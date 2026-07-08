@@ -12,6 +12,7 @@
 | WF-1 | 建立中央治理 repo + 規則抽出 | 使用者 | 使用者+Claude-Opus | Claude-Opus-4.8@ClaudeCode | 使用者 (pending) | main(初建) | 🔴 | 🔍待查核 |
 | WF-2 | §7.1「spec 文件 vs 看板」分工規則 + checklist 去重 | 使用者 | 使用者+Claude-Opus | Claude-Opus-4.8@ClaudeCode | 使用者 (pending) | main(直接) | 🔴 | 🔍待查核 |
 | WF-3 | §0 總覽（一圖流）+ §0.1 任務類型與適用流程矩陣 | 使用者 | 使用者+Claude-Opus | Claude-Opus-4.8@ClaudeCode | 使用者 (pending) | main(直接,B類文件) | 🔴 | 🔍待查核 |
+| WF-4 | §9 通用工程紅線（防幻覺/究責/安全，上收自 projectARG）| 使用者 | 使用者+Claude-Opus | Claude-Opus-4.8@ClaudeCode | 使用者 (pending) | main(直接,B類文件) | 🔴 | 🔍待查核 |
 
 ---
 
