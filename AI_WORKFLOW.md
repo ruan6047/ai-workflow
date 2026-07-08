@@ -128,12 +128,12 @@ flowchart LR
 
 ### 6.1 Git commit trailers（durable、grep-able）
 ```
-Requested-by:   <需求提供方：使用者 | 業務/來源>
-Planned-by:     <使用者 | AI 名/模型>
+Requested-by:   <人＝GitHub 帳號，如 ruan6047 | 業務/來源>
+Planned-by:     <人＝GitHub 帳號 | AI 名/模型>
 Implemented-by: <模型@工具>
-Reviewed-by:    <模型@工具>
+Reviewed-by:    <人＝GitHub 帳號 | 模型@工具>
 ```
-「模型@工具」寫具體：`Claude-Opus-4.8@ClaudeCode`、`Gemini-2.x@AIStudio`、`使用者`。查詢：`git log --grep="Reviewed-by:"`。
+**身分寫法（強制）**：**人一律用 GitHub 帳號**（如 `ruan6047`、`mor`），**嚴禁泛稱「使用者」**——多人協作下「使用者」無鑑別度、無法歸因。**AI 用 `模型@工具`**（`Claude-Opus-4.8@ClaudeCode`、`Gemini-2.x@AIStudio`）。查詢：`git log --grep="Reviewed-by: ruan6047"`。
 
 ### 6.2 各專案 `docs/TASKS.md` 卡片 log
 每卡一段時間線：`日期 | 階段 | 經手（模型@工具 / 需求方）| 通過/退回`。
