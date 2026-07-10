@@ -3,6 +3,7 @@
 > 進度追蹤。規則見 canonical [`~/Dev/ai-workflow/AI_WORKFLOW.md`](../../ai-workflow/AI_WORKFLOW.md)（本專案 stub：[`AI_WORKFLOW.md`](AI_WORKFLOW.md)）。
 > **git commit trailer 為單一事實來源**，本檔為人類可讀總覽；衝突以 git 為準。
 > 狀態：`📥Backlog → ⏳待執行 → 🔨執行中 → 🔍待查核 → ✅通過 → 🏁完成`／`↩退回`
+> **只留活卡**（canonical §6.4）：卡片 🏁/📥 後整段＋Ledger 列移 [`archive/TASKS_ARCHIVE.md`](archive/TASKS_ARCHIVE.md)，spec 文件隨卡封存，省 AI 常駐讀取算力。
 
 ---
 
@@ -20,6 +21,6 @@ _（無）_
 
 ---
 
-## 🏁 已完成
+## 歷史
 
-_（無）_
+已完成／封存卡片 → `archive/TASKS_ARCHIVE.md`（無則尚未有結案卡）
