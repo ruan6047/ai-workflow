@@ -14,7 +14,7 @@
 | WF-3 | §0 總覽（一圖流）+ §0.1 任務類型與適用流程矩陣 | ruan6047 | ruan6047+Claude-Opus | Claude-Opus-4.8@ClaudeCode | ruan6047 (pending) | main(直接,B類文件) | 🔴 | 🔍待查核 |
 | WF-4 | §9 通用工程紅線（防幻覺/究責/安全，上收自 projectARG）| ruan6047 | ruan6047+Claude-Opus | Claude-Opus-4.8@ClaudeCode | ruan6047 (pending) | main(直接,B類文件) | 🔴 | 🔍待查核 |
 | WF-5 | §6 身分寫法：人一律用 GitHub 帳號、禁泛稱「使用者」 | ruan6047 | ruan6047+Claude-Opus | Claude-Opus-4.8@ClaudeCode | ruan6047 (pending) | main(直接,B類文件) | ⚪ | 🔍待查核 |
-| WF-6 | §2 拆出「需求」階段（三→四階段）：企劃提需求可暫不規劃 + §0/§1/§7 同步 | ruan6047 | ruan6047+Claude-Opus | Claude-Opus-4.8@ClaudeCode | pending（紅線→換家族或 sign-off）| ai/Claude-Opus-4.8@ClaudeCode/WF-6 | 🔴 | 🔍待查核 |
+| WF-6 | §2 拆出「需求」階段（三→四階段）：企劃提需求可暫不規劃 + §0/§1/§7 同步 | ruan6047 | ruan6047+Claude-Opus | Claude-Opus-4.8@ClaudeCode | ruan6047 (sign-off) | ai/Claude-Opus-4.8@ClaudeCode/WF-6 (PR#1) | 🔴 | 🏁完成 |
 
 ---
 
@@ -39,17 +39,15 @@
   - 07-09 執行 by Claude-Opus@ClaudeCode：canonical 補 §7.1；cpbl CHECKLIST 移除每項重複職責歸屬（留稽核發現）、狀態收斂至 TASKS.md
   - 待：ruan6047 sign-off
 
-### WF-6 §2 拆出「需求」階段（三→四階段）  〔🔴紅線：影響全專案階段模型〕
-- 需求提供方：ruan6047　規劃：ruan6047 + Claude-Opus　分支：`ai/Claude-Opus-4.8@ClaudeCode/WF-6`
-- 執行：Claude-Opus-4.8@ClaudeCode　查核：**ruan6047 sign-off**（紅線 → 人審背板；執行者不自審）
-- 狀態：✅通過（已 sign-off，待 merge main）　Commit：（本卡 commit）
-- Log：
-  - 07-10 需求 by ruan6047：把「需求」從「規劃」拆出成獨立階段——企劃寫需求、可暫不規劃或暫不開工
-  - 07-10 執行 by Claude-Opus-4.8@ClaudeCode：§2 三階段→四階段（+需求語意/需求vs規劃）、§0 主流程圖加需求節點、§1 角色表拆「需求/派工」、§7 狀態機加 💡需求
-  - 07-10 查核 by ruan6047 → ✅ sign-off（紅線人審）
-
 ---
 
 ## 🏁 已完成
 
-_（無）_
+### WF-6 §2 拆出「需求」階段（三→四階段）  〔🔴紅線：影響全專案階段模型〕
+- 需求提供方：ruan6047　規劃：ruan6047 + Claude-Opus　分支：`ai/Claude-Opus-4.8@ClaudeCode/WF-6`（PR#1，已合併並刪除）
+- 執行：Claude-Opus-4.8@ClaudeCode　查核：**ruan6047 sign-off**（紅線 → 人審背板；執行者不自審）
+- 狀態：🏁完成（143719e，PR#1 merge 進 main）
+- Log：
+  - 07-10 需求 by ruan6047：把「需求」從「規劃」拆出成獨立階段——企劃寫需求、可暫不規劃或暫不開工
+  - 07-10 執行 by Claude-Opus-4.8@ClaudeCode：§2 三階段→四階段（+需求語意/需求vs規劃）、§0 主流程圖加需求節點、§1 角色表拆「需求/派工」、§7 狀態機加 💡需求
+  - 07-10 查核 by ruan6047 → ✅ sign-off（紅線人審）→ merge main（PR#1）
