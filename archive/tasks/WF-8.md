@@ -6,7 +6,7 @@
   - `TASKS.md`＝Ledger 索引 only + 依賴註記；卡明細一卡一檔 `tasks/<卡ID>.md`（**卡檔不設狀態欄**，狀態住 Ledger）
   - 封存改回 `git mv → archive/tasks/` + 抽 Ledger 列到 `archive/TASKS_ARCHIVE.md`（修訂 WF-7「不封存」）
   - canonical §6.3/§6.4(+§6.4.1 遷移指南)/§7/§7.1 改寫；`templates/TASKS.md` 瘦身 + 新增 `templates/tasks-card.md`
-- 狀態：見 [`../TASKS.md`](../TASKS.md) Ledger
+- 狀態：見 [`../TASKS_ARCHIVE.md`](../TASKS_ARCHIVE.md)（已封存 🏁，merge a8bbbcc）
 
 ## Log
 - 07-11 需求 by ruan6047：Log 累積使單檔 TASKS.md 膨脹（§6.4 反例）→ 導入一卡一檔：常駐只讀輕量 Ledger、卡明細按需載入
@@ -15,3 +15,4 @@
   - 建 `archive/TASKS_ARCHIVE.md`（封存 Ledger）；`TASKS.md` 瘦身為活卡 Ledger + 依賴註記
   - canonical §6.3/§6.4/§6.4.1/§7/§7.1 改寫；templates 兩檔就位
   - 決策：相關性採 Ledger「依賴註記」（非卡內 `[[]]`）——WF-7 的卡內相關任務欄由本卡修訂（ruan6047「無方向、由執行者推薦」）
+- 07-11 查核 by ruan6047 → ✅ sign-off（紅線人審）→ merge main（a8bbbcc）→ 🏁完成

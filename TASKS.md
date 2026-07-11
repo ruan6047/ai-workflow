@@ -10,13 +10,13 @@
 
 | 卡ID | 功能 | 需求 | 執行(model@tool) | 查核(model@tool) | 分支 | 紅線 | 狀態 |
 |---|---|---|---|---|---|---|---|
-| [WF-8](tasks/WF-8.md) | 導入「一卡一檔」慣例（狀態單一來源＝Ledger、封存用 git mv） | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 (sign-off) | ai/…/WF-8 | 🔴 | 🔍待查核 |
+| _（無活卡）_ | | | | | | | |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- **WF-8** ← 修訂 [WF-7](archive/tasks/WF-7.md)（card-per-file 的封存與狀態單一來源）；延續 [WF-2](archive/tasks/WF-2.md)（spec vs 看板分工）。
+- _（無活卡）_
 
 ---
 
