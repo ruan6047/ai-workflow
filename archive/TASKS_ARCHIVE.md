@@ -13,3 +13,4 @@
 | WF-6 | §2 拆出「需求」階段（三→四階段） | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | ai/…/WF-6 (PR#1) | 🔴 | 🏁 143719e | [WF-6](tasks/WF-6.md) |
 | WF-7 | 任務卡拆獨立檔（card-per-file） | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | ai/…/WF-7 | 🔴 | 🏁 9adb60b | [WF-7](tasks/WF-7.md) |
 | WF-8 | 導入「一卡一檔」（狀態＝Ledger、封存用 git mv） | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | ai/…/WF-8 | 🔴 | 🏁 a8bbbcc | [WF-8](tasks/WF-8.md) |
+| WF-9 | BUG 處理線（快線/慢線）+ bug 卡範本 + BUGS.md | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | ai/…/WF-9 | 🔴 | 🏁 1690640 | [WF-9](tasks/WF-9.md) |

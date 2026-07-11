@@ -10,13 +10,13 @@
 
 | 卡ID | 功能 | 需求 | 執行(model@tool) | 查核(model@tool) | 分支 | 紅線 | 狀態 |
 |---|---|---|---|---|---|---|---|
-| [WF-9](tasks/WF-9.md) | BUG 處理線（快線/慢線）+ bug 卡範本 + BUGS.md | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 (sign-off) | ai/…/WF-9 | 🔴 | 🔍待查核 |
+| _（無活卡）_ | | | | | | | |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- **WF-9** ← 站在 [WF-8](archive/tasks/WF-8.md) 一卡一檔之上（bug 快線＝該慣例的減負分支）。
+- _（無活卡）_
 
 ---
 
