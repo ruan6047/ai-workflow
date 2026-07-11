@@ -145,37 +145,48 @@ Reviewed-by:    <人＝GitHub 帳號 | 模型@工具>
 ### 6.2 各專案 `docs/TASKS.md` 卡片 log
 每卡一段時間線：`日期 | 階段 | 經手（模型@工具 / 需求方）| 通過/退回`。
 
-### 6.3 各專案 Ledger 總表
-`TASKS.md` 頂部一張表，一卡一列。**文件與 git 衝突以 git 為準。**
+### 6.3 各專案 Ledger 總表（一卡一檔）
+`docs/TASKS.md`＝**Ledger 索引表 only**（常駐、輕量）：規則抬頭 + 一卡一列的表格 + 依賴／相關卡註記，**不內嵌任何卡片明細段**。卡片明細**一卡一檔**於 `docs/tasks/<卡ID>.md`；Ledger「卡ID」欄以相對連結指向卡檔。**文件與 git 衝突以 git 為準。**
 
 ### 6.4 封存與算力衛生（Context Hygiene）
 **原則：AI 每 session 常駐讀取的檔案（`TASKS.md`／`CLAUDE.md`／Runbook）只留現行有效資訊；歷史「可查而不常駐」。封存≠刪除——git 仍是單一事實來源。**
-1. **card-per-file（看板只留索引）**：每卡完整內容住 `tasks/<卡ID>.md`，`TASKS.md` 只留 Ledger 一行/卡（狀態索引，常駐輕量）。AI 按需只讀所需卡＋其「相關任務」，完成卡留在 `tasks/` 即可、**不再另搬封存檔**（card-per-file 本身已達算力衛生目的）。
+1. **看板只留活卡**：卡片一到 🏁完成 或 📥封存，結案時 `git mv docs/tasks/<卡ID>.md docs/archive/tasks/<卡ID>.md`，並從 `docs/TASKS.md` Ledger **刪該列**、抄一列到 `docs/archive/TASKS_ARCHIVE.md` 的封存 Ledger。
 2. **spec／規劃／交接文件**：所屬卡片全數結案後移入 `docs/archive/`；**搬移時修好引用**（文內相對連結、AI 記憶指標、其他文件的路徑）。
 3. **常駐文件內的過期段落**同理：已失效的規劃/狀態描述刪除或移封存，不留「歷史敘事」佔 context。
 4. 封存屬 **B1 記錄型**（直接 commit，免審）。
+5. **一卡一檔算力衛生**：常駐只讀輕量 Ledger（`docs/TASKS.md`），卡片明細**按需載入**；規劃／執行只讀本卡＋依賴註記點名的相關卡。**更新狀態＝改 Ledger 一格 + 卡檔補一行 Log**——兩處職責不同、不重複（狀態住 Ledger、時序住 Log）。
+
+### 6.4.1 遷移指南（單檔 `TASKS.md` → 一卡一檔）
+既有專案（單檔 `TASKS.md` 內嵌所有卡）轉換：
+1. 為每張**活卡**建 `docs/tasks/<卡ID>.md`（範本 [`templates/tasks-card.md`](templates/tasks-card.md)），貼入卡片明細（**去掉狀態欄**）。
+2. `TASKS.md` 瘦身為 Ledger 索引 + 依賴註記；「卡ID」欄加連結指向卡檔。
+3. 已 🏁/📥 的卡：明細移 `docs/archive/tasks/<卡ID>.md`、Ledger 列移 `docs/archive/TASKS_ARCHIVE.md`。
+4. commit（B1 記錄型，直接）：`docs: migrate task board to one-card-per-file`。
 
 ---
 
 ## 7. 任務卡格式
 
-**每張卡＝一個獨立檔 `tasks/<卡ID>.md`（card-per-file，見 §6.4）**；`TASKS.md` 只留 Ledger 索引。卡片內容：
+**每張卡＝一個獨立檔 `docs/tasks/<卡ID>.md`（一卡一檔，見 §6.3/§6.4）**；`TASKS.md` 只留 Ledger 索引。**狀態住 Ledger、不進卡檔**（單一來源，承 §7.1）；卡檔只留 Log（時序自然為準）。卡格式（範本 [`templates/tasks-card.md`](templates/tasks-card.md)）：
 
 ```
-### <卡ID> <功能名>  〔🔴紅線 / ⚪一般〕
-- 需求提供方：<>　規劃：<>　分支：ai/<>/<卡ID>
+# <卡ID> <功能名>  〔🔴紅線 / ⚪一般〕
+- 需求：<>　規劃：<>　分支：ai/<>/<卡ID>
 - 執行：<模型@工具>　查核：<模型@工具>（須 ≠ 執行）
-- 相關任務：[[卡ID]]…（可能被同時修改／需一併考量的卡；日後大卡分切或規劃階段據此判定關聯）
-- 狀態：<>　Commit/PR：<>
-- Log：MM-DD 階段 by <模型@工具> → ✅/↩(原因)
+- 範圍：見 <spec 檔> §X（大規劃，連結不複製內容—承 §7.1）／或於此簡述（小任務）
+- 狀態住 ../TASKS.md Ledger
+
+## Log
+- MM-DD 階段 by <模型@工具> → ✅/↩(原因)
 ```
-**狀態機**：`💡需求 → 📥Backlog(待規劃) → ⏳待執行 → 🔨執行中 → 🔍待查核 → ✅通過→merge → 🏁完成`／`↩退回→回🔨`
-**相關任務欄**：規劃／執行時**只需讀本卡＋其相關卡**，免整板常駐；關聯以 `[[卡ID]]` 雙向鏈接，不強求對稱回填。
+**狀態機**（住 Ledger「狀態」欄）：`💡需求 → 📥Backlog(待規劃) → ⏳待執行 → 🔨執行中 → 🔍待查核 → ✅通過→merge → 🏁完成`／`↩退回→回🔨`
+**相關卡**：以 Ledger 的「依賴註記」表達（規劃／大卡分切時判定連動範圍），不逐卡雙鏈、不強求對稱。
 
 ### 7.1 spec 文件 vs 任務看板（何時開文件、何時只開卡）
 - **大型／多步規劃**（研究、RFC、多項清單、含驗收標準或程式碼片段）→ 存**獨立 spec 文件**（如 `docs/*_PROPOSALS.md`、`docs/*_CHECKLIST.md`），並在 `TASKS.md` **開卡連結**它。
 - **小任務**（單一改動、無需長篇）→ **只開卡**，不另立文件。
-- **鐵律**：spec 文件放「**做什麼／怎麼做／驗收標準**」（內容）；`TASKS.md` 放「**狀態／誰做／分支／log**」（狀態）。**狀態只住 `TASKS.md`，spec 文件不得另記一份**（避免兩處不同步）——spec 文件頂部只放**一行**指向其看板卡即可。
+- **鐵律**：spec 文件放「**做什麼／怎麼做／驗收標準**」（內容）；`TASKS.md` 放「**狀態／誰做／分支**」（狀態），卡檔 `docs/tasks/<卡ID>.md` 放「**誰做／分支／範圍連結／log**」。**狀態只住 `TASKS.md` Ledger，卡檔與 spec 文件皆不得另記一份**（避免兩處不同步）——spec 文件頂部只放**一行**指向其看板卡即可。
+- **卡片明細**（含範圍摘要）住卡檔，範圍以**連結**指向 spec 段落（`見 <spec> §X`）、**不複製內容**。
 - **結案後**：spec 文件隨卡片封存（§6.4），移入 `docs/archive/`。
 
 ---
