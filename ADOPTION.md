@@ -10,6 +10,7 @@
 複製 [`templates/TASKS.md`](templates/TASKS.md) → `<專案>/docs/TASKS.md`（Ledger 索引 only），把 `<專案名>` 換掉；
 每張卡由 [`templates/tasks-card.md`](templates/tasks-card.md) 建 `<專案>/docs/tasks/<卡ID>.md`（結案卡 `git mv` 進 `docs/archive/tasks/`）。
 此後該專案所有任務卡／log 都住這裡（**不集中到本 repo**）。狀態只住 Ledger（見 canonical §6.3/§6.4）。
+另起一份 `<專案>/docs/BUGS.md`（快線 bug 滾動 log，見 canonical §2.1；bug 卡範本 [`templates/bug-card.md`](templates/bug-card.md)）。
 
 ## 3. CLAUDE.md 加指引
 在 `<專案>/CLAUDE.md` 頂部加一行：
