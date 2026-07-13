@@ -10,13 +10,13 @@
 
 | 卡ID | 功能 | 需求 | 執行(model@tool) | 查核(model@tool) | 分支 | 紅線 | 交付狀態 | 部署狀態 |
 |---|---|---|---|---|---|---|---|---|
-| [WF-10](tasks/WF-10.md) | 自動狀態同步與模型路由規範 | ruan6047 | GPT-5@Codex | 待指派（跨家族／人審） | `ai/gpt@codex/WF-10` | 🔴 | 🔍待查核 | —不適用 |
+| [WF-10](tasks/WF-10.md) | 自動狀態同步與模型路由規範 | ruan6047 | GPT-5@Codex | ruan6047 sign-off | `ai/gpt@codex/WF-10` | 🔴 | ✅通過 | —不適用 |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- WF-10：規則更新完成後須由 Claude／Gemini 家族或 ruan6047 sign-off，才可 merge main。
+- WF-10：已由 ruan6047 sign-off，待 merge main。
 
 ---
 
