@@ -1,6 +1,6 @@
 # 新專案採用指南 (Adoption)
 
-讓一個 `~/Dev/<專案>` 納入本 AI 協作治理，三步：
+讓一個 `~/Dev/<專案>` 納入本 AI 協作治理，基本三步；有部署的專案再接第 4 步：
 
 ## 1. 放工作流 stub
 複製 [`templates/project-stub.md`](templates/project-stub.md) → `<專案>/docs/AI_WORKFLOW.md`。
@@ -18,8 +18,16 @@
 > 多 AI 協作前先讀 docs/AI_WORKFLOW.md（stub → canonical ~/Dev/ai-workflow）；任務看板 docs/TASKS.md。
 ```
 
+## 4. 接部署狀態 adapter（有部署才需要）
+
+在專案 Runbook／`DEPLOYMENT.md` 定義 canonical §3.2 的 Deployment Contract：目標環境、main source SHA、觸發方式、驗證、回滾、狀態回報與 owner。部署平台與 job 由專案自行選擇；共同要求只有：
+
+- GitHub PR merge 後自動記錄 `📦已合併`、PR URL 與 merge SHA。
+- `deploy → verify → update-task-status` 在同一 workflow 執行鏈回報結果。
+- 需部署的卡只有 `✅已驗證` 才能 `🏁完成`；失敗或回滾不得封存。
+
 ## 完成後
-- 該專案即受本機制管理：人工派工、分支制、實作/審核分離、只有 main 已審核可部署、commit trailer 留痕。
+- 該專案即受本機制管理：人工派工、分支制、實作/審核分離、只有 main 已審核可部署、交付／部署分軌留痕、commit trailer 留痕。
 - 規則有更新 → **只改本 repo `AI_WORKFLOW.md`**；各專案 stub 指針不變、無需同步。
 
 ## 已採用專案
