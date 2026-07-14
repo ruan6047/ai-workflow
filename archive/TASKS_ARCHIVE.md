@@ -15,3 +15,4 @@
 | WF-8 | 導入「一卡一檔」（狀態＝Ledger、封存用 git mv） | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | ai/…/WF-8 | 🔴 | 🏁 a8bbbcc | [WF-8](tasks/WF-8.md) |
 | WF-9 | BUG 處理線（快線/慢線）+ bug 卡範本 + BUGS.md | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | ai/…/WF-9 | 🔴 | 🏁 1690640 | [WF-9](tasks/WF-9.md) |
 | WF-10 | 自動狀態同步與模型路由規範 | ruan6047 | GPT-5@Codex | ruan6047 sign-off | ai/gpt@codex/WF-10 (PR#2) | 🔴 | 🏁 b3cd3ff | [WF-10](tasks/WF-10.md) |
+| WF-11 | 退回／修復卡生命週期與 worktree 收尾 | ruan6047 | Opus-4.8@ClaudeCode | GPT-5@Codex | ai/opus-4.8/WF-11 | 🔴 | 🏁 e13d300 | [WF-11](tasks/WF-11.md) |
