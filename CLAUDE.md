@@ -10,4 +10,4 @@
 - commit 一律加 trailer：`Requested-by / Planned-by / Implemented-by / Reviewed-by`（見 AI_WORKFLOW §6）。
 
 ## 模型路由
-本 repo 幾乎全是文件治理：規劃/改規則屬架構層 → Opus/Fable；純文字修訂 → Sonnet/Haiku。查核紅線（規則正確性）→ 換家族或人審。
+完整分級見 `AI_WORKFLOW.md` §10。本 repo 幾乎全是文件治理：一般修訂用 L2；架構／改規則用 L3，只有多日或極難工作才升 L4；純機械文字可用 L1。規則正確性屬紅線，查核必換模型家族或由使用者 sign-off。
