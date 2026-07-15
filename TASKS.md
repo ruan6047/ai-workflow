@@ -10,13 +10,13 @@
 
 | 卡ID | 功能 | 需求 | 執行(model@tool) | 查核(model@tool) | 分支 | 紅線 | 交付狀態 | 部署狀態 |
 |---|---|---|---|---|---|---|---|---|
-| [WF-12](tasks/WF-12.md) | 多 AI control-plane 與通用 DB Contract | ruan6047 | GPT-5@Codex | Gemini@external-review | `ai/gpt@codex/WF-12` | 🔴 | ✅通過 | —不適用 |
+| _（無活卡）_ | | | | | | | | |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- WF-12：Gemini@external-review 已獨立通過；待 merge／封存。
+- _（無活卡）_
 
 ---
 
