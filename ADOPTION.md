@@ -8,7 +8,7 @@
 
 ## 2. 起任務看板（一卡一檔）
 複製 [`templates/TASKS.md`](templates/TASKS.md) → `<專案>/docs/TASKS.md`（Ledger 索引 only），把 `<專案名>` 換掉；
-每張卡由 [`templates/tasks-card.md`](templates/tasks-card.md) 建 `<專案>/docs/tasks/<卡ID>.md`（結案卡 `git mv` 進 `docs/archive/tasks/`）。
+每張卡由 [`templates/tasks-card.md`](templates/tasks-card.md) 建 `<專案>/docs/tasks/<卡ID>.md`（結案卡 `git mv` 進 `docs/archive/tasks/`）。T3/T4 另由 [`templates/discovery-brief.md`](templates/discovery-brief.md) 建 Discovery brief；大型工作由 [`templates/initiative-card.md`](templates/initiative-card.md) 建 Initiative 父卡，先定 spec 基線與依賴圖再開子卡。
 此後該專案所有任務卡／log 都住這裡（**不集中到本 repo**）。狀態只住 Ledger（見 canonical §6）。
 另起一份 `<專案>/docs/BUGS.md`（快線 bug 滾動 log，見 canonical §3；bug 卡範本 [`templates/bug-card.md`](templates/bug-card.md)）。
 
@@ -20,7 +20,7 @@
 
 ## 4. 接 control-plane adapter（多 AI 並行時必需）
 
-在專案 Runbook 定義 canonical §4.1 的 adapter：唯一 Coordinator／workflow、原子 claim、lease TTL、worktree 建立、共享資源 lock、handoff／逾期回收與事件驅動對帳。不得只以看板文字或聊天訊息協調。
+在專案 Runbook 定義 canonical §4.1 的 adapter：唯一 Coordinator／workflow、原子 claim、lease TTL、worktree 建立、共享資源 lock、handoff／逾期回收與事件驅動對帳。adapter event log 是作業狀態事實來源，應產生含 owner、branch、worktree、iteration 與最後交接時間的 Ledger 投影；不得只以看板文字或聊天訊息協調。依團隊人類審查量能設定 agent 與 review queue 的 WIP limit。
 
 ## 5. 接資料庫契約（有資料庫才需要）
 
@@ -35,7 +35,7 @@
 - 需部署的卡只有 `✅已驗證` 才能 `🏁完成`；失敗或回滾不得封存。
 
 ## 完成後
-- 該專案即受本機制管理：人工派工、分支制、實作/審核分離、只有 main 已審核可部署、交付／部署分軌留痕、commit trailer 留痕。
+- 該專案即受本機制管理：人工派工、按 T0–T4 分級的分支／驗證、實作/審核分離、只有 main 已審核可部署、交付／部署分軌留痕、commit trailer 留痕。
 - 規則有更新 → **只改本 repo `AI_WORKFLOW.md`**；各專案 stub 指針不變、無需同步。
 
 ## 已採用專案

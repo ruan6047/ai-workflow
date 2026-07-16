@@ -15,7 +15,9 @@ ai-workflow/
 ├── CLAUDE.md        # 本 repo 的 AI 運行準則
 └── templates/
     ├── project-stub.md   # 丟進各專案 docs/AI_WORKFLOW.md 的 stub
-    └── TASKS.md          # 各專案任務看板範本
+    ├── TASKS.md          # 各專案任務看板範本
+    ├── discovery-brief.md # 需求發現與人類確認範本
+    └── initiative-card.md # 大型工作的 spec 基線與依賴範本
 ```
 
 ## 快速上手
