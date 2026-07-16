@@ -19,11 +19,13 @@ ai-workflow/
     ├── discovery-brief.md # 需求發現與人類確認範本
     ├── research-plan.md   # 研究假設、證據與限制範本
     ├── design-brief.md    # 使用流程、狀態與可用性驗收範本
+    ├── control-plane-contract.md # GitHub 協作與本機資源鎖契約範本
     └── initiative-card.md # 大型工作的 spec 基線與依賴範本
 ```
 
 ## 快速上手
 新專案採用 → 見 [`ADOPTION.md`](ADOPTION.md)。核心規則 → 見 [`AI_WORKFLOW.md`](AI_WORKFLOW.md)。
+舊版專案升級 → 見 [`MIGRATION.md`](MIGRATION.md)。
 
 ## 自我治理 (dogfooding)
 本 repo 也**受自己的機制管理**：改規則＝開分支 `ai/<模型>/<卡ID>` → 獨立審核 → merge main；卡片 log 見 [`TASKS.md`](TASKS.md)。
