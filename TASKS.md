@@ -10,7 +10,7 @@
 
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
-| WF-14 | — | T4 | 定義 Discovery、Design 與 Plan 的職責與閘門 | ruan6047（決策待確認） | `ai/gpt-5@codex/WF-14`／—不適用 | 0 | ⏸阻塞 | —不適用 | 2026-07-16 撤回查核 |
+| WF-14 | — | T4 | 定義 Discovery、Design 與 Plan 的職責與閘門 | GPT-5@Codex | `ai/gpt-5@codex/WF-14`／—不適用 | 0 | ✅通過 | —不適用 | 2026-07-16 人審→合併 |
 
 ## 依賴註記（相關卡）
 
