@@ -17,6 +17,8 @@ ai-workflow/
     ├── project-stub.md   # 丟進各專案 docs/AI_WORKFLOW.md 的 stub
     ├── TASKS.md          # 各專案任務看板範本
     ├── discovery-brief.md # 需求發現與人類確認範本
+    ├── research-plan.md   # 研究假設、證據與限制範本
+    ├── design-brief.md    # 使用流程、狀態與可用性驗收範本
     └── initiative-card.md # 大型工作的 spec 基線與依賴範本
 ```
 
