@@ -38,6 +38,8 @@
 - 該專案即受本機制管理：人工派工、按 T0–T4 分級的分支／驗證、實作/審核分離、只有 main 已審核可部署、交付／部署分軌留痕、commit trailer 留痕。
 - 規則有更新 → **只改本 repo `AI_WORKFLOW.md`**；各專案 stub 指針不變、無需同步。
 
+既有專案由 [`MIGRATION.md`](MIGRATION.md) 依 baseline event 升級；不要重寫歷史卡片或 commit。
+
 ## 已採用專案
 - `cpbl-analytics`（submodule of PersonalWebsite）
 - `PersonalWebsite`（主站）
