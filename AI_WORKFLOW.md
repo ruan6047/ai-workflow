@@ -8,19 +8,19 @@
 
 | 類型 | 例 | 分支／審核／落地 |
 |---|---|---|
-| A 程式碼 | 功能、bug、重構 | 分支 + 獨立審核；只有已審 main 可部署 |
+| A 程式碼 | 功能、bug、重構 | T2 以上才可改 versioned source／設定；分支 + 獨立審核，只有已審 main 可部署 |
 | B1 記錄文件 | log、TASKS、會議紀錄 | 直接 commit；免審，不部署 |
 | B2 權威文件 | spec、規則、API、checklist | 小改可直接 commit；需獨立事實查核／校讀，不部署；canonical 規則本體與指定 T4 文件除外 |
 | C 資料／維運 | 同步、refresh、爬蟲 | 無碼不開分支；資料 QA，生產操作先備份後驗證 |
 
-交付狀態只住 Ledger：`💡需求 → 📥Backlog → ⏳待執行 → 🔨執行中 → 🔍待查核 → ✅通過 → 📦已合併 → 🏁完成`，或 `↩退回`、`⏸阻塞`、`🚨已升級`。部署狀態獨立：`—不適用`，或 `⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證`；失敗／回滾不得結案。
+交付狀態為 `💡需求 → 📥Backlog → ⏳待執行 → 🔨執行中 → 🔍待查核 → ✅通過 → 📦已合併 → 🏁完成`，或 `↩退回`、`⏸阻塞`、`🚨已升級`、`🛑已停止`。不可覆寫 event log 是狀態歷史，Ledger 是由 event log 產生的 current-state projection；兩者不得各自人工改寫。`🛑已停止` 必填決策與原因後封存。部署狀態獨立：`—不適用`，或 `⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證`；失敗／回滾不得結案。
 
-變更級別 [change tier] 決定流程強度，不得只按估時或檔案數降級；取風險、影響範圍與可逆性的最高者。任一碰到 public contract、權限／安全、金流、資料寫入／migration、production 或紅線，即至少 T3，紅線一律 T4。
+變更級別 [change tier] 決定流程強度，不得只按估時或檔案數降級；取風險、影響範圍與可逆性的最高者。任一碰到 public contract、權限／安全、金流、資料寫入／migration、production 或紅線，即至少 T3，紅線一律 T4。適用順序為：紅線／法規與安全限制 → 類型的最低閘門 → tier；B2 的獨立事實查核不得被 T1 省略。
 
 | 級別 | 適用條件 | 最低閘門 |
 |---|---|---|
 | T0 記錄 | B1 log、非權威格式、無語意影響文字 | 直接 commit；格式／連結檢查 |
-| T1 編修 | 已知 typo、展示文案或細節調整；無行為、契約或資料影響 | 聚焦自查；可直接 commit，必要時抽查 |
+| T1 編修 | 已知 typo、非執行期文案或細節調整；不得改 versioned source、設定、生成物或 API／規格文字 | 聚焦自查；可直接 commit，必要時抽查 |
 | T2 局部修正 | 根因已知、可逆、局部的程式／設定變更 | 分支、聚焦回歸測試、獨立輕量查核 |
 | T3 標準交付 | 一般功能、跨檔或需求不確定的修正 | spec／卡、分支、自測、獨立查核、merge gate |
 | T4 紅線 | §5 列舉風險 | T3 + 跨家族或人工審核、實測與必要 sign-off |
@@ -57,11 +57,19 @@
 flowchart LR
   R[需求] --> D[Discovery：問題、證據與成功條件]
   D --> DG{Discovery Gate}
-  DG --> DSN[Design：使用流程與驗收]
+  DG -->|核可| DSN[Design：使用流程與驗收]
+  DG -->|補研究| D
+  DG -->|停止| STOP[停止／封存]
   DSN --> DSG{Design Gate}
-  DSG --> P[Plan：可行性與切片]
+  DSG -->|核可| P[Plan：可行性與切片]
+  DSG -->|重設計| DSN
+  DSG -->|回到 Discovery| D
+  DSG -->|停止| STOP
   P --> PG{Plan Gate／spec 基線}
-  PG --> C[Coordinator 認領資源]
+  PG -->|核可| C[Coordinator 認領資源]
+  PG -->|重規劃| P
+  PG -->|回到 Design| DSN
+  PG -->|停止| STOP
   C --> I[執行與自測]
   I --> V[獨立查核]
   V -->|退回| I
@@ -83,9 +91,11 @@ flowchart LR
 
 ### 4.1 Control-plane Contract
 
-每個多 AI 專案必須在 Runbook 實作一個 control-plane adapter（Coordinator、受保護 workflow 或具原子操作的服務）：
+每個有兩個以上人類／AI writer，或會並行操作共享資源的專案，必須在 Runbook 實作 control-plane adapter。採聯邦式混合架構：remote coordination adapter（GitHub 為預設實作）處理跨人 task、review、lease 與 CI；local resource adapter 處理 worktree、port、container 與未提交變更。local lock 只保護暫時資源，不是協作狀態事實來源。
 
-- 只有 adapter 可原子認領／釋放卡、建 worktree、轉交付狀態與核發資源租約 [lease]。adapter 的 append-only event log 是作業狀態事實來源；Ledger 是由它產生的可讀投影，git 是程式碼與已提交文件的事實來源。
+- GitHub Project／Issue 是協作 UI，不得單獨充當不可覆寫 event log。專案可把 event 追加到受保護 Git history 或外部 append-only store；remote coordination adapter 是唯一 lifecycle event writer。
+- 只有 remote coordination adapter 可原子認領／釋放卡、轉交付狀態與核發資源租約 [lease]；local resource adapter 只能建立／釋放資源並回報 telemetry，不得改 card state 或遞增 `state_version`。append-only event log 是作業狀態事實來源；Ledger 是它的可讀投影，git 是程式碼與已提交文件的事實來源。
+- lifecycle event 最小 schema：`event_id`、`card_id`、`type`、`actor`、`occurred_at`、`state_version`、`iteration`、`evidence`，以及 claim 時的 `branch`、`worktree`、`lease_expires_at`；review／handoff／merge／release 必填 `source_sha`。同一卡的 `state_version` 必須單調遞增。local telemetry 使用同一 envelope，但標記 `lifecycle=false`、引用 `claim_event_id`，不含 `state_version`。
 - claim 必須一次驗證卡可執行、無有效 owner、依賴已滿足，並記錄 `card_id`、owner、branch、worktree、`claimed_at`、`lease_expires_at`。
 - 共享可寫資源必須宣告並互斥：`file:<path>`、`port:<n>`、`container:<name>`、`db:<env>:schema`、`db:<env>:table:<name>`；read-only 才可共用。
 - lease 可續約、可到期回收；回收前先檢查未提交變更，禁止靜默刪除工作內容。claim、handoff、review finding、status change、merge、release 都要以事件記錄 iteration、actor、時間、source SHA、證據／原因，並對帳。
@@ -115,7 +125,7 @@ flowchart LR
 ## 6. 留痕與交付
 
 - git 是程式碼／文件衝突時的事實來源；adapter event log 是作業狀態事實來源；`docs/TASKS.md` 是活卡 Ledger 投影，卡片一檔，結案即封存。範本見 [`TASKS.md`](templates/TASKS.md)、[`tasks-card.md`](templates/tasks-card.md)。
-- 實作 commit 必加：
+- T0／T1 的直接 commit 至少記錄 `Requested-by` 與 `Implemented-by`；T2 以上的實作 commit 必加：
   ```text
   Requested-by: <GitHub 帳號／來源>
   Planned-by: <GitHub 帳號／模型@工具>

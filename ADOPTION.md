@@ -9,7 +9,7 @@
 ## 2. 起任務看板（一卡一檔）
 複製 [`templates/TASKS.md`](templates/TASKS.md) → `<專案>/docs/TASKS.md`（Ledger 索引 only），把 `<專案名>` 換掉；
 每張卡由 [`templates/tasks-card.md`](templates/tasks-card.md) 建 `<專案>/docs/tasks/<卡ID>.md`（結案卡 `git mv` 進 `docs/archive/tasks/`）。T3/T4 另由 [`templates/discovery-brief.md`](templates/discovery-brief.md) 建 Discovery brief；使用者可見的 T3/T4 再建 [`templates/design-brief.md`](templates/design-brief.md)，純技術卡則記錄 Design Gate `N/A` 的理由；研究不確定性時使用 [`templates/research-plan.md`](templates/research-plan.md)。大型工作由 [`templates/initiative-card.md`](templates/initiative-card.md) 建 Initiative 父卡，先定 spec 基線與依賴圖再開子卡。
-此後該專案所有任務卡／log 都住這裡（**不集中到本 repo**）。狀態只住 Ledger（見 canonical §6）。
+此後該專案所有任務卡／log 都住這裡（**不集中到本 repo**）。event log 保存狀態歷史，Ledger 是 current-state projection（見 canonical §6）。
 另起一份 `<專案>/docs/BUGS.md`（快線 bug 滾動 log，見 canonical §3；bug 卡範本 [`templates/bug-card.md`](templates/bug-card.md)）。
 
 ## 3. CLAUDE.md 加指引
@@ -18,9 +18,9 @@
 > 多 AI 協作前先讀 docs/AI_WORKFLOW.md（stub → canonical ~/Dev/ai-workflow）；任務看板 docs/TASKS.md。
 ```
 
-## 4. 接 control-plane adapter（多 AI 並行時必需）
+## 4. 接 control-plane adapter（多 writer／共享資源時必需）
 
-在專案 Runbook 定義 canonical §4.1 的 adapter：唯一 Coordinator／workflow、原子 claim、lease TTL、worktree 建立、共享資源 lock、handoff／逾期回收與事件驅動對帳。adapter event log 是作業狀態事實來源，應產生含 owner、branch、worktree、iteration 與最後交接時間的 Ledger 投影；不得只以看板文字或聊天訊息協調。依團隊人類審查量能設定 agent 與 review queue 的 WIP limit。
+從 [`templates/control-plane-contract.md`](templates/control-plane-contract.md) 建立 `<專案>/docs/CONTROL_PLANE_CONTRACT.md`，在專案 Runbook 定義 canonical §4.1 的 adapter：remote coordination（GitHub 為預設實作）處理跨人 task、review、lease、CI；local resource lock 處理 worktree、port、container 與未提交變更。event log 是作業狀態事實來源，應產生含 owner、branch、worktree、iteration 與最後交接時間的 Ledger 投影；不得只以看板文字或聊天訊息協調。依團隊人類審查量能設定 agent 與 review queue 的 WIP limit。
 
 ## 5. 接資料庫契約（有資料庫才需要）
 

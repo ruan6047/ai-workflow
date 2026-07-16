@@ -19,6 +19,7 @@ ai-workflow/
     ├── discovery-brief.md # 需求發現與人類確認範本
     ├── research-plan.md   # 研究假設、證據與限制範本
     ├── design-brief.md    # 使用流程、狀態與可用性驗收範本
+    ├── control-plane-contract.md # GitHub 協作與本機資源鎖契約範本
     └── initiative-card.md # 大型工作的 spec 基線與依賴範本
 ```
 

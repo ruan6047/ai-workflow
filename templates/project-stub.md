@@ -9,7 +9,8 @@
 3. **獨立性紅線**：紅線卡（安全/金流/統計 ML 正確性/資安/資料正確性）審核**必換模型家族或人審**，且**必跑實測**——同家族審（含 Opus 審 Sonnet）不算數。一般卡同家族異 session 審可接受。
 4. **退回不代改**：審核發現缺陷 → 以 PR review／event 留 finding → **原執行者同分支修** → 重審；審核者**不得順手改 source branch**。連續 ≥3 次退回 → `🚨已升級`。
 5. **需求、設計與大型工作**：Discovery 確認問題與證據，Design 確認使用流程、狀態、可及性與可用性驗收，Plan 才決定實作；使用者可見的 T3/T4 必過 Design Gate，純技術卡必記錄 N/A 理由。大型工作以 Initiative 管理 spec 基線、依賴、里程碑與變更，子卡採可驗證切片。
-6. **留痕**：實作 commit 加 trailer（**人＝GitHub 帳號如 `ruan6047`，勿寫「使用者」；AI＝`模型@工具`**）：
+6. **協作狀態**：多 writer／共享資源專案以 remote coordination（GitHub 為預設）管 task、review、lease、CI，以 local resource lock 管 worktree／port／container；event log 是歷史，Ledger 是投影。
+7. **留痕**：T0/T1 commit 至少填 `Requested-by`、`Implemented-by`；T2 以上實作 commit 加 trailer（**人＝GitHub 帳號如 `ruan6047`，勿寫「使用者」；AI＝`模型@工具`**）：
    ```
    Requested-by:   <GitHub 帳號 | 業務/來源>
    Planned-by:     <GitHub 帳號 | AI/模型>
@@ -19,8 +20,8 @@
    ```
    Reviewed-by:    <GitHub 帳號 | 模型@工具>
    ```
-7. **驗證與留痕（canonical §2、§6）**：先讀再說、不虛構不存在的 API/表/指令；secrets 永不進 git；交付必附「改什麼/為什麼/怎麼驗證(實測)」。
-8. **狀態與部署（canonical §0、§2）**：交付與部署分欄；需部署的卡只有驗證成功才可 `🏁完成`；失敗／回滾不得封存。
-9. **模型路由**：先依風險選能力與供應商；紅線 review 必換家族。模型名單與明確 model ID 住專案 `MODEL_ROUTING.md`，不使用 `latest` alias。
+8. **驗證與留痕（canonical §2、§6）**：先讀再說、不虛構不存在的 API/表/指令；secrets 永不進 git；交付必附「改什麼/為什麼/怎麼驗證(實測)」。
+9. **狀態與部署（canonical §0、§2）**：交付與部署分欄；需部署的卡只有驗證成功才可 `🏁完成`；失敗／回滾不得封存。
+10. **模型路由**：先依風險選能力與供應商；紅線 review 必換家族。模型名單與明確 model ID 住專案 `MODEL_ROUTING.md`，不使用 `latest` alias。
 
 **派工＝人工**（使用者指派）；Coordinator 由使用者指定，未指定時依專案 Runbook。任何工具擔任該卡執行者時都不得兼任查核。
