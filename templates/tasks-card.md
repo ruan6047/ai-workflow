@@ -9,6 +9,7 @@
 - 部署：<是/否>　環境：<staging/production/—>　PR：<#/URL>　Merge SHA：<SHA/—>
 - 範圍：見 [`<spec 檔>`](../<spec 檔>) §<X>（T3/T4 必填）／或於此簡述（T0–T2）
 - Discovery：<brief 路徑／人類確認者與時間／T0–T2 可填—>
+- Design：<design brief 路徑／Design Gate N/A 與理由>
 - 交付／部署狀態住 [`../TASKS.md`](../TASKS.md) Ledger
 
 ## Log

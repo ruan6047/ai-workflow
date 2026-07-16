@@ -1,7 +1,7 @@
 # INIT-<id> <成果導向名稱>
 
 - 需求方：<GitHub 帳號>　owner：<帳號／模型@工具>
-- Discovery：<discovery brief 路徑>　spec 基線：v<n>
+- Discovery：<discovery brief 路徑>　Design：<design brief 路徑／N/A 與理由>　spec 基線：v<n>
 - 目標：<預期成果>　非目標：<不做事項>
 - 里程碑：<checkpoint／人類確認點>
 
