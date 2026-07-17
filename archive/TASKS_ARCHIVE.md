@@ -17,3 +17,4 @@
 | WF-10 | 自動狀態同步與模型路由規範 | ruan6047 | GPT-5@Codex | ruan6047 sign-off | ai/gpt@codex/WF-10 (PR#2) | 🔴 | 🏁 b3cd3ff | [WF-10](tasks/WF-10.md) |
 | WF-11 | 退回／修復卡生命週期與 worktree 收尾 | ruan6047 | Opus-4.8@ClaudeCode | GPT-5@Codex | ai/opus-4.8/WF-11 | 🔴 | 🏁 e13d300 | [WF-11](tasks/WF-11.md) |
 | WF-12 | 多 AI control-plane 與通用 DB Contract | ruan6047 | GPT-5@Codex | Gemini@external-review | ai/gpt@codex/WF-12 | 🔴 | 🏁 0ad60c8 | [WF-12](tasks/WF-12.md) |
+| WF-16 | §4.1 lifecycle event 只能落受保護 main | ruan6047 | Claude-Fable-5@ClaudeCode | ruan6047 sign-off | ai/fable-5/WF-16 | 🔴 | 🏁 6d70b1b | [WF-16](tasks/WF-16.md) |
