@@ -10,13 +10,13 @@
 
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
-| _（無活卡）_ | | | | | | | | | |
+| [WF-17](tasks/WF-17.md) | — | T4 | 規劃期模型路由＋基線 cascade＋統計紅線範本 | 待指派（查核） | `ai/fable-5/WF-17` | 0 | 🔍待查核 | —不適用 | 2026-07-26T16:10:00+08:00 |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- _（無活卡）_
+- WF-17 merge 後，採用專案（cpbl-analytics：DOC-WORKFLOW-ADOPT1）bump submodule 並同步 stub／範本索引。
 
 ---
 
