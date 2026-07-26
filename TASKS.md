@@ -10,13 +10,13 @@
 
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
-| _（無活卡）_ | | | | | | | | | |
+| [WF-18](tasks/WF-18.md) | — | T4 | 結案終態＋時戳＋executor merge 例外＋基線必填 | 待指派（查核） | `ai/fable-5/WF-18` | 0 | 🔍待查核 | —不適用 | 2026-07-26T19:08:45+08:00 |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- _（無活卡）_（WF-17 已結案；採用同步由 cpbl-analytics DOC-WORKFLOW-ADOPT1 承接）
+- WF-18 merge 後，採用專案（cpbl-analytics：DOC-WORKFLOW-ADOPT2）同步 stub／CONTROL_PLANE_CONTRACT 例外條款引用。
 
 ---
 
