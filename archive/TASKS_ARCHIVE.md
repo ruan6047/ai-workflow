@@ -23,3 +23,4 @@
 | WF-16 | §4.1 lifecycle event 只能落受保護 main | ruan6047 | Claude-Fable-5@ClaudeCode | ruan6047 sign-off | ai/fable-5/WF-16 | 🔴 | 🏁 6d70b1b | [WF-16](tasks/WF-16.md) |
 | WF-17 | 規劃期模型路由＋基線 cascade＋統計紅線範本 | ruan6047 | Claude-Fable-5@ClaudeCode | ruan6047 sign-off | ai/fable-5/WF-17 (PR#3) | 🔴 | 🏁 e0b1c1e | [WF-17](tasks/WF-17.md) |
 | WF-18 | 結案終態＋時戳＋executor merge 例外＋子卡基線必填 | ruan6047 | Claude-Fable-5@ClaudeCode | Gemini 3.6 Flash 跨家族 APPROVE＋ruan6047 sign-off | ai/fable-5/WF-18 (PR#4) | 🔴 | 🏁 b9af568 | [WF-18](tasks/WF-18.md) |
+| WF-19 | discovery-brief 對抗式質詢建議欄 | ruan6047 | Claude-Fable-5@ClaudeCode | ruan6047 sign-off | ai/fable-5/WF-19 (PR#5) | ⚪ | 🏁 41c5357 | [WF-19](tasks/WF-19.md) |
