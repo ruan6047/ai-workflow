@@ -21,3 +21,4 @@
 | WF-14 | Discovery／Design／Plan 職責與閘門 | ruan6047 | GPT-5@Codex | ruan6047 sign-off | ai/gpt-5@codex/WF-14 | 🔴 | 🏁 b293f21 | [WF-14](tasks/WF-14.md) |
 | WF-15 | 收斂控制平面與流程狀態契約 | ruan6047 | GPT-5@Codex | ruan6047 sign-off | ai/gpt-5@codex/WF-15 | 🔴 | 🏁 2d2d1d0 | [WF-15](tasks/WF-15.md) |
 | WF-16 | §4.1 lifecycle event 只能落受保護 main | ruan6047 | Claude-Fable-5@ClaudeCode | ruan6047 sign-off | ai/fable-5/WF-16 | 🔴 | 🏁 6d70b1b | [WF-16](tasks/WF-16.md) |
+| WF-17 | 規劃期模型路由＋基線 cascade＋統計紅線範本 | ruan6047 | Claude-Fable-5@ClaudeCode | ruan6047 sign-off | ai/fable-5/WF-17 (PR#3) | 🔴 | 🏁 e0b1c1e | [WF-17](tasks/WF-17.md) |
