@@ -10,7 +10,7 @@
 - Design：<design brief 路徑／Design Gate N/A 與理由>
 - owner、worktree、iteration、最後交接、阻塞與交付／部署 current-state 見 [`../TASKS.md`](../TASKS.md) Ledger；歷史寫入 adapter event log
 
-> 「驗收條件」與「驗證」是**標準章節名**：查核提示詞產生器與 Ledger lint 等工具以此錨定，不得改寫為「目標與驗收」「Gate 與驗證」等變體。T4 統計／ML／資料正確性卡另須「紅線（違反即退回）」章節（見 [`statistical-redline.md`](statistical-redline.md)）。
+> 「驗收條件」與「驗證」是**標準章節名**：查核提示詞產生器與 Ledger lint 等工具以此錨定，不得改寫為「目標與驗收」「Gate 與驗證」等變體。T4 統計／ML／資料正確性卡另須「紅線（違反即退回）」章節（見 [`statistical-redline.md`](statistical-redline.md)）。有 Initiative 的卡，`spec 基線` 欄**註冊時即必填**父卡當前版本——「—」或缺欄視同不一致，查核直接退回（[`baseline-cascade.md`](baseline-cascade.md) §5）。
 
 ## 驗收條件
 
