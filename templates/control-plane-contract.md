@@ -16,7 +16,7 @@
 ```yaml
 event_id: <UUID/monotonic ID>
 card_id: <CARD_ID>
-type: claim | handoff | review | status-change | merge | release
+type: claim | handoff | handoff-accepted | review | status-change | merge | release
 actor: <GitHub account / model@tool>
 occurred_at: <ISO 8601>
 state_version: <strictly increasing integer>
@@ -39,7 +39,15 @@ local telemetry 另以同一 envelope 記錄 `resource-acquired | resource-relea
 - 到期回收：<未提交變更檢查、通知與人工介入>
 - WIP limit：agent <n>；review queue <n>；超過時 <行為>
 
-## 4. 權限與事故處理
+## 4. Handoff 與 optional tmux adapter
+
+- Handoff contract：從 [`handoff-contract.md`](handoff-contract.md) 建立 `<專案>/docs/HANDOFF_CONTRACT.md`；T2 以上或 owner 變更必填。
+- Receiver 驗證：<驗證完整 SHA、baseline、lease、證據的 command／workflow>
+- Receiver 接受事件：<`handoff-accepted` writer 與權限>
+- tmux：<不用／僅 session launcher／僅 wake-up；不得作為遠端狀態來源>
+- Local runtime：<路徑；必須在 `.gitignore`；清理／重啟程序>
+
+## 5. 權限與事故處理
 
 - GitHub Actions token／App 權限：<最小 permissions>
 - 外部協作者可做／不可做：<claim、review、merge、release>
