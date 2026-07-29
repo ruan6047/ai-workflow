@@ -20,7 +20,7 @@
 
 ## 4. 接 control-plane adapter（多 writer／共享資源時必需）
 
-從 [`templates/control-plane-contract.md`](templates/control-plane-contract.md) 建立 `<專案>/docs/CONTROL_PLANE_CONTRACT.md`，在專案 Runbook 定義 canonical §4.1 的 adapter：remote coordination（GitHub 為預設實作）處理跨人 task、review、lease、CI；local resource lock 處理 worktree、port、container 與未提交變更。event log 是作業狀態事實來源，應產生含 owner、branch、worktree、iteration 與最後交接時間的 Ledger 投影；不得只以看板文字或聊天訊息協調。依團隊人類審查量能設定 agent 與 review queue 的 WIP limit。
+從 [`templates/control-plane-contract.md`](templates/control-plane-contract.md) 建立 `<專案>/docs/CONTROL_PLANE_CONTRACT.md`，在專案 Runbook 定義 canonical §4.1 的 adapter：remote coordination（GitHub 為預設實作）處理跨人 task、review、lease、CI；local resource lock 處理 worktree、port、container 與未提交變更。跨 writer handoff 另從 [`templates/handoff-contract.md`](templates/handoff-contract.md) 建立 `<專案>/docs/HANDOFF_CONTRACT.md`；只能交接已 push 的完整 SHA。event log 是作業狀態事實來源，應產生含 owner、branch、worktree、iteration 與最後交接時間的 Ledger 投影；不得只以看板文字、tmux 或聊天訊息協調。依團隊人類審查量能設定 agent 與 review queue 的 WIP limit。
 
 ## 5. 接資料庫契約（有資料庫才需要）
 

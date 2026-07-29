@@ -21,7 +21,7 @@
 
 ## 1. 安裝新文件，不搬移歷史
 
-1. 將新 canonical stub、`TASKS.md`、`tasks-card.md`、`bug-card.md`、`discovery-brief.md`、`design-brief.md`、`research-plan.md` 與 `control-plane-contract.md` 放入專案文件目錄。
+1. 將新 canonical stub、`TASKS.md`、`tasks-card.md`、`bug-card.md`、`discovery-brief.md`、`design-brief.md`、`research-plan.md`、`control-plane-contract.md` 與 `handoff-contract.md` 放入專案文件目錄。
 2. 保留舊卡片與 `BUGS.md` 原文；不要為了新格式補寫舊事件。
 3. 對每張活卡建立一次 `migration-baseline` lifecycle event：記錄舊狀態、owner、branch、worktree、已知 iteration、source SHA 與建立時間；此 event 成為 `state_version: 1`。
 4. 從 baseline event 產生新的 Ledger。若新／舊 Ledger 不一致，停止 claim，先由 Coordinator 對帳。
@@ -45,6 +45,7 @@
 3. 實作 local resource lock：worktree、port、container、cache、queue 與 DB namespace。
 4. 設定 claim concurrency key、lease TTL、逾期回收、agent／review WIP limit 與外部協作者權限。
 5. 先以一張非紅線測試卡演練：claim → handoff → review → merge → release → Ledger projection。
+6. handoff 一律先 push 完整 40 字元 SHA；receiver 驗證 SHA、baseline、lease 與 evidence 後，才追加 `handoff-accepted`。
 
 ## 4. 啟用新 Gate 與任務格式
 
