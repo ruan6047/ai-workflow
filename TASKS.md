@@ -10,13 +10,13 @@
 
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
-| [WF-20](tasks/WF-20.md) | — | T4 | GitHub-first handoff contract + optional tmux adapter | GPT-5@Codex | `ai/gpt-5@codex/WF-20`／主工作目錄 | 1 | 🔍待查核 | —不適用 | d8607017612ee96e580ff294910922c6ef1ac971 已推送；阻塞修正重送 |
+| [WF-20](tasks/WF-20.md) | — | T4 | GitHub-first handoff contract + optional tmux adapter | GPT-5@Codex | `ai/gpt-5@codex/WF-20`／主工作目錄 | 1 | ✅通過 | —不適用 | 2026-07-29T08:58:42+0800 跨家族 APPROVE（SHA d8607017…971）；待 merge |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- WF-20：規則正確性紅線；Claude Fable 5@Claude Code iteration 0 退回兩項一致性問題，iteration 1 已修正並重送跨家族查核。
+- WF-20：規則正確性紅線；iteration 0 退回兩項一致性問題後，iteration 1 經 Claude Fable 5@Claude Code 跨家族 APPROVE，ruan6047 sign-off 核可 merge。
 
 ---
 
