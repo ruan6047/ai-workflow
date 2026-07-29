@@ -20,6 +20,7 @@ ai-workflow/
     ├── research-plan.md   # 研究假設、證據與限制範本
     ├── design-brief.md    # 使用流程、狀態與可用性驗收範本
     ├── control-plane-contract.md # GitHub 協作與本機資源鎖契約範本
+    ├── handoff-contract.md # 已推送完整 SHA 的跨 writer handoff 契約範本
     └── initiative-card.md # 大型工作的 spec 基線與依賴範本
 ```
 
