@@ -16,7 +16,7 @@
 ```yaml
 event_id: <UUID/monotonic ID>
 card_id: <CARD_ID>
-type: claim | handoff | review | status-change | merge | release
+type: claim | handoff | handoff-accepted | preflight-failed | review | review-invalid | escalation-checkpoint | status-change | correction | merge | release
 actor: <GitHub account / model@tool>
 occurred_at: <ISO 8601>
 state_version: <strictly increasing integer>
@@ -25,9 +25,15 @@ source_sha: <required for review/handoff/merge/release>
 evidence: <PR, CI, test or decision link>
 ```
 
+review preflight／退回／升級另依 [`review-escalation.md`](review-escalation.md) 實作
+`attempt_id`、`escalation_epoch`、結構化 findings 與 `counts_toward_escalation`；不得把所有
+`REJECT` event 直接視為一次升級計數。專案可擴充 event type，但必須文件化狀態轉移，
+不得將未識別 type 默默當成 review attempt。
+
 local telemetry 另以同一 envelope 記錄 `resource-acquired | resource-released`，但必填 `lifecycle: false`、`claim_event_id`，且不得填 `state_version` 或改 card state。
 
-列出允許的狀態轉移、Gate 退回、`⏸阻塞` 的 TTL 與 `🚨已升級` 的決策 owner：
+列出允許的狀態轉移、Gate／preflight 退回、`⏸阻塞` 的 TTL、escalation checkpoint 與
+`🚨已升級` 的決策 owner：
 
 <專案實作>
 

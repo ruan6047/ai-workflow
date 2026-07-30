@@ -10,13 +10,13 @@
 
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
-| _（無活卡）_ | | | | | | | | | |
+| WF-21 | — | T4 🔴規則 | 審核退回分流與升級計數去誤觸發 | GPT-5@Codex | `ai/gpt-5@codex/WF-21`／目前 checkout | 0 | 🔨執行中 | —不適用 | 2026-07-30 使用者直接指派 |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- _（無活卡）_（WF-18 已結案；採用同步＋F-01 歷史補帳由 cpbl-analytics DOC-WORKFLOW-ADOPT2 承接）
+- WF-21：改動 canonical 審核／升級語意；採用專案 adapter 須同步支援結構化 finding 與 preflight。
 
 ---
 
