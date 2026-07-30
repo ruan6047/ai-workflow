@@ -87,3 +87,4 @@ checkpoint_rationale: <root-cause repetition, closure trend, or requester ruling
 ```
 
 `counts_toward_escalation` 是 adapter 依結構化欄位算出的投影，不得由 reviewer 以自由文字自行宣告。若同 SHA 有多個有效 reviewer 報告，adapter 先合併 findings 再計算一次；相同 `finding_id` 的衝突分類須由 Coordinator／需求方裁定，不得用陣列順序覆寫。cutover 前歷史事件維持原貌；採用專案以 baseline event 指定新契約開始時間。
+adapter 亦須以穩定 `finding_id`／`root_cause_id` 跨 attempt 推導 checkpoint：同根因出現於三個唯一可計數 attempt，或前一 attempt 的 accepted blocking finding 未在下一 attempt 明列 `resolved`／`withdrawn` 時，`checkpoint_decision` 只能是 `escalate`，不得信任手填的 `continue`。
