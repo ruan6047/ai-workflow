@@ -40,7 +40,7 @@ disposition: <required fix or decision>
 
 Reviewer 提交報告，由 lifecycle writer 在寫入 `review` event 前依可重現證據標記 `accepted`；reviewer 不得自行決定是否消耗 escalation 額度。新採認的 blocking finding 以 `open` 開始；後續有效 review（無論是否計數）或明示 `review-correction` event 都可用同一 `finding_id` 帶回 `resolved`／`withdrawn`，adapter 必須先更新實際 open set 再判斷下一個可計數 attempt 是否承接未閉合 finding。若事後翻案，以 `review-correction` 追加新 disposition，不回寫舊 event。`root_cause_id=unknown` 不得跨 finding 當成相同根因。
 
-同一 attempt 的多 reviewer 可補充不同 finding；若同一 `finding_id` 的 `status`、`accepted`、分類、歸屬或根因互相衝突，adapter 必須將該 finding 標為待裁決、不套用任一衝突值，並要求下一筆相關 lifecycle event 為 Coordinator／需求方的 `review-correction`。事件流結束或出現其他事件而仍未裁決時才 fail loud；追加合法 correction 後完整 replay 必須恢復通過，不得因 append-only 歷史中保留衝突事件而永久失效，也不得依事件或陣列順序覆寫。
+同一 attempt 的多 reviewer 可補充不同 finding；若同一 `finding_id` 的 `status`、`accepted`、分類、歸屬或根因互相衝突，adapter 必須將該 finding 標為待裁決、不套用任一衝突值，並要求下一筆相關 lifecycle event 為 Coordinator／需求方的 `review-correction`。事件流結束或出現其他事件而仍未裁決時才 fail loud；追加合法 correction 後完整 replay 必須恢復通過，不得因 append-only 歷史中保留衝突事件而永久失效，也不得依事件或陣列順序覆寫。若某 correction 同時使第三個 attempt 恢復計數而建立 pending checkpoint，仍須先允許後續 `review-correction` 清完既有衝突，再要求下一筆為 `escalation-checkpoint`；兩個 gate 不得互相鎖死。
 
 ## 3. 可計數的退回
 
@@ -78,7 +78,7 @@ counts_toward_escalation: <boolean derived from §3>
 
 `preflight-failed` 必填 `preflight_passed=false` 與非空 `failure_reasons`；
 `review-invalid` 必填布林型別的 `preflight_passed` 實際值與非空 `invalid_reasons`。
-`review-correction` 必填 `escalation_epoch`、既存的 `target_attempt_id` 與非空 `finding_updates`；每個 update 使用 §2 完整 finding schema，且 `finding_id` 必須已存在於 target attempt。此專用 type 不得與其他 lifecycle correction 混用。`status=withdrawn` 或 `accepted=false` 表示原採認已撤銷；adapter 必須移除該 finding 對 unresolved carry、repeated root cause，以及「只由該 finding 支撐」之 target attempt 計數的貢獻，而非只關閉目前 open set。合法 correction 必須能在 append-only replay 中解除它所裁決的 pending conflict。
+`review-correction` 必填 `escalation_epoch`、既存的 `target_attempt_id` 與非空 `finding_updates`；每個 update 使用 §2 完整 finding schema，且 `finding_id` 必須已存在於 target attempt。此專用 type 不得與其他 lifecycle correction 混用。`status=withdrawn`、`accepted=false`，或仍為 open 但已不符合 §3 可計數 finding 的條件，都表示該 finding 不再是有效 open finding；adapter 必須將它移出 open set，並移除其對 unresolved carry、repeated root cause，以及「只由該 finding 支撐」之 target attempt 計數的貢獻。`status=resolved` 且採認未撤銷只表示已修正，不得洗掉先前真實 carry。若 correction 重診斷 `root_cause_id`，同一穩定 `finding_id` 在該 epoch 全部 attempt 的既有 occurrence 一併遷移至新根因。合法 correction 必須能在 append-only replay 中解除它所裁決的 pending conflict。
 `escalation-epoch-change` 必填：
 
 ```yaml
