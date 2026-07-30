@@ -38,7 +38,9 @@ disposition: <required fix or decision>
 - `coordination`：錯誤派工、查核順序、lease／handoff 管理或 Coordinator 指示造成的缺陷。
 - `environment`：外部依賴、服務、權限或測試環境尚未具備，且不是交付物本身造成。
 
-Reviewer 提交報告，由 lifecycle writer 在寫入 `review` event 前依可重現證據標記 `accepted`；reviewer 不得自行決定是否消耗 escalation 額度。新採認的 blocking finding 以 `open` 開始；後續 attempt 必須用同一 `finding_id` 帶回 `resolved` 或 `withdrawn`，否則視為未閉合。若事後翻案，以 correction event 追加新 disposition，不回寫舊 event。`root_cause_id=unknown` 不得跨 finding 當成相同根因。
+Reviewer 提交報告，由 lifecycle writer 在寫入 `review` event 前依可重現證據標記 `accepted`；reviewer 不得自行決定是否消耗 escalation 額度。新採認的 blocking finding 以 `open` 開始；後續有效 review（無論是否計數）或明示 `review-correction` event 都可用同一 `finding_id` 帶回 `resolved`／`withdrawn`，adapter 必須先更新實際 open set 再判斷下一個可計數 attempt 是否承接未閉合 finding。若事後翻案，以 `review-correction` 追加新 disposition，不回寫舊 event。`root_cause_id=unknown` 不得跨 finding 當成相同根因。
+
+同一 attempt 的多 reviewer 可補充不同 finding；若同一 `finding_id` 的 `status`、`accepted`、分類、歸屬或根因互相衝突，adapter 必須 fail loud，直到 Coordinator／需求方以 `review-correction` event 裁決，不得依事件或陣列順序覆寫。
 
 ## 3. 可計數的退回
 
@@ -59,7 +61,7 @@ Reviewer 提交報告，由 lifecycle writer 在寫入 `review` event 前依可�
 - findings 為不同根因、前輪均已閉合且 severity／剩餘範圍持續收斂：維持原 owner，交由 Coordinator 記錄「續修／重規劃」決定；只有需求方選擇升級才轉 `🚨已升級`。
 - Critical finding 可立即 fail-closed 或暫停高風險操作，但不因 severity 單獨推定 executor 已連續失敗三次。
 
-需求方核可重規劃或更換執行者時遞增 `escalation_epoch`，新 epoch 從零計數；舊 events 保留，不回寫或刪除。
+需求方核可重規劃或更換執行者時，以 `escalation-epoch-change` 明示授權並將 `escalation_epoch` 逐一遞增；新 epoch 從零計數，舊 events 保留，不回寫或刪除。review 自行填入較大 epoch 不構成授權，adapter 必須拒絕 epoch 跳號、倒退或未經授權的切換。
 
 ## 5. Adapter 必填欄位
 
@@ -75,7 +77,17 @@ counts_toward_escalation: <boolean derived from §3>
 ```
 
 `preflight-failed` 必填 `preflight_passed=false` 與非空 `failure_reasons`；
-`review-invalid` 必填 `preflight_passed` 的實際值與非空 `invalid_reasons`。
+`review-invalid` 必填布林型別的 `preflight_passed` 實際值與非空 `invalid_reasons`。
+`review-correction` 必填 `escalation_epoch`、既存的 `target_attempt_id` 與非空 `finding_updates`；每個 update 使用 §2 完整 finding schema，且 `finding_id` 必須已存在於 target attempt。此專用 type 不得與其他 lifecycle correction 混用。
+`escalation-epoch-change` 必填：
+
+```yaml
+from_escalation_epoch: <current integer>
+to_escalation_epoch: <current + 1>
+epoch_change_reason: replan | change-executor
+requester_approved: true
+```
+
 `escalation-checkpoint` 必填：
 
 ```yaml
@@ -86,5 +98,5 @@ checkpoint_decision: continue | replan | change-executor | escalate
 checkpoint_rationale: <root-cause repetition, closure trend, or requester ruling>
 ```
 
-`counts_toward_escalation` 是 adapter 依結構化欄位算出的投影，不得由 reviewer 以自由文字自行宣告。若同 SHA 有多個有效 reviewer 報告，adapter 先合併 findings 再計算一次；相同 `finding_id` 的衝突分類須由 Coordinator／需求方裁定，不得用陣列順序覆寫。cutover 前歷史事件維持原貌；採用專案以 baseline event 指定新契約開始時間。
+`counts_toward_escalation` 是 adapter 依結構化欄位算出的投影，不得由 reviewer 以自由文字自行宣告。若同 SHA 有多個有效 reviewer 報告，adapter 先合併 findings 再計算一次；相同 `finding_id` 的衝突分類須由 Coordinator／需求方裁定，不得用陣列順序覆寫。cutover 前歷史事件維持原貌；採用專案以獨立 `contract-baseline` event 指定新契約開始時間，該 marker 為 one-shot cutover：不得附在 review 等其他事件上，啟用後再次出現必須 fail loud。
 adapter 亦須以穩定 `finding_id`／`root_cause_id` 跨 attempt 推導 checkpoint：同根因出現於三個唯一可計數 attempt，或前一 attempt 的 accepted blocking finding 未在下一 attempt 明列 `resolved`／`withdrawn` 時，`checkpoint_decision` 只能是 `escalate`，不得信任手填的 `continue`。
