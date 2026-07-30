@@ -78,7 +78,7 @@ counts_toward_escalation: <boolean derived from §3>
 
 `preflight-failed` 必填 `preflight_passed=false` 與非空 `failure_reasons`；
 `review-invalid` 必填布林型別的 `preflight_passed` 實際值與非空 `invalid_reasons`。
-`review-correction` 必填 `escalation_epoch`、既存的 `target_attempt_id` 與非空 `finding_updates`；每個 update 使用 §2 完整 finding schema，且 `finding_id` 必須已存在於 target attempt。此專用 type 不得與其他 lifecycle correction 混用。`status=withdrawn` 或 `accepted=false` 表示原採認已撤銷；adapter 必須移除該 finding 對 unresolved carry 與 repeated root cause 的貢獻，而非只關閉目前 open set。合法 correction 必須能在 append-only replay 中解除它所裁決的 pending conflict。
+`review-correction` 必填 `escalation_epoch`、既存的 `target_attempt_id` 與非空 `finding_updates`；每個 update 使用 §2 完整 finding schema，且 `finding_id` 必須已存在於 target attempt。此專用 type 不得與其他 lifecycle correction 混用。`status=withdrawn` 或 `accepted=false` 表示原採認已撤銷；adapter 必須移除該 finding 對 unresolved carry、repeated root cause，以及「只由該 finding 支撐」之 target attempt 計數的貢獻，而非只關閉目前 open set。合法 correction 必須能在 append-only replay 中解除它所裁決的 pending conflict。
 `escalation-epoch-change` 必填：
 
 ```yaml
