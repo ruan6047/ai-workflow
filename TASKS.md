@@ -10,13 +10,13 @@
 
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
-| _（無活卡）_ | | | | | | | | | |
+| WF-21 | — | T4 🔴規則 | 審核退回分流與升級計數去誤觸發 | 待指派（跨家族查核或 ruan6047 sign-off） | `ai/gpt-5@codex/WF-21`／目前 checkout | 0 | 🔍待查核 | —不適用 | 2026-07-30T18:51:22+08:00 |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- _（無活卡）_（WF-20 已結案 🏁 29834f2；handoff contract 已入 canonical §4.1 與 templates/handoff-contract.md）
+- WF-21：改動 canonical 審核／升級語意；採用專案 adapter 須同步支援結構化 finding 與 preflight。
 
 ---
 
