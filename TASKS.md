@@ -11,14 +11,13 @@
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
 | [WF-22](tasks/WF-22.md) | WF-22 | T3 | 新治理落地（Initiative 父卡；13 項決議） | ruan6047（決策）＋PM 祕書（寫入） | — | 0 | 🚧進行中 | —不適用 | 2026-08-04T20:16:50+08:00 |
-| [WF-22-CLI1](tasks/WF-22-CLI1.md) | WF-22 | T3 | 祕書 CLI 最小集（open／assign／handoff／doctor／snapshot） | 待指派（查核；≠ 執行） | `ai/claude-sonnet-5/WF-22-CLI1 @ .claude/worktrees/wf-22-cli1-execution` | 0 | 🔍待查核 | —不適用 | 2026-08-04T22:56:44+08:00 |
 | [INIT-AIWF-PRODUCT1](tasks/INIT-AIWF-PRODUCT1.md) | INIT-AIWF-PRODUCT1 | T4 | ai-workflow 產品化（占位；60 天 dogfood＝Discovery） | ruan6047（動工 Gate） | — | 0 | 💡需求 | —不適用 | 2026-08-04T20:16:50+08:00 |
 
 ## 依賴註記（相關卡）
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- `WF-22` 基線＝cpbl-analytics `docs/research/WORKFLOW-REVIEW-2026-08-04.md`（913223e）；Wave 1 子卡：本 repo `WF-22-CLI1` ＋ cpbl `OPS-STATE-PLANE-MIG1`。`WF-22-CLI1` 的欄位寫入依賴 `OPS-STATE-PLANE-MIG1` Task 1 結構凍結（doctor／snapshot 骨架可先行）。Wave 2 canonical 文本子卡屆時開，不預開。
+- `WF-22` 基線＝cpbl-analytics `docs/research/WORKFLOW-REVIEW-2026-08-04.md`（913223e）；Wave 1 子卡：`WF-22-CLI1` 已 🏁（見 archive）；cpbl `OPS-STATE-PLANE-MIG1` Task 3 進行中。cutover 後開 `WF-22-CLI2`（F1：鏈深／iteration 寫入路徑）。Wave 2 canonical 文本子卡屆時開，不預開。
 - `INIT-AIWF-PRODUCT1` 的 Discovery＝WF-22 落地後 60 天 dogfood（至約 2026-10-03）；動工 Gate：商業評估 grilling＋需求方核可。
 - （WF-21 已結案 🏁 b113617；review preflight／escalation 契約已入 canonical §3／§4.1／§5 與 templates/review-escalation.md；cpbl adapter 於 cpbl-analytics#40 同步採用）
 
