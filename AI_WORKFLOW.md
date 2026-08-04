@@ -1,5 +1,15 @@
 # AI 協作工作流與職責歸屬準則 (AI Collaboration Workflow) — CANONICAL
 
+> **⚠️ 治理過渡狀態（2026-08-04 起，Wave 2 全文改版前有效）**：WF-22 十三項決議已
+> 定案並完成 Wave 0/1 實施——任務狀態面＝GitHub Issues＋user Project（cpbl-analytics
+> 已 cutover）、唯一狀態寫入通道＝本 repo [`cli/`](cli/) 的 `wfcli`、事件檔與 Ledger
+> 投影封存唯讀；人決策＋PM 祕書單寫入、三級制規劃閘門（Initiative/T4 同步 grilling、
+> T3 三問批註、T2+ 前提實查）、鏈式停損（每卡必填服務的原始目標、全域問題脫鏈、
+> 鏈深≤2）、查核第一判準＝核心痛點消失（具否決權）皆生效中。**下文與決議衝突處以
+> 決議為準**：cpbl-analytics `docs/research/WORKFLOW-REVIEW-2026-08-04.md`（merge
+> `a8f6f4c`）＋各專案 `CONTROL_PLANE_CONTRACT.md` §2。本 banner 由需求方 2026-08-04
+> 核可加註；Wave 2 改版時移除並將決議正文化。
+
 > 本檔是跨專案 AI 協作的**短版權威規則**：定義不可違反的不變量與專案必須實作的契約。操作命令、事故脈絡與供應商細節一律不放這裡；它們住在 [`templates/`](templates/) 與各專案 Runbook。程式碼與文件衝突時，以程式碼為準並修正文件。
 
 ## 0. 分類與狀態
