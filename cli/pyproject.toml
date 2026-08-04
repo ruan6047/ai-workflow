@@ -1,0 +1,24 @@
+[project]
+name = "wf-cli"
+version = "0.1.0"
+description = "祕書 CLI 最小集（WF-22-CLI1）：GitHub Issues/Projects v2 狀態面的唯一寫入通道"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+wfcli = "wf_cli.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wf_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+]
