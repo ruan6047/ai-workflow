@@ -5,6 +5,7 @@ import pytest
 from wf_cli.resources import ResourceDeclaration
 from wf_cli.validation import (
     ValidationError,
+    validate_chain_depth,
     validate_evidence,
     validate_open_fields,
     validate_source_sha,
@@ -76,3 +77,19 @@ def test_validate_open_fields_rejects_db_scope_mismatch_with_declaration():
                 resources=ResourceDeclaration(db_scope="read", resources=[]),
             )
         )
+
+
+@pytest.mark.parametrize("depth", [0, 1, 2])
+def test_validate_chain_depth_accepts_up_to_hard_cap(depth):
+    validate_chain_depth(depth)  # 不拋例外即算通過
+
+
+@pytest.mark.parametrize("depth", [3, 4, 10])
+def test_validate_chain_depth_rejects_over_hard_cap(depth):
+    with pytest.raises(ValidationError) as exc_info:
+        validate_chain_depth(depth)
+    message = "；".join(exc_info.value.errors)
+    # 拒絕訊息須引用決議 5 鏈式停損協定，不能只是泛用錯誤字串。
+    assert "決議 5" in message
+    assert "整鏈重審" in message
+    assert "2" in message  # 硬上限具體數字（原始目標之下最深 2 層）

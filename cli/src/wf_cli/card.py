@@ -20,7 +20,21 @@ from .resources import ResourceDeclaration, render_block
 
 TIERS = ("T0", "T1", "T2", "T3", "T4")
 
+# 決議 5（鏈式停損協定，見 docs/research/WORKFLOW-REVIEW-2026-08-04.md）：
+# 鏈深硬上限＝原始目標之下 2 層；超過強制整鏈重審，不得逕行加深。
+CHAIN_DEPTH_HARD_CAP = 2
+
 _BRANCH_WORKTREE_RE = re.compile(r"^\s*(?P<branch>\S+)\s*@\s*(?P<path>.+?)\s*$")
+
+
+def chain_depth_violation_message(chain_depth: int) -> str:
+    """決議 5 鏈式停損協定的拒絕訊息；CLI 層（ValidationError）與 model 層
+    （Card.__post_init__ 的 ValueError）共用同一段文字，避免兩處措辭各自漂移。
+    """
+    return (
+        f"鏈深 {chain_depth} 超過硬上限：原始目標之下最深 {CHAIN_DEPTH_HARD_CAP} 層；"
+        "超過須整鏈重審，不得逕行加深——見決議 5（鏈式停損協定）"
+    )
 
 
 def now_iso8601() -> str:
@@ -102,6 +116,11 @@ class Card:
                 "db_scope 與資源宣告內的 db_scope 不一致："
                 f"{self.db_scope!r} vs {self.resources.db_scope!r}"
             )
+        if self.chain_depth > CHAIN_DEPTH_HARD_CAP:
+            # 與 validation.validate_chain_depth 相同的機械紅線，這裡是繞過 CLI
+            # 直接建構 Card（測試／未來呼叫端）時的防線；CLI 路徑應該在到達這裡
+            # 之前就已經被 validate_chain_depth 攔下並回報 ValidationError。
+            raise ValueError(chain_depth_violation_message(self.chain_depth))
 
     @property
     def branch_worktree(self) -> str:
@@ -183,9 +202,11 @@ def append_log_line(body: str, line: str) -> str:
 
 
 __all__ = [
+    "CHAIN_DEPTH_HARD_CAP",
     "TIERS",
     "Card",
     "append_log_line",
+    "chain_depth_violation_message",
     "format_branch_worktree",
     "now_iso8601",
     "parse_branch_worktree",

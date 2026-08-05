@@ -9,9 +9,9 @@
 
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
-| `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告五項機械檢查全過才建卡 | 寫 |
+| `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
-| `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
+| `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
 | `doctor` | 對帳：`git worktree list` vs 卡註冊、submodule 初始化、孤兒分支、殘留 lease、prunable worktree | **唯讀**，不清理 |
 | `snapshot` | 匯出 Project 全部卡片為 JSON＋人類可讀 Markdown Ledger | 讀＋寫本機檔案（不寫回 GitHub） |
 
@@ -21,7 +21,7 @@
 cd cli
 uv sync
 uv run wfcli <command> --help
-uv run pytest        # 98 個測試，本 repo 新增
+uv run pytest        # 116 個測試，本 repo 新增
 ```
 
 ## 跨專案目標指定
@@ -88,6 +88,15 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
   repo 可改用 GitHub Project 作為登記來源（`src/wf_cli/registry.py` 留了擴充點，
   v1 未實作 `github` 模式，因為本卡驗收的唯讀對帳目標——cpbl-analytics——尚未
   cutover，`tasks-md` 已足夠覆蓋卡面驗收）。
+- **鏈深與 iteration 的寫入路徑**（WF-22-CLI2）：`open --chain-depth` 與 `handoff`
+  的 iteration 遞增在 CLI1 交付時只有底層 `set_field_value` 能寫、組裝層沒接，兩個
+  凍結欄位形同虛設 0。`--chain-depth`＝原始目標之下第幾層，> 2 依決議 5「鏈式停損
+  協定」在 `validation.validate_chain_depth`（CLI 層）與 `Card.__post_init__`（model
+  層，供繞過 CLI 直接建構 Card 的呼叫端）雙重擋下，訊息固定引用「整鏈重審」與
+  「決議 5」（`card.chain_depth_violation_message`，兩層共用同一段文字避免漂移）。
+  iteration 遞增接點依需求方 2026-08-05 裁決：`handoff --next-stage implementation`
+  （承載「查核退回」語意）讀回現值＋1 寫回；`review`／`release` 不遞增；`--iteration
+  N` 是顯式覆寫逃生門（印警示，覆寫理由說明於既有必填的 `--evidence`，不另立欄位）。
 
 ## 已知限制
 

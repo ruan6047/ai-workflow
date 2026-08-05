@@ -1,15 +1,15 @@
-"""機械檢查：open 的必填欄、handoff 的 source SHA／證據格式。
+"""機械檢查：open 的必填欄／鏈深硬上限、handoff 的 source SHA／證據格式。
 
 集中在這裡是因為卡面把「機械檢查」列為紅線相關的驗收條件（open 的必填欄、
-handoff 的 SHA／證據），測試要能單獨鎖住這些規則，不want 散在各 command 裡各自
-判斷、drift 出不一致的檢查標準。
+鏈深硬上限、handoff 的 SHA／證據），測試要能單獨鎖住這些規則，不want 散在各
+command 裡各自判斷、drift 出不一致的檢查標準。
 """
 
 from __future__ import annotations
 
 import re
 
-from .card import TIERS
+from .card import CHAIN_DEPTH_HARD_CAP, TIERS, chain_depth_violation_message
 from .resources import DB_SCOPES, ResourceDeclaration
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -35,6 +35,14 @@ def validate_source_sha(sha: str) -> None:
 def validate_evidence(evidence: str) -> None:
     if not evidence or not evidence.strip():
         raise ValidationError(["證據欄必填，不得為空字串"])
+
+
+def validate_chain_depth(chain_depth: int) -> None:
+    """決議 5 鏈式停損協定的硬上限機械檢查：原始目標之下最深 2 層，
+    超過（> ``CHAIN_DEPTH_HARD_CAP``）一律硬拒，不得逕行加深。
+    """
+    if chain_depth > CHAIN_DEPTH_HARD_CAP:
+        raise ValidationError([chain_depth_violation_message(chain_depth)])
 
 
 def validate_open_fields(
@@ -74,6 +82,7 @@ def validate_open_fields(
 __all__ = [
     "SHA_RE",
     "ValidationError",
+    "validate_chain_depth",
     "validate_evidence",
     "validate_open_fields",
     "validate_source_sha",

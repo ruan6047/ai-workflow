@@ -23,7 +23,7 @@ from ..project import (
     set_field_value,
 )
 from ..resources import ResourceDeclaration, ResourceDeclarationError
-from ..validation import ValidationError, validate_open_fields
+from ..validation import ValidationError, validate_chain_depth, validate_open_fields
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -41,6 +41,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--core-pain", required=True, help="核心痛點")
     p.add_argument("--service-goal", required=True, help="服務的原始目標")
+    p.add_argument(
+        "--chain-depth",
+        type=int,
+        default=0,
+        help="鏈深：原始目標之下第幾層（預設 0）。硬上限 2，超過依決議 5 鏈式"
+        "停損協定拒絕，須整鏈重審後降級或擱置，不得逕行加深。",
+    )
     p.add_argument(
         "--resources",
         default="",
@@ -91,6 +98,13 @@ def run(args: argparse.Namespace) -> int:
             print(f"[open] 必填欄檢查失敗：{e}", file=sys.stderr)
         return 2
 
+    try:
+        validate_chain_depth(args.chain_depth)
+    except ValidationError as exc:
+        for e in exc.errors:
+            print(f"[open] 拒絕：{e}", file=sys.stderr)
+        return 2
+
     card = Card(
         card_id=args.card_id,
         feature=args.feature,
@@ -108,6 +122,7 @@ def run(args: argparse.Namespace) -> int:
         acceptance=args.acceptance or ["TODO：填入可獨立驗證的條件"],
         verification=args.verification or ["TODO：填入驗證指令與證據要求"],
         deployment_status="⏸未部署" if args.needs_deploy else "—不適用",
+        chain_depth=args.chain_depth,
     )
 
     target = resolve_target(

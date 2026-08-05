@@ -38,6 +38,19 @@ def test_card_rejects_db_scope_mismatch_with_resource_declaration():
         _make_card(db_scope="none")  # resources 宣告是 write，與 db_scope 不一致
 
 
+def test_card_accepts_chain_depth_up_to_hard_cap():
+    _make_card(chain_depth=2)  # 不拋例外即算通過（0-2 皆合法）
+
+
+def test_card_rejects_chain_depth_over_hard_cap():
+    # 這是 CLI 層 validate_chain_depth 之外的 model 層防線：直接建構 Card（略過
+    # CLI 驗證）時仍不得逃過決議 5 鏈式停損硬上限。
+    with pytest.raises(ValueError) as exc_info:
+        _make_card(chain_depth=3)
+    assert "決議 5" in str(exc_info.value)
+    assert "整鏈重審" in str(exc_info.value)
+
+
 def test_branch_worktree_formatting_round_trips():
     s = format_branch_worktree("ai/agent/DEMO-CARD1", ".claude/worktrees/demo-execution")
     assert s == "ai/agent/DEMO-CARD1 @ .claude/worktrees/demo-execution"
