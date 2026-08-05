@@ -8,7 +8,13 @@ import pytest
 
 from wf_cli.cli import build_parser
 from wf_cli.commands import assign_cmd, handoff_cmd, open_cmd, snapshot_cmd
-from wf_cli.project import ensure_fields, list_items, resolve_project, set_field_value
+from wf_cli.project import (
+    ensure_fields,
+    find_item_by_card_id,
+    list_items,
+    resolve_project,
+    set_field_value,
+)
 
 from .fake_gh import FakeGhRunner
 
@@ -87,6 +93,34 @@ def test_open_writes_git_spec_file_skeleton(fake_runner, tmp_path: Path):
     text = spec_file.read_text(encoding="utf-8")
     assert "# SPEC-CARD1" in text
     assert "## 核心痛點" in text
+
+
+def test_open_writes_chain_depth_zero_by_default(fake_runner):
+    rc = run_cli(_open_argv("CHAINDEPTH-CARD1"))
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["鏈深"] == 0
+
+
+@pytest.mark.parametrize("depth", [0, 1, 2])
+def test_open_writes_chain_depth_within_hard_cap(fake_runner, depth):
+    rc = run_cli(_open_argv(f"CHAINDEPTH-CARD-OK{depth}", **{"--chain-depth": str(depth)}))
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["鏈深"] == depth
+
+
+def test_open_rejects_chain_depth_over_hard_cap(fake_runner, capsys):
+    rc = run_cli(_open_argv("CHAINDEPTH-CARD-BAD", **{"--chain-depth": "3"}))
+    assert rc == 2
+    err = capsys.readouterr().err
+    # 拒絕訊息須引用決議 5 鏈式停損協定，不能只是泛用「驗證失敗」字串。
+    assert "決議 5" in err
+    assert "整鏈重審" in err
+    project = resolve_project(fake_runner, "acme", 1)
+    assert find_item_by_card_id(list_items(fake_runner, project), "CHAINDEPTH-CARD-BAD") is None
 
 
 def _assign_argv(card_id: str, assignee: str, branch: str, worktree: str) -> list[str]:
@@ -177,6 +211,76 @@ def test_handoff_updates_owner_status_and_last_handoff(fake_runner):
     assert "T" in item.fields["最後交接"]
     assert f"SHA {sha}" in item.body
     assert "證據 pytest 全綠" in item.body
+
+
+def test_handoff_next_stage_implementation_auto_increments_iteration(fake_runner):
+    # --next-stage implementation 承載「查核退回」語意：讀回現值 +1 寫回，
+    # 連續兩次退回應累加而非固定寫 1。
+    run_cli(_open_argv("ITER-CARD1"))
+    project = resolve_project(fake_runner, "acme", 1)
+
+    rc1 = run_cli(
+        _handoff_argv("ITER-CARD1", "1" * 40, **{"--next-stage": "implementation"})
+    )
+    assert rc1 == 0
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["iteration"] == 1
+    assert "iteration 1" in item.body
+
+    rc2 = run_cli(
+        _handoff_argv("ITER-CARD1", "2" * 40, **{"--next-stage": "implementation"})
+    )
+    assert rc2 == 0
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["iteration"] == 2
+    assert "iteration 2" in item.body
+
+
+def test_handoff_next_stage_review_does_not_increment_iteration(fake_runner):
+    run_cli(_open_argv("ITER-CARD2"))
+    rc = run_cli(_handoff_argv("ITER-CARD2", "3" * 40))  # 預設 --next-stage review
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["iteration"] == 0
+
+
+def test_handoff_next_stage_release_does_not_increment_iteration(fake_runner):
+    run_cli(_open_argv("ITER-CARD3"))  # 預設部署狀態 —不適用，release 不受部署閘門阻擋
+    rc = run_cli(_handoff_argv("ITER-CARD3", "4" * 40, **{"--next-stage": "release"}))
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["iteration"] == 0
+
+
+def test_handoff_iteration_override_sets_exact_value_and_warns(fake_runner, capsys):
+    run_cli(_open_argv("ITER-CARD4"))
+    rc = run_cli(_handoff_argv("ITER-CARD4", "5" * 40, **{"--iteration": "7"}))
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["iteration"] == 7  # 顯式覆寫值，不是 current(0)+1
+    err = capsys.readouterr().err
+    assert "警示" in err
+    assert "iteration" in err
+
+
+def test_handoff_iteration_override_takes_precedence_over_auto_increment(fake_runner):
+    # --iteration 覆寫與 --next-stage implementation 同時給時，覆寫值本身勝出，
+    # 不會先自動 +1 再覆寫、也不會覆寫後再額外 +1。
+    run_cli(_open_argv("ITER-CARD5"))
+    rc = run_cli(
+        _handoff_argv(
+            "ITER-CARD5",
+            "6" * 40,
+            **{"--next-stage": "implementation", "--iteration": "10"},
+        )
+    )
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["iteration"] == 10
 
 
 def test_open_needs_deploy_flag_sets_initial_deployment_status(fake_runner):
