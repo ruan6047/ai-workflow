@@ -17,7 +17,7 @@
 
 > 規劃／大卡分切時據此判定連動範圍（取代逐卡 `[[]]`；結案卡見 archive）。
 
-- `WF-22` 基線＝cpbl-analytics `docs/research/WORKFLOW-REVIEW-2026-08-04.md`（913223e）；**Wave 1 已完結（2026-08-04）**：`WF-22-CLI1` 與 cpbl `OPS-STATE-PLANE-MIG1` 皆 🏁；**cutover 已宣告**（cpbl 終筆 `8271d7c`），Issues＋Project #4 為唯一狀態面、wfcli 唯一寫入通道。追卡 `WF-22-CLI2` 已 🏁（見 archive）。Wave 2 canonical 文本子卡屆時開，不預開。
+- `WF-22` 基線＝cpbl-analytics `docs/research/WORKFLOW-REVIEW-2026-08-04.md`（913223e）；**Wave 1 已完結（2026-08-04）**：`WF-22-CLI1` 與 cpbl `OPS-STATE-PLANE-MIG1` 皆 🏁；**cutover 已宣告**（cpbl 終筆 `8271d7c`），Issues＋Project #4 為唯一狀態面、wfcli 唯一寫入通道。追卡 `WF-22-CLI2` 已 🏁（見 archive）。**Wave 2 已完結（2026-08-05）**：`WF-22-CANON1` 🏁（canonical v2 merge `d99a8ad`，反向溯源查核閉環）；cpbl stub 已對齊（ced3a2f）。追卡 `WF-22-CLI3`（review 子命令）Backlog。
 - `INIT-AIWF-PRODUCT1` 的 Discovery＝WF-22 落地後 60 天 dogfood（至約 2026-10-03）；動工 Gate：商業評估 grilling＋需求方核可。
 - （WF-21 已結案 🏁 b113617；review preflight／escalation 契約已入 canonical §3／§4.1／§5 與 templates/review-escalation.md；cpbl adapter 於 cpbl-analytics#40 同步採用）
 
