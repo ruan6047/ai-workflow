@@ -8,11 +8,19 @@
 
 ## 結構
 ```
-ai-workflow/
-├── AI_WORKFLOW.md   # ★ CANONICAL 規則（唯一權威）
+ai-workflow/           # 依檔名排序，與 `ls` 實況一致
 ├── ADOPTION.md      # 新專案如何採用（3 步）
+├── AGENTS.md        # 本 repo 的 AI 運行準則（工具中立版）
+├── AI_WORKFLOW.md   # ★ CANONICAL 規則（唯一權威）
+├── BUGS.md          # 本 repo 的 T2 快線 bug 滾動 log
+├── CLAUDE.md        # 本 repo 的 AI 運行準則（Claude Code）
+├── MIGRATION.md     # 舊版工作流專案的升級指南
+├── MODEL_ROUTING.md # 模型路由範本（可替換操作知識，非流程鐵律）
+├── README.md        # 本檔
 ├── TASKS.md         # 本 repo 自身的任務看板（工作流演進；自我治理 dogfood）
-├── CLAUDE.md        # 本 repo 的 AI 運行準則
+├── archive/         # 結案卡與 Ledger 封存
+├── cli/             # wfcli——control plane 唯一寫入通道，見 canonical §4.3
+├── tasks/           # 本 repo 的活卡（一卡一檔）
 └── templates/            # 依檔名排序，與 `ls templates/` 實況一致
     ├── TASKS.md          # 各專案任務看板範本（Ledger 索引 only）
     ├── baseline-cascade.md # 基線變更的凍結、影響評估與傳播程序
