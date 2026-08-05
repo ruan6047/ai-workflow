@@ -13,15 +13,25 @@ ai-workflow/
 ├── ADOPTION.md      # 新專案如何採用（3 步）
 ├── TASKS.md         # 本 repo 自身的任務看板（工作流演進；自我治理 dogfood）
 ├── CLAUDE.md        # 本 repo 的 AI 運行準則
-└── templates/
-    ├── project-stub.md   # 丟進各專案 docs/AI_WORKFLOW.md 的 stub
-    ├── TASKS.md          # 各專案任務看板範本
-    ├── discovery-brief.md # 需求發現與人類確認範本
-    ├── research-plan.md   # 研究假設、證據與限制範本
-    ├── design-brief.md    # 使用流程、狀態與可用性驗收範本
-    ├── control-plane-contract.md # GitHub 協作與本機資源鎖契約範本
+└── templates/            # 依檔名排序，與 `ls templates/` 實況一致
+    ├── TASKS.md          # 各專案任務看板範本（Ledger 索引 only）
+    ├── baseline-cascade.md # 基線變更的凍結、影響評估與傳播程序
+    ├── bug-card.md       # 快線 bug 卡範本
+    ├── bug-workflow.md   # bug 分級與處理流程
+    ├── control-plane-contract.md # 協作狀態面與本機資源鎖契約範本
+    ├── database-contract.md # DB 引擎、migration、namespace 與回滾契約範本
+    ├── design-brief.md   # 使用流程、狀態與可用性驗收範本
+    ├── discovery-brief.md # 需求發現、對抗式質詢與人類確認範本
+    ├── dispatch-package.md # 派工包範本（canonical §6.1 六條標準條款）
     ├── handoff-contract.md # 已推送完整 SHA 的跨 writer handoff 契約範本
-    └── initiative-card.md # 大型工作的 spec 基線與依賴範本
+    ├── initiative-card.md # 大型工作的 spec 基線與依賴範本
+    ├── project-stub.md   # 丟進各專案 docs/AI_WORKFLOW.md 的 stub
+    ├── research-plan.md  # 研究假設、證據與限制範本
+    ├── review-escalation.md # preflight／退回／升級的事件欄位契約
+    ├── review-prompt.md  # 跨家族查核詞範本（canonical §5.1／§5.2）
+    ├── statistical-redline.md # 統計／ML 與資料正確性紅線區塊範本
+    ├── tasks-card.md     # 一卡一檔的任務卡範本
+    └── worktree-lifecycle.md # worktree 註冊、交接與結案收尾清單
 ```
 
 ## 快速上手
