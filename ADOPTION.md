@@ -22,6 +22,8 @@
 
 從 [`templates/control-plane-contract.md`](templates/control-plane-contract.md) 建立 `<專案>/docs/CONTROL_PLANE_CONTRACT.md`，在專案 Runbook 定義 canonical §4.1 的 adapter：remote coordination（GitHub 為預設實作）處理跨人 task、review、lease、CI；local resource lock 處理 worktree、port、container 與未提交變更。跨 writer handoff 另從 [`templates/handoff-contract.md`](templates/handoff-contract.md) 建立 `<專案>/docs/HANDOFF_CONTRACT.md`；只能交接已 push 的完整 SHA。event log 是作業狀態事實來源，應產生含 owner、branch、worktree、iteration 與最後交接時間的 Ledger 投影；不得只以看板文字、tmux 或聊天訊息協調。依團隊人類審查量能設定 agent 與 review queue 的 WIP limit。
 
+**派工與派審的操作範本**（使用時組裝，**不複製進專案 repo**）：祕書派工以 [`templates/dispatch-package.md`](templates/dispatch-package.md) 組裝派工包，canonical §6.1 六條標準條款逐字帶入；派審以 [`templates/review-prompt.md`](templates/review-prompt.md) 組裝查核詞，含進駐位置＋基準 SHA 核對、逐項驗收清單、環境紅線與結構化輸出（`core_pain_resolved`／`self_run` 必填，canonical §5.1／§5.2）。退回與升級的事件欄位契約見 [`templates/review-escalation.md`](templates/review-escalation.md)；worktree 的建立、註冊與結案收尾見 [`templates/worktree-lifecycle.md`](templates/worktree-lifecycle.md)。
+
 ## 5. 接資料庫契約（有資料庫才需要）
 
 從 [`templates/database-contract.md`](templates/database-contract.md) 建立 `<專案>/docs/DATABASE_CONTRACT.md`，填入該專案的 DB 引擎、migration 工具與 runner、環境 namespace、資源 lock、備份／回滾及驗證命令。Runbook 以此文件為 DB 操作事實；canonical 只提供 §4.2 的共同不變量。
