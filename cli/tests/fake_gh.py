@@ -186,6 +186,15 @@ class FakeGhRunner(GhRunner):
             }
             return url + "\n"
 
+        if args[:2] == ["issue", "comment"]:
+            repo = flags["--repo"]
+            number = int(args[2])
+            url = f"https://github.com/{repo}/issues/{number}"
+            if url not in self.issues:
+                raise AssertionError(f"FakeGhRunner: 對不存在的 issue 留言 {url}")
+            self.issues[url].setdefault("comments", []).append(flags["--body"])
+            return url + "#issuecomment-1\n"
+
         if args[:2] == ["issue", "edit"]:
             repo = flags["--repo"]
             number = int(args[2])

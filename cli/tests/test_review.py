@@ -1,0 +1,706 @@
+"""``wfcli review`` 的契約檢查與寫入行為。
+
+樣本刻意寫成「完整查核報告」（散文＋圍籬區塊）而非裸 YAML：實務上查核者交回來
+的就是報告全文，抽區塊本身是這條寫入通道的第一道關卡。
+"""
+
+from __future__ import annotations
+
+import io
+import json as jsonlib
+from pathlib import Path
+
+import pytest
+
+from wf_cli.cli import build_parser
+from wf_cli.commands import handoff_cmd, open_cmd, review_cmd
+from wf_cli.project import (
+    ensure_fields,
+    find_item_by_card_id,
+    list_items,
+    resolve_project,
+    set_field_value,
+)
+from wf_cli.review import ReviewParseError, parse_structured_block
+from wf_cli.validation import (
+    ValidationError,
+    review_invalid_reasons,
+    validate_review_report,
+)
+
+from .fake_gh import FakeGhRunner
+
+BASE_TARGET = ["--owner", "acme", "--project", "1"]
+REPO = "acme/demo"
+SHA = "a" * 40
+
+
+@pytest.fixture
+def fake_runner(monkeypatch):
+    runner = FakeGhRunner()
+    for module in (open_cmd, handoff_cmd, review_cmd):
+        monkeypatch.setattr(module, "default_runner", runner)
+    return runner
+
+
+def run_cli(argv: list[str]) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+def open_card(card_id: str, *, repo: str | None = REPO) -> int:
+    argv = ["open", *BASE_TARGET]
+    if repo:
+        argv += ["--repo", repo]
+    argv += [
+        card_id,
+        "--feature", "示範功能",
+        "--tier", "T2",
+        "--db-scope", "none",
+        "--core-pain", "痛點文字",
+        "--service-goal", "服務的原始目標文字",
+    ]
+    return run_cli(argv)
+
+
+def card_item(runner: FakeGhRunner, card_id: str):
+    project = resolve_project(runner, "acme", 1)
+    return find_item_by_card_id(list_items(runner, project), card_id)
+
+
+def issue_comments(runner: FakeGhRunner, issue_url: str) -> list[str]:
+    return runner.issues[issue_url].get("comments", [])
+
+
+def review_argv(card_id: str, input_path: Path, *, repo: str | None = REPO, **extra) -> list[str]:
+    argv = ["review", *BASE_TARGET]
+    if repo:
+        argv += ["--repo", repo]
+    argv += [
+        card_id,
+        "--input", str(input_path),
+        "--source-sha", extra.pop("source_sha", SHA),
+        "--reviewer", extra.pop("reviewer", "Codex"),
+    ]
+    for flag, value in extra.items():
+        argv += [f"--{flag.replace('_', '-')}"] + ([] if value is True else [str(value)])
+    return argv
+
+
+# --------------------------------------------------------------------------
+# 樣本
+# --------------------------------------------------------------------------
+
+APPROVE_REPORT = """# 查核報告 DEMO-CARD1 R1
+
+進駐 worktree 唯讀查核，HEAD 與 handoff 指定 source_sha 相符。
+
+## 5. 結構化輸出
+
+```yaml
+core_pain_resolved: yes
+review_result: APPROVE
+self_run:
+  - command: uv run pytest
+    observed: 128 passed in 1.42s
+  - command: git rev-parse HEAD
+    observed: aaaaaaaa（與 handoff 的 source_sha 相符）
+findings: []
+```
+"""
+
+REQUEST_CHANGES_REPORT = """```yaml
+core_pain_resolved: no
+review_result: REQUEST_CHANGES
+self_run:
+  - command: uv run pytest -k review
+    observed: 3 failed, 25 passed
+findings:
+  - finding_id: DEMO-CARD1-R1-01
+    severity: major
+    blocking: true
+    finding_class: implementation
+    attribution: executor
+    root_cause_id: self-run-parse
+    evidence: uv run pytest -k review 於 tests/test_review.py::test_x 失敗
+    disposition: 修正解析器對區塊純量的縮排判定後重送
+```
+"""
+
+APPROVE_WITHOUT_SELF_RUN = """```yaml
+core_pain_resolved: yes
+review_result: APPROVE
+findings: []
+```
+"""
+
+
+def write_input(tmp_path: Path, text: str, name: str = "review.md") -> Path:
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+# --------------------------------------------------------------------------
+# 1. 合格 APPROVE
+# --------------------------------------------------------------------------
+
+
+def test_valid_approve_writes_comment_and_flips_status(fake_runner, tmp_path, capsys):
+    open_card("DEMO-CARD1")
+    item_before = card_item(fake_runner, "DEMO-CARD1")
+    set_field_value(
+        fake_runner,
+        resolve_project(fake_runner, "acme", 1),
+        item_before.item_id,
+        ensure_fields(fake_runner, "acme", 1)["交付狀態"],
+        "🔍待查核",
+    )
+
+    rc = run_cli(review_argv("DEMO-CARD1", write_input(tmp_path, APPROVE_REPORT)))
+    assert rc == 0
+
+    item = card_item(fake_runner, "DEMO-CARD1")
+    assert item.fields["交付狀態"] == "✅通過"
+    comments = issue_comments(fake_runner, item.issue_url)
+    assert len(comments) == 1
+    body = comments[0]
+    assert "查核裁決：APPROVE" in body
+    assert "uv run pytest" in body and "128 passed" in body  # self_run 逐項落留言
+    assert f"DEMO-CARD1-e0-{SHA}" in body  # attempt_id（review-escalation §5）
+    assert "Codex" in body
+    assert "review by wf-cli → APPROVE" in item.body  # body Log 索引
+
+
+def test_valid_approve_does_not_touch_iteration_or_owner(fake_runner, tmp_path):
+    """iteration 由 handoff 獨占（WF-22-CLI2）；review 併動會讓一次退回被記兩次。"""
+    open_card("ITER-CARD1")
+    run_cli(
+        [
+            "handoff", *BASE_TARGET, "--repo", REPO, "ITER-CARD1",
+            "--to", "查核者", "--next-stage", "review",
+            "--source-sha", SHA, "--evidence", "pytest 全綠",
+        ]
+    )
+    before = card_item(fake_runner, "ITER-CARD1")
+    assert before.fields["iteration"] == 0
+
+    assert run_cli(review_argv("ITER-CARD1", write_input(tmp_path, REQUEST_CHANGES_REPORT))) == 0
+
+    after = card_item(fake_runner, "ITER-CARD1")
+    assert after.fields["iteration"] == 0  # 未被 review 動過
+    assert after.fields["owner"] == "查核者"  # owner 也仍歸 handoff 管
+    assert after.fields["最後交接"] == before.fields["最後交接"]
+
+
+# --------------------------------------------------------------------------
+# 2. 合格 REQUEST_CHANGES
+# --------------------------------------------------------------------------
+
+
+def test_valid_request_changes_flips_to_returned_and_lists_findings(fake_runner, tmp_path, capsys):
+    open_card("DEMO-CARD2")
+    rc = run_cli(review_argv("DEMO-CARD2", write_input(tmp_path, REQUEST_CHANGES_REPORT)))
+    assert rc == 0
+
+    item = card_item(fake_runner, "DEMO-CARD2")
+    assert item.fields["交付狀態"] == "↩退回"
+    body = issue_comments(fake_runner, item.issue_url)[0]
+    assert "DEMO-CARD1-R1-01" in body
+    assert "severity=major" in body and "blocking=true" in body
+    assert "core_pain_resolved：**no**" in body
+    out = capsys.readouterr().out
+    # 明確指出 iteration 遞增在 handoff，不在本指令（避免呼叫端自己補寫）。
+    assert "handoff --next-stage implementation" in out
+
+
+# --------------------------------------------------------------------------
+# 3. 缺 self_run 的 APPROVE → review-invalid，一律拒收
+# --------------------------------------------------------------------------
+
+
+def test_approve_without_self_run_is_rejected_as_review_invalid(fake_runner, tmp_path, capsys):
+    open_card("INVALID-CARD1")
+    before = card_item(fake_runner, "INVALID-CARD1")
+
+    rc = run_cli(review_argv("INVALID-CARD1", write_input(tmp_path, APPROVE_WITHOUT_SELF_RUN)))
+    assert rc == 4  # review-invalid 與「格式錯誤」(2) 分開，供呼叫端分辨
+
+    err = capsys.readouterr().err
+    assert "review-invalid" in err
+    assert "§5.2" in err  # 訊息須引 canonical §5.2 原文出處
+    assert "不計 iteration" in err
+
+    after = card_item(fake_runner, "INVALID-CARD1")
+    assert after.fields["交付狀態"] == before.fields["交付狀態"]  # 狀態不變
+    assert issue_comments(fake_runner, after.issue_url) == []  # 未寫任何遠端狀態
+
+
+def test_approve_with_self_run_entries_that_have_no_command_is_review_invalid(tmp_path):
+    text = """```yaml
+review_result: APPROVE
+core_pain_resolved: yes
+self_run:
+  - observed: 看起來沒問題
+findings: []
+```
+"""
+    assert review_invalid_reasons(parse_structured_block(text))  # 有 self_run 鍵不等於有自跑證據
+
+
+def test_request_changes_without_self_run_is_schema_error_not_review_invalid(fake_runner, tmp_path, capsys):
+    """§5「self_run 不得為空」對兩種結論都成立；只有 APPROVE 那條另有 review-invalid 處置。"""
+    text = """```yaml
+core_pain_resolved: no
+review_result: REQUEST_CHANGES
+findings: []
+```
+"""
+    open_card("NOSELFRUN-CARD1")
+    rc = run_cli(review_argv("NOSELFRUN-CARD1", write_input(tmp_path, text)))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "self_run 必填" in err
+    assert issue_comments(fake_runner, card_item(fake_runner, "NOSELFRUN-CARD1").issue_url) == []
+
+
+# --------------------------------------------------------------------------
+# 4. 缺 core_pain_resolved
+# --------------------------------------------------------------------------
+
+
+def test_missing_core_pain_resolved_is_rejected(fake_runner, tmp_path, capsys):
+    text = """```yaml
+review_result: APPROVE
+self_run:
+  - command: uv run pytest
+    observed: 128 passed
+findings: []
+```
+"""
+    open_card("NOPAIN-CARD1")
+    rc = run_cli(review_argv("NOPAIN-CARD1", write_input(tmp_path, text)))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "core_pain_resolved 必填" in err
+    assert "§5.1" in err  # 第一判準出處
+    assert issue_comments(fake_runner, card_item(fake_runner, "NOPAIN-CARD1").issue_url) == []
+
+
+def test_core_pain_no_with_approve_is_rejected():
+    """第一判準具否決權：痛點未消不得 APPROVE（review-escalation §5）。"""
+    data = {
+        "review_result": "APPROVE",
+        "core_pain_resolved": "no",
+        "self_run": [{"command": "pytest", "observed": "ok"}],
+        "findings": [],
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        validate_review_report(data)
+    assert any("只能是 REQUEST_CHANGES" in e for e in exc_info.value.errors)
+
+
+# --------------------------------------------------------------------------
+# 5. findings 缺欄
+# --------------------------------------------------------------------------
+
+
+def test_finding_missing_required_keys_is_rejected(fake_runner, tmp_path, capsys):
+    text = """```yaml
+core_pain_resolved: no
+review_result: REQUEST_CHANGES
+self_run:
+  - command: uv run pytest
+    observed: 3 failed
+findings:
+  - finding_id: X-R1-01
+    severity: major
+    evidence: 缺 blocking／finding_class／attribution／root_cause_id／disposition
+```
+"""
+    open_card("BADFINDING-CARD1")
+    rc = run_cli(review_argv("BADFINDING-CARD1", write_input(tmp_path, text)))
+    assert rc == 2
+    err = capsys.readouterr().err
+    for missing in ("blocking", "finding_class", "attribution", "root_cause_id", "disposition"):
+        assert missing in err
+    assert issue_comments(fake_runner, card_item(fake_runner, "BADFINDING-CARD1").issue_url) == []
+
+
+@pytest.mark.parametrize(
+    "field,bad_value",
+    [
+        ("severity", "blocker"),
+        ("finding_class", "docs"),
+        ("attribution", "reviewer-ish"),
+        ("blocking", "maybe"),
+    ],
+)
+def test_finding_enum_values_are_closed(field, bad_value):
+    finding = {
+        "finding_id": "X-R1-01",
+        "severity": "major",
+        "blocking": "true",
+        "finding_class": "implementation",
+        "attribution": "executor",
+        "root_cause_id": "r1",
+        "evidence": "e",
+        "disposition": "d",
+    }
+    finding[field] = bad_value
+    data = {
+        "review_result": "REQUEST_CHANGES",
+        "core_pain_resolved": "no",
+        "self_run": [{"command": "pytest", "observed": "ok"}],
+        "findings": [finding],
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        validate_review_report(data)
+    assert any(field in e for e in exc_info.value.errors)
+
+
+def test_duplicate_finding_id_is_rejected():
+    finding = {
+        "finding_id": "X-R1-01",
+        "severity": "minor",
+        "blocking": "false",
+        "finding_class": "governance",
+        "attribution": "planner",
+        "root_cause_id": "r1",
+        "evidence": "e",
+        "disposition": "d",
+    }
+    data = {
+        "review_result": "REQUEST_CHANGES",
+        "core_pain_resolved": "yes",
+        "self_run": [{"command": "pytest", "observed": "ok"}],
+        "findings": [dict(finding), dict(finding)],
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        validate_review_report(data)
+    assert any("重複" in e for e in exc_info.value.errors)
+
+
+def test_missing_findings_key_is_rejected_rather_than_assumed_empty():
+    data = {
+        "review_result": "APPROVE",
+        "core_pain_resolved": "yes",
+        "self_run": [{"command": "pytest", "observed": "ok"}],
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        validate_review_report(data)
+    assert any("findings" in e for e in exc_info.value.errors)
+
+
+# --------------------------------------------------------------------------
+# 6. 非法 review_result
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ["approve", "LGTM", "APPROVE_WITH_NITS", "通過"])
+def test_illegal_review_result_is_rejected(fake_runner, tmp_path, bad, capsys):
+    text = f"""```yaml
+core_pain_resolved: yes
+review_result: {bad}
+self_run:
+  - command: uv run pytest
+    observed: 128 passed
+findings: []
+```
+"""
+    card_id = f"BADRESULT-{abs(hash(bad)) % 10000}"
+    open_card(card_id)
+    rc = run_cli(review_argv(card_id, write_input(tmp_path, text)))
+    assert rc == 2
+    assert "review_result" in capsys.readouterr().err
+    assert issue_comments(fake_runner, card_item(fake_runner, card_id).issue_url) == []
+
+
+# --------------------------------------------------------------------------
+# 輸入通道與 fail-closed 邊界
+# --------------------------------------------------------------------------
+
+
+def test_stdin_input_is_accepted(fake_runner, monkeypatch, capsys):
+    open_card("STDIN-CARD1")
+    monkeypatch.setattr("sys.stdin", io.StringIO(APPROVE_REPORT))
+    rc = run_cli(
+        [
+            "review", *BASE_TARGET, "--repo", REPO, "STDIN-CARD1",
+            "--source-sha", SHA, "--reviewer", "Codex",
+        ]
+    )
+    assert rc == 0
+    assert card_item(fake_runner, "STDIN-CARD1").fields["交付狀態"] == "✅通過"
+
+
+def test_validate_only_touches_nothing_remote(fake_runner, tmp_path, capsys):
+    open_card("VALIDATE-CARD1")
+    before = card_item(fake_runner, "VALIDATE-CARD1")
+    rc = run_cli(
+        review_argv("VALIDATE-CARD1", write_input(tmp_path, APPROVE_REPORT), validate_only=True)
+    )
+    assert rc == 0
+    after = card_item(fake_runner, "VALIDATE-CARD1")
+    assert after.fields["交付狀態"] == before.fields["交付狀態"]
+    assert issue_comments(fake_runner, after.issue_url) == []
+    assert "未寫入任何狀態" in capsys.readouterr().out
+
+
+def test_missing_repo_is_fail_closed(fake_runner, tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("WFCLI_REPO", raising=False)
+    open_card("NOREPO-CARD1")
+    rc = run_cli(review_argv("NOREPO-CARD1", write_input(tmp_path, APPROVE_REPORT), repo=None))
+    assert rc == 2
+    assert "--repo" in capsys.readouterr().err
+    assert issue_comments(fake_runner, card_item(fake_runner, "NOREPO-CARD1").issue_url) == []
+
+
+def test_draft_item_without_issue_timeline_is_rejected(fake_runner, tmp_path, capsys):
+    open_card("DRAFT-CARD1", repo=None)  # Project draft item，無 Issue timeline
+    rc = run_cli(review_argv("DRAFT-CARD1", write_input(tmp_path, APPROVE_REPORT)))
+    assert rc == 2
+    assert "draft item" in capsys.readouterr().err
+    assert card_item(fake_runner, "DRAFT-CARD1").fields["交付狀態"] == "📥Backlog"
+
+
+def test_unknown_card_returns_exit_3(fake_runner, tmp_path, capsys):
+    rc = run_cli(review_argv("GHOST-CARD1", write_input(tmp_path, APPROVE_REPORT)))
+    assert rc == 3
+    assert "找不到卡" in capsys.readouterr().err
+
+
+def test_bad_source_sha_is_rejected_before_reading_input(fake_runner, capsys):
+    rc = run_cli(
+        [
+            "review", *BASE_TARGET, "--repo", REPO, "DEMO-CARD1",
+            "--input", "/nonexistent/path.md",
+            "--source-sha", "short", "--reviewer", "Codex",
+        ]
+    )
+    assert rc == 2
+    assert "source_sha" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "flag,value,expected",
+    [("--reviewer", "  ", "reviewer"), ("--escalation-epoch", "-1", "escalation-epoch")],
+)
+def test_reviewer_and_epoch_guards_are_fail_closed(fake_runner, tmp_path, capsys, flag, value, expected):
+    open_card("GUARD-CARD1")
+    argv = [
+        "review", *BASE_TARGET, "--repo", REPO, "GUARD-CARD1",
+        "--input", str(write_input(tmp_path, APPROVE_REPORT)),
+        "--source-sha", SHA, "--reviewer", "Codex",
+    ]
+    if flag == "--reviewer":
+        argv[argv.index("Codex")] = value
+    else:
+        argv += [flag, value]
+    assert run_cli(argv) == 2
+    assert expected in capsys.readouterr().err
+    assert issue_comments(fake_runner, card_item(fake_runner, "GUARD-CARD1").issue_url) == []
+
+
+def test_missing_input_file_is_rejected(fake_runner, capsys):
+    rc = run_cli(
+        [
+            "review", *BASE_TARGET, "--repo", REPO, "DEMO-CARD1",
+            "--input", "/nonexistent/path.md",
+            "--source-sha", SHA, "--reviewer", "Codex",
+        ]
+    )
+    assert rc == 2
+    assert "不存在" in capsys.readouterr().err
+
+
+def test_status_mismatch_warns_but_does_not_block(fake_runner, tmp_path, capsys):
+    # 契約沒規定「非 🔍待查核 不得下裁決」（補記舊裁決／⏸阻塞 期間收報告都是實務
+    # 情境），所以只警示不硬擋；是否升級為硬拒屬新裁量，留給需求方。
+    open_card("STATUS-CARD1")  # 停在 📥Backlog，不是 🔍待查核
+    rc = run_cli(review_argv("STATUS-CARD1", write_input(tmp_path, APPROVE_REPORT)))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "警示" in err and "🔍待查核" in err and "📥Backlog" in err
+    assert card_item(fake_runner, "STATUS-CARD1").fields["交付狀態"] == "✅通過"
+
+
+def test_writer_only_keys_are_warned_and_ignored(fake_runner, tmp_path, capsys):
+    text = """```yaml
+core_pain_resolved: yes
+review_result: APPROVE
+counts_toward_escalation: false
+self_run:
+  - command: uv run pytest
+    observed: 128 passed
+findings: []
+```
+"""
+    open_card("WRITERONLY-CARD1")
+    rc = run_cli(review_argv("WRITERONLY-CARD1", write_input(tmp_path, text)))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "counts_toward_escalation" in err
+    body = issue_comments(fake_runner, card_item(fake_runner, "WRITERONLY-CARD1").issue_url)[0]
+    assert "counts_toward_escalation" in body  # 只在說明段出現
+    assert "由 lifecycle writer" in body
+
+
+# --------------------------------------------------------------------------
+# 解析器：區塊抽取與受限 YAML 子集
+# --------------------------------------------------------------------------
+
+
+def test_json_block_is_accepted_and_shares_the_same_checks():
+    payload = {
+        "core_pain_resolved": "yes",
+        "review_result": "APPROVE",
+        "self_run": [{"command": "pytest", "observed": "128 passed"}],
+        "findings": [],
+    }
+    text = "報告\n\n```json\n" + jsonlib.dumps(payload, ensure_ascii=False) + "\n```\n"
+    report = validate_review_report(parse_structured_block(text))
+    assert report.review_result == "APPROVE"
+    assert report.delivery_status == "✅通過"
+
+
+def test_json_true_false_booleans_normalize_for_blocking():
+    payload = {
+        "core_pain_resolved": "no",
+        "review_result": "REQUEST_CHANGES",
+        "self_run": [{"command": "pytest", "observed": "1 failed"}],
+        "findings": [
+            {
+                "finding_id": "X-R1-01",
+                "severity": "critical",
+                "blocking": True,
+                "finding_class": "implementation",
+                "attribution": "executor",
+                "root_cause_id": "r1",
+                "evidence": "e",
+                "disposition": "d",
+            }
+        ],
+    }
+    report = validate_review_report(parse_structured_block("```json\n" + jsonlib.dumps(payload) + "\n```"))
+    assert report.findings[0].blocking is True
+    assert len(report.blocking_findings) == 1
+
+
+def test_multiple_candidate_blocks_are_rejected_not_guessed():
+    text = APPROVE_REPORT + "\n附錄（範本）：\n" + APPROVE_WITHOUT_SELF_RUN
+    with pytest.raises(ReviewParseError) as exc_info:
+        parse_structured_block(text)
+    assert "無法判定" in str(exc_info.value)
+
+
+def test_bare_yaml_file_without_fence_is_accepted():
+    text = "core_pain_resolved: yes\nreview_result: APPROVE\nself_run:\n  - command: pytest\n    observed: ok\nfindings: []\n"
+    assert validate_review_report(parse_structured_block(text)).review_result == "APPROVE"
+
+
+def test_report_without_structured_block_is_rejected():
+    with pytest.raises(ReviewParseError):
+        parse_structured_block("看起來沒問題，APPROVE。\n\n```\nsome code\n```\n")
+
+
+def test_empty_input_is_rejected():
+    with pytest.raises(ReviewParseError):
+        parse_structured_block("   \n\n")
+
+
+def test_duplicate_key_is_rejected_instead_of_silently_overwritten():
+    text = "review_result: REQUEST_CHANGES\nreview_result: APPROVE\ncore_pain_resolved: yes\n"
+    with pytest.raises(ReviewParseError) as exc_info:
+        parse_structured_block(text)
+    assert "重複" in str(exc_info.value)
+
+
+def test_literal_block_scalar_keeps_multiline_observed():
+    text = """```yaml
+core_pain_resolved: yes
+review_result: APPROVE
+self_run:
+  - command: uv run pytest
+    observed: |
+      128 passed in 1.42s
+      warnings: 0
+findings: []
+```
+"""
+    report = validate_review_report(parse_structured_block(text))
+    assert report.self_run[0].observed.splitlines() == ["128 passed in 1.42s", "warnings: 0"]
+
+
+def test_quoted_scalar_with_colon_is_preserved():
+    text = 'review_result: "APPROVE"\ncore_pain_resolved: yes\nself_run:\n  - command: "grep -n \'a: b\' x"\n    observed: ok\nfindings: []\n'
+    report = validate_review_report(parse_structured_block(text))
+    assert report.self_run[0].command == "grep -n 'a: b' x"
+
+
+def test_prose_inside_block_is_rejected():
+    text = "```yaml\nreview_result: APPROVE\n看起來沒問題\ncore_pain_resolved: yes\n```"
+    with pytest.raises(ReviewParseError) as exc_info:
+        parse_structured_block(text)
+    assert "散文" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "review_result: &anchor APPROVE\n",
+        "review_result: {a: b}\n",
+        "review_result: [APPROVE, REQUEST_CHANGES]\n",
+        "review_result: APPROVE\nself_run:\n\t- command: x\n",
+    ],
+)
+def test_unsupported_yaml_constructs_fail_closed(text):
+    with pytest.raises(ReviewParseError):
+        parse_structured_block(text)
+
+
+def test_template_inline_comments_survive_copy_and_fill():
+    """review-prompt.md §5 範本每行都帶註解；照抄填值是最常見用法，必須能用。"""
+    text = """```yaml
+core_pain_resolved: yes            # 第一判準；no 一律 REQUEST_CHANGES
+review_result: APPROVE             # APPROVE | REQUEST_CHANGES
+self_run:                          # 必填：查核者自己實際跑過的指令與觀察到的輸出
+  - command: uv run pytest
+    observed: 159 passed
+findings: []                       # 無 finding
+```
+"""
+    report = validate_review_report(parse_structured_block(text))
+    assert report.review_result == "APPROVE"
+    assert report.core_pain_resolved == "yes"
+    assert report.findings == ()
+    assert len(report.self_run) == 1
+
+
+def test_hash_inside_unquoted_value_is_rejected_not_silently_truncated():
+    """`evidence: 見 PR #12` 若照 YAML 砍註解會變成 `見 PR`——寧可拒收也不截斷 audit 記錄。"""
+    text = "review_result: APPROVE\ncore_pain_resolved: yes\nself_run:\n  - command: pytest\n    observed: 見 PR #12\nfindings: []\n"
+    with pytest.raises(ReviewParseError) as exc_info:
+        parse_structured_block(text)
+    assert "加上引號" in str(exc_info.value)
+
+    quoted = text.replace("observed: 見 PR #12", 'observed: "見 PR #12"')
+    report = validate_review_report(parse_structured_block(quoted))
+    assert report.self_run[0].observed == "見 PR #12"
+
+
+def test_url_fragment_without_space_is_not_treated_as_comment():
+    text = (
+        "review_result: APPROVE\ncore_pain_resolved: yes\n"
+        "self_run:\n  - command: pytest\n"
+        "    observed: https://github.com/o/r/issues/8#issuecomment-1\nfindings: []\n"
+    )
+    report = validate_review_report(parse_structured_block(text))
+    assert report.self_run[0].observed.endswith("#issuecomment-1")
+
+
+def test_sequence_item_must_start_with_dash():
+    text = "review_result: APPROVE\nself_run:\n  command: pytest\n"
+    with pytest.raises(ReviewParseError):
+        parse_structured_block(text)

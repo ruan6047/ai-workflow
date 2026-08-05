@@ -1,16 +1,24 @@
-"""wfcli 進入點：五個子指令 open／assign／handoff／doctor／snapshot。"""
+"""wfcli 進入點：六個子指令 open／assign／handoff／review／doctor／snapshot。"""
 
 from __future__ import annotations
 
 import argparse
 import sys
 
-from .commands import assign_cmd, doctor_cmd, handoff_cmd, open_cmd, snapshot_cmd
+from .commands import (
+    assign_cmd,
+    doctor_cmd,
+    handoff_cmd,
+    open_cmd,
+    review_cmd,
+    snapshot_cmd,
+)
 from .config import ConfigError
 from .gh import GhError
 from .git_ops import GitError
 from .project import ProjectError
 from .resources import ResourceDeclarationError
+from .review import ReviewParseError
 from .validation import ValidationError
 
 KNOWN_ERRORS = (
@@ -19,6 +27,7 @@ KNOWN_ERRORS = (
     GitError,
     ProjectError,
     ResourceDeclarationError,
+    ReviewParseError,
     ValidationError,
 )
 
@@ -35,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     open_cmd.add_parser(subparsers)
     assign_cmd.add_parser(subparsers)
     handoff_cmd.add_parser(subparsers)
+    review_cmd.add_parser(subparsers)
     doctor_cmd.add_parser(subparsers)
     snapshot_cmd.add_parser(subparsers)
     return parser
