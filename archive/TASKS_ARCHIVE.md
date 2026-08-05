@@ -5,6 +5,7 @@
 
 | 卡ID | 功能 | 需求 | 執行(model@tool) | 查核 | 分支 | 紅線 | 結案 | 卡片 |
 |---|---|---|---|---|---|---|---|---|
+| WF-22-CLI2 | 鏈深/iteration 寫入路徑（open --chain-depth 硬拒>2；handoff 退回自動+1＋覆寫警示） | ruan6047 | Claude-Sonnet-5@ClaudeCode | Claude-Sonnet-5 新context APPROVE 零阻塞（F1 裁量留痕已補/F2 下界檢查記待辦） | ai/claude-sonnet-5/WF-22-CLI2 | 🟡 | 🏁 16496db | [WF-22-CLI2](tasks/WF-22-CLI2.md) |
 | WF-22-CLI1 | 祕書 CLI 最小集（open/assign/handoff/doctor/snapshot；wf-cli） | ruan6047 | Claude-Sonnet-5@ClaudeCode | Claude-Sonnet-5 新context APPROVE 零阻塞（F1 鏈深/iteration 無寫入路徑→CLI2 追卡；F2 assign fail-open 措辭→Wave3；F3 範圍偏差需求方知悉） | ai/claude-sonnet-5/WF-22-CLI1 | 🟡 | 🏁 b0b65bb | [WF-22-CLI1](tasks/WF-22-CLI1.md) |
 | WF-1 | 建立中央治理 repo + 規則抽出 | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | main(初建,bootstrap) | 🔴 | 🏁 | [WF-1](tasks/WF-1.md) |
 | WF-2 | §7.1「spec 文件 vs 看板」分工 + checklist 去重 | ruan6047 | Claude-Opus-4.8@ClaudeCode | ruan6047 sign-off | main(直接,bootstrap) | 🔴 | 🏁 bbf3df0 | [WF-2](tasks/WF-2.md) |
