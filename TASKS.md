@@ -11,7 +11,7 @@
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
 | [WF-22](tasks/WF-22.md) | WF-22 | T3 | 新治理落地（Initiative 父卡；13 項決議） | ruan6047（決策）＋PM 祕書（寫入） | — | 0 | 🚧進行中 | —不適用 | 2026-08-04T20:16:50+08:00 |
-| [WF-22-CLI2](tasks/WF-22-CLI2.md) | WF-22 | T2 | 鏈深與 iteration 的寫入路徑（CLI1 查核 F1 追卡） | 待指派（建議 L2） | — | 0 | 📥Backlog | —不適用 | 2026-08-04T23:55:00+08:00 |
+| [WF-22-CLI2](tasks/WF-22-CLI2.md) | WF-22 | T2 | 鏈深與 iteration 的寫入路徑（CLI1 查核 F1 追卡） | Claude Sonnet 5@Claude Code | `ai/claude-sonnet-5/WF-22-CLI2 @ .claude/worktrees/wf-22-cli2-execution` | 0 | 🚧進行中 | —不適用 | 2026-08-05T10:30:00+08:00 |
 | [INIT-AIWF-PRODUCT1](tasks/INIT-AIWF-PRODUCT1.md) | INIT-AIWF-PRODUCT1 | T4 | ai-workflow 產品化（占位；60 天 dogfood＝Discovery） | ruan6047（動工 Gate） | — | 0 | 💡需求 | —不適用 | 2026-08-04T20:16:50+08:00 |
 
 ## 依賴註記（相關卡）

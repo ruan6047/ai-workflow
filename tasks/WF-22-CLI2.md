@@ -13,7 +13,7 @@
 ## 範圍
 
 1. `open --chain-depth N`（預設 0）；N>2 時硬拒（決議 5 硬上限，拒絕訊息引整鏈重審協定）。
-2. iteration 遞增接點：由需求方裁決掛在何處——候選 (a) `handoff --next-stage implementation`（查核退回語意）自動 +1；(b) 顯式 `--iteration N`。**執行者開工前先向 PM 提交一頁建議，需求方拍板後實作**（不得自行選）。
+2. iteration 遞增接點：**需求方 2026-08-05 已拍板＝(a)**——`handoff --next-stage implementation`（查核退回語意）**自動 +1**，另留顯式 `--iteration N` 覆寫供異常修正（覆寫時輸出警示與理由要求）。與契約「有效實質退回遞增 iteration」語意一致。執行者依此實作，不再中停請示。
 3. 回歸測試補齊兩欄位的寫入與拒絕路徑。
 
 ## 驗收
