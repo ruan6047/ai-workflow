@@ -1,15 +1,17 @@
 # Control-plane Contract — <專案名>
 
-> 共同不變量見 canonical `AI_WORKFLOW.md` §4.1。本檔定義該專案如何把協作狀態與本機資源鎖分離；不得填入 token、secret 或使用者個資。
+> 共同不變量見 canonical `AI_WORKFLOW.md` §4.1、§4.3、§4.4。本檔定義該專案如何把協作狀態與本機資源鎖分離；不得填入 token、secret 或使用者個資。
 
 ## 1. Adapter 邊界
 
 | 範圍 | 實作 | 事實來源／用途 |
 |---|---|---|
-| Remote coordination（GitHub 預設） | <Issue／PR／Project／Actions workflow> | 唯一 lifecycle writer：跨人 task、review、lease、CI 與協作事件 |
+| Remote coordination（GitHub 預設） | <Issue／Project #<n>／Actions workflow> | 唯一 lifecycle writer：跨人 task、review、lease、CI 與協作事件 |
+| **狀態寫入通道** | <祕書 CLI 指令；canonical §4.3 要求唯一通道> | 繞過它的狀態寫入（含看板 UI 手改欄位）即違規 |
 | Local resource | <原子目錄鎖／OS lock／container runtime> | worktree、port、container、未提交變更的暫時互斥；只回報 telemetry，不改 card state |
-| Event store | <受保護 Git history／外部 append-only store> | 不可覆寫事件歷史 |
-| Ledger projection | <產生方式與位置> | 活卡 current-state 顯示；不得手改 |
+| Event store | <Issue timeline ＋結構化 comment／受保護 Git history／外部 append-only store> | 事件歷史；採 Issue timeline 時必須有定期 snapshot export 作離線稽核副本 |
+| Ledger projection | <產生方式與位置；cutover 後＝snapshot 產生，不手改> | 活卡 current-state 顯示；不得手改 |
+| **封存的舊狀態面** | <舊 event log／Ledger 路徑與終筆 SHA；已 cutover 才填> | 唯讀，不得再追加或重建 |
 
 ## 2. Event schema 與狀態
 
@@ -44,6 +46,10 @@ local telemetry 另以同一 envelope 記錄 `resource-acquired | resource-relea
 - lease TTL／續約：<時間與命令>
 - 到期回收：<未提交變更檢查、通知與人工介入>
 - WIP limit：agent <n>；review queue <n>；超過時 <行為>
+- **派工前資源交集比對**：<命令；比對本卡寫入集 × 現役卡寫入集，撞則排隊。現役含 `📦已合併` 未收尾者—canonical §4.4>
+- **破壞性 CLI（啟動須驗 lease，無 lease 拒跑）**：<入口清單>
+- **當前仍有副作用的 CLI 入口（查核／探索禁跑）**：<入口清單／無—canonical §6.1 第 6 條>
+- **worktree 註冊**：<認領時把實際路徑＋分支寫回卡的命令>；派工前必跑的 `doctor` 對帳：<命令>
 
 ## 4. Handoff 與 optional tmux adapter
 
