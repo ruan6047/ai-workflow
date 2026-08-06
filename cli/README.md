@@ -12,7 +12,7 @@
 | `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
-| `review` | 查核裁決：驗 `templates/review-prompt.md` §5 結構化輸出（`review_result` 列舉、`core_pain_resolved` 必填、`self_run` 非空、finding 八欄 schema），過了才把裁決全文寫成 Issue 留言並轉交付狀態（`APPROVE`→`✅通過`／`REQUEST_CHANGES`→`↩退回`）；**無 `self_run` 的 `APPROVE` 記 `review-invalid` 拒收** | 寫（有條件拒絕） |
+| `review` | 查核裁決：驗 `templates/review-prompt.md` §5 結構化輸出（`review_result` 列舉、`core_pain_resolved` 必填、`self_run` 非空、finding 八欄 schema、結論與 findings 的語意一致性），過了才把裁決全文寫成 Issue 留言並轉交付狀態（`APPROVE`→`✅通過`／`REQUEST_CHANGES`→`↩退回`）；**無 `self_run` 的 `APPROVE` 記 `review-invalid` 拒收** | 寫（有條件拒絕） |
 | `doctor` | 對帳：`git worktree list` vs 卡註冊、submodule 初始化、孤兒分支、殘留 lease、prunable worktree | **唯讀**，不清理 |
 | `snapshot` | 匯出 Project 全部卡片為 JSON＋人類可讀 Markdown Ledger | 讀＋寫本機檔案（不寫回 GitHub） |
 
@@ -42,7 +42,8 @@ cat report.md | wfcli review WF-22-CLI3 --repo ... --source-sha <40hex> --review
 這種順序啟發式猜哪個是裁決）。退出碼：
 
 - `0` 通過並已寫入（或 `--validate-only` 驗證通過）
-- `2` 讀不到／解析失敗／契約檢查失敗／缺必要旗標——**未寫入任何遠端狀態**
+- `2` 讀不到／解析失敗／契約檢查失敗（含 `APPROVE` 帶 blocking finding、
+  `REQUEST_CHANGES` 零 finding 兩條硬拒）／缺必要旗標——**未寫入任何遠端狀態**
 - `3` 找不到卡
 - `4` `review-invalid`（`templates/review-escalation.md` §1）：目前可機械判定的是
   「`APPROVE` 未附 `self_run`」；§1 規定此情形留在 `🔍待查核`、不計 iteration，
@@ -128,6 +129,15 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
   交付狀態，另在 body `## Log` 補一行索引。
 - **`review` 先留言、後翻狀態**：反過來若留言失敗，板上會留下沒有裁決全文的
   `✅通過`，那正是本卡要消滅的「宣稱與證據脫節」。
+- **`APPROVE` 不得含 `blocking: true` 的 finding**（硬拒，exit 2）：有阻斷缺陷卻核可
+  是語意矛盾，二擇一——改 `REQUEST_CHANGES`，或把該 finding 改為 `blocking: false`。
+  需求方 2026-08-06 裁決（[`ruan6047/ai-workflow#8`](https://github.com/ruan6047/ai-workflow/issues/8) 查核留言），由警示升為硬拒。
+- **`REQUEST_CHANGES` 不得零 finding**（硬拒，exit 2）：退回必須附至少一項可執行
+  finding，否則執行者無從修起。與「`findings` 鍵須顯式存在」的互動：顯式寫
+  `findings: []` 搭配 `REQUEST_CHANGES` 現在同樣被擋（顯式不等於豁免）。
+  需求方 2026-08-06 裁決（[`ruan6047/ai-workflow#8`](https://github.com/ruan6047/ai-workflow/issues/8) 查核留言）。
+  兩條的判準都在 `validation.validate_review_report`，且只在 finding 本身解析乾淨時
+  才判——否則作者會同時看到「缺欄」與由缺欄衍生的矛盾訊息，被導去修錯的地方。
 - **`review` 自己寫受限 YAML 子集解析器，不引 PyYAML**：除了零第三方 runtime 相依，
   更關鍵的是寬鬆解析與 fail-closed 互斥——YAML 1.1 會把 `yes` 讀成布林、重複鍵靜默
   取最後一個。這裡只認 review-prompt.md §5 已經在用的固定子集（頂層純量、`- key:

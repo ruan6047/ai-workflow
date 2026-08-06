@@ -250,7 +250,11 @@ findings: []
 
 
 def test_request_changes_without_self_run_is_schema_error_not_review_invalid(fake_runner, tmp_path, capsys):
-    """§5「self_run 不得為空」對兩種結論都成立；只有 APPROVE 那條另有 review-invalid 處置。"""
+    """§5「self_run 不得為空」對兩種結論都成立；只有 APPROVE 那條另有 review-invalid 處置。
+
+    這份樣本同時踩到 2026-08-06 裁決的「REQUEST_CHANGES 不得零 finding」，兩個錯誤
+    會一起列出（ValidationError 一次回報全部）——退出碼仍是 2，不是 review-invalid 的 4。
+    """
     text = """```yaml
 core_pain_resolved: no
 review_result: REQUEST_CHANGES
@@ -391,6 +395,119 @@ def test_missing_findings_key_is_rejected_rather_than_assumed_empty():
     with pytest.raises(ValidationError) as exc_info:
         validate_review_report(data)
     assert any("findings" in e for e in exc_info.value.errors)
+
+
+# --------------------------------------------------------------------------
+# 5b. 結論與 findings 的語意一致性（需求方 2026-08-06 裁決 #8：警示 → 硬拒）
+# --------------------------------------------------------------------------
+
+
+def _finding(**overrides) -> dict:
+    finding = {
+        "finding_id": "X-R1-01",
+        "severity": "major",
+        "blocking": "true",
+        "finding_class": "implementation",
+        "attribution": "executor",
+        "root_cause_id": "r1",
+        "evidence": "重現方式",
+        "disposition": "修法",
+    }
+    finding.update(overrides)
+    return finding
+
+
+def _report_data(result: str, findings: list[dict]) -> dict:
+    return {
+        "review_result": result,
+        "core_pain_resolved": "yes" if result == "APPROVE" else "no",
+        "self_run": [{"command": "uv run pytest", "observed": "164 passed"}],
+        "findings": findings,
+    }
+
+
+def test_approve_with_blocking_finding_is_hard_rejected():
+    """反例：有阻斷缺陷不得核可，二擇一。"""
+    with pytest.raises(ValidationError) as exc_info:
+        validate_review_report(_report_data("APPROVE", [_finding(blocking="true")]))
+    message = "；".join(exc_info.value.errors)
+    assert "X-R1-01" in message
+    assert "語意矛盾" in message and "二擇一" in message
+    assert "#8" in message  # 裁決出處
+
+
+def test_approve_with_non_blocking_finding_is_accepted():
+    """正例：非阻斷 finding 不影響 APPROVE。"""
+    report = validate_review_report(_report_data("APPROVE", [_finding(blocking="false")]))
+    assert report.review_result == "APPROVE"
+    assert report.blocking_findings == ()
+
+
+def test_request_changes_with_empty_findings_is_hard_rejected():
+    """反例：退回必須附至少一項可執行 finding。"""
+    with pytest.raises(ValidationError) as exc_info:
+        validate_review_report(_report_data("REQUEST_CHANGES", []))
+    message = "；".join(exc_info.value.errors)
+    assert "findings 為空" in message and "至少一項" in message
+    assert "#8" in message
+
+
+def test_request_changes_with_one_finding_is_accepted():
+    """正例：附了 finding 的退回照常通過。"""
+    report = validate_review_report(_report_data("REQUEST_CHANGES", [_finding()]))
+    assert report.review_result == "REQUEST_CHANGES"
+    assert len(report.findings) == 1
+
+
+def test_hard_rejects_go_through_the_cli_as_exit_2_without_writing(fake_runner, tmp_path, capsys):
+    approve_with_blocking = """```yaml
+core_pain_resolved: yes
+review_result: APPROVE
+self_run:
+  - command: uv run pytest
+    observed: 164 passed
+findings:
+  - finding_id: HARD-R1-01
+    severity: critical
+    blocking: true
+    finding_class: implementation
+    attribution: executor
+    root_cause_id: r1
+    evidence: 重現方式
+    disposition: 修法
+```
+"""
+    open_card("HARD-CARD1")
+    assert run_cli(review_argv("HARD-CARD1", write_input(tmp_path, approve_with_blocking))) == 2
+    assert "語意矛盾" in capsys.readouterr().err
+
+    empty_request_changes = """```yaml
+core_pain_resolved: no
+review_result: REQUEST_CHANGES
+self_run:
+  - command: uv run pytest
+    observed: 1 failed
+findings: []
+```
+"""
+    open_card("HARD-CARD2")
+    assert run_cli(review_argv("HARD-CARD2", write_input(tmp_path, empty_request_changes))) == 2
+    assert "至少一項" in capsys.readouterr().err
+
+    for card_id in ("HARD-CARD1", "HARD-CARD2"):
+        item = card_item(fake_runner, card_id)
+        assert issue_comments(fake_runner, item.issue_url) == []
+        assert item.fields["交付狀態"] == "📥Backlog"  # 兩者都沒翻板
+
+
+def test_malformed_finding_does_not_trigger_the_consistency_message(capsys):
+    """finding 本身缺欄時只報缺欄；不讓衍生的矛盾訊息把作者導去修錯地方。"""
+    broken = {"finding_id": "X-R1-01", "severity": "major"}  # 缺 blocking 等六欄
+    with pytest.raises(ValidationError) as exc_info:
+        validate_review_report(_report_data("APPROVE", [broken]))
+    message = "；".join(exc_info.value.errors)
+    assert "缺必填欄" in message
+    assert "語意矛盾" not in message
 
 
 # --------------------------------------------------------------------------

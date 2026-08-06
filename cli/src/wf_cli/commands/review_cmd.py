@@ -16,6 +16,10 @@
   「`APPROVE` 未附 `self_run`」。§1 表列此情形**留在 `🔍待查核`、不計 iteration**，
   所以這裡刻意不寫任何狀態——維持現狀就是契約要求的結果。
 
+結論與 findings 的語意一致性（需求方 2026-08-06 裁決，ruan6047/ai-workflow#8，
+由警示升為硬拒，走 exit 2）：`APPROVE` 不得含 `blocking: true` 的 finding；
+`REQUEST_CHANGES` 不得零 finding。判準實作在 ``validation.validate_review_report``。
+
 與 handoff 的分工（勿重複發明）：
 
 - **iteration 由 handoff 獨占**。``handoff --next-stage implementation`` 承載「查核
@@ -163,20 +167,6 @@ def run(args: argparse.Namespace) -> int:
             "依可重現證據標記，reviewer 不得自行決定，本次一律忽略其值。",
             file=sys.stderr,
         )
-    if report.review_result == "APPROVE" and report.blocking_findings:
-        print(
-            "[review] 警示：APPROVE 卻含 blocking=true 的 finding（"
-            + "、".join(f.finding_id for f in report.blocking_findings)
-            + "）；契約未明文禁止此組合，本次照寫，請需求方裁決是否應改為硬拒。",
-            file=sys.stderr,
-        )
-    if report.review_result == "REQUEST_CHANGES" and not report.findings:
-        print(
-            "[review] 警示：REQUEST_CHANGES 但 findings 為空——退回缺可執行的處置；"
-            "契約未明文禁止，本次照寫，請需求方裁決是否應硬拒。",
-            file=sys.stderr,
-        )
-
     if args.validate_only:
         print(
             f"[review] 驗證通過（--validate-only，未寫入任何狀態）："

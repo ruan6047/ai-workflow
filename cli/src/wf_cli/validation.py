@@ -295,6 +295,27 @@ def validate_review_report(data: Mapping[str, Any]) -> ReviewReport:
             if finding is not None:
                 findings.append(finding)
 
+    # 結論與 findings 的語意一致性。需求方 2026-08-06 裁決（ruan6047/ai-workflow#8）：
+    # 這兩種矛盾由「警示照寫」升為硬拒。只在 findings 本身解析乾淨時才判——否則作者
+    # 會同時看到「finding 缺欄」與由缺欄衍生的矛盾訊息，被導去修錯的地方。
+    findings_clean = isinstance(data.get("findings"), list) and len(findings) == len(
+        data["findings"]
+    )
+    if findings_clean and review_result == "APPROVE":
+        blocking_ids = [f.finding_id for f in findings if f.blocking]
+        if blocking_ids:
+            errors.append(
+                f"review_result=APPROVE 但含 blocking=true 的 finding（{'、'.join(blocking_ids)}）："
+                "語意矛盾——有阻斷缺陷不得核可，二擇一：改 REQUEST_CHANGES，"
+                "或把該 finding 改為 blocking: false"
+                "（需求方 2026-08-06 裁決，ruan6047/ai-workflow#8）"
+            )
+    if findings_clean and review_result == "REQUEST_CHANGES" and not findings:
+        errors.append(
+            "review_result=REQUEST_CHANGES 但 findings 為空：退回必須附至少一項可執行 finding，"
+            "否則執行者無從修起（需求方 2026-08-06 裁決，ruan6047/ai-workflow#8）"
+        )
+
     if errors:
         raise ValidationError(errors)
 
