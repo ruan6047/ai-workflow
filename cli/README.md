@@ -22,7 +22,7 @@
 cd cli
 uv sync
 uv run wfcli <command> --help
-uv run pytest        # 162 個測試，本 repo 新增
+uv run pytest        # 全套測試（本 repo 新增；數量以此指令輸出為準）
 ```
 
 ## `review`：查核輸出契約的機械閘門（WF-22-CLI3）
@@ -178,5 +178,5 @@ cli/
 │   ├── config.py          # --owner/--project/--repo/--config 目標解析
 │   ├── cli.py             # argparse 組裝＋錯誤處理
 │   └── commands/          # 六個子指令的 argparse handler
-└── tests/                  # 162 個 pytest（純邏輯＋真實 sandbox git repo＋FakeGhRunner）
+└── tests/                  # pytest：純邏輯＋真實 sandbox git repo＋FakeGhRunner（數量見 uv run pytest）
 ```
