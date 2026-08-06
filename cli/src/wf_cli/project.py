@@ -182,6 +182,18 @@ def create_repo_issue(runner: GhRunner, repo: str, title: str, body: str) -> tup
     return number, url
 
 
+def add_issue_comment(runner: GhRunner, repo: str, issue_number: int, body: str) -> None:
+    """在 Issue timeline 追加一則留言（canonical §4.3：事件＝Issue timeline ＋結構化 comment）。
+
+    刻意走 ``gh issue comment`` 而非改 body：留言是 append-only 的事件流，body 是
+    current-state；裁決全文屬前者。draft item 沒有 timeline，呼叫端須先擋掉
+    （見 ``commands/review_cmd.py``）。
+    """
+    runner.execute(
+        ["issue", "comment", str(issue_number), "--repo", repo, "--body", body]
+    )
+
+
 def add_item_to_project(runner: GhRunner, owner: str, number: int, issue_url: str) -> str:
     data = runner.run_json(
         ["project", "item-add", str(number), "--owner", owner, "--url", issue_url, "--format", "json"]
@@ -338,6 +350,7 @@ __all__ = [
     "ItemSnapshot",
     "ProjectError",
     "ProjectMeta",
+    "add_issue_comment",
     "add_item_to_project",
     "create_draft_item",
     "create_repo_issue",

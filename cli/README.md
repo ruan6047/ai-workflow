@@ -5,13 +5,14 @@
 > 寫入即違規**（例如直接在 GitHub UI 手改 Project 欄位）。CLI 本身不做權限強制
 > （單機信任模型），紀律由治理承擔，不是技術鎖死。
 
-## 五指令
+## 六指令
 
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
 | `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
+| `review` | 查核裁決：驗 `templates/review-prompt.md` §5 結構化輸出（`review_result` 列舉、`core_pain_resolved` 必填、`self_run` 非空、finding 八欄 schema、結論與 findings 的語意一致性），過了才把裁決全文寫成 Issue 留言並轉交付狀態（`APPROVE`→`✅通過`／`REQUEST_CHANGES`→`↩退回`）；**無 `self_run` 的 `APPROVE` 記 `review-invalid` 拒收** | 寫（有條件拒絕） |
 | `doctor` | 對帳：`git worktree list` vs 卡註冊、submodule 初始化、孤兒分支、殘留 lease、prunable worktree | **唯讀**，不清理 |
 | `snapshot` | 匯出 Project 全部卡片為 JSON＋人類可讀 Markdown Ledger | 讀＋寫本機檔案（不寫回 GitHub） |
 
@@ -21,8 +22,32 @@
 cd cli
 uv sync
 uv run wfcli <command> --help
-uv run pytest        # 116 個測試，本 repo 新增
+uv run pytest        # 全套測試（本 repo 新增；數量以此指令輸出為準）
 ```
+
+## `review`：查核輸出契約的機械閘門（WF-22-CLI3）
+
+```bash
+# 查核者送審前自檢：只驗格式，完全不連 GitHub
+wfcli review WF-22-CLI3 --input report.md --source-sha <40hex> --reviewer Codex --validate-only
+
+# 祕書寫入裁決（真實副作用需 --repo）
+wfcli review WF-22-CLI3 --repo ruan6047/ai-workflow --input report.md \
+  --source-sha <40hex> --reviewer Codex
+cat report.md | wfcli review WF-22-CLI3 --repo ... --source-sha <40hex> --reviewer Codex
+```
+
+`--input` 吃**整份查核報告**（散文＋圍籬區塊），自動抽出含 `review_result` 的
+```` ```yaml ````／```` ```json ```` 區塊；抽到兩個以上一律拒收（不用「取最後一個」
+這種順序啟發式猜哪個是裁決）。退出碼：
+
+- `0` 通過並已寫入（或 `--validate-only` 驗證通過）
+- `2` 讀不到／解析失敗／契約檢查失敗（含 `APPROVE` 帶 blocking finding、
+  `REQUEST_CHANGES` 零 finding 兩條硬拒）／缺必要旗標——**未寫入任何遠端狀態**
+- `3` 找不到卡
+- `4` `review-invalid`（`templates/review-escalation.md` §1）：目前可機械判定的是
+  「`APPROVE` 未附 `self_run`」；§1 規定此情形留在 `🔍待查核`、不計 iteration，
+  所以刻意什麼都不寫
 
 ## 跨專案目標指定
 
@@ -97,6 +122,31 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
   iteration 遞增接點依需求方 2026-08-05 裁決：`handoff --next-stage implementation`
   （承載「查核退回」語意）讀回現值＋1 寫回；`review`／`release` 不遞增；`--iteration
   N` 是顯式覆寫逃生門（印警示，覆寫理由說明於既有必填的 `--evidence`，不另立欄位）。
+- **`review` 不碰 iteration／owner／最後交接**（WF-22-CLI3）：iteration 的唯一遞增點
+  是 `handoff --next-stage implementation`，review 若也動就會讓一次退回被記成兩次；
+  裁決也不是交接，所以 owner 與最後交接同樣留給 `handoff`。`review` 只寫兩件事——
+  Issue 留言（裁決全文；canonical §4.3「事件＝Issue timeline ＋結構化 comment」）與
+  交付狀態，另在 body `## Log` 補一行索引。
+- **`review` 先留言、後翻狀態**：反過來若留言失敗，板上會留下沒有裁決全文的
+  `✅通過`，那正是本卡要消滅的「宣稱與證據脫節」。
+- **`APPROVE` 不得含 `blocking: true` 的 finding**（硬拒，exit 2）：有阻斷缺陷卻核可
+  是語意矛盾，二擇一——改 `REQUEST_CHANGES`，或把該 finding 改為 `blocking: false`。
+  需求方 2026-08-06 裁決（[`ruan6047/ai-workflow#8`](https://github.com/ruan6047/ai-workflow/issues/8) 查核留言），由警示升為硬拒。
+- **`REQUEST_CHANGES` 不得零 finding**（硬拒，exit 2）：退回必須附至少一項可執行
+  finding，否則執行者無從修起。與「`findings` 鍵須顯式存在」的互動：顯式寫
+  `findings: []` 搭配 `REQUEST_CHANGES` 現在同樣被擋（顯式不等於豁免）。
+  需求方 2026-08-06 裁決（[`ruan6047/ai-workflow#8`](https://github.com/ruan6047/ai-workflow/issues/8) 查核留言）。
+  兩條的判準都在 `validation.validate_review_report`，且只在 finding 本身解析乾淨時
+  才判——否則作者會同時看到「缺欄」與由缺欄衍生的矛盾訊息，被導去修錯的地方。
+- **`review` 自己寫受限 YAML 子集解析器，不引 PyYAML**：除了零第三方 runtime 相依，
+  更關鍵的是寬鬆解析與 fail-closed 互斥——YAML 1.1 會把 `yes` 讀成布林、重複鍵靜默
+  取最後一個。這裡只認 review-prompt.md §5 已經在用的固定子集（頂層純量、`- key:
+  value` mapping 序列、`[]`、`|`／`|-` 區塊純量），語法之外一律拒收；```json 區塊走
+  `json.loads`，兩條路徑收斂到同一套契約檢查。
+- **`review` 的行內註解規則**：`key:   # 說明` 與 `review_result: APPROVE  # 說明`
+  這種「整段註解」或「單 token ＋註解」會切掉註解（範本每行都帶註解，照抄填值是最
+  常見用法）；但**片語後接 `' #'` 一律拒收**（`evidence: 見 PR #12` 若照 YAML 砍註解
+  會靜默截成 `見 PR`——截斷的 audit 記錄比被拒收糟），要求作者加引號。
 
 ## 已知限制
 
@@ -106,6 +156,18 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
   間舊卡尚未補宣告不該讓新卡整個卡死；目標卡自己解析失敗則直接拒絕（fail closed）。
 - 目前只有 `open` 會做「重複卡ID」檢查；`assign`／`handoff` 找不到卡ID時回報「找不到
   卡」（exit 3），不會嘗試模糊比對或自動建卡。
+- `review` 只能機械判定 `review-escalation.md` §1 六種 `review-invalid` 中的**一種**
+  （`APPROVE` 未附 `self_run`）。查核順序、環境污染、reviewer 獨立性、審錯 artifact、
+  同一 reviewer 對同一 SHA 重複回報都需要 CLI 拿不到的事實，由 Coordinator 判定——
+  本指令不假裝能判定，但也不因此放行。
+- `review` **不計算 `counts_toward_escalation`、不標記 `accepted`／`status`**
+  （§2／§3 規定由 lifecycle writer 依可重現證據標記，reviewer 不得自決）；查核輸出裡
+  出現這些 writer-only 欄位只會被警示並忽略。escalation 帳（epoch、attempt 去重、
+  checkpoint）目前仍在 CLI 之外。
+- `review` 只擋格式與契約，**不驗查核者的獨立性**（跨模型家族／人工）——`--reviewer`
+  是自陳字串。canonical §5 的獨立性紅線仍由治理承擔。
+- `review` 需要真實 repo Issue（`--repo`）：Project draft item 沒有 timeline 可留言，
+  會被拒絕而不是退化成「只翻板狀態」。
 
 ## 專案結構
 
@@ -116,14 +178,15 @@ cli/
 │   ├── gh.py            # gh CLI／graphql 底層包裝（唯一 subprocess 出口）
 │   ├── project.py        # Projects v2 adapter：欄位、item 建立、批次讀取
 │   ├── resources.py      # 資源宣告 schema、fenced JSON 解析／渲染、交集比對
+│   ├── review.py          # 查核輸出結構：區塊抽取、受限 YAML 子集解析、裁決留言渲染
 │   ├── card.py           # Card model、spec／Issue body 範本渲染、Log 附加
-│   ├── validation.py      # SHA／證據／必填欄機械檢查
+│   ├── validation.py      # SHA／證據／必填欄／查核輸出契約的機械檢查
 │   ├── registry.py        # TASKS.md Ledger 解析（doctor 的卡註冊來源）
 │   ├── git_ops.py         # 唯讀 git worktree／submodule／branch 操作
 │   ├── doctor.py          # 對帳邏輯（組合 git_ops + registry）
 │   ├── snapshot.py        # JSON／Markdown Ledger 渲染
 │   ├── config.py          # --owner/--project/--repo/--config 目標解析
 │   ├── cli.py             # argparse 組裝＋錯誤處理
-│   └── commands/          # 五個子指令的 argparse handler
-└── tests/                  # 98 個 pytest（純邏輯＋真實 sandbox git repo＋FakeGhRunner）
+│   └── commands/          # 六個子指令的 argparse handler
+└── tests/                  # pytest：純邏輯＋真實 sandbox git repo＋FakeGhRunner（數量見 uv run pytest）
 ```
