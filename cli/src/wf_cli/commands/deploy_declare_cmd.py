@@ -12,8 +12,9 @@ import sys
 
 from ..card import now_iso8601
 from ..config import add_target_args, resolve_target
-from ..gh import default_runner
+from ..gh import GhError, default_runner
 from ..project import (
+    ProjectError,
     add_issue_comment,
     find_item_by_card_id,
     list_fields,
@@ -129,10 +130,19 @@ def run(args: argparse.Namespace) -> int:
             reason=args.reason,
         ),
     )
-    update_item_field_value(
-        runner, project, item.item_id, fields["部署狀態"], DECLARATION_TARGET
-    )
-    update_item_field_value(runner, project, item.item_id, fields["Status"], PROJECT_STATUS)
+    try:
+        update_item_field_value(
+            runner, project, item.item_id, fields["部署狀態"], DECLARATION_TARGET
+        )
+        update_item_field_value(runner, project, item.item_id, fields["Status"], PROJECT_STATUS)
+    except (GhError, ProjectError) as exc:
+        print(
+            "[deploy-declare] 部分寫入：Issue timeline event 已追加，但 Project item 欄位未完整"
+            f"更新（{exc}）。請先對帳部署狀態與 Status，再以 wfcli 重新執行；"
+            "勿在 GitHub UI 手動修改。",
+            file=sys.stderr,
+        )
+        return 5
 
     print(
         f"[deploy-declare] 已宣告 {args.card_id} 需要部署："

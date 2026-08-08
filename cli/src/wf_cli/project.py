@@ -279,7 +279,7 @@ mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: Float!) {
                 f"現有選項：{sorted(field_meta.options)}"
             )
         query = """
-mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ID!) {
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
   updateProjectV2ItemFieldValue(input: {
     projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
     value: {singleSelectOptionId: $value}

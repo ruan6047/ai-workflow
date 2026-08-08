@@ -16,6 +16,7 @@ from wf_cli.commands import (
     snapshot_cmd,
 )
 from wf_cli.project import (
+    ProjectError,
     ensure_fields,
     find_item_by_card_id,
     list_items,
@@ -363,6 +364,36 @@ def test_deploy_declare_corrects_not_applicable_to_undeployed_with_auditable_dec
     assert "—不適用 → ⏸未部署" in comment
     assert any("updateProjectV2ItemFieldValue" in query for query in fake_runner.graphql_calls)
     assert not any("updateProjectV2Field" in query for query in fake_runner.graphql_calls)
+    single_select_queries = [
+        query for query in fake_runner.graphql_calls if "singleSelectOptionId" in query
+    ]
+    assert single_select_queries
+    assert all("$value: String!" in query for query in single_select_queries)
+
+
+def test_deploy_declare_reports_partial_write_when_item_mutation_fails_after_timeline_event(
+    fake_runner, monkeypatch, capsys
+):
+    run_cli(_open_argv("DEPLOY-DECLARE-PARTIAL", **{"--repo": "acme/workflow"}))
+    fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
+
+    def reject_item_mutation(*_args, **_kwargs):
+        raise ProjectError("GitHub rejected the item field value")
+
+    monkeypatch.setattr(deploy_declare_cmd, "update_item_field_value", reject_item_mutation)
+
+    rc = run_cli(_deploy_declare_argv("DEPLOY-DECLARE-PARTIAL"))
+
+    assert rc == 5
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["部署狀態"] == "—不適用"
+    assert fake_runner.issues[item.issue_url]["comments"][-1].startswith("## deployment-declaration")
+    captured = capsys.readouterr()
+    assert "部分寫入" in captured.err
+    assert "Issue timeline" in captured.err
+    assert "對帳" in captured.err
+    assert "已宣告" not in captured.out
 
 
 def test_deploy_declare_rejects_any_state_other_than_not_applicable(fake_runner):
