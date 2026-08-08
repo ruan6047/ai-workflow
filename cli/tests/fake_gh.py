@@ -40,6 +40,7 @@ class FakeGhRunner(GhRunner):
         self.content_id_to_item_id: dict[str, str] = {}
         self._seq = 0
         self._issue_seq = 0
+        self.graphql_calls: list[str] = []
 
     def _next(self, prefix: str) -> str:
         self._seq += 1
@@ -50,6 +51,19 @@ class FakeGhRunner(GhRunner):
         if key not in self.projects:
             self.projects[key] = {"id": self._next("PVT_"), "fields": {}}
         return self.projects[key]
+
+    def add_builtin_status(self, owner: str, number: int, options: list[str]) -> None:
+        """放入 GitHub Projects 內建 Status 的最小測試替身。
+
+        它不是 ``field-create``，因此可驗證 deploy-state 不會為了寫值而修改
+        Project 欄位定義。
+        """
+        project = self._ensure_project(owner, number)
+        project["fields"]["Status"] = {
+            "id": self._next("PVTF_STATUS_"),
+            "gh_type": "ProjectV2SingleSelectField",
+            "options": [{"id": self._next("OPT_STATUS_"), "name": name} for name in options],
+        }
 
     def _find_field_by_id(self, field_id: str) -> tuple[str, str]:
         for proj in self.projects.values():
@@ -209,6 +223,24 @@ class FakeGhRunner(GhRunner):
         raise AssertionError(f"FakeGhRunner: unhandled gh args {args}")
 
     def graphql(self, query: str, **variables: str) -> dict:  # type: ignore[override]
+        self.graphql_calls.append(query)
+        if "updateProjectV2ItemFieldValue" in query:
+            item = self.items[variables["itemId"]]
+            name, field_type = self._find_field_by_id(variables["fieldId"])
+            if field_type == "ProjectV2SingleSelectField":
+                item["fields"][name] = self._find_option_name(
+                    variables["fieldId"], variables["value"]
+                )
+            else:
+                item["fields"][name] = variables["value"]
+            return {
+                "data": {
+                    "updateProjectV2ItemFieldValue": {
+                        "projectV2Item": {"id": variables["itemId"]}
+                    }
+                }
+            }
+
         if "ProjectV2ItemFieldTextValue" in query:  # 批次讀取 items 的查詢特徵
             project_id = variables["projectId"]
             owner_number = next(k for k, v in self.projects.items() if v["id"] == project_id)

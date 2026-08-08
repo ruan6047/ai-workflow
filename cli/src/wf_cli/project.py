@@ -138,7 +138,14 @@ def list_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldMet
     for f in (data or {}).get("fields", []):
         name = f["name"]
         spec = FIELD_SPECS.get(name)
-        ftype: FieldType = spec[0] if spec else "TEXT"
+        # Project 內建 Status 不在我方凍結 custom-field schema，卻同樣是 single
+        # select。保留 GitHub 回傳的型別，才能以 item-value mutation 安全寫它，
+        # 而不是把內建欄位誤當 TEXT 或嘗試建立同名 custom field。
+        ftype: FieldType = (
+            spec[0]
+            if spec
+            else "SINGLE_SELECT" if f.get("type") == "ProjectV2SingleSelectField" else "TEXT"
+        )
         options = {o["name"]: o["id"] for o in f.get("options", [])}
         out[name] = FieldMeta(id=f["id"], name=name, type=ftype, options=options)
     return out
@@ -230,6 +237,66 @@ def set_field_value(
     else:  # pragma: no cover - FIELD_SPECS 目前只用三種
         raise ProjectError(f"不支援的欄位型別 {field_meta.type}")
     runner.execute(args)
+
+
+def update_item_field_value(
+    runner: GhRunner,
+    project: ProjectMeta,
+    item_id: str,
+    field_meta: FieldMeta,
+    value: Any,
+) -> None:
+    """只以 ``updateProjectV2ItemFieldValue`` 更新一個 item 值。
+
+    這條原生 GraphQL 路徑刻意不碰 Project 欄位定義；部署狀態命令必須同時改
+    custom field 與內建 Status，不能透過 ``gh project field-*`` 或
+    ``updateProjectV2Field`` 偷渡。每次 mutation 只帶一個 value，以符合 GitHub
+    Projects v2 的 item-value API 與可稽核的最小寫入集。
+    """
+    if field_meta.type == "TEXT":
+        query = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {text: $value}
+  }) { projectV2Item { id } }
+}
+"""
+        mutation_value = str(value)
+    elif field_meta.type == "NUMBER":
+        query = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: Float!) {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {number: $value}
+  }) { projectV2Item { id } }
+}
+"""
+        mutation_value = str(value)
+    elif field_meta.type == "SINGLE_SELECT":
+        option_id = field_meta.options.get(str(value))
+        if option_id is None:
+            raise ProjectError(
+                f"欄位 {field_meta.name!r} 沒有選項 {value!r}；"
+                f"現有選項：{sorted(field_meta.options)}"
+            )
+        query = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ID!) {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
+    value: {singleSelectOptionId: $value}
+  }) { projectV2Item { id } }
+}
+"""
+        mutation_value = option_id
+    else:  # pragma: no cover - FieldType 已封閉
+        raise ProjectError(f"不支援的欄位型別 {field_meta.type}")
+
+    runner.graphql(
+        query,
+        projectId=project.id,
+        itemId=item_id,
+        fieldId=field_meta.id,
+        value=mutation_value,
+    )
 
 
 def set_item_body(
@@ -361,4 +428,5 @@ __all__ = [
     "resolve_project",
     "set_field_value",
     "set_item_body",
+    "update_item_field_value",
 ]

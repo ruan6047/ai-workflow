@@ -5,13 +5,14 @@
 > 寫入即違規**（例如直接在 GitHub UI 手改 Project 欄位）。CLI 本身不做權限強制
 > （單機信任模型），紀律由治理承擔，不是技術鎖死。
 
-## 六指令
+## 七指令
 
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
 | `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
+| `deploy-state` | 部署狀態只允許相鄰前進（`⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證`）；必填下一 stage owner、actor、evidence，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態、內建 `Status`、owner、最後交接；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `review` | 查核裁決：驗 `templates/review-prompt.md` §5 結構化輸出（`review_result` 列舉、`core_pain_resolved` 必填、`self_run` 非空、finding 八欄 schema、結論與 findings 的語意一致性），過了才把裁決全文寫成 Issue 留言並轉交付狀態（`APPROVE`→`✅通過`／`REQUEST_CHANGES`→`↩退回`）；**無 `self_run` 的 `APPROVE` 記 `review-invalid` 拒收** | 寫（有條件拒絕） |
 | `doctor` | 對帳：`git worktree list` vs 卡註冊、submodule 初始化、孤兒分支、殘留 lease、prunable worktree | **唯讀**，不清理 |
 | `snapshot` | 匯出 Project 全部卡片為 JSON＋人類可讀 Markdown Ledger | 讀＋寫本機檔案（不寫回 GitHub） |
@@ -105,9 +106,13 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
 - **殘留 lease 是啟發式，不是判決**：(a) 註冊的 worktree 路徑在磁碟上不存在＝機械
   確定的訊號；(b) 最後交接超過可設定的 TTL（預設 48h）＝時間啟發式，只供人工判斷，
   不觸發任何自動回收。
-- **`handoff` 只驗證 release 的部署閘門，不管理部署狀態的中間轉移**
-  （`🚀待部署→⏳部署中→✅已部署→🧪驗證中→✅已驗證` 由各專案自己的部署管線
-  負責）；`open --needs-deploy` 只設定初始值 `⏸未部署` vs `—不適用`。
+- **`deploy-state` 是部署狀態的唯一中間轉移入口**：它拒絕跳級、倒退與
+  `—不適用` 的重分類；卡是否需要部署只可在開卡時由 `open --needs-deploy` 決定。
+  內建 `Status` 固定映射為 `⏸未部署`／`🚀待部署`→`Todo`、
+  `⏳部署中`／`✅已部署`／`🧪驗證中`→`In Progress`、`✅已驗證`→`Done`；Project
+  缺少對應 option 一律拒絕，不以色彩或順序猜測。命令不建立或修改任何 Project
+  欄位定義，所有 item 值都走 `updateProjectV2ItemFieldValue`。需要真實 repo Issue，
+  draft item 直接拒絕，避免失去 timeline event。
 - **`doctor` 的卡註冊來源可插拔**（`--registry tasks-md|none`）：`tasks-md` 解析
   `docs/TASKS.md`／`TASKS.md`（未 cutover 專案的現行事實來源）；未來完全 cutover 的
   repo 可改用 GitHub Project 作為登記來源（`src/wf_cli/registry.py` 留了擴充點，
