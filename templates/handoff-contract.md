@@ -40,6 +40,27 @@ occurred_at: <write-time ISO 8601>
 - [ ] 所需 evidence 存在、可讀，且工作區／驗證環境符合任務要求。
 - [ ] receiver 在 remote adapter 追加 `handoff-accepted`，記錄 `source_sha`、actor、時間與驗證證據；之後才開始工作。
 
+## 3.1 外部查核收據與轉錄
+
+跨工具查核者不能執行 `wfcli` 時，**不得**把「PR 頁面沒有 review」推論為「查核未發生」。改用下列兩段式留痕：
+
+1. 查核者先在被審 Issue conversation 或 PR review body 留下一則不可覆寫的收據；它不是 lifecycle event，不改卡片狀態。固定內容如下，並保留 GitHub URL：
+
+   ```text
+   <!-- wf-review-receipt:v1
+   card_id: <CARD_ID>
+   source_sha: <full-40-char-commit-sha>
+   report_sha256: <查核報告原文 UTF-8 SHA-256>
+   -->
+   ```
+
+   GitHub comment author 是可驗證的帳號身分；收據內模型／工具名稱只屬自述，不能取代平台身分驗證。
+2. PM 祕書以收據原文與 hash 對帳後，才用 `wfcli review` 轉錄結構化報告；review event evidence 必須引用該收據 URL。`--reviewer` 的自由文字不可單獨作為身分證明。
+
+若收據已存在而 review event 尚未出現，`wfcli doctor --review-channel` 必須報
+`receipt_untranscribed`：這是「查核裁決已可觀測、尚未進狀態面」，保持 `🔍待查核` 並要求轉錄。
+若兩者皆無，doctor 報 `unobservable`，**不是**宣告查核未發生；系統只能 fail-closed，不能放行或事後編造結論。
+
 ## 4. Optional local tmux adapter
 
 | 能力 | 可否使用 | 限制 |

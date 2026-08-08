@@ -9,7 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+import re
+from typing import Any, Literal
 
 from . import git_ops
 from .card import now_iso8601
@@ -56,6 +57,22 @@ class LeaseFinding:
     worktree_path: str | None
     reason: str
     age_hours: float | None = None
+
+
+@dataclass(frozen=True)
+class ReviewChannelFinding:
+    """同一 source SHA 的「外部收據」與 control-plane review event 對帳結果。
+
+    這裡刻意不把缺收據解讀成「查核沒做」。外部工具內的行為在沒有可讀收據時
+    不可觀測；doctor 只能誠實地指出狀態面尚不能證明裁決已被轉錄。
+    """
+
+    status: Literal["recorded", "receipt_untranscribed", "unobservable"]
+    card_id: str
+    source_sha: str
+    detail: str
+    receipt_urls: tuple[str, ...] = ()
+    receipt_authors: tuple[str, ...] = ()
 
 
 @dataclass
@@ -119,6 +136,77 @@ class DoctorReport:
             f"{len(self.orphan_branches)} 個孤兒分支；{len(self.stale_leases)} 個殘留 lease 疑慮。"
         )
         return "\n".join(lines)
+
+
+def audit_review_channel(
+    comments: list[dict[str, Any]],
+    card_id: str,
+    source_sha: str,
+    *,
+    card_body: str = "",
+    reviews: list[dict[str, Any]] | None = None,
+) -> ReviewChannelFinding:
+    """唯讀比對 Issue timeline 上的收據與 wfcli review event。
+
+    收據是外部查核者在 GitHub Issue/PR conversation 留下的非狀態證據，固定格式：
+    ``<!-- wf-review-receipt:v1 ... -->``。其 GitHub comment author 是平台可驗證
+    身分；其中的模型／工具文字不是身分證明。wfcli review event 仍是唯一狀態寫入。
+    """
+    receipt_urls: list[str] = []
+    receipt_authors: list[str] = []
+    receipt_marker = "<!-- wf-review-receipt:v1"
+    expected_card = f"card_id: {card_id}"
+    expected_sha = f"source_sha: {source_sha}"
+    attempt_pattern = re.compile(
+        rf"{re.escape(card_id)}-e\d+-{re.escape(source_sha)}"
+    )
+    event_marker = (
+        "<!-- wf-review-event:v1 "
+        f"card_id={card_id} source_sha={source_sha} "
+    )
+    state_marker = "## 查核裁決："
+    event_log_present = "review by wf-cli" in card_body and bool(attempt_pattern.search(card_body))
+
+    for comment in [*comments, *(reviews or [])]:
+        body = str(comment.get("body") or "")
+        is_marked_event = event_marker in body and bool(attempt_pattern.search(body))
+        # 舊事件沒有 v1 marker；仍可透過同卡 attempt_id + Issue body 的 wfcli Log 對帳。
+        is_legacy_event = state_marker in body and bool(attempt_pattern.search(body))
+        if event_log_present and (is_marked_event or is_legacy_event):
+            return ReviewChannelFinding(
+                status="recorded",
+                card_id=card_id,
+                source_sha=source_sha,
+                detail="已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log；狀態面已有裁決。",
+            )
+        if receipt_marker in body and expected_card in body and expected_sha in body:
+            url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
+            receipt_urls.append(url)
+            user = comment.get("user") or {}
+            login = user.get("login") if isinstance(user, dict) else None
+            receipt_authors.append(str(login or "（GitHub author 未提供）"))
+
+    if receipt_urls:
+        return ReviewChannelFinding(
+            status="receipt_untranscribed",
+            card_id=card_id,
+            source_sha=source_sha,
+            detail=(
+                "找到外部查核收據，但找不到對應 wfcli review event："
+                "裁決已可觀測、但尚未轉錄到狀態面；保持待查核並要求 PM 轉錄。"
+            ),
+            receipt_urls=tuple(receipt_urls),
+            receipt_authors=tuple(receipt_authors),
+        )
+    return ReviewChannelFinding(
+        status="unobservable",
+        card_id=card_id,
+        source_sha=source_sha,
+        detail=(
+            "找不到外部收據或 wfcli review event。這不證明查核未發生；"
+            "只表示該 source_sha 的查核在系統上不可觀測，必須 fail-closed。"
+        ),
+    )
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -260,7 +348,9 @@ __all__ = [
     "BranchFinding",
     "DoctorReport",
     "LeaseFinding",
+    "ReviewChannelFinding",
     "SubmoduleFinding",
     "WorktreeFinding",
+    "audit_review_channel",
     "run_doctor",
 ]
