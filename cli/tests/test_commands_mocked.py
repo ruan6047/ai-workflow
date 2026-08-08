@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from wf_cli.cli import build_parser
-from wf_cli.commands import assign_cmd, handoff_cmd, open_cmd, snapshot_cmd
+from wf_cli.commands import assign_cmd, deploy_state_cmd, handoff_cmd, open_cmd, snapshot_cmd
 from wf_cli.project import (
     ensure_fields,
     find_item_by_card_id,
@@ -22,7 +22,7 @@ from .fake_gh import FakeGhRunner
 @pytest.fixture
 def fake_runner(monkeypatch):
     runner = FakeGhRunner()
-    for module in (open_cmd, assign_cmd, handoff_cmd, snapshot_cmd):
+    for module in (open_cmd, assign_cmd, handoff_cmd, snapshot_cmd, deploy_state_cmd):
         monkeypatch.setattr(module, "default_runner", runner)
     return runner
 
@@ -48,6 +48,25 @@ def _open_argv(card_id: str, **overrides) -> list[str]:
     argv = ["open", *BASE_TARGET, card_id]
     for k, v in defaults.items():
         argv += [k, v]
+    return argv
+
+
+def _deploy_state_argv(card_id: str, target: str, **overrides) -> list[str]:
+    defaults = {
+        "--repo": "acme/workflow",
+        "--to": target,
+        "--next-owner": "部署負責人",
+        "--actor": "PM 祕書",
+        "--evidence": "部署管線已完成對應步驟",
+    }
+    defaults.update(overrides)
+    argv = ["deploy-state", *BASE_TARGET, card_id]
+    for key, value in defaults.items():
+        if isinstance(value, bool):
+            if value:
+                argv.append(key)
+        else:
+            argv += [key, value]
     return argv
 
 
@@ -290,6 +309,98 @@ def test_open_needs_deploy_flag_sets_initial_deployment_status(fake_runner):
     project = resolve_project(fake_runner, "acme", 1)
     item = list_items(fake_runner, project)[0]
     assert item.fields["部署狀態"] == "⏸未部署"
+
+
+def test_deploy_state_advances_one_legal_step_updates_builtin_status_and_issue_timeline(fake_runner):
+    open_argv = _open_argv("DEPLOY-STATE-CARD1", **{"--repo": "acme/workflow"})
+    open_argv.append("--needs-deploy")
+    run_cli(open_argv)
+    fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
+
+    rc = run_cli(_deploy_state_argv("DEPLOY-STATE-CARD1", "🚀待部署"))
+
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["部署狀態"] == "🚀待部署"
+    assert item.fields["Status"] == "Todo"
+    assert item.fields["owner"] == "部署負責人"
+    assert "T" in item.fields["最後交接"]
+    assert fake_runner.issues[item.issue_url]["comments"][-1].startswith("## deployment-state")
+    assert "⏸未部署 → 🚀待部署" in fake_runner.issues[item.issue_url]["comments"][-1]
+    assert "card_id: DEPLOY-STATE-CARD1" in fake_runner.issues[item.issue_url]["comments"][-1]
+    assert "actor: PM 祕書" in fake_runner.issues[item.issue_url]["comments"][-1]
+    assert "evidence: 部署管線已完成對應步驟" in fake_runner.issues[item.issue_url]["comments"][-1]
+    assert any("updateProjectV2ItemFieldValue" in query for query in fake_runner.graphql_calls)
+    assert not any("updateProjectV2Field" in query for query in fake_runner.graphql_calls)
+
+
+def test_deploy_state_maps_every_legal_step_to_the_expected_builtin_status(fake_runner):
+    open_argv = _open_argv("DEPLOY-STATE-CARD-MAPPING", **{"--repo": "acme/workflow"})
+    open_argv.append("--needs-deploy")
+    run_cli(open_argv)
+    fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
+    project = resolve_project(fake_runner, "acme", 1)
+
+    for deployment_status, expected_project_status in (
+        ("🚀待部署", "Todo"),
+        ("⏳部署中", "In Progress"),
+        ("✅已部署", "In Progress"),
+        ("🧪驗證中", "In Progress"),
+        ("✅已驗證", "Done"),
+    ):
+        assert run_cli(_deploy_state_argv("DEPLOY-STATE-CARD-MAPPING", deployment_status)) == 0
+        item = list_items(fake_runner, project)[0]
+        assert item.fields["部署狀態"] == deployment_status
+        assert item.fields["Status"] == expected_project_status
+
+
+def test_deploy_state_rejects_illegal_jump_without_timeline_or_item_mutation(fake_runner):
+    open_argv = _open_argv("DEPLOY-STATE-CARD2", **{"--repo": "acme/workflow"})
+    open_argv.append("--needs-deploy")
+    run_cli(open_argv)
+    fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
+    project = resolve_project(fake_runner, "acme", 1)
+    item_before = list_items(fake_runner, project)[0]
+
+    rc = run_cli(_deploy_state_argv("DEPLOY-STATE-CARD2", "✅已部署"))
+
+    assert rc == 4
+    item_after = list_items(fake_runner, project)[0]
+    assert item_after.fields == item_before.fields
+    assert fake_runner.issues[item_after.issue_url].get("comments") is None
+    assert not any("mutation" in query for query in fake_runner.graphql_calls)
+
+
+def test_deploy_state_cannot_reclassify_not_applicable_card_as_deployable(fake_runner):
+    run_cli(_open_argv("DEPLOY-STATE-CARD-NOT-APPLICABLE", **{"--repo": "acme/workflow"}))
+    fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
+    project = resolve_project(fake_runner, "acme", 1)
+
+    rc = run_cli(_deploy_state_argv("DEPLOY-STATE-CARD-NOT-APPLICABLE", "🚀待部署"))
+
+    assert rc == 4
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["部署狀態"] == "—不適用"
+    assert fake_runner.issues[item.issue_url].get("comments") is None
+    assert not any("mutation" in query for query in fake_runner.graphql_calls)
+
+
+def test_deploy_state_dry_run_validates_but_does_not_write(fake_runner, capsys):
+    open_argv = _open_argv("DEPLOY-STATE-CARD3", **{"--repo": "acme/workflow"})
+    open_argv.append("--needs-deploy")
+    run_cli(open_argv)
+    fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
+
+    rc = run_cli(_deploy_state_argv("DEPLOY-STATE-CARD3", "🚀待部署", **{"--dry-run": True}))
+
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["部署狀態"] == "⏸未部署"
+    assert fake_runner.issues[item.issue_url].get("comments") is None
+    assert not any("mutation" in query for query in fake_runner.graphql_calls)
+    assert "dry-run" in capsys.readouterr().out
 
 
 def test_handoff_release_blocked_when_deploy_not_verified(fake_runner):

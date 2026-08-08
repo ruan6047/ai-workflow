@@ -1,4 +1,4 @@
-"""wfcli 進入點：六個子指令 open／assign／handoff／review／doctor／snapshot。"""
+"""wfcli 進入點：受控的 control-plane 子指令。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import sys
 
 from .commands import (
     assign_cmd,
+    deploy_state_cmd,
     doctor_cmd,
     handoff_cmd,
     open_cmd,
@@ -43,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     open_cmd.add_parser(subparsers)
     assign_cmd.add_parser(subparsers)
+    deploy_state_cmd.add_parser(subparsers)
     handoff_cmd.add_parser(subparsers)
     review_cmd.add_parser(subparsers)
     doctor_cmd.add_parser(subparsers)
