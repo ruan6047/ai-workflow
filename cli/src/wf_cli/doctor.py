@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from . import git_ops
 from .card import now_iso8601
@@ -56,6 +56,21 @@ class LeaseFinding:
     worktree_path: str | None
     reason: str
     age_hours: float | None = None
+
+
+@dataclass(frozen=True)
+class ReviewChannelFinding:
+    """同一 source SHA 的「外部收據」與 control-plane review event 對帳結果。
+
+    這裡刻意不把缺收據解讀成「查核沒做」。外部工具內的行為在沒有可讀收據時
+    不可觀測；doctor 只能誠實地指出狀態面尚不能證明裁決已被轉錄。
+    """
+
+    status: Literal["recorded", "receipt_untranscribed", "unobservable"]
+    card_id: str
+    source_sha: str
+    detail: str
+    receipt_urls: tuple[str, ...] = ()
 
 
 @dataclass
@@ -119,6 +134,56 @@ class DoctorReport:
             f"{len(self.orphan_branches)} 個孤兒分支；{len(self.stale_leases)} 個殘留 lease 疑慮。"
         )
         return "\n".join(lines)
+
+
+def audit_review_channel(
+    comments: list[dict[str, Any]], card_id: str, source_sha: str
+) -> ReviewChannelFinding:
+    """唯讀比對 Issue timeline 上的收據與 wfcli review event。
+
+    收據是外部查核者在 GitHub Issue/PR conversation 留下的非狀態證據，固定格式：
+    ``<!-- wf-review-receipt:v1 ... -->``。其 GitHub comment author 是平台可驗證
+    身分；其中的模型／工具文字不是身分證明。wfcli review event 仍是唯一狀態寫入。
+    """
+    receipt_urls: list[str] = []
+    receipt_marker = "<!-- wf-review-receipt:v1"
+    expected_card = f"card_id: {card_id}"
+    expected_sha_forms = (f"source_sha: {source_sha}", f"source_sha：`{source_sha}`")
+    state_marker = "## 查核裁決："
+
+    for comment in comments:
+        body = str(comment.get("body") or "")
+        if any(value in body for value in expected_sha_forms) and state_marker in body:
+            return ReviewChannelFinding(
+                status="recorded",
+                card_id=card_id,
+                source_sha=source_sha,
+                detail="已找到同一 source_sha 的 wfcli review event；狀態面已有裁決。",
+            )
+        if receipt_marker in body and expected_card in body and expected_sha_forms[0] in body:
+            url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
+            receipt_urls.append(url)
+
+    if receipt_urls:
+        return ReviewChannelFinding(
+            status="receipt_untranscribed",
+            card_id=card_id,
+            source_sha=source_sha,
+            detail=(
+                "找到外部查核收據，但找不到對應 wfcli review event："
+                "裁決已可觀測、但尚未轉錄到狀態面；保持待查核並要求 PM 轉錄。"
+            ),
+            receipt_urls=tuple(receipt_urls),
+        )
+    return ReviewChannelFinding(
+        status="unobservable",
+        card_id=card_id,
+        source_sha=source_sha,
+        detail=(
+            "找不到外部收據或 wfcli review event。這不證明查核未發生；"
+            "只表示該 source_sha 的查核在系統上不可觀測，必須 fail-closed。"
+        ),
+    )
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -260,7 +325,9 @@ __all__ = [
     "BranchFinding",
     "DoctorReport",
     "LeaseFinding",
+    "ReviewChannelFinding",
     "SubmoduleFinding",
     "WorktreeFinding",
+    "audit_review_channel",
     "run_doctor",
 ]

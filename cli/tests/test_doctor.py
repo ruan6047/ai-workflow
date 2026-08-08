@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from wf_cli.doctor import run_doctor
+from wf_cli.doctor import audit_review_channel, run_doctor
 from wf_cli.registry import RegisteredCard, TasksMdRegistry
 
 from .conftest import git
@@ -164,3 +164,31 @@ def test_render_text_produces_readable_summary(sandbox_repo):
     text = report.render_text()
     assert "doctor 對帳報告" in text
     assert "摘要" in text
+
+
+def test_review_channel_marks_receipt_without_state_event_as_untranscribed():
+    sha = "a" * 40
+    finding = audit_review_channel(
+        [{
+            "body": "<!-- wf-review-receipt:v1\ncard_id: CARD-A\nsource_sha: " + sha
+            + "\nreport_sha256: " + "b" * 64 + "\n-->",
+            "html_url": "https://github.com/acme/demo/issues/9#issuecomment-1",
+        }],
+        "CARD-A", sha,
+    )
+    assert finding.status == "receipt_untranscribed"
+    assert finding.receipt_urls == ("https://github.com/acme/demo/issues/9#issuecomment-1",)
+
+
+def test_review_channel_requires_receipt_or_event_but_does_not_claim_review_absent():
+    finding = audit_review_channel([], "CARD-A", "a" * 40)
+    assert finding.status == "unobservable"
+    assert "不證明查核未發生" in finding.detail
+
+
+def test_review_channel_accepts_wfcli_event_for_matching_sha():
+    sha = "a" * 40
+    finding = audit_review_channel(
+        [{"body": f"## 查核裁決：APPROVE\n- source_sha：`{sha}`"}], "CARD-A", sha
+    )
+    assert finding.status == "recorded"
