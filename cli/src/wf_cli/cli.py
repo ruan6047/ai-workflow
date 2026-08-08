@@ -7,6 +7,7 @@ import sys
 
 from .commands import (
     assign_cmd,
+    deploy_declare_cmd,
     deploy_state_cmd,
     doctor_cmd,
     handoff_cmd,
@@ -44,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     open_cmd.add_parser(subparsers)
     assign_cmd.add_parser(subparsers)
+    deploy_declare_cmd.add_parser(subparsers)
     deploy_state_cmd.add_parser(subparsers)
     handoff_cmd.add_parser(subparsers)
     review_cmd.add_parser(subparsers)

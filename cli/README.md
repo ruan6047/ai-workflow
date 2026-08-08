@@ -5,13 +5,14 @@
 > 寫入即違規**（例如直接在 GitHub UI 手改 Project 欄位）。CLI 本身不做權限強制
 > （單機信任模型），紀律由治理承擔，不是技術鎖死。
 
-## 七指令
+## 八指令
 
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
 | `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
+| `deploy-declare` | 需求方已明確裁決既有卡需要部署時，唯一允許 `—不適用 → ⏸未部署`；必填固定 `needs-deploy` decision、reason、actor，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態與內建 `Status=Todo`；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `deploy-state` | 部署狀態只允許相鄰前進（`⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證`）；必填下一 stage owner、actor、evidence，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態、內建 `Status`、owner、最後交接；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `review` | 查核裁決：驗 `templates/review-prompt.md` §5 結構化輸出（`review_result` 列舉、`core_pain_resolved` 必填、`self_run` 非空、finding 八欄 schema、結論與 findings 的語意一致性），過了才把裁決全文寫成 Issue 留言並轉交付狀態（`APPROVE`→`✅通過`／`REQUEST_CHANGES`→`↩退回`）；**無 `self_run` 的 `APPROVE` 記 `review-invalid` 拒收** | 寫（有條件拒絕） |
 | `doctor` | 對帳：`git worktree list` vs 卡註冊、submodule 初始化、孤兒分支、殘留 lease、prunable worktree | **唯讀**，不清理 |
@@ -106,8 +107,12 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
 - **殘留 lease 是啟發式，不是判決**：(a) 註冊的 worktree 路徑在磁碟上不存在＝機械
   確定的訊號；(b) 最後交接超過可設定的 TTL（預設 48h）＝時間啟發式，只供人工判斷，
   不觸發任何自動回收。
-- **`deploy-state` 是部署狀態的唯一中間轉移入口**：它拒絕跳級、倒退與
-  `—不適用` 的重分類；卡是否需要部署只可在開卡時由 `open --needs-deploy` 決定。
+- **`deploy-declare` 是既有卡部署分類的唯一更正入口**：只在需求方明確決策後使用，
+  固定要求 `--decision needs-deploy` 與非空 `--reason`，且只允許
+  `—不適用 → ⏸未部署`。它不是 `deploy-state` 的跳轉例外；其餘重分類、重複宣告、
+  跳級與倒退全數拒絕。新卡仍由 `open --needs-deploy` 決定初始分類。
+- **`deploy-state` 是部署狀態的唯一中間轉移入口**：它只允許
+  `⏸未部署` 後的相鄰前進轉換。
   內建 `Status` 固定映射為 `⏸未部署`／`🚀待部署`→`Todo`、
   `⏳部署中`／`✅已部署`／`🧪驗證中`→`In Progress`、`✅已驗證`→`Done`；Project
   缺少對應 option 一律拒絕，不以色彩或順序猜測。命令不建立或修改任何 Project
