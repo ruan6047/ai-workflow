@@ -5,6 +5,8 @@ from pathlib import Path
 
 from wf_cli.doctor import audit_review_channel, run_doctor
 from wf_cli.registry import RegisteredCard, TasksMdRegistry
+from wf_cli.review import render_verdict_comment
+from wf_cli.validation import validate_review_report
 
 from .conftest import git
 
@@ -173,11 +175,13 @@ def test_review_channel_marks_receipt_without_state_event_as_untranscribed():
             "body": "<!-- wf-review-receipt:v1\ncard_id: CARD-A\nsource_sha: " + sha
             + "\nreport_sha256: " + "b" * 64 + "\n-->",
             "html_url": "https://github.com/acme/demo/issues/9#issuecomment-1",
+            "user": {"login": "copilot-reviewer"},
         }],
         "CARD-A", sha,
     )
     assert finding.status == "receipt_untranscribed"
     assert finding.receipt_urls == ("https://github.com/acme/demo/issues/9#issuecomment-1",)
+    assert finding.receipt_authors == ("copilot-reviewer",)
 
 
 def test_review_channel_requires_receipt_or_event_but_does_not_claim_review_absent():
@@ -186,9 +190,42 @@ def test_review_channel_requires_receipt_or_event_but_does_not_claim_review_abse
     assert "不證明查核未發生" in finding.detail
 
 
-def test_review_channel_accepts_wfcli_event_for_matching_sha():
+def test_review_channel_accepts_renderer_event_only_with_matching_issue_log():
     sha = "a" * 40
+    report = validate_review_report({
+        "review_result": "APPROVE", "core_pain_resolved": "yes",
+        "self_run": [{"command": "pytest", "observed": "1 passed"}], "findings": [],
+    })
+    body = render_verdict_comment(
+        card_id="CARD-A", report=report, source_sha=sha, reviewer="reviewer",
+        escalation_epoch=0, timestamp="2026-08-09T00:00:00+08:00",
+    )
     finding = audit_review_channel(
-        [{"body": f"## 查核裁決：APPROVE\n- source_sha：`{sha}`"}], "CARD-A", sha
+        [{"body": body}], "CARD-A", sha,
+        card_body=f"2026-08-09 review by wf-cli → APPROVE；attempt CARD-A-e0-{sha}。",
     )
     assert finding.status == "recorded"
+
+
+def test_review_channel_rejects_copied_event_or_event_from_another_card():
+    sha = "a" * 40
+    copied = f"## 查核裁決：APPROVE\n- 卡：`OTHER` attempt_id：`OTHER-e0-{sha}`"
+    finding = audit_review_channel(
+        [{"body": copied}], "CARD-A", sha,
+        card_body=f"2026-08-09 review by wf-cli → APPROVE；attempt CARD-A-e0-{sha}。",
+    )
+    assert finding.status == "unobservable"
+
+
+def test_review_channel_reads_receipt_from_pr_review_body():
+    sha = "a" * 40
+    finding = audit_review_channel(
+        [], "CARD-A", sha,
+        reviews=[{
+            "body": "<!-- wf-review-receipt:v1\ncard_id: CARD-A\nsource_sha: " + sha + "\n-->",
+            "html_url": "https://github.com/acme/demo/pull/9#pullrequestreview-1",
+            "user": {"login": "copilot-reviewer"},
+        }],
+    )
+    assert finding.status == "receipt_untranscribed"
+    assert finding.receipt_authors == ("copilot-reviewer",)

@@ -29,7 +29,7 @@ Token scopes: gist, project, read:org, repo, workflow
 | 方案 | 漏轉錄的失效方向 | 跨工具憑證 | 身分偽造面 | `doctor` 可偵測什麼 |
 | --- | --- | --- | --- | --- |
 | A. 給每個查核工具 `wfcli` 憑證 | 寫入失敗時保守地卡在待查核；若憑證遭冒用則危險地偽造通過 | 需要，且要解決保管、撤銷、工具是否可持有 | CLI 本身不驗證操作者；`--reviewer` 仍是自由字串 | 僅能檢查 event 存在，不能證明持證者真是宣稱的查核者 |
-| B. 查核者在 GitHub 留固定收據，PM 以 `wfcli` 轉錄 | 收據有、轉錄漏時保守地卡住；收據和 event 都沒有時不得判斷是否查核 | 不需要 `wfcli` 憑證；只需查核工具可用其 GitHub 身分留言／review | GitHub comment author 可驗證；模型/工具名仍只是自述，`--reviewer` 不可單獨信任 | 收據有但無 event → `receipt_untranscribed`；兩者都無 → `unobservable`（非「未查核」） |
+| B. 查核者在 GitHub Issue comment 或 PR review body 留固定收據，PM 以 `wfcli` 轉錄 | 收據有、轉錄漏時保守地卡住；收據和 event 都沒有時不得判斷是否查核 | 不需要 `wfcli` 憑證；只需查核工具可用其 GitHub 身分留言／review | GitHub author 可驗證；模型/工具名仍只是自述，`--reviewer` 不可單獨信任 | 收據有但無 event → `receipt_untranscribed`；兩者都無 → `unobservable`（非「未查核」） |
 | C. 純 PM 轉錄（現況明文化） | 漏轉錄時保守地把已查核當未查核，流程卡住 | 不需要 | PM 可任填 `--reviewer`，沒有外部可核對身分 | 無法區分「未查核」與「已查核但 PM 漏轉錄」；不符合本卡核心痛點 |
 
 ## 3. 建議：採 B，並保留 C 作為受控 fallback
@@ -76,7 +76,7 @@ fail-closed；加上 `--strict` 時會回傳 exit 1。尤其 `unobservable` 的�
 
 ## 5. 實作與驗證
 
-- `cli/src/wf_cli/doctor.py` 新增純函式 `audit_review_channel()`；只有同 SHA 的 `wfcli review` event 才是 `recorded`。
-- `wfcli doctor --review-channel` 唯讀讀取指定 Issue/PR conversation，輸出收據與狀態事件的對帳結果。
-- 新增三個單元測試：已收據未轉錄、完全不可觀測、同 SHA 已轉錄。
+- `cli/src/wf_cli/doctor.py` 新增純函式 `audit_review_channel()`；只有同卡、同 attempt 的 `wfcli review` event，且 Issue Log 有對應 `review by wf-cli` 索引才是 `recorded`。
+- `wfcli doctor --review-channel` 唯讀讀取 Issue comment，若目標是 PR 另讀 PR review body；輸出收據 URL 與 GitHub author。
+- 單元測試涵蓋：已收據未轉錄、完全不可觀測、真實 renderer 輸出、跨卡／貼上裁決拒收、PR review body 收據。
 - 驗證：`cd cli && uv run pytest tests/test_doctor.py -q`。

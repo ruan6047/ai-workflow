@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Any, Literal
 
 from . import git_ops
@@ -71,6 +72,7 @@ class ReviewChannelFinding:
     source_sha: str
     detail: str
     receipt_urls: tuple[str, ...] = ()
+    receipt_authors: tuple[str, ...] = ()
 
 
 @dataclass
@@ -137,7 +139,12 @@ class DoctorReport:
 
 
 def audit_review_channel(
-    comments: list[dict[str, Any]], card_id: str, source_sha: str
+    comments: list[dict[str, Any]],
+    card_id: str,
+    source_sha: str,
+    *,
+    card_body: str = "",
+    reviews: list[dict[str, Any]] | None = None,
 ) -> ReviewChannelFinding:
     """唯讀比對 Issue timeline 上的收據與 wfcli review event。
 
@@ -146,23 +153,38 @@ def audit_review_channel(
     身分；其中的模型／工具文字不是身分證明。wfcli review event 仍是唯一狀態寫入。
     """
     receipt_urls: list[str] = []
+    receipt_authors: list[str] = []
     receipt_marker = "<!-- wf-review-receipt:v1"
     expected_card = f"card_id: {card_id}"
-    expected_sha_forms = (f"source_sha: {source_sha}", f"source_sha：`{source_sha}`")
+    expected_sha = f"source_sha: {source_sha}"
+    attempt_pattern = re.compile(
+        rf"{re.escape(card_id)}-e\d+-{re.escape(source_sha)}"
+    )
+    event_marker = (
+        "<!-- wf-review-event:v1 "
+        f"card_id={card_id} source_sha={source_sha} "
+    )
     state_marker = "## 查核裁決："
+    event_log_present = "review by wf-cli" in card_body and bool(attempt_pattern.search(card_body))
 
-    for comment in comments:
+    for comment in [*comments, *(reviews or [])]:
         body = str(comment.get("body") or "")
-        if any(value in body for value in expected_sha_forms) and state_marker in body:
+        is_marked_event = event_marker in body and bool(attempt_pattern.search(body))
+        # 舊事件沒有 v1 marker；仍可透過同卡 attempt_id + Issue body 的 wfcli Log 對帳。
+        is_legacy_event = state_marker in body and bool(attempt_pattern.search(body))
+        if event_log_present and (is_marked_event or is_legacy_event):
             return ReviewChannelFinding(
                 status="recorded",
                 card_id=card_id,
                 source_sha=source_sha,
-                detail="已找到同一 source_sha 的 wfcli review event；狀態面已有裁決。",
+                detail="已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log；狀態面已有裁決。",
             )
-        if receipt_marker in body and expected_card in body and expected_sha_forms[0] in body:
+        if receipt_marker in body and expected_card in body and expected_sha in body:
             url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
             receipt_urls.append(url)
+            user = comment.get("user") or {}
+            login = user.get("login") if isinstance(user, dict) else None
+            receipt_authors.append(str(login or "（GitHub author 未提供）"))
 
     if receipt_urls:
         return ReviewChannelFinding(
@@ -174,6 +196,7 @@ def audit_review_channel(
                 "裁決已可觀測、但尚未轉錄到狀態面；保持待查核並要求 PM 轉錄。"
             ),
             receipt_urls=tuple(receipt_urls),
+            receipt_authors=tuple(receipt_authors),
         )
     return ReviewChannelFinding(
         status="unobservable",

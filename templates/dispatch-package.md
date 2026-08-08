@@ -50,6 +50,6 @@
 
 ### 跨工具查核收據（查核者無 `wfcli` 時）
 
-- 查核者先在被審 Issue／PR conversation 留 `wf-review-receipt:v1`（`card_id`、完整 `source_sha`、查核報告 UTF-8 `report_sha256`）；GitHub comment author 才是可驗證身分，模型／工具名稱只是自述。
+- 查核者先在被審 Issue conversation 或 PR review body 留 `wf-review-receipt:v1`（`card_id`、完整 `source_sha`、查核報告 UTF-8 `report_sha256`）；GitHub author 才是可驗證身分，模型／工具名稱只是自述。
 - PM 僅能逐字轉錄與收據 hash 相符的報告，並在 `wfcli review` evidence 引用 receipt URL；不能以 `--reviewer` 自由字串代替收據。
 - 交付／結案前執行 `wfcli doctor <repo_root> --review-channel --repo <owner/repo> --issue-number <n> --card-id <CARD_ID> --source-sha <40 SHA>`。`receipt_untranscribed` 或 `unobservable` 一律不得視為已查核；前者催轉錄，後者只可陳述「不可觀測」。

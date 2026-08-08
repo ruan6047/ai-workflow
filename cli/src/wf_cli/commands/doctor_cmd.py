@@ -73,15 +73,29 @@ def run(args: argparse.Namespace) -> int:
         if missing:
             print(f"[doctor] --review-channel 缺必要旗標：{', '.join(missing)}", file=sys.stderr)
             return 2
+        issue = default_runner.run_json(["api", f"repos/{args.repo}/issues/{args.issue_number}"])
         comments = default_runner.run_json(
             ["api", f"repos/{args.repo}/issues/{args.issue_number}/comments", "--paginate"]
         )
-        finding = audit_review_channel(comments or [], args.card_id, args.source_sha)
+        # Issue number 不必然也是 PR number；只有 GitHub 明示 pull_request 才讀 review body，
+        # 避免對純 Issue 送 /pulls/{n}/reviews 而把唯讀 doctor 誤變成 404。
+        reviews = []
+        if isinstance(issue, dict) and issue.get("pull_request") is not None:
+            reviews = default_runner.run_json(
+                ["api", f"repos/{args.repo}/pulls/{args.issue_number}/reviews", "--paginate"]
+            )
+        finding = audit_review_channel(
+            comments or [],
+            args.card_id,
+            args.source_sha,
+            card_body=str((issue or {}).get("body") or ""),
+            reviews=reviews or [],
+        )
         review_channel_finding = finding
         print("\n## 5. 跨工具查核寫入通道")
         print(f"- [{finding.status}] {finding.detail}")
-        for url in finding.receipt_urls:
-            print(f"  - receipt: {url}")
+        for url, author in zip(finding.receipt_urls, finding.receipt_authors, strict=True):
+            print(f"  - receipt: {url}（GitHub author: {author}）")
     if args.json:
         print(json.dumps(asdict(report), ensure_ascii=False, indent=2, default=str))
 

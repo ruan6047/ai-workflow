@@ -452,10 +452,15 @@ def render_verdict_comment(
     timestamp: str,
 ) -> str:
     """渲染寫進 Issue timeline 的裁決留言（canonical §4.3「事件＝結構化 comment」）。"""
+    review_attempt_id = attempt_id(card_id, escalation_epoch, source_sha)
     lines = [
+        (
+            "<!-- wf-review-event:v1 "
+            f"card_id={card_id} source_sha={source_sha} attempt_id={review_attempt_id} -->"
+        ),
         f"## 查核裁決：{report.review_result}",
         "",
-        f"- 卡：`{card_id}`　attempt_id：`{attempt_id(card_id, escalation_epoch, source_sha)}`",
+        f"- 卡：`{card_id}`　attempt_id：`{review_attempt_id}`",
         f"- 查核者：{_fence_safe(reviewer)}　escalation_epoch：{escalation_epoch}",
         f"- source_sha：`{source_sha}`",
         f"- core_pain_resolved：**{report.core_pain_resolved}**"

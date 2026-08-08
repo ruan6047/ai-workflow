@@ -44,7 +44,7 @@ occurred_at: <write-time ISO 8601>
 
 跨工具查核者不能執行 `wfcli` 時，**不得**把「PR 頁面沒有 review」推論為「查核未發生」。改用下列兩段式留痕：
 
-1. 查核者先在被審 Issue／PR conversation 留下一則不可覆寫的收據；它不是 lifecycle event，不改卡片狀態。固定內容如下，並保留 GitHub comment URL：
+1. 查核者先在被審 Issue conversation 或 PR review body 留下一則不可覆寫的收據；它不是 lifecycle event，不改卡片狀態。固定內容如下，並保留 GitHub URL：
 
    ```text
    <!-- wf-review-receipt:v1
