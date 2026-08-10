@@ -28,9 +28,12 @@
 | 4 | §3.1.3 順序與單一空白鎖定 | 欄位錯序 → `recorded` | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
 | 5 | §3.1.3 三欄自洽 | `attempt_id` 屬別卡 → `recorded` | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
 | 6 | §3.1.4 per-card halt 結果態 | 無；三態裝不下「找到訊號但讀不懂」 | fail-open（併入 `recorded`） | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 7 | §3.1.4 halt 解除路徑 | 無可用事件欄位契約：`review-correction` 要求既存 `target_attempt_id`，`status-change` 在 `review-escalation.md` §5 無欄位契約 | 設計缺口 | [#16](https://github.com/ruan6047/ai-workflow/issues/16) |
-| 8 | §3.1.5 語意比對與冪等重送 | 無；裁決語意只在散文，無結構化承載 | fail-open（重複 event 不被偵測） | [#16](https://github.com/ruan6047/ai-workflow/issues/16) |
+| 7 | §3.1.4 halt 解除路徑 | **契約已定義**（`review-escalation.md` §5 `review-marker-clearance`）；consumer 未實作 | fail-open（停機根本未發生，故無從解除） | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
+| 8a | §3.1.5 重複 event 的保守停機 | 無；同 `attempt_id` 多則事件不被偵測 | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
+| 8b | §3.1.5 語意比對（放行合法重送） | 無；裁決語意只在散文，無結構化承載 | fail-closed（合法重送會被停機卡住） | 設計歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；實作卡未開 |
 | 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | 未讀取；半寫入無表達態 | fail-open | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
+
+落差 8a／8b 的拆分理由：§3.1.5 延遲生效期間的保守行為（多則同 `attempt_id` 事件一律停止判定）**只需要消費者變更**，不依賴結構化承載，故可在 #17 內完成；只有「分辨語意一致以放行合法重送」才需要寫入端提供結構化裁決承載。兩者失效方向相反，混為一項會掩蓋 8a 的 fail-open 性質。
 
 落差 1–5 的證據可重跑：以下探針對六個案例呼叫 `audit_review_channel()`，前五個依 §3.1.4 應為不可判定，實測全部回 `recorded`。
 

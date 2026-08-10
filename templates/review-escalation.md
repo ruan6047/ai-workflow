@@ -10,10 +10,13 @@
 | 外部阻塞 | `status-change` → `⏸阻塞` | `⏸阻塞` | 不增加 | 否 |
 | 無效查核 | `review-invalid` | 交接仍有效時留在 `🔍待查核`；否則依原因回 `🔨執行中` 或 `⏸阻塞` | 不增加 | 否 |
 | 實質查核 | `APPROVE`／`REQUEST_CHANGES` | `✅通過`／`↩退回` | 後者增加 | 依 §3 |
+| 留痕解析停機 | 停機本身無觸發事件；解除寫 `review-marker-clearance` | 停機期間不變；解除後依 §5 的 `clearance_decision` | 不增加 | 否 |
 
 Preflight 至少驗證：卡面必填欄位與 spec 基線、Gate／依賴狀態、handoff 與 branch tip 的 source SHA 同一性、分支已推送、工作區乾淨、必要測試／證據存在、commit trailer，以及規定在跨家族查核前完成的人工檢查。可由 sender／Coordinator 修正的交付缺口寫 `preflight-failed`；等待權限、上游卡、服務或 sign-off 等外部條件時改寫 `status-change` 並轉 `⏸阻塞`。兩者都不得建立 `review` event 或派 reviewer。
 
 `review-invalid` 適用於未依順序進行的查核、查核環境受污染、reviewer 獨立性不符、查核了非 handoff 指定的 artifact、**`APPROVE` 未附 `self_run`**（canonical §5.2：沒有自跑證據的通過不是查核），或同一 reviewer 對同一 SHA 重複回報而沒有新的必要查核範圍。T4 跨家族／人工 sign-off 等規定的多 reviewer 查核仍然有效，但同一 SHA 只彙總為一個 attempt。無效查核中有參考價值的觀察可留在 evidence，但不得當成 accepted finding，該事件本身也不形成 escalation attempt。
+
+**留痕解析停機**是前四個層次之外的另一種東西：它不是對查核品質的判斷，而是**消費者讀不懂留痕**。當 timeline 出現受 `handoff-contract.md` §3.1 管轄卻不合格的 review marker（未知版本、缺欄、多出未定義鍵、欄位錯序、三欄不自洽），或同一 `attempt_id` 的多則事件語意衝突時，消費者必須停止該卡的自動裁決判定，不得跳過該則留言後照常放行——讀不懂的那則可能正是撤銷或降級裁決。停機不改卡片狀態、不建立 attempt、不計 iteration、不消耗 escalation 額度；它只是宣告「在人看過之前，機器不再自行下結論」。解除依 §5 的 `review-marker-clearance`。
 
 ## 2. Finding 分類
 
@@ -40,7 +43,7 @@ disposition: <required fix or decision>
 
 Reviewer 提交報告，由 lifecycle writer 在寫入 `review` event 前依可重現證據標記 `accepted`；reviewer 不得自行決定是否消耗 escalation 額度。新採認的 blocking finding 以 `open` 開始；後續有效 review（無論是否計數）或明示 `review-correction` event 都可用同一 `finding_id` 帶回 `resolved`／`withdrawn`，adapter 必須先更新實際 open set 再判斷下一個可計數 attempt 是否承接未閉合 finding。若事後翻案，以 `review-correction` 追加新 disposition，不回寫舊 event。`root_cause_id=unknown` 不得跨 finding 當成相同根因。
 
-同一 attempt 的多 reviewer 可補充不同 finding；若同一 `finding_id` 的 `status`、`accepted`、分類、歸屬或根因互相衝突，adapter 必須將該 finding 標為待裁決、不套用任一衝突值，並要求下一筆相關 lifecycle event 為 Coordinator／需求方的 `review-correction`。事件流結束或出現其他事件而仍未裁決時才 fail loud；追加合法 correction 後完整 replay 必須恢復通過，不得因 append-only 歷史中保留衝突事件而永久失效，也不得依事件或陣列順序覆寫。若某 correction 同時使第三個 attempt 恢復計數而建立 pending checkpoint，仍須先允許後續 `review-correction` 清完既有衝突，再要求下一筆為 `escalation-checkpoint`；兩個 gate 不得互相鎖死。
+同一 attempt 的多 reviewer 可補充不同 finding；若同一 `finding_id` 的 `status`、`accepted`、分類、歸屬或根因互相衝突，adapter 必須將該 finding 標為待裁決、不套用任一衝突值，並要求下一筆相關 lifecycle event 為 Coordinator／需求方的 `review-correction`。事件流結束或出現其他事件而仍未裁決時才 fail loud；追加合法 correction 後完整 replay 必須恢復通過，不得因 append-only 歷史中保留衝突事件而永久失效，也不得依事件或陣列順序覆寫。若某 correction 同時使第三個 attempt 恢復計數而建立 pending checkpoint，仍須先允許後續 `review-correction` 清完既有衝突，再要求下一筆為 `escalation-checkpoint`；兩個 gate 不得互相鎖死。留痕解析停機（§1、§5 `review-marker-clearance`）是**解析層**的第三個 gate，且**優先於**本節的語意層裁決：讀不出 marker 就談不上 finding 是否衝突。三個 gate 同樣不得互相鎖死——replay 必須允許依序追加 `review-marker-clearance`、`review-correction`、`escalation-checkpoint`，不得要求下一筆事件同時滿足兩種 gate。
 
 ## 3. 可計數的退回
 
@@ -101,6 +104,35 @@ unique_attempt_count: <deduplicated count in this epoch; >= 3>
 checkpoint_decision: continue | replan | change-executor | escalate
 checkpoint_rationale: <root-cause repetition, closure trend, or requester ruling>
 ```
+
+`review-marker-clearance` 解除 §1 的留痕解析停機，必填：
+
+```yaml
+quarantined_comment_id: <GitHub comment 數值 ID；跨編輯穩定>
+quarantined_comment_url: <該留言 URL>
+quarantined_body_sha256: <停機當下 comment body 原文 UTF-8 SHA-256>
+quarantine_reason: unknown-version | missing-field | unknown-key | field-order | field-inconsistent | duplicate-conflict
+clearance_decision: malformed-ignored | superseded | forged-rejected | reissue-required
+superseding_attempt_id: <clearance_decision=superseded 時必填，且須為既存 attempt>
+clearance_authority: coordinator | requester
+cleared_by: <GitHub account>
+clearance_rationale: <非空>
+```
+
+此專用 type 不得與其他 lifecycle correction 混用，也不得用來變更 finding、attempt 或 epoch。它不建立 attempt、不計 iteration、不消耗 escalation 額度——停機是留痕缺陷，不是執行者的交付失敗。
+
+**解除範圍以留言為單位，且必須雙欄相符**：一則 clearance 只解除 `quarantined_comment_id` 與 `quarantined_body_sha256` **同時**吻合的那一則停機；timeline 上有多則不合格 marker 就需要多則 clearance，不得以一則概括。GitHub comment 可被編輯，因此若該留言事後內容變動導致 hash 不再相符，原 clearance **失效、停機重新成立**，須重新評估並在必要時另發 clearance。這是刻意的 fail-closed：解除的是「這一份被人看過的內容」，不是「這個留言位置」。
+
+各 `clearance_decision` 的語意與後續狀態：
+
+- `malformed-ignored`：確認該留言是壞掉的 marker、不是裁決。消費者忽略它，恢復對該卡的自動判定。
+- `superseded`：該留言已由另一則合法事件取代，須以 `superseding_attempt_id` 指向既存 attempt。恢復判定並以該 attempt 為準。
+- `forged-rejected`：判定為冒充裁決。**強制 `clearance_authority: requester`**——偽造狀態面事件是安全事件，不由 Coordinator 單獨結案；消費者忽略該留言，並須另行記錄處置。
+- `reissue-required`：留痕不足以裁決，須重新以正規寫入通道產生事件。解除停機，但**不得**因此判定該卡已有裁決；卡回 `🔍待查核`。
+
+**append-only 不因解除而破例**：不得刪除被停機的留言，也不得回寫既有事件。若修復方式是編輯原留言，`clearance_rationale` 必須記錄編輯前原文或其 hash，否則被解除的內容將不可稽核。完整 replay 必須能僅憑事件流重建每一次停機與其解除。
+
+新增此 type 屬契約變更，適用範圍依本節末段的 `contract-baseline` cutover 機制；cutover 前的歷史事件維持原貌，不追溯要求補發 clearance。
 
 `counts_toward_escalation` 是 adapter 依結構化欄位算出的投影，不得由 reviewer 以自由文字自行宣告。若同 SHA 有多個有效 reviewer 報告，adapter 先合併 findings 再計算一次；相同 `finding_id` 的衝突分類須由 Coordinator／需求方裁定，不得用陣列順序覆寫。cutover 前歷史事件維持原貌；採用專案以獨立 `contract-baseline` event 指定新契約開始時間，該 marker 為 one-shot cutover：不得附在 review 等其他事件上，啟用後再次出現必須 fail loud。
 adapter 亦須以穩定 `finding_id`／`root_cause_id` 跨 attempt 推導 checkpoint：同根因出現於三個唯一可計數 attempt，或前一 attempt 的 accepted blocking finding 未在下一 attempt 明列 `resolved`／`withdrawn` 時，`checkpoint_decision` 只能是 `escalate`，不得信任手填的 `continue`。
