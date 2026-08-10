@@ -46,6 +46,21 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=run)
 
 
+def build_json_payload(report, review_channel_finding) -> dict:
+    """組出 ``--json`` 的輸出。
+
+    先前只序列化 ``DoctorReport``，而 review-channel 的判定結果**不在其中**——
+    停機（`marker_quarantined`）因此只出現在人類可讀的 stdout。本卡的目的正是讓
+    停機可被機器偵測，而 #16 要消費 doctor 輸出做對帳；一個機器讀不到的狀態等於
+    沒有對外提供。新增的是獨立鍵，既有消費者不受影響。
+    """
+    payload = asdict(report)
+    payload["review_channel"] = (
+        asdict(review_channel_finding) if review_channel_finding is not None else None
+    )
+    return payload
+
+
 def run(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root)
     if not repo_root.exists():
@@ -101,7 +116,8 @@ def run(args: argparse.Namespace) -> int:
             # 卡住了卻不知道卡在哪，那和沒偵測到差不多。
             print(f"  - 停機原因: {reason}")
     if args.json:
-        print(json.dumps(asdict(report), ensure_ascii=False, indent=2, default=str))
+        print(json.dumps(build_json_payload(report, review_channel_finding),
+                         ensure_ascii=False, indent=2, default=str))
 
     if args.strict and (
         report.orphan_worktrees()

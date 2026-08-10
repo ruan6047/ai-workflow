@@ -5,7 +5,7 @@ import pytest
 import shutil
 from pathlib import Path
 
-from wf_cli.doctor import audit_review_channel, run_doctor
+from wf_cli.doctor import DoctorReport, audit_review_channel, run_doctor
 from wf_cli.registry import RegisteredCard, TasksMdRegistry
 from wf_cli.review import render_verdict_comment
 from wf_cli.validation import validate_review_report
@@ -396,3 +396,37 @@ def test_receipt_card_id_must_match_exactly_not_by_prefix():
         [{"body": other, "html_url": "u", "user": {"login": "x"}}], _ECARD, _ESHA
     )
     assert finding.status == "unobservable", "別卡的收據不得被算成本卡的"
+
+
+def test_json_payload_exposes_review_channel_finding():
+    """停機必須出現在機器可讀輸出，否則 #16 的對帳讀不到它。"""
+    from wf_cli.commands.doctor_cmd import build_json_payload
+
+    report = DoctorReport(repo_root=".", generated_at="t", registry_sources=[])
+    finding = audit_review_channel(
+        [{"body": _verdict(f"<!-- wf-review-event:v2 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} -->")}],
+        _ECARD, _ESHA, card_body=_ELOG,
+    )
+    payload = build_json_payload(report, finding)
+    assert payload["review_channel"]["status"] == "marker_quarantined"
+    assert payload["review_channel"]["quarantine_reasons"], "停機原因也必須可機器讀取"
+    # 既有欄位不得被影響
+    assert "worktrees" in payload and "stale_leases" in payload
+
+
+def test_json_payload_review_channel_is_null_when_not_requested():
+    from wf_cli.commands.doctor_cmd import build_json_payload
+
+    report = DoctorReport(repo_root=".", generated_at="t", registry_sources=[])
+    assert build_json_payload(report, None)["review_channel"] is None
+
+
+@pytest.mark.parametrize("where", ["comments", "reviews"])
+def test_quarantine_detected_in_both_comment_and_pr_review_bodies(where):
+    """PR review body 與 Issue comment 走同一條判定，兩邊都要停機。"""
+    bad = _verdict(f"<!-- wf-review-event:v2 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} -->")
+    kwargs = {"card_body": _ELOG}
+    args = ([{"body": bad}], _ECARD, _ESHA) if where == "comments" else ([], _ECARD, _ESHA)
+    if where == "reviews":
+        kwargs["reviews"] = [{"body": bad}]
+    assert audit_review_channel(*args, **kwargs).status == "marker_quarantined"
