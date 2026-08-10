@@ -430,3 +430,32 @@ def test_quarantine_detected_in_both_comment_and_pr_review_bodies(where):
     if where == "reviews":
         kwargs["reviews"] = [{"body": bad}]
     assert audit_review_channel(*args, **kwargs).status == "marker_quarantined"
+
+
+@pytest.mark.parametrize(
+    "bad_sha", ["abc123", "A" * 40, "", "z" * 40, "a" * 39, "a" * 41]
+)
+def test_doctor_rejects_invalid_source_sha_instead_of_reporting_unobservable(bad_sha, tmp_path, capsys):
+    """無效 source_sha 必須當場拒絕，不得走到底回報 `unobservable`。
+
+    `unobservable` 的語意是「該 source_sha 的查核在系統上不可觀測」。對打錯的輸入
+    回這個狀態，等於拿確定的結論回答一個沒被評估的問題；加上 --strict 還會讓 CI 紅
+    在「沒人查核」而不是「SHA 打錯了」。handoff／review 都驗格式，doctor 先前沒驗。
+    """
+    import argparse
+
+    from wf_cli.commands import doctor_cmd
+
+    args = argparse.Namespace(
+        repo_root=str(tmp_path), registry="none", review_channel=True,
+        repo="acme/x", issue_number=1, card_id="CARD-A", source_sha=bad_sha,
+        main_ref="main", lease_ttl_hours=48.0, json=False, strict=False,
+    )
+    assert doctor_cmd.run(args) == 2
+    assert "source" in capsys.readouterr().err
+
+
+def test_doctor_accepts_valid_source_sha_format():
+    from wf_cli.validation import validate_source_sha
+
+    validate_source_sha("a" * 40)  # 不得拋

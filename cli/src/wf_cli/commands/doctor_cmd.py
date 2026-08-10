@@ -13,6 +13,7 @@ from pathlib import Path
 from ..doctor import audit_review_channel, run_doctor
 from ..gh import default_runner
 from ..registry import load_tasks_md_registry
+from ..validation import ValidationError, validate_source_sha
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -67,15 +68,7 @@ def run(args: argparse.Namespace) -> int:
         print(f"[doctor] repo 路徑不存在：{repo_root}", file=sys.stderr)
         return 2
 
-    registry = load_tasks_md_registry(repo_root) if args.registry == "tasks-md" else None
-    report = run_doctor(
-        repo_root,
-        registry,
-        lease_ttl_hours=args.lease_ttl_hours,
-        main_ref=args.main_ref,
-    )
-    print(report.render_text())
-    review_channel_finding = None
+    # 參數驗證一律先於實際工作：旗標打錯時不該先跑完整套 doctor 掃描再報錯。
     if args.review_channel:
         missing = [
             flag for flag, value in (
@@ -88,6 +81,27 @@ def run(args: argparse.Namespace) -> int:
         if missing:
             print(f"[doctor] --review-channel 缺必要旗標：{', '.join(missing)}", file=sys.stderr)
             return 2
+        # source_sha 沒驗格式的話，打錯的輸入會一路走到底並回報 `unobservable`——
+        # 而那個狀態的語意是「該 source_sha 的查核在系統上不可觀測」。等於拿一個
+        # 聽起來確定的結論回答一個根本沒被評估的問題，加上 --strict 還會讓 CI 紅在
+        # 「沒人查核」而不是「你 SHA 打錯了」。handoff 與 review 都驗，doctor 沒驗。
+        try:
+            validate_source_sha(args.source_sha)
+        except ValidationError as exc:
+            for error in exc.errors:
+                print(f"[doctor] {error}", file=sys.stderr)
+            return 2
+
+    registry = load_tasks_md_registry(repo_root) if args.registry == "tasks-md" else None
+    report = run_doctor(
+        repo_root,
+        registry,
+        lease_ttl_hours=args.lease_ttl_hours,
+        main_ref=args.main_ref,
+    )
+    print(report.render_text())
+    review_channel_finding = None
+    if args.review_channel:
         issue = default_runner.run_json(["api", f"repos/{args.repo}/issues/{args.issue_number}"])
         comments = default_runner.run_json(
             ["api", f"repos/{args.repo}/issues/{args.issue_number}/comments", "--paginate"]
