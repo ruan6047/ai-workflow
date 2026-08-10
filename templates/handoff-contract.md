@@ -122,7 +122,13 @@ GitHub comment author 是可驗證的帳號身分；收據內模型／工具名�
 
 **解除路徑必須存在，否則這條規則就是死鎖。** per-card halt 意味著任何有留言權限的身分，貼一行不合格 marker 即可凍結該卡的自動判定。這是已知的可用性代價：凍結需要人介入，但不會產生錯誤的通過。
 
-解除以 [`review-escalation.md`](review-escalation.md) §5 的 **`review-marker-clearance`** 事件為之，該處定義其必填欄位與語意。要點：解除範圍以留言為單位，且 `quarantined_comment_id` 與 `quarantined_body_sha256` 須**同時**吻合——留言事後被編輯致 hash 變動，原解除即失效、停機重新成立；`forged-rejected` 強制由需求方裁定；`reissue-required` 解除停機但不得據以認定該卡已有裁決。不得刪除被停機的留言，也不得回寫既有事件；若以編輯原留言修復，解除事件必須記錄編輯前原文或其 hash。
+解除以 [`review-escalation.md`](review-escalation.md) §5 的 **`review-marker-clearance`** 事件為之，該處定義其必填欄位與語意。要點：
+
+- **停機狀態由現行內容導出**，不由簿記推定——留言隔離後遭編輯即再次停機，但**任何**編輯結果都有可發的解除路徑（編輯成合格 marker 走 `repaired-verified`），不得出現無法解除的狀態。
+- 解除範圍以留言為單位；多則不合格 marker 需多則 clearance。
+- `forged-rejected` 強制由需求方裁定，且須附其本人帳號所留裁定的留言 URL 供比對；`reissue-required` 解除停機但不得據以認定該卡已有裁決。
+- **分類不得靠自述降類**：留言 author 不在 §5 宣告的 review event writer 帳號集合、內容卻看似裁決者，不得判為 `malformed-ignored`。
+- 修復首選是不編輯原留言、改以正規通道另發合法事件並 `superseded`；不得刪除被停機的留言，也不得回寫既有事件。
 
 **已承認的保守誤判**：一則本身合法的 legacy 留言，若在內文中**引用**了 `wf-review-event:` 字樣（例如討論契約本身），會被判為受管轄且不合格而觸發 halt。這是往 fail-closed 方向的誤判——卡住而非放行——故予以接受，但不假裝它不存在。
 
@@ -162,6 +168,12 @@ PM 祕書以收據原文與 hash 對帳後，才用 `wfcli review` 轉錄結構�
 - Remote handoff writer／API：<GitHub Action、App 或其他受保護 adapter>
 - SHA 驗證命令：<command>
 - `handoff-accepted` writer 與授權：<identity／workflow>
+- **被授權的 review event writer 帳號集合**：<GitHub 帳號，可多個>
+  （`review-escalation.md` §5 的 `forged-rejected`／`malformed-ignored` 分類界線以此為準：
+  留言 author 不在此集合而內容看似裁決者，不得降類為「寫壞了」。未宣告則該分類無法機械核對，
+  adapter 必須一律 fail-closed。）
+- 卡面「需求」欄所載的需求方帳號：<GitHub 帳號>
+  （`clearance_authority: requester` 的 `requester_decision_url` 以此比對 author。）
 - tmux launcher／wake-up：<可選 command；不用填—>
 - Runtime 路徑與 `.gitignore`：<path>
 - 失敗、重試與人工介入：<runbook link>

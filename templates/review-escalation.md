@@ -110,18 +110,39 @@ checkpoint_rationale: <root-cause repetition, closure trend, or requester ruling
 ```yaml
 quarantined_comment_id: <GitHub comment 數值 ID；跨編輯穩定>
 quarantined_comment_url: <該留言 URL>
+quarantined_comment_author: <該留言的 GitHub author 帳號>
 quarantined_body_sha256: <停機當下 comment body 原文 UTF-8 SHA-256>
-quarantine_reason: unknown-version | missing-field | unknown-key | field-order | field-inconsistent | duplicate-conflict
-clearance_decision: malformed-ignored | superseded | forged-rejected | reissue-required
+quarantine_reason: unknown-version | missing-field | unknown-key | field-order | field-inconsistent | duplicate-conflict | edited-after-clearance
+clearance_decision: malformed-ignored | superseded | forged-rejected | reissue-required | repaired-verified
 superseding_attempt_id: <clearance_decision=superseded 時必填，且須為既存 attempt>
+repaired_body_sha256: <clearance_decision=repaired-verified 時必填；修復後 body 原文 UTF-8 SHA-256>
 clearance_authority: coordinator | requester
+requester_decision_url: <clearance_authority=requester 時必填；需求方本人帳號所留裁定的留言 URL>
 cleared_by: <GitHub account>
 clearance_rationale: <非空>
 ```
 
 此專用 type 不得與其他 lifecycle correction 混用，也不得用來變更 finding、attempt 或 epoch。它不建立 attempt、不計 iteration、不消耗 escalation 額度——停機是留痕缺陷，不是執行者的交付失敗。
 
-**解除範圍以留言為單位，且必須雙欄相符**：一則 clearance 只解除 `quarantined_comment_id` 與 `quarantined_body_sha256` **同時**吻合的那一則停機；timeline 上有多則不合格 marker 就需要多則 clearance，不得以一則概括。GitHub comment 可被編輯，因此若該留言事後內容變動導致 hash 不再相符，原 clearance **失效、停機重新成立**，須重新評估並在必要時另發 clearance。這是刻意的 fail-closed：解除的是「這一份被人看過的內容」，不是「這個留言位置」。
+**停機狀態由現行內容導出，不由簿記推定。** 定義「**已涵蓋**」＝ timeline 上存在針對該 `comment_id` 的有效 clearance，其 `quarantined_body_sha256` 或 `repaired_body_sha256` 等於該留言**現行** body 的 SHA-256。則：
+
+> 一則留言處於停機狀態，當且僅當
+> **（其現行 body 含受管轄但不合格的 marker　或　該 `comment_id` 曾被隔離）**
+> **且　其現行 body 未被涵蓋。**
+
+兩個子句缺一不可，這是本規則唯一不會產生死鎖的形狀。前括號決定「要不要人看」，後半決定「是否已經看過**這一份**內容」。若只用前括號，一則以 `malformed-ignored` 解除、內容未改的壞留言會因為 body 永遠不合格而永遠停機；若只用後半，從未被隔離的留言會因為沒有 clearance 而全部停機。
+
+「曾被隔離」這一支保住了「解除的是這一份被人看過的內容，不是這個留言位置」——GitHub comment 可被編輯，隔離後的任何改動都必須再經人看過。但它**不得**造成無法解除：**任何** hash 變動都有對應的可發 clearance 路徑，adapter 不得以「現行 body 已合格、無壞內容可隔離」為由拒收 clearance。三種情形分別是：
+
+- 編輯後 body **已合格**：前括號由「曾被隔離」滿足，且新 hash 未被涵蓋，故仍停機。以 `quarantine_reason: edited-after-clearance` ＋ `clearance_decision: repaired-verified` 解除，`repaired_body_sha256` 填修復後的 hash。**此路徑不要求現行 body 不合格，故恆可發**——這是消除死鎖的關鍵。
+- 編輯後 body 仍不合格（或換成另一種不合格）：前括號由 marker 不合格滿足，依實際 `quarantine_reason` 對新 hash 另發 clearance。
+- 從未被隔離的留言遭編輯：前括號兩支皆不成立，不停機。
+
+adapter 實作本規則後，可窮舉的狀態組合只有六個（不合格 × 曾隔離 × 已涵蓋，扣除「未曾隔離卻已涵蓋」等不可達組合），其中三個為停機、且每一個都有可發的解除路徑並在發出後解除。任何實作若出現第七種狀態或某個停機狀態無路可解，即是偏離本契約。
+
+**修復方式有優先序。** 首選是**不編輯**：以正規寫入通道另發合法事件，再以 `superseded` 解除。編輯原留言會湮滅被隔離的原文，僅在無法重發時使用，且 `clearance_rationale` 必須載編輯前原文或其 hash，否則被解除的內容不可稽核。
+
+**解除範圍以留言為單位**：timeline 上有多則不合格 marker 就需要多則 clearance，不得以一則概括。
 
 各 `clearance_decision` 的語意與後續狀態：
 
@@ -129,8 +150,17 @@ clearance_rationale: <非空>
 - `superseded`：該留言已由另一則合法事件取代，須以 `superseding_attempt_id` 指向既存 attempt。恢復判定並以該 attempt 為準。
 - `forged-rejected`：判定為冒充裁決。**強制 `clearance_authority: requester`**——偽造狀態面事件是安全事件，不由 Coordinator 單獨結案；消費者忽略該留言，並須另行記錄處置。
 - `reissue-required`：留痕不足以裁決，須重新以正規寫入通道產生事件。解除停機，但**不得**因此判定該卡已有裁決；卡回 `🔍待查核`。
+- `repaired-verified`：隔離後留言遭編輯，且修復後內容已經人核對。解除僅對 `repaired_body_sha256` 有效；再次編輯即再次停機。
 
-**append-only 不因解除而破例**：不得刪除被停機的留言，也不得回寫既有事件。若修復方式是編輯原留言，`clearance_rationale` 必須記錄編輯前原文或其 hash，否則被解除的內容將不可稽核。完整 replay 必須能僅憑事件流重建每一次停機與其解除。
+**分類界線必須可機械核對，不得靠自述降類。** 採用專案須依 `handoff-contract.md` §5 宣告被授權的 review event writer 帳號集合。adapter 比對 `quarantined_comment_author`：
+
+- author **不在**該集合，且該留言含形式合格的 marker 或裁決標題 → **不得**使用 `malformed-ignored`；只能是 `forged-rejected` 或 `reissue-required`。外人寫出看起來像裁決的東西，不是「寫壞了」。
+- author 在該集合內（自家 writer 自己寫壞）→ 可用 `malformed-ignored`。
+- 分類與 author 事實不符的 clearance **無效**，停機維持。
+
+**requester 授權必須有可核對證據。** `clearance_authority: requester` 必填 `requester_decision_url`，且 adapter 必須實際讀取該 URL 並比對其 GitHub author 等於卡面「需求」欄所載帳號；不得採信 `cleared_by` 或 `clearance_rationale` 的自述。不符即 clearance 無效、停機維持。這與 `handoff-contract.md` §3.1.2 收據同源：**帳號是平台事實，欄位值只是自述**。（§4 `escalation-epoch-change` 的 `requester_approved: true` 仍是自述型欄位；本節刻意不沿用該弱模式，是否追溯補強屬另案，不在此處變更。）
+
+**append-only 不因解除而破例**：不得刪除被停機的留言，也不得回寫既有事件。完整 replay 必須能僅憑事件流重建每一次停機與其解除。
 
 新增此 type 屬契約變更，適用範圍依本節末段的 `contract-baseline` cutover 機制；cutover 前的歷史事件維持原貌，不追溯要求補發 clearance。
 
