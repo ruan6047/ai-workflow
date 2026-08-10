@@ -387,7 +387,10 @@ def test_log_must_index_the_same_attempt_as_the_event():
     先前實作把它拆成兩個獨立全文檢查，於是 Log 索引 e0 也能讓 e1 的事件過關。
     """
     marker = _conformant_marker(attempt=f"{_ECARD}-e1-{_ESHA}")
-    finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG)
+    # 帶第三面，否則斷言會因「第三面未提供」而成立，測不到 Log 索引規則本身。
+    finding = audit_review_channel(
+        [{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過"
+    )
     assert finding.status != "recorded", "Log 索引的是 e0，不得讓 e1 的事件過關"
 
 
@@ -401,7 +404,8 @@ def test_log_index_conditions_must_be_on_the_same_line():
         f"## Log\n- assign by wf-cli；attempt {_EATT}。\n- review by wf-cli → 別的事。"
     )
     finding = audit_review_channel(
-        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=split_log
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=split_log, delivery_status="✅通過",
     )
     assert finding.status != "recorded"
 
@@ -490,8 +494,11 @@ def test_log_attempt_must_match_on_token_boundary_not_substring():
     同一個子字串陷阱先前已在收據比對上出現過一次，這裡是它在 Log 對帳的複發。
     """
     log = f"2026-08-09 review by wf-cli → APPROVE；attempt {_EATT}x。"
+    # 必須帶 delivery_status：否則第三面未提供就會讓斷言因為別的原因成立，
+    # 這個測試等於沒在驗 token 邊界（#20 加入第三面檢查後一度變成如此）。
     finding = audit_review_channel(
-        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=log
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=log, delivery_status="✅通過",
     )
     assert finding.status != "recorded", "attempt+x 不是同一個 attempt"
 
@@ -558,7 +565,7 @@ def test_legacy_must_not_vouch_for_a_v1_event_of_the_same_attempt():
     split_log = f"- review by wf-cli → APPROVE。\n- assign by wf-cli；attempt {_EATT}。"
     finding = audit_review_channel(
         [{"body": _verdict(_conformant_marker())}, {"body": _legacy_verdict(_EATT)}],
-        _ECARD, _ESHA, card_body=split_log,
+        _ECARD, _ESHA, card_body=split_log, delivery_status="✅通過",
     )
     assert finding.status != "recorded", "v1 事件缺同行索引，不得由 legacy 路徑放行"
 
