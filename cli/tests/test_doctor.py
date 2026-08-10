@@ -800,10 +800,14 @@ def test_multiple_verdict_headings_in_one_comment_are_ambiguous():
     assert a.status == b.status == "half_written"
 
 
-def test_repeated_identical_verdict_heading_is_still_usable():
-    """同一結論重複出現不構成歧義——沒有可爭議的內容。"""
+def test_repeated_identical_verdict_heading_is_also_unusable():
+    """即使兩個標題文字相同也不得放行——判準是出現次數恰為一。
+
+    set 去重會讓重複的相同結論被當成唯一。但 wfcli review 渲染的留言恰有一個標題，
+    重複代表有人編輯或引用過，該留言已不是產生器的輸出，其結論不可信。
+    """
     m = _conformant_marker()
     finding = audit_review_channel(
         [{"body": f"{m}\n## 查核裁決：APPROVE\n\n重申：\n## 查核裁決：APPROVE"}],
         _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過")
-    assert finding.status == "recorded"
+    assert finding.status == "half_written"

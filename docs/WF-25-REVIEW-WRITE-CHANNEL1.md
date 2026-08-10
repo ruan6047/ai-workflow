@@ -56,13 +56,27 @@ report_sha256: <64-char lowercase hex>
 
 ```bash
 wfcli doctor /abs/repo --review-channel \
+  --owner ruan6047 --project 4 \
   --repo owner/repo --issue-number 123 --card-id CARD-ID \
   --source-sha 0123456789012345678901234567890123456789
 ```
 
-它輸出三種互斥結果：`recorded`、`receipt_untranscribed`、`unobservable`。後兩者均
-fail-closed；加上 `--strict` 時會回傳 exit 1。尤其 `unobservable` 的文字明確禁止
-「沒有紀錄」→「沒有查核」的推論。
+> `--owner`／`--project` 自 #20 起為必填（**破壞性介面變更**）：三面一致的第三面要讀
+> Project 交付狀態欄，少了它只驗到留言與 Log 兩面，而兩面一致的半寫入看起來與正常
+> 裁決完全一樣。舊格式的呼叫會以 exit 2 失敗並列出缺少的旗標。
+
+它輸出**五種**互斥結果（本檔原記三種，#17 與 #20 各增一種）：
+
+| 結果 | 意義 | 下一步 |
+| --- | --- | --- |
+| `recorded` | 三面一致：裁決留言、同 attempt 的 Log 索引行、Project 交付狀態欄相符 | 無 |
+| `half_written` | 前兩面成立但交付狀態不符或讀不到（#20） | 補齊狀態欄，**不要重跑查核** |
+| `marker_quarantined` | 找到受契約管轄但不合格的 marker（#17） | 去修那一則壞掉的留言 |
+| `receipt_untranscribed` | 有外部收據、無 review event | 要求 PM 轉錄 |
+| `unobservable` | 兩者皆無 | 去查有沒有人查核過 |
+
+除 `recorded` 外皆 fail-closed；加上 `--strict` 時回傳 exit 1。尤其 `unobservable` 的
+文字明確禁止「沒有紀錄」→「沒有查核」的推論。
 這是偵測「可觀測留痕缺口」的上限：一個完全沒有外部訊號的私有對話，系統無從偵測
 它實際是否發生，任何聲稱能偵測都會是虛假能力。
 

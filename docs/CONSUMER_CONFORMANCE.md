@@ -49,7 +49,7 @@
 
 落差 8a／8b 的拆分理由：§3.1.5 延遲生效期間的保守行為（多則同 `attempt_id` 事件一律停止判定）**只需要消費者變更**，不依賴結構化承載，故可在 #17 內完成；只有「分辨語意一致以放行合法重送」才需要寫入端提供結構化裁決承載。兩者失效方向相反，混為一項會掩蓋 8a 的 fail-open 性質。
 
-落差 1–5、8a 的修復證據可重跑：以下探針對六個案例呼叫 `audit_review_channel()`，前五個依 §3.1.4 應為不可判定。**修復前實測全部回 `recorded`；修復後全部回 `marker_quarantined`，對照組維持 `recorded`。**
+落差 1–5、8a 的修復證據可重跑：以下探針對六個案例呼叫 `audit_review_channel()`，前五個依 §3.1.4 應為不可判定。**修復前實測全部回 `recorded`；修復後全部回 `marker_quarantined`，對照組（提供第三面時）為 `recorded`。**
 
 ```bash
 cd cli && uv run python -c "
@@ -66,7 +66,10 @@ cases={
  'conformant(control)':f'<!-- wf-review-event:v1 card_id={C} source_sha={S} attempt_id={A} -->\n## 查核裁決：APPROVE',
 }
 for n,b in cases.items():
-    print(f'{n:24}', audit_review_channel([{'body':b,'html_url':'u','user':{'login':'x'}}],C,S,card_body=body).status)"
+    # control 必須提供第三面（Project 交付狀態），否則它會因第三面未驗而回
+    # half_written——那不是 marker 合規的結果，會讓這支探針測不到它要測的東西。
+    ds = '✅通過' if 'control' in n else None
+    print(f'{n:24}', audit_review_channel([{'body':b,'html_url':'u','user':{'login':'x'}}],C,S,card_body=body,delivery_status=ds).status)"
 ```
 
 ### 1.3 生效結論

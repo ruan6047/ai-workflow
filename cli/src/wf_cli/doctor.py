@@ -234,14 +234,20 @@ def _verdict_of(body: str) -> str | None:
     契約 §3.1.3 的已知限制：裁決結果不在 marker 內，只在渲染後的散文標題
     ``## 查核裁決：<result>``。此依賴會在結構化承載到位後消失（落差 8b）。
 
-    ``wfcli review`` 渲染的裁決留言恰有一個該標題。出現多個代表有人引用了另一則
-    裁決或編輯過留言——此時**不得取第一個**（那會讓結果隨標題在留言內的先後而變，
-    與 ``review-escalation.md`` §2「不得依順序覆寫」同源），一律視為無法辨識。
+    ``wfcli review`` 渲染的裁決留言**恰有一個**該標題。出現多個代表有人引用了另一則
+    裁決或編輯過留言——此時不得取第一個（那會讓結果隨標題在留言內的先後而變，與
+    ``review-escalation.md`` §2「不得依順序覆寫」同源），也不得因為兩個標題文字相同
+    就當成唯一：該留言已不是產生器的輸出，其結論不可信。判準是**標題出現次數恰為
+    一**，零個、非列舉值、或多個一律視為無法辨識。
     """
-    results = {STATUS_BY_RESULT.get(m) for m in _VERDICT_HEADING_RE.findall(body)}
-    if len(results) != 1:
+    headings = _VERDICT_HEADING_RE.findall(body)
+    # 以**出現次數**判定，不是以去重後的結論數。set 去重會讓「同一結論重複兩次」
+    # 被當成唯一而放行——但 wfcli review 渲染的留言恰有一個標題，重複代表有人編輯
+    # 或引用過，該留言已不是產生器的輸出。零個、非列舉值、或多個（即使文字相同）
+    # 一律視為無法辨識。
+    if len(headings) != 1:
         return None
-    return results.pop()
+    return STATUS_BY_RESULT.get(headings[0])
 
 
 def _expected_delivery_status(
