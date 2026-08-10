@@ -296,7 +296,13 @@ def audit_review_channel(
             quarantine_reasons.append(f"{reason}（{url}）")
         elif attempt is not None and attempt.startswith(expected_attempt_prefix) and attempt.endswith(expected_attempt_suffix):
             conformant_attempts.append(attempt)
-        elif attempt is None and state_marker in body:
+        if receipt_marker in body and receipt_matches(body):
+            url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
+            receipt_urls.append(url)
+            user = comment.get("user") or {}
+            login = user.get("login") if isinstance(user, dict) else None
+            receipt_authors.append(str(login or "（GitHub author 未提供）"))
+        if attempt is None and reason is None and state_marker in body:
             # legacy：完全不含 wf-review-event: 前綴的舊裁決留言。判準（語法）不變，
             # 但同樣要求 Log 索引的是這一則的 attempt，而非「body 裡任何一個 attempt」。
             hit = attempt_pattern.search(body)
@@ -326,6 +332,11 @@ def audit_review_channel(
                 "平面的表示法尚未定義（見 docs/CONSUMER_CONFORMANCE.md），故目前只能人工處理。"
             ),
             quarantine_reasons=tuple(quarantine_reasons),
+            # 停機與收據是兩件不同的事，下一步動作也不同：停機要人去修一則壞掉的
+            # 留言，收據則說明「裁決其實發生過、只是還沒轉錄」。先前收據只在未停機
+            # 時才收集，於是兩者並存時操作者只看得到停機，完全不知道有收據。
+            receipt_urls=tuple(receipt_urls),
+            receipt_authors=tuple(receipt_authors),
         )
 
     # 混合歷史的優先序：**同一 attempt 一旦存在受管轄的 v1 事件，就不得再由 legacy
@@ -345,15 +356,6 @@ def audit_review_channel(
             source_sha=source_sha,
             detail="已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log；狀態面已有裁決。",
         )
-
-    for comment in all_comments:
-        body = str(comment.get("body") or "")
-        if receipt_marker in body and receipt_matches(body):
-            url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
-            receipt_urls.append(url)
-            user = comment.get("user") or {}
-            login = user.get("login") if isinstance(user, dict) else None
-            receipt_authors.append(str(login or "（GitHub author 未提供）"))
 
     if receipt_urls:
         return ReviewChannelFinding(

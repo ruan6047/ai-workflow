@@ -18,6 +18,9 @@
   - **v1 事件**：同一行同時含 `review by wf-cli` 與該 `attempt_id`，且 attempt 以 token 邊界比對（`attempt in line` 會讓 `…-e0-<sha>` 命中 `…-e0-<sha>x`）。
   - **legacy**（完全不含 `wf-review-event:` 前綴者）：維持基線的全文各自搜尋，不要求同一行。收緊它會讓既有舊卡由 `recorded` 變成 `unobservable`，那是回歸而非修復。
   - **混合歷史的優先序**：同一 `attempt_id` 一旦存在受管轄的 v1 事件，**不得再由 legacy 路徑替它背書**。否則 v1 事件只要旁邊有一則同 attempt 的 legacy 文字，就能繞過同行索引要求——v1 的兩面一致將從未被真正要求。legacy 對「沒有 v1 對應」的 attempt 仍維持寬鬆對帳。
+- 停機（`marker_quarantined`）時仍會一併回報找到的收據。兩者是不同的事實、下一步動作也不同：停機要人去修一則壞掉的留言，收據則說明「裁決其實發生過、只是還沒轉錄」。
+
+> **legacy 路徑的已知寬鬆（基線行為，刻意保留）**：legacy 的 Log 對帳只要求 body 中各自存在 `review by wf-cli` 與**任一**符合本卡＋本 SHA 的 `attempt_id`，兩者不必同行、也不必是同一個 attempt。因此一則 `e1` 的 legacy 裁決可被一行提及 `e0` 的 Log 背書。這是 baseline 的既有語意；卡面驗收要求「legacy 判定行為與本卡前一致」，收緊它屬回歸而非修復，故不在 #17 變更。新的嚴格判準只施加於 v1。
 - §3.1.6 的 `receipt_untranscribed` 與 `unobservable` 兩態，且 `unobservable` 的輸出文字明確禁止「沒有紀錄 → 沒有查核」的推論。
 - receipt 的同卡、同 `source_sha` 比對，並輸出收據 URL 與 GitHub author。
 

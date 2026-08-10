@@ -566,3 +566,30 @@ def test_v1_with_proper_same_line_log_is_recorded_even_alongside_legacy():
         _ECARD, _ESHA, card_body=log,
     )
     assert finding.status == "recorded"
+
+
+def test_quarantine_still_surfaces_any_receipt_found():
+    """停機與收據是兩件事，下一步動作也不同，不得因停機而吞掉收據。
+
+    停機要人去修一則壞掉的留言；收據則說明「裁決其實發生過、只是還沒轉錄」。
+    先前收據只在未停機時才收集，兩者並存時操作者完全看不到收據存在。
+    """
+    bad = _verdict(f"<!-- wf-review-event:v2 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} -->")
+    receipt = f"<!-- wf-review-receipt:v1\ncard_id: {_ECARD}\nsource_sha: {_ESHA}\n-->"
+    finding = audit_review_channel(
+        [{"body": bad}, {"body": receipt, "html_url": "https://x/1", "user": {"login": "reviewer"}}],
+        _ECARD, _ESHA, card_body=_ELOG,
+    )
+    assert finding.status == "marker_quarantined"
+    assert finding.receipt_urls == ("https://x/1",)
+    assert finding.receipt_authors == ("reviewer",)
+
+
+def test_receipt_untranscribed_unaffected_by_the_earlier_collection():
+    """收據改在第一輪收集後，未停機時的行為必須完全不變。"""
+    receipt = f"<!-- wf-review-receipt:v1\ncard_id: {_ECARD}\nsource_sha: {_ESHA}\n-->"
+    finding = audit_review_channel(
+        [{"body": receipt, "html_url": "https://x/2", "user": {"login": "r2"}}], _ECARD, _ESHA
+    )
+    assert finding.status == "receipt_untranscribed"
+    assert finding.receipt_urls == ("https://x/2",)
