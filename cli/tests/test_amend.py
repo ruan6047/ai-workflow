@@ -384,24 +384,68 @@ def test_long_checklist_original_written_in_full(card):
 # --------------------------------------------------------------------------
 
 
-def test_repair_body_layout_restores_newlines_without_content_change():
-    corrupted = "- 需求：x\\n## Log\\n\\n- 條目"
-    repaired, original = repair_body_layout(corrupted)
-    assert original == corrupted
-    assert split_at_log(repaired)[1].startswith("## Log")
-    # 只准動空白：剝掉空白後逐字相同
-    assert "".join(corrupted.replace("\\n", "").split()) == "".join(repaired.split())
+def test_repair_replaces_only_the_corrupted_token():
+    body = "- 需求：x\\n## Log\\n\\n- 條目"
+    repaired, original = repair_body_layout(body)
+    assert original == body
+    assert repaired == "- 需求：x\n\n## Log\n\n- 條目"
+    split_at_log(repaired)
 
 
-def test_repair_rejects_body_without_literal_newline():
-    with pytest.raises(AmendError, match="找不到字面"):
-        repair_body_layout(BODY)
+def test_repair_leaves_legitimate_literal_newline_in_log_untouched():
+    """R3-01 破口一：#17 自己的 Log 敘述就含合法的字面 \\n（那行在描述『把字面 \\n 還原』）。"""
+    body = (
+        "- 需求：x\\n## Log\\n\\n"
+        "- 2026-08-10 repair；將誤寫的字面 \\n 還原為真換行。"
+    )
+    repaired, _ = repair_body_layout(body)
+    assert "字面 \\n 還原為真換行" in repaired, "Log 內文的合法字面 \\n 不得被改動"
+    assert repaired.count("\\n") == 1
 
 
-def test_repair_rejects_when_still_unsafe_after_fix():
-    """還原後仍有兩個 Log 標題 → 修不好，不留半修好的 body。"""
-    with pytest.raises(AmendError):
-        repair_body_layout("## Log\\n\\n- a\\n\\n## Log\\n\\n- b")
+def test_repair_refuses_marker_inside_fenced_code_block():
+    """R3-01 破口二：圍籬內的 \\n## Log 是內容不是標題，修復會在程式碼中生出標題。"""
+    body = (
+        "- 需求：x\n\n```text\n"
+        "示範損壞：\\n## Log\\n\\n- 條目\n"
+        "```\n\n## Log\n\n- 真正的條目"
+    )
+    with pytest.raises(AmendError, match="fenced code block"):
+        repair_body_layout(body)
+
+
+def test_repair_refuses_multiple_markers():
+    body = "a\\n## Log\\n\\nb\\n## Log\\n\\nc"
+    with pytest.raises(AmendError, match="出現 2 次"):
+        repair_body_layout(body)
+
+
+def test_repair_preserves_json_and_all_other_bytes():
+    body = (
+        "- 需求：x\n\n## 資源宣告\n"
+        "<!-- resource-claims:begin -->\n"
+        '```json\n{"db_scope": "none", "resources": ["file:a.py"], "note": "a\\nb"}\n```\n'
+        "<!-- resource-claims:end -->\n"
+        "\\n## Log\\n\\n- 條目"
+    )
+    repaired, original = repair_body_layout(body)
+    idx = body.index("\\n## Log\\n\\n")
+    assert repaired[:idx] == body[:idx], "損壞標記之前必須逐位元不變"
+    assert repaired[idx + len("\n\n## Log\n\n"):] == body[idx + len("\\n## Log\\n\\n"):], \
+        "損壞標記之後也必須逐位元不變"
+    assert '"note": "a\\nb"' in repaired, "JSON 字串內的合法字面 \\n 不得被改動"
+    assert parse_block(repaired).resources == parse_block(original).resources
+
+
+def test_repair_round_trips_issue17_shaped_body():
+    """完整 round-trip：對還原後的 body 再製造同一種損壞，修復必須回到原樣。"""
+    good = (
+        "- 需求：x\n- Initiative：—　spec 基線：base\n\n## 驗證\n\n- [ ] v\n\n"
+        "## Log\n\n- 2026-08-10 open。\n- 2026-08-10 repair；把字面 \\n 還原。\n"
+    )
+    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    repaired, _ = repair_body_layout(corrupted)
+    assert repaired == good
 
 
 def test_repair_command_requires_expected_hash(card):
@@ -434,7 +478,7 @@ def test_repair_command_fixes_corrupted_log(card):
     """重放 ai-workflow#17 的實際事故：Log 標題被寫成字面 \\n。"""
     project = resolve_project(card, "acme", 1)
     item = _item(card)
-    corrupted = item.body.replace("\n## Log\n", "\\n## Log\\n")
+    corrupted = item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
     set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number, corrupted)
     digest = hashlib.sha256(corrupted.encode("utf-8")).hexdigest()
 
@@ -546,10 +590,13 @@ def _body_with_json_literal_newline() -> str:
     )
 
 
-def test_repair_refuses_when_literal_newline_precedes_log():
-    """查核者的反例：JSON 字串裡的字面 \\n 是合法內容，換成實體換行會讓 JSON 解析失敗。"""
-    with pytest.raises(AmendError, match="Log 之前也含字面"):
-        repair_body_layout(_body_with_json_literal_newline())
+def test_repair_keeps_json_literal_newline_intact():
+    """R2 的反例在新做法下應該通過而非拒絕：定點替換根本不碰 JSON 裡的字面 \\n。"""
+    body = _body_with_json_literal_newline()
+    repaired, original = repair_body_layout(body)
+    assert '"note": "a\\nb"' in repaired, "JSON 字串內的合法字面 \\n 必須原封不動"
+    assert parse_block(repaired).resources == parse_block(original).resources
+    split_at_log(repaired)
 
 
 def test_repair_leaves_pre_log_content_byte_identical():
@@ -567,7 +614,7 @@ def test_repair_leaves_pre_log_content_byte_identical():
 
 
 def test_repair_refuses_body_without_literal_log_marker():
-    with pytest.raises(AmendError, match="找不到字面"):
+    with pytest.raises(AmendError, match="找不到"):
         repair_body_layout("- 需求：x\\n 這裡有字面 n 但沒有 Log 標記")
 
 

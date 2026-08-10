@@ -311,46 +311,52 @@ def amend_verification(
     )
 
 
-_LITERAL_LOG_MARKER = "\\n## Log"
+# 已知事故形態（ai-workflow#17，2026-08-10）：卡面 Log 標題連同其前後空行被整段
+# 寫成字面跳脫。修復只認這一個精確 token，並且只替換它。
+_CORRUPTED_LOG_TOKEN = "\\n## Log\\n\\n"
+_REPAIRED_LOG_TOKEN = "\n\n## Log\n\n"
 
 
 def repair_body_layout(body: str) -> tuple[str, str]:
-    """把 **Log 區段** 內的字面 ``\\n`` 還原成真換行；回傳 (修復後 body, 原 body)。
+    """修復 ai-workflow#17 那個精確的 Log 標題損壞；回傳 (修復後 body, 原 body)。
 
     這是 ``split_at_log`` fail-closed 之後唯一的出路：排版壞掉的卡若不能用 amend
     修，使用者就只能退回 ``gh issue edit``——工具在最需要它的時候不能用。
 
-    **修復範圍嚴格限定在 Log 區段**，這是本函式唯一的安全基礎。前一版對整份 body
-    無差別替換，並以「剝掉所有空白後相同」當作內容不變的證明——該證明是錯的：
-    字面 ``\\n`` 在 JSON 字串裡是合法內容（``{"note": "a\\nb"}``），把它換成實體
-    換行會讓 JSON 解析失敗，而比較基準又預先刪掉了字面 ``\\n``，等於自己把破壞
-    藏起來。實際反例已由查核者以資源宣告區塊證實。
+    **本函式只做一件事：把首個 ``\\n## Log\\n\\n``（字面）換成真正的標題與空行，
+    其餘每一個字元逐位元不動。** 兩次查核打穿了比這更寬鬆的做法，兩次都是同一個
+    錯誤——以為限縮了範圍，實際仍在做無差別替換：
 
-    現行三道防線：
+    - 第一版對整份 body 替換所有字面 ``\\n``，並以「剝掉空白後相同」當內容不變的
+      證明。該證明預先把字面 ``\\n`` 從比較基準刪掉，等於把破壞藏進證明裡；JSON
+      字串裡的 ``{"note": "a\\nb"}`` 因此被改壞而檢查不出來。
+    - 第二版限縮了**起點**（只動 ``\\n## Log`` 之後），卻仍對整個尾段無差別替換。
+      實測兩個破口：#17 自己的 Log 敘述中含合法的字面 ``\\n``（那行正在描述「把
+      字面 ``\\n`` 還原」），會被一併改掉；fenced code block 內的 ``\\n## Log``
+      會被誤認為 Log 起點，修復後在程式碼圍籬裡生出一個標題。
 
-    1. 只動 ``\\n## Log`` 起算的尾段；其前的內容**逐位元不變**（fenced JSON、
-       inline code、其他章節一律不受影響）。
-    2. 若 Log 之前也有字面 ``\\n``，拒絕——那已超出本模式能安全處理的範圍。
-    3. 修復後必須能安全定位 Log，且原本可解析的資源宣告必須仍解析成相同結果。
+    因此現在不再有「範圍」的概念，只有一次定點替換。不符這個精確事故形態就拒絕，
+    不試著猜測其他損壞怎麼修。
     """
-    idx = body.find(_LITERAL_LOG_MARKER)
-    if idx < 0:
+    occurrences = body.count(_CORRUPTED_LOG_TOKEN)
+    if occurrences == 0:
         raise AmendError(
-            "body 內找不到字面 `\\n## Log`；本模式只修復 Log 區段的排版損壞，"
-            "其他位置的字面 `\\n` 不在範圍內"
+            "body 內找不到 `\\n## Log\\n\\n`（字面）。本模式只修復這一個精確的已知"
+            "事故形態，其他排版損壞不在範圍內"
         )
-    head, tail = body[:idx], body[idx:]
-    if "\\n" in head:
+    if occurrences > 1:
         raise AmendError(
-            "Log 之前也含字面 `\\n`。本模式只動 Log 區段，無法安全判斷前段的字面 "
-            "`\\n` 是損壞還是合法內容（例如 JSON 字串裡的 `\\n`），拒絕"
+            f"`\\n## Log\\n\\n`（字面）出現 {occurrences} 次，不符已知事故形態；"
+            "無法判斷哪一個才是真正的 Log 標題，拒絕"
         )
 
-    repaired_tail = tail.replace("\\n", "\n")
-    if "".join(tail.replace("\\n", "").split()) != "".join(repaired_tail.split()):
-        raise AmendError("Log 區段的修復會改動非空白內容，拒絕")
+    idx = body.index(_CORRUPTED_LOG_TOKEN)
+    if body.count("```", 0, idx) % 2 == 1:
+        raise AmendError(
+            "損壞標記位於 fenced code block 內，那是內容不是標題；拒絕"
+        )
 
-    repaired = head + repaired_tail
+    repaired = body[:idx] + _REPAIRED_LOG_TOKEN + body[idx + len(_CORRUPTED_LOG_TOKEN) :]
     split_at_log(repaired)  # 修不好就讓它在這裡失敗，不寫出半修好的 body
 
     before_decl = try_parse_block(body)
