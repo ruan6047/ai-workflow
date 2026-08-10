@@ -13,6 +13,7 @@ from pathlib import Path
 from ..doctor import audit_review_channel, run_doctor
 from ..gh import default_runner
 from ..registry import load_tasks_md_registry
+from ..validation import ValidationError, validate_source_sha
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -37,7 +38,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--source-sha", help="--review-channel 的完整 40 字元受審 SHA")
     p.add_argument("--main-ref", default="main", help="判斷「已併入」與 lease 交集比對用的主幹分支")
     p.add_argument("--lease-ttl-hours", type=float, default=48.0)
-    p.add_argument("--json", action="store_true", help="額外輸出 JSON（供腳本消費）")
+    p.add_argument("--json", action="store_true", help="stdout 只輸出 JSON（供腳本消費）；人類可讀報告改走 stderr")
     p.add_argument(
         "--strict",
         action="store_true",
@@ -46,21 +47,28 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=run)
 
 
+def build_json_payload(report, review_channel_finding) -> dict:
+    """組出 ``--json`` 的輸出。
+
+    先前只序列化 ``DoctorReport``，而 review-channel 的判定結果**不在其中**——
+    停機（`marker_quarantined`）因此只出現在人類可讀的 stdout。本卡的目的正是讓
+    停機可被機器偵測，而 #16 要消費 doctor 輸出做對帳；一個機器讀不到的狀態等於
+    沒有對外提供。新增的是獨立鍵，既有消費者不受影響。
+    """
+    payload = asdict(report)
+    payload["review_channel"] = (
+        asdict(review_channel_finding) if review_channel_finding is not None else None
+    )
+    return payload
+
+
 def run(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root)
     if not repo_root.exists():
         print(f"[doctor] repo 路徑不存在：{repo_root}", file=sys.stderr)
         return 2
 
-    registry = load_tasks_md_registry(repo_root) if args.registry == "tasks-md" else None
-    report = run_doctor(
-        repo_root,
-        registry,
-        lease_ttl_hours=args.lease_ttl_hours,
-        main_ref=args.main_ref,
-    )
-    print(report.render_text())
-    review_channel_finding = None
+    # 參數驗證一律先於實際工作：旗標打錯時不該先跑完整套 doctor 掃描再報錯。
     if args.review_channel:
         missing = [
             flag for flag, value in (
@@ -73,6 +81,29 @@ def run(args: argparse.Namespace) -> int:
         if missing:
             print(f"[doctor] --review-channel 缺必要旗標：{', '.join(missing)}", file=sys.stderr)
             return 2
+        # source_sha 沒驗格式的話，打錯的輸入會一路走到底並回報 `unobservable`——
+        # 而那個狀態的語意是「該 source_sha 的查核在系統上不可觀測」。等於拿一個
+        # 聽起來確定的結論回答一個根本沒被評估的問題，加上 --strict 還會讓 CI 紅在
+        # 「沒人查核」而不是「你 SHA 打錯了」。handoff 與 review 都驗，doctor 沒驗。
+        try:
+            validate_source_sha(args.source_sha)
+        except ValidationError as exc:
+            for error in exc.errors:
+                print(f"[doctor] {error}", file=sys.stderr)
+            return 2
+
+    registry = load_tasks_md_registry(repo_root) if args.registry == "tasks-md" else None
+    report = run_doctor(
+        repo_root,
+        registry,
+        lease_ttl_hours=args.lease_ttl_hours,
+        main_ref=args.main_ref,
+    )
+    # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
+    # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。
+    print(report.render_text(), file=sys.stderr if args.json else sys.stdout)
+    review_channel_finding = None
+    if args.review_channel:
         issue = default_runner.run_json(["api", f"repos/{args.repo}/issues/{args.issue_number}"])
         comments = default_runner.run_json(
             ["api", f"repos/{args.repo}/issues/{args.issue_number}/comments", "--paginate"]
@@ -92,12 +123,18 @@ def run(args: argparse.Namespace) -> int:
             reviews=reviews or [],
         )
         review_channel_finding = finding
-        print("\n## 5. 跨工具查核寫入通道")
-        print(f"- [{finding.status}] {finding.detail}")
+        out = sys.stderr if args.json else sys.stdout
+        print("\n## 5. 跨工具查核寫入通道", file=out)
+        print(f"- [{finding.status}] {finding.detail}", file=out)
         for url, author in zip(finding.receipt_urls, finding.receipt_authors, strict=True):
-            print(f"  - receipt: {url}（GitHub author: {author}）")
+            print(f"  - receipt: {url}（GitHub author: {author}）", file=out)
+        for reason in finding.quarantine_reasons:
+            # 停機的價值在於「要人去修哪一則留言」。只印狀態不印原因，使用者只知道
+            # 卡住了卻不知道卡在哪，那和沒偵測到差不多。
+            print(f"  - 停機原因: {reason}", file=out)
     if args.json:
-        print(json.dumps(asdict(report), ensure_ascii=False, indent=2, default=str))
+        print(json.dumps(build_json_payload(report, review_channel_finding),
+                         ensure_ascii=False, indent=2, default=str))
 
     if args.strict and (
         report.orphan_worktrees()

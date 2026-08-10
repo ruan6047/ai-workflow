@@ -14,7 +14,13 @@
 
 ### 1.1 已實作
 
-- §3.1.3 三面一致中的兩面：要求 Issue body 的 `review by wf-cli` 索引行與同 `attempt_id` 同時命中，才回 `recorded`。
+- §3.1.3 三面一致中的兩面（第三面見落差 9）。v1 事件與 legacy 的 Log 對帳判準**刻意不同**：
+  - **v1 事件**：同一行同時含 `review by wf-cli` 與該 `attempt_id`，且 attempt 以 token 邊界比對（`attempt in line` 會讓 `…-e0-<sha>` 命中 `…-e0-<sha>x`）。
+  - **legacy**（完全不含 `wf-review-event:` 前綴者）：維持基線的全文各自搜尋，不要求同一行。收緊它會讓既有舊卡由 `recorded` 變成 `unobservable`，那是回歸而非修復。
+  - **混合歷史的優先序**：同一 `attempt_id` 一旦存在受管轄的 v1 事件，**不得再由 legacy 路徑替它背書**。否則 v1 事件只要旁邊有一則同 attempt 的 legacy 文字，就能繞過同行索引要求——v1 的兩面一致將從未被真正要求。legacy 對「沒有 v1 對應」的 attempt 仍維持寬鬆對帳。
+- 停機（`marker_quarantined`）時仍會一併回報找到的收據。兩者是不同的事實、下一步動作也不同：停機要人去修一則壞掉的留言，收據則說明「裁決其實發生過、只是還沒轉錄」。
+
+> **legacy 路徑的已知寬鬆（基線行為，刻意保留）**：legacy 的 Log 對帳只要求 body 中各自存在 `review by wf-cli` 與**任一**符合本卡＋本 SHA 的 `attempt_id`，兩者不必同行、也不必是同一個 attempt。因此一則 `e1` 的 legacy 裁決可被一行提及 `e0` 的 Log 背書。這是 baseline 的既有語意；卡面驗收要求「legacy 判定行為與本卡前一致」，收緊它屬回歸而非修復，故不在 #17 變更。新的嚴格判準只施加於 v1。
 - §3.1.6 的 `receipt_untranscribed` 與 `unobservable` 兩態，且 `unobservable` 的輸出文字明確禁止「沒有紀錄 → 沒有查核」的推論。
 - receipt 的同卡、同 `source_sha` 比對，並輸出收據 URL 與 GitHub author。
 
@@ -22,20 +28,24 @@
 
 | # | 契約要求 | 現況 | 失效方向 | 追蹤 |
 |---|---|---|---|---|
-| 1 | §3.1.4 未知版本不得回退 legacy | `v2` marker ＋ 舊式標題 → `recorded` | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 2 | §3.1.3 必填三欄 | 缺 `attempt_id` → `recorded` | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 3 | §3.1.3 鍵集合封閉 | 多出未定義鍵 → `recorded` | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 4 | §3.1.3 順序與單一空白鎖定 | 欄位錯序 → `recorded` | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 5 | §3.1.3 三欄自洽 | `attempt_id` 屬別卡 → `recorded` | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 6 | §3.1.4 per-card halt 結果態 | 無；三態裝不下「找到訊號但讀不懂」 | fail-open（併入 `recorded`） | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 7 | §3.1.4 halt 解除路徑 | **契約已定義**（`review-escalation.md` §5 `review-marker-clearance`）；consumer 未實作 | fail-open（停機根本未發生，故無從解除） | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
-| 8a | §3.1.5 重複 event 的保守停機 | 無；同 `attempt_id` 多則事件不被偵測 | **fail-open** | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
+| 1 | §3.1.4 未知版本不得回退 legacy | ✅ 已修：`v2` marker → `marker_quarantined` | — | 已閉（#17） |
+| 2 | §3.1.3 必填三欄 | ✅ 已修：缺 `attempt_id` → `marker_quarantined` | — | 已閉（#17） |
+| 3 | §3.1.3 鍵集合封閉 | ✅ 已修：多出未定義鍵 → `marker_quarantined` | — | 已閉（#17） |
+| 4 | §3.1.3 順序與單一空白鎖定 | ✅ 已修：欄位錯序 → `marker_quarantined` | — | 已閉（#17） |
+| 5 | §3.1.3 三欄自洽 | ✅ 已修：`attempt_id` 屬別卡 → `marker_quarantined` | — | 已閉（#17） |
+| 6 | §3.1.4 per-card halt 結果態 | ✅ 已修：新增 `marker_quarantined`，與 `unobservable` 分離 | — | 已閉（#17） |
+| 7 | §3.1.4 halt 解除路徑 | **仍缺**：契約只定義 `review-marker-clearance` 的事件欄位，未定義其在 Issue 留言平面的表示法，亦無 writer；消費者無從辨識哪則留言是 clearance | fail-closed（停機無法由機器解除，只能人工處理） | 表示法定義歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；消費實作卡未開 |
+| 8a | §3.1.5 重複 event 的保守停機 | ✅ 已修：同 `attempt_id` 多則事件 → `marker_quarantined` | — | 已閉（#17） |
 | 8b | §3.1.5 語意比對（放行合法重送） | 無；裁決語意只在散文，無結構化承載 | fail-closed（合法重送會被停機卡住） | 設計歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；實作卡未開 |
-| 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | 未讀取；半寫入無表達態 | fail-open | [#17](https://github.com/ruan6047/ai-workflow/issues/17) |
+| 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | 未讀取；半寫入無表達態 | fail-open | [#20](https://github.com/ruan6047/ai-workflow/issues/20) |
+
+**落差 7 的性質已改變。** 修復前它是 fail-open（停機根本不會發生，所以「無從解除」不痛不癢）；修復後停機真的會發生，而解除路徑仍不存在——方向轉為 fail-closed，代價是**遇到不合格 marker 的卡只能人工處理**。這是刻意的取捨：卡住要人看，好過放行一則讀不懂的裁決。
+
+**落差 9 已開追蹤卡 [#20](https://github.com/ruan6047/ai-workflow/issues/20)。** 它在 #17 的驗收條件中未涵蓋（#17 聚焦 marker 合規與停機態），而 `audit_review_channel()` 的簽章不接受 Project 欄位值，補它需要改呼叫端。方向是 fail-open，依 §6 規則必須有追蹤卡；該卡由 #17 的 R1-004 查核裁定要求開立。
 
 落差 8a／8b 的拆分理由：§3.1.5 延遲生效期間的保守行為（多則同 `attempt_id` 事件一律停止判定）**只需要消費者變更**，不依賴結構化承載，故可在 #17 內完成；只有「分辨語意一致以放行合法重送」才需要寫入端提供結構化裁決承載。兩者失效方向相反，混為一項會掩蓋 8a 的 fail-open 性質。
 
-落差 1–5 的證據可重跑：以下探針對六個案例呼叫 `audit_review_channel()`，前五個依 §3.1.4 應為不可判定，實測全部回 `recorded`。
+落差 1–5、8a 的修復證據可重跑：以下探針對六個案例呼叫 `audit_review_channel()`，前五個依 §3.1.4 應為不可判定。**修復前實測全部回 `recorded`；修復後全部回 `marker_quarantined`，對照組維持 `recorded`。**
 
 ```bash
 cd cli && uv run python -c "
@@ -57,7 +67,14 @@ for n,b in cases.items():
 
 ### 1.3 生效結論
 
-**§3.1.4 與 §3.1.5 在本 repo 目前皆未生效。** 在 [#17](https://github.com/ruan6047/ai-workflow/issues/17) 完成前，`wfcli doctor --review-channel` 回傳 `recorded` **不足以證明**該 attempt 的 marker 合格；它只證明有一則帶 `attempt_id` 的裁決文字與一行 Log 索引。任何據此結案的流程都必須另行人工核對 marker。
+**§3.1.4 的 marker 合規判定已生效**（#17）：`wfcli doctor --review-channel` 回傳 `recorded` 現在確實蘊含「該卡 timeline 上沒有受管轄但不合格的 marker」。五種不合格形態與重複事件皆轉 `marker_quarantined`，並在輸出中逐則列出停機原因。
+
+**但仍有兩項未生效，據此結案前必須知道**：
+
+- **停機無法由機器解除**（落差 7）。遇到不合格 marker 的卡會持續停機，`review-marker-clearance` 的留言平面表示法尚未定義，只能人工處理。方向是 fail-closed。
+- **§3.1.5 的語意等價放行未生效**（落差 8b）。合法的冪等重送目前會被當成衝突而停機。
+
+**三面一致仍只驗到兩面**（落差 9，追蹤卡 [#20](https://github.com/ruan6047/ai-workflow/issues/20)）：`recorded` 證明「有裁決留言 ＋ 有 Log 索引行」，**不**證明 Project 交付狀態欄與之相符。半寫入（留言成功、狀態欄失敗）目前仍無表達態，且該落差方向是 fail-open。
 
 ## 2. 其他消費者
 
