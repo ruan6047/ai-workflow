@@ -356,8 +356,39 @@ def repair_body_layout(body: str) -> tuple[str, str]:
             "損壞標記位於 fenced code block 內，那是內容不是標題；拒絕"
         )
 
+    # 真實事故中，token 取代的是「上一段內容」與 Log 標題之間的空行，因此它必定
+    # 緊接在內容文字之後。若它那一行在它之前只有空白，代表它處在縮排式程式碼區塊
+    # 一類的內容脈絡裡——那是內容不是標題。
+    line_start = body.rfind("\n", 0, idx) + 1
+    prefix = body[line_start:idx]
+    if idx != 0 and not prefix.strip():
+        raise AmendError(
+            f"損壞標記所在行在它之前只有空白（{prefix!r}），像是縮排式程式碼區塊裡的"
+            "內容而非 Log 標題；拒絕"
+        )
+
     repaired = body[:idx] + _REPAIRED_LOG_TOKEN + body[idx + len(_CORRUPTED_LOG_TOKEN) :]
-    split_at_log(repaired)  # 修不好就讓它在這裡失敗，不寫出半修好的 body
+    _, log_tail = split_at_log(repaired)  # 修不好就讓它在這裡失敗，不寫出半修好的 body
+
+    # 對**結果**的結構不變量，而不是對輸入做 Markdown 語境分析。
+    #
+    # 上面的 ``` 計數只擋得住反引號圍籬；`~~~` 圍籬、四空白縮排區塊、行內碼裡的
+    # 同一個 token 它都看不見。自我對抗測試證實：當 body 剛好沒有真正的 Log 標題
+    # 時（那些情形不會被「兩個 ## Log」的檢查攔下），修復會在圍籬或行內碼中間生出
+    # 一個標題。想靠列舉語境把它補完是追不完的——這已經是同一類錯誤第三次。
+    #
+    # 改為驗結果：真實卡片的 Log 區段永遠只有標題、空行、以及 `- ` 開頭的條目
+    # （``append_log_line`` 是唯一寫入者）。修完不符這個形狀，就代表切點落錯位置。
+    stray = [
+        line
+        for line in log_tail.splitlines()[1:]
+        if line.strip() and not line.startswith("- ")
+    ]
+    if stray:
+        raise AmendError(
+            "修復後的 Log 區段含非條目內容（例如圍籬、行內碼或其他章節殘留）："
+            f"{stray[0]!r}；判定切點落在內容中而非真正的 Log 標題，拒絕"
+        )
 
     before_decl = try_parse_block(body)
     if before_decl is not None:

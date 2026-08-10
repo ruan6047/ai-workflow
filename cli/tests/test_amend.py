@@ -425,7 +425,7 @@ def test_repair_preserves_json_and_all_other_bytes():
         "- 需求：x\n\n## 資源宣告\n"
         "<!-- resource-claims:begin -->\n"
         '```json\n{"db_scope": "none", "resources": ["file:a.py"], "note": "a\\nb"}\n```\n'
-        "<!-- resource-claims:end -->\n"
+        "<!-- resource-claims:end -->"
         "\\n## Log\\n\\n- 條目"
     )
     repaired, original = repair_body_layout(body)
@@ -585,7 +585,7 @@ def _body_with_json_literal_newline() -> str:
         "- 需求：x\n\n## 資源宣告\n"
         "<!-- resource-claims:begin -->\n"
         '```json\n{"db_scope": "none", "resources": ["file:a.py"], "note": "a\\nb"}\n```\n'
-        "<!-- resource-claims:end -->\n"
+        "<!-- resource-claims:end -->"
         "\\n## Log\\n\\n- 條目"
     )
 
@@ -604,7 +604,7 @@ def test_repair_leaves_pre_log_content_byte_identical():
         "- 需求：x\n\n## 資源宣告\n"
         "<!-- resource-claims:begin -->\n"
         '```json\n{"db_scope": "none", "resources": ["file:a.py"]}\n```\n'
-        "<!-- resource-claims:end -->\n"
+        "<!-- resource-claims:end -->"
         "\\n## Log\\n\\n- 條目"
     )
     repaired, original = repair_body_layout(body)
@@ -658,3 +658,48 @@ def test_exit5_message_points_to_record_unlogged_change(card, monkeypatch, capsy
     assert "--record-unlogged-change" in err
     assert "wfcli amend AMEND-DEMO1 --tier T3" in err
     assert "操作者的宣告" in err
+
+
+# --------------------------------------------------------------------------
+# 執行者自我對抗測試：fence 偵測的盲點（R3 修法後自查發現）
+#
+# `body.count("```")` 只看得見反引號圍籬。`~~~` 圍籬、縮排式程式碼區塊、行內碼
+# 裡的同一個 token 它都看不見；當 body 剛好沒有真正的 Log 標題時，「兩個 ## Log」
+# 那道下游檢查也攔不住，修復就會在內容中間生出一個標題。
+#
+# 靠列舉 Markdown 語境補不完，因此改為兩道與語境無關的檢查：
+#   1. token 所在行在它之前必須有非空白（真實事故中它緊接內容文字）。
+#   2. 修復後的 Log 區段只能有標題、空行與 `- ` 條目。
+# --------------------------------------------------------------------------
+
+_TOK = "\\n## Log\\n\\n"
+
+
+@pytest.mark.parametrize(
+    "name,body",
+    [
+        ("tilde-fence-no-real-log", "a\n\n~~~text\n" + _TOK + "- 範例條目\n~~~\n"),
+        ("four-space-indent", "a\n\n    " + _TOK + "- 範例\n"),
+        ("tab-indent", "a\n\n\t" + _TOK + "- 範例\n"),
+        ("inline-code-mention", "a\n\n- 文件說明：`" + _TOK + "` 是損壞形態\n"),
+        ("backtick-fence", "a\n\n```text\n" + _TOK + "\n```\n\n## Log\n\n- 真"),
+    ],
+)
+def test_repair_refuses_token_in_content_context(name, body):
+    with pytest.raises(AmendError):
+        repair_body_layout(body)
+
+
+def test_repair_accepts_token_at_body_start():
+    """token 位於 body 最開頭時沒有前綴可檢查，屬合法形態。"""
+    repaired, _ = repair_body_layout(_TOK + "- 條目")
+    assert repaired == "\n\n## Log\n\n- 條目"
+
+
+def test_repair_result_log_section_contains_only_entries():
+    """結構不變量：修復後 Log 區段只能有標題、空行與 `- ` 條目。"""
+    body = "- 需求：x" + _TOK + "- 條目一\n- 條目二\n"
+    repaired, _ = repair_body_layout(body)
+    tail = split_at_log(repaired)[1].splitlines()
+    assert tail[0].strip() == "## Log"
+    assert all(not ln.strip() or ln.startswith("- ") for ln in tail[1:])
