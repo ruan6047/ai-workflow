@@ -40,26 +40,105 @@ occurred_at: <write-time ISO 8601>
 - [ ] 所需 evidence 存在、可讀，且工作區／驗證環境符合任務要求。
 - [ ] receiver 在 remote adapter 追加 `handoff-accepted`，記錄 `source_sha`、actor、時間與驗證證據；之後才開始工作。
 
-## 3.1 外部查核收據與轉錄
+## 3.1 查核留痕契約：`wf-review-event:v1` 與 `wf-review-receipt:v1`
 
-跨工具查核者不能執行 `wfcli` 時，**不得**把「PR 頁面沒有 review」推論為「查核未發生」。改用下列兩段式留痕：
+本節是這兩個 marker 的權威定義。任何解析 Issue／PR 留言以判斷「這張卡的這個 SHA 是否已有查核裁決」的工具——`doctor`、看板對帳、任務編排器、CI 檢查——一律引用本節，不得從留言外觀、標題文字或作者身分自行推測語意。
 
-1. 查核者先在被審 Issue conversation 或 PR review body 留下一則不可覆寫的收據；它不是 lifecycle event，不改卡片狀態。固定內容如下，並保留 GitHub URL：
+本節規範的是**應然**。契約允許領先實作，但落差必須登記在 §6，否則會出現「契約寫著 fail-closed、實際在 fail-open」而無人看得出來的狀態。
 
-   ```text
-   <!-- wf-review-receipt:v1
-   card_id: <CARD_ID>
-   source_sha: <full-40-char-commit-sha>
-   report_sha256: <查核報告原文 UTF-8 SHA-256>
-   -->
-   ```
+### 3.1.1 角色分工
 
-   GitHub comment author 是可驗證的帳號身分；收據內模型／工具名稱只屬自述，不能取代平台身分驗證。
-2. PM 祕書以收據原文與 hash 對帳後，才用 `wfcli review` 轉錄結構化報告；review event evidence 必須引用該收據 URL。`--reviewer` 的自由文字不可單獨作為身分證明。
+跨工具查核者不能執行 `wfcli` 時，**不得**把「PR 頁面沒有 review」推論為「查核未發生」。留痕因此分兩段：查核者留下 receipt（證據），lifecycle writer 轉錄為 event（狀態）。兩者不是同一份東西的兩種寫法，權責、語法與嚴格度都不同：
+
+| 面向 | `wf-review-event:v1` | `wf-review-receipt:v1` |
+|---|---|---|
+| 產生者 | 只有 `wfcli review`（lifecycle writer） | 查核者本人的 GitHub 帳號 |
+| 是否 lifecycle 狀態 | 是；唯一的狀態面裁決事件 | 否；只是 evidence，不改卡片狀態 |
+| marker 語法 | 單行、`key=value`、以單一空白分隔 | 多行、`key: value`、以換行分隔 |
+| 鍵集合 | 封閉（§3.1.3） | 開放 |
+| 未知版本的失效方向 | 既有解析器會誤放行，故須明文 halt（§3.1.4） | 比對不命中即視為不存在，落 `unobservable`，方向已屬保守 |
+
+最後一列是兩者嚴格度不對稱的**原因**，不是疏漏：event 有一條會**放行**的錯誤路徑要堵，receipt 沒有。對 receipt 套用同等嚴格度，只會在沒有風險的地方製造遷移成本。
+
+receipt 不是 event 的必要前置。它只在查核者無法執行 `wfcli` 時需要；能自行執行 `wfcli` 的查核者直接產生 event，缺 receipt 不構成缺陷。但這留下一個必須明說的洞：**沒有 receipt 的 event，其查核者身分只有 `--reviewer` 的自由文字，而該欄只驗非空**。此類 event 在身分維度上等同無佐證，任何依賴「誰查核的」做判斷的流程都不得單獨採信它。
+
+### 3.1.2 `wf-review-receipt:v1`
+
+查核者在被審 Issue conversation 或 PR review body 留下一則不可覆寫的收據，並保留 GitHub URL。固定內容如下：
+
+```text
+<!-- wf-review-receipt:v1
+card_id: <CARD_ID>
+source_sha: <full-40-char-commit-sha>
+report_sha256: <查核報告原文 UTF-8 SHA-256>
+-->
+```
+
+GitHub comment author 是可驗證的帳號身分；收據內模型／工具名稱只屬自述，不能取代平台身分驗證。
+
+收據**不含** `escalation_epoch` 或 `attempt_id`。因此同一張卡、同一個 `source_sha` 在 epoch 遞增後重審時，兩份收據除 `report_sha256` 外逐字相同，僅憑收據無法判定各自對應哪個 attempt。轉錄者必須以 `report_sha256` 對帳報告原文來區分，不得以留言時序推定。
+
+### 3.1.3 `wf-review-event:v1`
+
+由 `wfcli review` 在通過契約驗證後寫入被審 Issue timeline 的裁決留言，marker 置於留言首行。它是狀態面唯一的裁決事件識別符。逐字語法：
+
+```text
+<!-- wf-review-event:v1 card_id=<CARD_ID> source_sha=<full-40-char-commit-sha> attempt_id=<CARD_ID>-e<epoch>-<full-40-char-commit-sha> -->
+```
+
+**必填三欄**：`card_id`、`source_sha`、`attempt_id`。三者皆為必填，缺任一即依 §3.1.4 處理。
+
+**鍵集合封閉**：`v1` 只有上列三鍵。出現任何未定義鍵即依 §3.1.4 處理，不得忽略後照常解析。要擴充欄位必須升版本——契約若對自己管轄範圍內的未知內容選擇忽略，那麼擋住未知版本卻放行未知欄位，只是把同一個漏洞換個位置。
+
+**順序與分隔固定**：三欄依 `card_id`、`source_sha`、`attempt_id` 排列，以單一空白分隔。這不是排版偏好：既有消費者以整段前綴字串比對，換順序或多一個空白就完全不命中，而不命中會落入 §3.1.4 要堵的 legacy 分支。語意等價但格式不同的 marker **不是**合法 `v1` marker。
+
+**三欄必須自洽**：`attempt_id` 冗餘編碼了另外兩欄，其反解出的 `card_id` 與 `source_sha` 必須與同一 marker 的對應欄位逐字相同。不自洽即依 §3.1.4 處理。
+
+**epoch 只能反解**：marker 不帶 `escalation_epoch` 欄，epoch 僅能由 `attempt_id` 的 `-e<N>-` 段取得。attempt identity 是 `(card_id, escalation_epoch, source_sha)`（`review-escalation.md` §3），因此丟失 `attempt_id` 等同丟失 epoch。
+
+**marker 是識別符，不是裁決本體**。marker 只是 comment body 裡的純文字，沒有任何簽章性質，任何有留言權限的身分都能逐字複製一份。因此**單憑 marker 不得裁決**。狀態面裁決成立需三面同時一致，缺一不可：
+
+1. Issue timeline 上帶合法 `v1` marker 的裁決留言全文；
+2. Issue body `## Log` 中對應同一 `attempt_id` 的 `review by wf-cli` 索引行；
+3. Project 交付狀態欄與該裁決結論相符。
+
+這是 AND 不是 OR，理由有二。其一，要求三面命中並不能杜絕偽造，但它把偽造面從「一則留言」擴大到留言、body、Project 欄位三處，而 Project 欄位另有 GitHub 稽核軌跡。其二，`wfcli review` 的三次遠端寫入沒有交易性，**半寫入是真實可能狀態**；AND 語意讓半寫入被偵測而非被靜默當成完成。三面不一致時不得裁決，也不得挑其中一面作準。
+
+**已知限制：裁決結果不在 marker 內。** marker 只承載 identity，`APPROVE`／`REQUEST_CHANGES`、`core_pain_resolved`、findings 等語意只存在於渲染後的散文，留言內沒有結構化區塊。消費者找到 marker 後仍無法從 marker 得知裁決是什麼。此限制影響 §3.1.5 的可實作性，其解法需改動寫入端，不在本節規範範圍。
+
+### 3.1.4 未知版本、缺欄與 fail-closed
+
+**legacy 的判準是語法，不是時間。** legacy 裁決留言 ≡ **完全不含 `wf-review-event:` 前綴**的留言。它們是 marker 引入前寫下的，既有相容規則對它們維持不變。
+
+反之，只要留言出現 `wf-review-event:` 前綴，該留言即宣告自己受本契約管轄。此時版本不是 `v1`、或 `v1` 但不符 §3.1.3 任一要求（缺欄、多出未定義鍵、順序或分隔不符、三欄不自洽），一律 fail-closed，**不得回退到 legacy 路徑**。用時間或 cutover 時點定義 legacy 會引入時鐘、時區與「編輯過的留言算哪個時間」等問題，那屬時間語意契約的範圍；語法判準只看單則留言的內容，與時間契約正交。
+
+**fail-closed 的作用域是整張卡，不是單則留言。** 一旦出現受管轄但不合格的 marker，該卡的自動裁決判定立即停止，回報「不可判定」；即使 timeline 別處存在合法 `v1` event，也不得自動放行。
+
+作用域必須是 per-card，因為失效方向不對稱。同一張卡出現多個 SHA、先退回後通過是常態；若只跳過讀不懂的那則、繼續採用較早的合法 event，那麼當讀不懂的那則其實是**撤銷或降級**裁決時，結果是「讀不懂一則留言，所以放行」。那不是比較寬鬆的 fail-closed，那是 fail-open。
+
+**解除路徑必須存在，否則這條規則就是死鎖。** per-card halt 意味著任何有留言權限的身分，貼一行不合格 marker 即可凍結該卡的自動判定。這是已知的可用性代價：凍結需要人介入，但不會產生錯誤的通過。解除方式為：由 Coordinator／需求方修復或標注該則留言，並在該卡追加既有 lifecycle event 明示裁定處置，消費者方可續行。本節不為此發明新 event type。修復不得以刪除留痕的方式進行；若編輯了原留言，解除裁定中必須記錄編輯前原文。
+
+**已承認的保守誤判**：一則本身合法的 legacy 留言，若在內文中**引用**了 `wf-review-event:` 字樣（例如討論契約本身），會被判為受管轄且不合格而觸發 halt。這是往 fail-closed 方向的誤判——卡住而非放行——故予以接受，但不假裝它不存在。
+
+### 3.1.5 重複 event 與冪等重送
+
+同一 `attempt_id` 出現多則 event 時：**裁決語意一致者視為同一筆**，不重複計入 attempt，也不觸發 §3.1.4 的 halt；**語意衝突者**依 §3.1.4 停止該卡的自動判定，交由 Coordinator／需求方裁定。
+
+重複不必然是異常。寫入端沒有重複執行防護，而遠端寫入中斷後的重送，其**成功樣態就是產生一則重複留言**。若規定重複即 halt，等於讓每一次成功的重送都凍結該卡，也就等於禁止了可恢復的重送機制。
+
+**比對基準是裁決語意，不是逐字。** 比對 `review_result`、`core_pain_resolved`、交付狀態結論，以及 findings 的 `finding_id`／`accepted`／`status` 集合；**排除**寫入時間與 reviewer 自由文字。寫入時間每次執行都重新取值，合法重送必然在該行不同；若採逐字比對，本節就退化成「重複即 halt」。
+
+此規則的可實作性受 §3.1.3 末段的已知限制拘束：上列語意欄位目前只存在於散文中，沒有結構化承載。在寫入端提供結構化裁決承載之前，消費者無法可靠執行本節的比對，該落差須登記於 §6。
+
+### 3.1.6 轉錄與 doctor 判定
+
+PM 祕書以收據原文與 hash 對帳後，才用 `wfcli review` 轉錄結構化報告；review event evidence 必須引用該收據 URL。`--reviewer` 的自由文字不可單獨作為身分證明。
 
 若收據已存在而 review event 尚未出現，`wfcli doctor --review-channel` 必須報
 `receipt_untranscribed`：這是「查核裁決已可觀測、尚未進狀態面」，保持 `🔍待查核` 並要求轉錄。
 若兩者皆無，doctor 報 `unobservable`，**不是**宣告查核未發生；系統只能 fail-closed，不能放行或事後編造結論。
+
+「找不到訊號」與「找到訊號但讀不懂」是不同結果，不得併入同一態：前者要人去查有沒有人查核過，後者要人去修一則壞掉的留言。§3.1.4 的 halt 與 §3.1.5 的衝突因此需要與 `unobservable` 分離的結果態；三面不一致的半寫入（§3.1.3）同理。消費者若尚無足夠的結果態表達這些情形，須在 §6 登記。
 
 ## 4. Optional local tmux adapter
 
@@ -78,3 +157,17 @@ occurred_at: <write-time ISO 8601>
 - tmux launcher／wake-up：<可選 command；不用填—>
 - Runtime 路徑與 `.gitignore`：<path>
 - 失敗、重試與人工介入：<runbook link>
+
+## 6. 消費者符合度登記
+
+任何解析 §3.1 marker 的工具都是本契約的消費者。§3.1 規範應然，允許契約領先實作；本節讓落差可稽核。不登記的落差會讓契約寫著 fail-closed、實際在 fail-open，而沒有人看得出來——那比沒有契約更危險，因為它同時提供了虛假的保證。
+
+每個採用專案在此逐一登記：
+
+- 消費者：<工具／檔案／函式>
+  - 讀取的 marker：<`wf-review-event:v1`／`wf-review-receipt:v1`>
+  - 已實作：<逐條，對應 §3.1 的哪一項要求>
+  - 落差：<逐條；每項必須註明失效方向為 fail-open 或 fail-closed>
+  - 落差追蹤：<Issue／卡 ID；無則填「未追蹤」>
+
+**fail-open 方向的落差必須有追蹤卡**：它代表契約承諾會擋下的情形，實際上會被放行。fail-closed 方向的落差（過度保守、誤卡）可暫時無追蹤卡，但仍須登記，否則無從判斷一次凍結是規則生效還是實作缺陷。
