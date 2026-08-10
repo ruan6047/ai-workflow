@@ -165,27 +165,37 @@ _CONFORMANT_MARKER_RE = re.compile(
 _ATTEMPT_RE = re.compile(r"^(?P<card>.+)-e(?P<epoch>\d+)-(?P<sha>[0-9a-f]{40})$")
 
 
-def _marker_line(body: str) -> str | None:
-    """取出宣告受管轄的那一行（契約規定 marker 置於留言首行）。"""
-    for line in body.splitlines():
-        if line.strip().startswith("<!-- " + _EVENT_PREFIX):
-            return line.strip()
-    return None
-
-
 def inspect_event_marker(body: str) -> tuple[str | None, str | None]:
     """檢查一則留言的 marker 合規性。
 
     回傳 ``(attempt_id, 不合格原因)``：兩者恰有一個為 None。留言未宣告受管轄時
     兩者皆 None——那是 legacy，不歸本檢查管。
+
+    **marker 必須恰為留言首行**（契約 §3.1.3：「marker 置於留言首行」），且整則
+    留言只能出現一處前綴。先前版本掃描所有行找 marker，導致三種 fail-open：
+    marker 埋在散文之後仍被採信、前導空白仍被採信、以及最嚴重的——**包在 code
+    fence 裡的示範 marker 被當成真事件**。示範與引用必須落在 fail-closed 那一側，
+    不能因為「找得到一行長得像 marker」就放行。
     """
     if _EVENT_PREFIX not in body:
         return None, None
-    line = _marker_line(body)
-    if line is None:
-        # 前綴只出現在內文（例如引用契約），沒有 marker 行。契約承認的保守誤判：
-        # 寧可停機要人看，也不放行一則可能是壞掉裁決的留言。
-        return None, "留言含 `wf-review-event:` 前綴但首行不是 marker（可能是內文引用）"
+    lines = body.splitlines()
+    first = lines[0] if lines else ""
+    if not first.startswith("<!-- " + _EVENT_PREFIX):
+        # 前綴出現在別處：內文引用、code fence 示範，或 marker 沒放在首行。
+        # 一律停機——契約承認這個保守誤判，方向是 fail-closed。
+        return None, (
+            "留言含 `wf-review-event:` 前綴但**首行不是 marker**"
+            "（契約要求 marker 置於留言首行；內文引用、code fence 示範、"
+            "前導空白皆屬此類）"
+        )
+    extra = sum(1 for line in lines if _EVENT_PREFIX in line) - 1
+    if extra > 0:
+        return None, (
+            f"留言首行是 marker，但另有 {extra} 處 `wf-review-event:` 前綴；"
+            "一則事件一則留言，無法判斷哪一個才算數"
+        )
+    line = first
     if not line.startswith("<!-- wf-review-event:v1 "):
         version = line.split()[1] if len(line.split()) > 1 else line
         return None, f"未知或不支援的 marker 版本：{version}（只認 v1；不得回退 legacy）"

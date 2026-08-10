@@ -325,3 +325,42 @@ def test_receipt_still_detected_when_no_governed_marker():
     receipt = f"<!-- wf-review-receipt:v1\ncard_id: {_ECARD}\nsource_sha: {_ESHA}\n-->"
     finding = audit_review_channel([{"body": receipt, "html_url": "u", "user": {"login": "x"}}], _ECARD, _ESHA)
     assert finding.status == "receipt_untranscribed"
+
+
+# --------------------------------------------------------------------------
+# 執行者自我對抗測試：marker 必須「恰為首行」
+#
+# 先前版本掃描所有行找 marker，造成三種 fail-open：埋在散文之後仍被採信、前導
+# 空白仍被採信，以及最嚴重的——包在 code fence 裡的示範 marker 被當成真事件。
+# 契約 §3.1.3 明寫「marker 置於留言首行」，示範與引用必須落在 fail-closed 那側。
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name,body",
+    [
+        ("buried-after-prose", f"閒聊一句\n再一句\n{_conformant_marker()}\n## 查核裁決：APPROVE"),
+        ("leading-whitespace", f"  {_conformant_marker()}\n## 查核裁決：APPROVE"),
+        ("two-markers-one-comment", f"{_conformant_marker()}\n{_conformant_marker()}\n## 查核裁決：APPROVE"),
+        ("inside-code-fence", f"```text\n{_conformant_marker()}\n```\n這只是範例"),
+        ("prefix-quoted-in-verdict-prose",
+         f"{_conformant_marker()}\n## 查核裁決：APPROVE\n備註：`wf-review-event:v1` 的三欄自洽規則"),
+    ],
+)
+def test_marker_must_be_exactly_the_first_line(name, body):
+    finding = audit_review_channel([{"body": body}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "marker_quarantined", f"{name} 被判為 {finding.status}（fail-open）"
+
+
+def test_uppercase_sha_in_marker_is_not_conformant():
+    """契約規定 source_sha 為完整 40 字元小寫 hex。"""
+    marker = _conformant_marker().replace(_ESHA, _ESHA.upper())
+    finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "marker_quarantined"
+
+
+def test_same_sha_different_epoch_is_a_separate_attempt_not_a_duplicate():
+    """同 SHA 在 replan 後重審屬不同 attempt，不是重複事件，不得停機。"""
+    marker = _conformant_marker(attempt=f"{_ECARD}-e1-{_ESHA}")
+    finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "recorded"
