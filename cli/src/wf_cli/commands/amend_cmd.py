@@ -47,6 +47,7 @@ from ..card import (
 from ..config import add_target_args, resolve_target
 from ..gh import default_runner
 from ..project import (
+    add_issue_comment,
     ensure_fields,
     find_item_by_card_id,
     list_items,
@@ -102,6 +103,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "故此判斷由操作者顯式承擔",
     )
     p.add_argument(
+        "--escalate",
+        action="store_true",
+        help="偵測到 body 排版損壞而拒絕時，在該 Issue 留言記錄求助（不碰 body、"
+        "不改交付狀態），讓人或 AI 接手。stderr 是瞬時的，卡面留言才是持久紀錄",
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         help="只驗證與列印將寫入的變更，不連 GitHub 寫入任何狀態",
@@ -142,6 +149,44 @@ _LAYOUT_RUNBOOK = """
 
 def _is_layout_failure(exc: Exception) -> bool:
     return any(marker in str(exc) for marker in _LAYOUT_MARKERS)
+
+
+def _escalate_layout_failure(runner, target, item, args, exc: Exception) -> None:
+    """把排版損壞留成 Issue 留言，讓人或 AI 接手。
+
+    stderr 是瞬時的：腳本裡跑 amend 失敗，runbook 捲過去就沒了，卡面不留痕跡，
+    沒人知道有卡卡住。留言是**唯一不必碰 body 就能留下持久紀錄**的通道——正好
+    避開「body 已經壞了、再寫更危險」這個處境。
+
+    刻意**不**改交付狀態：轉 ⏸阻塞 是 lifecycle 決定，屬 PM 的判斷，不由一個
+    修訂指令代勞。本函式只負責讓問題可被看見與被指派。
+    """
+    if item.content_type != "Issue" or item.issue_number is None or not target.repo:
+        print(
+            "[amend] --escalate 需要真實 repo Issue（draft item 沒有可留言的 timeline）；"
+            "本次僅印出 runbook，未留下持久紀錄",
+            file=sys.stderr,
+        )
+        return
+    comment = (
+        f"<!-- wf-amend-blocked:v1 card_id={args.card_id} check=log-layout -->\n"
+        f"## ⏸ `wfcli amend` 因 body 排版損壞而拒絕\n\n"
+        f"- 卡：`{args.card_id}`\n"
+        f"- 偵測到的問題：{exc}\n"
+        f"- 嘗試的修訂理由：{_fold(args.reason)}\n"
+        f"- 時間：{now_iso8601()}\n\n"
+        "**本指令刻意不自動修復 body**（理由見 `cli/README.md`「為什麼沒有排版修復」）。"
+        "在修好之前，這張卡的任何 `wfcli amend` 都會被拒絕。\n\n"
+        "### 需要人或 AI 接手\n"
+        f"```text{_LAYOUT_RUNBOOK.format(card_id=args.card_id)}\n```\n\n"
+        "修復後請在本串回覆，並一併說明 body 為何會被繞過 `wfcli` 直接寫入——"
+        "排版損壞本身就是那條繞道仍然存在的證據。"
+    )
+    add_issue_comment(runner, target.repo, item.issue_number, comment)
+    print(
+        f"[amend] --escalate：已在 #{item.issue_number} 留下求助紀錄（body 與交付狀態均未變動）",
+        file=sys.stderr,
+    )
 
 
 def _tier_change_logged(body: str, tier: str) -> bool:
@@ -218,6 +263,13 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
         if _is_layout_failure(exc):
             print(_LAYOUT_RUNBOOK.format(card_id=args.card_id), file=sys.stderr)
+            if args.escalate:
+                _escalate_layout_failure(runner, target, item, args, exc)
+        elif args.escalate:
+            print(
+                "[amend] --escalate 只對排版損壞生效；本次是一般拒收，不留升級紀錄",
+                file=sys.stderr,
+            )
         return 2
 
     old_tier = item.text("級別")

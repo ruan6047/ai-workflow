@@ -114,6 +114,22 @@ wfcli amend <CARD-ID> --repo <owner/repo> --reason 驗證排版 --dry-run --spec
 **逐字驗證**而非由工具**宣稱**——同一條不變量，差別在誰來背書；後者讓「修好了」有機械
 判準，不靠目視。
 
+#### `--escalate`：讓卡住這件事被看見
+
+stderr 是瞬時的。腳本裡跑 `amend` 失敗，runbook 捲過去就沒了，卡面不留痕跡，沒人知道
+有卡卡住。加 `--escalate` 時，排版損壞會在該 Issue 留下一則求助留言（含機器可 grep 的
+`<!-- wf-amend-blocked:v1 ... -->` 標記與完整 runbook），交給人或 AI 接手：
+
+```bash
+wfcli amend <CARD-ID> --repo <owner/repo> --reason "..." --spec-baseline "..." --escalate
+```
+
+三個刻意的界線：
+
+- **不碰 body**。body 已經壞了，再寫更危險；留言是唯一不必動 body 就能留下持久紀錄的通道。
+- **不改交付狀態**。轉 `⏸阻塞` 是 lifecycle 決定，屬 PM 的判斷，不由一個修訂指令代勞。
+- **只對排版損壞生效**。一般拒收（no-op、格式錯）不留升級紀錄，避免訊息噪音。
+
 **這類損壞同時是一個訊號**：它代表某處仍在繞過 `wfcli` 直接寫 body。修完請一併追查來源。
 
 ## `review`：查核輸出契約的機械閘門（WF-22-CLI3）

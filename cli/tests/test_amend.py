@@ -566,3 +566,41 @@ def test_healthy_body_does_not_print_runbook(card, capsys):
     rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "同值", "--spec-baseline", "原基線"])
     assert rc == 2
     assert "gh issue view" not in capsys.readouterr().err
+
+
+def test_escalate_leaves_durable_comment_without_touching_body(card, capsys, monkeypatch):
+    """stderr 是瞬時的；--escalate 要在卡上留下持久且可稽核的求助紀錄。"""
+    posted: list[tuple] = []
+    monkeypatch.setattr(amend_cmd, "add_issue_comment",
+                        lambda runner, repo, number, body: posted.append((repo, number, body)))
+    project = resolve_project(card, "acme", 1)
+    item = _item(card)
+    corrupted = item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number, corrupted)
+    monkeypatch.setattr(type(_item(card)), "content_type", "Issue", raising=False)
+
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "--repo", "acme/wf", "AMEND-DEMO1",
+         "--reason", "想改", "--spec-baseline", "新基線", "--escalate"]
+    )
+    assert rc == 2
+    assert _item(card).body == corrupted, "body 一個字都不能動"
+    if posted:  # draft item 沒有 issue_number 時會走警告路徑
+        _, _, comment = posted[0]
+        assert "wf-amend-blocked:v1" in comment, "要有可 grep 的機器標記"
+        assert "AMEND-DEMO1" in comment
+        assert "需要人或 AI 接手" in comment
+        assert "gh issue edit" in comment, "留言要自帶完整 runbook"
+    else:
+        assert "draft item" in capsys.readouterr().err
+
+
+def test_escalate_is_noop_for_non_layout_rejections(card, capsys, monkeypatch):
+    posted: list = []
+    monkeypatch.setattr(amend_cmd, "add_issue_comment", lambda *a: posted.append(a))
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "同值", "--spec-baseline", "原基線", "--escalate"]
+    )
+    assert rc == 2
+    assert not posted, "一般拒收不該留升級紀錄"
+    assert "只對排版損壞生效" in capsys.readouterr().err
