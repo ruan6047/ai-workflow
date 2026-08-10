@@ -31,11 +31,11 @@
 | 7 | §3.1.4 halt 解除路徑 | **仍缺**：契約只定義 `review-marker-clearance` 的事件欄位，未定義其在 Issue 留言平面的表示法，亦無 writer；消費者無從辨識哪則留言是 clearance | fail-closed（停機無法由機器解除，只能人工處理） | 表示法定義歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；消費實作卡未開 |
 | 8a | §3.1.5 重複 event 的保守停機 | ✅ 已修：同 `attempt_id` 多則事件 → `marker_quarantined` | — | 已閉（#17） |
 | 8b | §3.1.5 語意比對（放行合法重送） | 無；裁決語意只在散文，無結構化承載 | fail-closed（合法重送會被停機卡住） | 設計歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；實作卡未開 |
-| 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | 未讀取；半寫入無表達態 | fail-open | 未追蹤（本卡驗收未涵蓋，需另開卡） |
+| 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | 未讀取；半寫入無表達態 | fail-open | [#20](https://github.com/ruan6047/ai-workflow/issues/20) |
 
 **落差 7 的性質已改變。** 修復前它是 fail-open（停機根本不會發生，所以「無從解除」不痛不癢）；修復後停機真的會發生，而解除路徑仍不存在——方向轉為 fail-closed，代價是**遇到不合格 marker 的卡只能人工處理**。這是刻意的取捨：卡住要人看，好過放行一則讀不懂的裁決。
 
-**落差 9 目前無人追蹤。** 它在 #17 的驗收條件中未涵蓋（本卡聚焦 marker 合規與停機態），而 `audit_review_channel()` 的簽章不接受 Project 欄位值，補它需要改呼叫端。方向是 fail-open，依 §6 規則**應有追蹤卡**——尚未開。
+**落差 9 已開追蹤卡 [#20](https://github.com/ruan6047/ai-workflow/issues/20)。** 它在 #17 的驗收條件中未涵蓋（#17 聚焦 marker 合規與停機態），而 `audit_review_channel()` 的簽章不接受 Project 欄位值，補它需要改呼叫端。方向是 fail-open，依 §6 規則必須有追蹤卡；該卡由 #17 的 R1-004 查核裁定要求開立。
 
 落差 8a／8b 的拆分理由：§3.1.5 延遲生效期間的保守行為（多則同 `attempt_id` 事件一律停止判定）**只需要消費者變更**，不依賴結構化承載，故可在 #17 內完成；只有「分辨語意一致以放行合法重送」才需要寫入端提供結構化裁決承載。兩者失效方向相反，混為一項會掩蓋 8a 的 fail-open 性質。
 
@@ -68,7 +68,7 @@ for n,b in cases.items():
 - **停機無法由機器解除**（落差 7）。遇到不合格 marker 的卡會持續停機，`review-marker-clearance` 的留言平面表示法尚未定義，只能人工處理。方向是 fail-closed。
 - **§3.1.5 的語意等價放行未生效**（落差 8b）。合法的冪等重送目前會被當成衝突而停機。
 
-**三面一致仍只驗到兩面**（落差 9）：`recorded` 證明「有裁決留言 ＋ 有 Log 索引行」，**不**證明 Project 交付狀態欄與之相符。半寫入（留言成功、狀態欄失敗）目前仍無表達態，且該落差方向是 fail-open、尚無追蹤卡。
+**三面一致仍只驗到兩面**（落差 9，追蹤卡 [#20](https://github.com/ruan6047/ai-workflow/issues/20)）：`recorded` 證明「有裁決留言 ＋ 有 Log 索引行」，**不**證明 Project 交付狀態欄與之相符。半寫入（留言成功、狀態欄失敗）目前仍無表達態，且該落差方向是 fail-open。
 
 ## 2. 其他消費者
 
