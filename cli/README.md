@@ -34,13 +34,23 @@ uv run pytest        # 全套測試（本 repo 新增；數量以此指令輸出
 # 改 spec 基線（上游卡 merge 後）
 wfcli amend CARD-ID --repo owner/repo --reason "上游卡已 merge" --spec-baseline "main <sha>"
 
-# 整份替換驗收條件（預設全部重設為未勾選）
+# 整份替換驗收條件（預設全部重設為未勾選；要沿用原勾選加 --preserve-checked）
 wfcli amend CARD-ID --repo owner/repo --reason "需求方追加" \
   --acceptance "條件一" --acceptance "條件二"
+
+# 整份替換驗證項目（用法同 --acceptance）
+wfcli amend CARD-ID --repo owner/repo --reason "查核裁定改寫" \
+  --verification "驗證一" --verification "驗證二"
+
+# 改資源宣告：--resources 整份取代（空字串代表清空），--db-scope 單獨改 scope
+wfcli amend CARD-ID --repo owner/repo --reason "範圍調整" \
+  --resources "file:a.py,file:b.py" --db-scope read
 
 # 更正級別（`WF-CLI-TIER-MUTATION1` 併入本指令）
 wfcli amend CARD-ID --repo owner/repo --reason "開卡時填錯" --tier T3
 ```
+
+可同時給多個欄位；**任一欄位驗證失敗就整批不寫**，不留半套修改。
 
 `--dry-run` 零遠端寫入，可先看將寫入什麼。
 
