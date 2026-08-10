@@ -1,6 +1,6 @@
 # WF-ORCHESTRATION-RECONCILE1：可恢復任務編排狀態機設計
 
-> 卡：[ai-workflow#16](https://github.com/ruan6047/ai-workflow/issues/16)　基線：`origin/main` `91d8a1f10ad2a8faceafb79f7e8c89571385569f`
+> 卡：[ai-workflow#16](https://github.com/ruan6047/ai-workflow/issues/16)　基線：`origin/main` `7451b72ba7679893043950d71bad9642665e25da`（含 #20；`doctor --review-channel` 結果態為**五種**，`half_written` 為第五種）
 >
 > 本檔是**設計**，不含實作。所有可執行變更由衍生實作卡承接（§9），契約修訂另走紅線 PR（§10）。
 
@@ -221,6 +221,8 @@ WAL 讓「做到哪」在 crash 的任何位置都留得下來。
 #15／#17／#19 已 merge 並關閉 Issue，但交付狀態停在 `✅通過`、owner 仍掛著。`assign` 的終態集合是 `{🏁完成, 🛑已停止}`，於是它們被算成活卡，**資源宣告永不釋放**——#20 派工當場被拒絕。
 
 **恢復路徑**：§2.2 把 cleanup 納入 `release` 轉換（而非可選善後）；§5.2 白名單第 4 條讓 reconcile 能偵測並修復此形態。
+
+> **現況註記（供查核者比對線上狀態）**：此三張卡已於 2026-08-11 **人工**補跑 `release`，#20 亦已於同日走完完整 cleanup 序列（merge `7451b72` → 移 worktree → 刪雙端分支 → 關 Issue → `release` 轉 `🏁完成`）。**人工補跑正是本節要消滅的東西**——線上狀態已修不代表病灶已解，機械執行者仍待實作卡 G。
 
 ### 8.3 ai-workflow：cpbl 卡的 worktree 建在 ai-workflow repo 內
 
