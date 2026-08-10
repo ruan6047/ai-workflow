@@ -126,8 +126,10 @@ GitHub comment author 是可驗證的帳號身分；收據內模型／工具名�
 
 - **停機狀態由現行內容導出**，不由簿記推定——留言隔離後遭編輯即再次停機，但**任何**編輯結果都有可發的解除路徑（編輯成合格 marker 走 `repaired-verified`），不得出現無法解除的狀態。
 - 解除範圍以留言為單位；多則不合格 marker 需多則 clearance。
-- `forged-rejected` 強制由需求方裁定，且須附其本人帳號所留裁定的留言 URL 供比對；`reissue-required` 解除停機但不得據以認定該卡已有裁決。
-- **分類不得靠自述降類**：留言 author 不在 §5 宣告的 review event writer 帳號集合、內容卻看似裁決者，不得判為 `malformed-ignored`。
+- `forged-rejected` 強制由需求方裁定。其裁定留言 URL 須通過三項核對：author 等於卡面需求方、**位於本卡**、且內文**明列** `quarantined_comment_id` 與對應 body hash 及所授權的 decision。第三項是防重放——hash 在停機成立前並不存在，舊留言不可能含有它，因此不需引入時鐘即可擋掉重放。
+- **分類不得靠自述降類**：留言 author 不在 §5 宣告的 review event writer 帳號集合、內容卻看似裁決者，不得判為 `malformed-ignored`，**也不得**判為 `repaired-verified`——否則外人可自行編輯留言後以「已修復」洗白。
+- `repaired-verified` 另須 adapter 驗證現行 body **確實已合格**且該留言**已有前一筆有效 clearance**；否則壞 marker 只要改成另一個壞 marker 就能藉此出口解鎖。
+- `reissue-required` 解除停機但不得據以認定該卡已有裁決。
 - 修復首選是不編輯原留言、改以正規通道另發合法事件並 `superseded`；不得刪除被停機的留言，也不得回寫既有事件。
 
 **已承認的保守誤判**：一則本身合法的 legacy 留言，若在內文中**引用**了 `wf-review-event:` 字樣（例如討論契約本身），會被判為受管轄且不合格而觸發 halt。這是往 fail-closed 方向的誤判——卡住而非放行——故予以接受，但不假裝它不存在。
