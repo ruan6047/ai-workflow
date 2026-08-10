@@ -161,6 +161,15 @@ def _escalate_layout_failure(runner, target, item, args, exc: Exception) -> None
     刻意**不**改交付狀態：轉 ⏸阻塞 是 lifecycle 決定，屬 PM 的判斷，不由一個
     修訂指令代勞。本函式只負責讓問題可被看見與被指派。
     """
+    if args.dry_run:
+        # --dry-run 承諾零遠端寫入，這條承諾不因為「只是留言」而破例：留言同樣是
+        # 對 GitHub 的寫入，而 dry-run 的用途正是「先看看會發生什麼」。
+        print(
+            "[amend] --dry-run：略過 --escalate 的留言（dry-run 不做任何遠端寫入）。"
+            "要留下求助紀錄請去掉 --dry-run 重跑",
+            file=sys.stderr,
+        )
+        return
     if item.content_type != "Issue" or item.issue_number is None or not target.repo:
         print(
             "[amend] --escalate 需要真實 repo Issue（draft item 沒有可留言的 timeline）；"
@@ -182,7 +191,18 @@ def _escalate_layout_failure(runner, target, item, args, exc: Exception) -> None
         "修復後請在本串回覆，並一併說明 body 為何會被繞過 `wfcli` 直接寫入——"
         "排版損壞本身就是那條繞道仍然存在的證據。"
     )
-    add_issue_comment(runner, target.repo, item.issue_number, comment)
+    try:
+        add_issue_comment(runner, target.repo, item.issue_number, comment)
+    except Exception as post_exc:  # noqa: BLE001 - 留言失敗不得蓋掉原本的拒收語意
+        # 升級是**盡力而為**的附加動作。它失敗時最糟的處理就是讓例外逸出：呼叫端會
+        # 收到非預期的退出碼，而 stack trace 會把上面那份 runbook 沖掉——使用者因此
+        # 同時失去自動紀錄與人工出路。這裡改為警告並保留退出碼 2。
+        print(
+            f"[amend] --escalate 留言失敗（{type(post_exc).__name__}: {post_exc}）；"
+            "拒收結論不變，請依上方 runbook 人工處理並自行留痕",
+            file=sys.stderr,
+        )
+        return
     print(
         f"[amend] --escalate：已在 #{item.issue_number} 留下求助紀錄（body 與交付狀態均未變動）",
         file=sys.stderr,

@@ -568,31 +568,75 @@ def test_healthy_body_does_not_print_runbook(card, capsys):
     assert "gh issue view" not in capsys.readouterr().err
 
 
-def test_escalate_leaves_durable_comment_without_touching_body(card, capsys, monkeypatch):
-    """stderr 是瞬時的；--escalate 要在卡上留下持久且可稽核的求助紀錄。"""
-    posted: list[tuple] = []
-    monkeypatch.setattr(amend_cmd, "add_issue_comment",
-                        lambda runner, repo, number, body: posted.append((repo, number, body)))
-    project = resolve_project(card, "acme", 1)
-    item = _item(card)
-    corrupted = item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
-    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number, corrupted)
-    monkeypatch.setattr(type(_item(card)), "content_type", "Issue", raising=False)
-
+@pytest.fixture
+def issue_card(fake_runner):
+    """真實 repo Issue 型別的卡：draft item 沒有 timeline，測不到 --escalate 的留言路徑。"""
     rc = run_cli(
-        ["amend", *BASE_TARGET, "--repo", "acme/wf", "AMEND-DEMO1",
-         "--reason", "想改", "--spec-baseline", "新基線", "--escalate"]
+        ["open", *BASE_TARGET, "--repo", "acme/wf", "ESC-DEMO1",
+         "--feature", "示範", "--tier", "T1", "--db-scope", "none",
+         "--core-pain", "痛點", "--service-goal", "目標", "--spec-baseline", "原基線"]
     )
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "ESC-DEMO1")
+    assert item.content_type == "Issue" and item.issue_number is not None
+    corrupted = item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    set_item_body(fake_runner, item.content_type, item.content_id, project, "acme/wf",
+                  item.issue_number, corrupted)
+    return fake_runner, corrupted
+
+
+_ESC_TARGET = ["--owner", "acme", "--project", "1", "--repo", "acme/wf"]
+
+
+def _esc_item(runner):
+    project = resolve_project(runner, "acme", 1)
+    return find_item_by_card_id(list_items(runner, project), "ESC-DEMO1")
+
+
+def test_escalate_leaves_durable_comment_without_touching_body(issue_card, monkeypatch):
+    runner, corrupted = issue_card
+    posted: list = []
+    monkeypatch.setattr(amend_cmd, "add_issue_comment",
+                        lambda r, repo, n, b: posted.append((repo, n, b)))
+    rc = run_cli(["amend", *_ESC_TARGET, "ESC-DEMO1", "--reason", "想改",
+                  "--spec-baseline", "新基線", "--escalate"])
     assert rc == 2
-    assert _item(card).body == corrupted, "body 一個字都不能動"
-    if posted:  # draft item 沒有 issue_number 時會走警告路徑
-        _, _, comment = posted[0]
-        assert "wf-amend-blocked:v1" in comment, "要有可 grep 的機器標記"
-        assert "AMEND-DEMO1" in comment
-        assert "需要人或 AI 接手" in comment
-        assert "gh issue edit" in comment, "留言要自帶完整 runbook"
-    else:
-        assert "draft item" in capsys.readouterr().err
+    assert _esc_item(runner).body == corrupted, "body 一個字都不能動"
+    assert len(posted) == 1, "真 Issue 卡必須實際留言（不可像舊測試那樣兩路都放行）"
+    _, _, comment = posted[0]
+    assert "wf-amend-blocked:v1" in comment
+    assert "ESC-DEMO1" in comment
+    assert "需要人或 AI 接手" in comment
+    assert "gh issue edit" in comment
+
+
+def test_escalate_skipped_under_dry_run(issue_card, monkeypatch, capsys):
+    """--dry-run 承諾零遠端寫入；留言同樣是寫入，不得破例。"""
+    runner, _ = issue_card
+    posted: list = []
+    monkeypatch.setattr(amend_cmd, "add_issue_comment", lambda *a: posted.append(a))
+    rc = run_cli(["amend", *_ESC_TARGET, "ESC-DEMO1", "--reason", "試算",
+                  "--spec-baseline", "新基線", "--dry-run", "--escalate"])
+    assert rc == 2
+    assert posted == [], "dry-run 期間不得送出任何留言"
+    assert "略過 --escalate 的留言" in capsys.readouterr().err
+
+
+def test_escalate_comment_failure_does_not_crash(issue_card, monkeypatch, capsys):
+    """升級是盡力而為；它失敗不得蓋掉原本的拒收語意與 runbook。"""
+    runner, _ = issue_card
+
+    def boom(*a, **k):
+        raise RuntimeError("GitHub 500")
+
+    monkeypatch.setattr(amend_cmd, "add_issue_comment", boom)
+    rc = run_cli(["amend", *_ESC_TARGET, "ESC-DEMO1", "--reason", "想改",
+                  "--spec-baseline", "新基線", "--escalate"])
+    assert rc == 2, "留言失敗不得改變退出碼"
+    err = capsys.readouterr().err
+    assert "留言失敗" in err
+    assert "gh issue edit" in err, "runbook 仍須可見"
 
 
 def test_escalate_is_noop_for_non_layout_rejections(card, capsys, monkeypatch):
