@@ -521,3 +521,48 @@ def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
     payload = jsonlib.loads(captured.out)          # stdout 必須整份可解析
     assert payload["review_channel"] is None
     assert "doctor 對帳報告" in captured.err        # 人類可讀報告改走 stderr
+
+
+# --------------------------------------------------------------------------
+# R2-001：混合 v1／legacy 歷史的優先序
+#
+# 兩條放行路徑先前以 OR 合併：v1 事件即使沒有合格的同行 Log 索引，只要同卡有同
+# attempt 的 legacy 文字加上基線式分行 Log，就從寬鬆那條放行——等於用舊標準替新
+# 標準的事件背書，v1 的兩面一致從未真正被要求。
+# --------------------------------------------------------------------------
+
+
+def _legacy_verdict(attempt: str) -> str:
+    body = f"## 查核裁決：APPROVE\n- 卡：`{_ECARD}`　attempt_id：`{attempt}`"
+    assert "wf-review-event:" not in body
+    return body
+
+
+def test_legacy_must_not_vouch_for_a_v1_event_of_the_same_attempt():
+    """同 attempt 已有受管轄的 v1 事件時，legacy 的寬鬆對帳不得替它背書。"""
+    split_log = f"- review by wf-cli → APPROVE。\n- assign by wf-cli；attempt {_EATT}。"
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}, {"body": _legacy_verdict(_EATT)}],
+        _ECARD, _ESHA, card_body=split_log,
+    )
+    assert finding.status != "recorded", "v1 事件缺同行索引，不得由 legacy 路徑放行"
+
+
+def test_legacy_still_vouches_for_its_own_attempt_when_no_v1_exists():
+    """legacy 對「沒有 v1 對應」的 attempt 仍維持基線寬鬆對帳（驗收第 3 條）。"""
+    other = f"{_ECARD}-e1-{_ESHA}"
+    split_log = f"- review by wf-cli → APPROVE。\n- assign by wf-cli；attempt {other}。"
+    finding = audit_review_channel(
+        [{"body": _legacy_verdict(other)}], _ECARD, _ESHA, card_body=split_log
+    )
+    assert finding.status == "recorded"
+
+
+def test_v1_with_proper_same_line_log_is_recorded_even_alongside_legacy():
+    """v1 自己有合格索引時照常放行，legacy 的存在不影響。"""
+    log = f"- review by wf-cli → APPROVE；attempt {_EATT}。"
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}, {"body": _legacy_verdict(_EATT)}],
+        _ECARD, _ESHA, card_body=log,
+    )
+    assert finding.status == "recorded"

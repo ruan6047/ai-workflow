@@ -328,8 +328,16 @@ def audit_review_channel(
             quarantine_reasons=tuple(quarantine_reasons),
         )
 
+    # 混合歷史的優先序：**同一 attempt 一旦存在受管轄的 v1 事件，就不得再由 legacy
+    # 路徑替它背書**。兩條路徑先前以 OR 合併，於是 v1 事件即使沒有合格的同行 Log
+    # 索引，只要同卡有同 attempt 的 legacy 文字加上基線式分行 Log，就從寬鬆那條放行
+    # ——等於用舊標準替新標準的事件背書，v1 的兩面一致因此從未真正被要求。
+    #
+    # legacy 對其他 attempt 的寬鬆對帳保持不變（卡面驗收第 3 條），只排除與 v1 撞號者。
+    v1_attempts = set(conformant_attempts)
+    legacy_only = [a for a in legacy_attempts if a not in v1_attempts]
     if any(log_indexes(a) for a in conformant_attempts) or (
-        legacy_attempts and legacy_log_present
+        legacy_only and legacy_log_present
     ):
         return ReviewChannelFinding(
             status="recorded",
