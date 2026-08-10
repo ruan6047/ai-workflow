@@ -43,6 +43,8 @@
 | 8b | §3.1.5 語意比對（放行合法重送） | 無；裁決語意只在散文，無結構化承載 | fail-closed（合法重送會被停機卡住） | 設計歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；實作卡未開 |
 | 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | ✅ 已修：讀取交付狀態欄並與裁決結論比對，不符或讀不到即轉 `half_written` | — | 已閉（#20） |
 
+**保守誤判的實測衝擊（2026-08-11，#20 第 12 輪自查發現）**：契約承認「留言內引用 `wf-review-event:` 字樣會被判受管轄而停機」。實測本 repo 的 #15 與 #17——兩張裁決完整、三面一致的已結案卡——**都因派審留言引用了該字樣而回 `marker_quarantined`**。派審詞慣例性引用 marker 前綴，等於每張經此流程派審的卡都會被凍。方向仍是 fail-closed（不會誤放行），但在落差 7 的解除路徑到位前，`doctor --review-channel` 對這類卡**無法用於自動對帳**，`--strict` 會讓 CI 紅在一張其實沒問題的卡上。操作面的緩解：派審與討論留言避免出現裸的 `wf-review-event:` 字樣（例如以「event marker 前綴」轉述）；根治須待 #16 的 clearance 表示法。
+
 **落差 7 的性質已改變。** 修復前它是 fail-open（停機根本不會發生，所以「無從解除」不痛不癢）；修復後停機真的會發生，而解除路徑仍不存在——方向轉為 fail-closed，代價是**遇到不合格 marker 的卡只能人工處理**。這是刻意的取捨：卡住要人看，好過放行一則讀不懂的裁決。
 
 **落差 9 已由 [#20](https://github.com/ruan6047/ai-workflow/issues/20) 修復。** `audit_review_channel()` 新增 `delivery_status` 參數，`doctor --review-channel` 以新增的 `--owner`／`--project` 讀取該欄位。**讀不到第三面時一律回 `half_written`，不得退回兩面一致就宣稱 `recorded`**——讀取失敗不是「一致」。裁決結論由留言的 `## 查核裁決：` 標題反推（契約 §3.1.3 已知限制：結論不在 marker 內），該依賴會在結構化承載到位後消失（落差 8b）。
