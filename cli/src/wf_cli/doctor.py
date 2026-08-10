@@ -244,16 +244,29 @@ def audit_review_channel(
         """Issue body 的 ``## Log`` 是否有**對應同一 attempt_id** 的 review 索引行。
 
         契約 §3.1.3 的三面一致要求「Log 中對應**同一 attempt_id** 的
-        `review by wf-cli` 索引行」。先前實作把它拆成兩個獨立的全文檢查
-        （`"review by wf-cli" in card_body` 與 attempt 正則各自 search），
-        因此兩種 fail-open：Log 索引的是 e0 卻讓 e1 的事件過關；以及 attempt
-        出現在 assign 行、`review by wf-cli` 出現在另一行也算數。索引行必須是
-        **同一行同時含兩者**，否則它索引的根本不是這個事件。
+        `review by wf-cli` 索引行」。三個要件缺一不可：
+
+        1. 同一行同時含 `review by wf-cli` 與該 attempt——否則 attempt 出現在
+           assign 行、review 出現在另一行也會算數。
+        2. attempt 必須以 **token 邊界**比對，不能用 ``in``。``attempt in line``
+           會讓 ``CARD-A-e0-<sha>`` 命中 Log 裡的 ``CARD-A-e0-<sha>x``：較長的
+           不同 attempt 只要以前者為前綴就被誤認成同一個，fail-open 從頭來過。
+           （同一個子字串陷阱先前已在收據比對上出現過一次。）
+        3. 只用於 v1 事件；legacy 的判準見下方 ``legacy_log_present``。
         """
+        boundary = re.compile(rf"(?<![\w-]){re.escape(attempt)}(?![\w-])")
         return any(
-            "review by wf-cli" in line and attempt in line
+            "review by wf-cli" in line and boundary.search(line)
             for line in card_body.splitlines()
         )
+
+    # legacy 的 Log 對帳刻意維持基線行為：全文各自搜尋，不要求同一行。
+    # 卡面驗收第 3 條要求「legacy 判定行為與本卡前一致」，而基線接受「Log 中各自
+    # 存在 review 與 attempt」。收緊它會讓既有舊卡由 recorded 變成 unobservable，
+    # 那是回歸而不是修復。新的同行要求只施加於宣告受管轄的 v1 事件。
+    legacy_log_present = "review by wf-cli" in card_body and bool(
+        attempt_pattern.search(card_body)
+    )
 
     def receipt_matches(body: str) -> bool:
         """收據的 card_id／source_sha 須整行相等，不可用子字串比對。
@@ -315,7 +328,9 @@ def audit_review_channel(
             quarantine_reasons=tuple(quarantine_reasons),
         )
 
-    if any(log_indexes(a) for a in [*conformant_attempts, *legacy_attempts]):
+    if any(log_indexes(a) for a in conformant_attempts) or (
+        legacy_attempts and legacy_log_present
+    ):
         return ReviewChannelFinding(
             status="recorded",
             card_id=card_id,

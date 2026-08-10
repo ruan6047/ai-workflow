@@ -379,7 +379,11 @@ def test_log_must_index_the_same_attempt_as_the_event():
 
 
 def test_log_index_conditions_must_be_on_the_same_line():
-    """attempt 出現在 assign 行、review by wf-cli 出現在另一行，不構成索引。"""
+    """v1 事件：attempt 在 assign 行、review by wf-cli 在另一行，不構成索引。
+
+    此要求**只施加於宣告受管轄的 v1 事件**；legacy 維持基線的全文各自搜尋
+    （見 test_legacy_log_may_span_lines_as_in_baseline），否則就是回歸。
+    """
     split_log = (
         f"## Log\n- assign by wf-cli；attempt {_EATT}。\n- review by wf-cli → 別的事。"
     )
@@ -459,3 +463,61 @@ def test_doctor_accepts_valid_source_sha_format():
     from wf_cli.validation import validate_source_sha
 
     validate_source_sha("a" * 40)  # 不得拋
+
+
+# --------------------------------------------------------------------------
+# R1 查核回歸
+# --------------------------------------------------------------------------
+
+
+def test_log_attempt_must_match_on_token_boundary_not_substring():
+    """R1-001：`attempt in line` 會讓較長的不同 attempt 以前綴命中。
+
+    同一個子字串陷阱先前已在收據比對上出現過一次，這裡是它在 Log 對帳的複發。
+    """
+    log = f"2026-08-09 review by wf-cli → APPROVE；attempt {_EATT}x。"
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=log
+    )
+    assert finding.status != "recorded", "attempt+x 不是同一個 attempt"
+
+
+def test_legacy_log_may_span_lines_as_in_baseline():
+    """R1-002：卡面驗收第 3 條要求 legacy 判定行為與本卡前一致。
+
+    基線接受「Log 中各自存在 review 與 attempt」，不要求同一行。把 legacy 一併
+    收緊會讓既有舊卡由 recorded 變成 unobservable——那是回歸，不是修復。
+    """
+    legacy = f"## 查核裁決：APPROVE\n- 卡：`{_ECARD}`　attempt_id：`{_EATT}`"
+    assert "wf-review-event:" not in legacy
+    split_log = f"- review by wf-cli → APPROVE。\n- assign by wf-cli；attempt {_EATT}。"
+    finding = audit_review_channel([{"body": legacy}], _ECARD, _ESHA, card_body=split_log)
+    assert finding.status == "recorded"
+
+
+def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
+    """R1-003：--json 的 stdout 必須是可直接解析的 JSON。
+
+    先前人類可讀報告與 JSON 都印到 stdout，`| jq .` 直接 parse error，CI 與 #16
+    因此拿不到 review_channel。
+    """
+    import argparse
+    import json as jsonlib
+
+    from wf_cli.commands import doctor_cmd
+    from wf_cli.doctor import DoctorReport
+
+    monkeypatch.setattr(
+        doctor_cmd, "run_doctor",
+        lambda *a, **k: DoctorReport(repo_root=str(tmp_path), generated_at="t", registry_sources=[]),
+    )
+    args = argparse.Namespace(
+        repo_root=str(tmp_path), registry="none", review_channel=False,
+        repo=None, issue_number=None, card_id=None, source_sha=None,
+        main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
+    )
+    assert doctor_cmd.run(args) == 0
+    captured = capsys.readouterr()
+    payload = jsonlib.loads(captured.out)          # stdout 必須整份可解析
+    assert payload["review_channel"] is None
+    assert "doctor 對帳報告" in captured.err        # 人類可讀報告改走 stderr

@@ -38,7 +38,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--source-sha", help="--review-channel 的完整 40 字元受審 SHA")
     p.add_argument("--main-ref", default="main", help="判斷「已併入」與 lease 交集比對用的主幹分支")
     p.add_argument("--lease-ttl-hours", type=float, default=48.0)
-    p.add_argument("--json", action="store_true", help="額外輸出 JSON（供腳本消費）")
+    p.add_argument("--json", action="store_true", help="stdout 只輸出 JSON（供腳本消費）；人類可讀報告改走 stderr")
     p.add_argument(
         "--strict",
         action="store_true",
@@ -99,7 +99,9 @@ def run(args: argparse.Namespace) -> int:
         lease_ttl_hours=args.lease_ttl_hours,
         main_ref=args.main_ref,
     )
-    print(report.render_text())
+    # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
+    # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。
+    print(report.render_text(), file=sys.stderr if args.json else sys.stdout)
     review_channel_finding = None
     if args.review_channel:
         issue = default_runner.run_json(["api", f"repos/{args.repo}/issues/{args.issue_number}"])
@@ -121,14 +123,15 @@ def run(args: argparse.Namespace) -> int:
             reviews=reviews or [],
         )
         review_channel_finding = finding
-        print("\n## 5. 跨工具查核寫入通道")
-        print(f"- [{finding.status}] {finding.detail}")
+        out = sys.stderr if args.json else sys.stdout
+        print("\n## 5. 跨工具查核寫入通道", file=out)
+        print(f"- [{finding.status}] {finding.detail}", file=out)
         for url, author in zip(finding.receipt_urls, finding.receipt_authors, strict=True):
-            print(f"  - receipt: {url}（GitHub author: {author}）")
+            print(f"  - receipt: {url}（GitHub author: {author}）", file=out)
         for reason in finding.quarantine_reasons:
             # 停機的價值在於「要人去修哪一則留言」。只印狀態不印原因，使用者只知道
             # 卡住了卻不知道卡在哪，那和沒偵測到差不多。
-            print(f"  - 停機原因: {reason}")
+            print(f"  - 停機原因: {reason}", file=out)
     if args.json:
         print(json.dumps(build_json_payload(report, review_channel_finding),
                          ensure_ascii=False, indent=2, default=str))
