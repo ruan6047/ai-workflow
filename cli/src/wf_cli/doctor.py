@@ -235,19 +235,40 @@ def audit_review_channel(
     receipt_urls: list[str] = []
     receipt_authors: list[str] = []
     receipt_marker = "<!-- wf-review-receipt:v1"
-    expected_card = f"card_id: {card_id}"
-    expected_sha = f"source_sha: {source_sha}"
     attempt_pattern = re.compile(
         rf"{re.escape(card_id)}-e\d+-{re.escape(source_sha)}"
     )
     state_marker = "## 查核裁決："
-    event_log_present = "review by wf-cli" in card_body and bool(attempt_pattern.search(card_body))
+
+    def log_indexes(attempt: str) -> bool:
+        """Issue body 的 ``## Log`` 是否有**對應同一 attempt_id** 的 review 索引行。
+
+        契約 §3.1.3 的三面一致要求「Log 中對應**同一 attempt_id** 的
+        `review by wf-cli` 索引行」。先前實作把它拆成兩個獨立的全文檢查
+        （`"review by wf-cli" in card_body` 與 attempt 正則各自 search），
+        因此兩種 fail-open：Log 索引的是 e0 卻讓 e1 的事件過關；以及 attempt
+        出現在 assign 行、`review by wf-cli` 出現在另一行也算數。索引行必須是
+        **同一行同時含兩者**，否則它索引的根本不是這個事件。
+        """
+        return any(
+            "review by wf-cli" in line and attempt in line
+            for line in card_body.splitlines()
+        )
+
+    def receipt_matches(body: str) -> bool:
+        """收據的 card_id／source_sha 須整行相等，不可用子字串比對。
+
+        `"card_id: CARD-A" in "card_id: CARD-AB"` 為真——稽核 CARD-A 時會把
+        CARD-AB 的收據算成自己的，進而回報一份不存在的收據等待轉錄。
+        """
+        lines = [line.strip() for line in body.splitlines()]
+        return f"card_id: {card_id}" in lines and f"source_sha: {source_sha}" in lines
 
     expected_attempt_prefix = f"{card_id}-e"
     expected_attempt_suffix = f"-{source_sha}"
     quarantine_reasons: list[str] = []
     conformant_attempts: list[str] = []
-    legacy_event_found = False
+    legacy_attempts: list[str] = []
 
     all_comments = [*comments, *(reviews or [])]
 
@@ -262,9 +283,12 @@ def audit_review_channel(
             quarantine_reasons.append(f"{reason}（{url}）")
         elif attempt is not None and attempt.startswith(expected_attempt_prefix) and attempt.endswith(expected_attempt_suffix):
             conformant_attempts.append(attempt)
-        elif attempt is None and state_marker in body and bool(attempt_pattern.search(body)):
-            # legacy：完全不含 wf-review-event: 前綴的舊裁決留言。行為刻意不變。
-            legacy_event_found = True
+        elif attempt is None and state_marker in body:
+            # legacy：完全不含 wf-review-event: 前綴的舊裁決留言。判準（語法）不變，
+            # 但同樣要求 Log 索引的是這一則的 attempt，而非「body 裡任何一個 attempt」。
+            hit = attempt_pattern.search(body)
+            if hit:
+                legacy_attempts.append(hit.group(0))
 
     # 落差 8a：同一 attempt 多則事件。§3.1.5 在結構化裁決承載到位前的保守行為是
     # 一律停止判定——不得把重送視為安全。放行需要能證明兩則語意等價，而裁決語意
@@ -291,7 +315,7 @@ def audit_review_channel(
             quarantine_reasons=tuple(quarantine_reasons),
         )
 
-    if event_log_present and (conformant_attempts or legacy_event_found):
+    if any(log_indexes(a) for a in [*conformant_attempts, *legacy_attempts]):
         return ReviewChannelFinding(
             status="recorded",
             card_id=card_id,
@@ -301,7 +325,7 @@ def audit_review_channel(
 
     for comment in all_comments:
         body = str(comment.get("body") or "")
-        if receipt_marker in body and expected_card in body and expected_sha in body:
+        if receipt_marker in body and receipt_matches(body):
             url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
             receipt_urls.append(url)
             user = comment.get("user") or {}

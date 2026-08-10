@@ -361,6 +361,38 @@ def test_uppercase_sha_in_marker_is_not_conformant():
 
 def test_same_sha_different_epoch_is_a_separate_attempt_not_a_duplicate():
     """同 SHA 在 replan 後重審屬不同 attempt，不是重複事件，不得停機。"""
+    att = f"{_ECARD}-e1-{_ESHA}"
+    marker = _conformant_marker(attempt=att)
+    log = f"2026-08-09 review by wf-cli → APPROVE；attempt {att}。"
+    finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=log)
+    assert finding.status == "recorded"
+
+
+def test_log_must_index_the_same_attempt_as_the_event():
+    """§3.1.3 三面一致要求 Log 索引的是**同一 attempt_id**。
+
+    先前實作把它拆成兩個獨立全文檢查，於是 Log 索引 e0 也能讓 e1 的事件過關。
+    """
     marker = _conformant_marker(attempt=f"{_ECARD}-e1-{_ESHA}")
     finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG)
-    assert finding.status == "recorded"
+    assert finding.status != "recorded", "Log 索引的是 e0，不得讓 e1 的事件過關"
+
+
+def test_log_index_conditions_must_be_on_the_same_line():
+    """attempt 出現在 assign 行、review by wf-cli 出現在另一行，不構成索引。"""
+    split_log = (
+        f"## Log\n- assign by wf-cli；attempt {_EATT}。\n- review by wf-cli → 別的事。"
+    )
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=split_log
+    )
+    assert finding.status != "recorded"
+
+
+def test_receipt_card_id_must_match_exactly_not_by_prefix():
+    """`"card_id: CARD-A" in "card_id: CARD-AB"` 為真——子字串比對會認錯收據。"""
+    other = f"<!-- wf-review-receipt:v1\ncard_id: {_ECARD}B\nsource_sha: {_ESHA}\n-->"
+    finding = audit_review_channel(
+        [{"body": other, "html_url": "u", "user": {"login": "x"}}], _ECARD, _ESHA
+    )
+    assert finding.status == "unobservable", "別卡的收據不得被算成本卡的"
