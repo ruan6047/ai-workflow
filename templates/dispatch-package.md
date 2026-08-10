@@ -53,3 +53,4 @@
 - 查核者先在被審 Issue conversation 或 PR review body 留 `wf-review-receipt:v1`（`card_id`、完整 `source_sha`、查核報告 UTF-8 `report_sha256`）；GitHub author 才是可驗證身分，模型／工具名稱只是自述。
 - PM 僅能逐字轉錄與收據 hash 相符的報告，並在 `wfcli review` evidence 引用 receipt URL；不能以 `--reviewer` 自由字串代替收據。
 - 交付／結案前執行 `wfcli doctor <repo_root> --review-channel --owner <owner> --project <n> --repo <owner/repo> --issue-number <n> --card-id <CARD_ID> --source-sha <40 SHA>`。`receipt_untranscribed` 或 `unobservable` 一律不得視為已查核；前者催轉錄，後者只可陳述「不可觀測」。
+- ⚠️ **留言引用紀律**：Issue／PR 留言中不得出現「wf-review-event」緊接半形冒號的完整前綴字樣，除非該留言本身就是事件（首行為合格 marker）。契約 §3.1.4 把任何含該前綴的留言判為受管轄，**引用即停機**——實測 #15／#17 兩張三面一致的已結案卡都因派審留言引用而被凍（2026-08-11）。轉述時寫「event marker」或「wf-review-event 前綴（冒號略）」。本條目本身即示範合規寫法：組裝進派工包照貼留言也不會觸發。receipt 前綴不受此限（其未知形態落 unobservable，方向本就保守）。
