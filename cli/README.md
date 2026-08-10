@@ -28,6 +28,58 @@ uv run wfcli <command> --help
 uv run pytest        # 全套測試（本 repo 新增；數量以此指令輸出為準）
 ```
 
+## `amend`：開卡後的卡面修訂（WF-CLI-CARD-AMEND1）
+
+```bash
+# 改 spec 基線（上游卡 merge 後）
+wfcli amend CARD-ID --repo owner/repo --reason "上游卡已 merge" --spec-baseline "main <sha>"
+
+# 整份替換驗收條件（預設全部重設為未勾選）
+wfcli amend CARD-ID --repo owner/repo --reason "需求方追加" \
+  --acceptance "條件一" --acceptance "條件二"
+
+# 更正級別（`WF-CLI-TIER-MUTATION1` 併入本指令）
+wfcli amend CARD-ID --repo owner/repo --reason "開卡時填錯" --tier T3
+```
+
+`--dry-run` 零遠端寫入，可先看將寫入什麼。
+
+### 併發保證的界線
+
+`amend` 每次都是**整份重寫 body**。寫入前會重讀並比對 body，被他人改動時以退出碼 6
+中止而不覆寫——但這**不是**原子的 compare-and-swap：GitHub 對 issue body 沒有條件
+寫入，重讀只把競態窗口從「整條指令執行期間」縮到「重讀與寫入之間」。`--expect-body-sha256`
+同理，它只證明操作者看過讀取當下那一版。真正的解法是可序列化的唯一 writer 或底層
+條件寫入，不在本指令能提供的保證內。
+
+### 半寫入的恢復（退出碼 5）
+
+`--tier` 會先寫 Project 欄位、讀回驗證，再寫 body。若讀回驗證失敗（退出碼 5），body
+一定沒被寫入，但欄位可能已改——此時卡處於「欄位改了、Log 沒記」。恢復步驟：
+
+```bash
+# 1. 先確認 Project 的級別實際值
+# 2a. 若已是目標值 → 只補 Log、不再改欄位
+wfcli amend CARD-ID --repo owner/repo --tier T3 --record-unlogged-change \
+  --reason "先前寫入於讀回驗證階段中斷，補記留痕"
+# 2b. 若仍是舊值 → 直接重跑原本的 amend
+```
+
+`--record-unlogged-change` 是**操作者的宣告，不是系統的自動證明**。CLI 無法區分
+「欄位已是目標值且 Log 沒記」到底是先前半寫入、還是開卡時本來就填這個值，所以不猜；
+它只補留痕、不改欄位，欄位不符時直接拒絕，避免變成偷改欄位的後門。
+
+### `--repair-log-layout`：Log 排版損壞的窄路修復
+
+body 的 `## Log` 被寫成字面 `\n` 時（曾實際發生於 ai-workflow#17），`amend` 會拒絕
+一切修訂以免誤動 Log。此旗標是唯一出路，且刻意窄：
+
+- 必須同時給 `--expect-body-sha256`，且不得與其他修訂旗標併用。
+- **只動 `\n## Log` 起算的尾段**；其前的內容逐位元不變。Log 之前若也有字面 `\n`
+  就拒絕——那可能是 JSON 字串裡的合法內容（`{"note": "a\nb"}`），換成實體換行會
+  破壞 JSON。
+- 修復後必須能安全定位 Log，且原本可解析的資源宣告須仍解析成相同結果。
+
 ## `review`：查核輸出契約的機械閘門（WF-22-CLI3）
 
 ```bash

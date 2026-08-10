@@ -394,7 +394,7 @@ def test_repair_body_layout_restores_newlines_without_content_change():
 
 
 def test_repair_rejects_body_without_literal_newline():
-    with pytest.raises(AmendError, match="不需要排版修復"):
+    with pytest.raises(AmendError, match="找不到字面"):
         repair_body_layout(BODY)
 
 
@@ -528,3 +528,86 @@ def test_record_unlogged_change_refuses_when_field_differs(card):
     )
     assert rc == 2
     assert _item(card).text("級別") == "T1"
+
+
+# --------------------------------------------------------------------------
+# R2-01：修復範圍必須縮到 Log 區段，不得破壞 JSON 等非空白內容
+# --------------------------------------------------------------------------
+
+
+def _body_with_json_literal_newline() -> str:
+    """資源宣告 JSON 內含合法的字面 \\n（JSON 字串跳脫），Log 區段則是壞掉的。"""
+    return (
+        "- 需求：x\n\n## 資源宣告\n"
+        "<!-- resource-claims:begin -->\n"
+        '```json\n{"db_scope": "none", "resources": ["file:a.py"], "note": "a\\nb"}\n```\n'
+        "<!-- resource-claims:end -->\n"
+        "\\n## Log\\n\\n- 條目"
+    )
+
+
+def test_repair_refuses_when_literal_newline_precedes_log():
+    """查核者的反例：JSON 字串裡的字面 \\n 是合法內容，換成實體換行會讓 JSON 解析失敗。"""
+    with pytest.raises(AmendError, match="Log 之前也含字面"):
+        repair_body_layout(_body_with_json_literal_newline())
+
+
+def test_repair_leaves_pre_log_content_byte_identical():
+    body = (
+        "- 需求：x\n\n## 資源宣告\n"
+        "<!-- resource-claims:begin -->\n"
+        '```json\n{"db_scope": "none", "resources": ["file:a.py"]}\n```\n'
+        "<!-- resource-claims:end -->\n"
+        "\\n## Log\\n\\n- 條目"
+    )
+    repaired, original = repair_body_layout(body)
+    head = body[: body.find("\\n## Log")]
+    assert repaired.startswith(head), "Log 之前的內容必須逐位元不變"
+    assert parse_block(repaired).resources == parse_block(original).resources
+
+
+def test_repair_refuses_body_without_literal_log_marker():
+    with pytest.raises(AmendError, match="找不到字面"):
+        repair_body_layout("- 需求：x\\n 這裡有字面 n 但沒有 Log 標記")
+
+
+# --------------------------------------------------------------------------
+# R2-02：寫入前重讀，擋掉整份覆寫他人內容
+# --------------------------------------------------------------------------
+
+
+def test_amend_aborts_when_body_changed_by_another_writer(card, monkeypatch):
+    project = resolve_project(card, "acme", 1)
+    original_list = amend_cmd.list_items
+    state = {"n": 0}
+
+    def racing_list_items(runner, proj):
+        items = original_list(runner, proj)
+        state["n"] += 1
+        if state["n"] == 2:  # 第二次讀取＝寫入前重讀，此時模擬他人已改動
+            for it in items:
+                if it.card_id == "AMEND-DEMO1":
+                    it.body = it.body + "\n- 別人剛加的一行"
+        return items
+
+    monkeypatch.setattr(amend_cmd, "list_items", racing_list_items)
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "併發", "--spec-baseline", "新基線"]
+    )
+    assert rc == 6
+    assert "別人剛加的一行" not in _item(card).body or "新基線" not in _item(card).body
+
+
+# --------------------------------------------------------------------------
+# R2-03：exit 5 必須印出可直接執行的恢復指令
+# --------------------------------------------------------------------------
+
+
+def test_exit5_message_points_to_record_unlogged_change(card, monkeypatch, capsys):
+    monkeypatch.setattr(amend_cmd, "set_field_value", lambda *a, **k: None)
+    rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "模擬失敗", "--tier", "T3"])
+    assert rc == 5
+    err = capsys.readouterr().err
+    assert "--record-unlogged-change" in err
+    assert "wfcli amend AMEND-DEMO1 --tier T3" in err
+    assert "操作者的宣告" in err

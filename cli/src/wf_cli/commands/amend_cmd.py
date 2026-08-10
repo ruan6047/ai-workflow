@@ -19,7 +19,13 @@ tier 開卡時填錯——這些都是常態，但 CLI 沒有入口，於是每�
   並只補寫 Log（R1-03）。每次執行帶 `op` 識別碼，便於跨 Log 條目對齊同一次操作。
 - **完成證據不隱式沿用**：清單整份替換預設重設為未勾選；要沿用須顯式 `--preserve-checked`（R1-04）。
 
-退出碼：0 成功／2 參數或內容檢查失敗（未寫入）／3 找不到卡／5 寫入後讀回驗證不符。
+退出碼：0 成功／2 參數或內容檢查失敗（未寫入）／3 找不到卡／5 級別寫入後讀回驗證不符
+（body 未寫，stderr 印出補記留痕的恢復指令）／6 body 在本次操作期間被其他 writer 改動。
+
+**併發保證的界線（誠實聲明）**：本指令在寫入前會重讀並比對 body，但那**不是**原子的
+compare-and-swap——GitHub 對 issue body 沒有條件寫入。重讀只把競態窗口從「整條指令
+執行期間」縮到「重讀與寫入之間」。真正的解法是可序列化的唯一 writer 或底層條件寫入，
+不在本指令能提供的保證內。
 """
 
 from __future__ import annotations
@@ -106,8 +112,9 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--expect-body-sha256",
         default=None,
-        help="現行 body 原文的 UTF-8 SHA-256；--repair-log-layout 必填，"
-        "確保操作者確實看過將被改寫的內容",
+        help="現行 body 原文的 UTF-8 SHA-256；--repair-log-layout 必填。"
+        "它只證明「操作者看過讀取當下那一版」，**不是**原子的 compare-and-swap："
+        "GitHub 對 issue body 沒有條件寫入，寫入前的重讀只能縮小競態窗口，不能消除",
     )
     p.add_argument(
         "--dry-run",
@@ -304,11 +311,31 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         actual_tier = after.text("級別") if after else None
         if actual_tier != args.tier:
             print(
-                f"[amend] 寫入後讀回驗證失敗：級別預期 {args.tier}，實際 {actual_tier!r}；"
-                "body 未寫入，請排除後重試（重試會偵測並補齊留痕）",
+                f"[amend] 寫入後讀回驗證失敗：級別預期 {args.tier}，實際 {actual_tier!r}。\n"
+                "  body 未寫入，卡片現在可能處於「欄位已改、Log 沒記」。恢復步驟：\n"
+                f"  1. 確認 Project 的級別實際值。\n"
+                f"  2. 若已是 {args.tier}，以下列指令補記留痕（只補 Log、不再改欄位）：\n"
+                f"     wfcli amend {args.card_id} --tier {args.tier} "
+                f"--record-unlogged-change --reason '<說明先前寫入為何中斷>'\n"
+                f"  3. 若仍是舊值，直接重跑原本的 amend 即可。\n"
+                "  注意：--record-unlogged-change 是操作者的宣告，不是系統的自動證明。",
                 file=sys.stderr,
             )
             return 5
+
+    # 寫入前再讀一次，擋掉「讀取後、寫入前被他人改動」而整份覆寫的情形。
+    # 這**不是**原子的 compare-and-swap：GitHub 對 issue body 沒有條件寫入，本檢查
+    # 與 set_item_body 之間仍有殘餘競態視窗。它只把競態窗口從「整條指令執行期間」
+    # 縮到「這兩次呼叫之間」，不宣稱完全防護——真正的解法是可序列化的唯一 writer
+    # 或底層條件寫入，不在本指令能提供的保證內。
+    fresh = find_item_by_card_id(list_items(runner, project), args.card_id)
+    if fresh is None or fresh.body != item.body:
+        print(
+            "[amend] 中止：body 在本次操作期間已被其他 writer 改動，"
+            "繼續寫入會整份覆寫對方的內容。請重新讀取後再跑一次。",
+            file=sys.stderr,
+        )
+        return 6
 
     set_item_body(
         runner, item.content_type, item.content_id, project, target.repo, item.issue_number, body

@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from .resources import ResourceDeclaration, render_block
+from .resources import ResourceDeclaration, render_block, try_parse_block
 
 TIERS = ("T0", "T1", "T2", "T3", "T4")
 
@@ -311,24 +311,56 @@ def amend_verification(
     )
 
 
+_LITERAL_LOG_MARKER = "\\n## Log"
+
+
 def repair_body_layout(body: str) -> tuple[str, str]:
-    """把字面 ``\\n`` 還原成真換行；回傳 (修復後 body, 原 body)。
+    """把 **Log 區段** 內的字面 ``\\n`` 還原成真換行；回傳 (修復後 body, 原 body)。
 
     這是 ``split_at_log`` fail-closed 之後唯一的出路：排版壞掉的卡若不能用 amend
     修，使用者就只能退回 ``gh issue edit``——工具在最需要它的時候不能用。
 
-    安全性由一條可機械驗證的不變量提供：**只准動空白，不准增刪任何非空白字元**。
-    修復前後把所有空白（含被還原的字面 ``\\n``）剝掉後必須逐字相同，否則拒絕。
-    修復後還必須能安全定位 Log，否則同樣拒絕——修不好就不要留下半修好的 body。
+    **修復範圍嚴格限定在 Log 區段**，這是本函式唯一的安全基礎。前一版對整份 body
+    無差別替換，並以「剝掉所有空白後相同」當作內容不變的證明——該證明是錯的：
+    字面 ``\\n`` 在 JSON 字串裡是合法內容（``{"note": "a\\nb"}``），把它換成實體
+    換行會讓 JSON 解析失敗，而比較基準又預先刪掉了字面 ``\\n``，等於自己把破壞
+    藏起來。實際反例已由查核者以資源宣告區塊證實。
+
+    現行三道防線：
+
+    1. 只動 ``\\n## Log`` 起算的尾段；其前的內容**逐位元不變**（fenced JSON、
+       inline code、其他章節一律不受影響）。
+    2. 若 Log 之前也有字面 ``\\n``，拒絕——那已超出本模式能安全處理的範圍。
+    3. 修復後必須能安全定位 Log，且原本可解析的資源宣告必須仍解析成相同結果。
     """
-    repaired = body.replace("\\n", "\n")
-    if repaired == body:
-        raise AmendError("body 沒有字面 `\\n`，不需要排版修復")
-    before = "".join(body.replace("\\n", "").split())
-    after = "".join(repaired.split())
-    if before != after:
-        raise AmendError("排版修復會改動非空白內容，拒絕（本模式只准調整換行）")
+    idx = body.find(_LITERAL_LOG_MARKER)
+    if idx < 0:
+        raise AmendError(
+            "body 內找不到字面 `\\n## Log`；本模式只修復 Log 區段的排版損壞，"
+            "其他位置的字面 `\\n` 不在範圍內"
+        )
+    head, tail = body[:idx], body[idx:]
+    if "\\n" in head:
+        raise AmendError(
+            "Log 之前也含字面 `\\n`。本模式只動 Log 區段，無法安全判斷前段的字面 "
+            "`\\n` 是損壞還是合法內容（例如 JSON 字串裡的 `\\n`），拒絕"
+        )
+
+    repaired_tail = tail.replace("\\n", "\n")
+    if "".join(tail.replace("\\n", "").split()) != "".join(repaired_tail.split()):
+        raise AmendError("Log 區段的修復會改動非空白內容，拒絕")
+
+    repaired = head + repaired_tail
     split_at_log(repaired)  # 修不好就讓它在這裡失敗，不寫出半修好的 body
+
+    before_decl = try_parse_block(body)
+    if before_decl is not None:
+        after_decl = try_parse_block(repaired)
+        if after_decl is None or (
+            after_decl.db_scope,
+            after_decl.resources,
+        ) != (before_decl.db_scope, before_decl.resources):
+            raise AmendError("修復會改變資源宣告的解析結果，拒絕")
     return repaired, body
 
 
