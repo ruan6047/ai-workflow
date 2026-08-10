@@ -120,6 +120,30 @@ def _short(text: str, limit: int = 100) -> str:
     return folded if len(folded) <= limit else folded[:limit] + f"…（全文 {len(folded)} 字，見 Log）"
 
 
+# 排版損壞沒有自動修復（見 README「為什麼沒有排版修復」）。但「沒有自動修復」不等於
+# 「沒有出路」——工具不改 body，卻必須讓人知道**怎麼修**以及**怎麼機械驗證修好了**。
+_LAYOUT_MARKERS = ("不是獨立標題行", "個 `## Log` 標題")
+
+_LAYOUT_RUNBOOK = """
+[amend] 這是 body 排版損壞，本指令刻意不自動修（理由見 cli/README.md）。人工程序：
+
+  1. 取出現行 body：
+     gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md
+  2. 人工修正：把 Log 標題那處的字面 \\n 改回真換行。**只改換行，不動任何其他字元**。
+  3. 確認只有空白差異（非空白內容必須逐字相同）：
+     python3 -c "import sys;a=open('/tmp/body.md').read();print('僅空白差異' if ''.join(a.split())==''.join(open('/tmp/orig.md').read().replace(chr(92)+'n','').split()) else '⚠️ 內容被改動')"
+  4. 寫回：gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
+  5. **機械驗證修好了**（不寫入任何狀態）：
+     wfcli amend {card_id} --repo <owner/repo> --reason 驗證排版 --dry-run --spec-baseline '<現值>'
+     若不再出現本訊息，代表 Log 已可安全定位。
+  6. 在該 Issue 留言記錄這次人工寫入與原因——它同時是「某處仍在繞過 wfcli」的訊號。
+""".rstrip()
+
+
+def _is_layout_failure(exc: Exception) -> bool:
+    return any(marker in str(exc) for marker in _LAYOUT_MARKERS)
+
+
 def _tier_change_logged(body: str, tier: str) -> bool:
     """body 的 Log 是否已記過「級別 → tier」這筆變更。
 
@@ -192,6 +216,8 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             changes.append(("資源宣告", old, decl.summary()))
     except (AmendError, ResourceDeclarationError) as exc:
         print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
+        if _is_layout_failure(exc):
+            print(_LAYOUT_RUNBOOK.format(card_id=args.card_id), file=sys.stderr)
         return 2
 
     old_tier = item.text("級別")

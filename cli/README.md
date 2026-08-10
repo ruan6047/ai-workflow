@@ -85,7 +85,36 @@ body 無差別替換（JSON 字串裡的 `{"note": "a\nb"}` 被改壞，而比�
 本來就該關。為一個「上線後不該再發生」的一次性歷史事件，維護一個難以證明安全的
 改寫器並不划算。
 
-**遇到這類損壞請人工處理，並把它當成訊號**：它代表某處仍在繞過 `wfcli` 直接寫 body。
+#### 備案：可執行的人工程序 ＋ 機械驗證出口
+
+「沒有自動修復」不等於「沒有出路」。`amend` 偵測到排版損壞時，除了拒絕，還會在 stderr
+印出下列程序（含實際卡號）；核心設計是**工具不改 body，但要能機械證明人工修好了**：
+
+```bash
+# 1. 取出現行 body（另存一份 orig 供比對）
+gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md
+cp /tmp/body.md /tmp/orig.md
+
+# 2. 人工把 Log 標題那處的字面 \n 改回真換行。只改換行，不動任何其他字元。
+
+# 3. 確認只有空白差異（非空白內容必須逐字相同）
+python3 -c "a=open('/tmp/body.md').read(); b=open('/tmp/orig.md').read(); \
+print('僅空白差異' if ''.join(a.split())==''.join(b.replace(chr(92)+'n','').split()) else '⚠️ 內容被改動')"
+
+# 4. 寫回
+gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
+
+# 5. 機械驗證修好了（零遠端寫入）；不再出現排版錯誤即代表 Log 可安全定位
+wfcli amend <CARD-ID> --repo <owner/repo> --reason 驗證排版 --dry-run --spec-baseline '<現值>'
+
+# 6. 在該 Issue 留言記錄這次人工寫入與原因
+```
+
+第 3 步的比對與第 5 步的 `--dry-run` 是這個備案的關鍵：前者讓「只動空白」這件事由人
+**逐字驗證**而非由工具**宣稱**——同一條不變量，差別在誰來背書；後者讓「修好了」有機械
+判準，不靠目視。
+
+**這類損壞同時是一個訊號**：它代表某處仍在繞過 `wfcli` 直接寫 body。修完請一併追查來源。
 
 ## `review`：查核輸出契約的機械閘門（WF-22-CLI3）
 

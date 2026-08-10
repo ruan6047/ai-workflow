@@ -521,3 +521,48 @@ def test_exit5_message_points_to_record_unlogged_change(card, monkeypatch, capsy
     assert "操作者的宣告" in err
 
 
+
+
+# --------------------------------------------------------------------------
+# 備案：沒有自動修復，但必須有可執行的人工程序與機械驗證出口
+# --------------------------------------------------------------------------
+
+
+def test_layout_failure_prints_actionable_runbook(card, capsys):
+    """排版損壞時不只是拒絕，要告訴人怎麼修、怎麼驗證修好了。"""
+    project = resolve_project(card, "acme", 1)
+    item = _item(card)
+    corrupted = item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number, corrupted)
+
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"]
+    )
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "不是獨立標題行" in err, "先說明為什麼拒絕"
+    assert "gh issue view" in err and "gh issue edit" in err, "要給可直接執行的取出／寫回指令"
+    assert "--dry-run" in err, "要給機械驗證出口"
+    assert "AMEND-DEMO1" in err, "驗證指令要帶上實際卡號"
+    assert "繞過 wfcli" in err, "要標明這是繞過通道的訊號"
+    # 拒絕就是拒絕：body 一個字都不能動
+    assert _item(card).body == corrupted
+
+
+def test_duplicate_log_headings_also_get_runbook(card, capsys):
+    project = resolve_project(card, "acme", 1)
+    item = _item(card)
+    set_item_body(
+        card, item.content_type, item.content_id, project, None, item.issue_number,
+        item.body + "\n\n## Log\n\n- 第二個標題",
+    )
+    rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"])
+    assert rc == 2
+    assert "gh issue edit" in capsys.readouterr().err
+
+
+def test_healthy_body_does_not_print_runbook(card, capsys):
+    """一般的拒收（例如 no-op）不該噴出排版 runbook，避免訊息噪音。"""
+    rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "同值", "--spec-baseline", "原基線"])
+    assert rc == 2
+    assert "gh issue view" not in capsys.readouterr().err
