@@ -18,7 +18,11 @@
   - **v1 事件**：同一行同時含 `review by wf-cli` 與該 `attempt_id`，且 attempt 以 token 邊界比對（`attempt in line` 會讓 `…-e0-<sha>` 命中 `…-e0-<sha>x`）。
   - **legacy**（完全不含 `wf-review-event:` 前綴者）：維持基線的全文各自搜尋，不要求同一行。收緊它會讓既有舊卡由 `recorded` 變成 `unobservable`，那是回歸而非修復。
   - **混合歷史的優先序**：同一 `attempt_id` 一旦存在受管轄的 v1 事件，**不得再由 legacy 路徑替它背書**。否則 v1 事件只要旁邊有一則同 attempt 的 legacy 文字，就能繞過同行索引要求——v1 的兩面一致將從未被真正要求。legacy 對「沒有 v1 對應」的 attempt 仍維持寬鬆對帳。
-- 停機（`marker_quarantined`）時仍會一併回報找到的收據。兩者是不同的事實、下一步動作也不同：停機要人去修一則壞掉的留言，收據則說明「裁決其實發生過、只是還沒轉錄」。
+- §3.1.3 三面一致的第三面：讀取 Project 交付狀態欄，與裁決結論不符或讀不到即轉 `half_written`（#20）。裁決結論的取得規則（皆為 fail-closed，且**不得依順序決定**，`review-escalation.md` §2）：
+  - 只採信**據以放行的那個事件留言自身**的 `## 查核裁決：` 標題；其他留言即使提及該 `attempt_id`（討論引用、子字串碰撞）一律不算。
+  - 同一則留言出現多個結論標題 → 視為無法辨識。
+  - v1 與 legacy 兩條路徑都成立時取**聯集**：結論一致才放行，不一致即歧義。不因 v1 較嚴格就讓它勝出——在沒有時間語意的前提下無法宣稱誰較新。
+- 停機（`marker_quarantined`）與半寫入（`half_written`）時仍會一併回報找到的收據。兩者是不同的事實、下一步動作也不同：停機要人去修一則壞掉的留言，收據則說明「裁決其實發生過、只是還沒轉錄」。
 
 > **legacy 路徑的已知寬鬆（基線行為，刻意保留）**：legacy 的 Log 對帳只要求 body 中各自存在 `review by wf-cli` 與**任一**符合本卡＋本 SHA 的 `attempt_id`，兩者不必同行、也不必是同一個 attempt。因此一則 `e1` 的 legacy 裁決可被一行提及 `e0` 的 Log 背書。這是 baseline 的既有語意；卡面驗收要求「legacy 判定行為與本卡前一致」，收緊它屬回歸而非修復，故不在 #17 變更。新的嚴格判準只施加於 v1。
 - §3.1.6 的 `receipt_untranscribed` 與 `unobservable` 兩態，且 `unobservable` 的輸出文字明確禁止「沒有紀錄 → 沒有查核」的推論。
@@ -37,15 +41,17 @@
 | 7 | §3.1.4 halt 解除路徑 | **仍缺**：契約只定義 `review-marker-clearance` 的事件欄位，未定義其在 Issue 留言平面的表示法，亦無 writer；消費者無從辨識哪則留言是 clearance | fail-closed（停機無法由機器解除，只能人工處理） | 表示法定義歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；消費實作卡未開 |
 | 8a | §3.1.5 重複 event 的保守停機 | ✅ 已修：同 `attempt_id` 多則事件 → `marker_quarantined` | — | 已閉（#17） |
 | 8b | §3.1.5 語意比對（放行合法重送） | 無；裁決語意只在散文，無結構化承載 | fail-closed（合法重送會被停機卡住） | 設計歸 [#16](https://github.com/ruan6047/ai-workflow/issues/16)；實作卡未開 |
-| 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | 未讀取；半寫入無表達態 | fail-open | [#20](https://github.com/ruan6047/ai-workflow/issues/20) |
+| 9 | §3.1.3 三面一致的第三面（Project 交付狀態欄） | ✅ 已修：讀取交付狀態欄並與裁決結論比對，不符或讀不到即轉 `half_written` | — | 已閉（#20） |
+
+**保守誤判的實測衝擊（2026-08-11，#20 第 12 輪自查發現）**：契約承認「留言內引用 `wf-review-event:` 字樣會被判受管轄而停機」。實測本 repo 的 #15 與 #17——兩張裁決完整、三面一致的已結案卡——**都因派審留言引用了該字樣而回 `marker_quarantined`**。派審詞慣例性引用 marker 前綴，等於每張經此流程派審的卡都會被凍。方向仍是 fail-closed（不會誤放行），但在落差 7 的解除路徑到位前，`doctor --review-channel` 對這類卡**無法用於自動對帳**，`--strict` 會讓 CI 紅在一張其實沒問題的卡上。操作面的緩解：派審與討論留言避免出現裸的 `wf-review-event:` 字樣（例如以「event marker 前綴」轉述）；根治須待 #16 的 clearance 表示法。
 
 **落差 7 的性質已改變。** 修復前它是 fail-open（停機根本不會發生，所以「無從解除」不痛不癢）；修復後停機真的會發生，而解除路徑仍不存在——方向轉為 fail-closed，代價是**遇到不合格 marker 的卡只能人工處理**。這是刻意的取捨：卡住要人看，好過放行一則讀不懂的裁決。
 
-**落差 9 已開追蹤卡 [#20](https://github.com/ruan6047/ai-workflow/issues/20)。** 它在 #17 的驗收條件中未涵蓋（#17 聚焦 marker 合規與停機態），而 `audit_review_channel()` 的簽章不接受 Project 欄位值，補它需要改呼叫端。方向是 fail-open，依 §6 規則必須有追蹤卡；該卡由 #17 的 R1-004 查核裁定要求開立。
+**落差 9 已由 [#20](https://github.com/ruan6047/ai-workflow/issues/20) 修復。** `audit_review_channel()` 新增 `delivery_status` 參數，`doctor --review-channel` 以新增的 `--owner`／`--project` 讀取該欄位。**讀不到第三面時一律回 `half_written`，不得退回兩面一致就宣稱 `recorded`**——讀取失敗不是「一致」。裁決結論由留言的 `## 查核裁決：` 標題反推（契約 §3.1.3 已知限制：結論不在 marker 內），該依賴會在結構化承載到位後消失（落差 8b）。
 
 落差 8a／8b 的拆分理由：§3.1.5 延遲生效期間的保守行為（多則同 `attempt_id` 事件一律停止判定）**只需要消費者變更**，不依賴結構化承載，故可在 #17 內完成；只有「分辨語意一致以放行合法重送」才需要寫入端提供結構化裁決承載。兩者失效方向相反，混為一項會掩蓋 8a 的 fail-open 性質。
 
-落差 1–5、8a 的修復證據可重跑：以下探針對六個案例呼叫 `audit_review_channel()`，前五個依 §3.1.4 應為不可判定。**修復前實測全部回 `recorded`；修復後全部回 `marker_quarantined`，對照組維持 `recorded`。**
+落差 1–5、8a 的修復證據可重跑：以下探針對六個案例呼叫 `audit_review_channel()`，前五個依 §3.1.4 應為不可判定。**修復前實測全部回 `recorded`；修復後全部回 `marker_quarantined`，對照組（提供第三面時）為 `recorded`。**
 
 ```bash
 cd cli && uv run python -c "
@@ -62,7 +68,10 @@ cases={
  'conformant(control)':f'<!-- wf-review-event:v1 card_id={C} source_sha={S} attempt_id={A} -->\n## 查核裁決：APPROVE',
 }
 for n,b in cases.items():
-    print(f'{n:24}', audit_review_channel([{'body':b,'html_url':'u','user':{'login':'x'}}],C,S,card_body=body).status)"
+    # control 必須提供第三面（Project 交付狀態），否則它會因第三面未驗而回
+    # half_written——那不是 marker 合規的結果，會讓這支探針測不到它要測的東西。
+    ds = '✅通過' if 'control' in n else None
+    print(f'{n:24}', audit_review_channel([{'body':b,'html_url':'u','user':{'login':'x'}}],C,S,card_body=body,delivery_status=ds).status)"
 ```
 
 ### 1.3 生效結論
@@ -74,7 +83,7 @@ for n,b in cases.items():
 - **停機無法由機器解除**（落差 7）。遇到不合格 marker 的卡會持續停機，`review-marker-clearance` 的留言平面表示法尚未定義，只能人工處理。方向是 fail-closed。
 - **§3.1.5 的語意等價放行未生效**（落差 8b）。合法的冪等重送目前會被當成衝突而停機。
 
-**三面一致仍只驗到兩面**（落差 9，追蹤卡 [#20](https://github.com/ruan6047/ai-workflow/issues/20)）：`recorded` 證明「有裁決留言 ＋ 有 Log 索引行」，**不**證明 Project 交付狀態欄與之相符。半寫入（留言成功、狀態欄失敗）目前仍無表達態，且該落差方向是 fail-open。
+**三面一致已全數生效**（落差 9，#20）：`recorded` 現在同時蘊含「有裁決留言、有同 attempt 的 Log 索引行、且 Project 交付狀態與裁決結論相符」。半寫入（留言成功、狀態欄失敗）轉 `half_written`，與其他四態分離——它要人去補齊狀態欄，不是重跑查核。
 
 ## 2. 其他消費者
 

@@ -15,6 +15,7 @@ from typing import Any, Literal
 from . import git_ops
 from .card import now_iso8601
 from .registry import RegisteredCard, TasksMdRegistry
+from .review import STATUS_BY_RESULT
 
 WorktreeClass = Literal[
     "registered_active", "orphan_prunable", "orphan_untracked", "detached_sandbox"
@@ -68,7 +69,11 @@ class ReviewChannelFinding:
     """
 
     status: Literal[
-        "recorded", "receipt_untranscribed", "unobservable", "marker_quarantined"
+        "recorded",
+        "receipt_untranscribed",
+        "unobservable",
+        "marker_quarantined",
+        "half_written",
     ]
     card_id: str
     source_sha: str
@@ -76,6 +81,8 @@ class ReviewChannelFinding:
     receipt_urls: tuple[str, ...] = ()
     receipt_authors: tuple[str, ...] = ()
     quarantine_reasons: tuple[str, ...] = ()
+    expected_delivery_status: str | None = None
+    actual_delivery_status: str | None = None
 
 
 @dataclass
@@ -218,6 +225,90 @@ def inspect_event_marker(body: str) -> tuple[str | None, str | None]:
     return attempt, None
 
 
+_VERDICT_HEADING_RE = re.compile(r"^## 查核裁決：(?P<result>\S+)\s*$", re.M)
+
+
+def _verdict_of(body: str) -> str | None:
+    """取出一則裁決留言自己的結論並映射為交付狀態；無法辨識或不唯一回 None。
+
+    契約 §3.1.3 的已知限制：裁決結果不在 marker 內，只在渲染後的散文標題
+    ``## 查核裁決：<result>``。此依賴會在結構化承載到位後消失（落差 8b）。
+
+    ``wfcli review`` 渲染的裁決留言**恰有一個**該標題。出現多個代表有人引用了另一則
+    裁決或編輯過留言——此時不得取第一個（那會讓結果隨標題在留言內的先後而變，與
+    ``review-escalation.md`` §2「不得依順序覆寫」同源），也不得因為兩個標題文字相同
+    就當成唯一：該留言已不是產生器的輸出，其結論不可信。判準是**標題出現次數恰為
+    一**，零個、非列舉值、或多個一律視為無法辨識。
+    """
+    headings = _VERDICT_HEADING_RE.findall(body)
+    # 以**出現次數**判定，不是以去重後的結論數。set 去重會讓「同一結論重複兩次」
+    # 被當成唯一而放行——但 wfcli review 渲染的留言恰有一個標題，重複代表有人編輯
+    # 或引用過，該留言已不是產生器的輸出。零個、非列舉值、或多個（即使文字相同）
+    # 一律視為無法辨識。
+    if len(headings) != 1:
+        return None
+    return STATUS_BY_RESULT.get(headings[0])
+
+
+def _expected_delivery_status(
+    verdicts: dict[str, str | None], deciding_attempts: list[str]
+) -> tuple[str | None, str | None]:
+    """由**據以放行的那些事件自己的結論**決定交付狀態應有的值。
+
+    回傳 ``(expected, 歧義說明)``：兩者恰有一個為 None。
+
+    先前是事後重掃全部留言、以「有沒有提到這個 attempt」決定誰有資格提供結論，
+    因而兩種誤報：討論串引用裁決標題並提及該 attempt 會被算進來；以及 ``in``
+    子字串比對讓 ``…-e0-<sha>`` 命中 ``…-e0-<sha>x``（同一個陷阱第三次）。
+    改為在第一輪分類時就從該事件留言自身取下結論，不再有「誰有資格」的問題。
+
+    **不得依留言順序決定**（``review-escalation.md`` §2）：同一 SHA 在 replan 後
+    重審時，e0 與 e1 可能都被正確索引且結論相反，取「第一則」會讓結果隨排序而變。
+    """
+    results = {verdicts.get(a) for a in deciding_attempts}
+    if None in results:
+        return None, (
+            "據以放行的事件中，有留言的 `## 查核裁決：` 結論無法辨識或不唯一"
+            "（缺標題、結論非列舉值、或同一則留言出現多個結論），無從比對交付狀態。"
+        )
+    if not results:
+        return None, None
+    if len(results) > 1:
+        return None, (
+            "據以放行的 attempt 對應到多種裁決結論"
+            f"（{'、'.join(sorted(r for r in results if r))}），無從判斷交付狀態應為何。"
+            "同一 SHA 在 replan 後重審且結論相反時會出現此形態；依 review-escalation.md "
+            "§2 不得依留言順序決定，請人工裁定。"
+        )
+    return results.pop(), None
+
+
+def _check_third_face(expected: str | None, actual: str | None) -> str | None:
+    """三面一致的第三面。回傳不一致的說明；一致則回 None。
+
+    ``wfcli review`` 先寫 Issue 留言、再寫交付狀態、最後寫 body Log，三次遠端呼叫
+    沒有交易性。留言與 Log 都成功而狀態欄失敗，就是半寫入——先前兩面一致即回
+    ``recorded``，這種卡因此看起來完全正常，實際上看板上仍是待查核。
+    """
+    if actual is None:
+        return (
+            "無法讀取 Project 交付狀態欄，第三面未能驗證。契約 §3.1.3 要求三面一致，"
+            "只驗到留言與 Log 兩面時不得宣稱已有裁決。"
+        )
+    if expected is None:
+        return (
+            f"找到裁決留言與 Log 索引，但留言中沒有可辨識的 `## 查核裁決：` 結論，"
+            f"無從比對 Project 交付狀態（現為 {actual!r}）。"
+        )
+    if expected != actual:
+        return (
+            f"半寫入：裁決留言與 Log 索引都在，但 Project 交付狀態為 {actual!r}，"
+            f"與裁決結論應有的 {expected!r} 不符。`wfcli review` 的三次遠端寫入沒有"
+            "交易性，留言成功而狀態欄失敗即為此形態；請補齊狀態欄，不要重跑查核。"
+        )
+    return None
+
+
 def audit_review_channel(
     comments: list[dict[str, Any]],
     card_id: str,
@@ -225,6 +316,7 @@ def audit_review_channel(
     *,
     card_body: str = "",
     reviews: list[dict[str, Any]] | None = None,
+    delivery_status: str | None = None,
 ) -> ReviewChannelFinding:
     """唯讀比對 Issue timeline 上的收據與 wfcli review event。
 
@@ -282,6 +374,7 @@ def audit_review_channel(
     quarantine_reasons: list[str] = []
     conformant_attempts: list[str] = []
     legacy_attempts: list[str] = []
+    verdicts: dict[str, str | None] = {}
 
     all_comments = [*comments, *(reviews or [])]
 
@@ -296,6 +389,7 @@ def audit_review_channel(
             quarantine_reasons.append(f"{reason}（{url}）")
         elif attempt is not None and attempt.startswith(expected_attempt_prefix) and attempt.endswith(expected_attempt_suffix):
             conformant_attempts.append(attempt)
+            verdicts[attempt] = _verdict_of(body)
         if receipt_marker in body and receipt_matches(body):
             url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
             receipt_urls.append(url)
@@ -308,6 +402,7 @@ def audit_review_channel(
             hit = attempt_pattern.search(body)
             if hit:
                 legacy_attempts.append(hit.group(0))
+                verdicts.setdefault(hit.group(0), _verdict_of(body))
 
     # 落差 8a：同一 attempt 多則事件。§3.1.5 在結構化裁決承載到位前的保守行為是
     # 一律停止判定——不得把重送視為安全。放行需要能證明兩則語意等價，而裁決語意
@@ -347,14 +442,40 @@ def audit_review_channel(
     # legacy 對其他 attempt 的寬鬆對帳保持不變（卡面驗收第 3 條），只排除與 v1 撞號者。
     v1_attempts = set(conformant_attempts)
     legacy_only = [a for a in legacy_attempts if a not in v1_attempts]
-    if any(log_indexes(a) for a in conformant_attempts) or (
-        legacy_only and legacy_log_present
-    ):
+    matched = [a for a in conformant_attempts if log_indexes(a)]
+    if matched or (legacy_only and legacy_log_present):
+        # 過濾集必須涵蓋**實際據以放行的那些 attempt**。先前只傳 v1 的 matched，
+        # legacy 路徑因此拿到空集合而失去過濾，_expected_delivery_status 會抓到
+        # 第一則帶裁決標題的留言——包括別卡的，造成 half_written 誤報。誤報方向
+        # 雖是 fail-closed，但它會擋住合法的 legacy 卡，而 legacy 相容是硬性驗收。
+        # 兩條路徑都成立時取**聯集**而非只取 v1。先前寫成 `matched or legacy_only`，
+        # 於是「兩個 v1 結論相反」判歧義、「v1 與 legacy 結論相反」卻默默取 v1——
+        # 同樣的處境兩種待遇，而且沒有理由：在不引入時間語意的前提下，無法宣稱 v1
+        # 較新而應勝出。結論一致就照常放行，不一致則與多 v1 情形一樣判歧義。
+        deciding = [*matched, *legacy_only]
+        expected, ambiguity = _expected_delivery_status(verdicts, deciding)
+        third_face = ambiguity or _check_third_face(expected, delivery_status)
+        if third_face is not None:
+            return ReviewChannelFinding(
+                status="half_written",
+                card_id=card_id,
+                source_sha=source_sha,
+                detail=third_face,
+                receipt_urls=tuple(receipt_urls),
+                receipt_authors=tuple(receipt_authors),
+                expected_delivery_status=expected,
+                actual_delivery_status=delivery_status,
+            )
         return ReviewChannelFinding(
             status="recorded",
             card_id=card_id,
             source_sha=source_sha,
-            detail="已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log；狀態面已有裁決。",
+            detail=(
+                "已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log，"
+                "且 Project 交付狀態與裁決結論相符；三面一致，狀態面已有裁決。"
+            ),
+            expected_delivery_status=expected,
+            actual_delivery_status=delivery_status,
         )
 
     if receipt_urls:

@@ -12,6 +12,19 @@ from wf_cli.validation import validate_review_report
 
 from .conftest import git
 
+_APPROVED = "✅通過"
+
+
+def _audit_three_faces(*args, **kwargs):
+    """三面一致的正常情境：Project 交付狀態與 APPROVE 裁決相符。
+
+    這些測試驗的是「裁決確實成立」，因此 fixture 必須包含第三面；沒有它，
+    audit_review_channel 依契約 §3.1.3 不得宣稱 recorded。
+    """
+    kwargs.setdefault("delivery_status", _APPROVED)
+    return audit_review_channel(*args, **kwargs)
+
+
 
 def _registry(active: list[RegisteredCard], archived: set[str] | None = None) -> TasksMdRegistry:
     return TasksMdRegistry(active=active, archived_card_ids=archived or set(), source_paths=[])
@@ -202,7 +215,7 @@ def test_review_channel_accepts_renderer_event_only_with_matching_issue_log():
         card_id="CARD-A", report=report, source_sha=sha, reviewer="reviewer",
         escalation_epoch=0, timestamp="2026-08-09T00:00:00+08:00",
     )
-    finding = audit_review_channel(
+    finding = _audit_three_faces(
         [{"body": body}], "CARD-A", sha,
         card_body=f"2026-08-09 review by wf-cli → APPROVE；attempt CARD-A-e0-{sha}。",
     )
@@ -285,7 +298,7 @@ def test_quarantine_is_distinct_from_unobservable():
 
 
 def test_conformant_marker_still_recorded():
-    finding = audit_review_channel([{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=_ELOG)
+    finding = _audit_three_faces([{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=_ELOG)
     assert finding.status == "recorded"
 
 
@@ -293,7 +306,7 @@ def test_legacy_event_without_prefix_is_unchanged():
     """legacy 判準是語法：完全不含 wf-review-event: 前綴者行為完全不變。"""
     legacy = f"## 查核裁決：APPROVE\n- 卡：`{_ECARD}`　attempt_id：`{_EATT}`"
     assert "wf-review-event:" not in legacy
-    finding = audit_review_channel([{"body": legacy}], _ECARD, _ESHA, card_body=_ELOG)
+    finding = _audit_three_faces([{"body": legacy}], _ECARD, _ESHA, card_body=_ELOG)
     assert finding.status == "recorded"
 
 
@@ -364,7 +377,7 @@ def test_same_sha_different_epoch_is_a_separate_attempt_not_a_duplicate():
     att = f"{_ECARD}-e1-{_ESHA}"
     marker = _conformant_marker(attempt=att)
     log = f"2026-08-09 review by wf-cli → APPROVE；attempt {att}。"
-    finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=log)
+    finding = _audit_three_faces([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=log)
     assert finding.status == "recorded"
 
 
@@ -374,7 +387,10 @@ def test_log_must_index_the_same_attempt_as_the_event():
     先前實作把它拆成兩個獨立全文檢查，於是 Log 索引 e0 也能讓 e1 的事件過關。
     """
     marker = _conformant_marker(attempt=f"{_ECARD}-e1-{_ESHA}")
-    finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG)
+    # 帶第三面，否則斷言會因「第三面未提供」而成立，測不到 Log 索引規則本身。
+    finding = audit_review_channel(
+        [{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過"
+    )
     assert finding.status != "recorded", "Log 索引的是 e0，不得讓 e1 的事件過關"
 
 
@@ -388,7 +404,8 @@ def test_log_index_conditions_must_be_on_the_same_line():
         f"## Log\n- assign by wf-cli；attempt {_EATT}。\n- review by wf-cli → 別的事。"
     )
     finding = audit_review_channel(
-        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=split_log
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=split_log, delivery_status="✅通過",
     )
     assert finding.status != "recorded"
 
@@ -453,6 +470,7 @@ def test_doctor_rejects_invalid_source_sha_instead_of_reporting_unobservable(bad
     args = argparse.Namespace(
         repo_root=str(tmp_path), registry="none", review_channel=True,
         repo="acme/x", issue_number=1, card_id="CARD-A", source_sha=bad_sha,
+        owner="acme", project=1,
         main_ref="main", lease_ttl_hours=48.0, json=False, strict=False,
     )
     assert doctor_cmd.run(args) == 2
@@ -476,8 +494,11 @@ def test_log_attempt_must_match_on_token_boundary_not_substring():
     同一個子字串陷阱先前已在收據比對上出現過一次，這裡是它在 Log 對帳的複發。
     """
     log = f"2026-08-09 review by wf-cli → APPROVE；attempt {_EATT}x。"
+    # 必須帶 delivery_status：否則第三面未提供就會讓斷言因為別的原因成立，
+    # 這個測試等於沒在驗 token 邊界（#20 加入第三面檢查後一度變成如此）。
     finding = audit_review_channel(
-        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=log
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=log, delivery_status="✅通過",
     )
     assert finding.status != "recorded", "attempt+x 不是同一個 attempt"
 
@@ -491,7 +512,7 @@ def test_legacy_log_may_span_lines_as_in_baseline():
     legacy = f"## 查核裁決：APPROVE\n- 卡：`{_ECARD}`　attempt_id：`{_EATT}`"
     assert "wf-review-event:" not in legacy
     split_log = f"- review by wf-cli → APPROVE。\n- assign by wf-cli；attempt {_EATT}。"
-    finding = audit_review_channel([{"body": legacy}], _ECARD, _ESHA, card_body=split_log)
+    finding = _audit_three_faces([{"body": legacy}], _ECARD, _ESHA, card_body=split_log)
     assert finding.status == "recorded"
 
 
@@ -514,6 +535,7 @@ def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
     args = argparse.Namespace(
         repo_root=str(tmp_path), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
+        owner=None, project=None,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
     )
     assert doctor_cmd.run(args) == 0
@@ -543,7 +565,7 @@ def test_legacy_must_not_vouch_for_a_v1_event_of_the_same_attempt():
     split_log = f"- review by wf-cli → APPROVE。\n- assign by wf-cli；attempt {_EATT}。"
     finding = audit_review_channel(
         [{"body": _verdict(_conformant_marker())}, {"body": _legacy_verdict(_EATT)}],
-        _ECARD, _ESHA, card_body=split_log,
+        _ECARD, _ESHA, card_body=split_log, delivery_status="✅通過",
     )
     assert finding.status != "recorded", "v1 事件缺同行索引，不得由 legacy 路徑放行"
 
@@ -552,7 +574,7 @@ def test_legacy_still_vouches_for_its_own_attempt_when_no_v1_exists():
     """legacy 對「沒有 v1 對應」的 attempt 仍維持基線寬鬆對帳（驗收第 3 條）。"""
     other = f"{_ECARD}-e1-{_ESHA}"
     split_log = f"- review by wf-cli → APPROVE。\n- assign by wf-cli；attempt {other}。"
-    finding = audit_review_channel(
+    finding = _audit_three_faces(
         [{"body": _legacy_verdict(other)}], _ECARD, _ESHA, card_body=split_log
     )
     assert finding.status == "recorded"
@@ -561,7 +583,7 @@ def test_legacy_still_vouches_for_its_own_attempt_when_no_v1_exists():
 def test_v1_with_proper_same_line_log_is_recorded_even_alongside_legacy():
     """v1 自己有合格索引時照常放行，legacy 的存在不影響。"""
     log = f"- review by wf-cli → APPROVE；attempt {_EATT}。"
-    finding = audit_review_channel(
+    finding = _audit_three_faces(
         [{"body": _verdict(_conformant_marker())}, {"body": _legacy_verdict(_EATT)}],
         _ECARD, _ESHA, card_body=log,
     )
@@ -593,3 +615,199 @@ def test_receipt_untranscribed_unaffected_by_the_earlier_collection():
     )
     assert finding.status == "receipt_untranscribed"
     assert finding.receipt_urls == ("https://x/2",)
+
+
+# --------------------------------------------------------------------------
+# WF-REVIEW-CHANNEL-THIRD-FACE1：三面一致的第三面（Project 交付狀態欄）
+#
+# 契約 §3.1.3 要求裁決成立需三面一致。先前只驗留言與 Log 兩面，於是 wfcli review
+# 三次無交易性遠端寫入中「留言成功、狀態欄失敗」的半寫入，看起來與正常裁決一模一樣。
+# --------------------------------------------------------------------------
+
+
+def test_three_faces_agree_is_recorded():
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="✅通過",
+    )
+    assert finding.status == "recorded"
+    assert finding.expected_delivery_status == "✅通過"
+    assert finding.actual_delivery_status == "✅通過"
+
+
+def test_status_field_mismatch_is_half_written():
+    """留言與 Log 都在、狀態欄仍停在待查核＝半寫入，不得判 recorded。"""
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="🔍待查核",
+    )
+    assert finding.status == "half_written"
+    assert finding.expected_delivery_status == "✅通過"
+    assert finding.actual_delivery_status == "🔍待查核"
+    assert "半寫入" in finding.detail
+
+
+def test_request_changes_expects_returned_status():
+    body = f"{_conformant_marker()}\n## 查核裁決：REQUEST_CHANGES\n- attempt_id：`{_EATT}`"
+    ok = audit_review_channel([{"body": body}], _ECARD, _ESHA, card_body=_ELOG, delivery_status="↩退回")
+    bad = audit_review_channel([{"body": body}], _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過")
+    assert ok.status == "recorded"
+    assert bad.status == "half_written" and bad.expected_delivery_status == "↩退回"
+
+
+def test_unreadable_status_field_must_not_claim_recorded():
+    """讀不到第三面時只驗到兩面，依契約不得宣稱已有裁決。"""
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status=None,
+    )
+    assert finding.status == "half_written"
+    assert "無法讀取" in finding.detail
+
+
+def test_verdict_heading_missing_blocks_third_face_comparison():
+    """marker 合格但沒有可辨識的裁決結論時，無從比對狀態欄——不得放行。"""
+    body = f"{_conformant_marker()}\n（這則留言沒有查核裁決標題）\n{_EATT}"
+    finding = audit_review_channel(
+        [{"body": body}], _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過"
+    )
+    assert finding.status == "half_written"
+    assert "無法辨識或不唯一" in finding.detail
+
+
+def test_half_written_is_distinct_from_the_other_four_states():
+    def st(**kw):
+        return audit_review_channel(**kw).status
+
+    bad_marker = _verdict(f"<!-- wf-review-event:v2 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} -->")
+    assert st(comments=[{"body": _verdict(_conformant_marker())}], card_id=_ECARD,
+              source_sha=_ESHA, card_body=_ELOG, delivery_status="🔍待查核") == "half_written"
+    assert st(comments=[{"body": bad_marker}], card_id=_ECARD, source_sha=_ESHA,
+              card_body=_ELOG, delivery_status="✅通過") == "marker_quarantined"
+    assert st(comments=[], card_id=_ECARD, source_sha=_ESHA,
+              card_body=_ELOG, delivery_status="✅通過") == "unobservable"
+
+
+def test_half_written_still_surfaces_receipts():
+    receipt = f"<!-- wf-review-receipt:v1\ncard_id: {_ECARD}\nsource_sha: {_ESHA}\n-->"
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())},
+         {"body": receipt, "html_url": "https://x/9", "user": {"login": "rev"}}],
+        _ECARD, _ESHA, card_body=_ELOG, delivery_status="🔍待查核",
+    )
+    assert finding.status == "half_written"
+    assert finding.receipt_urls == ("https://x/9",)
+
+
+def test_expected_status_is_read_from_the_deciding_comment_not_the_first_one():
+    """legacy 路徑同樣要以「據以放行的 attempt」過濾，否則會抓到別卡的裁決結論。
+
+    先前只用 v1 的 matched 當過濾集，legacy 路徑拿到空集合而失去過濾，前置的別卡
+    留言就會決定 expected，造成 half_written 誤報——方向雖是 fail-closed，卻會擋住
+    合法的 legacy 卡，而 legacy 相容是硬性驗收。
+    """
+    other = f"## 查核裁決：REQUEST_CHANGES\n- 卡：`OTHER-CARD` attempt_id：`OTHER-e0-{_ESHA}`"
+    legacy = f"## 查核裁決：APPROVE\n- 卡：`{_ECARD}`　attempt_id：`{_EATT}`"
+    finding = audit_review_channel(
+        [{"body": other}, {"body": legacy}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="✅通過",
+    )
+    assert finding.status == "recorded"
+    assert finding.expected_delivery_status == "✅通過"
+
+
+def test_expected_status_must_not_depend_on_comment_order():
+    """review-escalation.md §2：不得依事件或陣列順序覆寫。
+
+    同一 SHA 在 replan 後重審時，e0 與 e1 可能都被正確索引且結論相反。取「第一則」
+    會讓結果隨留言排序而變——這是不可重現的判定，必須 fail-closed 交人裁定。
+    """
+    a1 = f"{_ECARD}-e1-{_ESHA}"
+    def ev(attempt, result):
+        return (f"{_conformant_marker(attempt=attempt)}\n"
+                f"## 查核裁決：{result}\n- attempt_id：`{attempt}`")
+    log = f"- review by wf-cli；attempt {_EATT}。\n- review by wf-cli；attempt {a1}。"
+    order_a = audit_review_channel(
+        [{"body": ev(_EATT, "REQUEST_CHANGES")}, {"body": ev(a1, "APPROVE")}],
+        _ECARD, _ESHA, card_body=log, delivery_status="✅通過")
+    order_b = audit_review_channel(
+        [{"body": ev(a1, "APPROVE")}, {"body": ev(_EATT, "REQUEST_CHANGES")}],
+        _ECARD, _ESHA, card_body=log, delivery_status="✅通過")
+    assert order_a.status == order_b.status == "half_written"
+    assert "多種裁決結論" in order_a.detail
+
+
+def test_expected_status_comes_from_the_deciding_event_not_from_mentions():
+    """只有「據以放行的那個事件」自己的裁決標題算數。
+
+    先前事後重掃全部留言、以「有沒有提到這個 attempt」決定誰有資格提供結論，因而
+    兩種誤報：討論串引用裁決標題並提及該 attempt；以及 `in` 子字串比對讓
+    `…-e0-<sha>` 命中 `…-e0-<sha>x`。
+    """
+    event = _verdict(_conformant_marker())
+    quoted = f"我引用一下：\n## 查核裁決：REQUEST_CHANGES\n（討論 {_EATT} 這個 attempt）"
+    longer = f"## 查核裁決：REQUEST_CHANGES\n- attempt_id：`{_EATT}x`"
+    for noise in (quoted, longer):
+        finding = audit_review_channel(
+            [{"body": event}, {"body": noise}], _ECARD, _ESHA,
+            card_body=_ELOG, delivery_status="✅通過",
+        )
+        assert finding.status == "recorded", f"雜訊留言不得影響 expected：{noise[:20]}"
+
+
+def test_conflicting_v1_and_legacy_verdicts_are_ambiguous_not_v1_wins():
+    """兩個 v1 結論相反判歧義，v1 與 legacy 結論相反也必須判歧義。
+
+    先前 `deciding = matched or legacy_only` 讓後者默默取 v1——同樣的處境兩種待遇。
+    在不引入時間語意的前提下，無法宣稱 v1 較新而應勝出。
+    """
+    a1 = f"{_ECARD}-e1-{_ESHA}"
+    v1 = f"{_conformant_marker()}\n## 查核裁決：APPROVE\n- attempt_id：`{_EATT}`"
+    legacy = f"## 查核裁決：REQUEST_CHANGES\n- 卡：`{_ECARD}`　attempt_id：`{a1}`"
+    log = f"- review by wf-cli；attempt {_EATT}。\n- review by wf-cli → APPROVE。\n- assign；attempt {a1}。"
+    finding = audit_review_channel(
+        [{"body": v1}, {"body": legacy}], _ECARD, _ESHA, card_body=log, delivery_status="✅通過"
+    )
+    assert finding.status == "half_written"
+    assert "多種裁決結論" in finding.detail
+
+
+def test_agreeing_v1_and_legacy_verdicts_still_record():
+    a1 = f"{_ECARD}-e1-{_ESHA}"
+    v1 = f"{_conformant_marker()}\n## 查核裁決：APPROVE\n- attempt_id：`{_EATT}`"
+    legacy = f"## 查核裁決：APPROVE\n- 卡：`{_ECARD}`　attempt_id：`{a1}`"
+    log = f"- review by wf-cli；attempt {_EATT}。\n- review by wf-cli → APPROVE。\n- assign；attempt {a1}。"
+    finding = audit_review_channel(
+        [{"body": v1}, {"body": legacy}], _ECARD, _ESHA, card_body=log, delivery_status="✅通過"
+    )
+    assert finding.status == "recorded"
+
+
+def test_multiple_verdict_headings_in_one_comment_are_ambiguous():
+    """同一則留言出現多個 `## 查核裁決：` 時不得取第一個。
+
+    取第一個會讓結果隨標題在留言內的先後而變，與 review-escalation.md §2
+    「不得依順序覆寫」同源。wfcli review 渲染的留言恰有一個標題；多個代表有人
+    引用了另一則裁決或編輯過留言。
+    """
+    m = _conformant_marker()
+    a = audit_review_channel(
+        [{"body": f"{m}\n## 查核裁決：APPROVE\n\n附註：\n## 查核裁決：REQUEST_CHANGES"}],
+        _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過")
+    b = audit_review_channel(
+        [{"body": f"{m}\n## 查核裁決：REQUEST_CHANGES\n\n更正：\n## 查核裁決：APPROVE"}],
+        _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過")
+    assert a.status == b.status == "half_written"
+
+
+def test_repeated_identical_verdict_heading_is_also_unusable():
+    """即使兩個標題文字相同也不得放行——判準是出現次數恰為一。
+
+    set 去重會讓重複的相同結論被當成唯一。但 wfcli review 渲染的留言恰有一個標題，
+    重複代表有人編輯或引用過，該留言已不是產生器的輸出，其結論不可信。
+    """
+    m = _conformant_marker()
+    finding = audit_review_channel(
+        [{"body": f"{m}\n## 查核裁決：APPROVE\n\n重申：\n## 查核裁決：APPROVE"}],
+        _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過")
+    assert finding.status == "half_written"
