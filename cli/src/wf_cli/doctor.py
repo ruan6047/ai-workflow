@@ -228,25 +228,53 @@ def inspect_event_marker(body: str) -> tuple[str | None, str | None]:
 _VERDICT_HEADING_RE = re.compile(r"^## 查核裁決：(?P<result>\S+)\s*$", re.M)
 
 
-def _expected_delivery_status(
-    comments: list[dict[str, Any]], matched_attempts: list[str]
-) -> str | None:
-    """從裁決留言的散文標題反推 Project 交付狀態應有的值。
+def _verdict_of(body: str) -> str | None:
+    """取出一則裁決留言自己的結論並映射為交付狀態；無法辨識或不唯一回 None。
 
-    契約 §3.1.3 的已知限制：裁決結果**不在 marker 內**，只存在於渲染後的散文標題
-    ``## 查核裁決：<result>``。第三面要比對的正是這個結論，因此不得不剖析散文。
-    這條依賴會在結構化裁決承載到位後消失（登記檔落差 8b）。
+    契約 §3.1.3 的已知限制：裁決結果不在 marker 內，只在渲染後的散文標題
+    ``## 查核裁決：<result>``。此依賴會在結構化承載到位後消失（落差 8b）。
 
-    找不到可辨識的結論時回 None——呼叫端據此判定「無法驗證第三面」，而不是猜。
+    ``wfcli review`` 渲染的裁決留言恰有一個該標題。出現多個代表有人引用了另一則
+    裁決或編輯過留言——此時**不得取第一個**（那會讓結果隨標題在留言內的先後而變，
+    與 ``review-escalation.md`` §2「不得依順序覆寫」同源），一律視為無法辨識。
     """
-    for comment in comments:
-        body = str(comment.get("body") or "")
-        if matched_attempts and not any(a in body for a in matched_attempts):
-            continue
-        found = _VERDICT_HEADING_RE.search(body)
-        if found:
-            return STATUS_BY_RESULT.get(found.group("result"))
-    return None
+    results = {STATUS_BY_RESULT.get(m) for m in _VERDICT_HEADING_RE.findall(body)}
+    if len(results) != 1:
+        return None
+    return results.pop()
+
+
+def _expected_delivery_status(
+    verdicts: dict[str, str | None], deciding_attempts: list[str]
+) -> tuple[str | None, str | None]:
+    """由**據以放行的那些事件自己的結論**決定交付狀態應有的值。
+
+    回傳 ``(expected, 歧義說明)``：兩者恰有一個為 None。
+
+    先前是事後重掃全部留言、以「有沒有提到這個 attempt」決定誰有資格提供結論，
+    因而兩種誤報：討論串引用裁決標題並提及該 attempt 會被算進來；以及 ``in``
+    子字串比對讓 ``…-e0-<sha>`` 命中 ``…-e0-<sha>x``（同一個陷阱第三次）。
+    改為在第一輪分類時就從該事件留言自身取下結論，不再有「誰有資格」的問題。
+
+    **不得依留言順序決定**（``review-escalation.md`` §2）：同一 SHA 在 replan 後
+    重審時，e0 與 e1 可能都被正確索引且結論相反，取「第一則」會讓結果隨排序而變。
+    """
+    results = {verdicts.get(a) for a in deciding_attempts}
+    if None in results:
+        return None, (
+            "據以放行的事件中，有留言的 `## 查核裁決：` 結論無法辨識或不唯一"
+            "（缺標題、結論非列舉值、或同一則留言出現多個結論），無從比對交付狀態。"
+        )
+    if not results:
+        return None, None
+    if len(results) > 1:
+        return None, (
+            "據以放行的 attempt 對應到多種裁決結論"
+            f"（{'、'.join(sorted(r for r in results if r))}），無從判斷交付狀態應為何。"
+            "同一 SHA 在 replan 後重審且結論相反時會出現此形態；依 review-escalation.md "
+            "§2 不得依留言順序決定，請人工裁定。"
+        )
+    return results.pop(), None
 
 
 def _check_third_face(expected: str | None, actual: str | None) -> str | None:
@@ -340,6 +368,7 @@ def audit_review_channel(
     quarantine_reasons: list[str] = []
     conformant_attempts: list[str] = []
     legacy_attempts: list[str] = []
+    verdicts: dict[str, str | None] = {}
 
     all_comments = [*comments, *(reviews or [])]
 
@@ -354,6 +383,7 @@ def audit_review_channel(
             quarantine_reasons.append(f"{reason}（{url}）")
         elif attempt is not None and attempt.startswith(expected_attempt_prefix) and attempt.endswith(expected_attempt_suffix):
             conformant_attempts.append(attempt)
+            verdicts[attempt] = _verdict_of(body)
         if receipt_marker in body and receipt_matches(body):
             url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
             receipt_urls.append(url)
@@ -366,6 +396,7 @@ def audit_review_channel(
             hit = attempt_pattern.search(body)
             if hit:
                 legacy_attempts.append(hit.group(0))
+                verdicts.setdefault(hit.group(0), _verdict_of(body))
 
     # 落差 8a：同一 attempt 多則事件。§3.1.5 在結構化裁決承載到位前的保守行為是
     # 一律停止判定——不得把重送視為安全。放行需要能證明兩則語意等價，而裁決語意
@@ -411,9 +442,13 @@ def audit_review_channel(
         # legacy 路徑因此拿到空集合而失去過濾，_expected_delivery_status 會抓到
         # 第一則帶裁決標題的留言——包括別卡的，造成 half_written 誤報。誤報方向
         # 雖是 fail-closed，但它會擋住合法的 legacy 卡，而 legacy 相容是硬性驗收。
-        deciding = matched or legacy_only
-        expected = _expected_delivery_status(all_comments, deciding)
-        third_face = _check_third_face(expected, delivery_status)
+        # 兩條路徑都成立時取**聯集**而非只取 v1。先前寫成 `matched or legacy_only`，
+        # 於是「兩個 v1 結論相反」判歧義、「v1 與 legacy 結論相反」卻默默取 v1——
+        # 同樣的處境兩種待遇，而且沒有理由：在不引入時間語意的前提下，無法宣稱 v1
+        # 較新而應勝出。結論一致就照常放行，不一致則與多 v1 情形一樣判歧義。
+        deciding = [*matched, *legacy_only]
+        expected, ambiguity = _expected_delivery_status(verdicts, deciding)
+        third_face = ambiguity or _check_third_face(expected, delivery_status)
         if third_face is not None:
             return ReviewChannelFinding(
                 status="half_written",
