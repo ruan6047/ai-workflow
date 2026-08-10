@@ -648,3 +648,68 @@ def test_escalate_is_noop_for_non_layout_rejections(card, capsys, monkeypatch):
     assert rc == 2
     assert not posted, "一般拒收不該留升級紀錄"
     assert "只對排版損壞生效" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
+# R4：runbook 必須真的能跑（前一版從未被實跑過，同時出了兩個錯）
+# --------------------------------------------------------------------------
+
+
+def _issue17_shaped_body() -> str:
+    """#17 的關鍵形狀：Log 內文本身含合法的字面 \\n（那行在描述「把字面 \\n 還原」）。"""
+    return (
+        "- 需求：x\n- Initiative：—　spec 基線：base\n\n"
+        "## 驗證\n\n- [ ] v\n\n"
+        "## Log\n\n"
+        "- 2026-08-10 open。\n"
+        "- 2026-08-10 repair；將誤寫的字面 \\n 還原為真換行。\n"
+    )
+
+
+def _run_verify(tmp_path, orig: str, fixed: str) -> str:
+    """實際執行 stderr runbook 第 3 步印出的那一行指令。"""
+    import subprocess
+
+    (tmp_path / "orig.md").write_text(orig, encoding="utf-8")
+    (tmp_path / "body.md").write_text(fixed, encoding="utf-8")
+    cmd = amend_cmd._LAYOUT_VERIFY_SNIPPET.replace(
+        "/tmp/orig.md", str(tmp_path / "orig.md")
+    ).replace("/tmp/body.md", str(tmp_path / "body.md"))
+    out = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    assert out.returncode == 0, f"驗證指令本身跑不起來：{out.stderr}"
+    return out.stdout.strip()
+
+
+def test_runbook_verify_accepts_correct_issue17_repair(tmp_path):
+    """R4-02：#17 的正確修復不得被誤判為竄改（Log 內合法的字面 \\n 必須留著）。"""
+    good = _issue17_shaped_body()
+    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    assert "\\n 還原為真換行" in corrupted, "前提：Log 內文仍有合法的字面 \\n"
+    assert _run_verify(tmp_path, corrupted, good).startswith("OK")
+
+
+def test_runbook_verify_rejects_extra_edits(tmp_path):
+    good = _issue17_shaped_body()
+    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    tampered = good.replace("spec 基線：base", "spec 基線：偷改的值")
+    assert _run_verify(tmp_path, corrupted, tampered).startswith("NG")
+
+
+def test_runbook_verify_rejects_stripping_legit_literal_newline(tmp_path):
+    """把 Log 內文合法的字面 \\n 也「順手還原」是錯的，必須被抓到。"""
+    good = _issue17_shaped_body()
+    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    overzealous = good.replace("字面 \\n 還原", "字面 \n 還原")
+    assert _run_verify(tmp_path, corrupted, overzealous).startswith("NG")
+
+
+def test_runbook_step1_creates_the_file_step3_reads(card, capsys):
+    """R4-01：第 3 步讀 orig.md，第 1 步就必須建立它，否則整份程序跑不動。"""
+    project = resolve_project(card, "acme", 1)
+    item = _item(card)
+    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number,
+                  item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1))
+    run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"])
+    err = capsys.readouterr().err
+    assert "cp /tmp/body.md /tmp/orig.md" in err, "runbook 必須自己建立 orig 副本"
+    assert err.index("cp /tmp/body.md") < err.index("/tmp/orig.md /tmp/body.md"), "建立要早於使用"

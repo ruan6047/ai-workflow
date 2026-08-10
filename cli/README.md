@@ -91,15 +91,15 @@ body 無差別替換（JSON 字串裡的 `{"note": "a\nb"}` 被改壞，而比�
 印出下列程序（含實際卡號）；核心設計是**工具不改 body，但要能機械證明人工修好了**：
 
 ```bash
-# 1. 取出現行 body（另存一份 orig 供比對）
+# 1. 取出現行 body，並另存一份原文副本供比對
 gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md
 cp /tmp/body.md /tmp/orig.md
 
-# 2. 人工把 Log 標題那處的字面 \n 改回真換行。只改換行，不動任何其他字元。
+# 2. 編輯 /tmp/body.md：把 Log 標題那處的字面 \n 改回真換行。
+#    只改那一處；Log 內文提到的字面 \n 是內容，不要碰。
 
-# 3. 確認只有空白差異（非空白內容必須逐字相同）
-python3 -c "a=open('/tmp/body.md').read(); b=open('/tmp/orig.md').read(); \
-print('僅空白差異' if ''.join(a.split())==''.join(b.replace(chr(92)+'n','').split()) else '⚠️ 內容被改動')"
+# 3. 驗證只發生了那一次替換（印出 OK 才可以繼續）
+python3 -c 'import sys;o=open(sys.argv[1]).read();n=open(sys.argv[2]).read();t=chr(92)+"n## Log"+chr(92)+"n"+chr(92)+"n";f=chr(10)*2+"## Log"+chr(10)*2;print("OK：只還原了 Log 標題" if o.replace(t,f,1)==n else "NG：還有其他改動，請重做第 2 步")' /tmp/orig.md /tmp/body.md
 
 # 4. 寫回
 gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
@@ -110,9 +110,15 @@ wfcli amend <CARD-ID> --repo <owner/repo> --reason 驗證排版 --dry-run --spec
 # 6. 在該 Issue 留言記錄這次人工寫入與原因
 ```
 
-第 3 步的比對與第 5 步的 `--dry-run` 是這個備案的關鍵：前者讓「只動空白」這件事由人
-**逐字驗證**而非由工具**宣稱**——同一條不變量，差別在誰來背書；後者讓「修好了」有機械
-判準，不靠目視。
+第 3 步與第 5 步是這個備案的關鍵。第 3 步的判準不是「只動了空白」而是**恰好等於原文做
+一次目標替換的結果**——任何其他改動（順手改錯字、把 Log 內文合法的字面 `\n` 也「還原」掉）
+都會被抓到。它與被移除的自動修復是同樣的邏輯，差別在它只**驗證**、不寫入：檢查失敗是
+安全的，寫錯才不是。第 5 步則讓「修好了」有機械判準，不靠目視。
+
+該驗證指令與 `amend` 印在 stderr 的那一份是**同一個常數**（`_LAYOUT_VERIFY_SNIPPET`），
+並由測試實際執行——先前的版本只存在於字串裡、從未被跑過，同時出了兩個錯（引用一個從未
+建立的 `orig.md`；以及用「刪掉全文所有字面 `\n` 再比」當判準，導致 #17 的正確修復被誤判
+為竄改）。
 
 #### `--escalate`：讓卡住這件事被看見
 

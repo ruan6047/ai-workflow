@@ -131,14 +131,33 @@ def _short(text: str, limit: int = 100) -> str:
 # 「沒有出路」——工具不改 body，卻必須讓人知道**怎麼修**以及**怎麼機械驗證修好了**。
 _LAYOUT_MARKERS = ("不是獨立標題行", "個 `## Log` 標題")
 
+# 第 3 步的驗證指令抽成常數，讓**測試執行的就是印給使用者的那一份**。先前 runbook
+# 只存在於字串裡、從沒被實跑過，結果同時出兩個錯：引用了一個從未建立的 orig.md，
+# 以及用「刪掉全文所有字面 \n 再比」當判準——那會把 Log 內文合法的字面 \n 一併刪掉，
+# 使 #17 的正確修復被誤判為內容遭竄改。
+#
+# 現在的判準精確得多：修好的 body 必須**恰好等於**原文做一次目標替換後的結果。
+# 任何其他改動（多刪一個字、順手改錯字）都會被抓到。這與被移除的自動修復同樣的
+# 邏輯，差別在它只**驗證**、不寫入——檢查失敗是安全的，寫錯才不是。
+_LAYOUT_VERIFY_SNIPPET = (
+    "python3 -c 'import sys;"
+    "o=open(sys.argv[1]).read();n=open(sys.argv[2]).read();"
+    "t=chr(92)+\"n## Log\"+chr(92)+\"n\"+chr(92)+\"n\";f=chr(10)*2+\"## Log\"+chr(10)*2;"
+    "print(\"OK：只還原了 Log 標題\" if o.replace(t,f,1)==n "
+    "else \"NG：還有其他改動，請重做第 2 步\")' /tmp/orig.md /tmp/body.md"
+)
+
 _LAYOUT_RUNBOOK = """
 [amend] 這是 body 排版損壞，本指令刻意不自動修（理由見 cli/README.md）。人工程序：
 
-  1. 取出現行 body：
+  1. 取出現行 body，並另存一份原文副本供比對：
      gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md
-  2. 人工修正：把 Log 標題那處的字面 \\n 改回真換行。**只改換行，不動任何其他字元**。
-  3. 確認只有空白差異（非空白內容必須逐字相同）：
-     python3 -c "import sys;a=open('/tmp/body.md').read();print('僅空白差異' if ''.join(a.split())==''.join(open('/tmp/orig.md').read().replace(chr(92)+'n','').split()) else '⚠️ 內容被改動')"
+     cp /tmp/body.md /tmp/orig.md
+  2. 編輯 /tmp/body.md：把 Log 標題那處的字面 \\n 改回真換行。
+     **只改那一處，不動任何其他字元**（Log 內文提到的字面 \\n 是內容，不要碰）。
+  3. 驗證只發生了那一次替換：
+     {verify}
+     印出 OK 才可以進第 4 步；印出 NG 表示還動到了別的地方。
   4. 寫回：gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
   5. **機械驗證修好了**（不寫入任何狀態）：
      wfcli amend {card_id} --repo <owner/repo> --reason 驗證排版 --dry-run --spec-baseline '<現值>'
@@ -187,7 +206,7 @@ def _escalate_layout_failure(runner, target, item, args, exc: Exception) -> None
         "**本指令刻意不自動修復 body**（理由見 `cli/README.md`「為什麼沒有排版修復」）。"
         "在修好之前，這張卡的任何 `wfcli amend` 都會被拒絕。\n\n"
         "### 需要人或 AI 接手\n"
-        f"```text{_LAYOUT_RUNBOOK.format(card_id=args.card_id)}\n```\n\n"
+        f"```text{_LAYOUT_RUNBOOK.format(card_id=args.card_id, verify=_LAYOUT_VERIFY_SNIPPET)}\n```\n\n"
         "修復後請在本串回覆，並一併說明 body 為何會被繞過 `wfcli` 直接寫入——"
         "排版損壞本身就是那條繞道仍然存在的證據。"
     )
@@ -282,7 +301,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     except (AmendError, ResourceDeclarationError) as exc:
         print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
         if _is_layout_failure(exc):
-            print(_LAYOUT_RUNBOOK.format(card_id=args.card_id), file=sys.stderr)
+            print(_LAYOUT_RUNBOOK.format(card_id=args.card_id, verify=_LAYOUT_VERIFY_SNIPPET), file=sys.stderr)
             if args.escalate:
                 _escalate_layout_failure(runner, target, item, args, exc)
         elif args.escalate:
