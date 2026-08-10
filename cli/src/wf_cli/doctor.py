@@ -15,6 +15,7 @@ from typing import Any, Literal
 from . import git_ops
 from .card import now_iso8601
 from .registry import RegisteredCard, TasksMdRegistry
+from .review import STATUS_BY_RESULT
 
 WorktreeClass = Literal[
     "registered_active", "orphan_prunable", "orphan_untracked", "detached_sandbox"
@@ -68,7 +69,11 @@ class ReviewChannelFinding:
     """
 
     status: Literal[
-        "recorded", "receipt_untranscribed", "unobservable", "marker_quarantined"
+        "recorded",
+        "receipt_untranscribed",
+        "unobservable",
+        "marker_quarantined",
+        "half_written",
     ]
     card_id: str
     source_sha: str
@@ -76,6 +81,8 @@ class ReviewChannelFinding:
     receipt_urls: tuple[str, ...] = ()
     receipt_authors: tuple[str, ...] = ()
     quarantine_reasons: tuple[str, ...] = ()
+    expected_delivery_status: str | None = None
+    actual_delivery_status: str | None = None
 
 
 @dataclass
@@ -218,6 +225,56 @@ def inspect_event_marker(body: str) -> tuple[str | None, str | None]:
     return attempt, None
 
 
+_VERDICT_HEADING_RE = re.compile(r"^## 查核裁決：(?P<result>\S+)\s*$", re.M)
+
+
+def _expected_delivery_status(
+    comments: list[dict[str, Any]], matched_attempts: list[str]
+) -> str | None:
+    """從裁決留言的散文標題反推 Project 交付狀態應有的值。
+
+    契約 §3.1.3 的已知限制：裁決結果**不在 marker 內**，只存在於渲染後的散文標題
+    ``## 查核裁決：<result>``。第三面要比對的正是這個結論，因此不得不剖析散文。
+    這條依賴會在結構化裁決承載到位後消失（登記檔落差 8b）。
+
+    找不到可辨識的結論時回 None——呼叫端據此判定「無法驗證第三面」，而不是猜。
+    """
+    for comment in comments:
+        body = str(comment.get("body") or "")
+        if matched_attempts and not any(a in body for a in matched_attempts):
+            continue
+        found = _VERDICT_HEADING_RE.search(body)
+        if found:
+            return STATUS_BY_RESULT.get(found.group("result"))
+    return None
+
+
+def _check_third_face(expected: str | None, actual: str | None) -> str | None:
+    """三面一致的第三面。回傳不一致的說明；一致則回 None。
+
+    ``wfcli review`` 先寫 Issue 留言、再寫交付狀態、最後寫 body Log，三次遠端呼叫
+    沒有交易性。留言與 Log 都成功而狀態欄失敗，就是半寫入——先前兩面一致即回
+    ``recorded``，這種卡因此看起來完全正常，實際上看板上仍是待查核。
+    """
+    if actual is None:
+        return (
+            "無法讀取 Project 交付狀態欄，第三面未能驗證。契約 §3.1.3 要求三面一致，"
+            "只驗到留言與 Log 兩面時不得宣稱已有裁決。"
+        )
+    if expected is None:
+        return (
+            f"找到裁決留言與 Log 索引，但留言中沒有可辨識的 `## 查核裁決：` 結論，"
+            f"無從比對 Project 交付狀態（現為 {actual!r}）。"
+        )
+    if expected != actual:
+        return (
+            f"半寫入：裁決留言與 Log 索引都在，但 Project 交付狀態為 {actual!r}，"
+            f"與裁決結論應有的 {expected!r} 不符。`wfcli review` 的三次遠端寫入沒有"
+            "交易性，留言成功而狀態欄失敗即為此形態；請補齊狀態欄，不要重跑查核。"
+        )
+    return None
+
+
 def audit_review_channel(
     comments: list[dict[str, Any]],
     card_id: str,
@@ -225,6 +282,7 @@ def audit_review_channel(
     *,
     card_body: str = "",
     reviews: list[dict[str, Any]] | None = None,
+    delivery_status: str | None = None,
 ) -> ReviewChannelFinding:
     """唯讀比對 Issue timeline 上的收據與 wfcli review event。
 
@@ -347,14 +405,36 @@ def audit_review_channel(
     # legacy 對其他 attempt 的寬鬆對帳保持不變（卡面驗收第 3 條），只排除與 v1 撞號者。
     v1_attempts = set(conformant_attempts)
     legacy_only = [a for a in legacy_attempts if a not in v1_attempts]
-    if any(log_indexes(a) for a in conformant_attempts) or (
-        legacy_only and legacy_log_present
-    ):
+    matched = [a for a in conformant_attempts if log_indexes(a)]
+    if matched or (legacy_only and legacy_log_present):
+        # 過濾集必須涵蓋**實際據以放行的那些 attempt**。先前只傳 v1 的 matched，
+        # legacy 路徑因此拿到空集合而失去過濾，_expected_delivery_status 會抓到
+        # 第一則帶裁決標題的留言——包括別卡的，造成 half_written 誤報。誤報方向
+        # 雖是 fail-closed，但它會擋住合法的 legacy 卡，而 legacy 相容是硬性驗收。
+        deciding = matched or legacy_only
+        expected = _expected_delivery_status(all_comments, deciding)
+        third_face = _check_third_face(expected, delivery_status)
+        if third_face is not None:
+            return ReviewChannelFinding(
+                status="half_written",
+                card_id=card_id,
+                source_sha=source_sha,
+                detail=third_face,
+                receipt_urls=tuple(receipt_urls),
+                receipt_authors=tuple(receipt_authors),
+                expected_delivery_status=expected,
+                actual_delivery_status=delivery_status,
+            )
         return ReviewChannelFinding(
             status="recorded",
             card_id=card_id,
             source_sha=source_sha,
-            detail="已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log；狀態面已有裁決。",
+            detail=(
+                "已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log，"
+                "且 Project 交付狀態與裁決結論相符；三面一致，狀態面已有裁決。"
+            ),
+            expected_delivery_status=expected,
+            actual_delivery_status=delivery_status,
         )
 
     if receipt_urls:

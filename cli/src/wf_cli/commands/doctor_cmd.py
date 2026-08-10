@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..doctor import audit_review_channel, run_doctor
 from ..gh import default_runner
+from ..project import find_item_by_card_id, list_items, resolve_project
 from ..registry import load_tasks_md_registry
 from ..validation import ValidationError, validate_source_sha
 
@@ -35,6 +36,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--repo", help="--review-channel 的 GitHub repo，格式 owner/repo")
     p.add_argument("--issue-number", type=int, help="--review-channel 的 Issue/PR number")
     p.add_argument("--card-id", help="--review-channel 的卡 ID")
+    p.add_argument("--owner", help="--review-channel 讀取 Project 交付狀態欄所需的 owner")
+    p.add_argument("--project", type=int, help="--review-channel 讀取交付狀態欄所需的 Project number")
     p.add_argument("--source-sha", help="--review-channel 的完整 40 字元受審 SHA")
     p.add_argument("--main-ref", default="main", help="判斷「已併入」與 lease 交集比對用的主幹分支")
     p.add_argument("--lease-ttl-hours", type=float, default=48.0)
@@ -76,6 +79,11 @@ def run(args: argparse.Namespace) -> int:
                 ("--issue-number", args.issue_number),
                 ("--card-id", args.card_id),
                 ("--source-sha", args.source_sha),
+                # 契約 §3.1.3 的三面一致要求比對 Project 交付狀態欄。少了它只驗到
+                # 兩面，而兩面一致的半寫入（留言成功、狀態欄失敗）看起來與正常裁決
+                # 完全一樣——那正是本卡要消滅的 fail-open，因此列為必填而非選配。
+                ("--owner", args.owner),
+                ("--project", args.project),
             ) if not value
         ]
         if missing:
@@ -115,12 +123,23 @@ def run(args: argparse.Namespace) -> int:
             reviews = default_runner.run_json(
                 ["api", f"repos/{args.repo}/pulls/{args.issue_number}/reviews", "--paginate"]
             )
+        # 第三面：Project 交付狀態欄。讀不到就傳 None，audit_review_channel 會據此
+        # 回報 half_written 而非宣稱 recorded——讀取失敗不得被當成一致。
+        delivery_status = None
+        try:
+            proj = resolve_project(default_runner, args.owner, args.project)
+            item = find_item_by_card_id(list_items(default_runner, proj), args.card_id)
+            delivery_status = item.delivery_status if item else None
+        except Exception as exc:  # noqa: BLE001 - 讀不到第三面是 finding，不是當機
+            print(f"[doctor] 讀取 Project 交付狀態失敗（{type(exc).__name__}: {exc}）；"
+                  "第三面將標記為未驗證", file=sys.stderr)
         finding = audit_review_channel(
             comments or [],
             args.card_id,
             args.source_sha,
             card_body=str((issue or {}).get("body") or ""),
             reviews=reviews or [],
+            delivery_status=delivery_status,
         )
         review_channel_finding = finding
         out = sys.stderr if args.json else sys.stdout
@@ -128,6 +147,9 @@ def run(args: argparse.Namespace) -> int:
         print(f"- [{finding.status}] {finding.detail}", file=out)
         for url, author in zip(finding.receipt_urls, finding.receipt_authors, strict=True):
             print(f"  - receipt: {url}（GitHub author: {author}）", file=out)
+        if finding.status == "half_written":
+            print(f"  - 交付狀態：預期 {finding.expected_delivery_status!r}／"
+                  f"實際 {finding.actual_delivery_status!r}", file=out)
         for reason in finding.quarantine_reasons:
             # 停機的價值在於「要人去修哪一則留言」。只印狀態不印原因，使用者只知道
             # 卡住了卻不知道卡在哪，那和沒偵測到差不多。

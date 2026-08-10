@@ -16,7 +16,7 @@
 | `deploy-declare` | 需求方已明確裁決既有卡需要部署時，唯一允許 `—不適用 → ⏸未部署`；必填固定 `needs-deploy` decision、reason、actor，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態與內建 `Status=Todo`；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `deploy-state` | 部署狀態只允許相鄰前進（`⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證`）；必填下一 stage owner、actor、evidence，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態、內建 `Status`、owner、最後交接；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `review` | 查核裁決：驗 `templates/review-prompt.md` §5 結構化輸出（`review_result` 列舉、`core_pain_resolved` 必填、`self_run` 非空、finding 八欄 schema、結論與 findings 的語意一致性），過了才把裁決全文寫成 Issue 留言並轉交付狀態（`APPROVE`→`✅通過`／`REQUEST_CHANGES`→`↩退回`）；**無 `self_run` 的 `APPROVE` 記 `review-invalid` 拒收** | 寫（有條件拒絕） |
-| `doctor` | 對帳：`git worktree list` vs 卡註冊、submodule 初始化、孤兒分支、殘留 lease、prunable worktree | **唯讀**，不清理 |
+| `doctor` | 對帳：`git worktree list` vs 卡註冊、submodule 初始化、孤兒分支、殘留 lease、prunable worktree；`--review-channel` 另對帳查核寫入通道，依 `handoff-contract.md` §3.1 驗 marker 合規與**三面一致**（裁決留言／Log 索引行／Project 交付狀態欄），結果為 `recorded`／`half_written`／`marker_quarantined`／`receipt_untranscribed`／`unobservable` 五態之一；`--json` 時 stdout 只輸出 JSON（含 `review_channel` 鍵），人類報告走 stderr | **唯讀**，不清理 |
 | `snapshot` | 匯出 Project 全部卡片為 JSON＋人類可讀 Markdown Ledger | 讀＋寫本機檔案（不寫回 GitHub） |
 
 ## 安裝與執行
