@@ -126,7 +126,7 @@ GitHub comment author 是可驗證的帳號身分；收據內模型／工具名�
 
 - **停機狀態由現行內容導出**，不由簿記推定——留言隔離後遭編輯即再次停機，但**任何**編輯結果都有可發的解除路徑（編輯成合格 marker 走 `repaired-verified`），不得出現無法解除的狀態。
 - 解除範圍以留言為單位；多則不合格 marker 需多則 clearance。
-- `forged-rejected` 強制由需求方裁定。其裁定留言 URL 須通過三項核對：author 等於卡面需求方、**位於本卡**、且內文**明列** `quarantined_comment_id` 與對應 body hash 及所授權的 decision。第三項是防重放——hash 在停機成立前並不存在，舊留言不可能含有它，因此不需引入時鐘即可擋掉重放。
+- `forged-rejected` **不解除停機**：偽造是安全事件，不由任何機器判定自動放行。它只把「這是冒充」寫進事件流；宣告與恢復是兩個動作，恢復另發 `reissue-required`。（先前版本以需求方裁定＋body hash 綁定來自動解除，該防重放推理已撤回——內容由攻擊者撰寫，hash 可預先計算，不構成 nonce。詳見 §5。）
 - **分類不得靠自述降類**：留言 author 不在 §5 宣告的 review event writer 帳號集合、內容卻看似裁決者，不得判為 `malformed-ignored`，**也不得**判為 `repaired-verified`——否則外人可自行編輯留言後以「已修復」洗白。
 - `repaired-verified` 另須 adapter 驗證現行 body **確實已合格**且該留言**已有前一筆有效 clearance**；否則壞 marker 只要改成另一個壞 marker 就能藉此出口解鎖。
 - `reissue-required` 解除停機但不得據以認定該卡已有裁決。
@@ -174,8 +174,6 @@ PM 祕書以收據原文與 hash 對帳後，才用 `wfcli review` 轉錄結構�
   （`review-escalation.md` §5 的 `forged-rejected`／`malformed-ignored` 分類界線以此為準：
   留言 author 不在此集合而內容看似裁決者，不得降類為「寫壞了」。未宣告則該分類無法機械核對，
   adapter 必須一律 fail-closed。）
-- 卡面「需求」欄所載的需求方帳號：<GitHub 帳號>
-  （`clearance_authority: requester` 的 `requester_decision_url` 以此比對 author。）
 - tmux launcher／wake-up：<可選 command；不用填—>
 - Runtime 路徑與 `.gitignore`：<path>
 - 失敗、重試與人工介入：<runbook link>

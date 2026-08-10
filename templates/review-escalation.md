@@ -113,11 +113,10 @@ quarantined_comment_url: <該留言 URL>
 quarantined_comment_author: <該留言的 GitHub author 帳號>
 quarantined_body_sha256: <停機當下 comment body 原文 UTF-8 SHA-256>
 quarantine_reason: unknown-version | missing-field | unknown-key | field-order | field-inconsistent | duplicate-conflict | edited-after-clearance
-clearance_decision: malformed-ignored | superseded | forged-rejected | reissue-required | repaired-verified
+clearance_decision: malformed-ignored | superseded | repaired-verified | reissue-required | forged-rejected
 superseding_attempt_id: <clearance_decision=superseded 時必填，且須為既存 attempt>
 repaired_body_sha256: <clearance_decision=repaired-verified 時必填；修復後 body 原文 UTF-8 SHA-256>
-clearance_authority: coordinator | requester
-requester_decision_url: <clearance_authority=requester 時必填；需求方本人帳號所留裁定的留言 URL>
+incident_record_url: <quarantined_comment_author 不在授權 writer 集合且內容看似裁決時必填；記錄該冒充事件處置的留言 URL>
 cleared_by: <GitHub account>
 clearance_rationale: <非空>
 ```
@@ -138,7 +137,7 @@ clearance_rationale: <非空>
 - 編輯後 body 仍不合格（或換成另一種不合格）：前括號由 marker 不合格滿足，依實際 `quarantine_reason` 對新 hash 另發 clearance。
 - 從未被隔離的留言遭編輯：前括號兩支皆不成立，不停機。
 
-adapter 實作本規則後，可窮舉的狀態組合是 **12 個**（現行 body 不合格 × 曾隔離 × 已涵蓋 × author 是否為授權 writer，扣除「未曾隔離卻已涵蓋」等不可達組合），其中 **6 個為停機**，且每一個都至少有一條可發的解除路徑並在發出後解除。非 writer author 的留言恆可走 `forged-rejected`／`reissue-required`（前者需需求方授權），因此嚴格的分類限制不會造成無路可解。任何實作若出現第 13 種狀態，或某個停機狀態無路可解，即是偏離本契約。
+adapter 實作本規則後，可窮舉的狀態組合是 **12 個**（現行 body 不合格 × 曾隔離 × 已涵蓋 × author 是否為授權 writer，扣除「未曾隔離卻已涵蓋」等不可達組合），其中 **6 個為停機**，且每一個都至少有一條**可解除**的路徑並在發出後解除。計算可解除路徑時**不計入 `forged-rejected`**，它只記錄不解除。非 writer author 的留言恆可走 `reissue-required`（並須附 `incident_record_url`），因此嚴格的分類限制不會造成無路可解。任何實作若出現第 13 種狀態，或某個停機狀態無可解除路徑，即是偏離本契約。
 
 **已知限制**：若壞 marker 在**任何** clearance 被寫下之前就被編輯成合格內容，停機會靜默解除且事件流不留紀錄——消費者是唯讀的，系統對「曾經壞過但沒人記錄」沒有記憶，GitHub 的留言編輯歷史也非 API 可靠取得。此情形不會產生錯誤的裁決（合格 marker 仍須通過 `handoff-contract.md` §3.1.3 的三面一致才算裁決），但會失去一次竄改訊號。要消除它需要消費者在偵測到停機時即寫入紀錄，那是寫入端變更，不在本節範圍。
 
@@ -150,7 +149,7 @@ adapter 實作本規則後，可窮舉的狀態組合是 **12 個**（現行 bod
 
 - `malformed-ignored`：確認該留言是壞掉的 marker、不是裁決。消費者忽略它，恢復對該卡的自動判定。
 - `superseded`：該留言已由另一則合法事件取代，須以 `superseding_attempt_id` 指向既存 attempt。恢復判定並以該 attempt 為準。
-- `forged-rejected`：判定為冒充裁決。**強制 `clearance_authority: requester`**——偽造狀態面事件是安全事件，不由 Coordinator 單獨結案；消費者忽略該留言，並須另行記錄處置。
+- `forged-rejected`：判定該留言為冒充裁決。**它不解除停機**——偽造是安全事件，不該由任何機器判定自動放行。本 decision 只是把「這是冒充」這個判定寫進事件流；停機持續，直到另發一則能解除的 decision（通常是事件處置完成後的 `reissue-required`）。宣告與恢復是**兩個動作**，刻意不合併：合併就等於讓一則事件同時扮演告警與解除，而那正是可被重放攻擊的形狀。
 - `reissue-required`：留痕不足以裁決，須重新以正規寫入通道產生事件。解除停機，但**不得**因此判定該卡已有裁決；卡回 `🔍待查核`。
 - `repaired-verified`：隔離後留言遭編輯，且修復後內容已經人核對。解除僅對 `repaired_body_sha256` 有效；再次編輯即再次停機。**adapter 必須另行驗證兩件事，缺一即 clearance 無效、停機維持**：(i) 該留言的**現行** body 確實已是合格 marker，或已完全不含 `wf-review-event:` 前綴；(ii) timeline 上該 `comment_id` 已有前一筆有效 clearance——`repaired-verified` 是「修復」，不是首次隔離的處置。少了 (i)，壞 marker 只要被改成**另一個**壞 marker 就能藉本出口涵蓋新 hash 而解除停機，繞過所有分類限制；這個出口是為了消除死鎖，不是為了提供無條件解鎖。
 
@@ -160,15 +159,11 @@ adapter 實作本規則後，可窮舉的狀態組合是 **12 個**（現行 bod
 - author 在該集合內（自家 writer 自己寫壞）→ 可用 `malformed-ignored` 或 `repaired-verified`。
 - 分類與 author 事實不符的 clearance **無效**，停機維持。
 
-**requester 授權必須有可核對證據，且必須綁定到這一次解除。** `clearance_authority: requester` 必填 `requester_decision_url`。adapter 必須實際讀取該 URL 並逐項驗證，任一不符即 clearance 無效、停機維持：
+**冒充事件必須留下處置紀錄。** 當 `quarantined_comment_author` 不在授權 writer 集合、且該留言（隔離當下或現行）含形式合格 marker 或裁決標題時，**無論使用哪一個 `clearance_decision`**，都必須填 `incident_record_url` 指向記錄該事件處置的留言。這條不封鎖任何解除路徑——Coordinator 仍可用 `reissue-required` 讓卡片繼續前進——但它確保「有人冒充過裁決」這個訊號不會因為換一個較溫和的 decision 而靜默消失。缺 `incident_record_url` 即 clearance 無效、停機維持。
 
-1. **author**：該裁定留言的 GitHub author 等於卡面「需求」欄所載帳號。不得採信 `cleared_by` 或 `clearance_rationale` 的自述。
-2. **同卡**：該裁定留言位於**本卡**的 Issue／PR，不接受其他卡或其他 repo 的 URL。
-3. **綁定**：裁定內文必須明列本次解除的 `quarantined_comment_id`、對應的 body hash（`quarantined_body_sha256`，或 `repaired-verified` 時的 `repaired_body_sha256`），以及所授權的 `clearance_decision` 值。
-
-第 3 條是**防重放**的關鍵，而且它不需要時鐘：body hash 在停機成立前並不存在，因此需求方任何既有的無關留言都不可能含有該 hash。以「裁定時間須晚於停機」來擋重放會引入時區與編輯時間的判定問題，那屬時間語意契約的範圍，本節刻意不走那條路。
-
-這與 `handoff-contract.md` §3.1.2 收據同源：**帳號是平台事實，欄位值只是自述**。（§4 `escalation-epoch-change` 的 `requester_approved: true` 仍是自述型欄位；本節刻意不沿用該弱模式，是否追溯補強屬另案，不在此處變更。）
+> **已撤回的設計（保留記錄以免重蹈）**：先前版本要求 `clearance_authority: requester` ＋ `requester_decision_url`，並主張「body hash 在停機成立前並不存在，故可作為防重放 nonce、不需時鐘」。**該推理是錯的**：nonce 的要件是攻擊者無法預測，但被隔離的內容正是攻擊者所撰寫，他能預先算出自己的 hash。攻擊者可先建立無害留言取得 `comment_id`、選定未來的壞 body 並算出其 hash、取得需求方對該組 ID／hash 的裁定，再把同一留言編輯成預定的壞 body——舊裁定會通過 author、同卡、ID、hash 與 decision 的全部檢查。hash 綁定證明的是「這則裁定指涉這串位元組」，既不證明該內容當時已存在，也不證明裁定者看過它。
+>
+> 修法不是替該機制補上新鮮性證據，而是**移除它所保護的能力**：`forged-rejected` 不再自動解除停機，requester 授權路徑因此無用武之地，整個重放面隨之消失而非被修補。這也讓本節不需要引入時鐘或 revision 排序，與時間語意契約保持正交。
 
 **append-only 不因解除而破例**：不得刪除被停機的留言，也不得回寫既有事件。完整 replay 必須能僅憑事件流重建每一次停機與其解除。
 
