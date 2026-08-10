@@ -14,7 +14,9 @@
 
 ### 1.1 已實作
 
-- §3.1.3 三面一致中的兩面：要求 Issue body 的 `review by wf-cli` 索引行與同 `attempt_id` 同時命中，才回 `recorded`。
+- §3.1.3 三面一致中的兩面（第三面見落差 9）。v1 事件與 legacy 的 Log 對帳判準**刻意不同**：
+  - **v1 事件**：同一行同時含 `review by wf-cli` 與該 `attempt_id`，且 attempt 以 token 邊界比對（`attempt in line` 會讓 `…-e0-<sha>` 命中 `…-e0-<sha>x`）。
+  - **legacy**（完全不含 `wf-review-event:` 前綴者）：維持基線的全文各自搜尋，不要求同一行。收緊它會讓既有舊卡由 `recorded` 變成 `unobservable`，那是回歸而非修復。
 - §3.1.6 的 `receipt_untranscribed` 與 `unobservable` 兩態，且 `unobservable` 的輸出文字明確禁止「沒有紀錄 → 沒有查核」的推論。
 - receipt 的同卡、同 `source_sha` 比對，並輸出收據 URL 與 GitHub author。
 
