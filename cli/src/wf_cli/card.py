@@ -201,10 +201,148 @@ def append_log_line(body: str, line: str) -> str:
     return body.rstrip("\n") + f"\n\n{_LOG_HEADING}\n\n{entry}\n"
 
 
+# --------------------------------------------------------------------------
+# 開卡後的卡面修訂（WF-CLI-CARD-AMEND1）
+# --------------------------------------------------------------------------
+#
+# 這些是純函式：吃 body 字串、回傳 (新 body, 被改欄位的原值)，不碰網路。原值一律
+# 回傳而非丟棄，呼叫端才有東西寫進 Log——「不得無痕覆寫」是本能力的硬要求。
+#
+# 所有修訂**只作用於 ``## Log`` 之前的區段**。Log 是 append-only 留痕，修訂能力
+# 不為自己破例；真要動 Log 的唯一合法方式是再 append 一行。
+
+
+class AmendError(ValueError):
+    """卡面修訂失敗：錨點缺失／不唯一／值未變更／目標落在 Log 區段。"""
+
+
+_ACCEPTANCE_HEADING = "## 驗收條件"
+_VERIFICATION_HEADING = "## 驗證"
+_RESOURCE_HEADING = "## 資源宣告"
+_SPEC_BASELINE_RE = re.compile(r"^- Initiative：(?P<init>.*)　spec 基線：(?P<base>.*)$")
+_CHECKBOX_RE = re.compile(r"^- \[(?P<state>[ xX])\] (?P<text>.*)$")
+
+
+def split_at_log(body: str) -> tuple[str, str]:
+    """切成「Log 之前」與「``## Log`` 起的全部」。修訂只准動前者。
+
+    刻意 fail closed：body 出現 ``## Log`` 字樣卻不是獨立標題行時直接拒絕。實務上
+    這代表排版已被破壞（例如有人把換行寫成字面 ``\\n``），此時任何依標題定位的
+    區段替換都可能誤動 Log。
+    """
+    lines = body.splitlines()
+    idx = [i for i, line in enumerate(lines) if line.strip() == _LOG_HEADING]
+    if len(idx) > 1:
+        raise AmendError(f"body 內有 {len(idx)} 個 `## Log` 標題，無法安全定位修訂範圍")
+    if not idx:
+        if _LOG_HEADING in body:
+            raise AmendError(
+                "body 含 `## Log` 字樣但它不是獨立標題行（排版可能已被字面 \\n 破壞）；"
+                "拒絕修訂，以免區段替換誤動 Log"
+            )
+        return body, ""
+    return "\n".join(lines[: idx[0]]), "\n".join(lines[idx[0] :])
+
+
+def _join(head: str, tail: str) -> str:
+    return f"{head.rstrip()}\n\n{tail.strip()}\n" if tail else f"{head.rstrip()}\n"
+
+
+def _locate_section(lines: list[str], heading: str) -> tuple[int, int]:
+    """回傳該章節的 [起始標題列, 下一個 ``## `` 標題列或結尾)。標題須唯一。"""
+    starts = [i for i, line in enumerate(lines) if line.strip() == heading]
+    if len(starts) != 1:
+        raise AmendError(
+            f"章節 `{heading}` 在 Log 之前出現 {len(starts)} 次，必須恰好 1 次才能安全替換"
+        )
+    start = starts[0]
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            return start, j
+    return start, len(lines)
+
+
+def _read_checklist(lines: list[str]) -> list[tuple[str, str]]:
+    """讀出 ``- [ ] text`` 形式的項目，保留勾選狀態。"""
+    out: list[tuple[str, str]] = []
+    for line in lines:
+        m = _CHECKBOX_RE.match(line.strip())
+        if m:
+            out.append((m.group("state"), m.group("text")))
+    return out
+
+
+def _amend_checklist(body: str, heading: str, new_items: list[str]) -> tuple[str, str]:
+    if not new_items or any(not item.strip() for item in new_items):
+        raise AmendError(f"`{heading}` 的新內容不得為空，也不得含空白項目")
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    start, end = _locate_section(lines, heading)
+    old = _read_checklist(lines[start + 1 : end])
+    old_repr = "；".join(f"[{s}] {t}" for s, t in old) or "（原本無項目）"
+    # 文字未變的項目沿用原勾選狀態，避免修訂清單時默默把別人已完成的項目取消勾選。
+    prior = {t: s for s, t in old}
+    rendered = [f"- [{prior.get(item, ' ')}] {item}" for item in new_items]
+    if rendered == [line.strip() for line in lines[start + 1 : end] if line.strip()]:
+        raise AmendError(f"`{heading}` 的新內容與現值相同；拒絕寫入不實的修訂留痕")
+    new_lines = lines[: start + 1] + ["", *rendered, ""] + lines[end:]
+    return _join("\n".join(new_lines), tail), old_repr
+
+
+def amend_acceptance(body: str, new_items: list[str]) -> tuple[str, str]:
+    """整份替換「驗收條件」；回傳 (新 body, 原內容含勾選狀態)。"""
+    return _amend_checklist(body, _ACCEPTANCE_HEADING, new_items)
+
+
+def amend_verification(body: str, new_items: list[str]) -> tuple[str, str]:
+    """整份替換「驗證」；回傳 (新 body, 原內容含勾選狀態)。"""
+    return _amend_checklist(body, _VERIFICATION_HEADING, new_items)
+
+
+def amend_spec_baseline(body: str, new_value: str) -> tuple[str, str]:
+    """改 spec 基線（它內嵌在 Initiative 那一行）；回傳 (新 body, 原值)。"""
+    if not new_value.strip():
+        raise AmendError("spec 基線不得為空；無基線請明確填 `—`")
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    hits = [i for i, line in enumerate(lines) if _SPEC_BASELINE_RE.match(line)]
+    if len(hits) != 1:
+        raise AmendError(
+            f"`- Initiative：…　spec 基線：…` 這一行在 Log 之前命中 {len(hits)} 次，必須恰好 1 次"
+        )
+    match = _SPEC_BASELINE_RE.match(lines[hits[0]])
+    assert match is not None
+    old = match.group("base")
+    if old.strip() == new_value.strip():
+        raise AmendError("spec 基線與現值相同；拒絕寫入不實的修訂留痕")
+    lines[hits[0]] = f"- Initiative：{match.group('init')}　spec 基線：{new_value}"
+    return _join("\n".join(lines), tail), old
+
+
+def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
+    """整份替換「資源宣告」章節；``rendered_block`` 須含標題（``resources.render_block``
+    的輸出即是）。回傳 (新 body, 原章節原文)。
+    """
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    start, end = _locate_section(lines, _RESOURCE_HEADING)
+    old_repr = "\n".join(lines[start:end]).strip()
+    new_lines = lines[:start] + rendered_block.splitlines() + [""] + lines[end:]
+    candidate = _join("\n".join(new_lines), tail)
+    if candidate == _join(head, tail):
+        raise AmendError("資源宣告與現值相同；拒絕寫入不實的修訂留痕")
+    return candidate, " ".join(old_repr.split())
+
+
 __all__ = [
     "CHAIN_DEPTH_HARD_CAP",
     "TIERS",
+    "AmendError",
     "Card",
+    "amend_acceptance",
+    "amend_resource_block",
+    "amend_spec_baseline",
+    "amend_verification",
     "append_log_line",
     "chain_depth_violation_message",
     "format_branch_worktree",
@@ -212,4 +350,5 @@ __all__ = [
     "parse_branch_worktree",
     "render_issue_body",
     "render_spec_markdown",
+    "split_at_log",
 ]
