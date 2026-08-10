@@ -90,30 +90,53 @@ body 無差別替換（JSON 字串裡的 `{"note": "a\nb"}` 被改壞，而比�
 「沒有自動修復」不等於「沒有出路」。`amend` 偵測到排版損壞時，除了拒絕，還會在 stderr
 印出下列程序（含實際卡號）；核心設計是**工具不改 body，但要能機械證明人工修好了**：
 
+> ⚠️ 下列所有機械檢查都是**必要條件，不是安全證明**。是否真的修對了，最終由人判斷。
+
 ```bash
 # 1. 取出現行 body，並另存一份原文副本供比對
 gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md
 cp /tmp/body.md /tmp/orig.md
 
-# 2. 編輯 /tmp/body.md：把 Log 標題那處的字面 \n 改回真換行。
-#    只改那一處；Log 內文提到的字面 \n 是內容，不要碰。
+# 2. 人工判斷（無法機械化）：確認 `\n## Log\n\n` 候選標記確實是被寫壞的 Log 標題，
+#    而不是 code fence 內的範例、inline code 引用、或內文提到的字樣。
 
-# 3. 驗證只發生了那一次替換（印出 OK 才可以繼續）
-python3 -c 'import sys;o=open(sys.argv[1]).read();n=open(sys.argv[2]).read();t=chr(92)+"n## Log"+chr(92)+"n"+chr(92)+"n";f=chr(10)*2+"## Log"+chr(10)*2;print("OK：只還原了 Log 標題" if o.replace(t,f,1)==n else "NG：還有其他改動，請重做第 2 步")' /tmp/orig.md /tmp/body.md
+# 3. 編輯 /tmp/body.md：只把那一處的字面 \n 改回真換行，不動任何其他字元。
 
-# 4. 寫回
+# 4. 檢查「只改了那一處」（必要條件）
+python3 - /tmp/orig.md /tmp/body.md <<'PY'
+import sys
+o = open(sys.argv[1]).read(); n = open(sys.argv[2]).read()
+t = "\\n## Log\\n\\n"; f = "\n\n## Log\n\n"
+c = o.count(t)
+if c != 1:
+    print(f"NG：原文有 {c} 處候選標記，本程序只處理恰好 1 處。請人工判斷後個別處理")
+elif o.replace(t, f, 1) != n:
+    print("NG：除了那一處之外還動到別的地方，請重做")
+else:
+    print("必要條件通過：只還原了那一處候選標記。")
+    print("⚠️ 這不是安全證明——本檢查無法判斷它是否真的是 Log 標題。")
+    print("   請自行確認它不在 code fence／inline code／內文引用中，並審閱完整 diff。")
+PY
+
+# 5. 審閱完整 diff——不可省略，這是唯一能看見全部改動的地方
+diff /tmp/orig.md /tmp/body.md
+
+# 6. 寫回
 gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
 
-# 5. 機械驗證修好了（零遠端寫入）；不再出現排版錯誤即代表 Log 可安全定位
+# 7. 確認 amend 不再回報排版錯誤（必要條件，非充分）
 wfcli amend <CARD-ID> --repo <owner/repo> --reason 驗證排版 --dry-run --spec-baseline '<現值>'
 
-# 6. 在該 Issue 留言記錄這次人工寫入與原因
+# 8. 在該 Issue 留言記錄這次人工寫入與原因
 ```
 
-第 3 步與第 5 步是這個備案的關鍵。第 3 步的判準不是「只動了空白」而是**恰好等於原文做
-一次目標替換的結果**——任何其他改動（順手改錯字、把 Log 內文合法的字面 `\n` 也「還原」掉）
-都會被抓到。它與被移除的自動修復是同樣的邏輯，差別在它只**驗證**、不寫入：檢查失敗是
-安全的，寫錯才不是。第 5 步則讓「修好了」有機械判準，不靠目視。
+這個備案**不宣稱能機械證明修對了**。第 4 步只驗證兩件事：候選標記恰好一處，且除了
+那一處之外沒有其他改動。它**無法**判斷那處標記是不是真的 Log 標題——查核者實測打穿過
+兩次：多處候選時只修第一個卻仍印通過；code fence 內的標記被誤修後，`split_at_log` 還會
+把它當成唯一的 Log 標題。因此語意判斷明確留給第 2 步的人工確認與第 5 步的完整 diff。
+
+第 7 步的 `--dry-run` 同理：它只證明「找得到唯一一個 Log 標題」，不證明那個標題在對的
+位置，也不保證 body 其他地方沒有殘留的字面 `\n`。
 
 該驗證指令與 `amend` 印在 stderr 的那一份是**同一個常數**（`_LAYOUT_VERIFY_SNIPPET`），
 並由測試實際執行——先前的版本只存在於字串裡、從未被跑過，同時出了兩個錯（引用一個從未

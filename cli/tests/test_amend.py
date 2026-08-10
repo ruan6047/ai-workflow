@@ -685,7 +685,7 @@ def test_runbook_verify_accepts_correct_issue17_repair(tmp_path):
     good = _issue17_shaped_body()
     corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
     assert "\\n 還原為真換行" in corrupted, "前提：Log 內文仍有合法的字面 \\n"
-    assert _run_verify(tmp_path, corrupted, good).startswith("OK")
+    assert _run_verify(tmp_path, corrupted, good).startswith("必要條件通過")
 
 
 def test_runbook_verify_rejects_extra_edits(tmp_path):
@@ -712,4 +712,56 @@ def test_runbook_step1_creates_the_file_step3_reads(card, capsys):
     run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"])
     err = capsys.readouterr().err
     assert "cp /tmp/body.md /tmp/orig.md" in err, "runbook 必須自己建立 orig 副本"
-    assert err.index("cp /tmp/body.md") < err.index("/tmp/orig.md /tmp/body.md"), "建立要早於使用"
+    assert err.index("cp /tmp/body.md") < err.index("python3 - /tmp/orig.md"), "建立要早於使用"
+
+
+# --------------------------------------------------------------------------
+# R5-01：「OK」只是必要條件，不是安全證明
+#
+# 查核者打穿兩處：多個候選 token 時 replace(...,1) 只修第一個，剩下的損壞留著卻
+# 印 OK；code fence 內的 token 被誤修後，split_at_log 還會把它當成唯一 Log 標題。
+# 根因是把「第一個字串被替換了」當成「那個字串是 Log 標題」的證明。
+# --------------------------------------------------------------------------
+
+
+def test_verify_refuses_when_multiple_candidate_tokens(tmp_path):
+    """多處候選時必須拒絕，而不是修掉第一個就宣稱通過。"""
+    good = _issue17_shaped_body()
+    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    corrupted += "\n- 範例：\\n## Log\\n\\n 這行也長得像\n"
+    fixed_first_only = corrupted.replace("\\n## Log\\n\\n", "\n\n## Log\n\n", 1)
+    out = _run_verify(tmp_path, corrupted, fixed_first_only)
+    assert out.startswith("NG"), "多 token 時不得印通過"
+    assert "2 處候選標記" in out
+
+
+def test_verify_refuses_token_inside_code_fence_by_count(tmp_path):
+    """code fence 內另有一處候選時同樣落入「不只一處」而被擋下。"""
+    good = _issue17_shaped_body()
+    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    corrupted = "```text\n\\n## Log\\n\\n- 範例\n```\n\n" + corrupted
+    out = _run_verify(tmp_path, corrupted, corrupted.replace("\\n## Log\\n\\n", "\n\n## Log\n\n", 1))
+    assert out.startswith("NG")
+
+
+def test_verify_output_disclaims_being_a_safety_proof(tmp_path):
+    """通過訊息必須明說它不是安全證明，並要求人工確認語意位置。"""
+    good = _issue17_shaped_body()
+    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    out = _run_verify(tmp_path, corrupted, good)
+    assert "不是安全證明" in out
+    assert "code fence" in out
+
+
+def test_runbook_requires_human_judgement_and_full_diff(card, capsys):
+    """runbook 必須含「無法機械化的人工判斷」與「審閱完整 diff」兩步。"""
+    project = resolve_project(card, "acme", 1)
+    item = _item(card)
+    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number,
+                  item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1))
+    run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"])
+    err = capsys.readouterr().err
+    assert "必要條件，不是安全證明" in err
+    assert "人工判斷（無法機械化）" in err
+    assert "diff /tmp/orig.md /tmp/body.md" in err
+    assert "不證明那個標題在對的位置" in err

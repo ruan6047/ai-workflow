@@ -139,30 +139,44 @@ _LAYOUT_MARKERS = ("不是獨立標題行", "個 `## Log` 標題")
 # 現在的判準精確得多：修好的 body 必須**恰好等於**原文做一次目標替換後的結果。
 # 任何其他改動（多刪一個字、順手改錯字）都會被抓到。這與被移除的自動修復同樣的
 # 邏輯，差別在它只**驗證**、不寫入——檢查失敗是安全的，寫錯才不是。
-_LAYOUT_VERIFY_SNIPPET = (
-    "python3 -c 'import sys;"
-    "o=open(sys.argv[1]).read();n=open(sys.argv[2]).read();"
-    "t=chr(92)+\"n## Log\"+chr(92)+\"n\"+chr(92)+\"n\";f=chr(10)*2+\"## Log\"+chr(10)*2;"
-    "print(\"OK：只還原了 Log 標題\" if o.replace(t,f,1)==n "
-    "else \"NG：還有其他改動，請重做第 2 步\")' /tmp/orig.md /tmp/body.md"
-)
+_LAYOUT_VERIFY_SNIPPET = r"""python3 - /tmp/orig.md /tmp/body.md <<'PY'
+import sys
+o = open(sys.argv[1]).read(); n = open(sys.argv[2]).read()
+t = "\\n## Log\\n\\n"; f = "\n\n## Log\n\n"
+c = o.count(t)
+if c != 1:
+    print(f"NG：原文有 {c} 處候選標記，本程序只處理恰好 1 處。請人工判斷後個別處理")
+elif o.replace(t, f, 1) != n:
+    print("NG：除了那一處之外還動到別的地方，請重做")
+else:
+    print("必要條件通過：只還原了那一處候選標記。")
+    print("⚠️ 這不是安全證明——本檢查無法判斷它是否真的是 Log 標題。")
+    print("   請自行確認它不在 code fence／inline code／內文引用中，並審閱完整 diff。")
+PY"""
 
 _LAYOUT_RUNBOOK = """
 [amend] 這是 body 排版損壞，本指令刻意不自動修（理由見 cli/README.md）。人工程序：
 
+  ⚠️ 下列所有機械檢查都是**必要條件，不是安全證明**。是否真的修對了，最終由你判斷。
+
   1. 取出現行 body，並另存一份原文副本供比對：
      gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md
      cp /tmp/body.md /tmp/orig.md
-  2. 編輯 /tmp/body.md：把 Log 標題那處的字面 \\n 改回真換行。
+  2. **人工判斷（無法機械化）**：確認 body 中的 `\\n## Log\\n\\n` 候選標記確實是被寫壞的
+     Log 標題，而不是 code fence 內的範例、inline code 引用、或內文提到的字樣。
+     若有多處候選，逐一判斷；本程序的檢查只處理恰好一處。
+  3. 編輯 /tmp/body.md：把該處的字面 \\n 改回真換行。
      **只改那一處，不動任何其他字元**（Log 內文提到的字面 \\n 是內容，不要碰）。
-  3. 驗證只發生了那一次替換：
+  4. 檢查「只改了那一處」（必要條件）：
      {verify}
-     印出 OK 才可以進第 4 步；印出 NG 表示還動到了別的地方。
-  4. 寫回：gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
-  5. **機械驗證修好了**（不寫入任何狀態）：
+  5. **審閱完整 diff**——這一步不可省略，它是唯一能看見全部改動的地方：
+     diff /tmp/orig.md /tmp/body.md
+  6. 寫回：gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
+  7. 確認 amend 不再回報排版錯誤（必要條件，非充分；不寫入任何狀態）：
      wfcli amend {card_id} --repo <owner/repo> --reason 驗證排版 --dry-run --spec-baseline '<現值>'
-     若不再出現本訊息，代表 Log 已可安全定位。
-  6. 在該 Issue 留言記錄這次人工寫入與原因——它同時是「某處仍在繞過 wfcli」的訊號。
+     注意：它只證明「找得到唯一一個 Log 標題」，不證明那個標題在對的位置，
+     也不保證 body 其他地方沒有殘留的字面 \\n。
+  8. 在該 Issue 留言記錄這次人工寫入與原因——它同時是「某處仍在繞過 wfcli」的訊號。
 """.rstrip()
 
 
