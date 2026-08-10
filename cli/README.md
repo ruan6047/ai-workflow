@@ -5,12 +5,13 @@
 > 寫入即違規**（例如直接在 GitHub UI 手改 Project 欄位）。CLI 本身不做權限強制
 > （單機信任模型），紀律由治理承擔，不是技術鎖死。
 
-## 八指令
+## 九指令
 
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
 | `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
+| `amend` | 開卡後修訂卡面：spec 基線／驗收條件／驗證項目／資源宣告／`級別`；`--reason` 必填，每個被改欄位各 append 一行 Log 記下**完整原值**（不截斷，Log 是唯一還原點）並帶同一 `op` 識別碼；值未變、內容為空、錨點不唯一一律拒絕；清單替換預設重設未勾選，`--preserve-checked` 才沿用；`級別` 先寫並讀回驗證再寫 body；寫入前重讀比對，被他人改動即中止；`--record-unlogged-change` 補救半寫入；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
 | `deploy-declare` | 需求方已明確裁決既有卡需要部署時，唯一允許 `—不適用 → ⏸未部署`；必填固定 `needs-deploy` decision、reason、actor，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態與內建 `Status=Todo`；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `deploy-state` | 部署狀態只允許相鄰前進（`⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證`）；必填下一 stage owner、actor、evidence，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態、內建 `Status`、owner、最後交接；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
@@ -26,6 +27,150 @@ uv sync
 uv run wfcli <command> --help
 uv run pytest        # 全套測試（本 repo 新增；數量以此指令輸出為準）
 ```
+
+## `amend`：開卡後的卡面修訂（WF-CLI-CARD-AMEND1）
+
+```bash
+# 改 spec 基線（上游卡 merge 後）
+wfcli amend CARD-ID --repo owner/repo --reason "上游卡已 merge" --spec-baseline "main <sha>"
+
+# 整份替換驗收條件（預設全部重設為未勾選；要沿用原勾選加 --preserve-checked）
+wfcli amend CARD-ID --repo owner/repo --reason "需求方追加" \
+  --acceptance "條件一" --acceptance "條件二"
+
+# 整份替換驗證項目（用法同 --acceptance）
+wfcli amend CARD-ID --repo owner/repo --reason "查核裁定改寫" \
+  --verification "驗證一" --verification "驗證二"
+
+# 改資源宣告：--resources 整份取代（空字串代表清空），--db-scope 單獨改 scope
+wfcli amend CARD-ID --repo owner/repo --reason "範圍調整" \
+  --resources "file:a.py,file:b.py" --db-scope read
+
+# 更正級別（`WF-CLI-TIER-MUTATION1` 併入本指令）
+wfcli amend CARD-ID --repo owner/repo --reason "開卡時填錯" --tier T3
+```
+
+可同時給多個欄位；**任一欄位驗證失敗就整批不寫**，不留半套修改。
+
+`--dry-run` 零遠端寫入，可先看將寫入什麼。
+
+### 併發保證的界線
+
+`amend` 每次都是**整份重寫 body**。寫入前會重讀並比對 body，被他人改動時以退出碼 6
+中止而不覆寫——但這**不是**原子的 compare-and-swap：GitHub 對 issue body 沒有條件
+寫入，重讀只把競態窗口從「整條指令執行期間」縮到「重讀與寫入之間」。真正的解法是
+可序列化的唯一 writer 或底層條件寫入，不在本指令能提供的保證內。
+
+### 半寫入的恢復（退出碼 5）
+
+`--tier` 會先寫 Project 欄位、讀回驗證，再寫 body。若讀回驗證失敗（退出碼 5），body
+一定沒被寫入，但欄位可能已改——此時卡處於「欄位改了、Log 沒記」。恢復步驟：
+
+```bash
+# 1. 先確認 Project 的級別實際值
+# 2a. 若已是目標值 → 只補 Log、不再改欄位
+wfcli amend CARD-ID --repo owner/repo --tier T3 --record-unlogged-change \
+  --reason "先前寫入於讀回驗證階段中斷，補記留痕"
+# 2b. 若仍是舊值 → 直接重跑原本的 amend
+```
+
+`--record-unlogged-change` 是**操作者的宣告，不是系統的自動證明**。CLI 無法區分
+「欄位已是目標值且 Log 沒記」到底是先前半寫入、還是開卡時本來就填這個值，所以不猜；
+它只補留痕、不改欄位，欄位不符時直接拒絕，避免變成偷改欄位的後門。
+
+### 為什麼沒有排版修復
+
+body 的 `## Log` 若被寫成字面 `\n`（曾實際發生於 ai-workflow#17），`amend` 會拒絕
+一切修訂以免誤動 Log，且**不提供自動修復**。
+
+曾經有過 `--repair-log-layout`，做了三輪查核後移除。移除的理由不是做不出來，而是
+成本與價值不成比例：三輪查核加一次自我對抗測試，累計在同一個旗標上找到五個安全
+破口，每一個都是同一類錯誤——拿「聽起來像不變量」的論證當安全保證。依序是：對整份
+body 無差別替換（JSON 字串裡的 `{"note": "a\nb"}` 被改壞，而比較基準預先刪掉字面
+`\n`，等於把破壞藏進證明裡）；限縮起點但仍對尾段無差別替換（Log 敘述中合法的字面
+`\n` 被改掉、fenced code block 內的標記被誤認為 Log 起點）；以及 fence 偵測只看得見
+反引號圍籬，`~~~` 圍籬、縮排區塊、行內碼三類在 body 沒有真 Log 時全數失守。
+
+而它服務的損壞形態，正是 `gh issue edit` 直接寫 body 造成的——`amend` 上線後那條路
+本來就該關。為一個「上線後不該再發生」的一次性歷史事件，維護一個難以證明安全的
+改寫器並不划算。
+
+#### 備案：可執行的人工程序 ＋ 機械驗證必要條件
+
+「沒有自動修復」不等於「沒有出路」。`amend` 偵測到排版損壞時，除了拒絕，還會在 stderr
+印出下列程序（含實際卡號）。核心設計是**工具不改 body，只機械驗證必要條件；語意判斷
+留給人**——工具能證明的是「只改了那一處」，不是「那一處是對的」：
+
+> ⚠️ 下列所有機械檢查都是**必要條件，不是安全證明**。是否真的修對了，最終由人判斷。
+
+```bash
+# 1. 取出現行 body，並另存一份原文副本供比對
+gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md
+cp /tmp/body.md /tmp/orig.md
+
+# 2. 人工判斷（無法機械化）：確認 `\n## Log\n\n` 候選標記確實是被寫壞的 Log 標題，
+#    而不是 code fence 內的範例、inline code 引用、或內文提到的字樣。
+
+# 3. 編輯 /tmp/body.md：只把那一處的字面 \n 改回真換行，不動任何其他字元。
+
+# 4. 檢查「只改了那一處」（必要條件）
+python3 - /tmp/orig.md /tmp/body.md <<'PY'
+import sys
+o = open(sys.argv[1]).read(); n = open(sys.argv[2]).read()
+t = "\\n## Log\\n\\n"; f = "\n\n## Log\n\n"
+c = o.count(t)
+if c != 1:
+    print(f"NG：原文有 {c} 處候選標記，本程序只處理恰好 1 處。請人工判斷後個別處理")
+elif o.replace(t, f, 1) != n:
+    print("NG：除了那一處之外還動到別的地方，請重做")
+else:
+    print("必要條件通過：只還原了那一處候選標記。")
+    print("⚠️ 這不是安全證明——本檢查無法判斷它是否真的是 Log 標題。")
+    print("   請自行確認它不在 code fence／inline code／內文引用中，並審閱完整 diff。")
+PY
+
+# 5. 審閱完整 diff——不可省略，這是唯一能看見全部改動的地方
+diff /tmp/orig.md /tmp/body.md
+
+# 6. 寫回
+gh issue edit <N> --repo <owner/repo> --body-file /tmp/body.md
+
+# 7. 確認 amend 不再回報排版錯誤（必要條件，非充分）
+wfcli amend <CARD-ID> --repo <owner/repo> --reason 驗證排版 --dry-run --spec-baseline '<現值>'
+
+# 8. 在該 Issue 留言記錄這次人工寫入與原因
+```
+
+這個備案**不宣稱能機械證明修對了**。第 4 步只驗證兩件事：候選標記恰好一處，且除了
+那一處之外沒有其他改動。它**無法**判斷那處標記是不是真的 Log 標題——查核者實測打穿過
+兩次：多處候選時只修第一個卻仍印通過；code fence 內的標記被誤修後，`split_at_log` 還會
+把它當成唯一的 Log 標題。因此語意判斷明確留給第 2 步的人工確認與第 5 步的完整 diff。
+
+第 7 步的 `--dry-run` 同理：它只證明「找得到唯一一個 Log 標題」，不證明那個標題在對的
+位置，也不保證 body 其他地方沒有殘留的字面 `\n`。
+
+該驗證指令與 `amend` 印在 stderr 的那一份是**同一個常數**（`_LAYOUT_VERIFY_SNIPPET`），
+並由測試實際執行——先前的版本只存在於字串裡、從未被跑過，同時出了兩個錯（引用一個從未
+建立的 `orig.md`；以及用「刪掉全文所有字面 `\n` 再比」當判準，導致 #17 的正確修復被誤判
+為竄改）。
+
+#### `--escalate`：讓卡住這件事被看見
+
+stderr 是瞬時的。腳本裡跑 `amend` 失敗，runbook 捲過去就沒了，卡面不留痕跡，沒人知道
+有卡卡住。加 `--escalate` 時，排版損壞會在該 Issue 留下一則求助留言（含機器可 grep 的
+`<!-- wf-amend-blocked:v1 ... -->` 標記與完整 runbook），交給人或 AI 接手：
+
+```bash
+wfcli amend <CARD-ID> --repo <owner/repo> --reason "..." --spec-baseline "..." --escalate
+```
+
+三個刻意的界線：
+
+- **不碰 body**。body 已經壞了，再寫更危險；留言是唯一不必動 body 就能留下持久紀錄的通道。
+- **不改交付狀態**。轉 `⏸阻塞` 是 lifecycle 決定，屬 PM 的判斷，不由一個修訂指令代勞。
+- **只對排版損壞生效**。一般拒收（no-op、格式錯）不留升級紀錄，避免訊息噪音。
+
+**這類損壞同時是一個訊號**：它代表某處仍在繞過 `wfcli` 直接寫 body。修完請一併追查來源。
 
 ## `review`：查核輸出契約的機械閘門（WF-22-CLI3）
 
