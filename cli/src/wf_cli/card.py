@@ -272,7 +272,9 @@ def _read_checklist(lines: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def _amend_checklist(body: str, heading: str, new_items: list[str]) -> tuple[str, str]:
+def _amend_checklist(
+    body: str, heading: str, new_items: list[str], *, preserve_checked: bool = False
+) -> tuple[str, str]:
     if not new_items or any(not item.strip() for item in new_items):
         raise AmendError(f"`{heading}` 的新內容不得為空，也不得含空白項目")
     head, tail = split_at_log(body)
@@ -280,8 +282,10 @@ def _amend_checklist(body: str, heading: str, new_items: list[str]) -> tuple[str
     start, end = _locate_section(lines, heading)
     old = _read_checklist(lines[start + 1 : end])
     old_repr = "；".join(f"[{s}] {t}" for s, t in old) or "（原本無項目）"
-    # 文字未變的項目沿用原勾選狀態，避免修訂清單時默默把別人已完成的項目取消勾選。
-    prior = {t: s for s, t in old}
+    # 預設一律重設為未勾選：整份替換代表驗收語意已變動，此時「文字相同」不保證
+    # 「仍然成立」——相鄰條件全改時，沿用勾選會把過期的完成證據當成現況。
+    # 需要沿用時由呼叫端顯式指定，責任因此可歸屬。
+    prior = {t: s for s, t in old} if preserve_checked else {}
     rendered = [f"- [{prior.get(item, ' ')}] {item}" for item in new_items]
     if rendered == [line.strip() for line in lines[start + 1 : end] if line.strip()]:
         raise AmendError(f"`{heading}` 的新內容與現值相同；拒絕寫入不實的修訂留痕")
@@ -289,14 +293,43 @@ def _amend_checklist(body: str, heading: str, new_items: list[str]) -> tuple[str
     return _join("\n".join(new_lines), tail), old_repr
 
 
-def amend_acceptance(body: str, new_items: list[str]) -> tuple[str, str]:
+def amend_acceptance(
+    body: str, new_items: list[str], *, preserve_checked: bool = False
+) -> tuple[str, str]:
     """整份替換「驗收條件」；回傳 (新 body, 原內容含勾選狀態)。"""
-    return _amend_checklist(body, _ACCEPTANCE_HEADING, new_items)
+    return _amend_checklist(
+        body, _ACCEPTANCE_HEADING, new_items, preserve_checked=preserve_checked
+    )
 
 
-def amend_verification(body: str, new_items: list[str]) -> tuple[str, str]:
+def amend_verification(
+    body: str, new_items: list[str], *, preserve_checked: bool = False
+) -> tuple[str, str]:
     """整份替換「驗證」；回傳 (新 body, 原內容含勾選狀態)。"""
-    return _amend_checklist(body, _VERIFICATION_HEADING, new_items)
+    return _amend_checklist(
+        body, _VERIFICATION_HEADING, new_items, preserve_checked=preserve_checked
+    )
+
+
+def repair_body_layout(body: str) -> tuple[str, str]:
+    """把字面 ``\\n`` 還原成真換行；回傳 (修復後 body, 原 body)。
+
+    這是 ``split_at_log`` fail-closed 之後唯一的出路：排版壞掉的卡若不能用 amend
+    修，使用者就只能退回 ``gh issue edit``——工具在最需要它的時候不能用。
+
+    安全性由一條可機械驗證的不變量提供：**只准動空白，不准增刪任何非空白字元**。
+    修復前後把所有空白（含被還原的字面 ``\\n``）剝掉後必須逐字相同，否則拒絕。
+    修復後還必須能安全定位 Log，否則同樣拒絕——修不好就不要留下半修好的 body。
+    """
+    repaired = body.replace("\\n", "\n")
+    if repaired == body:
+        raise AmendError("body 沒有字面 `\\n`，不需要排版修復")
+    before = "".join(body.replace("\\n", "").split())
+    after = "".join(repaired.split())
+    if before != after:
+        raise AmendError("排版修復會改動非空白內容，拒絕（本模式只准調整換行）")
+    split_at_log(repaired)  # 修不好就讓它在這裡失敗，不寫出半修好的 body
+    return repaired, body
 
 
 def amend_spec_baseline(body: str, new_value: str) -> tuple[str, str]:
@@ -350,5 +383,6 @@ __all__ = [
     "parse_branch_worktree",
     "render_issue_body",
     "render_spec_markdown",
+    "repair_body_layout",
     "split_at_log",
 ]

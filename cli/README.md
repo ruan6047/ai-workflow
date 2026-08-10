@@ -11,7 +11,7 @@
 |---|---|---|
 | `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
-| `amend` | 開卡後修訂卡面：spec 基線／驗收條件／驗證項目／資源宣告／`級別`；`--reason` 必填，每個被改欄位各 append 一行 Log 記下**原值**；值未變、內容為空、錨點不唯一一律拒絕（不寫不實留痕）；修訂只作用於 `## Log` 之前，Log 排版壞掉時拒絕而非猜；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
+| `amend` | 開卡後修訂卡面：spec 基線／驗收條件／驗證項目／資源宣告／`級別`；`--reason` 必填，每個被改欄位各 append 一行 Log 記下**完整原值**（不截斷，Log 是唯一還原點）並帶同一 `op` 識別碼；值未變、內容為空、錨點不唯一一律拒絕（不寫不實留痕）；清單替換預設重設未勾選，`--preserve-checked` 才沿用；`級別` 先寫並讀回驗證再寫 body，欄位寫失敗即乾淨中止；修訂只作用於 `## Log` 之前，排版壞掉時拒絕，另由 `--repair-log-layout`＋`--expect-body-sha256` 提供只准動空白的窄路修復；`--record-unlogged-change` 補救「欄位已改但 Log 沒記」的半寫入；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
 | `deploy-declare` | 需求方已明確裁決既有卡需要部署時，唯一允許 `—不適用 → ⏸未部署`；必填固定 `needs-deploy` decision、reason、actor，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態與內建 `Status=Todo`；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `deploy-state` | 部署狀態只允許相鄰前進（`⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證`）；必填下一 stage owner、actor、evidence，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態、內建 `Status`、owner、最後交接；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |

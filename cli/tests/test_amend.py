@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from wf_cli.card import (
@@ -14,11 +16,19 @@ from wf_cli.card import (
     amend_resource_block,
     amend_spec_baseline,
     amend_verification,
+    repair_body_layout,
     split_at_log,
 )
 from wf_cli.cli import build_parser
 from wf_cli.commands import amend_cmd, open_cmd
-from wf_cli.project import find_item_by_card_id, list_items, resolve_project
+from wf_cli.project import (
+    ensure_fields,
+    find_item_by_card_id,
+    list_items,
+    resolve_project,
+    set_field_value,
+    set_item_body,
+)
 from wf_cli.resources import ResourceDeclaration, parse_block, render_block
 
 from .fake_gh import FakeGhRunner
@@ -108,9 +118,17 @@ def test_acceptance_replaced_wholesale():
     assert "已完成的條件" not in new_body
 
 
-def test_acceptance_preserves_checkbox_state_for_unchanged_text():
-    """文字沒變的項目要沿用原勾選狀態，否則修訂清單會默默取消別人的進度。"""
+def test_acceptance_resets_checkboxes_by_default():
+    """R1-04：整份替換代表驗收語意已變動，文字相同不保證仍然成立，預設不沿用勾選。"""
     new_body, _ = amend_acceptance(BODY, ["已完成的條件", "新增的條件"])
+    assert "- [ ] 已完成的條件" in new_body
+    assert "- [x]" not in new_body
+
+
+def test_acceptance_preserves_checkbox_state_only_when_asked():
+    new_body, _ = amend_acceptance(
+        BODY, ["已完成的條件", "新增的條件"], preserve_checked=True
+    )
     assert "- [x] 已完成的條件" in new_body
     assert "- [ ] 新增的條件" in new_body
 
@@ -244,7 +262,7 @@ def test_amend_writes_body_and_records_old_value_in_log(card):
     assert rc == 0
     body = _item(card).body
     assert "spec 基線：新基線 dbfdb9c" in body
-    assert "amend by wf-cli → spec 基線：原值「原基線」→ 新值「新基線 dbfdb9c」" in body
+    assert "→ spec 基線：原值「原基線」→ 新值「新基線 dbfdb9c」" in body
     assert "理由 上游卡已 merge" in body
     # 開卡那行 Log 仍在（append-only）
     assert "open by" in body
@@ -257,7 +275,7 @@ def test_amend_tier_updates_project_field_and_logs(card):
     assert rc == 0
     item = _item(card)
     assert item.text("級別") == "T3"
-    assert "amend by wf-cli → 級別：原值「T1」→ 新值「T3」" in item.body
+    assert "→ 級別：原值「T1」→ 新值「T3」" in item.body
 
 
 def test_amend_rejects_same_tier(card):
@@ -310,7 +328,7 @@ def test_amend_resources_replaces_declaration(card):
     decl = parse_block(_item(card).body)
     assert decl.resources == ["file:x.py", "file:y.py"]
     assert decl.db_scope == "none"
-    assert "amend by wf-cli → 資源宣告：" in _item(card).body
+    assert "→ 資源宣告：" in _item(card).body
 
 
 def test_amend_rejects_bad_resource_prefix_without_writing(card):
@@ -334,3 +352,179 @@ def test_amend_failure_in_one_field_writes_nothing(card):
     )
     assert rc == 2
     assert _item(card).body == before
+
+
+# --------------------------------------------------------------------------
+# R1-01：原值不得截斷（Log 是唯一還原點）
+# --------------------------------------------------------------------------
+
+
+def test_long_original_value_is_written_to_log_in_full(card):
+    long_value = "基" * 800
+    run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "先塞長值", "--spec-baseline", long_value])
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "再改回", "--spec-baseline", "短基線"]
+    )
+    assert rc == 0
+    body = _item(card).body
+    assert f"原值「{long_value}」" in body, "超長原值必須完整寫入 Log，不得截斷"
+    assert "此處截斷" not in body
+
+
+def test_long_checklist_original_written_in_full(card):
+    long_item = "條" * 500
+    run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "塞長清單", "--acceptance", long_item])
+    rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "換掉", "--acceptance", "短條件"])
+    assert rc == 0
+    assert f"[ ] {long_item}" in _item(card).body
+
+
+# --------------------------------------------------------------------------
+# R1-02：Log 排版修復的窄路
+# --------------------------------------------------------------------------
+
+
+def test_repair_body_layout_restores_newlines_without_content_change():
+    corrupted = "- 需求：x\\n## Log\\n\\n- 條目"
+    repaired, original = repair_body_layout(corrupted)
+    assert original == corrupted
+    assert split_at_log(repaired)[1].startswith("## Log")
+    # 只准動空白：剝掉空白後逐字相同
+    assert "".join(corrupted.replace("\\n", "").split()) == "".join(repaired.split())
+
+
+def test_repair_rejects_body_without_literal_newline():
+    with pytest.raises(AmendError, match="不需要排版修復"):
+        repair_body_layout(BODY)
+
+
+def test_repair_rejects_when_still_unsafe_after_fix():
+    """還原後仍有兩個 Log 標題 → 修不好，不留半修好的 body。"""
+    with pytest.raises(AmendError):
+        repair_body_layout("## Log\\n\\n- a\\n\\n## Log\\n\\n- b")
+
+
+def test_repair_command_requires_expected_hash(card):
+    rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "修排版", "--repair-log-layout"])
+    assert rc == 2
+
+
+def test_repair_command_rejects_combination_with_other_flags(card):
+    rc = run_cli(
+        [
+            "amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "混用",
+            "--repair-log-layout", "--expect-body-sha256", "0" * 64,
+            "--spec-baseline", "順便改",
+        ]
+    )
+    assert rc == 2
+
+
+def test_repair_command_rejects_hash_mismatch(card):
+    rc = run_cli(
+        [
+            "amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "修排版",
+            "--repair-log-layout", "--expect-body-sha256", "0" * 64,
+        ]
+    )
+    assert rc == 2
+
+
+def test_repair_command_fixes_corrupted_log(card):
+    """重放 ai-workflow#17 的實際事故：Log 標題被寫成字面 \\n。"""
+    project = resolve_project(card, "acme", 1)
+    item = _item(card)
+    corrupted = item.body.replace("\n## Log\n", "\\n## Log\\n")
+    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number, corrupted)
+    digest = hashlib.sha256(corrupted.encode("utf-8")).hexdigest()
+
+    rc = run_cli(
+        [
+            "amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "還原被寫成字面 \\n 的 Log 標題",
+            "--repair-log-layout", "--expect-body-sha256", digest,
+        ]
+    )
+    assert rc == 0
+    fixed = _item(card).body
+    assert "\\n## Log" not in fixed
+    assert "amend by wf-cli" in fixed
+    assert f"原 body SHA-256 {digest}" in fixed, "修復必須留下原 body 雜湊供還原"
+    split_at_log(fixed)  # 修完必須能安全定位
+
+
+# --------------------------------------------------------------------------
+# R1-03：半寫入的偵測與自癒
+# --------------------------------------------------------------------------
+
+
+def test_tier_write_failure_aborts_before_touching_body(card, monkeypatch):
+    """欄位寫入沒生效時讀回驗證要擋下，且 body 一個字都不能動。"""
+    before = _item(card).body
+    monkeypatch.setattr(amend_cmd, "set_field_value", lambda *a, **k: None)
+    rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "模擬欄位寫入失敗", "--tier", "T3"])
+    assert rc == 5
+    assert _item(card).body == before
+    assert _item(card).text("級別") == "T1"
+
+
+def test_unlogged_tier_change_is_self_healed_by_rerun(card):
+    """模擬「欄位寫成功、body 寫失敗」：欄位已是 T3 但 Log 沒記，重跑應只補 Log。"""
+    project = resolve_project(card, "acme", 1)
+    fields = ensure_fields(card, "acme", 1)
+    item = _item(card)
+    set_field_value(card, project, item.item_id, fields["級別"], "T3")
+    assert "→ 級別" not in _item(card).body
+
+    # 沒有旗標時必須拒絕：CLI 分不出「開卡就是這個值」與「先前半寫入」，不准猜
+    assert run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "不該猜", "--tier", "T3"]) == 2
+
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "補齊先前失敗的留痕",
+         "--tier", "T3", "--record-unlogged-change"]
+    )
+    assert rc == 0
+    body = _item(card).body
+    assert "級別（補記先前未留痕的變更）" in body
+    assert "操作者判定為先前半寫入" in body
+    assert _item(card).text("級別") == "T3"
+
+
+def test_second_rerun_after_self_heal_is_rejected(card):
+    """自癒過一次之後，Log 已有紀錄，再跑就是真正的 no-op，必須拒絕。"""
+    project = resolve_project(card, "acme", 1)
+    fields = ensure_fields(card, "acme", 1)
+    item = _item(card)
+    set_field_value(card, project, item.item_id, fields["級別"], "T3")
+    assert run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "補齊", "--tier", "T3",
+         "--record-unlogged-change"]
+    ) == 0
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "又跑一次", "--tier", "T3",
+         "--record-unlogged-change"]
+    )
+    assert rc == 2
+
+
+def test_op_id_links_log_lines_of_one_invocation(card):
+    rc = run_cli(
+        [
+            "amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "一次改兩欄",
+            "--spec-baseline", "新基線", "--tier", "T2",
+        ]
+    )
+    assert rc == 0
+    lines = [ln for ln in _item(card).body.splitlines() if "amend by wf-cli" in ln]
+    assert len(lines) == 2
+    ops = {ln.split("op ")[1].split("）")[0] for ln in lines}
+    assert len(ops) == 1, "同一次執行的 Log 條目必須帶同一個 op 識別碼"
+
+
+def test_record_unlogged_change_refuses_when_field_differs(card):
+    """補記旗標只補留痕、不改欄位；欄位不是目標值時必須拒絕，避免拿它當偷改欄位的後門。"""
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想偷改", "--tier", "T4",
+         "--record-unlogged-change"]
+    )
+    assert rc == 2
+    assert _item(card).text("級別") == "T1"
