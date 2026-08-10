@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import hashlib
-
 import pytest
 
 from wf_cli.card import (
@@ -16,7 +14,6 @@ from wf_cli.card import (
     amend_resource_block,
     amend_spec_baseline,
     amend_verification,
-    repair_body_layout,
     split_at_log,
 )
 from wf_cli.cli import build_parser
@@ -384,116 +381,24 @@ def test_long_checklist_original_written_in_full(card):
 # --------------------------------------------------------------------------
 
 
-def test_repair_replaces_only_the_corrupted_token():
-    body = "- 需求：x\\n## Log\\n\\n- 條目"
-    repaired, original = repair_body_layout(body)
-    assert original == body
-    assert repaired == "- 需求：x\n\n## Log\n\n- 條目"
-    split_at_log(repaired)
 
 
-def test_repair_leaves_legitimate_literal_newline_in_log_untouched():
-    """R3-01 破口一：#17 自己的 Log 敘述就含合法的字面 \\n（那行在描述『把字面 \\n 還原』）。"""
-    body = (
-        "- 需求：x\\n## Log\\n\\n"
-        "- 2026-08-10 repair；將誤寫的字面 \\n 還原為真換行。"
-    )
-    repaired, _ = repair_body_layout(body)
-    assert "字面 \\n 還原為真換行" in repaired, "Log 內文的合法字面 \\n 不得被改動"
-    assert repaired.count("\\n") == 1
 
 
-def test_repair_refuses_marker_inside_fenced_code_block():
-    """R3-01 破口二：圍籬內的 \\n## Log 是內容不是標題，修復會在程式碼中生出標題。"""
-    body = (
-        "- 需求：x\n\n```text\n"
-        "示範損壞：\\n## Log\\n\\n- 條目\n"
-        "```\n\n## Log\n\n- 真正的條目"
-    )
-    with pytest.raises(AmendError, match="fenced code block"):
-        repair_body_layout(body)
 
 
-def test_repair_refuses_multiple_markers():
-    body = "a\\n## Log\\n\\nb\\n## Log\\n\\nc"
-    with pytest.raises(AmendError, match="出現 2 次"):
-        repair_body_layout(body)
 
 
-def test_repair_preserves_json_and_all_other_bytes():
-    body = (
-        "- 需求：x\n\n## 資源宣告\n"
-        "<!-- resource-claims:begin -->\n"
-        '```json\n{"db_scope": "none", "resources": ["file:a.py"], "note": "a\\nb"}\n```\n'
-        "<!-- resource-claims:end -->"
-        "\\n## Log\\n\\n- 條目"
-    )
-    repaired, original = repair_body_layout(body)
-    idx = body.index("\\n## Log\\n\\n")
-    assert repaired[:idx] == body[:idx], "損壞標記之前必須逐位元不變"
-    assert repaired[idx + len("\n\n## Log\n\n"):] == body[idx + len("\\n## Log\\n\\n"):], \
-        "損壞標記之後也必須逐位元不變"
-    assert '"note": "a\\nb"' in repaired, "JSON 字串內的合法字面 \\n 不得被改動"
-    assert parse_block(repaired).resources == parse_block(original).resources
 
 
-def test_repair_round_trips_issue17_shaped_body():
-    """完整 round-trip：對還原後的 body 再製造同一種損壞，修復必須回到原樣。"""
-    good = (
-        "- 需求：x\n- Initiative：—　spec 基線：base\n\n## 驗證\n\n- [ ] v\n\n"
-        "## Log\n\n- 2026-08-10 open。\n- 2026-08-10 repair；把字面 \\n 還原。\n"
-    )
-    corrupted = good.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
-    repaired, _ = repair_body_layout(corrupted)
-    assert repaired == good
 
 
-def test_repair_command_requires_expected_hash(card):
-    rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "修排版", "--repair-log-layout"])
-    assert rc == 2
 
 
-def test_repair_command_rejects_combination_with_other_flags(card):
-    rc = run_cli(
-        [
-            "amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "混用",
-            "--repair-log-layout", "--expect-body-sha256", "0" * 64,
-            "--spec-baseline", "順便改",
-        ]
-    )
-    assert rc == 2
 
 
-def test_repair_command_rejects_hash_mismatch(card):
-    rc = run_cli(
-        [
-            "amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "修排版",
-            "--repair-log-layout", "--expect-body-sha256", "0" * 64,
-        ]
-    )
-    assert rc == 2
 
 
-def test_repair_command_fixes_corrupted_log(card):
-    """重放 ai-workflow#17 的實際事故：Log 標題被寫成字面 \\n。"""
-    project = resolve_project(card, "acme", 1)
-    item = _item(card)
-    corrupted = item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
-    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number, corrupted)
-    digest = hashlib.sha256(corrupted.encode("utf-8")).hexdigest()
-
-    rc = run_cli(
-        [
-            "amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "還原被寫成字面 \\n 的 Log 標題",
-            "--repair-log-layout", "--expect-body-sha256", digest,
-        ]
-    )
-    assert rc == 0
-    fixed = _item(card).body
-    assert "\\n## Log" not in fixed
-    assert "amend by wf-cli" in fixed
-    assert f"原 body SHA-256 {digest}" in fixed, "修復必須留下原 body 雜湊供還原"
-    split_at_log(fixed)  # 修完必須能安全定位
 
 
 # --------------------------------------------------------------------------
@@ -575,50 +480,6 @@ def test_record_unlogged_change_refuses_when_field_differs(card):
 
 
 # --------------------------------------------------------------------------
-# R2-01：修復範圍必須縮到 Log 區段，不得破壞 JSON 等非空白內容
-# --------------------------------------------------------------------------
-
-
-def _body_with_json_literal_newline() -> str:
-    """資源宣告 JSON 內含合法的字面 \\n（JSON 字串跳脫），Log 區段則是壞掉的。"""
-    return (
-        "- 需求：x\n\n## 資源宣告\n"
-        "<!-- resource-claims:begin -->\n"
-        '```json\n{"db_scope": "none", "resources": ["file:a.py"], "note": "a\\nb"}\n```\n'
-        "<!-- resource-claims:end -->"
-        "\\n## Log\\n\\n- 條目"
-    )
-
-
-def test_repair_keeps_json_literal_newline_intact():
-    """R2 的反例在新做法下應該通過而非拒絕：定點替換根本不碰 JSON 裡的字面 \\n。"""
-    body = _body_with_json_literal_newline()
-    repaired, original = repair_body_layout(body)
-    assert '"note": "a\\nb"' in repaired, "JSON 字串內的合法字面 \\n 必須原封不動"
-    assert parse_block(repaired).resources == parse_block(original).resources
-    split_at_log(repaired)
-
-
-def test_repair_leaves_pre_log_content_byte_identical():
-    body = (
-        "- 需求：x\n\n## 資源宣告\n"
-        "<!-- resource-claims:begin -->\n"
-        '```json\n{"db_scope": "none", "resources": ["file:a.py"]}\n```\n'
-        "<!-- resource-claims:end -->"
-        "\\n## Log\\n\\n- 條目"
-    )
-    repaired, original = repair_body_layout(body)
-    head = body[: body.find("\\n## Log")]
-    assert repaired.startswith(head), "Log 之前的內容必須逐位元不變"
-    assert parse_block(repaired).resources == parse_block(original).resources
-
-
-def test_repair_refuses_body_without_literal_log_marker():
-    with pytest.raises(AmendError, match="找不到"):
-        repair_body_layout("- 需求：x\\n 這裡有字面 n 但沒有 Log 標記")
-
-
-# --------------------------------------------------------------------------
 # R2-02：寫入前重讀，擋掉整份覆寫他人內容
 # --------------------------------------------------------------------------
 
@@ -660,46 +521,3 @@ def test_exit5_message_points_to_record_unlogged_change(card, monkeypatch, capsy
     assert "操作者的宣告" in err
 
 
-# --------------------------------------------------------------------------
-# 執行者自我對抗測試：fence 偵測的盲點（R3 修法後自查發現）
-#
-# `body.count("```")` 只看得見反引號圍籬。`~~~` 圍籬、縮排式程式碼區塊、行內碼
-# 裡的同一個 token 它都看不見；當 body 剛好沒有真正的 Log 標題時，「兩個 ## Log」
-# 那道下游檢查也攔不住，修復就會在內容中間生出一個標題。
-#
-# 靠列舉 Markdown 語境補不完，因此改為兩道與語境無關的檢查：
-#   1. token 所在行在它之前必須有非空白（真實事故中它緊接內容文字）。
-#   2. 修復後的 Log 區段只能有標題、空行與 `- ` 條目。
-# --------------------------------------------------------------------------
-
-_TOK = "\\n## Log\\n\\n"
-
-
-@pytest.mark.parametrize(
-    "name,body",
-    [
-        ("tilde-fence-no-real-log", "a\n\n~~~text\n" + _TOK + "- 範例條目\n~~~\n"),
-        ("four-space-indent", "a\n\n    " + _TOK + "- 範例\n"),
-        ("tab-indent", "a\n\n\t" + _TOK + "- 範例\n"),
-        ("inline-code-mention", "a\n\n- 文件說明：`" + _TOK + "` 是損壞形態\n"),
-        ("backtick-fence", "a\n\n```text\n" + _TOK + "\n```\n\n## Log\n\n- 真"),
-    ],
-)
-def test_repair_refuses_token_in_content_context(name, body):
-    with pytest.raises(AmendError):
-        repair_body_layout(body)
-
-
-def test_repair_accepts_token_at_body_start():
-    """token 位於 body 最開頭時沒有前綴可檢查，屬合法形態。"""
-    repaired, _ = repair_body_layout(_TOK + "- 條目")
-    assert repaired == "\n\n## Log\n\n- 條目"
-
-
-def test_repair_result_log_section_contains_only_entries():
-    """結構不變量：修復後 Log 區段只能有標題、空行與 `- ` 條目。"""
-    body = "- 需求：x" + _TOK + "- 條目一\n- 條目二\n"
-    repaired, _ = repair_body_layout(body)
-    tail = split_at_log(repaired)[1].splitlines()
-    assert tail[0].strip() == "## Log"
-    assert all(not ln.strip() or ln.startswith("- ") for ln in tail[1:])

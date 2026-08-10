@@ -12,8 +12,8 @@ tier 開卡時填錯——這些都是常態，但 CLI 沒有入口，於是每�
 
 - **原值必留且不得截斷**：每個被改欄位 append 一行 Log，完整記下原值與理由。Log 是
   唯一還原點，摘要不能取代全文（R1-01）；主控台輸出才做可讀性截斷。
-- **不動 Log**：修訂只作用於 `## Log` 之前。排版壞到無法安全定位 Log 時拒絕，但另提供
-  `--repair-log-layout` 這條窄路，否則工具在最需要它的情境反而不能用（R1-02）。
+- **不動 Log**：修訂只作用於 `## Log` 之前。排版壞到無法安全定位 Log 時一律拒絕，
+  不提供修復模式——見下方「為什麼沒有排版修復」。
 - **半寫入可偵測且可自癒**：`級別` 先寫並讀回驗證，再寫 body。若 body 寫入失敗導致
   欄位已改卻沒有 Log，下一次同樣的 amend 會偵測到「欄位已是目標值但 Log 沒記」，
   並只補寫 Log（R1-03）。每次執行帶 `op` 識別碼，便於跨 Log 條目對齊同一次操作。
@@ -31,7 +31,6 @@ compare-and-swap——GitHub 對 issue body 沒有條件寫入。重讀只把競
 from __future__ import annotations
 
 import argparse
-import hashlib
 import sys
 import uuid
 
@@ -44,7 +43,6 @@ from ..card import (
     amend_verification,
     append_log_line,
     now_iso8601,
-    repair_body_layout,
 )
 from ..config import add_target_args, resolve_target
 from ..gh import default_runner
@@ -104,19 +102,6 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "故此判斷由操作者顯式承擔",
     )
     p.add_argument(
-        "--repair-log-layout",
-        action="store_true",
-        help="窄路修復模式：把 body 內的字面 \\n 還原成真換行。只准動空白，"
-        "不得與其他修訂旗標併用，且必須同時給 --expect-body-sha256",
-    )
-    p.add_argument(
-        "--expect-body-sha256",
-        default=None,
-        help="現行 body 原文的 UTF-8 SHA-256；--repair-log-layout 必填。"
-        "它只證明「操作者看過讀取當下那一版」，**不是**原子的 compare-and-swap："
-        "GitHub 對 issue body 沒有條件寫入，寫入前的重讀只能縮小競態窗口，不能消除",
-    )
-    p.add_argument(
         "--dry-run",
         action="store_true",
         help="只驗證與列印將寫入的變更，不連 GitHub 寫入任何狀態",
@@ -158,22 +143,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     field_flags = [args.spec_baseline, args.acceptance, args.verification, args.tier]
     wants_fields = any(f is not None for f in field_flags) or wants_resources
 
-    if args.repair_log_layout:
-        if wants_fields:
-            print(
-                "[amend] 拒絕：--repair-log-layout 是窄路修復模式，不得與其他修訂旗標併用"
-                "（修排版與改內容混在一起就無法逐項稽核）",
-                file=sys.stderr,
-            )
-            return 2
-        if not args.expect_body_sha256:
-            print(
-                "[amend] 拒絕：--repair-log-layout 必須同時給 --expect-body-sha256"
-                "（確保你確實看過將被改寫的 body）",
-                file=sys.stderr,
-            )
-            return 2
-    elif not wants_fields:
+    if not wants_fields:
         print("[amend] 拒絕：沒有指定任何要修訂的欄位", file=sys.stderr)
         return 2
 
@@ -195,98 +165,79 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     changes: list[tuple[str, str, str]] = []  # (欄位, 原值, 新值)
     tier_needs_field_write = False
 
-    if args.repair_log_layout:
-        actual = hashlib.sha256(item.body.encode("utf-8")).hexdigest()
-        if actual != args.expect_body_sha256.strip().lower():
+    try:
+        if args.spec_baseline is not None:
+            body, old = amend_spec_baseline(body, args.spec_baseline)
+            changes.append(("spec 基線", old, args.spec_baseline))
+        if args.acceptance is not None:
+            body, old = amend_acceptance(
+                body, args.acceptance, preserve_checked=args.preserve_checked
+            )
+            changes.append(("驗收條件", old, "；".join(args.acceptance)))
+        if args.verification is not None:
+            body, old = amend_verification(
+                body, args.verification, preserve_checked=args.preserve_checked
+            )
+            changes.append(("驗證", old, "；".join(args.verification)))
+        if wants_resources:
+            current = parse_block(item.body)
+            db_scope = args.db_scope if args.db_scope is not None else current.db_scope
+            resources = (
+                [r.strip() for r in args.resources.split(",") if r.strip()]
+                if args.resources is not None
+                else current.resources
+            )
+            decl = ResourceDeclaration(db_scope=db_scope, resources=resources)
+            body, old = amend_resource_block(body, render_block(decl))
+            changes.append(("資源宣告", old, decl.summary()))
+    except (AmendError, ResourceDeclarationError) as exc:
+        print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
+        return 2
+
+    old_tier = item.text("級別")
+    if args.tier is not None:
+        already_logged = _tier_change_logged(item.body, args.tier)
+        if old_tier == args.tier and not args.record_unlogged_change:
+            # 「欄位已是目標值且 Log 沒記」有兩種可能：開卡時就是這個值（正常
+            # no-op），或先前 amend 寫完欄位後 body 寫入失敗（半寫入）。CLI 分不
+            # 出來，也不該猜——猜錯就會把正常的 no-op 記成一筆不存在的變更。
+            # 因此預設拒絕，並在確實可能是半寫入時提示補記旗標，由操作者承擔判斷。
+            hint = (
+                ""
+                if already_logged
+                else "；若這是先前 amend 寫完欄位卻 body 寫入失敗所致，"
+                "請加 --record-unlogged-change 補記留痕"
+            )
             print(
-                f"[amend] 拒絕：--expect-body-sha256 與現行 body 不符\n"
-                f"  預期 {args.expect_body_sha256}\n  實際 {actual}",
+                f"[amend] 拒收（未寫入任何狀態）：級別已是 {args.tier}"
+                f"，拒絕寫入不實的修訂留痕{hint}",
                 file=sys.stderr,
             )
             return 2
-        try:
-            body, original = repair_body_layout(item.body)
-        except AmendError as exc:
-            print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
-            return 2
-        changes.append(
-            ("body 排版修復", f"原 body SHA-256 {actual}", "字面 \\n 已還原為真換行，非空白內容未變")
-        )
-        del original
-    else:
-        try:
-            if args.spec_baseline is not None:
-                body, old = amend_spec_baseline(body, args.spec_baseline)
-                changes.append(("spec 基線", old, args.spec_baseline))
-            if args.acceptance is not None:
-                body, old = amend_acceptance(
-                    body, args.acceptance, preserve_checked=args.preserve_checked
-                )
-                changes.append(("驗收條件", old, "；".join(args.acceptance)))
-            if args.verification is not None:
-                body, old = amend_verification(
-                    body, args.verification, preserve_checked=args.preserve_checked
-                )
-                changes.append(("驗證", old, "；".join(args.verification)))
-            if wants_resources:
-                current = parse_block(item.body)
-                db_scope = args.db_scope if args.db_scope is not None else current.db_scope
-                resources = (
-                    [r.strip() for r in args.resources.split(",") if r.strip()]
-                    if args.resources is not None
-                    else current.resources
-                )
-                decl = ResourceDeclaration(db_scope=db_scope, resources=resources)
-                body, old = amend_resource_block(body, render_block(decl))
-                changes.append(("資源宣告", old, decl.summary()))
-        except (AmendError, ResourceDeclarationError) as exc:
-            print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
-            return 2
-
-        old_tier = item.text("級別")
-        if args.tier is not None:
-            already_logged = _tier_change_logged(item.body, args.tier)
-            if old_tier == args.tier and not args.record_unlogged_change:
-                # 「欄位已是目標值且 Log 沒記」有兩種可能：開卡時就是這個值（正常
-                # no-op），或先前 amend 寫完欄位後 body 寫入失敗（半寫入）。CLI 分不
-                # 出來，也不該猜——猜錯就會把正常的 no-op 記成一筆不存在的變更。
-                # 因此預設拒絕，並在確實可能是半寫入時提示補記旗標，由操作者承擔判斷。
-                hint = (
-                    ""
-                    if already_logged
-                    else "；若這是先前 amend 寫完欄位卻 body 寫入失敗所致，"
-                    "請加 --record-unlogged-change 補記留痕"
-                )
+        if args.record_unlogged_change:
+            if old_tier != args.tier:
                 print(
-                    f"[amend] 拒收（未寫入任何狀態）：級別已是 {args.tier}"
-                    f"，拒絕寫入不實的修訂留痕{hint}",
+                    f"[amend] 拒絕：--record-unlogged-change 只補留痕、不改欄位，"
+                    f"但級別現為 {old_tier!r} 而非 {args.tier}；請改用一般 --tier",
                     file=sys.stderr,
                 )
                 return 2
-            if args.record_unlogged_change:
-                if old_tier != args.tier:
-                    print(
-                        f"[amend] 拒絕：--record-unlogged-change 只補留痕、不改欄位，"
-                        f"但級別現為 {old_tier!r} 而非 {args.tier}；請改用一般 --tier",
-                        file=sys.stderr,
-                    )
-                    return 2
-                if already_logged:
-                    print(
-                        f"[amend] 拒絕：級別 {args.tier} 的變更 Log 已存在，無需補記",
-                        file=sys.stderr,
-                    )
-                    return 2
-                changes.append(
-                    (
-                        "級別（補記先前未留痕的變更）",
-                        "（Project 欄位已是目標值但 Log 無紀錄；操作者判定為先前半寫入）",
-                        args.tier,
-                    )
+            if already_logged:
+                print(
+                    f"[amend] 拒絕：級別 {args.tier} 的變更 Log 已存在，無需補記",
+                    file=sys.stderr,
                 )
-            else:
-                tier_needs_field_write = True
-                changes.append(("級別", old_tier or "（未設定）", args.tier))
+                return 2
+            changes.append(
+                (
+                    "級別（補記先前未留痕的變更）",
+                    "（Project 欄位已是目標值但 Log 無紀錄；操作者判定為先前半寫入）",
+                    args.tier,
+                )
+            )
+        else:
+            tier_needs_field_write = True
+            changes.append(("級別", old_tier or "（未設定）", args.tier))
 
     timestamp = now_iso8601()
     for field_name, old, new in changes:
