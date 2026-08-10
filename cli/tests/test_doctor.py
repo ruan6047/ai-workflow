@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import shutil
 from pathlib import Path
 
@@ -229,3 +231,97 @@ def test_review_channel_reads_receipt_from_pr_review_body():
     )
     assert finding.status == "receipt_untranscribed"
     assert finding.receipt_authors == ("copilot-reviewer",)
+
+
+# --------------------------------------------------------------------------
+# WF-REVIEW-EVENT-MARKER-ENFORCE1：marker 合規的 fail-closed
+#
+# handoff-contract.md §3.1.3／§3.1.4 自 2026-08-10 起要求：受管轄但不合格的 marker
+# 必須讓該卡停止自動裁決判定，不得回退 legacy。先前實作對五種不合格 marker 全數
+# 回傳 recorded——契約寫著 fail-closed、消費者實際 fail-open。
+# --------------------------------------------------------------------------
+
+_ESHA = "a" * 40
+_ECARD = "CARD-A"
+_EATT = f"{_ECARD}-e0-{_ESHA}"
+_ELOG = f"2026-08-09 review by wf-cli → APPROVE；attempt {_EATT}。"
+
+
+def _conformant_marker(card: str = _ECARD, sha: str = _ESHA, attempt: str | None = None) -> str:
+    att = attempt if attempt is not None else f"{card}-e0-{sha}"
+    return f"<!-- wf-review-event:v1 card_id={card} source_sha={sha} attempt_id={att} -->"
+
+
+def _verdict(marker: str) -> str:
+    """帶 marker 的裁決留言；散文部分足以讓 legacy 分支也會命中（正是要證明它不再命中）。"""
+    return f"{marker}\n## 查核裁決：APPROVE\n- attempt_id：`{_EATT}`"
+
+
+@pytest.mark.parametrize(
+    "name,marker",
+    [
+        ("unknown-version", f"<!-- wf-review-event:v2 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} -->"),
+        ("missing-field", f"<!-- wf-review-event:v1 card_id={_ECARD} source_sha={_ESHA} -->"),
+        ("unknown-key", f"<!-- wf-review-event:v1 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} verdict=APPROVE -->"),
+        ("field-order", f"<!-- wf-review-event:v1 source_sha={_ESHA} card_id={_ECARD} attempt_id={_EATT} -->"),
+        ("field-inconsistent", _conformant_marker(attempt=f"OTHER-e0-{_ESHA}")),
+    ],
+)
+def test_nonconformant_marker_quarantines_instead_of_recorded(name, marker):
+    finding = audit_review_channel([{"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "marker_quarantined", f"{name} 仍被判為 {finding.status}"
+    assert finding.quarantine_reasons, "停機必須說明是哪一則、為什麼"
+
+
+def test_quarantine_is_distinct_from_unobservable():
+    """「找到訊號但讀不懂」與「找不到訊號」對人的指示完全不同，不得併態。"""
+    bad = audit_review_channel(
+        [{"body": _verdict(f"<!-- wf-review-event:v2 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} -->")}],
+        _ECARD, _ESHA, card_body=_ELOG,
+    )
+    none = audit_review_channel([], _ECARD, _ESHA, card_body=_ELOG)
+    assert bad.status == "marker_quarantined"
+    assert none.status == "unobservable"
+
+
+def test_conformant_marker_still_recorded():
+    finding = audit_review_channel([{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "recorded"
+
+
+def test_legacy_event_without_prefix_is_unchanged():
+    """legacy 判準是語法：完全不含 wf-review-event: 前綴者行為完全不變。"""
+    legacy = f"## 查核裁決：APPROVE\n- 卡：`{_ECARD}`　attempt_id：`{_EATT}`"
+    assert "wf-review-event:" not in legacy
+    finding = audit_review_channel([{"body": legacy}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "recorded"
+
+
+def test_duplicate_events_for_same_attempt_quarantine():
+    """落差 8a：可驗證語意等價的機制到位前，重送不得被推定為安全。"""
+    marker = _conformant_marker()
+    finding = audit_review_channel(
+        [{"body": _verdict(marker)}, {"body": _verdict(marker)}], _ECARD, _ESHA, card_body=_ELOG
+    )
+    assert finding.status == "marker_quarantined"
+    assert any("同一 attempt_id 出現 2 則" in r for r in finding.quarantine_reasons)
+
+
+def test_conformant_marker_for_another_card_does_not_quarantine_this_one():
+    """別卡的合法 marker 不是本卡的事件，也不該讓本卡停機。"""
+    other = _verdict(_conformant_marker(card="OTHER-CARD"))
+    finding = audit_review_channel([{"body": other}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "unobservable"
+
+
+def test_prefix_quoted_in_prose_quarantines_conservatively():
+    """契約明文承認的保守誤判：內文引用該字樣會被判為受管轄。方向是 fail-closed。"""
+    prose = "討論：`wf-review-event:v1` 的三欄自洽規則是否過嚴？"
+    finding = audit_review_channel([{"body": prose}], _ECARD, _ESHA, card_body=_ELOG)
+    assert finding.status == "marker_quarantined"
+
+
+def test_receipt_still_detected_when_no_governed_marker():
+    receipt = f"<!-- wf-review-receipt:v1\ncard_id: {_ECARD}\nsource_sha: {_ESHA}\n-->"
+    finding = audit_review_channel([{"body": receipt, "html_url": "u", "user": {"login": "x"}}], _ECARD, _ESHA)
+    assert finding.status == "receipt_untranscribed"

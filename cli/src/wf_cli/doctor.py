@@ -67,12 +67,15 @@ class ReviewChannelFinding:
     不可觀測；doctor 只能誠實地指出狀態面尚不能證明裁決已被轉錄。
     """
 
-    status: Literal["recorded", "receipt_untranscribed", "unobservable"]
+    status: Literal[
+        "recorded", "receipt_untranscribed", "unobservable", "marker_quarantined"
+    ]
     card_id: str
     source_sha: str
     detail: str
     receipt_urls: tuple[str, ...] = ()
     receipt_authors: tuple[str, ...] = ()
+    quarantine_reasons: tuple[str, ...] = ()
 
 
 @dataclass
@@ -138,6 +141,73 @@ class DoctorReport:
         return "\n".join(lines)
 
 
+# --------------------------------------------------------------------------
+# wf-review-event:v1 marker 合規檢查（handoff-contract.md §3.1.3／§3.1.4）
+# --------------------------------------------------------------------------
+#
+# 契約自 2026-08-10 起要求：受管轄但不合格的 marker 必須讓該卡停止自動裁決判定，
+# 不得回退到 legacy 分支。先前實作對五種不合格 marker 全數回傳 recorded——契約寫著
+# fail-closed、消費者實際 fail-open，那比沒有契約更危險，因為它讓人以為有閘門。
+#
+# legacy 的判準是**語法**：完全不含 `wf-review-event:` 前綴的舊裁決留言，行為完全
+# 不變。只要出現該前綴，該留言即宣告自己受契約管轄，不合格就得停機。契約明文承認
+# 一個保守誤判：在留言中「引用」該字樣（例如討論契約本身）會被判為受管轄而停機。
+# 那是往 fail-closed 方向的誤判，予以接受。
+
+_EVENT_PREFIX = "wf-review-event:"
+
+# 一次把「順序固定、單一空白分隔、鍵集合封閉」三件事編碼進同一條 regex：
+# 多出未定義鍵會讓 `attempt_id=(\S+) -->` 對不上（中間多一個空白段），錯序同理。
+_CONFORMANT_MARKER_RE = re.compile(
+    r"^<!-- wf-review-event:v1 "
+    r"card_id=(?P<card>\S+) source_sha=(?P<sha>[0-9a-f]{40}) attempt_id=(?P<attempt>\S+) -->$"
+)
+_ATTEMPT_RE = re.compile(r"^(?P<card>.+)-e(?P<epoch>\d+)-(?P<sha>[0-9a-f]{40})$")
+
+
+def _marker_line(body: str) -> str | None:
+    """取出宣告受管轄的那一行（契約規定 marker 置於留言首行）。"""
+    for line in body.splitlines():
+        if line.strip().startswith("<!-- " + _EVENT_PREFIX):
+            return line.strip()
+    return None
+
+
+def inspect_event_marker(body: str) -> tuple[str | None, str | None]:
+    """檢查一則留言的 marker 合規性。
+
+    回傳 ``(attempt_id, 不合格原因)``：兩者恰有一個為 None。留言未宣告受管轄時
+    兩者皆 None——那是 legacy，不歸本檢查管。
+    """
+    if _EVENT_PREFIX not in body:
+        return None, None
+    line = _marker_line(body)
+    if line is None:
+        # 前綴只出現在內文（例如引用契約），沒有 marker 行。契約承認的保守誤判：
+        # 寧可停機要人看，也不放行一則可能是壞掉裁決的留言。
+        return None, "留言含 `wf-review-event:` 前綴但首行不是 marker（可能是內文引用）"
+    if not line.startswith("<!-- wf-review-event:v1 "):
+        version = line.split()[1] if len(line.split()) > 1 else line
+        return None, f"未知或不支援的 marker 版本：{version}（只認 v1；不得回退 legacy）"
+    match = _CONFORMANT_MARKER_RE.match(line)
+    if not match:
+        return None, (
+            "marker 不符 v1 語法：必須恰為 card_id／source_sha／attempt_id 三鍵、"
+            "依序排列、以單一空白分隔（缺欄、多出未定義鍵、錯序皆屬此類）"
+        )
+    attempt = match.group("attempt")
+    decomposed = _ATTEMPT_RE.match(attempt)
+    if not decomposed:
+        return None, f"attempt_id 不符 `<card>-e<epoch>-<40 hex sha>` 形式：{attempt}"
+    if decomposed.group("card") != match.group("card") or decomposed.group("sha") != match.group("sha"):
+        return None, (
+            "marker 三欄不自洽：attempt_id 反解出的 card_id／source_sha "
+            f"（{decomposed.group('card')}／{decomposed.group('sha')}）"
+            f"與欄位值（{match.group('card')}／{match.group('sha')}）不符"
+        )
+    return attempt, None
+
+
 def audit_review_channel(
     comments: list[dict[str, Any]],
     card_id: str,
@@ -160,25 +230,67 @@ def audit_review_channel(
     attempt_pattern = re.compile(
         rf"{re.escape(card_id)}-e\d+-{re.escape(source_sha)}"
     )
-    event_marker = (
-        "<!-- wf-review-event:v1 "
-        f"card_id={card_id} source_sha={source_sha} "
-    )
     state_marker = "## 查核裁決："
     event_log_present = "review by wf-cli" in card_body and bool(attempt_pattern.search(card_body))
 
-    for comment in [*comments, *(reviews or [])]:
+    expected_attempt_prefix = f"{card_id}-e"
+    expected_attempt_suffix = f"-{source_sha}"
+    quarantine_reasons: list[str] = []
+    conformant_attempts: list[str] = []
+    legacy_event_found = False
+
+    all_comments = [*comments, *(reviews or [])]
+
+    # 第一輪只做解析層判定。契約 §2 明定留痕解析停機是**解析層** gate，且優先於
+    # 語意層裁決——讀不出 marker 就談不上這則留言算不算裁決，所以必須先掃完全部
+    # 留言、確認沒有受管轄但不合格者，才輪得到「有沒有裁決」這個問題。
+    for comment in all_comments:
         body = str(comment.get("body") or "")
-        is_marked_event = event_marker in body and bool(attempt_pattern.search(body))
-        # 舊事件沒有 v1 marker；仍可透過同卡 attempt_id + Issue body 的 wfcli Log 對帳。
-        is_legacy_event = state_marker in body and bool(attempt_pattern.search(body))
-        if event_log_present and (is_marked_event or is_legacy_event):
-            return ReviewChannelFinding(
-                status="recorded",
-                card_id=card_id,
-                source_sha=source_sha,
-                detail="已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log；狀態面已有裁決。",
+        attempt, reason = inspect_event_marker(body)
+        if reason is not None:
+            url = str(comment.get("html_url") or comment.get("url") or "（URL 未提供）")
+            quarantine_reasons.append(f"{reason}（{url}）")
+        elif attempt is not None and attempt.startswith(expected_attempt_prefix) and attempt.endswith(expected_attempt_suffix):
+            conformant_attempts.append(attempt)
+        elif attempt is None and state_marker in body and bool(attempt_pattern.search(body)):
+            # legacy：完全不含 wf-review-event: 前綴的舊裁決留言。行為刻意不變。
+            legacy_event_found = True
+
+    # 落差 8a：同一 attempt 多則事件。§3.1.5 在結構化裁決承載到位前的保守行為是
+    # 一律停止判定——不得把重送視為安全。放行需要能證明兩則語意等價，而裁決語意
+    # 目前只存在於渲染後的散文裡，證不了。
+    for attempt in set(conformant_attempts):
+        if conformant_attempts.count(attempt) > 1:
+            quarantine_reasons.append(
+                f"同一 attempt_id 出現 {conformant_attempts.count(attempt)} 則事件"
+                f"（{attempt}）；在可驗證語意等價的機制到位前一律停機，不得推定為冪等重送"
             )
+
+    if quarantine_reasons:
+        return ReviewChannelFinding(
+            status="marker_quarantined",
+            card_id=card_id,
+            source_sha=source_sha,
+            detail=(
+                "timeline 上有受契約管轄但不合格的 review marker，依 handoff-contract.md "
+                "§3.1.4 停止本卡的自動裁決判定。這與 unobservable 不同：那是找不到訊號，"
+                "這是找到訊號但讀不懂——前者要去查有沒有人查核過，後者要去修一則壞掉的留言。"
+                "解除須依 review-escalation.md §5 的 review-marker-clearance；該事件在留言"
+                "平面的表示法尚未定義（見 docs/CONSUMER_CONFORMANCE.md），故目前只能人工處理。"
+            ),
+            quarantine_reasons=tuple(quarantine_reasons),
+        )
+
+    if event_log_present and (conformant_attempts or legacy_event_found):
+        return ReviewChannelFinding(
+            status="recorded",
+            card_id=card_id,
+            source_sha=source_sha,
+            detail="已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log；狀態面已有裁決。",
+        )
+
+    for comment in all_comments:
+        body = str(comment.get("body") or "")
         if receipt_marker in body and expected_card in body and expected_sha in body:
             url = str(comment.get("html_url") or comment.get("url") or "（收據 URL 未提供）")
             receipt_urls.append(url)

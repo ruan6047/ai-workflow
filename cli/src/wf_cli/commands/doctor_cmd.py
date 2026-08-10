@@ -96,6 +96,10 @@ def run(args: argparse.Namespace) -> int:
         print(f"- [{finding.status}] {finding.detail}")
         for url, author in zip(finding.receipt_urls, finding.receipt_authors, strict=True):
             print(f"  - receipt: {url}（GitHub author: {author}）")
+        for reason in finding.quarantine_reasons:
+            # 停機的價值在於「要人去修哪一則留言」。只印狀態不印原因，使用者只知道
+            # 卡住了卻不知道卡在哪，那和沒偵測到差不多。
+            print(f"  - 停機原因: {reason}")
     if args.json:
         print(json.dumps(asdict(report), ensure_ascii=False, indent=2, default=str))
 
