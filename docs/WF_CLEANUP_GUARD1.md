@@ -254,11 +254,28 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 - `--registry` 只支援 `tasks-md`／`none`；已 cutover 到 GitHub Issues 的專案，其活卡讀不進 doctor 預覽（`registry.py` 未改動）。`release --cleanup` 這條路徑不受此限：它就地把 Project items 轉成 `RegisteredCard`（`handoff_cmd.registry_from_items`）。
 - `release --cleanup` 尚未對真實 Project／Issue 實跑過——它會關 Issue 與寫終態，屬 T4 不可逆操作，**須需求方 sign-off 後才做**。目前證據全來自真 git ＋ 假 GitHub（`ReleaseGhRunner`）。
 
-### 7.5 條件式刪除：對真實 GitHub 遠端**沒有**實證，以及替代證據到哪裡為止
+### 7.5 條件式刪除對真實 GitHub 的驗證：拒絕路徑已實證，接受路徑未實證
 
-先講結論：**本輪沒有對真實 GitHub 遠端驗證過條件式刪除**。嘗試在 `origin` 上建一條拋棄式探針分支來實測，被執行環境的權限層擋下（`git push` 到真實遠端不被允許），未再嘗試繞道。以下是替代證據，以及它證明了什麼、沒證明什麼。
+先講清楚證到哪裡。**拒絕路徑（＝真正承擔保證的那一半）已對真實 GitHub 實證**；**接受路徑只在本機 bare repo 實證**。
 
-替代證據在拋棄式本機 bare repo 上做，除了重現需求方的結果，另外用 `GIT_TRACE_PACKET` 把**線路上實際送了什麼**看出來：
+#### 對真實 GitHub 遠端（`github.com:ruan6047/ai-workflow.git`，SSH）
+
+用 `--dry-run` 對真實遠端送一個**租約過期**的刪除（`--dry-run` 不送出任何更新；租約本身也是過期的，兩重保險），目標是本卡自己的分支：
+
+```
+git push --dry-run origin --force-with-lease=refs/heads/<本卡分支>:<過期SHA> --delete <本卡分支>
+  → ! [rejected]  (delete) -> <本卡分支> (stale info)
+  → git returncode 1；分支在 GitHub 上完好無損
+  → GIT_TRACE_PACKET：客戶端只送出一個 flush（0000），一條更新指令都沒送
+```
+
+這證明的是：**GitHub 的 ref advertisement 會被租約檢查吃到，且過期租約在真實傳輸上確實被拒**。因為客戶端一條指令都沒送，這一層的保證完全不依賴 GitHub 做任何額外的事。
+
+**沒有對真實 GitHub 做的是接受路徑**（租約相符 → 分支真的被刪）。那需要在真實遠端建一條拋棄式探針分支再刪掉；該次 `git push` 被執行環境的權限層擋下，未再嘗試繞道。
+
+#### 本機拋棄式 bare repo（兩條路徑都有）
+
+除了重現需求方的結果，另外用 `GIT_TRACE_PACKET` 把**線路上實際送了什麼**看出來：
 
 | 觀測 | 結果 |
 |---|---|
@@ -268,23 +285,23 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 | 被接受那次的線路內容 | `<old-oid> 0000…0000 refs/heads/feature`，刪除指令**帶著非零的 old-oid** |
 | 無租約的普通刪除 | old-oid **相同**（取自同一次 advertisement） |
 
-由此可以推出兩件事，而且它們是**傳輸層無關**的：
+由此可以推出兩件事：
 
-1. **租約檢查完全發生在客戶端**，比對的對象是伺服器在同一條連線裡剛送出的 ref advertisement，不是本機的 remote-tracking ref。ref advertisement 是每一種傳輸（含 GitHub 的 HTTPS／SSH）都必有的第一步，因此這一層在 GitHub 上的行為沒有理由不同——它不依賴伺服器做任何額外的事。
+1. **租約檢查完全發生在客戶端**，比對的對象是伺服器在同一條連線裡剛送出的 ref advertisement，不是本機的 remote-tracking ref。上面對真實 GitHub 的那次 dry-run 直接證實了這一點在 GitHub 上成立（拒絕發生了，而且一條指令都沒送出）。
 2. **客戶端只在 advertisement 與租約相符時才送出指令**，而送出的 old-oid 就是那個值。所以只要伺服器對 delete 指令做標準的 old-oid 交換檢查，我們的期望值就會被伺服器再驗一次。
 
 **沒有證明的部分，逐條列出**：
 
-- GitHub 的 receive-pack 是否對 delete 指令執行 old-oid CAS——本機 `git` 的 receive-pack 會（`ref_transaction_delete` 收 old_oid），GitHub 不是逐字的 stock git。這一條只有推定。
+- **接受路徑未對真實 GitHub 實跑**：租約相符時 GitHub 是否確實完成刪除。若 GitHub 對帶租約的 delete 另有自訂行為而拒絕，症狀是 `aborted` ＋ `rc=5` ＋ 遠端分支留著——雜訊，不是資料遺失，但會讓每次 `release --cleanup` 都停在最後一步。
+- GitHub 的 receive-pack 是否對 delete 指令執行 old-oid CAS——本機 `git` 的 receive-pack 會（`ref_transaction_delete` 收 old_oid），GitHub 不是逐字的 stock git。這一條只有推定，且它只影響「GitHub advertise 之後到套用之前」那一段毫秒級的窗。
 - GitHub 的 ref advertisement 是否恆為最新（而非來自落後的 replica）。若 advertisement 落後，租約會拿舊值比舊值而通過。這個殘餘風險**所有 `--force-with-lease` 的使用者都共有**，客戶端無法自行消除。
-- 真實 GitHub 是否可能對帶租約的 delete 有自訂行為（例如整個忽略租約）。
 
-**這些殘餘風險不構成退回 fail-closed 的理由**，因為失敗方向是安全的：
+**這些殘餘風險不構成退回 fail-closed（不自動刪遠端分支）的理由**，因為失敗方向是安全的：
 
-- 若 GitHub **忽略**租約，行為退化成本輪之前的無條件刪除——不比現況差，且窗仍比修改前窄（複驗仍在）。
+- 若 GitHub **忽略**租約，行為退化成本輪之前的無條件刪除——不比現況差，且窗仍比修改前窄（複驗仍在）。而真實遠端的 dry-run 已經證明它沒有被忽略。
 - 若 GitHub **誤拒**合法的刪除，處置是 `aborted` ＋ 效果扣住 ＋ `rc=5`，遠端分支留著等人處理——雜訊，不是資料遺失。
 
-因此保留條件式刪除，並把「對真實 GitHub 首次實跑」列為未關的洞（§9 第 8 項）與 sign-off 條件，而不是宣稱已驗證。
+因此保留條件式刪除，並把「接受路徑對真實 GitHub 首次實跑」列為未關的洞（§9 第 8 項）與 sign-off 條件，而不是宣稱整條路徑都已驗證。
 
 ### 7.4 突變測試
 
@@ -356,5 +373,5 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 5. **條件式刪除只覆蓋遠端分支**。worktree 移除與本地分支刪除靠 git 自己的拒絕（`worktree remove` 不加 `--force` 會拒絕髒工作樹，`branch -d` 會拒絕未合併分支）當第二道防線，本模組沒有再加一層自己的複驗，也沒有等價的 CAS。可接受的理由是這兩者刪掉的是**本機**副本、且都有 reflog；遠端分支被刪則可能是唯一一份。
 6. **`no_stash` 只認得 git 預設的 stash 訊息格式**。使用者自訂訊息的 stash 會被判 `unobservable`（fail closed，安全），但實務上會變成擋住合法收尾的雜訊。
 7. **第 4 步的「Issue 留結案留言」未實作**。`worktree-lifecycle.md` 第 11 行第 4 點寫的是「留結案留言**並**關閉」；本輪只關閉，留痕仍走既有的 body `## Log` append（與其餘 wfcli 指令一致）。差在留言是外部可見的收據，body Log 不是——這條差異刻意列出來，不當成已完成。
-8. **條件式刪除未對真實 GitHub 遠端實跑**（§7.5）。全部證據來自拋棄式本機 bare repo ＋ 線路封包追蹤；嘗試在真實遠端建拋棄式探針分支被執行環境權限層擋下。**失敗方向是安全的**（忽略租約＝退回修改前行為；誤拒＝雜訊而非資料遺失），但「已驗證」三個字現在不能說。列為 sign-off 條件。
+8. **條件式刪除的「接受路徑」未對真實 GitHub 實跑**（§7.5）。拒絕路徑已對真實遠端實證（過期租約 → `(stale info)`、returncode 1、一條指令都沒送出）；**租約相符時 GitHub 是否確實完成刪除**只在本機 bare repo 證過，因為那需要在真實遠端建拋棄式探針分支，該次 push 被執行環境權限層擋下。失敗方向是雜訊而非資料遺失（`aborted` ＋ `rc=5` ＋ 分支留著），但第一次真跑 `release --cleanup` 時要盯著這一步。
 9. **殘餘窗：GitHub 的 ref advertisement 到套用刪除之間**。租約檢查在客戶端對 advertisement 完成，這段窗由遠端自己的 ref transaction 負責，客戶端無法涵蓋。它是毫秒級、且與本卡修掉的「整段本機清理」不同量級，但它存在，且所有 `--force-with-lease` 的使用者共有。
