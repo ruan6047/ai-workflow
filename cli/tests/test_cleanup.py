@@ -317,6 +317,49 @@ def test_refuses_when_card_body_missing(env: Env) -> None:
     assert decision.mode == "detect_only"
 
 
+def test_stash_with_an_unparseable_message_is_unobservable(env: Env) -> None:
+    """歸屬不明的 stash 必須擋。
+
+    突變測試 M04（把「解析不出所屬分支」改成直接略過該筆）在此之前存活——沒有任何
+    案例覆蓋這條規則。真實 stash 幾乎都長成 ``WIP on X:``／``On X:``，所以這裡直接
+    餵一筆解析不出來的 stash list 輸出，而不是想辦法把 git 的 reflog 弄壞。
+    """
+
+    def runner(cwd: Path, args):
+        if list(args)[:2] == ["stash", "list"]:
+            return cleanup.GitResult(0, "stash@{0}\tsomething nobody can parse\n", "")
+        return default_git_runner(cwd, args)
+
+    decision = evaluate_cleanup_guard(
+        env.target, registry=env.registry, card_body=CARD_BODY,
+        runner=runner, occupancy_prober=free_prober,
+    )
+    check = next(c for c in decision.checks if c.check_id == "no_stash")
+    assert check.outcome == "unobservable", "無法證明這筆 stash 不屬於待刪分支，就不能放行"
+    assert decision.mode == "detect_only"
+
+
+def test_remote_commit_missing_from_the_local_object_store_is_unobservable(
+    env: Env, tmp_path: Path
+) -> None:
+    """前提檢查也不對「本機沒見過的 commit」下祖先判斷。
+
+    突變測試 M15（拿掉 `cat-file` 可觀測性檢查）在此之前存活：少了它，守衛會對一個
+    自己沒有的物件跑 `merge-base`，git 只會回一個籠統的錯誤，於是「觀測不到」被降級
+    成「未併入」——結論碰巧一樣，理由卻是錯的，而理由才是報告給人看的東西。
+    """
+    other = _other_clone(tmp_path, env.remote)
+    _push_new_commit_from_other_clone(other)  # 本機刻意不 fetch
+
+    decision = evaluate_cleanup_guard(
+        env.target, registry=env.registry, card_body=CARD_BODY, occupancy_prober=free_prober
+    )
+    check = next(c for c in decision.checks if c.check_id == "merge_verified_remote")
+    assert check.outcome == "unobservable"
+    assert "不在本地物件庫" in check.detail
+    assert decision.mode == "detect_only"
+
+
 @pytest.mark.skipif(shutil.which("lsof") is None, reason="此機器沒有 lsof")
 def test_real_lsof_prober_detects_own_cwd(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     """真探針、真 process：不是只有 fake 會回 occupied。"""
@@ -705,6 +748,144 @@ def test_failed_worktree_removal_stops_before_touching_the_status_face(env: Env)
     assert writer.calls == []
     assert not [a for argv in log for a in argv if a == "-D"]
     assert_work_intact(env)
+
+
+# ---------------------------------------------------------------------------
+# 6.1 R1-001：守衛通過後、遠端刪除前的時間窗（TOCTOU）
+# ---------------------------------------------------------------------------
+
+RESCUED_WORK = "work pushed by another clone after the guard had already passed\n"
+
+
+def _other_clone(tmp_path: Path, remote: Path) -> Path:
+    """另一個 clone——代表「另一台機器／另一個人」，與本 repo 只共用 bare remote。"""
+    other = tmp_path / "other-clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(other)], check=True)
+    git(other, "config", "user.email", "other@example.com")
+    git(other, "config", "user.name", "another clone")
+    return other
+
+
+def _push_new_commit_from_other_clone(other: Path) -> str:
+    git(other, "checkout", "-q", "-B", BRANCH, f"origin/{BRANCH}")
+    (other / "rescue.txt").write_text(RESCUED_WORK, encoding="utf-8")
+    git(other, "add", "rescue.txt")
+    git(other, "commit", "-q", "-m", "work that must survive the cleanup")
+    git(other, "push", "-q", "origin", BRANCH)
+    return git(other, "rev-parse", "HEAD").strip()
+
+
+def _remote_tip(repo: Path, branch: str) -> str:
+    out = subprocess.run(
+        ["git", "-C", str(repo), "ls-remote", "--heads", "origin", branch],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    return out.split("\t")[0].strip()
+
+
+def _content_recoverable_from_remote(tmp_path: Path, remote: Path, name: str) -> str:
+    """從遠端**重新** clone 一份，證明內容真的還在遠端，不是只有本機看起來還在。"""
+    check = tmp_path / f"verify-{name}"
+    subprocess.run(["git", "clone", "-q", "-b", BRANCH, str(remote), str(check)], check=True)
+    return (check / "rescue.txt").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("fetch_after_push", [False, True])
+def test_remote_delete_refused_when_tip_moved_after_the_guard_passed(
+    env: Env, tmp_path: Path, fetch_after_push: bool
+) -> None:
+    """R1-001：守衛通過 → 本機清理完成 → **別人推了新提交** → 遠端刪除必須拒絕。
+
+    這是本模組唯一會真的毀掉他人已提交內容的路徑。舊實作在此只重新確認「遠端分支
+    還在」——分支確實還在，但 tip 已經換人，照刪就把新提交刪掉了。
+
+    兩個參數化分支覆蓋二次確認的兩種拒絕理由：
+    - ``fetch_after_push=False``：新提交不在本地物件庫 → `unobservable`（守衛不代為
+      fetch，也不刪自己沒看過的東西）；
+    - ``fetch_after_push=True``：本機已 fetch 得到該 commit → `cat-file` 過得了，
+      但 `merge-base --is-ancestor` 不成立 → `fail`。
+      沒有這一半，只要有人在別處先 fetch 過，守衛就會退回舊行為。
+    """
+    other = _other_clone(tmp_path, env.remote)
+    remote_state = FakeRemoteState()
+    writer = FakeEffectWriter(remote_state)
+    new_sha = ""
+
+    def hook(step: str) -> None:
+        nonlocal new_sha
+        if step == "after_delete_local_branch":
+            new_sha = _push_new_commit_from_other_clone(other)
+            if fetch_after_push:
+                git(env.repo, "fetch", "-q", "origin", BRANCH)
+
+    result = execute_closeout_transition(
+        env.target, trigger="release", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote_state.facts(), effect_writer=writer,
+        occupancy_prober=free_prober, step_hook=hook,
+    )
+
+    # 1) 遠端刪除被拒，且拒絕理由指名是「刪除前的二次確認」而非前提檢查
+    assert result.mode == "aborted", result
+    assert result.actions_aborted == ("delete_remote_branch",)
+    assert result.actions_performed == ("remove_worktree", "delete_local_branch")
+    assert any(cleanup.RECHECK_REMOTE_ID in r for r in result.blocking_reasons)
+    expected = "unobservable" if not fetch_after_push else "fail"
+    assert [c.outcome for c in result.recheck_checks] == [expected]
+
+    # 2) 新提交仍在遠端——不是只驗回傳碼，是真的再 clone 一份把內容讀出來
+    assert _remote_branch_exists(env.repo, "origin", BRANCH)
+    assert _remote_tip(env.repo, BRANCH) == new_sha
+    assert _content_recoverable_from_remote(tmp_path, env.remote, "aborted") == RESCUED_WORK
+
+    # 3) 效果被扣住：狀態面沒寫、Issue 沒關，停在合法的暫時態
+    assert writer.calls == []
+    assert remote_state.issue_open is True and remote_state.terminal_written is False
+    assert result.state_after == "cleanup_in_progress"
+    assert result.legal_state
+    assert set(result.remaining_status_face_steps) == {2, EFFECT_STEP}
+
+    # 4) 重跑不會「第二次就刪掉」：前提複驗此時看到未併入的遠端 tip，直接純偵測
+    resumed = execute_closeout_transition(
+        env.target, trigger="reconcile", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote_state.facts(), effect_writer=writer, occupancy_prober=free_prober,
+    )
+    assert resumed.mode == "detect_only"
+    assert any("merge_verified_remote" in r for r in resumed.blocking_reasons)
+    assert _content_recoverable_from_remote(tmp_path, env.remote, "resumed") == RESCUED_WORK
+
+
+def test_recheck_reports_absent_remote_branch_as_nothing_to_delete(env: Env) -> None:
+    """二次確認的 `absent` 不是拒絕：遠端分支本來就沒了，跳過即可，不得誤報阻擋。"""
+    git(env.repo, "push", "-q", "origin", "--delete", BRANCH)
+    verdict, check = cleanup.recheck_remote_branch(env.target, default_git_runner)
+    assert verdict == "absent"
+    assert check.outcome == "pass"
+
+
+def test_recheck_refuses_when_remote_is_unreadable(env: Env) -> None:
+    """讀不到遠端＝不知道 tip 是誰。不知道就不刪。"""
+
+    def broken(cwd: Path, args):
+        if list(args)[:1] == ["ls-remote"]:
+            return cleanup.GitResult(128, "", "fatal: unable to access remote")
+        return default_git_runner(cwd, args)
+
+    verdict, check = cleanup.recheck_remote_branch(env.target, broken)
+    assert verdict == "refuse"
+    assert check.outcome == "unobservable"
+
+
+def test_recheck_runs_on_the_happy_path_too(env: Env) -> None:
+    """放行路徑也必須留下二次確認的紀錄，否則「有沒有複驗過」無從對帳。"""
+    remote_state = FakeRemoteState()
+    result = execute_closeout_transition(
+        env.target, trigger="release", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote_state.facts(), effect_writer=FakeEffectWriter(remote_state),
+        occupancy_prober=free_prober,
+    )
+    assert result.mode == "applied"
+    assert [c.check_id for c in result.recheck_checks] == [cleanup.RECHECK_REMOTE_ID]
+    assert [c.outcome for c in result.recheck_checks] == ["pass"]
 
 
 def test_resume_uses_no_local_progress_record(env: Env, tmp_path: Path) -> None:

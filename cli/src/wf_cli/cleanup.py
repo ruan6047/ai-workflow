@@ -42,6 +42,15 @@ canonical ``AI_WORKFLOW.md:146``：「lease 可續約、可到期回收；**回�
 `_forbid_force()` 掛在**本模組唯一的 git 執行入口**上。任何帶 ``--force`` ／``-f``
 ／``-D`` 等旗標的 git 呼叫會在送進 subprocess 之前就丟 `CleanupGuardError`。這不是
 文件約定，是呼叫點的硬阻擋——日後有人「順手加個 --force」會直接炸在測試上。
+
+## 遠端刪除前的二次確認（R1-001）
+
+前提檢查與 `git push --delete` 之間**有一段時間窗**：本機 worktree 移除與本地分支
+刪除就發生在其中。另一個 clone 在這段窗內把新提交推上同一條遠端分支時，只重新確認
+「分支還在」是不夠的——分支確實還在，但它指的已經是別人的新工作。
+`recheck_remote_branch()` 因此在按下刪除鍵前重讀 tip SHA、確認該 commit 可觀測、
+重驗祖先關係；任一不成立即拒絕該次刪除（`GuardMode` 降 ``detect_only``），
+本次 run 以 `mode="aborted"` 收場，效果（第 4 步）一併扣住。
 """
 
 from __future__ import annotations
@@ -343,18 +352,40 @@ def _check_merge_local(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
                       f"本地 {target.branch} 尚未併入 {target.main_ref}", 1)
 
 
-def _check_merge_remote(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
+def _read_remote_heads(
+    target: CleanupTarget, runner: GitRunner
+) -> tuple[dict[str, str] | None, str]:
+    """一次 ls-remote 同時取回待刪分支與 main 的**當下** SHA。
+
+    兩端取自同一次觀測，避免「分支讀一次、main 再讀一次」之間又開一個窗。
+    """
     ls = _run(runner, target.repo_root,
               ["ls-remote", "--heads", target.remote, target.branch, target.main_ref])
     if not ls.ok:
-        return GuardCheck("merge_verified_remote", "unobservable",
-                          f"ls-remote 失敗（{ls.stderr.strip() or '無錯誤訊息'}），"
-                          "無法驗證遠端分支是否已併入", 1)
+        return None, ls.stderr.strip() or "無錯誤訊息"
     heads: dict[str, str] = {}
     for line in ls.stdout.splitlines():
         parts = line.split("\t")
         if len(parts) == 2:
             heads[parts[1].removeprefix("refs/heads/")] = parts[0]
+    return heads, ""
+
+
+def _commit_observable(target: CleanupTarget, runner: GitRunner, sha: str) -> bool:
+    """該 commit object 在**本地物件庫**看得見嗎。
+
+    看不見＝這是本機從未見過的提交（例如別人剛推上去的新工作）。本守衛不代為
+    fetch，也拒絕對看不見的東西下祖先判斷——「查不到」不是「沒問題」。
+    """
+    return _run(runner, target.repo_root, ["cat-file", "-e", f"{sha}^{{commit}}"]).ok
+
+
+def _check_merge_remote(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
+    heads, err = _read_remote_heads(target, runner)
+    if heads is None:
+        return GuardCheck("merge_verified_remote", "unobservable",
+                          f"ls-remote 失敗（{err}），"
+                          "無法驗證遠端分支是否已併入", 1)
     branch_sha = heads.get(target.branch)
     if branch_sha is None:
         return GuardCheck("merge_verified_remote", "pass",
@@ -364,8 +395,7 @@ def _check_merge_remote(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
         return GuardCheck("merge_verified_remote", "unobservable",
                           f"遠端 {target.remote} 讀不到 {target.main_ref}，無法比對祖先", 1)
     for sha in (branch_sha, main_sha):
-        exists = _run(runner, target.repo_root, ["cat-file", "-e", f"{sha}^{{commit}}"])
-        if not exists.ok:
+        if not _commit_observable(target, runner, sha):
             return GuardCheck("merge_verified_remote", "unobservable",
                               f"遠端 commit {sha[:12]} 不在本地物件庫，"
                               "未 fetch 前無法驗證祖先關係（本守衛不代為 fetch）", 1)
@@ -571,6 +601,85 @@ def evaluate_cleanup_guard(
 
 
 # ---------------------------------------------------------------------------
+# 遠端刪除前的二次確認（R1-001：守衛通過後、push --delete 之前的時間窗）
+# ---------------------------------------------------------------------------
+
+#: 二次確認的 check_id。刻意與前提 `merge_verified_remote` 分開命名——它們問的是
+#: **不同時刻**的同一件事，混用會讓報告看不出「是在哪一刻被擋下的」。
+RECHECK_REMOTE_ID = "remote_tip_still_merged"
+
+#: 對「該不該送出 push --delete」的三值裁決。``absent`` 不是放行也不是拒絕：
+#: 遠端分支已不存在，本來就無事可做。
+RemoteDeleteVerdict = Literal["delete", "absent", "refuse"]
+
+
+def recheck_remote_branch(
+    target: CleanupTarget, runner: GitRunner
+) -> tuple[RemoteDeleteVerdict, GuardCheck]:
+    """按下 `push --delete` 前的最後一次確認：tip 是誰、看得見嗎、還是 main 祖先嗎。
+
+    **為什麼只重新確認「分支還在」不夠**：前提檢查與遠端刪除之間隔著本機 worktree
+    移除與本地分支刪除。另一個 clone 在這段窗內把新提交推上同一條遠端分支後，分支
+    當然還在——但它指的已經是別人的新工作，照刪就把那份工作刪掉了。這是本模組唯一
+    真的會毀掉他人已提交內容的路徑，因此在此重讀三件事，缺一即拒：
+
+    1. 遠端 branch 與 main 的**當下** SHA（同一次 ls-remote，兩端同一次觀測）；
+    2. branch tip 的 commit object 在**本地物件庫可觀測**（觀測不到＝本機沒見過的
+       新提交，守衛不代為 fetch，也不對看不見的東西做祖先判斷）；
+    3. `merge-base --is-ancestor <tip> <遠端 main tip>` 仍成立。
+
+    回傳的 `GuardCheck` 走與前提檢查同一套三值語意，因此
+    ``aggregate_mode([check.outcome])`` 在拒絕時就是 ``detect_only``——「驗不過或
+    觀測不到就降純偵測、不刪」在這裡與前提檢查是同一條規則，不是另立的例外。
+    """
+    heads, err = _read_remote_heads(target, runner)
+    if heads is None:
+        return "refuse", GuardCheck(
+            RECHECK_REMOTE_ID, "unobservable",
+            f"刪除前重讀遠端失敗（{err}）；無法確認 tip 未變動，不刪", 2,
+        )
+    branch_sha = heads.get(target.branch)
+    if branch_sha is None:
+        return "absent", GuardCheck(
+            RECHECK_REMOTE_ID, "pass",
+            f"遠端 {target.remote} 已無 {target.branch!r}，無可刪對象", 2,
+        )
+    main_sha = heads.get(target.main_ref)
+    if main_sha is None:
+        return "refuse", GuardCheck(
+            RECHECK_REMOTE_ID, "unobservable",
+            f"刪除前讀不到遠端 {target.main_ref}，無法比對祖先，不刪", 2,
+        )
+    if not _commit_observable(target, runner, branch_sha):
+        return "refuse", GuardCheck(
+            RECHECK_REMOTE_ID, "unobservable",
+            f"遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
+            "該 commit 不在本地物件庫——很可能是守衛通過後才被推上來的新提交；"
+            "守衛不代為 fetch，也不刪自己沒看過的東西", 2,
+        )
+    if not _commit_observable(target, runner, main_sha):
+        return "refuse", GuardCheck(
+            RECHECK_REMOTE_ID, "unobservable",
+            f"遠端 {target.main_ref} 的 tip {main_sha[:12]} 不在本地物件庫，"
+            "無法驗證祖先關係，不刪", 2,
+        )
+    if not _run(runner, target.repo_root,
+                ["merge-base", "--is-ancestor", branch_sha, main_sha]).ok:
+        return "refuse", GuardCheck(
+            RECHECK_REMOTE_ID, "fail",
+            f"遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
+            f"不是遠端 {target.main_ref}（{main_sha[:12]}）的祖先；"
+            "在 executor 內走到這一步代表前提檢查當時是通過的，"
+            "也就是窗內有新提交進來——刪掉它會毀掉那份工作", 2,
+        )
+    return "delete", GuardCheck(
+        RECHECK_REMOTE_ID, "pass",
+        f"刪除前複驗：遠端 {target.branch} tip {branch_sha[:12]} 仍是 "
+        f"{target.main_ref}（{main_sha[:12]}）的祖先", 2,
+    )
+
+
+# ---------------------------------------------------------------------------
 # 觀測式續作：狀態分類
 # ---------------------------------------------------------------------------
 
@@ -682,10 +791,20 @@ def _noop_hook(_: str) -> None:
     return None
 
 
+#: 本次 run 的結局。三者互斥：
+#: - ``applied``：守衛放行，破壞性動作全部執行或（本來就不存在而）跳過；
+#: - ``detect_only``：**什麼都沒動**（守衛擋下或狀態非法）；
+#: - ``aborted``：守衛放行、部分動作已執行，但刪除前的二次確認拒絕了後續動作。
+#:
+#: ``aborted`` 不併入 ``detect_only``：一個已經移除了 worktree 的 run 自稱「純偵測」
+#: 是不誠實的。呼叫端只需記住「只有 applied 代表轉換完成」。
+CloseoutMode = Literal["applied", "detect_only", "aborted"]
+
+
 @dataclass(frozen=True)
 class CloseoutResult:
     trigger: Trigger
-    mode: Literal["applied", "detect_only"]
+    mode: CloseoutMode
     decision: GuardDecision
     observation_before: CloseoutObservation
     observation_after: CloseoutObservation
@@ -695,6 +814,10 @@ class CloseoutResult:
     remaining_status_face_steps: tuple[int, ...]
     outstanding_obligations: tuple[int, ...]
     blocking_reasons: tuple[str, ...]
+    #: 刪除前二次確認拒絕、因而未執行的動作。
+    actions_aborted: tuple[str, ...] = ()
+    #: 二次確認的逐項結果（供報告與對帳；正常放行時也會有一筆 pass）。
+    recheck_checks: tuple[GuardCheck, ...] = ()
 
     @property
     def legal_state(self) -> bool:
@@ -721,6 +844,10 @@ def execute_closeout_transition(
     續作安全性靠兩件事，都不依賴本機紀錄：
     1. 每個破壞性動作**執行前重讀當下事實**，已不存在就跳過（不重複刪除）；
     2. 效果（第 4 步）只在清理確實完成後才發動（不產生非法半完成組合）。
+
+    遠端分支這一步另外做**二次確認**（`recheck_remote_branch`）：不只確認「還在」，
+    還要確認 tip 沒被別人換掉。拒絕時本次 run 以 ``aborted`` 收場，效果一併扣住，
+    狀態停在合法的 `cleanup_in_progress`——重跑會重新觀測，人也還有機會介入。
     """
     runner = runner or default_git_runner
     before = observe(target, remote_facts, runner)
@@ -757,6 +884,8 @@ def execute_closeout_transition(
 
     performed: list[str] = []
     skipped: list[str] = []
+    aborted: list[str] = []
+    rechecks: list[GuardCheck] = []
     step_hook("guard_passed")
 
     for action in DESTRUCTIVE_ORDER:
@@ -786,10 +915,16 @@ def execute_closeout_transition(
                     )
                 performed.append(action)
         else:
-            probe = _run(runner, target.repo_root,
-                         ["ls-remote", "--heads", target.remote, target.branch])
-            if not (probe.ok and probe.stdout.strip()):
+            # R1-001：這裡不能只問「分支還在嗎」。守衛通過後、本機清理進行中的這段
+            # 時間窗裡，別的 clone 可能已經把新提交推上同一條遠端分支——分支還在，
+            # 但它指的已經是別人的新工作。因此重讀 tip、確認可觀測、重驗祖先。
+            verdict, check = recheck_remote_branch(target, runner)
+            rechecks.append(check)
+            if verdict == "absent":
                 skipped.append(action)
+            elif verdict == "refuse":
+                aborted.append(action)
+                break
             else:
                 res = _run(runner, target.repo_root,
                            ["push", target.remote, "--delete", target.branch])
@@ -797,6 +932,23 @@ def execute_closeout_transition(
                     raise CleanupGuardError(f"刪除遠端分支失敗：{res.stderr.strip()}")
                 performed.append(action)
         step_hook(f"after_{action}")
+
+    if aborted:
+        # 已執行的動作不回頭（也回不了頭），但**效果一律扣住**：狀態面不寫，
+        # Issue 不關。停在合法的暫時態，交給下一次觀測式續作或人判斷。
+        halted = observe(target, remote_facts, runner)
+        return CloseoutResult(
+            trigger=trigger, mode="aborted", decision=decision,
+            observation_before=before, observation_after=halted,
+            state_after=classify_state(halted),
+            actions_performed=tuple(performed), actions_skipped_absent=tuple(skipped),
+            actions_aborted=tuple(aborted), recheck_checks=tuple(rechecks),
+            remaining_status_face_steps=remaining_status_face_steps(halted),
+            outstanding_obligations=SUBSEQUENT_OBLIGATION_STEPS,
+            blocking_reasons=tuple(
+                f"[{c.check_id}] {c.detail}" for c in rechecks if c.blocking
+            ),
+        )
 
     mid = observe(target, remote_facts, runner)
     if effect_writer is not None and mid.cleanup_done:
@@ -817,6 +969,7 @@ def execute_closeout_transition(
         remaining_status_face_steps=remaining_status_face_steps(after),
         outstanding_obligations=SUBSEQUENT_OBLIGATION_STEPS,
         blocking_reasons=(),
+        recheck_checks=tuple(rechecks),
     )
 
 
@@ -829,11 +982,13 @@ __all__ = [
     "EFFECT_STEP",
     "LEGAL_STATES",
     "PRECONDITION_STEPS",
+    "RECHECK_REMOTE_ID",
     "STEP_ROLES",
     "SUBSEQUENT_OBLIGATION_STEPS",
     "CleanupGuardError",
     "CleanupTarget",
     "CloseoutEffectWriter",
+    "CloseoutMode",
     "CloseoutObservation",
     "CloseoutResult",
     "GuardCheck",
@@ -849,5 +1004,6 @@ __all__ = [
     "lsof_cwd_prober",
     "observe",
     "parse_worktree_records",
+    "recheck_remote_branch",
     "remaining_status_face_steps",
 ]
