@@ -60,9 +60,45 @@ Reviewer 提交報告，由 lifecycle writer 在寫入 `review` event 前依可�
 
 第三個及其後每個可計數 attempt 出現時先建立 `escalation-checkpoint`，不得只按整數直接寫 `🚨已升級`。`accepted` 表示 finding 已由 Coordinator／需求方依可重現證據採認，且未被後續 correction 撤銷：
 
-- 任一相同 `root_cause_id` 在三個不同 attempt 持續出現，或上一輪 accepted blocking finding 在下一輪未處理：轉 `🚨已升級`。
+- 任一相同 `root_cause_id` 在三個不同 attempt 持續出現，或上一輪未閉合的 accepted blocking finding 在下一輪未處理且未經需求方 defer（見下方「查核規格變更與 deferred finding」）：轉 `🚨已升級`。兩個條件各自獨立成立，defer 只作用於後者。
 - findings 為不同根因、前輪均已閉合且 severity／剩餘範圍持續收斂：維持原 owner，交由 Coordinator 記錄「續修／重規劃」決定；只有需求方選擇升級才轉 `🚨已升級`。
 - Critical finding 可立即 fail-closed 或暫停高風險操作，但不因 severity 單獨推定 executor 已連續失敗三次。
+
+**checkpoint 的評估時點。** `trigger_attempt_id` 必須是**已記錄且已依 §3 判定 `counts_toward_escalation=true`** 的 attempt——`unique_attempt_count >= 3` 本來就無法在第三個可計數 attempt 的裁決落地前算出。因此第二條件的比較對是「前一個可計數 attempt N-1」與「trigger attempt N」，兩者的裁決都已存在，**trigger attempt 自己提出的 finding 從不屬於 carry set**。若在 trigger attempt 的裁決落地前就建立 checkpoint，第二條件會因「下一輪尚未表態」而恆真，`continue`／`replan`／`change-executor` 三個分支永遠不可達，該條件退化為無鑑別力——那是誤讀，不是本契約。
+
+**carry set 的界定。** carry set ＝ attempt N-1 的裁決落地當下，`accepted=true`、`blocking=true`、`status=open` 且符合 §3 第 3～4 款的 finding 全體（**不限於 N-1 當輪新提出者**，未閉合者一路承接）。成員身分固定於 N-1，處置則依 checkpoint 事件在 replay 中的位置判定：所有排在該 checkpoint 之前的有效 review 與 `review-correction` 都已套用（§2 末段「先更新實際 open set 再判斷」）。
+
+carry set 中每個 finding 在 trigger attempt N 只能落在下列**五格之一，且必落在一格**：
+
+| carry 處置 | 表示法 | 對第二條件 |
+|---|---|---|
+| `resolved` | N 的 review，或排在本 checkpoint 之前的 `review-correction`，明列該 `finding_id` | 不觸發 |
+| `withdrawn` | 同上 | 不觸發 |
+| 仍開啟 | N 明列該 `finding_id` 仍 `open` | **觸發** |
+| deferred | 本 checkpoint 的 `deferred_findings` 明列，且該筆全部必要條件成立 | 不觸發 |
+| 未提及 | 以上皆非（含 defer 因條件不成立而失效者） | **觸發** |
+
+「未提及」是預設格：**沉默不等於 deferred**。任何無法落入前四格的輸入一律落在此格並強制 `escalate`，adapter 不得另設「其餘」處置。同一 finding 的證據同時指向多格時，依 `resolved`／`withdrawn` ＞ 仍開啟 ＞ deferred 的優先序取單一格；對已閉合 finding 的 defer 宣告視為無作用的冗贅，不使該 checkpoint 無效。
+
+**查核規格變更與 deferred finding。** 需求方收窄或改變某一輪的查核規格（例如裁定該輪只搜特定根因、明文不逐條複驗前輪處置）是合法動作。它會使 carry set 中的 finding 在該輪既非 `resolved` 也非 `withdrawn`，若無出口，收窄範圍就機械上必然強制下一輪升級——把流程的正常動作誤讀成執行者連續失敗。
+
+出口是 checkpoint 的 `deferred_findings`：**它只宣告「本輪不要求對該 finding 表態」，不改變 finding 本身。** deferred finding 的 `status` 仍是 `open`、`accepted` 仍是 `true`，仍留在 open set，仍完整計入 §3 的 `counts_toward_escalation` 推導。§2 的 `status` 三值封閉，**不得**新增 `deferred` 值；defer 處置的是「本輪的複驗義務」，不是 finding 的狀態。要改變 finding 本身只能走 `review-correction`。
+
+單筆 defer 的必要條件（缺一即該筆無效，對應 finding 退回「未提及」格）：
+
+1. `finding_id` 已存在於本 epoch 某個 attempt，且確實屬於本 checkpoint 的 carry set；
+2. `deferred_by` 逐字等於卡面 `需求：` 欄宣告的帳號（`wfcli open` 寫入的 `requested_by`）。該欄未宣告或無法解析時本出口不可用，adapter 一律 fail-closed——這與 §5 對 `forged-rejected` 分類界線的處理同向：無法機械核對的授權不得以自述成立；
+3. `deferred_by` 不得逐字等於本卡當前 owner，也不得等於本 epoch 任一 review event 的 `reviewer`。同一帳號兼任需求方與執行者／查核者時本出口不可用——defer 的裁定者必須不是被 defer 所嘉惠的人；
+4. `defer_reason` 非空，且載明是哪一次查核規格變更使該 finding 未被表態；
+5. `defer_ruling_url` 指向該次規格變更的需求方裁定留痕。此欄是稽核指標，**不**充當授權證據——授權由第 2、3 款的身分比對成立。（不重蹈 §5 末段已撤回設計的錯誤：當內容由受該裁定影響的一方撰寫時，指向該內容的指標既不證明它當時已存在，也不證明裁定者看過它。）
+
+**清償上限是機械的，不是「應儘速」。** checkpoint C 的 `deferred_findings` 中每個 `finding_id`，必須在**本 epoch 下一個 `escalation-checkpoint` C′** 之時，已由 C′ 的 trigger attempt 給出 `resolved`、`withdrawn` 或明列仍 `open`。逾此即逾期，C′ 的 `checkpoint_decision` 只能是 `escalate`。上限之所以是機械的：第三個之後**每一個**可計數 attempt 都必建 checkpoint，故「下一個 checkpoint」等價於「下一個可計數 attempt」，不需要時鐘、不需要預先知道未來的 `attempt_id`。給出「仍 `open`」算清償了複驗義務，但它本身即第二條件的觸發格，仍然強制 `escalate`——defer 延後的是**評估**，不是**結果**。
+
+**不得連續 defer。** 同一 `finding_id` 出現於 C 的 `deferred_findings` 後，不得再出現於 C′ 的 `deferred_findings`；出現即該筆無效並強制 `escalate`。連兩輪無人對同一 accepted blocking finding 表態，正是需求方必須介入的狀態，而介入正是 `escalate` 的語意。此規則同時封死交替 defer 的繞道：finding 要活過 C′ 只能靠 `resolved`／`withdrawn`，而那已使它離開 open set，不可能在 C″ 再被 defer。
+
+**與第一條件正交。** defer 不新增也不刪除任何 `root_cause_id` 的 occurrence，僅使該 finding 在本輪不產生新 occurrence。同根因已跨三個唯一可計數 attempt 出現時第一條件獨立成立，`deferred_findings` 不能使其失效。
+
+**沒有 C′ 時 defer 自然失效，不構成放行。** 若本 epoch 不再出現可計數 attempt（卡片通過、停止，或以 `escalation-epoch-change` 換 epoch），清償義務隨之無對象而消滅——但 deferred finding 仍是 open 的 accepted blocking finding，仍留在 open set。**defer 從不閉合 finding，也從不授權在其未閉合的情況下結案**；「open blocking finding 尚存時可否 `APPROVE`」由 §2／§3 與 canonical §5 管轄，不因本節而改變。epoch 遞增後舊 epoch 的 `deferred_findings` 不隨之延續：新 epoch 從零計數（§4 末段），其第一個 checkpoint 的 carry set 依新 epoch 的 attempt 重新界定。
 
 需求方核可重規劃或更換執行者時，以 `escalation-epoch-change` 明示授權並將 `escalation_epoch` 逐一遞增；新 epoch 從零計數，舊 events 保留，不回寫或刪除。review 自行填入較大 epoch 不構成授權，adapter 必須拒絕 epoch 跳號、倒退或未經授權的切換。
 
@@ -99,11 +135,18 @@ requester_approved: true
 
 ```yaml
 escalation_epoch: <integer>
-trigger_attempt_id: <the third-or-later unique counted attempt>
+trigger_attempt_id: <the third-or-later unique counted attempt；其 review 裁決須已記錄>
 unique_attempt_count: <deduplicated count in this epoch; >= 3>
 checkpoint_decision: continue | replan | change-executor | escalate
 checkpoint_rationale: <root-cause repetition, closure trend, or requester ruling>
+deferred_findings:          # 選填，預設空陣列；語意與必要條件見 §4
+  - finding_id: <既存於本 epoch，且屬本 checkpoint carry set 的 finding>
+    defer_reason: <非空；載明哪一次查核規格變更使該 finding 未被表態>
+    deferred_by: <卡面「需求：」欄宣告的帳號>
+    defer_ruling_url: <該次查核規格變更的需求方裁定留痕 URL>
 ```
+
+`deferred_findings` 只表達「本輪不要求對該 finding 表態」，不得用來變更 finding 的 `status`／`accepted`／分類／根因，也不得用來閉合 finding——那些只能走 `review-correction`。單筆缺欄、身分不符（§4 第 2、3 款）、finding 不在 carry set，或違反「不得連續 defer」者，該筆無效，對應 finding 落回「未提及」格並強制 `escalate`；其餘筆數不受牽連。空陣列與省略本欄語意相同。
 
 `review-marker-clearance` 解除 §1 的留痕解析停機，必填：
 
@@ -170,4 +213,9 @@ adapter 實作本規則後，可窮舉的狀態組合是 **12 個**（現行 bod
 新增此 type 屬契約變更，適用範圍依本節末段的 `contract-baseline` cutover 機制；cutover 前的歷史事件維持原貌，不追溯要求補發 clearance。
 
 `counts_toward_escalation` 是 adapter 依結構化欄位算出的投影，不得由 reviewer 以自由文字自行宣告。若同 SHA 有多個有效 reviewer 報告，adapter 先合併 findings 再計算一次；相同 `finding_id` 的衝突分類須由 Coordinator／需求方裁定，不得用陣列順序覆寫。cutover 前歷史事件維持原貌；採用專案以獨立 `contract-baseline` event 指定新契約開始時間，該 marker 為 one-shot cutover：不得附在 review 等其他事件上，啟用後再次出現必須 fail loud。
-adapter 亦須以穩定 `finding_id`／`root_cause_id` 跨 attempt 推導 checkpoint：同根因出現於三個唯一可計數 attempt，或前一 attempt 的 accepted blocking finding 未在下一 attempt 明列 `resolved`／`withdrawn` 時，`checkpoint_decision` 只能是 `escalate`，不得信任手填的 `continue`。
+adapter 亦須以穩定 `finding_id`／`root_cause_id` 跨 attempt 推導 checkpoint。下列任一條件成立時，`checkpoint_decision` 只能是 `escalate`，不得信任手填的 `continue`；兩條件各自獨立成立，`deferred_findings` 只作用於第二條件：
+
+1. 同一 `root_cause_id` 出現於三個唯一可計數 attempt；
+2. 本 checkpoint 的 carry set（§4：前一個可計數 attempt 裁決落地當下仍未閉合的 accepted blocking finding）中，有任一 finding 在 trigger attempt 落入 §4 的「仍開啟」或「未提及」格；或前一次 checkpoint 的 `deferred_findings` 有成員逾期未清償，或被連續第二次 defer。
+
+carry set 的成員身分固定於前一個可計數 attempt，處置依 checkpoint 事件在 replay 中的位置計算（§2 末段）；trigger attempt 自己提出的 finding 不屬 carry set。第二條件的評估必須發生在 trigger attempt 的裁決已記錄之後，否則它恆真而失去鑑別力（§4「checkpoint 的評估時點」）。
