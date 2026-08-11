@@ -3,6 +3,8 @@
 > 卡：[ruan6047/ai-workflow#25](https://github.com/ruan6047/ai-workflow/issues/25)（T4 紅線）
 > 切自 [#16](https://github.com/ruan6047/ai-workflow/issues/16)。#16 §2.3 明文把**整個收尾轉換**交給本卡，並刻意不描述它的任何性質；本文件與 `cli/src/wf_cli/cleanup.py` 是該轉換的唯一描述處。
 > 實作：`cli/src/wf_cli/cleanup.py`　接線：`wfcli handoff --next-stage release --cleanup`　偵測面：`wfcli doctor --cleanup-preview`　測試：`cli/tests/test_cleanup.py`、`cli/tests/test_release_cleanup.py`
+>
+> **⚠️ 射程：只有 `release`。`reconcile --apply` 這條路徑目前沒有任何守衛。** 依卡面驗收第 4 條（2026-08-12 `amend` op `3cd13f81` 正式縮小射程），本卡的實作射程限於 `release` 觸發路徑；`reconcile --apply` 白名單第 2 條的接線歸 #16 §9 的 G 卡。讀本文件時請把這件事一路帶著——見 §0 的現況段、§4.1 的接線表、§9 第 1 項。
 
 ## 0. 要解的事
 
@@ -10,7 +12,9 @@ canonical `AI_WORKFLOW.md:146` 已經寫了：「回收前先檢查未提交變�
 
 問題不在規則缺失，在於**沒有任何東西在執行它**。`reconcile --apply` 與 `release` 的收尾會移除 worktree、刪本地與遠端分支；一個無人看管的批次修復可以刪掉別人尚未提交的工作，而現況只有一句散文擋在前面。本卡把那句話變成呼叫點上的機械守衛。
 
-> **現況先講清楚，免得這份文件被讀成「已經解決了」**：本輪只把 `release` 接上守衛，**`reconcile` 側尚未受保護**（該子命令目前根本不存在，見 §4.1）。核心痛點只解決了一半。
+> **現況先講清楚，免得這份文件被讀成「已經解決了」**：上一段那個「無人看管的批次修復刪掉別人尚未提交的工作」，**在 `reconcile` 這一側仍然完全沒有東西擋著**。本輪只把 `release` 接上守衛。
+>
+> 這是卡面驗收第 4 條界定的射程，不是實作疏漏——但**射程縮小不改變事實**：核心痛點只關上一半，而且關上的不是原始敘述裡最危險的那一半（`release` 是操作者當場發動、有人在看；批次修復才是「無人看管」的那個）。詳見 §4.1 與 §9 第 1 項。
 
 ## 1. 權威來源（引用，不重述）
 
@@ -113,15 +117,49 @@ recheck_remote_branch() → RemoteDeleteDecision(verdict="delete", expected_tip=
 
 ## 4. 唯一機械 executor
 
-`release` 與 `reconcile --apply` 白名單第 2 條呼叫的是同一個 `execute_closeout_transition()`，共用同一個 `evaluate_cleanup_guard()`。
+收尾轉換只有一個機械 executor：`execute_closeout_transition()`。**目前呼叫它的只有 `release` 一條路徑**（§4.1）；`reconcile --apply` 白名單第 2 條被寫出來時**必須**呼叫同一個函式、共用同一個 `evaluate_cleanup_guard()`——那是本卡對後續卡的約束，**不是已經發生的事實**。
 
 **「reconcile 側前提不得放寬」不靠紀律維持**：`evaluate_cleanup_guard()` 的簽章裡根本沒有 `trigger` 參數，也沒有任何 `force` 參數——依觸發者放寬前提這件事在型別層就寫不出來。`trigger` 只進結果紀錄。
 
 `doctor --cleanup-preview` 是同一份守衛的**唯讀偵測面**，因此「doctor 說可以」與「executor 願意做」不可能各說各話。doctor 本身永不刪除任何東西。
 
+### 4.0 「不得分叉實作」怎麼證明（卡面驗收第 5 條）
+
+縮小射程的**代價上限**由卡面釘死：允許少接一條路徑，**不允許把實作切成兩份**。條文要求 `execute_closeout_transition()` 不得因只接一條路徑而內含 release 專屬邏輯，後續接 reconcile 時只該新增呼叫點。
+
+本輪逐項查過，結論是**已符合**。憑據分三層，單靠任何一層都不夠：
+
+**一、觸發者專屬的資訊進不到函式裡。** executor 的輸入全是純資料：`CleanupTarget`（repo root／卡號／分支／worktree 路徑）、`registry`、`card_body`、`RemoteCardFacts`、以及 `CloseoutEffectWriter` 協定。沒有一項認得 Project、Issue 或 `handoff` 的引數。release 專屬的翻譯——解析 Project item 的「分支worktree」欄、讀 Issue 開關狀態、把第 4 步的兩次寫入包成 writer——全部留在**呼叫點** `handoff_cmd._release_with_cleanup()`。reconcile 接線時要寫的就是它自己那份翻譯，executor 一行都不必動。
+
+**二、`trigger` 只是標籤，不是開關。** 函式體內 `trigger` 被讀取四次，四次都是四個 `return CloseoutResult(trigger=trigger, …)` 的關鍵字引數，沒有第五次。這件事由 `test_executor_body_never_branches_on_the_trigger` 解析 AST 釘住：任何一次讀取落在條件、比較或查表上就轉紅。同一條測試另外禁止函式體出現 `"release"`／`"reconcile"` 的字面常數，堵住「不讀 `trigger` 也能分叉」的寫法。
+
+**三、換一個 `trigger` 值，行為逐字相同。** `test_swapping_the_trigger_changes_nothing_but_the_label` 給兩個 trigger **各一個獨立沙箱 repo**（不是同一個 repo 跑兩次——第二次會跑在第一次的殘骸上，那不是同一個情境），逐字比對送進 git runner 的 argv、effect writer 的呼叫序列、以及 `CloseoutResult` 的每個可觀測欄位（路徑與 SHA 正規化後）。放行與拒絕兩條路徑都比：只比放行會漏掉「拒絕理由依觸發者不同」。放行案例另外斷言三個破壞性動作真的都跑了，否則「兩邊相同」比的可能是兩次空跑。
+
+**為什麼三層都要，是跑出來的不是想出來的。** 七個分叉突變體逐一注入，既有測試與本輪新增測試分開跑：
+
+| 突變體 | 分叉位置 | 既有測試 | 新增測試 |
+|---|---|---|---|
+| M43 | `release` 跳過遠端刪除 | KILLED（16 例轉紅） | KILLED |
+| M44 | `reconcile` 跳過遠端刪除 | KILLED（7 例） | KILLED |
+| M45 | 第 4 步只在 `release` 發動 | KILLED（3 例） | KILLED |
+| M46 | 非法態檢查在 `reconcile` 被略過 | KILLED（1 例） | KILLED |
+| M47 | 非法態檢查在 `release` 被略過 | KILLED（1 例） | KILLED |
+| M48 | 「複驗沒帶回 tip」的保險絲在 `release` 被略過 | **SURVIVED（82 passed）** | KILLED |
+| M49 | 改查模組級政策表（函式體內無字面常數） | KILLED（24 例） | KILLED |
+
+**M48 是關鍵的那一個。** 它分叉在一條沒有任何行為測試走過的保險絲上（`recheck` 回報可刪卻沒帶回期望 tip），整份既有套件 82 passed 全綠。行為面的等價比對只覆蓋得到跑過的情境；形狀面的 AST 規則不挑路徑。兩者不是重複，是互補——這也是為什麼既有的 `test_decision_identical_for_release_and_reconcile`（只比對守衛的 `decision`）不足以承擔這條驗收：守衛放行**之後** executor 做了什麼，它一個字都比不到。
+
+**一個誠實的殘留**：`CloseoutEffectWriter` 的方法名叫 `write_release_terminal()`，字面帶著 release。那是**命名**不是分叉——它是注入進來的協定方法，第 4 步的終態寫入對兩個觸發者是同一件事，reconcile 接線時提供自己的實作即可，不需要複製或分叉 executor。本輪不改名：改名要動協定、呼叫點與既有測試，換不到任何行為保證。寫在這裡是為了讓查核者不必自己去確認它到底是名字還是分支。
+
 ### 4.1 接線現況：release 已接，**reconcile 尚未受保護**
 
-查核者 R1-002 指出 `execute_closeout_transition()` 寫好了卻沒有任何呼叫點，因此核心痛點未消。需求方 2026-08-11 裁定本輪的接線射程為**只接 `release`**：
+查核者 R1-002 指出 `execute_closeout_transition()` 寫好了卻沒有任何呼叫點，因此核心痛點未消。
+
+**射程的規範來源是卡面驗收第 4 條**（2026-08-12 `amend` op `3cd13f81`）：「本卡的實作射程限於 `release` 觸發路徑；`reconcile --apply` 白名單第 2 條的接線歸 #16 §9 的 G 卡。」該條同時作廢了先前「不得依觸發者切分實作範圍」的舊條文。
+
+**這個引用基礎本身是修過的。** 縮小射程的裁定原本只存在於 checkpoint 留言與 handoff 證據，沒有寫進卡面規範欄位，於是 R3 查核者對著卡面正確判定驗收未達成（R3-001；attribution 事後更正為 `coordinator`）。本文件先前也照著同一個形態，把射程寫成「需求方某日的裁定」——**引用散文來源等於把那個病灶再複製一次**，所以本輪改為引用卡面條文本身。裁定的落點是規範欄位，不是留言。
+
+條文之外，這個射程還有兩個事實支撐：
 
 - `reconcile` 子命令**目前完全不存在**（`cli/src/wf_cli/cli.py` 註冊的只有 open／assign／amend／deploy-declare／deploy-state／handoff／review／doctor／snapshot），且其 `--apply` 白名單第 2 條在 #16 §5.2 標記為 **reserved pending #25**——本卡若須先建出 reconcile，兩張卡會互相等待。
 - `release` 是**現在就有人在用**的路徑（`handoff --next-stage release`），接上守衛立即有價值。
@@ -131,9 +169,11 @@ recheck_remote_branch() → RemoteDeleteDecision(verdict="delete", expected_tip=
 | 觸發者 | 是否已接上守衛 | 歸屬 |
 |---|---|---|
 | `handoff --next-stage release --cleanup` | ✅ 本輪接上 | 本卡 |
-| `reconcile --apply` 白名單第 2 條 | ❌ **尚未受保護**（指令尚不存在） | #16 §9 的 G 卡 |
+| `reconcile --apply` 白名單第 2 條 | ❌ **完全沒有守衛**（指令尚不存在；寫出來時也不會自動受保護，得由 G 卡自己接） | #16 §9 的 G 卡 |
 
-**核心痛點只解決了一半**：一個無人看管的批次修復仍然沒有被本卡擋住——因為那個批次修復本身還沒被寫出來。本卡確保的是「當它被寫出來時，只能用這一份守衛」，而不是「它現在已經被守住了」。
+**核心痛點只解決了一半，而且要說清楚是哪一半。** 痛點的原始敘述是「一個**無人看管的批次修復**可以刪掉別人尚未提交的工作」；本輪接上的 `release` 是操作者當場發動、有人盯著的那一條。批次修復那一條——痛點裡真正危險的主體——**尚未受任何守衛保護**。
+
+本卡對它的保證也只到「當它被寫出來時，應該用這一份守衛」為止。那是**規範上的約束**（卡面驗收與本文件），不是機械保證：`execute_closeout_transition()` 沒有辦法阻止未來有人在 reconcile 裡另寫一條刪除路徑。§4.0 釘住的是「這份實作不會為了 release 而分叉」，不是「不會有人繞過它」。
 
 ### 4.2 `--cleanup` 為何是選配而非預設
 
@@ -192,13 +232,14 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 
 ## 7. 驗證
 
-`cli/tests/test_cleanup.py`（68 例，本輪 57 → 68）＋ `cli/tests/test_release_cleanup.py`（14 例，13 → 14）＋ `cli/tests/test_doctor.py` 的預覽段。全部在 pytest `tmp_path` 沙箱 repo 內操作真實 git worktree、真實 bare remote，不碰任何實際專案。
+`cli/tests/test_cleanup.py`（71 例，57 → 68 → 71）＋ `cli/tests/test_release_cleanup.py`（14 例，13 → 14）＋ `cli/tests/test_doctor.py` 的預覽段。全部在 pytest `tmp_path` 沙箱 repo 內操作真實 git worktree、真實 bare remote，不碰任何實際專案。
 
-`cd cli && uv run pytest -q`：**379 passed**（R2-001 修正前的基線 **367 passed**，新增 12 例、無退化、無跳過）。
+`cd cli && uv run pytest -q`：**382 passed**（R2-001 修正前的基線 **367**，R3 交付 **379**，本輪為驗收第 5 條新增 3 例；無退化、無跳過）。
 
 - **五種危險情境全數拒絕**，且每一條都以 `assert_work_intact()` 核對**拒絕後工作內容仍完整存在**——檔案內容、本地分支、遠端分支、stash 逐項驗，不是只驗回傳碼。
 - **故障注入**：`step_hook` 在六個步驟間隙各丟一次例外，續作後必須到達 `completed`，中斷當下必須落在合法態，且每個破壞性 argv 在兩次執行加總後最多出現一次。
 - **循環前置專項**：`CHECK_STEP_REF` 的值域不含 4；守衛簽章不含 `remote_facts`；Issue 開著且非終態時 release 照樣通過；`outstanding_obligations` 不影響 `mode`。
+- **單一 executor 形狀**：AST 規則 ＋ 兩個獨立沙箱的行為等價比對 ＋ 七個分叉突變體（§4.0）。
 - **正向對照**：前提全成立時真的清乾淨（沒有它，拒絕測試可能是空頭支票）。
 
 ### 7.1 R1-001 的回歸測試怎麼構造
@@ -356,7 +397,7 @@ git push --dry-run origin --force-with-lease=refs/heads/<本卡分支>:<過期SH
 ## 8. 本卡不做的事
 
 - **不執行第 5–7 步**（卡檔封存／Ledger 投影／對帳三件套）：它們不寫狀態面，也不在本卡資源宣告內。
-- **不接 `reconcile --apply`**：該子命令尚不存在，其接線屬 #16 §9 的 G 卡（見 §4.1）。**reconcile 側因此尚未受守衛保護**。
+- **不接 `reconcile --apply`**：卡面驗收第 4 條已把該接線劃出本卡射程，歸 #16 §9 的 G 卡（見 §4.1）；該子命令目前也尚不存在。**reconcile 側因此完全沒有守衛**——這是本卡最大的未關缺口，不是一句「不做的事」就能帶過的。
 - **不新增 `wfcli release` 子命令**：release 是 `handoff --next-stage release` 的既有階段，本輪只改它的行為，不註冊新指令（`cli.py` 未改動）。
 - **不代為 fetch**：遠端 commit 不在本地物件庫時回 unobservable 並拒絕，不靜默改動本機 ref。
 - **不解 `open` 的建立型半寫入**（#16 §4.5 明示缺口），與本卡無關。
@@ -365,7 +406,7 @@ git push --dry-run origin --force-with-lease=refs/heads/<本卡分支>:<過期SH
 
 誠實列出，供查核者與後續卡接手：
 
-1. **reconcile 側完全沒有守衛**（§4.1）。核心痛點——「無人看管的批次修復刪掉別人的工作」——只在 release 這一半被關上。
+1. **reconcile 側完全沒有守衛**（§4.1）——**本卡最大的未關缺口，排第一不是排版順序**。核心痛點的原始敘述是「無人看管的批次修復刪掉別人的工作」，而被關上的是 `release`（操作者當場發動、有人在看）那一半；**無人看管的那一半原封不動**。卡面驗收第 4 條把該接線劃給 #16 §9 的 G 卡，所以這不是本卡的實作欠債；但缺口的存在與歸屬是兩件事，射程縮小不使它變小。本卡對它唯一的保證是規範上的「將來只能用這一份守衛」，沒有任何機械手段阻止有人另寫一條刪除路徑。
 2. **effect writer 回報成功不等於狀態面真的變了**。executor 在 writer 回傳後即認定第 4 步完成（`RemoteCardFacts(True, False)`），而不是回頭重讀 GitHub。這與 `push --delete` 回 0 卻沒刪掉是同一類問題——後者已被 `cleanup_done` 複驗接住，前者沒有。修法是給 executor 一個「重讀狀態面」的可注入讀取器，本輪未做。
    > **本輪嚴重度上升，理由要記下來。** R2-001 證明的不是「複驗漏了一項」，而是「**讀一次不構成保證**」——讀與寫之間沒有 CAS 時，窗只會變窄不會關上。這條洞是同一個形狀在狀態面的翻版：writer 回傳成功只是一次寫入的回應，不是回頭讀到的事實，而 GitHub 側沒有 git 那種現成的 `--force-with-lease` 可用。git 這一側能修是因為傳輸協定本來就帶 old-oid 交換；狀態面要等價的保證，得自己做「讀取 → 帶條件寫入 → 重讀驗證」，成本高得多。**在那之前，這條洞不應再被描述為「與 §3.3 同類、已被同一招接住」。**
 3. **`--cleanup` 不是預設**，所以既有的 status-only release 仍會持續造出 `illegal_terminal_before_cleanup`（§4.2）。這是刻意的取捨，代價以警示與測試釘住，但洞還在。

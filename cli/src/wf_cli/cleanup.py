@@ -32,10 +32,15 @@ canonical ``AI_WORKFLOW.md:146``：「lease 可續約、可到期回收；**回�
 
 ## 唯一機械 executor
 
-`release`（操作者當場發動）與 `reconcile --apply` 白名單第 2 條（批次）共用
-`execute_closeout_transition`。`trigger` 只進結果紀錄，**不進任何判斷**：
-`evaluate_cleanup_guard()` 的簽章裡根本沒有 trigger 參數，因此「依觸發者放寬前提」
-在型別層就寫不出來。
+收尾轉換只有一個機械 executor：`execute_closeout_transition`。**現況：只有 `release`
+（操作者當場發動）呼叫它**；`reconcile --apply` 白名單第 2 條（批次）尚不存在，
+**該側因此完全沒有守衛**（卡面驗收第 4 條把它劃出本卡射程，歸 #16 §9 的 G 卡）。
+
+它被寫出來時必須呼叫同一個函式，而不是自己另寫一條。這件事在本模組內能保證的是
+「這份實作不會為了單一觸發者而分叉」：`trigger` 只進結果紀錄，**不進任何判斷**
+（`tests/test_cleanup.py::test_executor_body_never_branches_on_the_trigger` 以 AST
+釘住），而 `evaluate_cleanup_guard()` 的簽章裡根本沒有 trigger 參數，因此「依觸發者
+放寬前提」在型別層就寫不出來。**「不會有人繞過它」不在本模組能保證的範圍內。**
 
 ## --force 為何是「不可用」而非「不建議」
 
@@ -624,8 +629,8 @@ def evaluate_cleanup_guard(
 ) -> GuardDecision:
     """回傳 proceed／detect_only。**沒有 trigger 參數，也沒有 force 參數。**
 
-    「reconcile 側前提不得放寬」不是靠紀律維持的：release 與 reconcile 呼叫的是同
-    一個函式，而它根本沒有可以區分兩者的輸入。
+    「reconcile 側前提不得放寬」不是靠紀律維持的：兩個觸發者要呼叫的是同一個函式，
+    而它根本沒有可以區分兩者的輸入。（reconcile 目前尚未接線，見模組 docstring。）
     """
     runner = runner or default_git_runner
     prober = occupancy_prober or lsof_cwd_prober
@@ -922,10 +927,13 @@ def execute_closeout_transition(
     occupancy_prober: OccupancyProber | None = None,
     step_hook: Callable[[str], None] = _noop_hook,
 ) -> CloseoutResult:
-    """收尾轉換的**唯一機械 executor**（release 與 reconcile 共用）。
+    """收尾轉換的**唯一機械 executor**（設計為兩個觸發者共用；目前只有 release 接線）。
 
-    `trigger` 只寫進結果，不參與任何判斷；`step_hook` 是故障注入點（正常執行為
-    no-op），讓測試能在每個步驟間隙中斷並驗證續作。
+    `trigger` 只寫進結果，不參與任何判斷——**函式體內它只出現在下面四個
+    `CloseoutResult(...)` 的關鍵字引數上**，`test_executor_body_never_branches_on_the_trigger`
+    以 AST 釘住這件事（卡面驗收「單一 executor 形狀」）。因此接 reconcile 時只需新增
+    呼叫點，本函式不必改。`step_hook` 是故障注入點（正常執行為 no-op），讓測試能在
+    每個步驟間隙中斷並驗證續作。
 
     續作安全性靠兩件事，都不依賴本機紀錄：
     1. 每個破壞性動作**執行前重讀當下事實**，已不存在就跳過（不重複刪除）；
