@@ -12,9 +12,11 @@ from wf_cli.card import (
     CAPABILITY_DEVIATED,
     CAPABILITY_MATCHED,
     CAPABILITY_TIERS,
+    ROUTING_MARKER,
     TIERS,
     CapabilityComparison,
     Card,
+    amend_acceptance,
     append_log_line,
     compare_capability_to_card,
     format_branch_worktree,
@@ -184,7 +186,10 @@ ROUTING_LINE_RE = re.compile(
 
 def test_format_routing_line_matches_template_line4_shape():
     card = _make_card(executor="待指派", reviewer="獨立校讀")
-    match = ROUTING_LINE_RE.match(format_routing_line(card))
+    rendered = format_routing_line(card)
+    # 第一行是機器可辨識的版本標記，第二行才是範本第 4 行本體。
+    assert rendered.split("\n")[0] == ROUTING_MARKER
+    match = ROUTING_LINE_RE.match(rendered.split("\n")[-1])
     assert match is not None
     assert match.group("executor") == "待指派"
     assert match.group("exec_tier") == "主力型"
@@ -291,9 +296,8 @@ def test_absent_when_there_is_no_executor_line_at_all():
 
 
 def test_ambiguous_when_executor_line_is_not_unique():
-    body = LEGACY_BODY.replace(
-        "- 執行：待指派　查核：獨立校讀",
-        "- 執行：待指派　查核：獨立校讀\n- 執行：另一行（建議 高階型；理由）　查核：X（建議 高階型；理由）",
+    body = _body_with_line(
+        f"{WELL_FORMED_LINE}\n- 執行：另一行（建議 高階型；理由）　查核：X（建議 高階型；理由）"
     )
     c = compare_capability_to_card(body, "主力型")
     assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
@@ -315,6 +319,12 @@ WELL_FORMED_LINE = (
 
 
 def _body_with_line(line: str) -> str:
+    """**宣告為新制**的卡面（帶版本標記），該行內容可任意破壞。"""
+    return f"- 需求：x\n{ROUTING_MARKER}\n{line}\n\n## Log\n\n- x\n"
+
+
+def _legacy_body_with_line(line: str) -> str:
+    """**未宣告**新制的舊卡（無版本標記），該行是不受限的自由文字。"""
     return f"- 需求：x\n{line}\n\n## Log\n\n- x\n"
 
 
@@ -376,6 +386,130 @@ def test_insignificant_whitespace_still_parses_as_matched(how, line):
     assert c.suggested == "主力型"
 
 
+# --- R3-001：格式版本判準必須是機器標記，不是自然語言 token -------------------
+#
+# 前兩輪的判準都在猜「這張卡是不是新制」：先看正規表示式有沒有匹配，再看行內有沒有
+# 「建議」字樣或能力層級值。兩者都壞在同一個地方——舊制的執行／查核兩欄是**不受限的
+# 自由文字**，所以：
+#
+#   * 舊卡寫「依建議降級」「主力型模型當班」會被誤判為新制（要求根本不存在的偏離理由）
+#   * 新卡被零寬字元打斷前綴後掉出判斷，又被寫成「卡面無建議層級」——不實留痕
+#
+# 而且這不是判準沒調好，是問題本身無解：舊卡能產生與新卡**逐位元組相同**的一行
+# （見 test_old_card_can_be_byte_identical_to_a_new_one）。所以改用遷移標記。
+
+# 真實語料：本 repo 現存舊卡的執行行（2026-08-11 取自 Issue #7–#25），
+# 證明「執行／查核欄含全形括號與自由文字」是常態而非邊緣案例。
+REAL_LEGACY_LINES = [
+    "- 執行：待指派　查核：待指派",
+    "- 執行：待指派　查核：獨立校讀",
+    "- 執行：待指派（先 grilling）　查核：跨家族架構查核",
+    "- 執行：待指派　查核：跨家族查核（契約本體，依 AI_WORKFLOW.md B2 例外須走 PR）",
+    "- 執行：待指派　查核：跨家族查核（T4 紅線：不可逆且會毀資料，須人工 sign-off）",
+]
+
+
+@pytest.mark.parametrize("line", REAL_LEGACY_LINES)
+def test_real_legacy_cards_are_absent_not_ambiguous(line):
+    c = compare_capability_to_card(_legacy_body_with_line(line), "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_ABSENT
+    assert "卡面無建議層級" in c.log_fragment("舊卡無基線")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "- 執行：待指派（理由：依建議降級）　查核：獨立校讀",
+        "- 執行：主力型模型當班　查核：獨立校讀",
+        "- 執行：待指派　查核：獨立校讀（建議由需求方決定）",
+        "- 執行：經濟型　查核：高階型",
+    ],
+    ids=["理由含建議二字", "含主力型三字", "查核欄含建議", "兩欄剛好是層級名"],
+)
+def test_legacy_free_text_containing_routing_words_is_still_absent(line):
+    # R3-001 指定回歸：自然語言 token 不得再觸發「自稱新制」。
+    c = compare_capability_to_card(_legacy_body_with_line(line), "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_ABSENT
+    assert c.requires_reason is True  # 無基線仍要理由，但理由是「無基線」不是「偏離」
+
+
+ZWSP = "\u200b"  # 零寬空白
+VS16 = "\ufe0f"  # variation selector-16
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        lambda s: ZWSP + s,  # 前綴前置零寬空白 → 掉出 startswith
+        lambda s: s.replace("- 執行：", f"-{ZWSP} 執行：", 1),
+        lambda s: s.replace("- 執行：", f"- 執{VS16}行：", 1),
+        lambda s: s.replace("主力型", f"主{ZWSP}力型", 1),
+        lambda s: s.replace("高階型", f"高{VS16}階型", 1),
+    ],
+    ids=["前置U+200B", "前綴內U+200B", "前綴內U+FE0F", "執行層級內U+200B", "查核層級內U+FE0F"],
+)
+def test_declared_new_card_broken_by_format_chars_is_ambiguous_never_absent(corrupt):
+    # R3-001 指定回歸：宣告了新制的卡被零寬／格式字元破壞後，必須是 ambiguous。
+    # 版本判準只看標記，所以行內字元怎麼壞都不會退化成「卡面無建議層級」。
+    body = _body_with_line(corrupt(WELL_FORMED_LINE))
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    fragment = c.log_fragment("格式字元破壞")
+    assert "卡面無建議層級" not in fragment
+    assert "偏離卡面建議" not in fragment
+
+
+def test_well_formed_new_card_whose_reason_mentions_routing_words_still_matches():
+    # 反向：合格新制卡的理由欄本來就可能寫「依建議降級」，不得因此被判壞。
+    c = compare_capability_to_card(
+        _body_with_line(WELL_FORMED_LINE.replace("理由甲", "依建議降級改派")), "主力型"
+    )
+    assert c.outcome == CAPABILITY_MATCHED
+
+
+def test_old_card_can_be_byte_identical_to_a_new_one():
+    """這條測試釘住「為什麼必須有標記」：兩種卡在**內容上不可區分**。
+
+    舊制 executor／reviewer 是自由文字，填成下面這樣就與新制渲染逐位元組相同。
+    只要這條成立，任何「從行內容判斷版本」的判準都必然錯——標記是唯一誠實解。
+    """
+    card = _make_card(
+        executor="待指派",
+        reviewer="獨立校讀",
+        executor_capability="主力型",
+        executor_capability_reason="跨模組",
+        reviewer_capability="高階型",
+        reviewer_capability_reason="紅線",
+    )
+    new_line = format_routing_line(card).split("\n")[-1]
+    legacy_line = "- 執行：待指派（建議 主力型；跨模組）　查核：獨立校讀（建議 高階型；紅線）"
+    assert new_line == legacy_line  # 內容不可區分
+
+    # 但加上標記後可區分：同一行，有標記＝新制、無標記＝舊卡。
+    assert (
+        compare_capability_to_card(_body_with_line(legacy_line), "主力型").outcome
+        == CAPABILITY_MATCHED
+    )
+    assert (
+        compare_capability_to_card(_legacy_body_with_line(legacy_line), "主力型").outcome
+        == CAPABILITY_BASELINE_ABSENT
+    )
+
+
+def test_renderers_emit_the_version_marker():
+    card = _make_card()
+    for text in (render_spec_markdown(card), render_issue_body(card)):
+        assert ROUTING_MARKER in text
+
+
+def test_marker_survives_an_amend_round_trip():
+    # 標記若被 amend 洗掉，新卡會退化成 absent——這條鎖住那個回歸。
+    body = render_issue_body(_make_card())
+    amended, _ = amend_acceptance(body, ["改過的條件"])
+    assert ROUTING_MARKER in amended
+    assert compare_capability_to_card(amended, "主力型").outcome == CAPABILITY_MATCHED
+
+
 def test_empty_reason_no_longer_counts_as_matched():
     # R2-001 (1) 的精確回歸：理由被清空的卡不得判 matched，更不得因此免除理由要求。
     c = compare_capability_to_card(
@@ -396,11 +530,9 @@ def test_halfwidth_separator_no_longer_counts_as_absent():
 
 def test_ambiguous_when_card_face_tier_is_outside_model_routing_vocabulary():
     # 有人手改卡面填了不存在的層級：不得當成「沒有建議」放行，也不得當成相符。
-    body = LEGACY_BODY.replace(
-        "- 執行：待指派　查核：獨立校讀",
-        "- 執行：待指派（建議 旗艦型；理由）　查核：獨立校讀（建議 高階型；理由）",
+    c = compare_capability_to_card(
+        _body_with_line(WELL_FORMED_LINE.replace("建議 主力型", "建議 旗艦型")), "主力型"
     )
-    c = compare_capability_to_card(body, "主力型")
     assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
     assert "旗艦型" in c.detail
 
@@ -418,7 +550,7 @@ def test_all_four_outcomes_are_reachable():
         compare_capability_to_card(_body_with_suggestion("主力型"), "高階型").outcome,
         compare_capability_to_card(LEGACY_BODY, "主力型").outcome,
         compare_capability_to_card(
-            LEGACY_BODY.replace("- 執行：", "- 執行：x\n- 執行：", 1), "主力型"
+            _body_with_line(f"{WELL_FORMED_LINE}\n{WELL_FORMED_LINE}"), "主力型"
         ).outcome,
     }
     assert observed == set(CAPABILITY_COMPARISON_OUTCOMES)
@@ -433,6 +565,14 @@ def test_suggestion_is_read_from_card_face_not_from_log_history():
     )
     c = compare_capability_to_card(body, "主力型")
     assert c.outcome == CAPABILITY_BASELINE_ABSENT
+
+
+def test_marker_appearing_only_in_log_does_not_promote_a_legacy_card():
+    # 標記也可能被 amend 的原值引用進 Log；Log 是歷史，不得用來宣告現況版本。
+    body = append_log_line(
+        LEGACY_BODY, f"2026-08-11 amend → 原值「{ROUTING_MARKER}」"
+    )
+    assert compare_capability_to_card(body, "主力型").outcome == CAPABILITY_BASELINE_ABSENT
 
 
 def test_render_then_parse_round_trips_the_suggested_tier():

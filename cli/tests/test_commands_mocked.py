@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from wf_cli.card import ROUTING_MARKER
 from wf_cli.cli import build_parser
 from wf_cli.commands import (
     assign_cmd,
@@ -471,10 +472,11 @@ def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviati
     run_cli(_open_argv("DEV-LEGACY1"))
     project = resolve_project(fake_runner, "acme", 1)
     item = find_item_by_card_id(list_items(fake_runner, project), "DEV-LEGACY1")
+    # 真正的規劃期路由必填之前的卡：**沒有版本標記**，執行行是舊格式自由文字。
     legacy_body = item.body.replace(
         next(ln for ln in item.body.splitlines() if ln.startswith("- 執行：")),
         "- 執行：待指派　查核：獨立校讀",
-    )
+    ).replace(ROUTING_MARKER + "\n", "")
     set_item_body(fake_runner, item.content_type, item.content_id, project, None, None, legacy_body)
 
     assert run_cli(_assign_argv("DEV-LEGACY1", "某模型@某工具", "b", "/w")) == 2
@@ -491,6 +493,30 @@ def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviati
     assert "卡面無建議層級" in log
     assert "偏離卡面建議" not in log
     assert "本卡開立於規劃期路由必填之前" in log
+
+
+def test_assign_on_declared_card_with_broken_line_logs_unparseable_not_absent(fake_runner):
+    # R3-001 的第二個方向，走完整 CLI 路徑：卡面**宣告**了新制但路由行被破壞
+    # （這裡用零寬字元打斷前綴），Log 必須寫「無法解析」而非「卡面無建議層級」。
+    run_cli(_open_argv("DEV-BROKEN1", **{"--exec-capability": "主力型"}))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "DEV-BROKEN1")
+    routing = next(ln for ln in item.body.splitlines() if ln.startswith("- 執行："))
+    broken = item.body.replace(routing, "\u200b" + routing)  # 標記仍在，行壞了
+    set_item_body(fake_runner, item.content_type, item.content_id, project, None, None, broken)
+
+    assert run_cli(_assign_argv("DEV-BROKEN1", "某模型@某工具", "b", "/w")) == 2
+    rc = run_cli(
+        _assign_argv(
+            "DEV-BROKEN1", "某模型@某工具", "b", "/w",
+            deviation_reason="卡面路由行疑遭編輯破壞，先以主力型派工並待修卡",
+        )
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-BROKEN1")
+    assert "卡面建議無法解析" in log
+    assert "卡面無建議層級" not in log
+    assert "偏離卡面建議" not in log
 
 
 def test_assign_argparse_requires_actual_capability(fake_runner):

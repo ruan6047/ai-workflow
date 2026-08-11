@@ -206,6 +206,31 @@ class Card:
         return format_branch_worktree(self.branch, self.worktree)
 
 
+# 規劃期路由的**格式版本標記**（WF-CLI-ROUTING-TIER1 R3-001）。
+#
+# 為什麼需要它：舊制卡面第 4 行的執行／查核兩欄都是**不受限的自由文字**，因此舊卡可以
+# 產生與新制**逐位元組相同**的一行——2026-08-11 以 format_routing_line 對照實證：
+#
+#   新制 Card(executor='待指派', executor_capability='主力型', …) 渲染
+#   舊制 executor 自由文字填 '待指派（建議 主力型；跨模組）'
+#   → 兩者字串相等
+#
+# 所以「從 body 內容判斷這張卡是不是新制」在資訊上不可能為真。R2-001／R3-001 兩輪都
+# 是在這個不可能的問題上調整啟發式：先用「正規表示式有沒有匹配」（→ 排版壞掉的新卡
+# 被寫成「無建議」），再用「行內有沒有『建議』字樣或能力層級值」（→ 舊卡自由文字寫
+# 「依建議降級」「主力型模型當班」就被誤判為新制）。自然語言 token 不是格式版本訊號。
+#
+# 誠實解是**遷移標記**：新制卡由 open 寫入一個機器可辨識的版本標記，判準只看標記，
+# 完全不看自由文字。沿用本 repo 既有的 HTML 註解標記慣例（resources.py 的
+# `<!-- resource-claims:begin -->`、doctor.py 的 `<!-- wf-review-event:v1 ... -->`），
+# 不另創一套。與 doctor 的事件 marker 不碰撞：後者只掃 Issue **留言**且鎖
+# `wf-review-event:` 前綴。
+#
+# 殘留假設（明說，不宣稱絕對）：舊卡的自由文字不會剛好含這串 HTML 註解。這與「不會
+# 剛好含『建議』二字」是不同量級的假設——前者不是人會打進姓名欄的東西。
+ROUTING_MARKER = "<!-- wf-routing:v1 -->"
+
+
 def format_routing_line(c: Card) -> str:
     """``templates/tasks-card.md`` 第 4 行（執行／查核＋建議能力層級＋理由）。
 
@@ -219,6 +244,7 @@ def format_routing_line(c: Card) -> str:
     規劃者的填寫指示（規則文字），不是要逐字複製進卡面的內容，故不渲染。
     """
     return (
+        f"{ROUTING_MARKER}\n"
         f"- 執行：{c.executor}"
         f"（建議 {c.executor_capability}；{c.executor_capability_reason}）"
         f"　查核：{c.reviewer}"
@@ -506,23 +532,6 @@ _ROUTING_PARSE_RE = re.compile(
     r"　查核：(?P<reviewer>[^（]*)（建議 (?P<rev_tier>[^；）]+)；(?P<rev_reason>[^）]+)）$"
 )
 
-# 「這一行是否**自稱**新制路由」的訊號。用途是把兩種失敗分開：
-#
-#   有訊號但不完整符合欄位格式 → ``ambiguous``（卡面明明寫了建議，只是壞了）
-#   完全沒有訊號              → ``absent``（規劃期路由必填之前開的舊卡）
-#
-# R2-001 的根因就是沒有分開這兩者：任何不匹配都被當成舊卡，於是「半形空格」這種
-# 純粹的排版損壞被寫成「卡面無建議層級」——卡面明明有建議，那是不實留痕。
-#
-# 訊號取「建議」字樣**或**任一能力層級值出現在行內。誤判方向刻意偏向 ``ambiguous``
-# （要求理由）而非 ``absent``：前者只是多打一個旗標，後者會產生不實留痕。
-_ROUTING_SIGNAL_TOKEN = "建議"
-
-
-def _claims_new_format(line: str) -> bool:
-    return _ROUTING_SIGNAL_TOKEN in line or any(t in line for t in CAPABILITY_TIERS)
-
-
 def _field_problems(match: re.Match[str]) -> list[str]:
     """匹配成功後的逐欄檢查；回傳所有問題（空清單＝四欄皆合格）。
 
@@ -623,41 +632,41 @@ def compare_capability_to_card(body: str, actual_capability: str) -> CapabilityC
             f"卡面排版已損壞，無法安全定位 Log 之前的區段（{exc}）",
         )
 
-    lines = [ln.rstrip() for ln in head.splitlines() if ln.startswith(_EXECUTOR_LINE_PREFIX)]
-    if not lines:
+    # 版本判準**只看機器標記**，完全不檢查自由文字內容。這是 R3-001 的修法核心：
+    # 舊卡可以逐位元組偽裝成新卡（見 ROUTING_MARKER 註解的實證），所以「從內容判斷
+    # 版本」在資訊上不可能為真；改由 open 在新制卡寫下標記，判準退化成布林查詢。
+    #
+    # 刻意**不做**零寬／格式字元正規化：標記在不在是布林事實，不受行內字元破壞影響
+    # （前綴被 U+200B 打斷的新卡仍有標記，會落 ambiguous 而非 absent）。反過來，要是
+    # 加一層「哪些碼位可以剝除」的正規化，等於再造一個猜測層——正是本輪要消滅的東西。
+    if ROUTING_MARKER not in head:
         return CapabilityComparison(
             CAPABILITY_BASELINE_ABSENT,
             actual_capability,
             None,
-            "卡面沒有「- 執行：」行",
+            f"卡面沒有 {ROUTING_MARKER} 標記：本卡開立於規劃期路由必填之前",
         )
-    if len(lines) > 1:
+
+    # 以下：卡面**自我宣告**為新制，因此任何讀不出合格建議的情形都是 ambiguous，
+    # 不再有「退回當舊卡」這條路——宣告了就要拿得出來。
+    executor_lines = [
+        ln.rstrip() for ln in head.splitlines() if ln.startswith(_EXECUTOR_LINE_PREFIX)
+    ]
+    parsed = [(ln, _ROUTING_PARSE_RE.match(ln)) for ln in executor_lines]
+    matches = [(ln, m) for ln, m in parsed if m is not None]
+
+    if len(matches) != 1:
         return CapabilityComparison(
             CAPABILITY_BASELINE_AMBIGUOUS,
             actual_capability,
             None,
-            f"卡面有 {len(lines)} 行「- 執行：」，無法判斷哪一行是規劃期建議",
+            f"卡面宣告 {ROUTING_MARKER}，但合格的路由行有 {len(matches)} 行（應恰為 1）；"
+            f"另有 {len(executor_lines) - len(matches)} 行以「- 執行：」開頭卻不符合 "
+            "templates/tasks-card.md 第 4 行格式（如全形／半形空白錯置、缺分號或括號、"
+            "理由為空、查核段缺失、前綴混入零寬字元）",
         )
 
-    match = _ROUTING_PARSE_RE.match(lines[0])
-    if not match:
-        # 有新制痕跡卻不完整符合欄位格式＝壞掉的建議，不是「沒有建議」。
-        if _claims_new_format(lines[0]):
-            return CapabilityComparison(
-                CAPABILITY_BASELINE_AMBIGUOUS,
-                actual_capability,
-                None,
-                "「- 執行：」行有新制路由的痕跡（「建議」字樣或能力層級值）卻不完整符合"
-                "templates/tasks-card.md 第 4 行格式（如全形／半形空白錯置、缺分號或"
-                "括號、理由為空、查核段缺失）",
-            )
-        return CapabilityComparison(
-            CAPABILITY_BASELINE_ABSENT,
-            actual_capability,
-            None,
-            "「- 執行：」行是規劃期路由必填之前的舊格式，沒有（建議 <層級>；<理由>）括號段",
-        )
-
+    match = matches[0][1]
     # 匹配成功不等於四欄都合格：層級要在語彙內、理由不得全空白。任一不合格都歸
     # ambiguous——「部分正確的建議」不可當成可信基線，更不可當成相符而免除理由。
     problems = _field_problems(match)
@@ -684,6 +693,7 @@ __all__ = [
     "CAPABILITY_MATCHED",
     "CAPABILITY_TIERS",
     "CHAIN_DEPTH_HARD_CAP",
+    "ROUTING_MARKER",
     "TIERS",
     "AmendError",
     "CapabilityComparison",
