@@ -4,7 +4,9 @@
 >
 > **本檔不含實作**。`cli/src/wf_cli/resources.py` 與 `cli/src/wf_cli/commands/assign_cmd.py` 的改動歸衍生實作卡（§10）；`assign_cmd.py` 目前由 [#21](https://github.com/ruan6047/ai-workflow/issues/21) 佔用。§9 的回歸測試矩陣**在本卡定義、由衍生卡執行**。
 >
-> **spec 基線**：自 [#16](https://github.com/ruan6047/ai-workflow/issues/16) 設計文件 §7.2 切出，基準內容為 SHA `2d361303ce438c6fecf475b2aaa1fcbc06518dc9` 的 `docs/WF_ORCHESTRATION_RECONCILE1.md`。本檔對該節有四處實測修正，逐條列於 §11。
+> **spec 基線**：自 [#16](https://github.com/ruan6047/ai-workflow/issues/16) 設計文件 §7.2 切出，基準內容為 SHA `2d361303ce438c6fecf475b2aaa1fcbc06518dc9` 的 `docs/WF_ORCHESTRATION_RECONCILE1.md`。本檔對該節的修正與補完逐條列於 §11（該表即完整清單）。
+>
+> **貫穿全檔的不變式**：派工守衛的每一站，對每一個它無法安全判定的輸入，必須以「阻擋」或「一次性、具名、留痕的豁免」結束——**不得有任何路徑以「略過並繼續」結束**（§8.6）。§2–§7 逐節論證各自謂詞的全函數性，§8.6–§8.9 論證謂詞**之外**的管線各站。
 
 ---
 
@@ -21,7 +23,7 @@
 
 ### 1.1 現況實測
 
-以下數字由 §9.6 的調查程式對 Project #4 的真實活卡產生，非人工聲明。
+以下數字由 §9.7 的調查程式對 Project #4 的真實活卡產生，非人工聲明。
 
 `open`／`amend` 對 `file:` 路徑目前**零語彙檢查**：`ResourceDeclaration` 只跑前綴正則 `^(file:.+|port:\d+|…)$`。實測全數接受——
 
@@ -43,7 +45,7 @@
 
 兩者寫入集實際重疊（後者是前者的子路徑），現行檢查判無衝突，**兩張可同時派工**。
 
-對 16 張活卡（已指派、非終態）做全對比對，三條規則的結果：
+對已指派、非終態的活卡做全對比對（2026-08-11 重跑：17 張，其中 15 張宣告可解析、2 張不可解析——後者見 §8.7），三條規則的結果：
 
 | 規則 | 同 repo 相交對數 | 跨 repo 相交對數 |
 |---|---|---|
@@ -52,6 +54,8 @@
 | C：目標階段（§2） | **1** | 0 |
 
 規則 A 在真實資料上找到 **0 個衝突**——守衛是睡著的。規則 B／C 各找到 **1 個**，且正是 #16 × #22。
+
+**張數是快照，結論不是**：活卡集合逐日變動（R1 交付當時為 16 張），查核者重跑會看到不同張數；上表三列的相對關係與 #16 × #22 這個具名反例才是被斷言的東西。**另有 2 張活卡因宣告無法解析而完全未進入這張表**——這正是 §8.7 要處理的洞：**比對表上看不見的卡，才是守衛最大的盲區**。
 
 ### 1.3 另一組實證：宣告與實際寫入脫鉤
 
@@ -185,13 +189,16 @@ macOS 的 APFS 對檔名做正規化不敏感比對：NFC 與 NFD 形式指向�
 
 ### 4.2 裁定
 
-> **相交判定只在同一 repo 內進行。** 兩張卡的資源，若其所屬 repo 不同，一律**不相交**（`port:` / `container:` / `db:` 資源不適用此限定，見 §4.3）。
+> **相交判定只在同一 repo 內進行。** 兩張卡的資源，若其所屬 repo **經正向確立**且不同，一律**不相交**（`port:` / `container:` / `db:` 資源不適用此限定，見 §4.3）。
 >
-> **repo 歸屬的來源**：卡的 Issue 所在 repo，由 Project item 的 `issue_url` 解析。
+> **repo 歸屬的來源**：卡的 Issue 所在 repo，由 Project item 的 `issue_url` 以 `https://github.com/<owner>/<repo>/issues/` 解析。
 >
-> **無法判定歸屬者 fail-closed**：Project item 若為 DraftIssue（無 `issue_url`）而其宣告含任何 `file:` 資源，`assign` **拒絕派工**，要求先轉為真 Issue。
+> **歸屬必須正向確立，否則不得套用此限定**（此限定是**放行方向**的規則——它把本來會相交的兩張卡判為不相交，因此它的前提必須被證明，不能被假定）：
+>
+> - **別卡歸屬無法確立**（DraftIssue 無 `issue_url`，或 `issue_url` 不符上述形狀）：**不套用 repo 限定詞**，逕行以 §2 比對，即**視同與本卡同 repo**。誤拒的代價是排隊，漏放的代價是兩張卡同寫一檔——取前者。
+> - **本卡自身歸屬無法確立**且其宣告含任何 `file:` 資源：`assign` **拒絕派工**，要求先轉為真 Issue。本卡的歸屬是整個比對平面的座標原點，座標未定時整個比對沒有意義，退回「視同同 repo」也救不了。
 
-**今日誤拒為 0，是運氣不是設計**：§1.2 的表顯示跨 repo 相交對數為 0——那只是因為目前兩 repo 的活卡路徑碰巧不重疊。實測 DraftIssue 持有 `file:` 宣告者 **0 筆**，故此規則亦可即刻生效、零遷移負債。
+**今日誤拒為 0，是運氣不是設計**：§1.2 的表顯示跨 repo 相交對數為 0——那只是因為目前兩 repo 的活卡路徑碰巧不重疊。**這個限定詞遲早會真的擋掉某次誤拒，也就遲早會真的放行某一對；它的正確性完全依賴歸屬判定不出錯，所以上面兩條把「判不出來」導向 fail-closed 側，而不是導向「歸屬不同」。** 實測 Project #4 全部有卡 ID 的 item 中，`issue_url` 無法解析出 `owner/repo` 者 **0 筆**（由 §9.7 的探針列舉產生），故此規則可即刻生效、零遷移負債。
 
 ### 4.3 為何 `port:`／`container:`／`db:` 不受此限定
 
@@ -313,7 +320,7 @@ symlink 可能在宣告之後才被加入，故 `assign` 於派工當下重跑 �
 
 ---
 
-## 8. 兩階段落地，兩階段都機械（驗收 5）
+## 8. 落地與守衛完整性：兩階段都機械，且無靜默放行（驗收 5）
 
 **過渡期最容易寫成「在實作到位前由 PM 人工執行 fail-closed」——那不算設計完成。** 每一條規則都要有機械執行者；人工紀律不是。
 
@@ -334,7 +341,7 @@ symlink 可能在宣告之後才被加入，故 `assign` 於派工當下重跑 �
 
 **證明**：若 `K(x)` 是 `K(y)` 的分量前綴，則 `'/'.join(K(y))` 等於 `'/'.join(K(x))` 接上 `'/'` 再接上剩餘分量，故前者是後者的字串前綴。反向同理。∎
 
-實測驗證（9 個案例，含 #16 × #22、邊界、冗餘 `./`、重複斜線、大小寫、祖先未標目錄、Next.js 中括號、CJK 檔名）：**B 漏放 C 的例數 = 0**。
+實測驗證（9 個案例，含 #16 × #22、邊界、冗餘 `./`、重複斜線、大小寫、祖先未標目錄、Next.js 中括號、CJK 檔名）：**B 漏放 C 的例數 = 0**。此結論另由 §9.8 的**文件內嵌、離線可重跑**窮舉程式獨立重現（23 條語料、276 組合，`b_misses_c = 0`）——證明從「一次性腳本的口頭數字」升級為「查核者可原樣重跑的 artifact」。
 
 ### 8.3 基線的立即階段規格有 fail-open 漏洞（實測修正）
 
@@ -365,6 +372,132 @@ fail-closed、有界、且會製造修正該宣告的壓力。實測現存觸犯
 ### 8.5 過度拒絕行為必須被測試釘住
 
 立即階段的誤拒（`templates` × `templates2/a.md`）是**刻意的設計取捨**，不是 bug。它必須在 §9 的矩陣中以**斷言相交為真**的形式明確固定，並附註「此為立即階段的預期行為，目標階段才改為不相交」——否則日後會有人把它當成 bug 修掉，而修掉的方式極可能是移除正規化，於是 §8.3 的 5 個漏放全部回來。
+
+### 8.6 不變式 I：守衛管線不得有靜默放行
+
+§8.4 已經處理了一個「謂詞在某類輸入上無定義」的格子。**但那只是謂詞層。真正的漏洞在謂詞之前**：`assign` 是一條管線，謂詞只是其中一站，而**前面每一站都可能失敗，而失敗的預設處置歷來是「略過」**。略過一張活卡，等於把它的寫入集當成空集合——這比謂詞判錯更嚴重，因為它讓那張卡在守衛眼中根本不存在。
+
+> **不變式 I**：派工守衛的**每一站**，對它**無法安全判定**的每一個輸入，必須以「**阻擋**」或「**一次性、具名、留痕的豁免**」二者之一結束。**不得有任何路徑以「略過並繼續」結束。**
+
+管線逐站的處置表。**「現行」欄是實測，不是推測**；「本檔裁定」欄凡標 ★ 者為本檔新增：
+
+| 站 | 無法安全判定的輸入 | 現行行為 | 本檔裁定 | 依據 |
+|---|---|---|---|---|
+| S1 | **本卡**宣告解析失敗 | 拒絕派工（exit 2） | 維持，並由 §9.6 釘住不得回退 | 現行 `assign_cmd.py` |
+| S2 | **別卡**宣告解析失敗 | **略過該卡、只印警告** → **fail-open** | ★ **阻擋派工**，輸出 card id 與解析錯誤原文；唯一出路是 §8.8 的具名豁免 | §8.7 |
+| S3 | **本卡** repo 歸屬無法確立 | 無此檢查 | ★ 拒絕派工 | §4.2 |
+| S4 | **別卡** repo 歸屬無法確立 | 無此檢查（歸屬根本未被使用） | ★ 不套用 repo 限定詞，視同同 repo 比對 | §4.2 |
+| S5 | 路徑語彙非法（`..`／glob／絕對／`~`／空） | 全數接受 | `open`／`amend` 拒收；`assign` 重跑同套檢查 | §3 |
+| S6 | 立即階段遇到尚未被 S5 攔下的非法宣告 | 不適用（立即階段尚未落地） | 視為與對方每個 `file:` 資源皆相交 | §8.4 |
+| S7 | tracked symlink 走查所需的 `git ls-tree` 查詢失敗（`resource_check_rev` 不存在、repo 損壞、非零 exit） | 無此檢查 | ★ **拒絕派工**。查詢失敗與「查無此分量」**必須分開處置**——後者是合法的「將要新增」，前者是資訊缺失 | §5.2 |
+| S8 | realpath 解析拋 `OSError`（symlink 迴圈、權限不足） | 無此檢查 | ★ **拒絕派工**。不得以「解析不到就當它不存在」略過 | §5.3 |
+| S9 | `HEAD` 無法解析為 40 hex，或檢查後、寫入前變動 | 無此檢查 | 放棄本次派工 | §6 |
+| S10 | 資源字串不符四種前綴 | 正則已拒（`ResourceDeclarationError`） | 維持；此錯誤在 S1／S2 上浮 | 現行 `resources.py` |
+
+**S7 的分開處置值得單獨強調**，因為 §5.2 已經證明 git 對「tree 中的 symlink 之下」與「路徑不存在」回傳**同樣的空**——那是查詢**成功**但結果為空。若把「查詢**失敗**」也塞進同一格，三種語意就被壓成一種，而其中兩種是安全的、一種不是。
+
+### 8.7 R1-001 裁定：無法解析的資源宣告 fail-closed
+
+**這是 R1 查核的 blocking finding。前一版把它列在 §12 非目標「提出但不裁定」——那個處置本身就是不變式 I 的違例：把一個已知的 fail-open 標記為「不處理」，等於用文件把靜默放行合法化。本節裁定它。**
+
+#### 8.7.1 為什麼那兩張卡解析不了（先查證，再修法）
+
+實測結論由 §9.7b 的普查程式產生：
+
+- Project #4 有卡 ID 的 item **96 張**，宣告無法解析 **33 張**。
+- 33 張**全數**帶 `<!-- state-plane-mig1:card_id=… -->` marker，即 `OPS-STATE-PLANE-MIG1` 一次性遷移寫入的卡。
+- 帶 `<!-- resource-claims:begin -->` sentinel 卻仍解析失敗者：**0 張**。
+- 因此**「無法解析」與「MIG1 遷移佔位卡」在今日的資料上是同一個集合**，母體外的解析失敗數為 **0**。
+
+失敗的**近因**是：遷移寫出的區塊形狀與 CLI 的 `render_block` 不同——它是
+
+````text
+## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）
+```json
+{ "db_scope": null, "resources": [] }
+```
+````
+
+**有 fenced JSON，但沒有 `resource-claims` sentinel 對**。卡首另有一行「派工時由 PM 補資源宣告區塊」——遷移**知道**自己寫的不是正式宣告，並把補齊的責任交給了人。
+
+**所以答案是三者皆非**：不是宣告缺漏（區塊在）、不是格式舊到不可辨（JSON 合法）、也不是解析器太嚴——**是遷移刻意寫了一個自我標示為「未正式宣告」的佔位符，而「補齊」這一步從未被機械強制**。§1.3 的 #13 是「宣告寫錯了」，這 33 張是「宣告從未存在」，兩者是同一個病灶的兩端：**都由人工紀律承接，也都失守了**。
+
+#### 8.7.2 因此「放寬解析器」是陷阱，不是修法
+
+直覺的修法是讓解析器也接受這個舊形狀。**實測顯示那會製造一個比現況更糟的 fail-open**：
+
+- 母體 33 張的佔位 `db_scope` 分佈實測為 `'none'` 11、`'read'` 10、`'write'` 8、`'schema'` 1、`null` 3。**30/33 的值落在封閉列舉內**——放寬 sentinel 比對後，這 30 張會**解析成功**，得到 `resources: []`。
+- 而該區塊的標題**逐字寫著**「`null`／`[]` 代表未正式宣告，**不代表無資源**」。放寬解析＝把「寫入集未知」轉譯成「寫入集為空」，且**不再有任何警告**——守衛會安靜地認為這 30 張卡不碰任何檔案。
+
+現況的略過至少還印警告；放寬後連警告都沒有。**寬鬆化會把一個吵鬧的 fail-open 換成一個安靜的 fail-open。**
+
+補充一筆同向證據：母體內有 1 張（`DEV-REVIEW-PREFLIGHT-GATE1`）的 `resources` 陣列裡混進了一個**卡 ID** `DEV-REVIEW-DEACCEPT-TRAIL1`，不符任何資源前綴。手寫宣告會漂移成什麼形狀，這就是實例。
+
+> **裁定 A**：**解析器不放寬。** `parse_block` 的嚴格性是正確的——它忠實回報「這裡沒有可信的宣告」。缺口在**閘門**，不在解析器。
+>
+> **裁定 B**：`assign` 對**別卡**解析失敗，**一律拒絕派工**（與現行對本卡的處置一致），錯誤訊息須逐張列出 **card id ＋ 解析錯誤原文**，並指明唯一出路是「替該卡補上正式宣告」或「§8.8 的具名豁免」。`skipped_unparseable` 這條只印警告就放行的路徑**移除**。
+
+**立即後果**（實測，非推測）：今日 `assign` 任何一張卡都會被 `INIT-GAME-RECAP`、`ML-FIELD-OF1` 兩張擋下，除非具名豁免。這正是 fail-closed 應有的痛感——**它把「有兩張活卡的寫入集是未知的」這個事實，從一行沒人讀的警告變成一次擋下**。
+
+### 8.8 具名豁免機制：具名、可稽核、到期
+
+裁定 B 若沒有逃生門，會在補完 33 張卡之前卡死整個派工。但逃生門本身不能是新的 fail-open。**形狀**：
+
+> ```
+> wfcli assign … --ignore-unparseable <CARD-ID>[,<CARD-ID>…]
+> ```
+
+#### 8.8.1 具名
+
+- **逐張列出 card id**。不接受 `*`、`all`、空字串、前綴萬用、或「略過全部」語意。名單中未列到的解析失敗卡**仍然擋**。
+- **只對本次 `assign` 生效**，不寫入任何持久設定檔、不讀環境變數。**沒有一個可以被打開後遺忘的開關**——這是「臨時措施變成永久 fail-open」的標準病灶，此處以「無處可存」在結構上排除。
+- **封閉母體限定**：只有母體成員可被具名。母體外的解析失敗**硬阻擋、不可豁免**——那代表 CLI 自己寫出的宣告壞了，是 bug，不是遺產。
+
+  **母體的定義必須是凍結的名單，不是對 body 的謂詞。** 直覺做法是「body 帶 `state-plane-mig1:card_id=` marker 且不帶 sentinel」，但 **body 可以被任何人在 GitHub 網頁上手改**（§3.4 已為此把 `assign` 的語彙檢查設為縱深防禦），於是任何新卡只要貼上那行 marker 就能取得豁免資格——**謂柢式母體不是封閉的**。
+  
+  > **裁定**：衍生卡須把 §9.7b 於**釘選日期**列舉出的 card ID 逐一寫成 CLI 內的**字面常數清單**（今日為 33 個）。母體＝該清單 ∩「仍無法解析」∩「不帶 sentinel」∩「未註冊 worktree」。清單是原始碼，加名字要走 PR 與查核；貼 marker 進 body 不再能取得資格。marker 判準降為**交叉檢查**：清單內但 marker 不在者，同樣拒絕豁免並報告不一致。
+- **無 worktree 限定**：被具名的卡，其「分支worktree」欄必須為空（未註冊／`—`）。已註冊 worktree 代表它真的在執行，「寫入集未知」的風險是實的，此時**不可豁免**。實測母體 33 張中已註冊 worktree 者 **0 張**（§9.7b），故此限定今日零成本，而它封住了豁免最危險的用法。
+
+#### 8.8.2 可稽核
+
+- 每次使用，把 **(a)** 被豁免的 card id 逐張、**(b)** 各自的解析錯誤原文、**(c)** 執行者、**(d)** `resource_check_rev`，寫入 assign 事件的 log 行。豁免因此與派工本身同壽命、可事後盤點「這半年豁免過幾次、豁免了誰」。
+- **陳舊豁免即錯誤**：名單中若有一張其實**解析得出來**的卡，`assign` **拒絕**並要求把它從名單移除。這條把「名單只會被加、不會被刪」這個熵增方向反轉成強制收縮。
+- `doctor`（唯讀）須輸出**當前母體殘量**與**距 sunset 的天數**。殘量從 33 走向 0 的過程因此在觀測面上是可見的，而不是靠誰記得。
+
+#### 8.8.3 到期：三層，每層都機械
+
+「暫時」「過渡期」之所以會變成永久，是因為它們沒有終止條件。這裡給三個，且**都不依賴任何人記得**：
+
+**E1 — 母體在釘選當下就封頂，且以原始碼固定。** 成員清單是字面常數（§8.8.1），**上界固定為 33，且增長路徑只有「改原始碼並過 PR」一條**——不是「在結構上不可能」，而是「不可能靜默發生」。這是誠實的強度：任何以 body 內容為依據的封閉性都會被手改 body 打穿，而原始碼常數不會。
+
+**E2 — 單調收縮，且收縮由使用行為驅動。** 任一張卡經 `amend` 補上正式宣告後即帶 sentinel 且可解析，**永久離開母體**（成員判準含「仍無法解析」，離開後無法回頭）。加上 §8.8.2 的「陳舊豁免即錯誤」，名單被強迫跟著母體縮。母體大小非遞增且每次補宣告嚴格遞減 → **程序有限步終止**。
+
+**E3 — 硬性 sunset 日期。** E1＋E2 保證母體不會變大，**不保證它會變小**——沒有人被強制去補那 33 張。因此再加一層純機械的截止：
+
+> CLI 內建常數 **`UNPARSEABLE_EXEMPTION_SUNSET = 2026-09-30`**。系統日期超過該日後，`--ignore-unparseable` **一律拒絕**，不看名單內容、不看母體殘量。到期後唯一出路是補上正式宣告。
+
+該日期是**契約值，定在本檔**：需求方要改，改的是這一行，而不是散落在程式裡的某個判斷。衍生卡須把它落成單一常數並由測試釘住（§9.6 第 50 列）。**選 2026-09-30 的理由**：距本檔撰寫日約七週，而今日真正被擋的只有 2 張、母體 33 張全部無 worktree，補宣告的工作量有界且不阻塞任何執行中的卡。
+
+**E3 的代價明說**：若到期時母體仍非空且那些卡仍是活卡，**全 Project 的 `assign` 會硬停**。這是刻意的——一個「到期後自動放寬」的截止不是截止。停下來的成本是可見且可立即解除的（補宣告即可），而繼續 fail-open 的成本是不可見的。**兩者都不舒服，但只有一個會被人注意到。**
+
+**E3 不防的事**：改系統時鐘、或直接改那個常數。前者不在任何 CLI 的威脅模型內；後者要過 PR 與查核，與 E1 同性質——**可稽核，不是不可能**。
+
+#### 8.8.4 豁免仍是 fail-open，只是有界——明說
+
+豁免的語意是「我知道這張卡的寫入集未知，我仍然派工」。**這是真的放行，不是安全的放行。** 它與現況的差別在四件事，每一件都機械：它必須被逐張打出來（不可能不知情）、它留痕（可事後盤點）、它的母體封頂且單調收縮（有界）、它有硬到期日（會結束）。
+
+**一個必須被點名的錯誤修法**：有人會發現 `INIT-GAME-RECAP`（owner 為「子卡依 v1.3 藍圖推進」）與 `ML-FIELD-OF1`（owner 為「ruan6047（Design Gate）」）根本不是執行中的卡，而想去收緊 `is_owner_assigned` 讓它們掉出比對集合。**那是把 fail-open 偽裝成清理**——縮小比對集合的每一步都在減少會被抓到的衝突，而它會順手把未來真正該被比對的卡也一起排除。活卡定義沿用現行（§12-5），**要改必須另開卡並以「這會漏掉什麼」為驗收**，不得夾帶在本卡。
+
+### 8.9 仍未關閉的 fail-open 殘留（本檔明列，不宣稱已解決）
+
+不變式 I 保證的是**守衛管線內部**沒有靜默放行。以下四項在管線之外，本檔**不宣稱**涵蓋：
+
+1. **豁免本身**（§8.8.4）。有界、留痕、有到期，但確實是放行。
+2. **`[abc]` 被寫成字元類別的意圖**（§3.2）。判定是確定的（字面），但**宣告的意義與宣告者的意圖可能不同**，於是靜默少保護。它不是「無法判定」，而是「判定了，但判的不是他想說的」——與 §3.2 那 41 個 Next.js 動態路由檔案是同一個字面處理規則的兩面：規則保住了那 41 個，代價是無法分辨誰在寫模式。§7.1 的存在性提示會對不存在的字面路徑響，但那是**提示**，不是閘門。
+3. **宣告與實際寫入脫鉤**（§7.3）。上一項與 §1.3 的 #13 都是它的實例。真正的機制是 `handoff`／`review` 時比對 `git diff --name-only` × 資源宣告，**歸另一張卡**（§12-3）。**本檔的守衛只能保證「宣告的東西不撞」，保證不了「宣告的就是會寫的」。**
+4. **派工之後才建立的未追蹤 symlink**（§5.4）、**跨主機併發 `assign`**（§6.2）。
+
+第 2、3 兩項共用同一個根因，也共用同一個解——**事後對帳**。本檔把它們指向同一張建議新卡，而不是各自發明半套機制。
 
 ---
 
@@ -414,10 +547,12 @@ fail-closed、有界、且會製造修正該宣告的壓力。實測現存觸犯
 | # | 情境 | 期望 |
 |---|---|---|
 | 24 | 兩張 ai-workflow 卡，`file:docs/x.md` × `file:docs/` | 相交 |
-| 25 | 一張 ai-workflow 卡 `file:docs/x.md` × 一張 cpbl 卡 `file:docs/` | **不相交** |
+| 25 | 一張 ai-workflow 卡 `file:docs/x.md` × 一張 cpbl 卡 `file:docs/`（兩者歸屬皆已確立） | **不相交** |
 | 26 | 兩張不同 repo 的卡，`port:4001` × `port:4001` | **相交**（§4.3） |
-| 27 | DraftIssue（無 `issue_url`）持有 `file:` 宣告 → `assign` | **拒絕派工** |
+| 27 | **目標卡自身**為 DraftIssue（無 `issue_url`）且持有 `file:` 宣告 → `assign` | **拒絕派工**（§4.2） |
 | 28 | 現存活卡中 DraftIssue 持 `file:` 宣告者 | 計數為 **0**（列舉產生） |
+| 28a | **別卡**歸屬無法確立（DraftIssue，或 `issue_url` 不符 `…/<owner>/<repo>/issues/` 形狀），路徑會相交 | **相交**——不套用 repo 限定詞，視同同 repo（§4.2；**不得**判為跨 repo 而放行） |
+| 28b | 全 Project item 的 `issue_url` 無法解析出 `owner/repo` 者 | 計數為 **0**（列舉產生，§9.7b） |
 
 ### 9.4 symlink（§5）
 
@@ -444,21 +579,45 @@ fail-closed、有界、且會製造修正該宣告的壓力。實測現存觸犯
 | 42 | 解析、檢查、寫入三步 | 均在同一次原子目錄鎖持有期間內 |
 | 43 | `--worktree` 指向 detached HEAD | `HEAD` 仍可解析為 40 hex，正常運作 |
 
-### 9.6 真實資料調查（生成式證據）
+### 9.6 無法解析的宣告、具名豁免、與管線其餘各站（§8.6–§8.8）
 
-**驗證 1 要求納入 #16／#22 真實反例，本節使其可重跑。** 下列程式對 Project #4 的活卡跑三條規則並輸出對照；衍生卡須將其納入 repo（需 `amend` 擴充資源宣告）並在 CI 或交付報告中附上輸出。
+| # | 情境 | 期望 |
+|---|---|---|
+| 44 | 別卡宣告無法解析，未給 `--ignore-unparseable` | **拒絕派工**；訊息逐張列出 card id ＋解析錯誤原文（§8.7-B） |
+| 45 | **本卡**宣告無法解析 | **拒絕派工**（現行行為；本列的作用是釘住它不得被回退） |
+| 46 | `--ignore-unparseable A,B`，A、B 皆在封閉母體且無 worktree 註冊，且解析失敗的恰為 A、B | 放行；assign 事件記下 A、B 的 card id、各自解析錯誤、執行者、`resource_check_rev`（§8.8.2） |
+| 47 | 解析失敗的是 A、B，但名單只列 A | **仍拒絕**，並指名 B |
+| 48 | 名單含一張其實解析得出來的卡（陳舊豁免） | **拒絕**，要求移除該名字（§8.8.2） |
+| 49 | 名單含一張**不在封閉母體字面清單**的卡（帶 sentinel 但 JSON 壞） | **拒絕**：母體外一律不可豁免（§8.8.1） |
+| 49a | 一張**新**卡的 body 被手動貼入 `state-plane-mig1:card_id=` marker 後具名豁免 | **拒絕**：母體是原始碼中的字面清單，貼 marker 不能取得資格（§8.8.1／E1） |
+| 49b | 卡在字面清單內，但 body 已無 MIG1 marker | **拒絕豁免**並報告清單與 body 不一致（交叉檢查，§8.8.1） |
+| 50 | 系統日期 > `UNPARSEABLE_EXEMPTION_SUNSET`（2026-09-30） | `--ignore-unparseable` **一律拒絕**，不看名單內容（§8.8.3-E3） |
+| 51 | 名單含一張母體成員，但其「分支worktree」欄已註冊 | **拒絕**：已在執行者不可豁免（§8.8.1） |
+| 52 | 母體成員經 `amend` 補上正式宣告後 | 永久離開母體（body 帶 sentinel，成員判準不再命中）；再具名它即觸發第 48 列 |
+| 53 | `--ignore-unparseable` 給 `*`／`all`／空字串 | **拒絕**：只接受逐張 card id（§8.8.1） |
+| 54 | 現存無法解析卡的普查 | **33 張全數落在 MIG1 封閉母體、母體外 0 張、帶 sentinel 卻失敗 0 張**（列舉產生，§9.7b） |
+| 55 | `git ls-tree` 對 `resource_check_rev` 查詢**失敗**（rev 不存在／非零 exit） | **拒絕派工**；不得與「查無此分量」（合法的「將要新增」）同格處置（§8.6-S7） |
+| 56 | realpath 解析拋 `OSError`（symlink 迴圈、權限不足） | **拒絕派工**；不得當成「路徑不存在」略過（§8.6-S8） |
+
+**另須斷言**：`assign` 的程式路徑中**不存在**任何「解析失敗 → 記錄後 `continue`」的分支（`skipped_unparseable` 已移除）。此為結構性斷言，衍生卡須以測試覆蓋第 44 列的**退出碼**而非僅訊息文字。
+
+### 9.7 真實資料調查（生成式證據）
+
+**驗證 1 要求納入 #16／#22 真實反例，本節使其可重跑。** 下列程式對 Project #4 的活卡跑三條規則並輸出對照，同時盤點 §8.7 的 fail-closed 阻擋名單；衍生卡須將其納入 repo（需 `amend` 擴充資源宣告）並在 CI 或交付報告中附上輸出。**唯讀，不寫入任何狀態面。**
 
 ```python
-# 對 Project #4 活卡跑 A/B/C 三規則，輸出同 repo 與跨 repo 的相交對數。
-# 依賴：wf_cli（gh CLI 已登入）
+# §9.7 對 Project #4 活卡跑 A/B/C 三規則 + 無法解析宣告的 fail-closed 盤點。
+# 依賴：wf_cli（gh CLI 已登入）。唯讀。
 import re, unicodedata
 from itertools import combinations
 from wf_cli.card import is_owner_assigned
 from wf_cli.gh import default_runner
 from wf_cli.project import list_items, resolve_project
-from wf_cli.resources import try_parse_block
+from wf_cli.resources import ResourceDeclarationError, parse_block
 
 TERMINAL = {"🏁完成", "🛑已停止"}
+SENTINEL = "<!-- resource-claims:begin -->"
+MIG1_MARK = re.compile(r"<!--\s*state-plane-mig1:card_id=")   # §8.8.1 封閉母體成員判準
 
 def key(r):                                   # §2.1
     comps = [c for c in r[len("file:"):].split("/") if c not in ("", ".")]
@@ -473,30 +632,252 @@ def rule_c(x, y):                                                 # 目標（§2
     return a[:n] == b[:n]
 
 project = resolve_project(default_runner, "ruan6047", 4)
-cards, unparseable = [], []
+cards, blocking = [], []
 for it in list_items(default_runner, project):
     if not it.card_id or (it.delivery_status or "") in TERMINAL: continue
     if not is_owner_assigned(it.owner_field): continue
-    decl = try_parse_block(it.body)
-    if decl is None:
-        unparseable.append(it.card_id); continue
+    try:
+        decl = parse_block(it.body)
+    except ResourceDeclarationError as exc:                       # §8.7：不得略過
+        blocking.append((it.card_id, str(exc),
+                         bool(MIG1_MARK.search(it.body or "")),
+                         SENTINEL in (it.body or "")))
+        continue
     m = re.match(r"https://github\.com/([^/]+/[^/]+)/issues/", it.issue_url or "")
     cards.append((it.card_id, m.group(1) if m else None,
                   [r for r in decl.resources if r.startswith("file:")]))
 
-print("無法解析的活卡：", unparseable or "無")
+print(f"已指派活卡 {len(cards) + len(blocking)} 張；可解析 {len(cards)}、不可解析 {len(blocking)}")
+print("[fail-closed] 無法解析而阻擋派工的活卡（§8.7）：")
+for cid, err, in_cohort, has_sent in (blocking or []):
+    elig = "可具名豁免" if (in_cohort and not has_sent) else "不可豁免（不在封閉母體）"
+    print(f"  - {cid}：{err}｜MIG1 母體={in_cohort}｜sentinel={has_sent}｜{elig}")
+if not blocking: print("  （無）")
+
 for name, rule in (("A 現行", rule_a), ("B 立即", rule_b), ("C 目標", rule_c)):
-    same = cross = 0
+    same = cross = unknown = 0
     for (c1, r1, f1), (c2, r2, f2) in combinations(cards, 2):
-        if any(rule(x, y) for x in f1 for y in f2):
-            if r1 == r2 and r1 is not None: same += 1
-            else: cross += 1
-    print(f"{name}：同 repo {same} 對；跨 repo {cross} 對")
+        if not any(rule(x, y) for x in f1 for y in f2): continue
+        if r1 is None or r2 is None: unknown += 1; same += 1   # §4.2：歸屬未確立→視同同 repo
+        elif r1 == r2: same += 1
+        else: cross += 1
+    print(f"{name}：同 repo {same} 對（其中歸屬未確立而 fail-closed 併入者 {unknown}）；跨 repo {cross} 對")
 ```
 
-**撰寫當下的輸出**（16 張活卡）：規則 A 同 repo 0 對；規則 B 與 C 各 1 對，即 `WF-ORCHESTRATION-RECONCILE1` × `WF-ESCALATION-DEFERRED-FINDINGS1` 於 `file:templates/` ~ `file:templates/review-escalation.md`。跨 repo 皆 0 對。
+**2026-08-11 重跑輸出**：
 
-> **立即後果**：本節生效後，#22 在 #16 進入終態或 `amend` 其資源宣告前**不得派工**——即使現行實作判它們不衝突。**實作現況不等於契約應然**，而本卡的職責正是讓兩者對齊。
+```text
+已指派活卡 17 張；可解析 15、不可解析 2
+[fail-closed] 無法解析而阻擋派工的活卡（§8.7）：
+  - INIT-GAME-RECAP：body 內找不到 <!-- resource-claims:begin --> ... <!-- resource-claims:end --> 之間的 fenced JSON 資源宣告區塊｜MIG1 母體=True｜sentinel=False｜可具名豁免
+  - ML-FIELD-OF1：body 內找不到 <!-- resource-claims:begin --> ... <!-- resource-claims:end --> 之間的 fenced JSON 資源宣告區塊｜MIG1 母體=True｜sentinel=False｜可具名豁免
+A 現行：同 repo 0 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
+B 立即：同 repo 1 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
+C 目標：同 repo 1 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
+```
+
+規則 B／C 的那 1 對即 `WF-ORCHESTRATION-RECONCILE1` × `WF-ESCALATION-DEFERRED-FINDINGS1`（`file:templates/` ~ `file:templates/review-escalation.md`）。跨 repo 皆 0 對。
+
+**與前一版輸出的差異須明說**：前一版記錄的是「16 張活卡」，本次為 17 張（15 可解析 ＋ 2 阻擋）。**活卡集合會隨時間變動，這些數字是快照不是常數**——查核者重跑得到不同的張數是預期的；**不變的是結論**：規則 A 在真實資料上找到 0 個衝突、規則 B／C 找到 #16 × #22、跨 repo 0 對、阻擋名單全部落在封閉母體內。
+
+> **立即後果一（相交語意）**：本節生效後，#22 在 #16 進入終態或 `amend` 其資源宣告前**不得派工**——即使現行實作判它們不衝突。**實作現況不等於契約應然**，而本卡的職責正是讓兩者對齊。
+>
+> **立即後果二（fail-closed）**：§8.7 生效後，**任何**卡的 `assign` 都會被上列 2 張擋下，除非依 §8.8 逐張具名豁免。這是刻意的痛感。
+
+### 9.7b 封閉母體普查（生成式證據，支撐 §8.7.1／§8.8.1）
+
+「無法解析 ≡ MIG1 佔位卡」「母體外 0 張」「30/33 的 db_scope 落在封閉列舉內」這三個宣稱**必須由程式產生**，因為 §8.7.2 的整個論證（放寬解析器是陷阱）都架在第三個宣稱上。
+
+````python
+# §9.7b 封閉母體普查。依賴：wf_cli（gh CLI 已登入）。唯讀。
+# 註：本區塊以四個反引號圍起，因為程式內含 ``` 字面（MIG1_JSON 正則要比對 fenced JSON）。
+import json, re
+from collections import Counter
+from wf_cli.gh import default_runner
+from wf_cli.project import list_items, resolve_project
+from wf_cli.resources import ResourceDeclarationError, parse_block
+
+SENTINEL = "<!-- resource-claims:begin -->"
+MIG1_MARK = re.compile(r"<!--\s*state-plane-mig1:card_id=")
+MIG1_JSON = re.compile(r"##\s*資源宣告（機器可讀[^\n]*\n```json\s*(?P<j>.*?)```", re.DOTALL)
+PREFIX = r"^(file:.+|port:\d+|container:.+|db:[^:]+:(schema|table:.+))$"
+
+items = [it for it in list_items(default_runner, resolve_project(default_runner, "ruan6047", 4))
+         if it.card_id]
+fail = []
+for it in items:
+    try: parse_block(it.body)
+    except ResourceDeclarationError: fail.append(it)
+
+in_cohort = [it for it in fail if MIG1_MARK.search(it.body or "")]
+print(f"Project #4 有卡ID 的 item {len(items)} 張；宣告無法解析 {len(fail)} 張")
+print(f"  帶 state-plane-mig1 marker（封閉母體）：{len(in_cohort)}")
+print(f"  帶 resource-claims sentinel 卻仍失敗：{sum(1 for it in fail if SENTINEL in (it.body or ''))}")
+print(f"  母體外的解析失敗（＝不可豁免、硬阻擋）：{len(fail) - len(in_cohort)}")
+print(f"  母體中已註冊「分支worktree」者："
+      f"{[it.card_id for it in in_cohort if (it.branch_worktree or '—').strip() not in ('', '—')] or 0}")
+print(f"  全 item 中 issue_url 無法解析出 owner/repo 者："
+      f"{sum(1 for it in items if not re.match(r'https://github\.com/([^/]+/[^/]+)/issues/', it.issue_url or ''))}")
+
+scopes, tainted = Counter(), []
+for it in in_cohort:
+    m = MIG1_JSON.search(it.body or "")
+    if not m: scopes["（無 JSON）"] += 1; continue
+    d = json.loads(m.group("j"))
+    scopes[repr(d.get("db_scope"))] += 1
+    bad = [r for r in d.get("resources") or [] if not re.match(PREFIX, r)]
+    if bad: tainted.append((it.card_id, bad))
+print(f"  母體內佔位 db_scope 分佈：{dict(scopes)}")
+print(f"  母體內 resources 含不合前綴項目者：{tainted or '無'}")
+print("  封閉母體字面清單（衍生卡直接落成常數，§8.8.1）：")
+print("    " + ", ".join(sorted(it.card_id for it in in_cohort)))
+````
+
+**2026-08-11 輸出**：
+
+```text
+Project #4 有卡ID 的 item 96 張；宣告無法解析 33 張
+  帶 state-plane-mig1 marker（封閉母體）：33
+  帶 resource-claims sentinel 卻仍失敗：0
+  母體外的解析失敗（＝不可豁免、硬阻擋）：0
+  母體中已註冊「分支worktree」者：0
+  全 item 中 issue_url 無法解析出 owner/repo 者：0
+  母體內佔位 db_scope 分佈：{"'none'": 11, "'read'": 10, "'write'": 8, "'schema'": 1, 'None': 3}
+  母體內 resources 含不合前綴項目者：[('DEV-REVIEW-PREFLIGHT-GATE1', ['DEV-REVIEW-DEACCEPT-TRAIL1'])]
+  封閉母體字面清單（衍生卡直接落成常數，§8.8.1）：
+    DEV-CI-RED-OWNERSHIP1, DEV-EVENT-REPAIR-ANCHOR1, DEV-REVIEW-DEACCEPT-TRAIL1,
+    DEV-REVIEW-PREFLIGHT-GATE1, DEV-REVIEW-PREFLIGHT-SELFCHECK1, DEV-TRAILER-GUARD-PR-CHECKOUT1,
+    DEV-VERIFY-TM-ASSERTS1, DOC-CARD-SPEC-RULES1, INGEST-GAME-TM-REFACTOR1,
+    INGEST-LIVE-RECONCILE1, INGEST-PLAYER-BIO-GAP2, INGEST-POSTGAME-FINALIZE1,
+    INGEST-SPLITS-IMPORT-RESTATE1, INIT-GAME-RECAP, INIT-OFFICIAL-DATA1, INIT-PRODUCT-UX,
+    MATCHUP-DATA2, ML-FIELD-LINEUP1, ML-FIELD-OAA-VAL1, ML-FIELD-OF1, ML-PA-SIM-CONTEXT1,
+    ML-PA-SIM-TEAM1, ML-PT3, ML-SIM2, OPS-BACKUP-DR1, OPS-CONTROL-PLANE-PR-GUARD1,
+    OPS-POSTGAME-OBSERVE1, OPS-REMOTE-CUTOVER1, OPS-REMOTE-PROBE1, OPS-REMOTE-ROUTE1,
+    OPS-REMOTE-WORKER1, OPS-STATE-PLANE-MIG1, UX-TEAM-FIELD-HIST1
+```
+
+（原始輸出為單行；此處為版面折行，內容逐字相同、順序為 `sorted()`。**這 33 個 ID 就是 §8.8.1 要求衍生卡落成的字面常數**——它由程式列舉，不由人清點。）
+
+**讀法**：`db_scope` 分佈中 **30/33 落在封閉列舉內**（`none`＋`read`＋`write`＋`schema`）——這正是 §8.7.2 的關鍵數字：放寬 sentinel 比對後，這 30 張會解析**成功**並產生 `resources: []`，把「寫入集未知」靜默轉譯成「寫入集為空」。
+
+### 9.8 離線窮舉（生成式證據，支撐 §2／§3／§8.2／§8.5）
+
+§8.2 的 `B ⊇ C` 與 §3.1 的「拒收條件是完整列舉」是**完整性宣稱**，必須由可重跑的 artifact 產生。下列程式**不依賴網路、不依賴 `wf_cli`**，查核者可原樣複製執行。
+
+```python
+# §9.8 離線窮舉：語彙分類的完整性 + 立即階段 ⊇ 目標階段。無網路、無 wf_cli 依賴。
+import unicodedata
+from itertools import combinations_with_replacement
+
+REJECT_RULES = {2: "絕對路徑", 3: "家目錄", 4: "..", 5: "萬用字元", 11: "空路徑"}
+
+def classify(raw):                      # 回傳 ("reject", rule_no) 或 ("accept", K)
+    if raw.startswith("/"):  return ("reject", 2)
+    if raw.startswith("~"):  return ("reject", 3)
+    comps = [c for c in raw.split("/") if c not in ("", ".")]
+    if any(c == ".." for c in comps):    return ("reject", 4)
+    if any(("*" in c or "?" in c) for c in comps): return ("reject", 5)
+    if not comps:                        return ("reject", 11)
+    return ("accept", tuple(unicodedata.normalize("NFC", c).casefold() for c in comps))
+
+def rule_b(kx, ky):                      # 立即階段：字串前綴（§8.1）
+    a, b = "/".join(kx), "/".join(ky)
+    return a.startswith(b) or b.startswith(a)
+
+def rule_c(kx, ky):                      # 目標階段：分量序列前綴（§2.2）
+    n = min(len(kx), len(ky))
+    return kx[:n] == ky[:n]
+
+ACCEPT_CORPUS = [
+    "templates/", "templates", "templates/a.md", "templates/review-escalation.md",
+    "templates2/a.md", "templates2/", "Templates/", "./templates/", "templates//",
+    "docs/", "docs/A.md", "docs/a.md", "docs/WF_RESOURCE_WRITESET1.md",
+    "docs/reference/", "docs/reference/棒球規則.txt",
+    "a/b", "a/b/c.md", "a/b/d.md", "./a//b/c.md",
+    "web/src/app/games/[sno]/", "web/src/app/games/[sno]/page.tsx",
+    "cli/src/wf_cli/", "cli/src/wf_cli/resources.py",
+]
+REJECT_CORPUS = [
+    "../outside.md", "a/../b.md", "/etc/passwd", "/", "~/secrets", "~",
+    "src/**/*.py", "a?.md", ".", "./", "", "a//../b", "**", "docs/*",
+]
+
+# --- 斷言 1：分類是全函數且分割（每個輸入恰好一個結果，拒收理由來自封閉列舉）
+bad = []
+for raw in ACCEPT_CORPUS:
+    kind, payload = classify(raw)
+    if kind != "accept" or not payload: bad.append(("應接受卻拒收", raw, payload))
+for raw in REJECT_CORPUS:
+    kind, payload = classify(raw)
+    if kind != "reject": bad.append(("應拒收卻接受", raw, payload))
+    elif payload not in REJECT_RULES: bad.append(("拒收理由不在封閉列舉", raw, payload))
+print(f"[1] 語彙分類：接受語料 {len(ACCEPT_CORPUS)} 筆、拒收語料 {len(REJECT_CORPUS)} 筆；"
+      f"分類錯誤 {len(bad)} 筆 {bad if bad else ''}")
+
+# --- 斷言 2：B ⊇ C（立即階段不漏放目標階段會抓的）
+keys = {raw: classify(raw)[1] for raw in ACCEPT_CORPUS}
+pairs = list(combinations_with_replacement(ACCEPT_CORPUS, 2))
+b_misses_c, b_only = [], []
+for x, y in pairs:
+    c, b = rule_c(keys[x], keys[y]), rule_b(keys[x], keys[y])
+    if c and not b: b_misses_c.append((x, y))
+    if b and not c: b_only.append((x, y))
+print(f"[2] 組合數 {len(pairs)}（含自配對）；b_misses_c = {len(b_misses_c)} "
+      f"{b_misses_c if b_misses_c else '（B ⊇ C 成立）'}")
+
+# --- 斷言 3：立即階段的過度拒絕必須存在且被釘住（§8.5）
+print(f"[3] 立即階段獨有的過度拒絕 {len(b_only)} 對：")
+for x, y in sorted(b_only): print(f"      {x!r} × {y!r}")
+
+# --- 斷言 4：§9.1 矩陣第 1–11 列的期望值逐列驗證
+MATRIX = [
+    (1,  "templates/", "templates/review-escalation.md", True,  True),
+    (2,  "templates/", "templates2/a.md",                False, True),
+    (3,  "templates/", "templates",                      True,  True),
+    (4,  "templates",  "templates/a.md",                 True,  True),
+    (5,  "docs/A.md",  "docs/a.md",                      True,  True),
+    (6,  "./templates/", "templates/a.md",               True,  True),
+    (7,  "templates//", "templates/a.md",                True,  True),
+    (8,  "Templates/", "templates/a.md",                 True,  True),
+    (9,  "a/b/c.md",   "a/b/d.md",                       False, False),
+    (10, "web/src/app/games/[sno]/", "web/src/app/games/[sno]/page.tsx", True, True),
+    (11, "docs/reference/", "docs/reference/棒球規則.txt", True, True),
+]
+fails = []
+for no, x, y, exp_c, exp_b in MATRIX:
+    kx, ky = classify(x)[1], classify(y)[1]
+    got_c, got_b = rule_c(kx, ky), rule_b(kx, ky)
+    if (got_c, got_b) != (exp_c, exp_b):
+        fails.append((no, x, y, (got_c, got_b), (exp_c, exp_b)))
+print(f"[4] §9.1 第 1–11 列：{len(MATRIX)} 列，不符期望 {len(fails)} 列 {fails if fails else ''}")
+
+ok = not bad and not b_misses_c and not fails and b_only
+print(f"[裁決] {'PASS' if ok else 'FAIL'}")
+```
+
+**2026-08-11 輸出**：
+
+```text
+[1] 語彙分類：接受語料 23 筆、拒收語料 14 筆；分類錯誤 0 筆
+[2] 組合數 276（含自配對）；b_misses_c = 0 （B ⊇ C 成立）
+[3] 立即階段獨有的過度拒絕 10 對：
+      'templates' × 'templates2/'
+      'templates' × 'templates2/a.md'
+      'templates/' × 'templates2/'
+      'templates/' × 'templates2/a.md'
+      'templates2/' × './templates/'
+      'templates2/' × 'Templates/'
+      'templates2/' × 'templates//'
+      'templates2/a.md' × './templates/'
+      'templates2/a.md' × 'Templates/'
+      'templates2/a.md' × 'templates//'
+[4] §9.1 第 1–11 列：11 列，不符期望 0 列
+[裁決] PASS
+```
+
+**[3] 的清單就是 §8.5 要求被釘住的東西**：立即階段的誤拒不是 bug，而且它的**完整範圍**在此以生成方式列出——日後有人想「修掉」其中任何一對，會直接撞上這份清單與 `[裁決] PASS` 的條件（`b_only` 非空是 PASS 的必要條件之一）。
+
+**語料的邊界誠實聲明**：這是**有限語料上的窮舉**，不是對全部字串的證明。§8.2 的證明本身是形式化的（對任意分量序列成立）；本節的角色是**回歸防護**——確保實作與該證明不脫節，並把 §8.5 的過度拒絕範圍固定下來。語料涵蓋 §9.1／§9.2 的全部輸入類別（邊界、大小寫、`./`、重複斜線、中括號、CJK、多層路徑）。
 
 ---
 
@@ -504,10 +885,11 @@ for name, rule in (("A 現行", rule_a), ("B 立即", rule_b), ("C 目標", rule
 
 契約語意（§2–§8）定義在本卡。實作歸衍生卡（基線 §9-L）：
 
-- `resources.py`：§2.1 正規化、§2.2 相交謂詞、§3 語彙拒收、§4 repo 限定詞、§8 兩階段。
+- `resources.py`：§2.1 正規化、§2.2 相交謂詞、§3 語彙拒收、§4 repo 限定詞、§8.1–§8.5 兩階段。
 - `open_cmd.py`／`amend_cmd.py`：§3.4 拒收時機、§5.1 tracked symlink 逐分量走查、§7.1 存在性提示。
-- `assign_cmd.py`：§5.3 realpath 與 containment、§6 revision 釘選與 TOCTOU、§4.2 DraftIssue fail-closed。
-- 測試：§9 全部 43 列＋三項列舉式斷言。
+- `assign_cmd.py`：§5.3 realpath 與 containment、§6 revision 釘選與 TOCTOU、§4.2 repo 歸屬 fail-closed、**§8.6 不變式 I 的各站處置、§8.7 移除 `skipped_unparseable`、§8.8 `--ignore-unparseable` 與 `UNPARSEABLE_EXEMPTION_SUNSET` 常數**。
+- `doctor.py`：§8.8.2 的母體殘量與距 sunset 天數輸出（唯讀報告）。
+- 測試：§9 全部 60 列（1–43 原有＋28a／28b＋44–56＋49a／49b 共 17 列新增）＋五項列舉式斷言（§9.2 零遷移負債、§9.3 第 28／28b、§9.6 第 54、§9.7／§9.7b／§9.8 的生成式輸出）。
 
 **排程限制**：`assign_cmd.py` 目前由 [#21](https://github.com/ruan6047/ai-workflow/issues/21) 佔用（宣告 `file:cli/src/wf_cli/commands/assign_cmd.py`），衍生卡須待其釋放。`resources.py` 目前**無活卡佔用**，故 §8.1 的立即階段可先行落地——這正是兩階段切分的實務價值。
 
@@ -515,7 +897,7 @@ for name, rule in (("A 現行", rule_a), ("B 立即", rule_b), ("C 目標", rule
 
 ## 11. 對基線 §7.2 的修正（逐條）
 
-本檔非基線的重述，有四處實測修正與兩處補完。
+本檔非基線的重述。下表即完整清單：**3 處實測修正、5 處補完、2 處新增裁定**（第 9、10 列為 R1 查核後新增）。
 
 | # | 基線 §7.2 的內容 | 本檔的處置 | 依據 |
 |---|---|---|---|
@@ -527,6 +909,8 @@ for name, rule in (("A 現行", rule_a), ("B 立即", rule_b), ("C 目標", rule
 | 6 | 未提及空路徑 | **補完**：`file:.` 正規化後為空序列，是所有序列的前綴，會靜默鎖死全 repo | §3.1-11 |
 | 7 | 「宣告路徑是否存在」未提及 | **新增裁定**：不硬拒、強制提示；真正對應的機制是宣告×實際 diff 對帳，列非目標 | §7 |
 | 8 | symlink 檢查未指明查詢方式 | **補完**：實測 git 不穿越 tree symlink，整條查與「路徑不存在」不可區分，必須逐分量走查 | §5.2 |
+| 9 | 未涵蓋「別卡宣告解析失敗」 | **新增裁定**（R1-001）：現行只警告不擋，是 fail-open；改為阻擋派工，逃生門為具名／留痕／有到期的豁免。放寬解析器經實測是更糟的選項 | §8.6–§8.8 |
+| 10 | 未涵蓋「repo 歸屬判不出來」 | **補完**：repo 限定詞是放行方向的規則，其前提須正向確立；別卡歸屬未確立時退回「視同同 repo」比對，本卡歸屬未確立則拒絕派工 | §4.2 |
 
 ### 11.1 與 canonical 的一致性（驗證 3）
 
@@ -546,28 +930,24 @@ for name, rule in (("A 現行", rule_a), ("B 立即", rule_b), ("C 目標", rule
 2. **跨主機併發 `assign`**（§6.2）。原子目錄鎖是同機的；遠端 CAS 不在射程內。
 3. **宣告 × 實際寫入的事後對帳**（§7.3）。這是 #13 病灶的真正對應機制，觸發點在 `handoff`／`review`，**建議另開卡**，本檔不夾帶。
 4. **`db:` 資源的相交語意**。沿用 canonical §4.1，未改動。
-5. **活卡的定義**。沿用現行 `assign`，未改動。
-6. **無法解析的資源宣告被靜默略過**——見 §12.1，本檔提出但不裁定。
+5. **活卡的定義**。沿用現行 `assign`（非終態＋已指派），未改動。**收緊它是 fail-open 方向的變更**，理由見 §8.8.4，須另開卡並以「這會漏掉什麼」為驗收。
+6. **`open`／`amend` 對既有 33 張 MIG1 佔位卡的批次補宣告**。§8.8 給了到期壓力，但**誰去補、怎麼補**是作業排程，不是契約語意。
 
-### 12.1 邊界發現：無法解析的宣告目前 fail-open
+### 12.1 已從非目標移出並裁定的項目（記錄）
 
-**這是超出本卡五條驗收的發現，明列於此供需求方與查核者裁定，不靜默夾帶。**
+前一版（R1 交付）把「無法解析的資源宣告被靜默略過」列為本節第 6 項「提出但不裁定」。**R1 查核以 blocking finding 退回該處置，判定正確**：把一個已知的 fail-open 標為「不處理」，等於用文件把靜默放行合法化，與卡面「任何無法安全判定的情形一律拒絕派工」直接矛盾。
 
-現行 `assign_cmd.py` 對**別卡**解析失敗的宣告只警告、不擋（`try_parse_block` 回 `None` → `skipped_unparseable`）。實測今日有 **2 張已指派活卡**落在此列：`INIT-GAME-RECAP`、`ML-FIELD-OF1`。本卡自己的 `assign` 執行時即印出該警告。
+**現已裁定於 §8.6（不變式 I）、§8.7（fail-closed）、§8.8（具名／可稽核／到期的豁免），並納入 §9.6 矩陣第 44–56 列與 §10 的衍生卡歸屬。** 本節保留此段是為了讓「曾經被列為非目標」這件事留在紙上，而不是被無痕改寫。
 
-這與 [#24](https://github.com/ruan6047/ai-workflow/issues/24) 卡面「服務的原始目標」寫的「**任何無法安全判定的情形一律拒絕派工而非放行**」**直接衝突**——無法解析正是「無法安全判定」的原型。
-
-`assign_cmd.py` 的註解為此給了理由：遷移期舊卡尚未補宣告，不該讓新卡整個卡死。**該理由在 cutover 當時成立，但它是一個沒有到期日的 fail-open**，且今日仍有 2 張。
-
-**建議的形狀**（不在此裁定）：預設 fail-closed，並提供 `--ignore-unparseable CARD-A,CARD-B` 的具名逃生門——把靜默的 fail-open 換成一次明示、可稽核、且必須逐張具名的行為。守衛的**預設**不再依賴任何人記得，而豁免留下痕跡。今日只需具名 2 張，代價有界。
-
-**本檔不將其納入 §9 矩陣，亦不指派給衍生卡**——它超出本卡驗收射程，須由需求方明示納入後才動。
+殘留的 fail-open（含豁免本身）明列於 §8.9，**不宣稱已關閉**。
 
 ---
 
 ## 13. 執行者揭露
 
 - 本檔為設計／契約文件，**無程式碼變更、無 CI**。§9 的矩陣**未被執行**，執行歸衍生卡。
-- §1.1、§1.2、§3.2、§3.3、§4.1、§8.2、§8.3、§9.6 的所有數字，均由對真實 repo 與真實 Project #4 執行的探查程式產生，非人工清點。§9.6 的程式已內嵌於本檔，可重跑。
+- §1.1、§1.2、§3.2、§3.3、§4.1、§4.2、§8.2、§8.3、§8.7、§8.8、§9.7、§9.7b、§9.8 的所有數字，均由探查程式對真實 repo 與真實 Project #4 產生，非人工清點。三支探針（§9.7 活卡三規則、§9.7b 封閉母體普查、§9.8 離線窮舉）**全部內嵌於本檔並可原樣重跑**，其中 §9.8 不需網路與 `gh` 登入。
+- **R2（本輪）處理 R1-001**：新增 §8.6–§8.9、§9.6 矩陣 13 列、§9.7b／§9.8 兩支探針，改寫 §4.2、§12.1，並補 §11 第 9／10 列。§2、§3、§5–§7 的既有內容未被修改（R1 查核已驗證通過的 `B ⊇ C`、窮舉 `b_misses_c=0`、`templates/` vs `templates2/a.md` 不相交三項結論在 §9.8 被重新生成並維持不變）。
+- **§8.2 的「258 組合」數字來自 R1 當時的一次性 session 腳本，不可重跑**；本輪以 §9.8 的內嵌程式取代其角色（23 條語料、276 組合、`b_misses_c = 0`），結論相同而證據升級為可稽核。兩者語料不同故組合數不同——**這是刻意的替換，不是數字對不上**。
 - §5.2 的 git symlink 行為以一個臨時 scratch repo 實測，該 repo 未進入本 repo；重現步驟即 §9.4 第 29–33 列。
 - 撰寫過程中一項自查修正值得記錄：初次以 `git ls-files | grep -P '[^\x00-\x7F]'` 探查非 ASCII 路徑，得到「兩 repo 皆無」的**錯誤**結論——`git ls-files` 預設對非 ASCII 路徑做 C-style 八進位引號。改用 `-c core.quotePath=false` 後查出 25 筆。§3.3 因此從「不需要」翻轉為「需要」。**探查工具的預設值本身就是一個可以說謊的來源。**
