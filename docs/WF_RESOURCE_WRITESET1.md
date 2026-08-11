@@ -55,7 +55,13 @@
 
 規則 A 在真實資料上找到 **0 個衝突**——守衛是睡著的。規則 B／C 各找到 **1 個**，且正是 #16 × #22。
 
-**張數是快照，結論不是**：活卡集合逐日變動（R1 交付當時為 16 張），查核者重跑會看到不同張數；上表三列的相對關係與 #16 × #22 這個具名反例才是被斷言的東西。**另有 2 張活卡因宣告無法解析而完全未進入這張表**——這正是 §8.7 要處理的洞：**比對表上看不見的卡，才是守衛最大的盲區**。
+**張數是快照，結論不是**：活卡集合逐日變動（R1 交付當時為 16 張），查核者重跑會看到不同張數。**另有 2 張活卡因宣告無法解析而完全未進入這張表**——這正是 §8.7 要處理的洞：**比對表上看不見的卡，才是守衛最大的盲區**。
+
+> **⚠️ 這個線上反例已於 2026-08-12 消失（R3 重跑實測，非推測）。** #16 的卡面異動軌跡逐字記錄：`2026-08-12T00:13:42+08:00 amend by wf-cli（op df7e0929）`，把宣告從 `["file:docs/WF_ORCHESTRATION_RECONCILE1.md", "file:templates/"]` 收窄為單一檔案，理由是「本卡自開卡至今從未寫入 `templates/` 底下任何檔案……該目錄級宣告在階層路徑包含語意下與 `WF-ESCALATION-DEFERRED-FINDINGS1` 相交，等於整張卡的生命週期都在擋別人而一次也沒用到」。因此 §9.7 於 **2026-08-12 01:28 +0800** 重跑得到規則 B／C **0 對**（見該節）。
+>
+> **這不削弱本卡的論證，但它修正了上一版的一句話。** 上一版寫「不變的是結論：規則 B／C 找到 #16 × #22」——那句話把一個**線上狀態**誤當成不變量，而線上狀態當然會變。被斷言的不變量只有兩件，且都不依賴線上資料：(a) 對**固定輸入**，A 判不相交而 B／C 判相交（§9.1 第 1 列＋§9.8 離線窮舉，兩者把這對路徑凍結成語料）；(b) 現行守衛在**任何**時點的真實活卡上都不曾判出 `file:` 階層相交。#16 × #22 的角色是「這個缺口曾在線上真實成立」的**歷史舉證**，其證據是上引的 amend 軌跡與本節，不是每日可重跑的普查。
+>
+> 附帶一提，消失的**原因**恰好是本契約的預期出路：§9.7 的「立即後果一」寫的是「#22 在 #16 進入終態或 `amend` 其資源宣告前不得派工」，而 #16 的 amend 理由逐字援引了本檔定義的階層包含語意。**契約在成文階段就已經改變了它所描述的世界**——這對本卡是好消息，對「拿線上快照當證據」則是一記警告。
 
 ### 1.3 另一組實證：宣告與實際寫入脫鉤
 
@@ -115,7 +121,11 @@
 
 「正規化」若不封閉定義，等價規則就是下一個縫。**`file:` 的路徑語彙限定如下；不符者 `open`／`amend` 逕行拒收。**
 
-### 3.1 語彙規則
+### 3.1 語彙規則（**只管卡面 `file:` 資源宣告，不管 CLI 路徑引數**）
+
+> **定義域界線（跨卡裁決，記錄於此以免被誤引）**：本節的封閉 namespace 規範的是**寫在卡面資源宣告區塊裡的 `file:` 資源字串**，其消費端是相交判定（§2）；拒收時機是 `open`／`amend`（§3.4）。
+>
+> 它**不是**一個通用的路徑正規化器，**明確不涵蓋 CLI 的路徑引數**（如 `--worktree <path>`、指向檔案的命令參數）。兩者定義域不相容：資源宣告必須是 repo 根的相對路徑，才能有共同座標可比（§3.1-1、§4）；而 CLI 引數必須解析到執行當下的**真實檔案系統位置**，因此絕對路徑與 `~` 在那裡是合法且必要的——本節第 2、3 條把它們拒收，正是因為在**宣告**的定義域裡它們會使相交判定失去座標。**把本節的規則套到 CLI 引數上會是錯誤引用**；引數的正規化歸 [#23](https://github.com/ruan6047/ai-workflow/issues/23)，與本卡無語意衝突。
 
 | # | 規則 | 內容 | 理由 |
 |---|---|---|---|
@@ -198,7 +208,7 @@ macOS 的 APFS 對檔名做正規化不敏感比對：NFC 與 NFD 形式指向�
 > - **別卡歸屬無法確立**（DraftIssue 無 `issue_url`，或 `issue_url` 不符上述形狀）：**不套用 repo 限定詞**，逕行以 §2 比對，即**視同與本卡同 repo**。誤拒的代價是排隊，漏放的代價是兩張卡同寫一檔——取前者。
 > - **本卡自身歸屬無法確立**且其宣告含任何 `file:` 資源：`assign` **拒絕派工**，要求先轉為真 Issue。本卡的歸屬是整個比對平面的座標原點，座標未定時整個比對沒有意義，退回「視同同 repo」也救不了。
 
-**今日誤拒為 0，是運氣不是設計**：§1.2 的表顯示跨 repo 相交對數為 0——那只是因為目前兩 repo 的活卡路徑碰巧不重疊。**這個限定詞遲早會真的擋掉某次誤拒，也就遲早會真的放行某一對；它的正確性完全依賴歸屬判定不出錯，所以上面兩條把「判不出來」導向 fail-closed 側，而不是導向「歸屬不同」。** 實測 Project #4 全部有卡 ID 的 item 中，`issue_url` 無法解析出 `owner/repo` 者 **0 筆**（由 §9.7 的探針列舉產生），故此規則可即刻生效、零遷移負債。
+**今日誤拒為 0，是運氣不是設計**：§1.2 的表顯示跨 repo 相交對數為 0——那只是因為目前兩 repo 的活卡路徑碰巧不重疊。**這個限定詞遲早會真的擋掉某次誤拒，也就遲早會真的放行某一對；它的正確性完全依賴歸屬判定不出錯，所以上面兩條把「判不出來」導向 fail-closed 側，而不是導向「歸屬不同」。** 實測 Project #4 全部有卡 ID 的 item 中，`issue_url` 無法解析出 `owner/repo` 者 **0 筆**（由 **§9.7b** 的探針列舉產生——上一版誤標為 §9.7，而 §9.7 只掃已指派活卡，涵蓋面較窄，此處要的是全 item），故此規則可即刻生效、零遷移負債。
 
 ### 4.3 為何 `port:`／`container:`／`db:` 不受此限定
 
@@ -495,6 +505,8 @@ fail-closed、有界、且會製造修正該宣告的壓力。實測現存觸犯
 1. **豁免本身**（§8.8.4）。有界、留痕、有到期，但確實是放行。
 2. **`[abc]` 被寫成字元類別的意圖**（§3.2）。判定是確定的（字面），但**宣告的意義與宣告者的意圖可能不同**，於是靜默少保護。它不是「無法判定」，而是「判定了，但判的不是他想說的」——與 §3.2 那 41 個 Next.js 動態路由檔案是同一個字面處理規則的兩面：規則保住了那 41 個，代價是無法分辨誰在寫模式。§7.1 的存在性提示會對不存在的字面路徑響，但那是**提示**，不是閘門。
 3. **宣告與實際寫入脫鉤**（§7.3）。上一項與 §1.3 的 #13 都是它的實例。真正的機制是 `handoff`／`review` 時比對 `git diff --name-only` × 資源宣告，**歸另一張卡**（§12-3）。**本檔的守衛只能保證「宣告的東西不撞」，保證不了「宣告的就是會寫的」。**
+
+   **R3 補一筆同向實證，且它使這一項更緊迫、不是更輕**：#16 於 2026-08-12 收窄宣告的 `amend` 理由，逐字引用了 `git diff --name-only origin/main` 只有一個檔案、從未寫入 `templates/`（§1.2）。**那正是本項所指的對帳，只是由需求方用眼睛做的**——與 §1.3 的 #13「由 PM 人工發現」是同一個形狀的第二個實例。兩次都靠人抓到，代表機制有效且必要，也代表**它仍然完全沒有機械執行者**。本輪修的是 §9.7b 的可攜性，與本項無關，**故本項維持原狀不作任何弱化**：宣告 × 實際寫入的對帳在本卡射程之外，R3 沒有推進它一寸。
 4. **派工之後才建立的未追蹤 symlink**（§5.4）、**跨主機併發 `assign`**（§6.2）。
 
 第 2、3 兩項共用同一個根因，也共用同一個解——**事後對帳**。本檔把它們指向同一張建議新卡，而不是各自發明半套機制。
@@ -579,7 +591,7 @@ fail-closed、有界、且會製造修正該宣告的壓力。實測現存觸犯
 | 42 | 解析、檢查、寫入三步 | 均在同一次原子目錄鎖持有期間內 |
 | 43 | `--worktree` 指向 detached HEAD | `HEAD` 仍可解析為 40 hex，正常運作 |
 
-### 9.6 無法解析的宣告、具名豁免、與管線其餘各站（§8.6–§8.8）
+### 9.6 無法解析的宣告、具名豁免、管線其餘各站與探針自檢（§8.6–§8.8、§9.9）
 
 | # | 情境 | 期望 |
 |---|---|---|
@@ -598,6 +610,7 @@ fail-closed、有界、且會製造修正該宣告的壓力。實測現存觸犯
 | 54 | 現存無法解析卡的普查 | **33 張全數落在 MIG1 封閉母體、母體外 0 張、帶 sentinel 卻失敗 0 張**（列舉產生，§9.7b） |
 | 55 | `git ls-tree` 對 `resource_check_rev` 查詢**失敗**（rev 不存在／非零 exit） | **拒絕派工**；不得與「查無此分量」（合法的「將要新增」）同格處置（§8.6-S7） |
 | 56 | realpath 解析拋 `OSError`（symlink 迴圈、權限不足） | **拒絕派工**；不得當成「路徑不存在」略過（§8.6-S8） |
+| 57 | 本檔 §9.9 的自檢落成 repo 內腳本並掛 CI，對本檔執行 | 退出碼 **0**；且對**人為植入**「f-string 取值部含反斜線」與「刪去一個探針區塊」兩種變異，退出碼 **非 0**（變異測試——只驗 PASS 的自檢等於沒驗，§9.9.2 已示範反向案例） |
 
 **另須斷言**：`assign` 的程式路徑中**不存在**任何「解析失敗 → 記錄後 `continue`」的分支（`skipped_unparseable` 已移除）。此為結構性斷言，衍生卡須以測試覆蓋第 44 列的**退出碼**而非僅訊息文字。
 
@@ -664,7 +677,7 @@ for name, rule in (("A 現行", rule_a), ("B 立即", rule_b), ("C 目標", rule
     print(f"{name}：同 repo {same} 對（其中歸屬未確立而 fail-closed 併入者 {unknown}）；跨 repo {cross} 對")
 ```
 
-**2026-08-11 重跑輸出**：
+**2026-08-12 01:28 +0800 重跑輸出**（與 §9.7b 為同一次 session，兩節數字互相一致）：
 
 ```text
 已指派活卡 17 張；可解析 15、不可解析 2
@@ -672,13 +685,17 @@ for name, rule in (("A 現行", rule_a), ("B 立即", rule_b), ("C 目標", rule
   - INIT-GAME-RECAP：body 內找不到 <!-- resource-claims:begin --> ... <!-- resource-claims:end --> 之間的 fenced JSON 資源宣告區塊｜MIG1 母體=True｜sentinel=False｜可具名豁免
   - ML-FIELD-OF1：body 內找不到 <!-- resource-claims:begin --> ... <!-- resource-claims:end --> 之間的 fenced JSON 資源宣告區塊｜MIG1 母體=True｜sentinel=False｜可具名豁免
 A 現行：同 repo 0 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
-B 立即：同 repo 1 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
-C 目標：同 repo 1 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
+B 立即：同 repo 0 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
+C 目標：同 repo 0 對（其中歸屬未確立而 fail-closed 併入者 0）；跨 repo 0 對
 ```
 
-規則 B／C 的那 1 對即 `WF-ORCHESTRATION-RECONCILE1` × `WF-ESCALATION-DEFERRED-FINDINGS1`（`file:templates/` ~ `file:templates/review-escalation.md`）。跨 repo 皆 0 對。
+**輸出隨時間變動的逐項交代**（前一版為 2026-08-11：17 張、B／C 各 1 對；R1 當時為 16 張）：
 
-**與前一版輸出的差異須明說**：前一版記錄的是「16 張活卡」，本次為 17 張（15 可解析 ＋ 2 阻擋）。**活卡集合會隨時間變動，這些數字是快照不是常數**——查核者重跑得到不同的張數是預期的；**不變的是結論**：規則 A 在真實資料上找到 0 個衝突、規則 B／C 找到 #16 × #22、跨 repo 0 對、阻擋名單全部落在封閉母體內。
+- **活卡張數**（17）：集合逐日變動，查核者重跑得到不同張數是預期的。
+- **B／C 由 1 對變 0 對**：唯一那對是 `WF-ORCHESTRATION-RECONCILE1` × `WF-ESCALATION-DEFERRED-FINDINGS1`（`file:templates/` ~ `file:templates/review-escalation.md`），而 #16 已於 `2026-08-12T00:13:42+08:00` 由 `amend`（op `df7e0929`）把 `file:templates/` 移出宣告（軌跡與理由見 §1.2 的告示框）。**線上反例是被本契約的語意說服而消解的，不是被推翻的。**
+- **不變的是**：規則 A 在真實資料上**從未**判出任何 `file:` 階層相交；跨 repo 相交 0 對；阻擋名單全數落在 §8.8.1 的封閉母體內。
+
+**因此本節的角色必須被正確理解**：它是「今天這份守衛在真實資料上會做什麼」的**可重跑普查**，不是「#16 × #22 存在」的證據來源。後者是歷史事實，凍結在 §9.1 第 1 列與 §9.8 的離線語料裡——**會變的東西不該被當成不變量引用**，這正是上一版措辭的錯誤，R3 已改。
 
 > **立即後果一（相交語意）**：本節生效後，#22 在 #16 進入終態或 `amend` 其資源宣告前**不得派工**——即使現行實作判它們不衝突。**實作現況不等於契約應然**，而本卡的職責正是讓兩者對齊。
 >
@@ -691,6 +708,8 @@ C 目標：同 repo 1 對（其中歸屬未確立而 fail-closed 併入者 0）�
 ````python
 # §9.7b 封閉母體普查。依賴：wf_cli（gh CLI 已登入）。唯讀。
 # 註：本區塊以四個反引號圍起，因為程式內含 ``` 字面（MIG1_JSON 正則要比對 fenced JSON）。
+# 註：所有含反斜線的正則一律先編譯成模組層常數，不得內嵌進 f-string 的取值部——
+#     那在 Python 3.12 以前是 SyntaxError（見 §9.9，該規則由自檢探針機械執行）。
 import json, re
 from collections import Counter
 from wf_cli.gh import default_runner
@@ -700,7 +719,8 @@ from wf_cli.resources import ResourceDeclarationError, parse_block
 SENTINEL = "<!-- resource-claims:begin -->"
 MIG1_MARK = re.compile(r"<!--\s*state-plane-mig1:card_id=")
 MIG1_JSON = re.compile(r"##\s*資源宣告（機器可讀[^\n]*\n```json\s*(?P<j>.*?)```", re.DOTALL)
-PREFIX = r"^(file:.+|port:\d+|container:.+|db:[^:]+:(schema|table:.+))$"
+ISSUE_URL = re.compile(r"https://github\.com/([^/]+/[^/]+)/issues/")   # §4.2 的歸屬解析形狀
+PREFIX = re.compile(r"^(file:.+|port:\d+|container:.+|db:[^:]+:(schema|table:.+))$")
 
 items = [it for it in list_items(default_runner, resolve_project(default_runner, "ruan6047", 4))
          if it.card_id]
@@ -710,14 +730,15 @@ for it in items:
     except ResourceDeclarationError: fail.append(it)
 
 in_cohort = [it for it in fail if MIG1_MARK.search(it.body or "")]
+with_worktree = [it.card_id for it in in_cohort
+                 if (it.branch_worktree or "—").strip() not in ("", "—")]
+no_repo = sum(1 for it in items if not ISSUE_URL.match(it.issue_url or ""))
 print(f"Project #4 有卡ID 的 item {len(items)} 張；宣告無法解析 {len(fail)} 張")
 print(f"  帶 state-plane-mig1 marker（封閉母體）：{len(in_cohort)}")
 print(f"  帶 resource-claims sentinel 卻仍失敗：{sum(1 for it in fail if SENTINEL in (it.body or ''))}")
 print(f"  母體外的解析失敗（＝不可豁免、硬阻擋）：{len(fail) - len(in_cohort)}")
-print(f"  母體中已註冊「分支worktree」者："
-      f"{[it.card_id for it in in_cohort if (it.branch_worktree or '—').strip() not in ('', '—')] or 0}")
-print(f"  全 item 中 issue_url 無法解析出 owner/repo 者："
-      f"{sum(1 for it in items if not re.match(r'https://github\.com/([^/]+/[^/]+)/issues/', it.issue_url or ''))}")
+print(f"  母體中已註冊「分支worktree」者：{with_worktree or 0}")
+print(f"  全 item 中 issue_url 無法解析出 owner/repo 者：{no_repo}")
 
 scopes, tainted = Counter(), []
 for it in in_cohort:
@@ -725,7 +746,7 @@ for it in in_cohort:
     if not m: scopes["（無 JSON）"] += 1; continue
     d = json.loads(m.group("j"))
     scopes[repr(d.get("db_scope"))] += 1
-    bad = [r for r in d.get("resources") or [] if not re.match(PREFIX, r)]
+    bad = [r for r in d.get("resources") or [] if not PREFIX.match(r)]
     if bad: tainted.append((it.card_id, bad))
 print(f"  母體內佔位 db_scope 分佈：{dict(scopes)}")
 print(f"  母體內 resources 含不合前綴項目者：{tainted or '無'}")
@@ -733,10 +754,10 @@ print("  封閉母體字面清單（衍生卡直接落成常數，§8.8.1）："
 print("    " + ", ".join(sorted(it.card_id for it in in_cohort)))
 ````
 
-**2026-08-11 輸出**：
+**2026-08-12 01:28 +0800 輸出**（與 §9.7 同一次 session；本區塊由**修正後的程式原樣抽出執行**產生，見 §9.9）：
 
 ```text
-Project #4 有卡ID 的 item 96 張；宣告無法解析 33 張
+Project #4 有卡ID 的 item 99 張；宣告無法解析 33 張
   帶 state-plane-mig1 marker（封閉母體）：33
   帶 resource-claims sentinel 卻仍失敗：0
   母體外的解析失敗（＝不可豁免、硬阻擋）：0
@@ -757,6 +778,10 @@ Project #4 有卡ID 的 item 96 張；宣告無法解析 33 張
 ```
 
 （原始輸出為單行；此處為版面折行，內容逐字相同、順序為 `sorted()`。**這 33 個 ID 就是 §8.8.1 要求衍生卡落成的字面常數**——它由程式列舉，不由人清點。）
+
+**釘選與變動交代（R3）**：本節全部數字釘選在 **2026-08-12 01:28 +0800** 這一次執行，該次與 §9.7 為同一 session。與 2026-08-11 版相比，**唯一變動是 `item 96 → 99`**（Project 新增 3 張有卡 ID 的 item）；解析失敗 33、母體 33、母體外 0、sentinel 卻失敗 0、已註冊 worktree 0、`db_scope` 分佈、混入卡 ID 的那 1 張、以及 33 個 ID 的字面清單**逐字未變**。
+
+**這份輸出在 R2 是不存在的**：R2 版的程式把一個含反斜線的正則直接放進 f-string 取值部，在 Python 3.12 以前是 `SyntaxError`（而 `cli/pyproject.toml` 的 `requires-python` 下限是 **3.11**），因此上一版所有「33 張」「母體外 0」「30/33」等數字**在文件形態下無法被重跑驗證**——那是 R2-001 的實質，不是排版瑕疵。R3 的修法是把所有含反斜線的正則提升為模組層 `re.compile` 常數（`ISSUE_URL`、`PREFIX`），並以 §9.9 的自檢探針把「這件事不得再發生」變成**機械檢查**而非人的自律。
 
 **讀法**：`db_scope` 分佈中 **30/33 落在封閉列舉內**（`none`＋`read`＋`write`＋`schema`）——這正是 §8.7.2 的關鍵數字：放寬 sentinel 比對後，這 30 張會解析**成功**並產生 `resources: []`，把「寫入集未知」靜默轉譯成「寫入集為空」。
 
@@ -879,6 +904,147 @@ print(f"[裁決] {'PASS' if ok else 'FAIL'}")
 
 **語料的邊界誠實聲明**：這是**有限語料上的窮舉**，不是對全部字串的證明。§8.2 的證明本身是形式化的（對任意分量序列成立）；本節的角色是**回歸防護**——確保實作與該證明不脫節，並把 §8.5 的過度拒絕範圍固定下來。語料涵蓋 §9.1／§9.2 的全部輸入類別（邊界、大小寫、`./`、重複斜線、中括號、CJK、多層路徑）。
 
+### 9.9 探針自檢：把「探針可原樣重跑」變成機械檢查（R2-001 的結構性處置）
+
+R2-001 的教訓不是「有一行寫錯」，而是**「文件內的證據可以原樣重跑」這件事本身沒有任何檢查**。§9.7／§9.7b／§9.8 三支探針是 §8.7.2、§8.8.1、§8.2、§8.5 全部完整性宣稱的唯一支撐，而其中一支壞了七天沒被發現——直到查核者手動 `sed | python3` 才撞上。**人工保證失效過一次，就不該再被當成保證。**
+
+下列程式**抽出本檔全部 `python` 圍籬區塊**，逐一編譯、檢查跨直譯器可攜性，並實際執行其中不需網路者。它自身也是一個 `python` 區塊，因此**會抽到自己**（以 `probe-selfcheck` 標記避免遞迴執行，但仍受編譯與可攜性檢查）。**無網路、無 `wf_cli` 依賴；退出碼非 0 即失敗，可直接掛 CI。**
+
+```python
+# §9.9 探針自檢（probe-selfcheck）：抽出本檔全部 python 探針，逐一編譯、檢查跨直譯器版本
+# 可攜性，並實際執行其中不需網路者。無網路、無 wf_cli 依賴；退出碼非 0 即失敗，可直接掛 CI。
+import ast, pathlib, re, sys
+
+DOC = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "docs/WF_RESOURCE_WRITESET1.md")
+TICK = chr(96)                   # 反引號；不寫字面，以免本區塊被自己的內容提前關閉
+FLOOR = (3, 11)                  # cli/pyproject.toml 的 requires-python 下限
+OPENER = re.compile("^(" + TICK + "{3,})python[ \t]*$")
+SELF = "probe-selfcheck"         # 本區塊自身的標記：抽到自己時不遞迴執行
+
+def extract(text):
+    """回傳 [(起始行, 結束行, 原始碼)]，行號 1-based 且含端點。"""
+    lines, out, i = text.splitlines(), [], 0
+    while i < len(lines):
+        m = OPENER.match(lines[i])
+        if not m:
+            i += 1; continue
+        fence, j = m.group(1), i + 1
+        while j < len(lines):
+            s = lines[j].strip()
+            if s and set(s) == {TICK} and len(s) >= len(fence): break
+            j += 1
+        if j >= len(lines): raise SystemExit(f"第 {i+1} 行的 python 區塊未閉合")
+        out.append((i + 2, j, "\n".join(lines[i+1:j])))
+        i = j + 1
+    return out
+
+def imports_wf_cli(tree):
+    """是否真的 import wf_cli。不可用字串比對：§9.8 的語料裡就有 cli/src/wf_cli/ 這條路徑。"""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(a.name.split(".")[0] == "wf_cli" for a in node.names): return True
+        if isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[0] == "wf_cli": return True
+    return False
+
+def fstring_backslash(tree, src):
+    """f-string 取值部含反斜線者，在 Python 3.12 以前（PEP 701 之前）是 SyntaxError。"""
+    if sys.version_info < (3, 12):
+        return []                # 該版本的 compile() 本身即精確閘門，且 f-string 內位置不可靠
+    hits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.JoinedStr): continue
+        for part in node.values:
+            if not isinstance(part, ast.FormattedValue): continue
+            seg = ast.get_source_segment(src, part.value) or ""
+            if "\\" in seg: hits.append((part.lineno, seg.strip()))
+    return hits
+
+text = DOC.read_text(encoding="utf-8")
+probes, failures, ran = extract(text), [], 0
+ver = ".".join(str(n) for n in sys.version_info[:3])
+floor = f"{FLOOR[0]}.{FLOOR[1]}"
+print(f"探針自檢：{DOC}；抽出 python 區塊 {len(probes)} 個；直譯器 {ver}；宣稱可攜下限 {floor}")
+if len(probes) < 4: failures.append(("整份", f"只抽到 {len(probes)} 個區塊，少於本檔登記的 4 個"))
+for start, end, src in probes:
+    label, note = f"L{start}-{end}", []
+    try:
+        tree = ast.parse(src, f"{DOC}:{start}")
+    except SyntaxError as exc:
+        failures.append((label, f"編譯失敗：{exc}")); print(f"  {label}：編譯失敗"); continue
+    for lineno, seg in fstring_backslash(tree, src):
+        failures.append((label, f"第 {start + lineno - 1} 行 f-string 取值部含反斜線"
+                                f"（{floor} 上會 SyntaxError）：{seg}"))
+        note.append("可攜性違例")
+    if SELF in src:
+        note.append("自身，不遞迴執行")
+    elif imports_wf_cli(tree):
+        note.append("需 gh 登入，僅編譯")
+    else:
+        ns = {"__name__": "__probe__"}
+        try:
+            exec(compile(tree, f"{DOC}:{start}", "exec"), ns)
+        except BaseException as exc:
+            failures.append((label, f"執行拋錯：{type(exc).__name__}: {exc}")); note.append("執行失敗")
+        else:
+            ran += 1
+            note.append("已執行")
+            if ns.get("ok") is False: failures.append((label, "該探針自身斷言判 FAIL"))
+    print(f"  {label}：編譯 OK；{'；'.join(note) or '—'}")
+print(f"實際執行 {ran} 個離線探針；違例 {len(failures)} 筆")
+for label, msg in failures: print(f"  [FAIL] {label}：{msg}")
+print(f"[裁決] {'PASS' if not failures else 'FAIL'}")
+sys.exit(1 if failures else 0)
+```
+
+#### 9.9.1 它檢查什麼，為什麼是這三件
+
+1. **編譯**（`ast.parse`）：抓 R2-001 那一類「抽出來根本跑不起來」。在 3.12 以前的直譯器上，這一步就是精確閘門。
+2. **可攜性**（f-string 取值部的反斜線）：**這才是 R2-001 的真正形狀**。在 3.12+（PEP 701）該寫法合法，於是**用新直譯器自檢會看不見它**——查核者用系統 Python 3.9 撞到、執行者用 3.14 沒撞到，同一份檔案兩種結果。故在 3.12+ 上補一道 AST 掃描，把宣稱的可攜下限（`requires-python >= 3.11`）機械化。3.12 以下不掃：那些版本的 `compile()` 已是精確閘門，且 f-string 內的位置資訊不可靠，掃了會產生假陽性。
+3. **執行**：不 import `wf_cli` 的探針（今日只有 §9.8）**實際跑完**，並在其自訂 `ok` 為 `False` 時判 FAIL。需 `gh` 登入者只編譯——CI 不該依賴 GitHub 憑證，但**語法與可攜性不需要憑證就能守住**。
+
+`imports_wf_cli` 用 AST 判 import 而非字串比對，是因為 §9.8 的語料裡就有 `"cli/src/wf_cli/"` 這條**路徑字串**——用 `"wf_cli" in src` 會把離線探針誤判成需憑證而**靜默不執行它**。這是本檔反覆出現的同一種病：**用寬鬆的字面比對代替結構判定，代價是安靜地少做事。**
+
+#### 9.9.2 在修正前的檔案上執行的輸出（反向驗證）
+
+自檢若只在修好之後跑一次，證明不了它抓得到東西。以 **R2 交付版**（`cb6028f`）的檔案為輸入：
+
+```text
+探針自檢：docs/WF_RESOURCE_WRITESET1.md；抽出 python 區塊 3 個；直譯器 3.14.3；宣稱可攜下限 3.11
+  L609-664：編譯 OK；需 gh 登入，僅編譯
+  L692-733：編譯 OK；可攜性違例；需 gh 登入，僅編譯
+  L768-855：編譯 OK；已執行
+實際執行 1 個離線探針；違例 2 筆
+  [FAIL] 整份：只抽到 3 個區塊，少於本檔登記的 4 個
+  [FAIL] L692-733：第 720 行 f-string 取值部含反斜線（3.11 上會 SyntaxError）：sum(1 for it in items if not re.match(r'https://github\.com/([^/]+/[^/]+)/issues/', it.issue_url or ''))
+[裁決] FAIL
+```
+
+（`[3]`／`[4]` 等 §9.8 自身的輸出在執行時會巢狀印出，此處略去。）
+
+**它在 Python 3.14 上、且在 `compile()` 通過的情況下，仍然指到了第 720 行**——與查核者用系統 Python 3.9 手動 `sed -n '694,733p' | python3` 撞到的是同一行。第一筆 `[FAIL]` 則是自檢**抽到自己之前**的狀態（R2 版沒有 §9.9，只有 3 個區塊）。
+
+#### 9.9.3 在本次交付版上的輸出
+
+```text
+探針自檢：docs/WF_RESOURCE_WRITESET1.md；抽出 python 區塊 4 個；直譯器 3.14.3；宣稱可攜下限 3.11
+  L622-677：編譯 OK；需 gh 登入，僅編譯
+  L709-754：編譯 OK；需 gh 登入，僅編譯
+  L793-880：編譯 OK；已執行
+  L914-997：編譯 OK；自身，不遞迴執行
+實際執行 1 個離線探針；違例 0 筆
+[裁決] PASS
+```
+
+（同樣略去 §9.8 在 `L793-880` 執行時巢狀印出的 `[1]`–`[4]` 與其 `[裁決] PASS`；退出碼 `0`。）
+
+四個區塊即 §9.7（`L622-677`）、§9.7b（`L709-754`）、§9.8（`L793-880`）、§9.9 自身（`L914-997`）。**行號會隨本檔任何編輯而漂移，所以它由自檢輸出，不寫進正文其他地方。**
+
+#### 9.9.4 CI 歸屬與行號的自動化
+
+- **CI**：衍生卡須把本探針落成 repo 內腳本並掛進 CI（§9.6 第 57 列、§10）。**本卡只宣告 `docs/WF_RESOURCE_WRITESET1.md` 一個資源，不得新增 workflow 或 script 檔案**——這是資源宣告互斥語意的卡在自己身上的應用，不是偷懶。
+- **行號**：上列輸出的 `L<起>-<訖>` 即各探針在本檔中的行號區間，**由程式列出、不由人維護**。查核者若要沿用手動 `sed -n '<起>,<訖>p' docs/WF_RESOURCE_WRITESET1.md | PYTHONPATH=cli/src python3` 的重現方式，直接讀該次自檢輸出即可，不必信任文件裡任何寫死的行號。
+
 ---
 
 ## 10. 歸屬
@@ -889,7 +1055,8 @@ print(f"[裁決] {'PASS' if ok else 'FAIL'}")
 - `open_cmd.py`／`amend_cmd.py`：§3.4 拒收時機、§5.1 tracked symlink 逐分量走查、§7.1 存在性提示。
 - `assign_cmd.py`：§5.3 realpath 與 containment、§6 revision 釘選與 TOCTOU、§4.2 repo 歸屬 fail-closed、**§8.6 不變式 I 的各站處置、§8.7 移除 `skipped_unparseable`、§8.8 `--ignore-unparseable` 與 `UNPARSEABLE_EXEMPTION_SUNSET` 常數**。
 - `doctor.py`：§8.8.2 的母體殘量與距 sunset 天數輸出（唯讀報告）。
-- 測試：§9 全部 60 列（1–43 原有＋28a／28b＋44–56＋49a／49b 共 17 列新增）＋五項列舉式斷言（§9.2 零遷移負債、§9.3 第 28／28b、§9.6 第 54、§9.7／§9.7b／§9.8 的生成式輸出）。
+- **CI ＋ 一支 repo 內腳本**：§9.9 的探針自檢（抽取本檔全部 `python` 區塊 → 編譯 ＋ 可攜性 ＋ 執行離線者），連同 §9.6 第 57 列的兩個變異測試。**本卡不落地它**——本卡只宣告 `docs/WF_RESOURCE_WRITESET1.md`，新增腳本或 workflow 會逸出自己的寫入集。
+- 測試：§9 全部 61 列（1–43 原有＋28a／28b＋44–57＋49a／49b 共 18 列新增）＋五項列舉式斷言（§9.2 零遷移負債、§9.3 第 28／28b、§9.6 第 54、§9.7／§9.7b／§9.8 的生成式輸出）。
 
 **排程限制**：`assign_cmd.py` 目前由 [#21](https://github.com/ruan6047/ai-workflow/issues/21) 佔用（宣告 `file:cli/src/wf_cli/commands/assign_cmd.py`），衍生卡須待其釋放。`resources.py` 目前**無活卡佔用**，故 §8.1 的立即階段可先行落地——這正是兩階段切分的實務價值。
 
@@ -932,6 +1099,7 @@ print(f"[裁決] {'PASS' if ok else 'FAIL'}")
 4. **`db:` 資源的相交語意**。沿用 canonical §4.1，未改動。
 5. **活卡的定義**。沿用現行 `assign`（非終態＋已指派），未改動。**收緊它是 fail-open 方向的變更**，理由見 §8.8.4，須另開卡並以「這會漏掉什麼」為驗收。
 6. **`open`／`amend` 對既有 33 張 MIG1 佔位卡的批次補宣告**。§8.8 給了到期壓力，但**誰去補、怎麼補**是作業排程，不是契約語意。
+7. **CLI 路徑引數的正規化**（`--worktree` 等）。§3.1 的封閉 namespace 只規範卡面 `file:` 資源宣告；兩者定義域不相容，理由見該節的界線告示，歸屬 [#23](https://github.com/ruan6047/ai-workflow/issues/23)。
 
 ### 12.1 已從非目標移出並裁定的項目（記錄）
 
@@ -946,8 +1114,11 @@ print(f"[裁決] {'PASS' if ok else 'FAIL'}")
 ## 13. 執行者揭露
 
 - 本檔為設計／契約文件，**無程式碼變更、無 CI**。§9 的矩陣**未被執行**，執行歸衍生卡。
-- §1.1、§1.2、§3.2、§3.3、§4.1、§4.2、§8.2、§8.3、§8.7、§8.8、§9.7、§9.7b、§9.8 的所有數字，均由探查程式對真實 repo 與真實 Project #4 產生，非人工清點。三支探針（§9.7 活卡三規則、§9.7b 封閉母體普查、§9.8 離線窮舉）**全部內嵌於本檔並可原樣重跑**，其中 §9.8 不需網路與 `gh` 登入。
-- **R2（本輪）處理 R1-001**：新增 §8.6–§8.9、§9.6 矩陣 13 列、§9.7b／§9.8 兩支探針，改寫 §4.2、§12.1，並補 §11 第 9／10 列。§2、§3、§5–§7 的既有內容未被修改（R1 查核已驗證通過的 `B ⊇ C`、窮舉 `b_misses_c=0`、`templates/` vs `templates2/a.md` 不相交三項結論在 §9.8 被重新生成並維持不變）。
+- §1.1、§1.2、§3.2、§3.3、§4.1、§4.2、§8.2、§8.3、§8.7、§8.8、§9.7、§9.7b、§9.8 的所有數字，均由探查程式對真實 repo 與真實 Project #4 產生，非人工清點。四支探針（§9.7 活卡三規則、§9.7b 封閉母體普查、§9.8 離線窮舉、§9.9 探針自檢）**全部內嵌於本檔並可原樣抽出執行**，其中 §9.8 與 §9.9 不需網路與 `gh` 登入。
+- **上一句在 R2 交付版是假的，而它是我自己寫的。** R2 版逐字寫著「三支探針全部內嵌於本檔並可原樣重跑」，實際上 §9.7b 抽出來即 `SyntaxError`（f-string 取值部含反斜線，Python < 3.12），由查核者以 `sed | python3` 撞出（R2-001）。**這條紀律的教訓不是「要更小心」**：我在 Python 3.14 上寫、在 3.14 上驗，而該寫法在 3.14 合法——**同一份檔案在不同直譯器上有不同結果，靠自律看不見**。故 R3 不只修那一行，而是把「探針可原樣抽出執行」本身變成 §9.9 的機械檢查，並要求衍生卡以變異測試釘住它（§9.6 第 57 列）。
+- **R3（本輪）處理 R2-001**：修 §9.7b 的可攜性缺陷並以修正後程式重跑（§9.7／§9.7b 同一 session，釘選 2026-08-12 01:28 +0800）、新增 §9.9 探針自檢與 §9.6 第 57 列、補 §3.1 的定義域界線告示與 §12 第 7 項（跨卡裁決，對 [#23](https://github.com/ruan6047/ai-workflow/issues/23)）、修正 §4.2 對 §9.7／§9.7b 的誤標，並在 §1.2／§9.7 記錄「線上反例已消失」與上一版把線上狀態誤當不變量的措辭錯誤。**§2、§3（除新增告示）、§5–§8 未改動；§9.8 一字未改**（其 `[裁決] PASS` 在 R3 由 §9.9 自動執行複現）。
+- **R2 處理 R1-001**：新增 §8.6–§8.9、§9.6 矩陣 13 列、§9.7b／§9.8 兩支探針，改寫 §4.2、§12.1，並補 §11 第 9／10 列。§2、§3、§5–§7 的既有內容未被修改（R1 查核已驗證通過的 `B ⊇ C`、窮舉 `b_misses_c=0`、`templates/` vs `templates2/a.md` 不相交三項結論在 §9.8 被重新生成並維持不變）。
+- **R3 自陳，未修：§9.9 的自檢只涵蓋內嵌於本檔的四支探針，本檔仍有數字不在其射程內。** 具體是 §1.1 的「送入宣告全數被接受」對照表、§4.1 的 repo 分佈表（非終態 10／44、已指派 7／11）、§3.2 的 `*`／`?`／`[` 計數（0／0／41）、§3.3 的 25 個非 ASCII 路徑——這些來自一次性 session 腳本，**與 R2-001 是同一族的「不可重跑證據」，只是還沒有人踩到**。本輪不補的理由是它們支撐的都是**定性結論**（語彙檢查為零、Project 跨兩 repo、中括號不可誤拒、CJK 路徑真實存在），定性結論不因計數漂移而翻轉；而 §8.7.2／§8.8.1 靠的是**具體數值與具名清單**，那才是非可重跑不可的。**這個界線是我畫的，查核者可以不接受**——若判定要全數補成內嵌探針，工作量在本檔內、不逸出寫入集。
 - **§8.2 的「258 組合」數字來自 R1 當時的一次性 session 腳本，不可重跑**；本輪以 §9.8 的內嵌程式取代其角色（23 條語料、276 組合、`b_misses_c = 0`），結論相同而證據升級為可稽核。兩者語料不同故組合數不同——**這是刻意的替換，不是數字對不上**。
 - §5.2 的 git symlink 行為以一個臨時 scratch repo 實測，該 repo 未進入本 repo；重現步驟即 §9.4 第 29–33 列。
 - 撰寫過程中一項自查修正值得記錄：初次以 `git ls-files | grep -P '[^\x00-\x7F]'` 探查非 ASCII 路徑，得到「兩 repo 皆無」的**錯誤**結論——`git ls-files` 預設對非 ASCII 路徑做 C-style 八進位引號。改用 `-c core.quotePath=false` 後查出 25 筆。§3.3 因此從「不需要」翻轉為「需要」。**探查工具的預設值本身就是一個可以說謊的來源。**
