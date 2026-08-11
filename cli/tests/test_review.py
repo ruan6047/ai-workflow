@@ -60,6 +60,10 @@ def open_card(card_id: str, *, repo: str | None = REPO) -> int:
         "--db-scope", "none",
         "--core-pain", "痛點文字",
         "--service-goal", "服務的原始目標文字",
+        "--exec-capability", "主力型",
+        "--exec-capability-reason", "一般實作",
+        "--review-capability", "主力型",
+        "--review-capability-reason", "一般 review",
     ]
     return run_cli(argv)
 

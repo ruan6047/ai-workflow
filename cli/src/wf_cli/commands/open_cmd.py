@@ -9,7 +9,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..card import Card, render_issue_body, render_spec_markdown
+from ..card import (
+    CAPABILITY_TIERS,
+    Card,
+    render_issue_body,
+    render_spec_markdown,
+    validate_capability_routing,
+)
 from ..config import add_target_args, resolve_target
 from ..gh import default_runner
 from ..project import (
@@ -33,7 +39,41 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     add_target_args(p)
     p.add_argument("card_id")
     p.add_argument("--feature", required=True, help="功能（卡面標題後半段）")
-    p.add_argument("--tier", required=True, choices=["T0", "T1", "T2", "T3", "T4"])
+    p.add_argument(
+        "--tier",
+        required=True,
+        choices=["T0", "T1", "T2", "T3", "T4"],
+        help="**風險級別** T0–T4（卡面欄位「級別」）。這條軸講的是變更風險，"
+        "與 --exec-capability／--review-capability 的**能力層級**"
+        "（經濟型／主力型／高階型）是兩條不同的軸，名稱雖都含 tier／層級但不可互代。",
+    )
+    p.add_argument(
+        "--exec-capability",
+        required=True,
+        choices=list(CAPABILITY_TIERS),
+        help="建議**執行**能力層級（MODEL_ROUTING.md「預設能力等級」欄的語彙）。"
+        "引用層級而非模型名：名單會過期，層級才是穩定介面。"
+        "**不是** T0–T4 風險級別（那是 --tier）。",
+    )
+    p.add_argument(
+        "--exec-capability-reason",
+        required=True,
+        help="建議執行能力層級的理由（能力軸；須反映任務風險）。"
+        "缺或空白一律硬拒，CLI 不代填預設值。",
+    )
+    p.add_argument(
+        "--review-capability",
+        required=True,
+        choices=list(CAPABILITY_TIERS),
+        help="建議**查核**能力層級（語彙同 --exec-capability）。"
+        "紅線卡另須跨家族或人工查核，該獨立性要求疊加於層級之上、"
+        "寫進理由，不是第四個層級。",
+    )
+    p.add_argument(
+        "--review-capability-reason",
+        required=True,
+        help="建議查核能力層級的理由（能力軸）。缺或空白一律硬拒。",
+    )
     p.add_argument(
         "--db-scope",
         required=True,
@@ -98,6 +138,20 @@ def run(args: argparse.Namespace) -> int:
             print(f"[open] 必填欄檢查失敗：{e}", file=sys.stderr)
         return 2
 
+    # 規劃期路由（canonical §3 Plan／MODEL_ROUTING.md「路由決定於規劃期」）。
+    # argparse 的 required＋choices 已擋掉「沒給」與「不在語彙內」；這裡補的是
+    # argparse 擋不到的空白字串理由——與 --core-pain 空白時同樣硬拒，不建卡。
+    try:
+        validate_capability_routing(
+            executor_capability=args.exec_capability,
+            executor_capability_reason=args.exec_capability_reason,
+            reviewer_capability=args.review_capability,
+            reviewer_capability_reason=args.review_capability_reason,
+        )
+    except ValueError as exc:
+        print(f"[open] 拒絕：{exc}", file=sys.stderr)
+        return 2
+
     try:
         validate_chain_depth(args.chain_depth)
     except ValidationError as exc:
@@ -113,6 +167,10 @@ def run(args: argparse.Namespace) -> int:
         core_pain=args.core_pain,
         service_goal=args.service_goal,
         resources=decl,
+        executor_capability=args.exec_capability,
+        executor_capability_reason=args.exec_capability_reason,
+        reviewer_capability=args.review_capability,
+        reviewer_capability_reason=args.review_capability_reason,
         initiative=args.initiative,
         requested_by=args.requested_by,
         planned_by=args.planned_by,

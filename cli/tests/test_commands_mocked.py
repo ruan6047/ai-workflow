@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from wf_cli.card import ROUTING_MARKER
 from wf_cli.cli import build_parser
 from wf_cli.commands import (
     assign_cmd,
@@ -22,9 +23,11 @@ from wf_cli.project import (
     list_items,
     resolve_project,
     set_field_value,
+    set_item_body,
 )
 
 from .fake_gh import FakeGhRunner
+from .test_card import ROUTING_LINE_RE
 
 
 @pytest.fixture
@@ -58,6 +61,10 @@ def _open_argv(card_id: str, **overrides) -> list[str]:
         "--db-scope": "none",
         "--core-pain": "痛點文字",
         "--service-goal": "服務的原始目標文字",
+        "--exec-capability": "主力型",
+        "--exec-capability-reason": "跨模組改動",
+        "--review-capability": "主力型",
+        "--review-capability-reason": "一般 review 即可",
     }
     defaults.update(overrides)
     argv = ["open", *BASE_TARGET, card_id]
@@ -175,11 +182,358 @@ def test_open_rejects_chain_depth_over_hard_cap(fake_runner, capsys):
     assert find_item_by_card_id(list_items(fake_runner, project), "CHAINDEPTH-CARD-BAD") is None
 
 
-def _assign_argv(card_id: str, assignee: str, branch: str, worktree: str) -> list[str]:
-    return [
+# ---------------------------------------------------------------------------
+# 規劃期路由欄位（WF-CLI-ROUTING-TIER1）
+# ---------------------------------------------------------------------------
+
+
+def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tmp_path: Path):
+    spec_dir = tmp_path / "tasks"
+    rc = run_cli(
+        _open_argv(
+            "ROUTING-CARD1",
+            **{
+                "--exec-capability": "主力型",
+                "--exec-capability-reason": "跨模組、根因已知",
+                "--review-capability": "高階型",
+                "--review-capability-reason": "資料正確性紅線，須跨家族",
+                "--spec-dir": str(spec_dir),
+            },
+        )
+    )
+    assert rc == 0
+    expected = (
+        "- 執行：待指派（建議 主力型；跨模組、根因已知）"
+        "　查核：待指派（建議 高階型；資料正確性紅線，須跨家族）"
+    )
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "ROUTING-CARD1")
+    assert item is not None
+    assert expected in item.body
+    assert expected in (spec_dir / "ROUTING-CARD1.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--exec-capability",
+        "--exec-capability-reason",
+        "--review-capability",
+        "--review-capability-reason",
+    ],
+)
+def test_open_argparse_requires_every_routing_flag(fake_runner, flag):
+    # 缺欄＝硬拒（argparse required），不得靜默產出不符範本第 4 行的卡。
+    argv = list(_open_argv("ROUTING-MISSING"))
+    idx = argv.index(flag)
+    del argv[idx : idx + 2]
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)
+
+
+@pytest.mark.parametrize(
+    "flag", ["--exec-capability-reason", "--review-capability-reason"]
+)
+def test_open_rejects_blank_routing_reason_without_creating_card(fake_runner, capsys, flag):
+    rc = run_cli(_open_argv("ROUTING-BLANK", **{flag: "   "}))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "必填" in err
+    project = resolve_project(fake_runner, "acme", 1)
+    assert find_item_by_card_id(list_items(fake_runner, project), "ROUTING-BLANK") is None
+
+
+@pytest.mark.parametrize("flag", ["--exec-capability", "--review-capability"])
+def test_open_rejects_risk_tier_value_in_capability_flag(fake_runner, flag):
+    # 命名碰撞的實際誤用：把 T0–T4 填進能力層級旗標，argparse choices 直接擋。
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(_open_argv("ROUTING-CONFUSED", **{flag: "T3"}))
+
+
+def test_open_rejects_capability_tier_value_in_risk_tier_flag(fake_runner):
+    # 反向：把能力層級填進 --tier（級別）也必須擋，兩軸值域互不接受。
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(_open_argv("ROUTING-CONFUSED2", **{"--tier": "主力型"}))
+
+
+# #17／#19／#20 的實際開卡情境重放：三張卡當初產出的執行行都是
+# 「- 執行：待指派　查核：獨立校讀」（缺括號內的層級與理由，即本卡的核心痛點）。
+# 以相同參數重跑新版 open，證明產出改為符合 templates/tasks-card.md 第 4 行。
+_REPLAY_CARDS = [
+    (
+        "WF-REVIEW-EVENT-MARKER-ENFORCE1",
+        "doctor 落實 wf-review-event:v1 不合格 marker 的 fail-closed",
+        "高階型",
+        "查核寫入通道的 fail-closed 判準，錯判會讓卡停機",
+    ),
+    (
+        "WF-CLI-CARD-AMEND1",
+        "wfcli 補上開卡後的通用卡面修訂能力",
+        "主力型",
+        "唯一寫入通道的新寫入路徑，跨模組",
+    ),
+    (
+        "WF-REVIEW-CHANNEL-THIRD-FACE1",
+        "doctor 補上三面一致的第三面（Project 交付狀態欄）",
+        "主力型",
+        "既有對帳邏輯延伸，根因與範圍已知",
+    ),
+]
+
+
+@pytest.mark.parametrize("card_id,feature,capability,reason", _REPLAY_CARDS)
+def test_open_replays_real_cards_into_template_line4_format(
+    fake_runner, card_id, feature, capability, reason
+):
+    rc = run_cli(
+        _open_argv(
+            card_id,
+            **{
+                "--feature": feature,
+                "--reviewer": "獨立校讀",
+                "--exec-capability": capability,
+                "--exec-capability-reason": reason,
+                "--review-capability": "高階型",
+                "--review-capability-reason": "跨家族獨立查核",
+            },
+        )
+    )
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), card_id)
+    assert item is not None
+    routing = [ln for ln in item.body.splitlines() if ln.startswith("- 執行：")]
+    assert len(routing) == 1
+    assert ROUTING_LINE_RE.match(routing[0]) is not None
+    # 三張卡當初的產出形狀（無層級無理由）不得再出現。
+    assert routing[0] != "- 執行：待指派　查核：獨立校讀"
+
+
+def _assign_argv(
+    card_id: str,
+    assignee: str,
+    branch: str,
+    worktree: str,
+    *,
+    actual_capability: str = "主力型",  # 與 _open_argv 的建議執行層級相同＝相符路徑
+    deviation_reason: str | None = None,
+) -> list[str]:
+    argv = [
         "assign", *BASE_TARGET, card_id,
         "--assignee", assignee, "--branch", branch, "--worktree", worktree,
+        "--actual-capability", actual_capability,
     ]
+    if deviation_reason is not None:
+        argv += ["--capability-deviation-reason", deviation_reason]
+    return argv
+
+
+# --- assign 偏離專項：三種情形（卡面驗證明列）-------------------------------
+
+
+def _assign_log_line(runner, card_id: str) -> str:
+    project = resolve_project(runner, "acme", 1)
+    item = find_item_by_card_id(list_items(runner, project), card_id)
+    assert item is not None
+    lines = [ln for ln in item.body.splitlines() if " assign by wf-cli " in ln]
+    assert len(lines) == 1
+    return lines[0]
+
+
+def test_assign_matched_capability_needs_no_reason_and_proceeds(fake_runner):
+    # 情形 1：實際層級＝卡面建議 → 不要求理由，照常派工。
+    run_cli(_open_argv("DEV-MATCH1", **{"--exec-capability": "主力型"}))
+    rc = run_cli(
+        _assign_argv("DEV-MATCH1", "某模型@某工具", "b", "/w", actual_capability="主力型")
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-MATCH1")
+    assert "實際能力層級 主力型（與卡面建議 主力型 相符）" in log
+
+
+class _RecordingRunner:
+    """把每一次 gh 呼叫記下來的代理（R2-002）。
+
+    先前那版「零寫入」測試只比對最終狀態值——`FakeGhRunner` 不記呼叫，所以測不出
+    「有沒有發生 mutation」，只測得出「最後看起來一樣」。狀態比對過不了「探針通過
+    但程式不正確」這關（例如寫進去又改回來），改用呼叫紀錄才是真證據。
+
+    刻意做在測試檔內而非改 `tests/fake_gh.py`：後者不在本卡資源宣告內。
+    """
+
+    # gh 子命令中會改變遠端狀態的那些；其餘（view／field-list／item-list）是唯讀。
+    MUTATING = (
+        ("project", "item-edit"),
+        ("project", "item-create"),
+        ("project", "item-add"),
+        ("project", "field-create"),
+        ("issue", "create"),
+        ("issue", "edit"),
+        ("issue", "comment"),
+    )
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.calls: list[list[str]] = []
+
+    def execute(self, args, input=None):
+        self.calls.append(list(args))
+        return self.inner.execute(args, input)
+
+    def run_json(self, args):
+        self.calls.append(list(args))
+        return self.inner.run_json(args)
+
+    def graphql(self, query: str, **variables):
+        self.calls.append(["graphql", query])
+        return self.inner.graphql(query, **variables)
+
+    def mutations(self) -> list[list[str]]:
+        found = []
+        for call in self.calls:
+            is_mutating_subcommand = any(
+                call[: len(m)] == list(m) for m in self.MUTATING
+            )
+            is_mutating_graphql = call[0] == "graphql" and "mutation" in call[1]
+            if is_mutating_subcommand or is_mutating_graphql:
+                found.append(call)
+        return found
+
+
+def test_assign_deviation_without_reason_is_refused_before_any_mutation(
+    fake_runner, capsys, monkeypatch
+):
+    # 情形 2：不符且未給理由 → fail-closed 拒絕。
+    #
+    # 保證的**精確範圍**：拒絕路徑不發生任何 mutation 呼叫。注意 assign 在能力檢查
+    # 之前會呼叫 ensure_fields，那是冪等的欄位 schema 準備——本測試在欄位已存在的
+    # project 上跑，故連 field-create 都不該發生；但「絕對零寫入」不是本指令在所有
+    # 情境下的保證（全新 project 會先建欄位），因此不用那個更強的詞。
+    run_cli(_open_argv("DEV-FAIL1", **{"--exec-capability": "主力型"}))
+    project = resolve_project(fake_runner, "acme", 1)
+    before = find_item_by_card_id(list_items(fake_runner, project), "DEV-FAIL1")
+
+    spy = _RecordingRunner(fake_runner)
+    monkeypatch.setattr(assign_cmd, "default_runner", spy)
+    rc = run_cli(
+        _assign_argv("DEV-FAIL1", "某模型@某工具", "b", "/w", actual_capability="高階型")
+    )
+    assert rc == 2
+    assert "MODEL_ROUTING" in capsys.readouterr().err
+
+    # 真證據：整條拒絕路徑上一次 mutation 都沒有。
+    assert spy.mutations() == []
+    assert spy.calls, "代理必須真的攔到呼叫，否則這個斷言是空的"
+
+    # 狀態值也確實沒變（與呼叫紀錄互為佐證）。
+    after = find_item_by_card_id(list_items(fake_runner, project), "DEV-FAIL1")
+    assert after.fields["owner"] == before.fields["owner"]
+    assert after.fields["交付狀態"] == before.fields["交付狀態"]
+    assert after.body == before.body
+
+
+def test_recording_runner_actually_detects_mutations(fake_runner, monkeypatch):
+    # 防「探針本身壞掉」：成功派工必須被同一支代理看見 mutation。
+    # 沒有這條，上面的 mutations()==[] 可能只是代理沒接上。
+    run_cli(_open_argv("DEV-SPY1", **{"--exec-capability": "主力型"}))
+    spy = _RecordingRunner(fake_runner)
+    monkeypatch.setattr(assign_cmd, "default_runner", spy)
+    assert run_cli(_assign_argv("DEV-SPY1", "某模型@某工具", "b", "/w")) == 0
+    assert spy.mutations() != []
+
+
+def test_assign_deviation_with_reason_records_both_and_reads_back(fake_runner):
+    # 情形 3：給了理由 → 實際層級與偏離理由皆入 Log，且可被讀回。
+    run_cli(_open_argv("DEV-OK1", **{"--exec-capability": "主力型"}))
+    rc = run_cli(
+        _assign_argv(
+            "DEV-OK1",
+            "某模型@某工具",
+            "b",
+            "/w",
+            actual_capability="高階型",
+            deviation_reason="主力型當下額度不足，改派高階型",
+        )
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-OK1")
+    assert "實際能力層級 高階型" in log
+    assert "偏離卡面建議 主力型" in log
+    assert "主力型當下額度不足，改派高階型" in log
+
+
+def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviation(
+    fake_runner, capsys
+):
+    # 無基線格（#17／#19／#20 那批舊卡）：同樣 fail-closed，但留痕不得寫成「偏離」。
+    run_cli(_open_argv("DEV-LEGACY1"))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "DEV-LEGACY1")
+    # 真正的規劃期路由必填之前的卡：**沒有版本標記**，執行行是舊格式自由文字。
+    legacy_body = item.body.replace(
+        next(ln for ln in item.body.splitlines() if ln.startswith("- 執行：")),
+        "- 執行：待指派　查核：獨立校讀",
+    ).replace(ROUTING_MARKER + "\n", "")
+    set_item_body(fake_runner, item.content_type, item.content_id, project, None, None, legacy_body)
+
+    assert run_cli(_assign_argv("DEV-LEGACY1", "某模型@某工具", "b", "/w")) == 2
+    assert "沒有可比對的建議層級" in capsys.readouterr().err
+
+    rc = run_cli(
+        _assign_argv(
+            "DEV-LEGACY1", "某模型@某工具", "b", "/w",
+            deviation_reason="本卡開立於規劃期路由必填之前，無建議可比對",
+        )
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-LEGACY1")
+    assert "卡面無建議層級" in log
+    assert "偏離卡面建議" not in log
+    assert "本卡開立於規劃期路由必填之前" in log
+
+
+def test_assign_on_declared_card_with_broken_line_logs_unparseable_not_absent(fake_runner):
+    # R3-001 的第二個方向，走完整 CLI 路徑：卡面**宣告**了新制但路由行被破壞
+    # （這裡用零寬字元打斷前綴），Log 必須寫「無法解析」而非「卡面無建議層級」。
+    run_cli(_open_argv("DEV-BROKEN1", **{"--exec-capability": "主力型"}))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "DEV-BROKEN1")
+    routing = next(ln for ln in item.body.splitlines() if ln.startswith("- 執行："))
+    broken = item.body.replace(routing, "\u200b" + routing)  # 標記仍在，行壞了
+    set_item_body(fake_runner, item.content_type, item.content_id, project, None, None, broken)
+
+    assert run_cli(_assign_argv("DEV-BROKEN1", "某模型@某工具", "b", "/w")) == 2
+    rc = run_cli(
+        _assign_argv(
+            "DEV-BROKEN1", "某模型@某工具", "b", "/w",
+            deviation_reason="卡面路由行疑遭編輯破壞，先以主力型派工並待修卡",
+        )
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-BROKEN1")
+    assert "卡面建議無法解析" in log
+    assert "卡面無建議層級" not in log
+    assert "偏離卡面建議" not in log
+
+
+def test_assign_argparse_requires_actual_capability(fake_runner):
+    argv = _assign_argv("DEV-REQ1", "某模型@某工具", "b", "/w")
+    idx = argv.index("--actual-capability")
+    del argv[idx : idx + 2]
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)
+
+
+def test_assign_rejects_risk_tier_value_in_actual_capability(fake_runner):
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            _assign_argv("DEV-REQ2", "某模型@某工具", "b", "/w", actual_capability="T3")
+        )
 
 
 def test_assign_writes_owner_and_branch_worktree(fake_runner):
