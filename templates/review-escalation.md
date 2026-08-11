@@ -98,7 +98,14 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 
 「未提及」是預設格：**沉默不等於 deferred**。任何無法落入前五格的輸入一律落在此格並強制 `escalate`，adapter 不得另設「其餘」處置。同一 finding 的證據同時指向多格時，依「已離開 open set 的三格（`resolved`／`withdrawn`／已非有效 open finding）」＞ 仍開啟 ＞ deferred 的優先序取單一格；對已離開 open set 之 finding 的 defer 宣告視為無作用的冗贅，不使該 checkpoint 無效。
 
-**查核規格變更與 deferred finding。** 需求方收窄或改變某一輪的查核規格（例如裁定該輪只搜特定根因、明文不逐條複驗前輪處置）是合法動作。它會使 carry set 中的 finding 在該輪既非 `resolved` 也非 `withdrawn`，若無出口，收窄範圍就機械上必然強制下一輪升級——把流程的正常動作誤讀成執行者連續失敗。
+**查核指示變動與 deferred finding。** 有兩種**指示側**的合法動作會使 carry set 中的 finding 在該輪既非 `resolved` 也非 `withdrawn`：
+
+- **規格收窄**（`spec-narrowed`）：需求方裁定該輪只搜特定根因、明文不逐條複驗前輪處置。
+- **指示缺漏**（`instruction-omitted`）：派審指示**漏了**要求查核者逐項回報前輪 finding 的閉環狀態，查核報告因而沒有那一節。
+
+兩者的差別只在前者是刻意、後者是疏漏；對事件流的效果完全相同，而第二條件只看「事件流上有沒有那個宣告」，不看為什麼沒有。若無出口，一次收窄或一次漏寫就機械上必然強制下一輪升級——把 Coordinator／需求方側的動作誤讀成執行者連續失敗。依 §3，這兩種成因本身都屬 `coordination`，本就不消耗 executor 額度；但 §3 管的是 attempt 是否計數，第二條件管的是 carry 是否被處置，**兩者是不同的閘門**，故仍需在 checkpoint 上有一個明示出口。
+
+本出口是**事後的表示法**，不是預防機制：要讓 `instruction-omitted` 不再發生，該做的是在派審指示裡固定要求查核者逐項回報前輪 accepted blocking finding 的閉環狀態——那屬派審／handoff 範本的管轄，不在本檔。也**不**因成因是疏漏而放寬任何一款必要條件，尤其是「不得連續 defer」：同一 finding 被漏問兩次，正是需求方必須介入的狀態。
 
 出口是 checkpoint 的 `deferred_findings`：**它只宣告「本輪不要求對該 finding 表態」，不改變 finding 本身。** deferred finding 的 `status` 仍是 `open`、`accepted` 仍是 `true`，仍留在 open set，仍完整計入 §3 的 `counts_toward_escalation` 推導。§2 的 `status` 三值封閉，**不得**新增 `deferred` 值；defer 處置的是「本輪的複驗義務」，不是 finding 的狀態。要改變 finding 本身只能走 `review-correction`。
 
@@ -107,12 +114,12 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 1. `finding_id` 已存在於本 epoch 某個 attempt，且確實屬於本 checkpoint 的 carry set；
 2. `deferred_by` 逐字等於卡面 `需求：` 欄宣告的帳號（`wfcli open` 寫入的 `requested_by`）。該欄未宣告或無法解析時本出口不可用，adapter 一律 fail-closed——這與 §5 對 `forged-rejected` 分類界線的處理同向：無法機械核對的授權不得以自述成立；
 3. `deferred_by` 不得逐字等於本卡當前 owner，也不得等於本 epoch 任一 review event 的 `reviewer`。同一帳號兼任需求方與執行者／查核者時本出口不可用——defer 的裁定者必須不是被 defer 所嘉惠的人；
-4. `defer_reason` 非空，且載明是哪一次查核規格變更使該 finding 未被表態；
-5. `defer_ruling_url` 指向該次規格變更的需求方裁定留痕。此欄是稽核指標，**不**充當授權證據——授權由第 2、3 款的身分比對成立。（不重蹈 §5 末段已撤回設計的錯誤：當內容由受該裁定影響的一方撰寫時，指向該內容的指標既不證明它當時已存在，也不證明裁定者看過它。）
+4. `defer_cause` 取值於 `spec-narrowed`｜`instruction-omitted`（不得自創成因），且 `defer_reason` 非空並載明對應的那一次事件：`spec-narrowed` 載明是哪一次查核規格變更，`instruction-omitted` 載明是哪一次派審指示漏了要求表態。**兩種成因都必須指向指示側的具體事實**——執行者忙不過來、時間不夠、finding 太難，都不是本出口的成因；
+5. `defer_ruling_url` 指向該事實的留痕：`spec-narrowed` 指向需求方的規格變更裁定，`instruction-omitted` 指向那一則缺漏的派審指示本身（缺漏可由該則留痕直接核對，不必另造證據）。此欄是稽核指標，**不**充當授權證據——授權由第 2、3 款的身分比對成立。（不重蹈 §5 末段已撤回設計的錯誤：當內容由受該裁定影響的一方撰寫時，指向該內容的指標既不證明它當時已存在，也不證明裁定者看過它。）
 
-**清償上限是機械的，不是「應儘速」。** checkpoint C 的 `deferred_findings` 中每個 `finding_id`，必須在**本 epoch 下一個 `escalation-checkpoint` C′** 之時，已由 C′ 的 trigger attempt 給出 `resolved`、`withdrawn` 或明列仍 `open`。逾此即逾期，C′ 的 `checkpoint_decision` 只能是 `escalate`。上限之所以是機械的：第三個之後**每一個**可計數 attempt 都必建 checkpoint，故「下一個 checkpoint」等價於「下一個可計數 attempt」，不需要時鐘、不需要預先知道未來的 `attempt_id`。給出「仍 `open`」算清償了複驗義務，但它本身即第二條件的觸發格，仍然強制 `escalate`——defer 延後的是**評估**，不是**結果**。
+**清償上限是機械的，不是「應儘速」。** checkpoint C 的 `deferred_findings` 中每個 `finding_id`，必須在**本 epoch 下一個 `escalation-checkpoint` C′** 之時，已由 C′ 的 trigger attempt 給出 `resolved`、`withdrawn` 或明列仍 `open`；落入「已非有效 open finding」格（經合法降級或撤銷採認而離開 open set）同樣算清償——複驗義務的對象已不存在，再要求對它表態沒有意義。逾此即逾期，C′ 的 `checkpoint_decision` 只能是 `escalate`。上限之所以是機械的：第三個之後**每一個**可計數 attempt 都必建 checkpoint，故「下一個 checkpoint」等價於「下一個可計數 attempt」，不需要時鐘、不需要預先知道未來的 `attempt_id`。給出「仍 `open`」算清償了複驗義務，但它本身即第二條件的觸發格，仍然強制 `escalate`——defer 延後的是**評估**，不是**結果**。
 
-**不得連續 defer。** 同一 `finding_id` 出現於 C 的 `deferred_findings` 後，不得再出現於 C′ 的 `deferred_findings`；出現即該筆無效並強制 `escalate`。連兩輪無人對同一 accepted blocking finding 表態，正是需求方必須介入的狀態，而介入正是 `escalate` 的語意。此規則同時封死交替 defer 的繞道：finding 要活過 C′ 只能靠 `resolved`／`withdrawn`，而那已使它離開 open set，不可能在 C″ 再被 defer。
+**不得連續 defer。** 同一 `finding_id` 出現於 C 的 `deferred_findings` 後，不得再出現於 C′ 的 `deferred_findings`；出現即該筆無效並強制 `escalate`。連兩輪無人對同一 accepted blocking finding 表態，正是需求方必須介入的狀態，而介入正是 `escalate` 的語意。此規則同時封死交替 defer 的繞道：finding 要活過 C′ 只能靠 `resolved`／`withdrawn`／合法降級，而那三者都已使它離開 open set，不可能在 C″ 再被 defer。
 
 **與第一條件正交。** defer 不新增也不刪除任何 `root_cause_id` 的 occurrence，僅使該 finding 在本輪不產生新 occurrence。同根因已跨三個唯一可計數 attempt 出現時第一條件獨立成立，`deferred_findings` 不能使其失效。
 
@@ -159,12 +166,13 @@ checkpoint_decision: continue | replan | change-executor | escalate
 checkpoint_rationale: <root-cause repetition, closure trend, or requester ruling>
 deferred_findings:          # 選填，預設空陣列；語意與必要條件見 §4
   - finding_id: <既存於本 epoch，且屬本 checkpoint carry set 的 finding>
-    defer_reason: <非空；載明哪一次查核規格變更使該 finding 未被表態>
+    defer_cause: spec-narrowed | instruction-omitted
+    defer_reason: <非空；載明哪一次規格變更或哪一則派審指示缺漏使該 finding 未被表態>
     deferred_by: <卡面「需求：」欄宣告的帳號>
-    defer_ruling_url: <該次查核規格變更的需求方裁定留痕 URL>
+    defer_ruling_url: <該規格變更裁定，或該則缺漏的派審指示本身的留痕 URL>
 ```
 
-`deferred_findings` 只表達「本輪不要求對該 finding 表態」，不得用來變更 finding 的 `status`／`accepted`／分類／根因，也不得用來閉合 finding——那些只能走 `review-correction`。單筆缺欄、身分不符（§4 第 2、3 款）、finding 不在 carry set，或違反「不得連續 defer」者，該筆無效，對應 finding 落回「未提及」格並強制 `escalate`；其餘筆數不受牽連。空陣列與省略本欄語意相同。
+`deferred_findings` 只表達「本輪不要求對該 finding 表態」，不得用來變更 finding 的 `status`／`accepted`／分類／根因，也不得用來閉合 finding——那些只能走 `review-correction`。單筆缺欄、`defer_cause` 不在列舉內、身分不符（§4 第 2、3 款）、finding 不在 carry set，或違反「不得連續 defer」者，該筆無效，對應 finding 落回「未提及」格並強制 `escalate`；其餘筆數不受牽連。空陣列與省略本欄語意相同。**對不在 carry set 的 finding 所作的宣告是無作用的冗贅**（§4 末段），不使整個 checkpoint 無效。
 
 `review-marker-clearance` 解除 §1 的留痕解析停機，必填：
 
