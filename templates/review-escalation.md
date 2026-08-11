@@ -103,7 +103,7 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 - **規格收窄**（`spec-narrowed`）：需求方裁定該輪只搜特定根因、明文不逐條複驗前輪處置。
 - **指示缺漏**（`instruction-omitted`）：派審指示**漏了**要求查核者逐項回報前輪 finding 的閉環狀態，查核報告因而沒有那一節。
 
-兩者的差別只在前者是刻意、後者是疏漏；對 carry 的效果相同，**但兩者的舉證強度不同**（見下方「`instruction-omitted` 的有效性必須可機械核對」）。若無出口，一次收窄或一次漏寫就機械上必然強制下一輪升級——把 Coordinator／需求方側的動作誤讀成執行者連續失敗。依 §3，這兩種成因本身都屬 `coordination`，本就不消耗 executor 額度；但 §3 管的是 attempt 是否計數，第二條件管的是 carry 是否被處置，**兩者是不同的閘門**，故仍需在 checkpoint 上有一個明示出口。
+兩者的差別只在前者是刻意、後者是疏漏；對 carry 的效果相同，**但要證明的東西形狀不同**（見下方「兩個 cause 的內容證據都必須可機械核對」）。若無出口，一次收窄或一次漏寫就機械上必然強制下一輪升級——把 Coordinator／需求方側的動作誤讀成執行者連續失敗。依 §3，這兩種成因本身都屬 `coordination`，本就不消耗 executor 額度；但 §3 管的是 attempt 是否計數，第二條件管的是 carry 是否被處置，**兩者是不同的閘門**，故仍需在 checkpoint 上有一個明示出口。
 
 本出口是**事後的表示法**，不是預防機制：要讓 `instruction-omitted` 不再發生，該做的是在派審指示裡固定要求查核者逐項回報前輪 accepted blocking finding 的閉環狀態（`review-prompt.md` §6 已如此規定），並在派審事件上記下該輪究竟有沒有帶進去——那屬派審／handoff 範本的管轄，不在本檔；本檔只規定「沒記＝本出口不可用」。也**不**因成因是疏漏而放寬任何一款必要條件，尤其是「不得連續 defer」：同一 finding 被漏問兩次，正是需求方必須介入的狀態。
 
@@ -115,11 +115,18 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 2. `deferred_by` 逐字等於卡面 `需求：` 欄宣告的帳號（`wfcli open` 寫入的 `requested_by`）。該欄未宣告或無法解析時本出口不可用，adapter 一律 fail-closed——這與 §5 對 `forged-rejected` 分類界線的處理同向：無法機械核對的授權不得以自述成立；
 3. `deferred_by` 不得逐字等於本卡當前 owner，也不得等於本 epoch 任一 review event 的 `reviewer`。同一帳號兼任需求方與執行者／查核者時本出口不可用——defer 的裁定者必須不是被 defer 所嘉惠的人；
 4. `defer_cause` 取值於 `spec-narrowed`｜`instruction-omitted`（不得自創成因），且 `defer_reason` 非空。**兩種成因都必須指向指示側的具體事實**——執行者忙不過來、時間不夠、finding 太難，都不是本出口的成因；
-5. `defer_ruling_url` 必須解析為**本卡 issue 的單一留言 URL**（`…/issues/<本卡 issue 編號>#issuecomment-<數字 id>`）：`spec-narrowed` 指向需求方的規格變更裁定，`instruction-omitted` 指向那一則缺漏的派審指示本身。無法解析、指向他卡、指向非留言資源（含任意站外 URL）者，該筆無效。此欄是稽核指標，**不**充當授權證據——授權由第 2、3 款的身分比對成立。（不重蹈 §5 末段已撤回設計的錯誤：當內容由受該裁定影響的一方撰寫時，指向該內容的指標既不證明它當時已存在，也不證明裁定者看過它。）
+5. `defer_ruling_url` 必須解析為**本卡 issue 的單一留言 URL**（`…/issues/<本卡 issue 編號>#issuecomment-<數字 id>`）：`spec-narrowed` 指向需求方的規格變更裁定，`instruction-omitted` 指向那一則缺漏的派審指示本身。無法解析、指向他卡、指向非留言資源（含任意站外 URL）者，該筆無效。**此欄只是形狀檢查**：它證明指向了本卡的某一則留言，不證明那則留言是什麼，故**不**單獨充當授權或內容證據。內容側的證據由第 7 款（`instruction-omitted`）與第 8 款（`spec-narrowed`）分別建立。（§5 末段已撤回設計的教訓正在此：當被指向的內容由受該裁定影響的一方撰寫時，指標既不證明它當時已存在，也不證明裁定者看過它——所以第 8 款要求該留言的 **GitHub comment author** 是需求方，那是平台身分而非自述。）
 6. `defer_reason` 必須**逐字含第 5 款解析出的 `<數字 id>`**。這是把原本「載明對應的那一次事件」從人讀措辭變成可比對的指涉：從另一筆 defer 複製過來的理由、或只泛稱成因（「規格收窄」「指示漏了」）而未指涉本次留痕者，一律無效。**理由的散文本身不是判準**——判準是它與 `defer_ruling_url` 指向同一則留痕；散文只提供人讀脈絡；
-7. `defer_cause=instruction-omitted` 另需下方專節的三款缺漏證據全部成立。
+7. `defer_cause=instruction-omitted` 另需下方專節的三款缺漏證據全部成立；
+8. `defer_cause=spec-narrowed` 另需下方專節的三款裁定證據全部成立。
 
-**`instruction-omitted` 的有效性必須可機械核對。** 本 cause 宣稱的是一個**否定事實**——某一則派審指示**沒有**要求查核者逐項回報前輪 finding 的閉環狀態。否定事實無法靠「指向一份文件」成立：一個指標既不證明該文件的內容，也不證明它就是漏掉的那一則。`spec-narrowed` 宣稱的則是需求方的**肯定作為**，其留痕本身即該作為的紀錄，指標與事實同體。**這個舉證強度的不對稱是刻意的**，不是對兩種成因的差別待遇：肯定作為可由留痕直接見證，否定事實不行。故除第 1～6 款外，`instruction-omitted` 另需以下三款全部成立：
+**兩個 cause 的內容證據都必須可機械核對。** 本節先修正前一版在此處的錯誤，再分別給出兩組款次。
+
+前一版寫道：「`instruction-omitted` 宣稱的是否定事實，指標不證明內容；`spec-narrowed` 宣稱的是需求方的肯定作為，其留痕本身即該作為的紀錄，指標與事實同體——這個舉證強度的不對稱是刻意的。」**該論證本身不假，但它偷渡了一個未被兌現的前提。**「留痕與事實同體」只在**該留痕確經核對就是那個裁定**時成立；而前一版只驗 URL 的形狀（本卡的某一則留言）與理由是否含同一數字 id，從不核對該留言的 author 或內容。於是被指向的可以是本卡**任何**一則留言，此時指標與事實**不同體**，整段推理的前提根本不存在——取得任一本卡 comment id 即可讓有效 open finding 落 `deferred`。
+
+因此修法不是推翻那個論證，而是**兌現**它：`spec-narrowed` 必須驗證指向的留痕在平台身分上確為需求方所寫，且其內容逐字綁定本次 trigger attempt 與該筆 finding。兌現之後兩者仍不對稱，但**不對稱的是證據的形狀，不是強度**：肯定作為要證明「這一則就是那個作為」（author ＋ 內容綁定），否定事實要證明「那一則確實少了某段內容」（由派審事件指認 ＋ 結構化宣告）。兩者都必須可機械核對，兩者在證據或解析能力不存在時都 fail-closed，兩者都不得以自述成立。
+
+**`instruction-omitted`：否定事實的三款。** 本 cause 宣稱的是一個**否定事實**——某一則派審指示**沒有**要求查核者逐項回報前輪 finding 的閉環狀態。否定事實無法靠「指向一份文件」成立：一個指標既不證明該文件的內容，也不證明它就是漏掉的那一則。故除第 1～6 款外，`instruction-omitted` 另需以下三款全部成立：
 
 - **(a) 指認**：事件流上存在本 epoch 的派審事件（`handoff` 或等價 dispatch event），其 `review_prompt_url` 逐字等於 `defer_ruling_url`，且它派出的正是 **trigger attempt N 的查核**。沒有指認就沒有「哪一則」可言；由 defer 自行宣稱是哪一則不算，指向前幾輪的派審指示也不算——被漏問的必須是**本輪**。
 - **(b) 缺漏的結構化宣告**：該派審事件必須帶 `closure_reporting_requested`，且其值**恰為 `false`**。缺欄、`true`、或無法判定，一律該筆無效。[`review-prompt.md`](review-prompt.md) §6 已把「前輪 finding 逐項閉環驗證」定為 R2 以後的固定範圍，因此 `closure_reporting_requested: false` 記錄的是一次**偏離範本**——它本身即一筆 `coordination` 事實，該在派審當下被寫下，而不是事後由受益方推定。此二欄的 schema 歸 [`handoff-contract.md`](handoff-contract.md) §2 管轄；本檔只規定本出口對它的依賴，不代為定義。
@@ -127,7 +134,19 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 
 若 adapter 另具備讀取留言原文的能力，(b) 應再以原文核對「該則指示確實不含逐項閉環要求」；但**原文核對是加強，不是替代**——沒有 (a)(b) 的結構化事實，原文核對本身也無從知道該核對哪一則。
 
-**本 repo 現況：`instruction-omitted` 不可用。** `handoff` payload（`handoff-contract.md` §2）尚無 `review_prompt_url` 與 `closure_reporting_requested`，`wfcli` 亦尚無 checkpoint writer（`ai-workflow#9` 未完成）。在 #9 補上這兩欄的寫入與 adapter 的解析之前，本 cause 在本 repo 的每一次使用都會 fail-closed。條文先寫在這裡是為了給 #9 一個可實作的目標，**不是**讓它在證據到位前就能被引用；本卡自身的 checkpoint 同樣不得使用它。
+**`spec-narrowed`：肯定作為的三款。** 需求方確實作過收窄裁定，是一個肯定事實；但「**這一則**就是那個裁定」不是自明的，而那正是本出口唯一的授權來源。故除第 1～6 款外，`spec-narrowed` 另需以下三款全部成立：
+
+- **(a′) 作者**：`defer_ruling_url` 解析出的留言，其 **GitHub comment author** 逐字等於卡面 `需求：` 欄宣告的帳號。這是平台可驗證身分，不是留言內文的自述（`handoff-contract.md` §3.1.2 對收據 author 的處理同向）。取不到 author、或 author 非需求方者，該筆無效。依第 2、3 款 `deferred_by` 已須等於需求方且不得為 owner／reviewer，故 author 連帶不會是被 defer 所嘉惠的人，本款不另設排除。
+- **(b′) 綁定**：該裁定必須把收窄**綁定到這一輪與這一筆**，兩條路徑擇一，皆為逐字比對：
+  - **(b′-1) 結構化**：採用專案的寫入通道在該裁定事件上記下被收窄的 `attempt_id` 與 `finding_id` 集合。此 schema 歸 [`handoff-contract.md`](handoff-contract.md) 管轄，本檔只規定本出口對它的依賴、不代為定義；該 schema 目前尚未存在，故本路徑暫不可用。
+  - **(b′-2) 原文核對**：adapter 讀取該留言**現行** body，其中必須逐字含三者——trigger attempt N 的 `attempt_id`（§5 的 `<card>-e<epoch>-<full source sha>`）、該筆 `finding_id`，以及 `defer_cause: spec-narrowed`。等價的說法是：**checkpoint 的該筆 defer 條目必須是需求方已在裁定中寫下之內容的引用**——這就是「指標與事實同體」的可核對形式。缺任一即該筆無效。
+
+  綁定到 `attempt_id` 同時給出**免時鐘的新鮮性**：`attempt_id` 內含本輪 source SHA，任何早於該 commit 的裁定都不可能逐字含它，故前幾輪的收窄裁定無法被搬來掩護本輪。這與 §5 末段已撤回的 hash 綁定不同——彼處被綁定的內容由攻擊者自撰、hash 可預先算出；此處內容必須由需求方以其平台身分寫下。
+- **(c′) 可用性**：(b′) 兩條路徑皆不可得時（結構化欄位未定義**且** adapter 無法取得留言 author 與 body），本 cause **不可用**：以它提出的每一筆 defer 皆無效，對應 finding 落「未提及」格並強制 `escalate`。adapter **不得**以「讀不到裁定內容」為由改判成立。
+
+**已知限制：author 不可變，body 可變。** 具 repo 寫入權者能編輯他人留言，故 (b′-2) 的保證止於「沒有人事後改寫需求方的裁定」；留言編輯歷史非 API 可靠取得（§5 已記同一限制）。消除它只能靠 (b′-1)：寫入通道產生的事件是 append-only 的，不隨留言編輯而變。在 (b′-1) 到位前，本款把偽造成本從「取得本卡任一 comment id」提高到「編輯需求方的裁定留言」，後者在 GitHub 上會留下 edited 標記——這是**降低**而非消滅該風險，本檔不假裝相反。
+
+**本 repo 現況：兩個 cause 的依賴不同，但今天都寫不出來。** `instruction-omitted` 依賴**寫入端**：`handoff` payload（`handoff-contract.md` §2）尚無 `review_prompt_url` 與 `closure_reporting_requested`，在 #9 補上這兩欄的寫入與 adapter 的解析之前，每一次使用都會 fail-closed。`spec-narrowed` 只依賴**唯讀**能力——取得留言 author 與 body，本 repo 既有消費者（`wfcli doctor --review-channel` 的 review channel 稽核）已在做同一件事，故 (b′-2) 一旦有 checkpoint 可寫即可用。**但 `wfcli` 尚無 checkpoint writer（`ai-workflow#9` 未完成），`escalation-checkpoint` 事件今天無法由授權通道寫出，因此 `deferred_findings` 整個機制在本 repo 尚未上線——那是 #9 的缺口，不是本節收緊造成的。** 條文先寫在這裡是為了給 #9 一個可實作的目標，**不是**讓它在證據到位前就能被引用；本卡自身的 checkpoint 兩個 cause 都不得使用。
 
 **清償上限是機械的，不是「應儘速」。** checkpoint C 的 `deferred_findings` 中每個 `finding_id`，必須在**本 epoch 下一個 `escalation-checkpoint` C′** 之時，已由 C′ 的 trigger attempt 給出 `resolved`、`withdrawn` 或明列仍 `open`；落入「已非有效 open finding」格（經合法降級或撤銷採認而離開 open set）同樣算清償——複驗義務的對象已不存在，再要求對它表態沒有意義。逾此即逾期，C′ 的 `checkpoint_decision` 只能是 `escalate`。上限之所以是機械的：第三個之後**每一個**可計數 attempt 都必建 checkpoint，故「下一個 checkpoint」等價於「下一個可計數 attempt」，不需要時鐘、不需要預先知道未來的 `attempt_id`。給出「仍 `open`」算清償了複驗義務，但它本身即第二條件的觸發格，仍然強制 `escalate`——defer 延後的是**評估**，不是**結果**。
 
@@ -186,7 +205,9 @@ deferred_findings:          # 選填，預設空陣列；語意與必要條件�
 
 `instruction-omitted` 另需該留言已由本 epoch、指向 trigger attempt 的派審事件以 `review_prompt_url` 指認，且該事件的 `closure_reporting_requested` 恰為 `false`（§4 專節 (a)(b)）；寫入通道未產出該兩欄時本 cause 不可用，一律 fail-closed（同節 (c)）。
 
-`deferred_findings` 只表達「本輪不要求對該 finding 表態」，不得用來變更 finding 的 `status`／`accepted`／分類／根因，也不得用來閉合 finding——那些只能走 `review-correction`。單筆缺欄、`defer_cause` 不在列舉內、`defer_ruling_url` 不能解析為本卡留言、`defer_reason` 未指涉該留言、`instruction-omitted` 的缺漏證據不成立或該 cause 在本專案不可用、身分不符（§4 第 2、3 款）、finding 不在 carry set，或違反「不得連續 defer」者，該筆無效，對應 finding 落回「未提及」格並強制 `escalate`；其餘筆數不受牽連。空陣列與省略本欄語意相同。**對不在 carry set 的 finding 所作的宣告是無作用的冗贅**（§4 末段），不使整個 checkpoint 無效。
+`spec-narrowed` 另需該留言的 **GitHub comment author** 逐字等於需求方帳號，且其內容逐字綁定 trigger attempt 的 `attempt_id`、該筆 `finding_id` 與 `defer_cause: spec-narrowed`（結構化路徑 (b′-1) 到位後可改以事件欄位承載）（§4 專節 (a′)(b′)）；adapter 既無結構化欄位又無法取得留言 author／body 時本 cause 不可用，一律 fail-closed（同節 (c′)）。**兩個 cause 的內容證據不得以 `defer_ruling_url` 或 `defer_reason` 的自述替代。**
+
+`deferred_findings` 只表達「本輪不要求對該 finding 表態」，不得用來變更 finding 的 `status`／`accepted`／分類／根因，也不得用來閉合 finding——那些只能走 `review-correction`。單筆缺欄、`defer_cause` 不在列舉內、`defer_ruling_url` 不能解析為本卡留言、`defer_reason` 未指涉該留言、`instruction-omitted` 的缺漏證據不成立、`spec-narrowed` 的裁定證據不成立（留言 author 非需求方、內容未逐字綁定本輪 attempt 與本筆 finding）、該 cause 在本專案不可用、身分不符（§4 第 2、3 款）、finding 不在 carry set，或違反「不得連續 defer」者，該筆無效，對應 finding 落回「未提及」格並強制 `escalate`；其餘筆數不受牽連。空陣列與省略本欄語意相同。**對不在 carry set 的 finding 所作的宣告是無作用的冗贅**（§4 末段），不使整個 checkpoint 無效。
 
 `review-marker-clearance` 解除 §1 的留痕解析停機，必填：
 

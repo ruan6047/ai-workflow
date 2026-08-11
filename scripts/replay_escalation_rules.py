@@ -20,6 +20,9 @@
      條件1 可失效性。全部明確標示為構造。
   D2. `instruction-omitted` 的缺漏證據（§4 專節 (a)(b)(c)）：含 R3-001 隔離探針的
      逐字重跑與四種反例。全部明確標示為構造。
+  D3. `spec-narrowed` 的裁定證據（§4 專節 (a′)(b′)(c′)）：R4-001 的三個指定反例
+     （任意本卡留言／非需求方留言／內容未收窄）＋ 新鮮性與可用性反例。全部明確
+     標示為構造。
 
 --------------------------------------------------------------------------
 A 的宣稱界線（R2-003）
@@ -33,8 +36,8 @@ A 段列舉的是 **`classify()` 這個函式的輸入空間**：finding 的五�
   1. finding 是否屬於本 checkpoint 的 carry set（→ D「carry 成員資格」）
   2. epoch 邊界對計數／carry／prev_deferred 的重置（→ D「epoch 邊界」）
   3. review-correction 相對 checkpoint 的**位置**（→ B 六格情境以事件順序驅動）
-  4. 十一款 defer 條件各自的**真值如何從事件流算出**（→ D2；A 段只把它們當自由
-     布林軸，證明「缺一即不成立」）
+  4. 十四款 defer 條件各自的**真值如何從事件流算出**（→ D2／D3；A 段只把它們當
+     自由布林軸，證明「缺一即不成立」）
   5. 同一 finding 的**衝突事件**與 §2 的待裁決 gate ——**未涵蓋**。本引擎不模擬
      衝突偵測，也不模擬同 SHA 多 reviewer 合併後的 fail loud。任何「本腳本證明
      §2 衝突處理正確」的宣稱都是假的。
@@ -55,10 +58,29 @@ D2 的宣稱界線（R3-001）
 =False，對應本 repo 現況：`handoff` payload 尚無該兩欄、`wfcli` 尚無 checkpoint
 writer）。正例必須明示改用 `CTX_SUPPORTED` 才跑得出來，且已標示為構造。
 
-`spec-narrowed` 仍**不**核對其 ruling 留言的內容：該 cause 宣稱的是需求方的肯定
-作為，其留痕本身即該作為的紀錄；否定事實則不能靠指向文件成立。這個不對稱是刻意
-的設計判斷，不是實作偷懶——但它確實表示 `spec-narrowed` 的保證強度較低，止於
-「URL 解析為本卡留言 ＋ 理由指涉同一則 ＋ 需求方身分」。
+--------------------------------------------------------------------------
+D3 的宣稱界線（R4-001）
+--------------------------------------------------------------------------
+前一版對 `spec-narrowed` 只驗「URL 解析為本卡留言 ＋ 理由含同一數字 id ＋
+`deferred_by` 身分」，**不讀該留言**。因此取得任意本卡 comment id 即可讓有效 open
+finding 落 `deferred`。前一版為此不對稱辯護的論證（「肯定作為的留痕與事實同體」）
+本身不假，但「同體」只在**該留痕確經核對就是那個裁定**時成立，而當時沒有任何一款
+在做這件核對——前提未兌現。§4 專節 (a′)(b′)(c′) 兌現它，本段建模之。
+
+本腳本把裁定留言建模為事件流上的 `COMMENT` fixture（`author` ＋ `body`），對應
+adapter 以唯讀 API 取得的兩個欄位。因此 D3 證明的是**規則對 author 與內容綁定有
+鑑別力**：author 非需求方、body 未逐字含 trigger attempt 的 `attempt_id`／該筆
+`finding_id`／`defer_cause: spec-narrowed`、綁定指向前一輪、或 adapter 無讀取能力，
+任一即該筆 defer 失效。
+
+它**不**證明：某一則真實 GitHub 留言的現行原文已被讀取。fixture 的 `body` 只建模
+「可機械檢查的性質」，真實原文可由檔頭 C 段的 `gh api` 指令取回自行核對。
+
+**`author` 與 `body` 的取得能力在本 repo 已存在**（`cli/src/wf_cli/doctor.py` 的
+`audit_review_channel` 已在讀 comment body 與 `user.login`），故預設 `CTX` 的
+`comment_read_supported=True`——`spec-narrowed` 的失效不是「能力不存在」，而是
+「證據不成立」。缺的是 checkpoint writer 本身（#9），那使 `deferred_findings` 今天
+**整個機制**都寫不出來，與本段收緊無關。
 
 --------------------------------------------------------------------------
 C 的資料來源與轉錄聲明
@@ -108,6 +130,7 @@ closed。本腳本**不**做任何「舊 id 已被接續故不套用六格」的
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import re
 import sys
@@ -135,6 +158,23 @@ SETTLED = ("resolved", "withdrawn", "已非有效 open finding", "仍開啟")
 # 本卡（#16 事件流）所屬 issue；constructed 情境沿用同一 issue 只為 URL 形狀。
 CARD_ISSUE_URL = "https://github.com/ruan6047/ai-workflow/issues/16"
 
+# attempt_id 的形狀依 §5：<card>-e<epoch>-<full source sha>。本腳本以 label 的
+# SHA-1 當 source sha 的替身（同為 40 hex），只為讓「裁定留言逐字含 attempt_id」
+# 這個綁定可被真實地比對；替身不代表任何真實 commit。
+CARD_ID = "WF-CARD"
+
+# §4 (b′-2)：裁定留言必須逐字含此 token，才算宣告本筆的收窄。key 名沿用 §5 的
+# deferred_findings schema，不另立新 marker（新 marker 的權威定義屬 handoff-contract）。
+NARROW_TOKEN = "defer_cause: spec-narrowed"
+
+
+def sha_stub(label: str) -> str:
+    return hashlib.sha1(label.encode("utf-8")).hexdigest()
+
+
+def attempt_uid(epoch: int, label: str) -> str:
+    return f"{CARD_ID}-e{epoch}-{sha_stub(label)}"
+
 
 def ruling_url(comment_id, issue_url=CARD_ISSUE_URL) -> str:
     return f"{issue_url}#issuecomment-{comment_id}"
@@ -155,12 +195,16 @@ DEFER_CONDITIONS = (
     "reason_nonempty",     # 4b. defer_reason 非空
     "ruling_url_on_card",  # 5. defer_ruling_url 解析為本卡 issue 的單一留言
     "reason_cites_ruling",  # 6. defer_reason 逐字含該留言的數字 id
-    # 7 = §4「instruction-omitted 的有效性必須可機械核對」專節 (a)(b)(c)。
-    # 三款只對 instruction-omitted 生效；spec-narrowed 宣稱的是需求方的肯定作為，
-    # 其留痕本身即該作為的紀錄，故不需同等強度的內容核對（不對稱是刻意的）。
+    # 7 = §4「instruction-omitted：否定事實的三款」(a)(b)(c)，只對該 cause 生效。
     "omission_dispatch_identified",  # 7a. 派審事件以 review_prompt_url 指認同一則，且派的是 trigger attempt
     "omission_declared_false",       # 7b. 該派審事件的 closure_reporting_requested 恰為 false
     "cause_available",               # 7c. 寫入通道／adapter 具備 (a)(b) 能力，否則本 cause 不可用
+    # 8 = §4「spec-narrowed：肯定作為的三款」(a′)(b′)(c′)，只對該 cause 生效。
+    # 兩組的差別是**證據的形狀**（肯定作為要證明「這一則就是那個作為」；否定事實要
+    # 證明「那一則少了某段內容」），不是強度：兩組都必須可機械核對、都 fail-closed。
+    "narrow_ruling_author_is_requester",  # 8a′. 該留言的 GitHub author 逐字為需求方
+    "narrow_scope_bound",                 # 8b′. 內容逐字綁定 trigger attempt_id ＋ 本筆 finding_id ＋ NARROW_TOKEN
+    "narrow_cause_available",             # 8c′. 結構化欄位或留言讀取能力至少其一存在
     "not_consecutive",     # §4「不得連續 defer」
 )
 
@@ -214,8 +258,10 @@ A_NOT_COVERED = [
     "carry set 成員資格（由 D 的事件層測試涵蓋）",
     "epoch 邊界的計數／carry／prev_deferred 重置（由 D 涵蓋）",
     "review-correction 相對 checkpoint 的位置（由 B 的事件順序涵蓋）",
-    "十一款 defer 條件的真值如何從事件流算出（由 D2 涵蓋；A 段視為自由布林軸）",
+    "十四款 defer 條件的真值如何從事件流算出（由 D2／D3 涵蓋；A 段視為自由布林軸）",
     "派審指示**留言原文**是否真的不含逐項閉環要求 —— 未涵蓋（以結構化欄位建模）",
+    "某一則**真實** GitHub 留言的現行 author／body —— 未涵蓋（D3 以 fixture 建模；"
+    "真實取值是 adapter 的義務，取不到時 §4 (c′) 要求 fail-closed）",
     "同一 finding 的衝突事件與 §2 待裁決 gate —— 未涵蓋",
     "同 SHA 多 reviewer 合併後的 fail loud —— 未涵蓋",
     "留痕解析停機（§1／§5 review-marker-clearance）—— 未涵蓋",
@@ -234,19 +280,26 @@ def enumerate_classifier_domain():
     ):
         f = {"status": st, "accepted": acc, "blocking": blk,
              "finding_class": cls, "attribution": attr}
-        for bits in cond_axes:
-            total += 1
-            conds = dict(zip(DEFER_CONDITIONS, bits))
-            defer_ok = declared and all(conds.values())
+        # 述詞與分類器對同一 (f, mentioned, defer_ok) 是純函式，故先把兩個
+        # defer_ok 值各算一次；下面仍**逐點**走完全部條件向量並逐點計數，
+        # 只是不重複求值。這是消除重複計算，不是抽樣。
+        verdict = {}
+        for defer_ok in (True, False):
             hits = [n for n, p in PREDICATES.items() if p(f, mentioned, defer_ok)]
             if len(hits) != 1:
-                problems.append(f"{f} mentioned={mentioned} defer_ok={defer_ok} → 命中 {hits}")
+                verdict[defer_ok] = (None,
+                                     f"{f} mentioned={mentioned} defer_ok={defer_ok} → 命中 {hits}")
                 continue
             got = classify(f, mentioned_open=mentioned, defer_ok=defer_ok)
-            if got != hits[0]:
-                problems.append(f"{f} → 分類器 {got} ≠ 述詞 {hits[0]}")
+            verdict[defer_ok] = ((got, None) if got == hits[0]
+                                 else (None, f"{f} → 分類器 {got} ≠ 述詞 {hits[0]}"))
+        for bits in cond_axes:
+            total += 1
+            cell, problem = verdict[declared and all(bits)]
+            if cell is None:
+                problems.append(problem)
                 continue
-            hit_count[got] += 1
+            hit_count[cell] += 1
     return total, problems, hit_count
 
 
@@ -278,6 +331,7 @@ def prove_each_defer_condition_necessary():
 #   correction{updates:{fid: partial}}            # review-correction
 #   epoch     {}                                   # escalation-epoch-change
 #   dispatch  {for_attempt, url, closure_reporting_requested}   # 派審事件（handoff）
+#   comment   {url, author, body, narrowed}       # adapter 唯讀取回的 GitHub 留言
 #   checkpoint{deferred:[{finding_id, defer_reason, deferred_by,
 #                         defer_ruling_url, defer_cause}]}
 #
@@ -297,6 +351,12 @@ CTX = {
     # 本 repo 現況：handoff payload 無 review_prompt_url／closure_reporting_requested，
     # wfcli 亦無 checkpoint writer（#9 未完成）→ instruction-omitted 不可用。
     "instruction_omitted_supported": False,
+    # §4 (c′)：spec-narrowed 只需唯讀能力。本 repo 的 doctor --review-channel 已在讀
+    # comment body 與 user.login（cli/src/wf_cli/doctor.py::audit_review_channel），
+    # 故建模為 True——該 cause 的失效是「證據不成立」，不是「能力不存在」。
+    "comment_read_supported": True,
+    # (b′-1) 結構化路徑的 schema 歸 handoff-contract.md 管轄，目前尚未定義 → False。
+    "spec_narrow_structured_supported": False,
 }
 
 
@@ -306,6 +366,10 @@ def ctx_with(**kw) -> dict:
 
 # 【構造】假想已完成 #9、派審事件已帶兩欄的採用專案。
 CTX_SUPPORTED = ctx_with(instruction_omitted_supported=True)
+# 【構造】假想 (b′-1) 的結構化欄位已由 handoff-contract.md 定義並可解析。
+CTX_STRUCTURED = ctx_with(spec_narrow_structured_supported=True)
+# 【構造】adapter 既無結構化欄位、也讀不到留言 author／body → (c′) 本 cause 不可用。
+CTX_NO_READ = ctx_with(comment_read_supported=False)
 
 
 def A(label, new=None, updates=None, counted=True):
@@ -333,8 +397,49 @@ def DISPATCH(for_attempt, comment_id, *, closure_reporting_requested, url=None):
             "closure_reporting_requested": closure_reporting_requested}
 
 
+def COMMENT(comment_id, author, body, *, narrowed=None, issue_url=CARD_ISSUE_URL):
+    """adapter 唯讀取回的一則 GitHub 留言（§4 (a′)(b′) 的證據來源）。
+
+    `author` 對應 GitHub comment 的 `user.login`（平台身分，不可由內文自述取代）；
+    `body` 對應現行原文；`narrowed` 是 (b′-1) 結構化路徑的假想欄位，只在
+    `spec_narrow_structured_supported` 為真時被讀取。
+    """
+    return {"kind": "comment", "url": ruling_url(comment_id, issue_url),
+            "author": author, "body": body, "narrowed": narrowed}
+
+
 CONSTRUCTED_RULING_ID = "9000000001"   # 構造情境的規格變更裁定留言
 CONSTRUCTED_DISPATCH_ID = "9000000042"  # 構造情境的派審指示留言
+
+
+def narrowing_body(finding_ids, attempt_id, *, declare=True, prose=None):
+    """【構造】需求方的規格收窄裁定留言原文。
+
+    (b′-2) 要求逐字含三者：trigger attempt 的 attempt_id、該筆 finding_id、
+    以及 NARROW_TOKEN。`declare=False` 產出「有提到這些 id 但沒有宣告收窄」的
+    留言——那是 R4-001 指定的第三個反例（內容未收窄）。
+    """
+    lines = [prose or "## 需求方裁定：本輪改窄查核範圍，明文不逐條複驗前輪處置",
+             f"適用 trigger attempt：{attempt_id}",
+             ("本輪 deferred_findings（引用本裁定即以下列條目為準）："
+              if declare else "涉及的 finding：")]
+    for fid in finding_ids:
+        lines.append(f"  - finding_id: {fid}")
+        if declare:
+            lines.append(f"    {NARROW_TOKEN}")
+    return "\n".join(lines)
+
+
+def narrowing_ruling(finding_ids, attempt_id, *, comment_id=CONSTRUCTED_RULING_ID,
+                     author=None, declare=True, structured=False, prose=None):
+    """【構造】把上述原文包成一則可被 adapter 取回的留言 fixture。"""
+    who = author or CTX["requester"]
+    return COMMENT(
+        comment_id, who,
+        narrowing_body(finding_ids, attempt_id, declare=declare, prose=prose),
+        narrowed=({"attempt_id": attempt_id, "finding_ids": list(finding_ids),
+                   "actor": who} if structured else None),
+    )
 
 
 def defer_entry(fid, *, by=None, reason=None, comment_id=CONSTRUCTED_RULING_ID,
@@ -368,16 +473,36 @@ class Checkpoint:
         return [c for c, ok in self.defer_audit.get(fid, {}).items() if not ok]
 
 
-def _defer_conditions(entry, fid, carry, prev_deferred, ctx, dispatches, trigger, epoch):
+def _defer_conditions(entry, fid, carry, prev_deferred, ctx, dispatches, trigger,
+                      epoch, comments, trigger_attempt_id):
     cause = entry.get("defer_cause")
     reason = (entry.get("defer_reason") or "").strip()
     url = (entry.get("defer_ruling_url") or "").strip()
     ruling_id = parse_ruling_id(url, ctx["issue_url"])
     is_omitted = cause == "instruction-omitted"
+    is_narrowed = cause == "spec-narrowed"
 
     # §4 專節 (a)：由派審事件指認，不由 defer 自述。
     d = dispatches.get(url)
     identified = bool(d) and d["for_attempt"] == trigger and d["epoch"] == epoch
+
+    # §4 專節 (a′)(b′)：裁定留言的 author 與內容綁定。
+    # 讀不到留言（能力不存在，或該 URL 根本不對應任何留言）一律 fail-closed。
+    readable = bool(ctx.get("comment_read_supported"))
+    structured_ok = bool(ctx.get("spec_narrow_structured_supported"))
+    c = comments.get(url) if readable else None
+    st = (comments.get(url) or {}).get("narrowed") if structured_ok else None
+
+    # (a′)：author 由平台身分取得——唯讀路徑取 comment author，結構化路徑取事件 actor。
+    narrow_author = ((bool(c) and c.get("author") == ctx["requester"])
+                     or (bool(st) and st.get("actor") == ctx["requester"]))
+    # (b′-2)：現行 body 逐字含三者。
+    bound_by_text = bool(c) and all(
+        tok and tok in (c.get("body") or "")
+        for tok in (trigger_attempt_id, fid, NARROW_TOKEN))
+    # (b′-1)：結構化欄位逐字綁定同一 attempt 與同一 finding。
+    bound_by_field = (bool(st) and st.get("attempt_id") == trigger_attempt_id
+                      and fid in (st.get("finding_ids") or ()))
 
     return {
         "in_carry": fid in carry,
@@ -395,6 +520,9 @@ def _defer_conditions(entry, fid, carry, prev_deferred, ctx, dispatches, trigger
             if is_omitted else True),
         "cause_available": (bool(ctx.get("instruction_omitted_supported"))
                             if is_omitted else True),
+        "narrow_ruling_author_is_requester": narrow_author if is_narrowed else True,
+        "narrow_scope_bound": (bound_by_field or bound_by_text) if is_narrowed else True,
+        "narrow_cause_available": (readable or structured_ok) if is_narrowed else True,
         "not_consecutive": fid not in prev_deferred,
     }
 
@@ -409,6 +537,8 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
     snapshot: dict[str, set[str]] = {}
     mentioned: dict[str, set[str]] = {}
     dispatches: dict[str, dict] = {}
+    comments: dict[str, dict] = {}
+    attempt_ids: dict[str, str] = {}
     structural: list[str] = []
 
     epoch = 0
@@ -433,6 +563,7 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
         if kind == "attempt":
             label = ev["label"]
             last_label = label
+            attempt_ids[label] = attempt_uid(epoch, label)
             apply(ev["updates"], label)
             for fid, (rc, over) in ev["new"].items():
                 if fid in state:
@@ -454,6 +585,12 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
             dispatches[ev["url"]] = {
                 "for_attempt": ev["for_attempt"], "epoch": epoch,
                 "closure_reporting_requested": ev["closure_reporting_requested"]}
+
+        elif kind == "comment":
+            if ev["url"] in comments:
+                structural.append(f"comment: URL 重複 {ev['url']}")
+            comments[ev["url"]] = {"author": ev["author"], "body": ev["body"],
+                                   "narrowed": ev.get("narrowed")}
 
         elif kind == "correction":
             apply(ev["updates"], last_label)
@@ -481,7 +618,8 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
                 ok = False
                 if entry is not None:
                     conds = _defer_conditions(entry, fid, carry, prev_deferred, ctx,
-                                              dispatches, trigger, epoch)
+                                              dispatches, trigger, epoch, comments,
+                                              attempt_ids[trigger])
                     audit[fid] = conds
                     ok = all(conds.values())
                 cells[fid] = classify(
@@ -551,6 +689,17 @@ DEFER_AT_C_R3 = [
     defer_entry("R2-002", reason=_R3_REASON, comment_id=SPEC_NARROW_RULING_ID),
 ]
 
+# 5248549305 的 fixture。本腳本不連網，只建模該留言**可機械檢查的兩個性質**：
+#   author  = ruan6047（需求方本人）→ §4 (a′) 成立；
+#   body    不含 attempt_id／finding_id／NARROW_TOKEN 綁定 → §4 (b′) 不成立。
+# 這不是猜測：cutover 前的裁定沒有理由帶這些欄位。原文可自行取回核對：
+#   gh api repos/ruan6047/ai-workflow/issues/comments/5248549305 -q .body
+LEGACY_R3_RULING = COMMENT(
+    SPEC_NARROW_RULING_ID, "ruan6047",
+    "【fixture】cutover 前的需求方裁定：改窄本輪查核範圍。原文不含 attempt_id、"
+    "finding_id 或 defer_cause 綁定（該契約當時尚不存在）。",
+)
+
 EVENTS_16 = [
     A("R1", new={"R1-001": ("rc-r1-001", {}), "R1-002": (RC_MARKER, {}),
                  "R1-003": ("rc-r1-003", {}), "R1-004": ("rc-r1-004", {}),
@@ -561,6 +710,7 @@ EVENTS_16 = [
                "R1-004": {"status": "resolved"}, "R1-005": {"status": "resolved"}}),
     # R3：窄規格，對前輪 finding 零處置。
     A("R3", new={"R3-001": (RC_GEN, {})}),
+    LEGACY_R3_RULING,
     CP(deferred=DEFER_AT_C_R3),
     A("R4", new={"R4-001": (RC_GEN, {})},
       updates={"R1-002": {"status": "resolved"}, "R1-006": {"status": "resolved"},
@@ -619,16 +769,25 @@ def six_cell_stream():
                    "A2-001": {"status": "resolved"}}),
         CORR({"F_WD": {"status": "withdrawn"}}),
         CORR({"F_ACC": {"accepted": False}}),
+        narrowing_ruling(["F_DEF"], attempt_uid(0, "A3")),
         CP(deferred=[defer_entry("F_DEF")]),
     ]
 
 
+_AUTO = object()
+
+
 def defer_stream(defer_ids, *, cause="spec-narrowed", by=None, drop_field=None,
-                 dispatch=None, **entry_kw):
+                 dispatch=None, ruling=_AUTO, **entry_kw):
     """【構造】三項 carry 全部合法 deferred → 不強制；少一筆即強制。
 
     `dispatch` 為選填的派審事件（§4 專節 (a)(b) 的證據）；不給即等同「事件流上
     沒有可指認的派審指示」，這正是本 repo 現況。
+
+    `ruling` 為選填的裁定留言 fixture（§4 專節 (a′)(b′) 的證據）。預設 `_AUTO`：
+    `spec-narrowed` 自動附一則**合法**裁定（需求方所寫、逐字綁定 trigger attempt
+    與這幾筆 finding），使既有的正例仍然成立；傳 None 即等同「事件流上沒有可讀到
+    的裁定留言」。
     """
     entries = []
     for fid in defer_ids:
@@ -636,11 +795,15 @@ def defer_stream(defer_ids, *, cause="spec-narrowed", by=None, drop_field=None,
         if drop_field:
             e[drop_field] = ""
         entries.append(e)
+    if ruling is _AUTO:
+        ruling = (narrowing_ruling(defer_ids, attempt_uid(0, "B3"))
+                  if cause == "spec-narrowed" else None)
     return [
         A("B0", new={"B0-001": ("rc-b0", {})}),
         A("B1", new={"B-001": ("rc-b1", {}), "B-002": ("rc-b2", {}), "B-003": ("rc-b3", {})},
           updates={"B0-001": {"status": "resolved"}}),
         *([dispatch] if dispatch else []),
+        *([ruling] if ruling else []),
         A("B3", new={"B3-001": ("rc-b5", {})}),
         CP(deferred=entries),
     ]
@@ -656,6 +819,39 @@ def omitted_stream(*, dispatch=True, closure_requested=False, for_attempt="B3",
                         comment_id=CONSTRUCTED_DISPATCH_ID, url=url, reason=reason)
 
 
+def narrowed_stream(*, ruling=_AUTO, ids=("B-001", "B-002", "B-003")):
+    """【構造】`spec-narrowed` 的裁定證據軸：裁定留言在／不在、author 是誰、
+    內容有沒有把收窄綁定到本輪與本筆。"""
+    return defer_stream(list(ids), cause="spec-narrowed", ruling=ruling)
+
+
+def arbitrary_card_comment(ids):
+    """R4-001 反例 1：**任意本卡留言**。
+
+    需求方本人寫的、與本輪無關的一則留言（例如跨卡對帳筆記）。前一版只要 URL 形狀
+    對、理由含同一數字 id 就成立；(b′) 之後它不再成立。
+    """
+    return COMMENT(CONSTRUCTED_RULING_ID, CTX["requester"],
+                   "## PM：五張卡同時送審前的跨卡對帳\n（與本輪查核範圍無關的一則留言）")
+
+
+def non_requester_ruling(ids):
+    """R4-001 反例 2：**非需求方留言**——內容完全合規，但 author 是執行者本人。"""
+    return narrowing_ruling(ids, attempt_uid(0, "B3"), author=CTX["owner"])
+
+
+def unnarrowed_ruling(ids):
+    """R4-001 反例 3：**內容未收窄**——需求方所寫、也提到本輪 attempt 與這幾筆
+    finding，但沒有宣告收窄（缺 NARROW_TOKEN）。例如「這幾筆請這輪一併修掉」。"""
+    return narrowing_ruling(ids, attempt_uid(0, "B3"), declare=False,
+                            prose="## 需求方：本輪請把下列 finding 一併修掉")
+
+
+def stale_round_ruling(ids):
+    """反例 4：需求方確實收窄過，但綁定的是**前一輪**的 attempt_id（免時鐘新鮮性）。"""
+    return narrowing_ruling(ids, attempt_uid(0, "B1"))
+
+
 def reviewer_probe_r3_001():
     """R3-001 的隔離探針，逐字重建查核者所用的輸入：
 
@@ -668,17 +864,27 @@ def reviewer_probe_r3_001():
                         reason="規格收窄", url="https://example/ruling")
 
 
+REPAY_SECOND_RULING_ID = "9000000003"   # C′ 的裁定留言（構造）
+
+
 def repay_stream(second_cp_deferred, *, settle):
-    """【構造】清償上限：C 宣告 defer，C′ 必須逐項表態，否則逾期。"""
+    """【構造】清償上限：C 宣告 defer，C′ 必須逐項表態，否則逾期。
+
+    兩個 checkpoint 各附一則**合法**裁定留言，使「連續 defer」的失效只可能來自
+    `not_consecutive` 一款，不會被 (a′)(b′) 順帶打掉而失去鑑別力。
+    """
     updates = {"C-001": {"status": "resolved"}} if settle else {}
     return [
         A("C1", new={"C-001": ("rc-c1", {}), "C-002": ("rc-c2", {})}),
         A("C2", new={"C2-001": ("rc-c2b", {})}),
         A("C3", new={"C3-001": ("rc-c3", {})},
           updates={"C-002": {"status": "resolved"}, "C2-001": {"status": "resolved"}}),
+        narrowing_ruling(["C-001"], attempt_uid(0, "C3")),
         CP(deferred=[defer_entry("C-001")]),
         A("C4", new={"C4-001": ("rc-c4", {})}, updates={**updates,
                                                         "C3-001": {"status": "resolved"}}),
+        narrowing_ruling(["C-001"], attempt_uid(0, "C4"),
+                         comment_id=REPAY_SECOND_RULING_ID),
         CP(deferred=second_cp_deferred),
     ]
 
@@ -691,6 +897,8 @@ def epoch_stream():
         A("E3", new={"E-003": (RC_GEN, {})}, updates={"E-002": {"status": "resolved"}}),
         # E-001 早已離開 open set（不在 carry）→ 無作用的冗贅；
         # E-002 在 carry 但本輪已 resolved → 依 §4 優先序取 resolved，defer 宣告不生效。
+        # 兩筆都附**合法**裁定，確保結論來自優先序而不是 defer 本身不成立。
+        narrowing_ruling(["E-001", "E-002"], attempt_uid(0, "E3")),
         CP(deferred=[defer_entry("E-001"), defer_entry("E-002")]),
         EPOCH(),
         A("F1", new={"F-001": ("rc-f1", {})}, updates={"E-003": {"status": "resolved"}}),
@@ -721,9 +929,15 @@ def stable_id_repair_of_16():
     substance 完全保留（同樣的輪次、同樣的再開、同樣的 transferred 處置），只把
     「以新 id 重新提出」改為「明列同一 finding 仍 open」。這是唯一能讓 #16 的實質
     走完新契約的方式，也是本卡兩項驗證條文在**合法事件流**上的證據。
+
+    §4 (a′)(b′) 加入後，最小改寫還必須連**裁定留痕的形式**一併補上：真實的
+    5248549305 不含 attempt_id／finding_id／NARROW_TOKEN 綁定（見 LEGACY_R3_RULING），
+    故這裡改用一則構造的合規裁定，並明示標為構造，不冒充該真實留言的內容。
     """
-    defer = [defer_entry("R1-002", reason=_R3_REASON, comment_id=SPEC_NARROW_RULING_ID),
-             defer_entry("R1-006", reason=_R3_REASON, comment_id=SPEC_NARROW_RULING_ID)]
+    ruling_id = "9000000002"
+    reason = (f"R3 依需求方於 issuecomment-{ruling_id} 的裁定改為窄規格，明文不逐條複驗")
+    defer = [defer_entry("R1-002", reason=reason, comment_id=ruling_id),
+             defer_entry("R1-006", reason=reason, comment_id=ruling_id)]
     return [
         A("R1", new={"R1-001": ("rc-r1-001", {}), "R1-002": (RC_MARKER, {}),
                      "R1-003": ("rc-r1-003", {}), "R1-004": ("rc-r1-004", {}),
@@ -733,6 +947,8 @@ def stable_id_repair_of_16():
                          "R1-004": {"status": "resolved"}, "R1-005": {"status": "resolved"},
                          "R1-002": {"status": "open"}, "R1-006": {"status": "open"}}),
         A("R3", new={"R3-001": (RC_GEN, {})}),
+        narrowing_ruling(["R1-002", "R1-006"], attempt_uid(0, "R3"),
+                         comment_id=ruling_id),
         CP(deferred=defer),
         A("R4", new={"R4-001": (RC_GEN, {})},
           updates={"R1-002": {"status": "resolved"}, "R1-006": {"status": "resolved"},
@@ -814,16 +1030,18 @@ def main() -> int:
         ("#16 忠實回放無結構性問題", not st_lit and not st_rev),
         ("C@R3：現行條文強制 escalate（前輪 finding 全無表態）",
          literal["R3"].forced and literal["R3"].cond2 and not literal["R3"].cond1_rcs),
-        ("C@R3：修訂後**仍**強制 escalate —— 需求方實際只 defer 了 R2-001／R2-002，"
-         "而 R1-002／R1-006 因換號重開未被處置，落「未提及」",
+        ("C@R3：修訂後**仍**強制 escalate —— carry 四筆全部落「未提及」："
+         "R1-002／R1-006 因換號重開未被處置；R2-001／R2-002 雖被 defer，但 legacy "
+         "裁定不含 §4 (b′) 綁定",
          revised["R3"].forced
-         and revised["R3"].cells["R2-001"] == "deferred"
-         and revised["R3"].cells["R2-002"] == "deferred"
-         and revised["R3"].cells["R1-002"] == "未提及"
-         and revised["R3"].cells["R1-006"] == "未提及"),
+         and set(revised["R3"].cells.values()) == {"未提及"}),
+        ("C@R3：legacy 裁定的 author 核對**通過**（確為需求方），失效的只有內容綁定"
+         "—— 證明 (a′) 與 (b′) 各自獨立，不是靠一個粗糙的總開關",
+         revised["R3"].failed_conditions("R2-001") == ["narrow_scope_bound"]
+         and revised["R3"].failed_conditions("R2-002") == ["narrow_scope_bound"]),
         ("C@R3 的 deferred 集合逐字等於 5248665281 的兩筆，未被補造",
          [e["finding_id"] for e in DEFER_AT_C_R3] == ["R2-001", "R2-002"]),
-        ("C@R4：C@R3 的兩筆 deferred 已由 R4 全數 resolved，無逾期",
+        ("C@R4：C@R3 無任何生效的 defer，故無清償對象；R4 逐項閉環後不強制",
          not revised["R4"].overdue and not revised["R4"].forced),
         ("R5–R7：條件1 成立（同根因跨三個以上可計數 attempt 且仍存活）",
          all(RC_GEN in revised[k].cond1_rcs for k in ("R5", "R6", "R7"))),
@@ -866,10 +1084,12 @@ def main() -> int:
          bad_by["B3"].forced and set(bad_by["B3"].cells.values()) == {"未提及"}),
         ("缺 defer_ruling_url 時該筆失效並強制 escalate",
          bad_url["B3"].forced and set(bad_url["B3"].cells.values()) == {"未提及"}),
-        ("§4 第 5 款：URL 不能解析為本卡留言時失效（含站外任意 URL）",
+        ("§4 第 5 款：URL 不能解析為本卡留言時失效（含站外任意 URL），"
+         "且該 URL 也取不到任何裁定留言，(a′)(b′) 一併不成立",
          off_card["B3"].forced
-         and off_card["B3"].failed_conditions("B-001") == ["ruling_url_on_card",
-                                                           "reason_cites_ruling"]),
+         and off_card["B3"].failed_conditions("B-001") == [
+             "ruling_url_on_card", "reason_cites_ruling",
+             "narrow_ruling_author_is_requester", "narrow_scope_bound"]),
         ("列舉外的 defer_cause 一律失效（不得自創成因）",
          bad_cause["B3"].forced and set(bad_cause["B3"].cells.values()) == {"未提及"}),
     ]
@@ -938,9 +1158,79 @@ def main() -> int:
          replay(omitted_stream())[0]["B3"].forced),
     ]
 
+    # ---- D3：spec-narrowed 的裁定證據（R4-001）------------------------------
+    #
+    # 上一版本 cause 完全不讀裁定留言，取得任意本卡 comment id 即可壓掉第二條件。
+    # 以下三個反例是查核者指定的，另加新鮮性與可用性兩個。
+    ok_narrow, _ = replay(narrowed_stream())
+    ids3 = ["B-001", "B-002", "B-003"]
+    no_ruling, _ = replay(narrowed_stream(ruling=None))
+    arbitrary, _ = replay(narrowed_stream(ruling=arbitrary_card_comment(ids3)))
+    non_requester, _ = replay(narrowed_stream(ruling=non_requester_ruling(ids3)))
+    unnarrowed, _ = replay(narrowed_stream(ruling=unnarrowed_ruling(ids3)))
+    stale, _ = replay(narrowed_stream(ruling=stale_round_ruling(ids3)))
+    no_read, _ = replay(narrowed_stream(), ctx=CTX_NO_READ)
+    structured, _ = replay(
+        defer_stream(ids3, ruling=narrowing_ruling(
+            ids3, attempt_uid(0, "B3"), declare=False, structured=True,
+            prose="## 需求方裁定（內容承載於結構化欄位，body 不含綁定字串）")),
+        ctx=CTX_STRUCTURED)
+
+    render("D3. 正例【構造】：需求方所寫、逐字綁定本輪 attempt 與本筆 finding",
+           ok_narrow, only={"B3"})
+    render("D3. 反例 1【構造】：任意本卡留言（需求方寫的，但與本輪無關）",
+           arbitrary, only={"B3"})
+    render("D3. 反例 2【構造】：非需求方留言（內容合規，author 是執行者）",
+           non_requester, only={"B3"})
+    render("D3. 反例 3【構造】：內容未收窄（提到了 id，但沒有宣告收窄）",
+           unnarrowed, only={"B3"})
+    render("D3. 反例 4【構造】：裁定綁定的是前一輪的 attempt_id", stale, only={"B3"})
+    render("D3. 反例 5【構造】：adapter 讀不到 author／body → 本 cause 不可用",
+           no_read, only={"B3"})
+
+    def _narrow_fail(cps, conds):
+        """三筆全落「未提及」、強制 escalate，且失效款次逐字等於 conds。"""
+        cp = cps["B3"]
+        return (cp.forced and set(cp.cells.values()) == {"未提及"}
+                and all(cp.failed_conditions(f) == list(conds) for f in ids3))
+
+    checks += [
+        ("D3 正例：需求方所寫且逐字綁定本輪 attempt＋本筆 finding＋收窄宣告時成立",
+         not ok_narrow["B3"].forced
+         and set(ok_narrow["B3"].cells.values()) == {"deferred"}),
+        ("反例 1（任意本卡留言）：URL 形狀合格、理由含同一數字 id，仍因內容未綁定"
+         "而全部落「未提及」並強制 escalate —— 這正是 R4-001 的攻擊路徑",
+         _narrow_fail(arbitrary, ["narrow_scope_bound"])),
+        ("反例 2（非需求方留言）：內容合規但 author 是 owner，(a′) 單獨即打掉該筆",
+         _narrow_fail(non_requester, ["narrow_ruling_author_is_requester"])),
+        ("反例 3（內容未收窄）：author 是需求方、也提到本輪 attempt 與這幾筆 finding，"
+         "但缺收窄宣告 → 失效",
+         _narrow_fail(unnarrowed, ["narrow_scope_bound"])),
+        ("反例 4（綁定前一輪）：舊裁定無法被搬來掩護本輪（免時鐘的新鮮性）",
+         _narrow_fail(stale, ["narrow_scope_bound"])),
+        ("反例 5（無讀取能力）：(c′) 本 cause 不可用，且 (a′)(b′) 一併 fail-closed，"
+         "adapter 不得以「讀不到」改判成立",
+         _narrow_fail(no_read, ["narrow_ruling_author_is_requester",
+                                "narrow_scope_bound", "narrow_cause_available"])),
+        ("事件流上根本沒有可讀到的裁定留言時 fail-closed",
+         _narrow_fail(no_ruling, ["narrow_ruling_author_is_requester",
+                                  "narrow_scope_bound"])),
+        ("(b′-1) 結構化路徑【構造：假想 schema 已由 handoff-contract.md 定義】："
+         "body 不含綁定字串，但事件欄位綁定同一 attempt 與同一 finding 時成立",
+         not structured["B3"].forced
+         and set(structured["B3"].cells.values()) == {"deferred"}),
+        ("同一結構化事件流在**預設** ctx（schema 未定義）下仍強制 escalate —— "
+         "(b′-1) 不是免費出口",
+         replay(defer_stream(ids3, ruling=narrowing_ruling(
+             ids3, attempt_uid(0, "B3"), declare=False, structured=True)))[0]["B3"].forced),
+    ]
+
     settled, _ = replay(repay_stream([], settle=True))
     silent, _ = replay(repay_stream([], settle=False))
-    redefer, _ = replay(repay_stream([defer_entry("C-001")], settle=False))
+    redefer, _ = replay(repay_stream(
+        [defer_entry("C-001", comment_id=REPAY_SECOND_RULING_ID,
+                     reason=f"需求方於 issuecomment-{REPAY_SECOND_RULING_ID} 再次裁定收窄")],
+        settle=False))
     render("D. 清償【構造】：C′ 給出 resolved", settled, only={"C4"})
     render("D. 逾期【構造】：C′ 對 deferred 集合保持沉默", silent, only={"C4"})
     render("D. 連續 defer【構造】：C′ 對同一筆再 defer 一次", redefer, only={"C4"})
@@ -949,9 +1239,11 @@ def main() -> int:
          not settled["C4"].overdue and not settled["C4"].forced),
         ("逾期：C′ 沉默即列入逾期並強制 escalate",
          silent["C4"].overdue == ["C-001"] and silent["C4"].forced),
-        ("不得連續 defer：C′ 再 defer 同一筆判為無效、落「未提及」且列入逾期",
+        ("不得連續 defer：C′ 再 defer 同一筆判為無效、落「未提及」且列入逾期。"
+         "C′ 另附一則合法裁定，故失效款次逐字只有 not_consecutive",
          redefer["C4"].cells["C-001"] == "未提及"
-         and redefer["C4"].overdue == ["C-001"] and redefer["C4"].forced),
+         and redefer["C4"].overdue == ["C-001"] and redefer["C4"].forced
+         and redefer["C4"].failed_conditions("C-001") == ["not_consecutive"]),
     ]
 
     ep, st_ep = replay(epoch_stream())
@@ -1023,10 +1315,12 @@ def main() -> int:
 
     # ---- 結論摘要 ----------------------------------------------------------
     print("\n===== 結論摘要（供查核者對照卡面驗證條文）=====")
-    print("  1. #16 的**忠實**事件流在修訂後條文下 C@R3 仍強制 escalate。原因不是 deferred")
-    print("     出口失效，而是需求方實際只 defer 了兩筆（5248665281），而 carry set 有四筆：")
+    print("  1. #16 的**忠實**事件流在修訂後條文下 C@R3 仍強制 escalate，且有兩個各自獨立")
+    print("     的原因：(i) 需求方實際只 defer 了兩筆（5248665281），而 carry set 有四筆——")
     print("     R1-002／R1-006 在 R2 被換號為 R2-001／R2-002 重新提出，依 §4「六格的前提是")
-    print("     穩定 finding_id」不構成處置，故落「未提及」。腳本**不**補造第三、四筆 defer。")
+    print("     穩定 finding_id」不構成處置；(ii) 被 defer 的那兩筆，其 legacy 裁定留言")
+    print("     （5248549305）不含 §4 (b′) 要求的 attempt_id／finding_id／收窄宣告綁定，故")
+    print("     defer 本身也不成立。腳本**不**補造第三、四筆 defer，也不替 legacy 留言補造內容。")
     print("  2. 同理，#16 忠實流在 C@R8 的條件1 仍為 TRUE：R4-001 自 R5 起被換號為 R5-001，")
     print("     從未被任何一輪處置，故該根因始終有有效 open finding。這是換號重開的後果，")
     print("     不是存活判準失效。")
@@ -1040,6 +1334,12 @@ def main() -> int:
     print("     review_prompt_url／closure_reporting_requested、wfcli 尚無 checkpoint")
     print("     writer（#9）。D2 的正例必須明示改用 CTX_SUPPORTED 才成立，且已標為構造。")
     print("     故本卡自身的 escalation checkpoint 亦不得引用本 cause。")
+    print("  6. `spec-narrowed` 的依賴不同：它只要唯讀能力（留言 author＋body），本 repo 的")
+    print("     doctor --review-channel 已在讀同樣的東西，故預設 CTX 的")
+    print("     comment_read_supported=True——D3 的失效全部來自「證據不成立」，不是「能力")
+    print("     不存在」。但 wfcli 尚無 checkpoint writer，`escalation-checkpoint` 事件今天")
+    print("     根本寫不出來，故 deferred_findings 整個機制在本 repo 尚未上線；那是 #9 的")
+    print("     缺口，不是本輪收緊造成的。本卡自身的 checkpoint 兩個 cause 都不得引用。")
 
     # ---- 斷言彙總 ----------------------------------------------------------
     print("\n===== 斷言 =====")
