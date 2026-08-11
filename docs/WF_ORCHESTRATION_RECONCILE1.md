@@ -48,7 +48,7 @@ PR 是否開啟、CI 是否綠、merge 是否進 main——這些**不設欄位*
 |---|---|---|---|---|---|
 | `open` | （無） | 必填欄機械檢查、鏈深 ≤ 2 | `📥Backlog`（需求未成形時 `💡需求`） | → 待指派 | 拒絕建卡 |
 | `amend` | 非終態（`🏁完成`／`🛑已停止` 以外全部） | `--reason` 非空；值確有變更；Log 錨點唯一 | 不變 | 不變 | 拒收，零寫入 |
-| `assign` | `💡需求`／`📥Backlog`／`⏳待執行`／`↩退回` | **寫入集不相交**（§7.2；現行實作僅字串相等，尚不構成此保證，過渡期見該節）；**worktree commondir repo ＝ 卡 Issue repo**（§7.1） | `🚧進行中` | → 執行者 | 拒絕派工 |
+| `assign` | `💡需求`／`📥Backlog`／`⏳待執行`／`↩退回` | **寫入集不相交**（§7.2 → [#24](https://github.com/ruan6047/ai-workflow/issues/24)；在該卡落地前僅字串相等，尚不構成此保證）；**worktree commondir repo ＝ 卡 Issue repo**（§7.1） | `🚧進行中` | → 執行者 | 拒絕派工 |
 | `handoff --next-stage review` | `🔨執行中`／`🚧進行中` | `source_sha` 為完整 40 hex 且已推送；證據非空 | `🔍待查核` | → 查核者 | **sender 側**拒絕交接；**receiver 驗證失敗** → `⏸阻塞`（`handoff-contract.md` 第 9 行） |
 | `review` | `🔍待查核` | 結構化輸出合契約；**第三個可計數 attempt 起須先有 `escalation-checkpoint`**（Q5、§2.2） | `✅通過`／`↩退回` | 不變 | `review-invalid`（留原狀）／拒轉錄 |
 | `handoff --next-stage implementation` | `↩退回` | 同 review 方向 | `🚧進行中` | → 執行者 | 同上 |
@@ -124,104 +124,19 @@ cleanup 不是「善後」而是轉換的一部分——把它當成獨立的、
 
 ## 3. 事件契約
 
-### 3.1 `state_version`：排序權威（Q3）
+### 3.1 事件排序與冪等 → **歸 [#23](https://github.com/ruan6047/ai-workflow/issues/23)**
 
-**`state_version` 不是本設計新增的。** canonical `AI_WORKFLOW.md:141` 的 lifecycle event 最小 schema 已含 `event_id`、`state_version`，並明定「同一卡的 `state_version` 必須單調遞增」。本節做的是**把它取號與異常處置的細節補完**，不是另立一套。
+`state_version` 不是本設計新增的：canonical `AI_WORKFLOW.md:141` 的 lifecycle event 最小 schema 已含 `event_id`、`state_version`，並要求同一卡的 `state_version` 單調遞增。
 
-**這是計數不是時刻**，與時間語意契約（cpbl#123）正交。canonical 同行另要求 `occurred_at` 取自寫入當下的系統時鐘、不得估算——時戳與排序是兩件事，本設計只用後者。
+取號程序、撞號／缺號／無序號的處置、決定性 `event_id`、逐型別 canonical bytes 與 resume 演算法，經 R5–R7 三輪查核後**已切出為獨立卡 [#23 `WF-EVENT-IDEMPOTENCY1`](https://github.com/ruan6047/ai-workflow/issues/23)**，本設計不重述其內容。
 
-- **取號**：讀該卡現有最大序號 +1。GitHub 無原子遞增，故取號是 read-modify-write。
-- **撞號**（同卡同序號、且 `event_id` 不同的兩筆）→ 並行寫入的證據 → **fail-closed**：該卡降純偵測，人工裁定。
-- **同號同 `event_id`** → **不是撞號**，是同一次寫入的重試或重複觀測，見 §3.1.2。
-- **缺號**（序列有洞）→ 有事件遺失或未落地 → 同樣降級。
-- **舊事件無序號** → legacy epoch，以 `contract-baseline` 劃界（Q11），不追溯。
-
-#### 3.1.1 撞號的機械預防
-
-**紀律不是機制**：任兩個 resume 或人工作業即可撞號並讓該卡永久降級，而降級是不可逆的懲罰，代價與防護不對稱。
-
-canonical `AI_WORKFLOW.md:148` 已給出可用的一層：「本機可採**原子目錄鎖**；跨主機必須使用具併發控制的服務或 workflow。Markdown、聊天訊息與『請勿同時操作』皆不構成鎖。」
-
-因此分兩層，**不宣稱超出各層真實能力**：
-
-| 併發來源 | 機制 | 保證強度 |
-|---|---|---|
-| 同機多個 `wfcli` 程序（含 resume 與人工並行——**實測中最常見的來源**） | 以 `(owner, project, card_id)` 為鍵的**本機原子目錄鎖**，包住「讀最大序號 → 寫首寫」整段 | **可預防**。canonical 明文允許，且是鎖不是狀態面 |
-| 跨主機 | 無可用的併發控制服務 | **不可預防**。取號後、寫入前**重讀比對**縮窗，撞號 fail-closed |
-
-> **誠實界線**：跨主機撞號仍只能偵測。這與 `wfcli amend` 的「重讀比對縮窗、不宣稱 CAS」是同一誠實等級。但**同機這一層已從紀律升格為機制**，而 resume 與人工並行都在這一層。
-
-#### 3.1.2 遠端寫入成功但回應遺失：冪等重試 [idempotent retry]
-
-分散式寫入最常見的失效是：請求送達 GitHub 並成功寫入，但**回應在網路上遺失**。它不是邊角——**它正是 §4 要解的那類故障**，任何不處理它的排序方案，resume 的核心目標都不成立。
-
-兩種都壞：
-
-- 重試若沿用原序號 → 讀到該號已被佔 → **誤判撞號 → 該卡永久降級**。
-- 重試若重新取號 → 讀到 max ＝ N（自己剛寫的）→ 寫 N+1 → **同一意圖產生兩筆事件**。
-
-##### 冪等鍵：`event_id` 必須是決定性的
-
-canonical 已在最小 schema 裡要求 `event_id`（`handoff-contract.md:16` 寫為 `<UUID>`）。**隨機 UUID 撐不過重試**——新程序會產生新的 id，自己認不出自己。既然本設計採本機零狀態（§4.2），重試唯一能依靠的就是「從相同輸入重新算出相同的 id」。
-
-##### 一個不可迴避的理論界線
-
-**本機零狀態下，「重試」與「刻意重跑同一指令」原則上不可區分。** 要區分就必須記住上一次做過什麼，而那正是 §4.1 依 canonical 拿掉的本機狀態。任何宣稱能區分兩者的機制，都是把本機狀態藏在別的名字底下。
-
-**任何以「寫入者觀察到的鏈尖端」為材料的鍵都不成立**：寫入成功但回應遺失後，鏈尖端已經變成自己剛寫的那一筆，重試觀察到的尖端與第一次不同，算出的鍵也就不同——**恰好在最需要辨識的那一刻失效**。
-
-因此必須選一邊犧牲。**需求方裁定：保留辨識重試的能力，犧牲「無聲重跑同一指令」。** 拒絕一筆合法的重複，代價是操作者多打一個旗標；寫出一筆重複事件，代價是 append-only 歷史永久污染且 reducer 無從分辨。**保守側在拒絕這邊。**
-
-> **`event_id` 由意圖決定性導出**（UUIDv5 或等價的雜湊命名）：
+> **本狀態機對 #23 的假設**（介面，非實作）：
 >
-> ```
-> event_id = uuid5(NS_WFCLI, canonical(owner, project, card_id, verb, args, attempt_salt))
-> ```
+> 1. 每個 lifecycle 事件帶 per-card 嚴格遞增的 `state_version`，可用於排序，**且不取環境時鐘**（與 cpbl#123 的時間語意正交）。
+> 2. 每個事件帶**可由意圖重新導出**的 `event_id`，因此「寫入成功但回應遺失」後的重試可辨識自己先前的寫入。
+> 3. 排序或冪等任一無法安全判定時（撞號、缺號、legacy epoch、同鍵不同內容），該卡**降純偵測**。
 >
-> - `args`：該動詞的全部使用者輸入，**依欄位型別逐一正規化**後以「欄位名 ‖ 長度 ‖ 位元組」串接（見下表）。
-> - `attempt_salt`：**預設空字串**；僅在操作者顯式帶 `--new-attempt <標籤>` 時取該標籤。
-> - **不含鏈尖端、不含時鐘、不含 `state_version`**。呼應 §11 與 cpbl#123：冪等鍵不得取環境時鐘。
-
-##### 逐型別的 canonical bytes
-
-「NFC ＋ 長度前綴」不足以定義所有欄位的規範位元組——換行、尾隨空白、結構化資料與 emoji 枚舉各有各的歧義來源。**逐型別定義，不留「其餘」格**：
-
-| 型別 | 規範化 | 歧義來源 |
-|---|---|---|
-| **自由文字**（`--evidence`、`--reason`、查核報告） | Unicode **NFC**；行尾一律 `LF`；去除每行尾隨空白與整體尾隨換行 | CRLF、貼上時的尾白、輸入法產生的 NFD |
-| **枚舉**（交付狀態、部署狀態、級別） | **逐位元組取自 `FIELD_SPECS` 的凍結字串**；輸入含 **variation selector**（`U+FE0E`／`U+FE0F`）或零寬字元者**拒收** | 狀態值本身是 emoji，終端與輸入法會插入變體選擇符 |
-| **路徑** | §7.2 的封閉 namespace 正規化 | 見該節 |
-| **SHA／識別碼** | 小寫 hex，長度固定 | 大小寫、短 SHA |
-| **整數／布林** | 十進位無前導零／`true`\|`false` | 空白、`True` |
-| **結構化輸入**（findings 區塊） | 先解析為資料結構，再以**排序鍵、無註解、無錨點**的規範形式序列化；**不對原始文字取雜湊** | 縮排、鍵序、註解、YAML 別名 |
-
-任何無法歸入上表的新欄位，在其型別規範化定義補上之前，**該動詞不得納入冪等鍵機制**（fail-closed）。
-
-##### `already_exists` 與 salt 衝突
-
-- **`already_exists` 退出語意**：步驟 3 命中既有事件時，`wfcli` 以**非零但可辨識的退出碼**結束，訊息明指「已存在，視為重試；若確實要再寫一筆請帶 `--new-attempt <標籤>`」，**不寫入任何狀態**。腳本可據此區分「真的失敗」與「已經做過了」。
-- **salt 衝突 fail-loud**：`--new-attempt <標籤>` 若與既有事件算出同一 `event_id`（同卡、同動詞、同參數、同標籤），**拒絕並要求換標籤**——操作者已明示要新的一筆，靜默視為重試會違反其明示意圖。標籤本身寫入 Log 供稽核。
-
-##### resume 演算法（純讀 GitHub，無本機狀態）
-
-1. 讀該卡完整事件流，取得現有最大序號。
-2. 依上式算出本次的 `event_id`（不需要鏈尖端）。
-3. **若該 `event_id` 已存在於事件流** → 這是同一意圖先前已落地的寫入：**不重寫**，改依 §4.2 自該筆首寫推導後續步驟並補齊缺漏（§5.2 第 1 條），並向操作者印出「已存在，視為重試；若確實要再寫一筆請帶 `--new-attempt <標籤>`」。
-4. **若不存在** → 取 `max + 1` 為 `state_version`，在同機原子目錄鎖內完成「重讀確認 → 寫入」。
-5. 寫入後若回應遺失，下一次執行從步驟 1 重來，**必然落到步驟 3**——因為鍵不依賴鏈的狀態。
-
-##### 明文代價
-
-- **卡＋動詞＋參數完全相同的第二次寫入會被拒絕**，即使那是合法的刻意重跑。逃生門是 `--new-attempt <標籤>`，該標籤進入 Log，可事後稽核為何需要重複。
-- **兩個並行寫入者若意圖完全相同**（同卡、同動詞、同參數），會算出同一 `event_id`，後者被視為前者的重試而不寫入。這在語意上正確——兩人做同一件事，做一次就夠——但它**不是**並行防護；並行的偵測仍靠 `state_version` 撞號（§3.1.1）。
-
-##### 同鍵不同內容 ＝ 竄改或非決定性缺陷
-
-同一 `event_id` 出現兩筆、而**payload 語意不等**（依 §3.4 的結構化區塊比對，刻意排除 `occurred_at` 與 reviewer 自由文字這類每次都不同的欄位）→ **fail-closed**，純偵測交人。這表示要嘛有人改了留言，要嘛 `event_id` 的導出實際上不決定性——兩者都不能自動修。
-
-##### 驗收要求
-
-實作卡 **§9-A** 必須對**每一個寫入邊界**附網路失敗回歸測試：請求送達且寫入成功、但回應遺失，重跑後**不得**產生第二筆事件、**不得**判為撞號、且能正確補齊未完成的後續步驟。合成 mock 可用於此項（故障注入本來就無法用真實 timeline 取得），但必須覆蓋 §4.3 表中的每個動詞。
+> §4 的自描述首寫以假設 2 為辨識基礎；§5.2 白名單第 1 條依賴假設 2 與 3。**假設不成立時，本設計的自動修復整條失效**——這是明示的相依，不是隱含期待。
 
 ### 3.2 受管轄判準的收窄（Q8）— 契約修訂案
 
@@ -399,22 +314,13 @@ findings:
 
 **每筆修復 append Log 記原值**（沿用 `wfcli amend` 已確立的紀律）。
 
-### 5.3 破壞性步驟的前提（一項不成立即不刪）
+### 5.3 破壞性步驟的前提 → **歸 [#25](https://github.com/ruan6047/ai-workflow/issues/25)**
 
-白名單第 2 條會刪 worktree 與分支。**canonical `AI_WORKFLOW.md:146` 對此已有明文**：「lease 可續約、可到期回收；**回收前先檢查未提交變更，禁止靜默刪除工作內容**。」`worktree-lifecycle.md` 第 11 行的清理順序（先離開 worktree，再移除目錄、刪本地分支、刪遠端分支）也是同一件事的另一半。
+白名單第 2 條會刪 worktree 與分支。canonical `AI_WORKFLOW.md:146` 對此已有明文：「lease 可續約、可到期回收；**回收前先檢查未提交變更，禁止靜默刪除工作內容**。」
 
-> **`reconcile --apply` 執行任何刪除前，下列全部須成立；任一不成立即該項降純偵測、只回報不動手：**
->
-> | 前提 | 檢查 | 不成立時 |
-> |---|---|---|
-> | **無未提交變更** | 目標 worktree 的 `git status --porcelain` 為空，且無 stash、無 `git worktree list` 標示的 locked | 保留全部，回報「有未提交內容」 |
-> | **無 active lease** | 該卡無未到期 lease；lease 由既有機制判定，本設計不另定義 | 保留，回報 lease 持有者與到期時間 |
-> | **未被佔用** | 該 worktree 非任何現行 shell 的 cwd／非 primary worktree；`git worktree remove` 不得加 `--force` | 保留，回報佔用情形 |
-> | **分支已合併** | 待刪分支的 tip 為 `main` 祖先（本地與遠端各自驗） | 保留該分支，其餘步驟仍可進行 |
->
-> **`--force` 在 reconcile 路徑一律禁用。** 需要強制的情境即為「需要人判斷」的定義。
+前提的枚舉、`--force` 禁用、以及與 `release` cleanup 的共用關係，經 R7-001（critical）後**已切出為獨立卡 [#25 `WF-CLEANUP-GUARD1`](https://github.com/ruan6047/ai-workflow/issues/25)**（T4 紅線：不可逆且會毀資料），本設計不重述其內容。
 
-同一組前提亦適用於 `release` 內含的 cleanup（§2.3）——差別只在 `release` 由操作者當場發動、失敗時可立即處理，而 reconcile 是批次無人看管，因此**reconcile 側的前提不得放寬**。
+> **本狀態機對 #25 的假設**：`reconcile --apply` 與 `release` 的任何刪除步驟，在 #25 定義的全部前提可機械驗證成立前**不執行**；無法判定時只回報。**未落地前，白名單第 2 條的破壞性部分不得啟用**——非破壞性部分（關閉 Issue、補寫欄位）不受影響。
 
 ### 5.4 白名單外——一律純偵測，交人
 
@@ -516,91 +422,13 @@ canonical **自己已經劃好了界**：B2 的預設是小改直推＋獨立事
 
 **明文不宣稱的**：這**不阻止**任何人直接在別的 repo 開分支手動做事——那是人的操作選擇，`assign` 只管註冊制 worktree。已知殘餘風險。
 
-### 7.2 資源宣告的互斥語意
+### 7.2 資源宣告的互斥語意 → **歸 [#24](https://github.com/ruan6047/ai-workflow/issues/24)**
 
-#### 既有權威用的詞是「寫入集」，實作沒跟上
+canonical `AI_WORKFLOW.md:145` 要求「共享可寫資源必須宣告並互斥」；`control-plane-contract.md:49` 用的詞是「比對本卡**寫入集** × 現役卡寫入集」。而 `resources.find_conflicts` 現行只做完全相同字串比對——**字串相等是寫入集相交的不完備代理**。
 
-- canonical `AI_WORKFLOW.md:145`：「**共享可寫資源必須宣告並互斥**：`file:<path>`、`port:<n>`、`container:<name>`…」
-- `control-plane-contract.md:49`：「派工前資源交集比對：〈命令；**比對本卡寫入集 × 現役卡寫入集**，撞則排隊〉」
+相交定義、封閉 path namespace、symlink 處置、`resource_check_rev` 釘選與 TOCTOU 防護、兩階段落地，經 R4–R7 四輪查核後**已切出為獨立卡 [#24 `WF-RESOURCE-WRITESET1`](https://github.com/ruan6047/ai-workflow/issues/24)**，本設計不重述其內容。
 
-而 `cli/src/wf_cli/resources.py` 的 `find_conflicts` 實作為「完全相同字串才算撞（不做路徑前綴模糊比對，避免誤判）」——**字串相等是寫入集相交的一個不完備的代理**。把它當成 `assign` 的安全守衛，就是用代理冒充保證。
-
-線上有現成反例：**#16 宣告 `file:templates/`、#22 宣告 `file:templates/review-escalation.md`，寫入集實際重疊，現行檢查卻判無衝突、兩張可同時派工。**
-
-#### 需求方裁定：階層路徑包含比對
-
-> 兩個 `file:` 資源相交，當且僅當**其正規化路徑相等，或其一為另一之祖先目錄**。判定以**路徑邊界**為準：`file:templates/` 與 `file:templates/a.md` 相交；`file:templates/` 與 `file:templates2/a.md` **不相交**。
-
-選此案而非「禁止目錄宣告、一律精確檔案」的理由：**只有目錄宣告能表達「我會在這裡新增檔案」**，而那是真實需求（本卡自己就是）。逐檔宣告會迫使每新增一個檔案就 `amend` 一次，摩擦大到一定程度就會造成少宣告——**保護會被繞過而不是被遵守**。
-
-實作註解所稱「避免誤判」，指的是樸素子字串比對（`templates` 命中 `templates2`）；**加上路徑邊界判定即無此問題**，該顧慮不構成反對本案的理由。
-
-#### 封閉的 path namespace
-
-「正規化」若不封閉定義，等價規則就是下一個縫。**`file:` 的路徑語彙限定如下，不符者 `open`／`amend` 逕行拒收**：
-
-| 規則 | 內容 | 理由 |
-|---|---|---|
-| **根** | 一律為**卡所屬 repo 根**的相對路徑；不接受絕對路徑、`~`、跨 repo 路徑 | 跨 repo 由 §7.1 的連結卡處理，不由資源字串表達 |
-| **禁用段** | 拒收含 `..` 的路徑 | `..` 使「祖先」關係不可由字面判定 |
-| **正規化** | 去除 `./`、摺疊重複斜線；**結尾斜線＝目錄宣告**，無結尾斜線＝檔案宣告 | 目錄／檔案之別是語意，不是排版 |
-| **大小寫** | **位元組精確比對**，不做大小寫摺疊 | git 索引是位元組精確的；在大小寫不敏感的檔案系統上，兩個只差大小寫的宣告**須視為相交**（fail-closed 側） |
-| **symlink** | **拒收任何路徑分量為 git 追蹤 symlink 的宣告**，見下方 | 「不解析、列為殘餘風險」會讓兩個字面不同的宣告指向同一實際檔案，而互斥判定完全看不見 |
-| **glob／萬用字元** | 拒收 | 相交判定必須可由字面決定 |
-
-拒收發生在**寫入卡面時**（`open`／`amend`），不是派工時——**壞的宣告根本進不了系統**，比事後比對安全。
-
-##### symlink：git 索引已經知道，不需要工作樹
-
-把 symlink 列為「殘餘風險」的前提是「解析需要工作樹存在且與宣告時一致」。**那個前提是錯的**：git 以**檔案模式 `120000`** 在索引／tree 中記錄 symlink，`git ls-files -s <rev>` 或 `git ls-tree` 讀得到，**不需要 checkout、不需要工作樹**。既然機械可判定，就不該用殘餘風險打發。
-
-> **規則**：宣告的路徑，其**任一祖先分量或自身**在該卡 repo 的目標 revision 中模式為 `120000` 者，`open`／`amend` **拒收**，並提示改宣告 symlink 的 target 路徑。
->
-> **重驗時機與 revision 釘選**：symlink 可能在宣告之後才被加入，故 `assign` 於派工當下重跑同一檢查。**「當時的 revision」必須釘死，不能只寫「當時」**：
->
-> 1. `assign` 先把 `--worktree` 的 `HEAD` 解析為**完整 40 hex commit SHA**，記為 `resource_check_rev`，**寫入 assign 事件**（事後可重放同一檢查）。
-> 2. symlink 檢查與資源交集比對**都對 `resource_check_rev` 進行**，不對「分支尖端」這種會動的東西。
-> 3. **TOCTOU**：解析 SHA、跑檢查、寫入 assign 三者在同機原子目錄鎖內完成（§3.1.1 已有該鎖）；寫入前重讀 `HEAD`，若已非 `resource_check_rev` 則**放棄本次派工**並要求重跑，不得帶著過期的檢查結果寫入。
-
-##### 未追蹤 symlink 也要檢查
-
-把未追蹤 symlink 劃出範圍的理由通常是「資源宣告是 repo 檔案的契約」。**該理由不成立**：`assign` 當下 worktree 就在眼前，未追蹤的 symlink **確實可以讓兩張卡的實際寫入落到同一個檔案**——寫入集是實際會被寫的東西，不是 git 追蹤與否。
-
-> `assign` 對每個宣告路徑，在 `--worktree` 中另做**實際路徑檢查**：
->
-> - 沿路徑逐層解析（含未追蹤 symlink），得到 realpath；
-> - **containment**：realpath 必須仍在該 worktree 根之內，逸出者拒絕派工；
-> - **交集比對以 realpath 進行**，與字面路徑的比對取聯集（任一命中即相交，fail-closed 側）。
->
-> 路徑尚不存在時（宣告將要新增的檔案）：解析到**最深的既存祖先**為止，對該祖先做同樣的 containment 檢查。
-
-**仍不涵蓋**：派工之後才被建立的未追蹤 symlink。那超出任何派工時檢查的能力，屬執行期紀律，不宣稱涵蓋。
-
-#### 過渡期也必須是機械的
-
-**過渡期最容易寫成「在實作到位前由 PM 人工執行 fail-closed」——那不算設計完成。** §0 的判準是每一條規則都要有機械執行者；人工紀律不是。
-
-因此分**兩階段，兩階段都是機械的**：
-
-| 階段 | `find_conflicts` 的行為 | 性質 |
-|---|---|---|
-| **立即**（§9-L 落地前） | 保留現行字串相等，**另加樸素前綴比對**：任一方為目錄宣告時，若對方字串以其起始即判相交 | **過度拒絕**（`templates/` 會誤撞 `templates2/a.md`），但**是 fail-closed 且現在就可執行**。誤拒的代價是排隊，漏放的代價是兩張卡同時寫同一檔 |
-| **目標**（§9-L） | 上述封閉 namespace ＋ 路徑邊界判定 | 消除誤拒，語意精確 |
-
-立即階段是**一個謂詞的擴充**，不需要封閉 namespace 先到位——因為它只會多擋、不會少擋。**沒有任何一刻依賴人記得。**
-
-#### 歸屬
-
-契約語意（相交定義、封閉 namespace）定義在本卡；`find_conflicts` 的兩階段實作與回歸測試歸實作卡 **§9-L**，其驗收須含：立即階段的過度拒絕行為、目標階段的 `templates/` vs `templates2/` 邊界、`..`／glob／絕對路徑的拒收、大小寫差異視為相交，以及 #16／#22 的真實反例。
-
-> **立即後果**：本節生效後，#22（`file:templates/review-escalation.md`）在 #16（`file:templates/`）進入終態或 `amend` 其資源宣告前**不得派工**——即使現行實作判它們不衝突。
->
-> **實作現況不等於契約應然**，而本卡的職責正是讓兩者對齊。
-- **primary worktree** ← `git worktree list` 首項，分類為 primary，**永不列孤兒**（修正既有誤報）。
-- **合法跨 repo 沙箱**：使用 detached worktree（沿用既有 `detached_sandbox` 分類），不走註冊制。
-- **registry `github` 模式**：實作讀 Project 的 `分支worktree` 欄位。ai-workflow 自 08-04 cutover 後 `TASKS.md` 僅為封存投影，doctor 目前實際上無 registry 可讀。
-
----
+> **本狀態機對 #24 的假設**：§2.1 `assign` 列的守衛「寫入集不相交」由 #24 提供；在其落地前，該守衛**是宣稱而非保證**，兩張寫入集實際重疊的卡可能同時被派工。§7.1 的跨 repo 拒絕不受影響（它不依賴路徑比對）。
 
 ## 8. 漂移回放
 
@@ -681,20 +509,20 @@ CI 紅經 cpbl#123 查證為時間語意缺陷（測試 module import 取容器�
 
 ## 9. 衍生實作卡（建議，深度 1）
 
+> **三個機制已切出為獨立卡**，不再列於本表：事件排序與冪等 → [#23](https://github.com/ruan6047/ai-workflow/issues/23)（原 A 卡）、資源寫入集互斥 → [#24](https://github.com/ruan6047/ai-workflow/issues/24)（原 L 卡）、破壞性收尾守衛 → [#25](https://github.com/ruan6047/ai-workflow/issues/25)（T4）。下表各卡的「依賴」欄改指這些卡號。
+
 | # | 卡 | 範圍 | 依賴 |
 |---|---|---|---|
-| A | `state_version` 取號、**決定性 `event_id` 與 idempotent resume**、本機原子目錄鎖、撞號／缺號 fail-closed | §3.1 全部（含 §3.1.2 的每寫入邊界網路失敗回歸測試） | — |
-| B | **首寫自描述改造與 `wfcli resume`** | §4.2–§4.4；`handoff`／`assign` 首寫重構；`deploy-*` 先稽核；恢復純讀 GitHub | A |
-| C | `wf-review-clearance:v1` writer 與消費 **＋ §3.2.1 三分類的真實 timeline 回歸探針（四類案例）** | §3.2.3、§3.3；解落差 7 | A |
-| D | 裁決結構化區塊 | §3.4；解落差 8b；`render_verdict_comment` 改造 | A |
+| B | **首寫自描述改造與 `wfcli resume`** | §4.2–§4.4；`handoff`／`assign` 首寫重構；`deploy-*` 先稽核；恢復純讀 GitHub | **#23** |
+| C | `wf-review-clearance:v1` writer 與消費 **＋ §3.2.1 三分類的真實 timeline 回歸探針（四類案例）** | §3.2.3、§3.3；解落差 7 | **#23** |
+| D | 裁決結構化區塊 | §3.4；解落差 8b；`render_verdict_comment` 改造 | **#23** |
 | E | `wfcli merge` 動詞與守衛 **＋ §6.4 的 PR 事件契約** | §2.1 merge 列、§6.3 sign-off、§6.4 | — |
 | F | ai-workflow 最小 CI **＋ 逐 repo ruleset／workflow 落地** | §6.2 適用範圍、§6.4 末 | — |
-| G | `release` 守衛引用既有結案清單 ＋ `merge` 後置改 `📦已合併` ＋ `reconcile --apply` 白名單 1／2 | §2.1、§2.3、§5.2 | A、B |
+| G | `release` 守衛引用既有結案清單 ＋ `merge` 後置改 `📦已合併` ＋ `reconcile --apply` 白名單 1／2 的**非破壞性部分** | §2.1、§2.3、§5.2 | **#23**、B、**#25**（破壞性部分） |
 | H | worktree repo 歸屬預防、**§7.1 連結卡欄位**、registry `github` 模式 | §7、§7.1 | — |
-| I | review 的 escalation 計數與 checkpoint 守衛 | §2.1、§8.5 | A |
-| **J** | **event envelope ＋ total reducer ＋ 唯一性判定**（解鎖 §5.2 第 3 條） | §5.4 五項驗收 | A、B |
-| **K** | **`epoch-anchor` 動詞**（含 quiescent 前置檢查與三種在途狀態拒收）與可錨定卡的錨定 | §10.2、§10.3 第 4 步 | A |
-| **L** | **`find_conflicts` 兩階段**（立即：樸素前綴的過度拒絕；目標：封閉 namespace ＋路徑邊界）＋ `open`／`amend` 對非法路徑語彙與 git symlink 分量的拒收 ＋ `assign` 依當時 revision 重驗 | §7.2 | — |
+| I | review 的 escalation 計數與 checkpoint 守衛 | §2.1、§8.5 | **#23**、[#22](https://github.com/ruan6047/ai-workflow/issues/22) |
+| **J** | **event envelope ＋ total reducer ＋ 唯一性判定**（解鎖 §5.2 第 3 條） | §5.5 五項驗收 | **#23**、B |
+| **K** | **`epoch-anchor` 動詞**（含 quiescent 前置檢查與三種在途狀態拒收）與可錨定卡的錨定 | §10.2、§10.3 第 4 步 | **#23** |
 
 **契約修訂 PR（非實作卡）**：§3.2.1 三分類 ＋ §3.3 clearance 表示法入 `handoff-contract.md`／`review-escalation.md`，並同步**改寫**（非移除）`templates/dispatch-package.md` 的留言引用紀律為「不得讓任何一行以 `<!--` ＋前綴起始」（§3.2.3）。此 PR 改的是 canonical 契約本體，落在 §6.2 第 2 類，**必走 PR＋跨家族查核**。
 
@@ -765,17 +593,17 @@ CI 紅經 cpbl#123 查證為時間語意缺陷（測試 module import 取容器�
 
 ## 12. 查核紀錄
 
-R1–R4 共 10 項 blocking finding，**R1-001／002／003／004／005／006、R2-001／002、R3-001 與執行者自查追加的第四例，均已於 R4 判定 `resolved`**。逐輪裁決全文、checkpoint 與派審詞在 [Issue #16](https://github.com/ruan6047/ai-workflow/issues/16) 的 timeline 上，本檔**不重述**（重述就是製造第二份會漂移的複本，同 §2.3 的準則）。
+R1–R7 共 18 項 blocking finding。**R1–R4 提出的十項已於 R4／R5 判定 `resolved`；R6-001 於 R7 判定 `resolved`。** 逐輪裁決全文、七則 checkpoint 與派審詞在 [Issue #16](https://github.com/ruan6047/ai-workflow/issues/16) 的 timeline 上，本檔**不重述**（同 §2.3 的準則）。
 
-**仍開啟**：
+**仍開啟的三項，已隨機制切卡一併移轉**——它們是那三個機制的驗收前提，留在框架卡上無人可修：
 
-| finding | 內容 | 落點 |
+| finding | 內容 | 承接卡 |
 |---|---|---|
-| **R7-001** critical | 自動 cleanup 可刪 worktree／分支，卻無 canonical `:146` 要求的未提交變更等破壞性守衛 | §5.3（四項前提，任一不成立即不刪；reconcile 路徑禁用 `--force`）、§5.2 第 2 條 |
-| **R5-001**（四輪） | symlink 重驗未釘 revision；未追蹤 worktree symlink 被錯誤排除 | §7.2（`resource_check_rev` 釘選＋鎖內 TOCTOU 防護＋realpath containment 與交集聯集） |
-| **R5-002**（三輪） | NFC 不足以定義所有參數的規範位元組；salt 衝突未定義 | §3.1.2（逐型別 canonical bytes 表、`already_exists` 退出語意、salt 衝突 fail-loud） |
-| **R5-001**（三輪） | symlink 使字面不同的宣告指向同一檔案，前一版僅列殘餘風險 | §7.2（依 git 模式 `120000` 拒收，`assign` 依當時 revision 重驗）、§9-L |
-| **R5-002**（兩輪） | 以鏈尖端為材料的鍵，在回應遺失後恰好失效 | §3.1.2（改為意圖鍵＋`--new-attempt` 逃生門）、§9-A |
+| **R7-001** critical | 自動 cleanup 無 canonical `:146` 要求的破壞性守衛 | [#25](https://github.com/ruan6047/ai-workflow/issues/25)（T4） |
+| **R5-001**（四輪未閉環） | symlink 與 revision 釘選使寫入集漏交集 | [#24](https://github.com/ruan6047/ai-workflow/issues/24) |
+| **R5-002**（三輪未閉環） | 規範位元組與 salt 衝突未定義 | [#23](https://github.com/ruan6047/ai-workflow/issues/23) |
+
+移轉方式是把七輪磨出來的內容寫進各卡的**驗收條件**，不是留在設計散文裡——需求就該長在需求的位置。
 
 ### 12.1 一個貫穿五輪的根因，及它為何影響設計
 
