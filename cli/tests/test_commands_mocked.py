@@ -22,6 +22,7 @@ from wf_cli.project import (
     list_items,
     resolve_project,
     set_field_value,
+    set_item_body,
 )
 
 from .fake_gh import FakeGhRunner
@@ -310,11 +311,129 @@ def test_open_replays_real_cards_into_template_line4_format(
     assert routing[0] != "- 執行：待指派　查核：獨立校讀"
 
 
-def _assign_argv(card_id: str, assignee: str, branch: str, worktree: str) -> list[str]:
-    return [
+def _assign_argv(
+    card_id: str,
+    assignee: str,
+    branch: str,
+    worktree: str,
+    *,
+    actual_capability: str = "主力型",  # 與 _open_argv 的建議執行層級相同＝相符路徑
+    deviation_reason: str | None = None,
+) -> list[str]:
+    argv = [
         "assign", *BASE_TARGET, card_id,
         "--assignee", assignee, "--branch", branch, "--worktree", worktree,
+        "--actual-capability", actual_capability,
     ]
+    if deviation_reason is not None:
+        argv += ["--capability-deviation-reason", deviation_reason]
+    return argv
+
+
+# --- assign 偏離專項：三種情形（卡面驗證明列）-------------------------------
+
+
+def _assign_log_line(runner, card_id: str) -> str:
+    project = resolve_project(runner, "acme", 1)
+    item = find_item_by_card_id(list_items(runner, project), card_id)
+    assert item is not None
+    lines = [ln for ln in item.body.splitlines() if " assign by wf-cli " in ln]
+    assert len(lines) == 1
+    return lines[0]
+
+
+def test_assign_matched_capability_needs_no_reason_and_proceeds(fake_runner):
+    # 情形 1：實際層級＝卡面建議 → 不要求理由，照常派工。
+    run_cli(_open_argv("DEV-MATCH1", **{"--exec-capability": "主力型"}))
+    rc = run_cli(
+        _assign_argv("DEV-MATCH1", "某模型@某工具", "b", "/w", actual_capability="主力型")
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-MATCH1")
+    assert "實際能力層級 主力型（與卡面建議 主力型 相符）" in log
+
+
+def test_assign_deviation_without_reason_is_refused_with_zero_writes(fake_runner, capsys):
+    # 情形 2：不符且未給理由 → fail-closed 拒絕，且**完全沒有寫入**。
+    run_cli(_open_argv("DEV-FAIL1", **{"--exec-capability": "主力型"}))
+    project = resolve_project(fake_runner, "acme", 1)
+    before = find_item_by_card_id(list_items(fake_runner, project), "DEV-FAIL1")
+    rc = run_cli(
+        _assign_argv("DEV-FAIL1", "某模型@某工具", "b", "/w", actual_capability="高階型")
+    )
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "MODEL_ROUTING" in err
+    after = find_item_by_card_id(list_items(fake_runner, project), "DEV-FAIL1")
+    assert after.fields["owner"] == before.fields["owner"]  # owner 未被改
+    assert after.fields["交付狀態"] == before.fields["交付狀態"]
+    assert after.body == before.body  # Log 也沒有半套紀錄
+
+
+def test_assign_deviation_with_reason_records_both_and_reads_back(fake_runner):
+    # 情形 3：給了理由 → 實際層級與偏離理由皆入 Log，且可被讀回。
+    run_cli(_open_argv("DEV-OK1", **{"--exec-capability": "主力型"}))
+    rc = run_cli(
+        _assign_argv(
+            "DEV-OK1",
+            "某模型@某工具",
+            "b",
+            "/w",
+            actual_capability="高階型",
+            deviation_reason="主力型當下額度不足，改派高階型",
+        )
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-OK1")
+    assert "實際能力層級 高階型" in log
+    assert "偏離卡面建議 主力型" in log
+    assert "主力型當下額度不足，改派高階型" in log
+
+
+def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviation(
+    fake_runner, capsys
+):
+    # 無基線格（#17／#19／#20 那批舊卡）：同樣 fail-closed，但留痕不得寫成「偏離」。
+    run_cli(_open_argv("DEV-LEGACY1"))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "DEV-LEGACY1")
+    legacy_body = item.body.replace(
+        next(ln for ln in item.body.splitlines() if ln.startswith("- 執行：")),
+        "- 執行：待指派　查核：獨立校讀",
+    )
+    set_item_body(fake_runner, item.content_type, item.content_id, project, None, None, legacy_body)
+
+    assert run_cli(_assign_argv("DEV-LEGACY1", "某模型@某工具", "b", "/w")) == 2
+    assert "沒有可比對的建議層級" in capsys.readouterr().err
+
+    rc = run_cli(
+        _assign_argv(
+            "DEV-LEGACY1", "某模型@某工具", "b", "/w",
+            deviation_reason="本卡開立於規劃期路由必填之前，無建議可比對",
+        )
+    )
+    assert rc == 0
+    log = _assign_log_line(fake_runner, "DEV-LEGACY1")
+    assert "卡面無建議層級" in log
+    assert "偏離卡面建議" not in log
+    assert "本卡開立於規劃期路由必填之前" in log
+
+
+def test_assign_argparse_requires_actual_capability(fake_runner):
+    argv = _assign_argv("DEV-REQ1", "某模型@某工具", "b", "/w")
+    idx = argv.index("--actual-capability")
+    del argv[idx : idx + 2]
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)
+
+
+def test_assign_rejects_risk_tier_value_in_actual_capability(fake_runner):
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            _assign_argv("DEV-REQ2", "某模型@某工具", "b", "/w", actual_capability="T3")
+        )
 
 
 def test_assign_writes_owner_and_branch_worktree(fake_runner):

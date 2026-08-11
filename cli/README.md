@@ -10,7 +10,7 @@
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
 | `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深／**規劃期路由**（執行與查核各一能力層級＋理由）六＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
-| `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
+| `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡；`--actual-capability` 必填並與卡面建議執行層級比對，非「相符」（偏離／無基線／無法解析）一律 fail-closed 要求 `--capability-deviation-reason`，實際層級與理由一併入 Log | 寫（有條件拒絕） |
 | `amend` | 開卡後修訂卡面：spec 基線／驗收條件／驗證項目／資源宣告／`級別`；`--reason` 必填，每個被改欄位各 append 一行 Log 記下**完整原值**（不截斷，Log 是唯一還原點）並帶同一 `op` 識別碼；值未變、內容為空、錨點不唯一一律拒絕；清單替換預設重設未勾選，`--preserve-checked` 才沿用；`級別` 先寫並讀回驗證再寫 body；寫入前重讀比對，被他人改動即中止；`--record-unlogged-change` 補救半寫入；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
 | `deploy-declare` | 需求方已明確裁決既有卡需要部署時，唯一允許 `—不適用 → ⏸未部署`；必填固定 `needs-deploy` decision、reason、actor，先追加真實 Issue timeline event，再只以 `updateProjectV2ItemFieldValue` 寫入部署狀態與內建 `Status=Todo`；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
@@ -81,8 +81,60 @@ validate_capability_routing`），一律拒絕且**不建卡**。刻意不採「
 檢查在 CLI 層與 model 層各做一次：`Card` 把這四項放在 dataclass 的**必填區**（無預設
 值），繞過 CLI 直接建構 `Card` 也產不出不符範本的卡。
 
-> 派工時可依可用性偏離建議（`MODEL_ROUTING.md` 同節），偏離與理由記入 claim 事件；
-> 本卡只負責**開卡端**必填，`assign` 的偏離留痕不在此範圍。
+### 派工端：`assign` 的偏離留痕
+
+`MODEL_ROUTING.md` 第 14 行後半：「派工時可依可用性偏離建議，但**實際模型與偏離理由
+記入 claim 事件**。」規劃端寫下建議、派工端記錄實際與偏離，兩端都在唯一寫入通道上：
+
+```bash
+# 相符：不需要理由
+wfcli assign CARD-ID --assignee "某模型@某工具" --branch b --worktree /w \
+  --actual-capability 主力型
+
+# 偏離：未給理由會被拒（exit 2，零寫入）
+wfcli assign CARD-ID ... --actual-capability 高階型 \
+  --capability-deviation-reason "主力型當下額度不足，改派高階型"
+```
+
+`--assignee` 記具體模型名，`--actual-capability` 記它對應的能力層級——**卡面比對走層級**
+（名單會過期，層級才是穩定介面），Log 兩者都留。
+
+#### 比對是四格全函數，沒有「其餘」
+
+`card.compare_capability_to_card` 把（卡面 body、實際層級）映到**恰好一格**：
+
+| 結果態 | 什麼情況 | 需要理由？ | Log 措辭 |
+|---|---|---|---|
+| `matched` | 卡面有建議且與實際相同 | 否 | `（與卡面建議 X 相符）` |
+| `deviated` | 卡面有建議且與實際不同 | **是** | `（偏離卡面建議 X；偏離理由：…）` |
+| `absent` | 卡面無「- 執行：」行，或該行是規劃期路由必填**之前**的舊格式（#17／#19／#20／#21 那批） | **是** | `（卡面無建議層級：…；理由：…）` |
+| `ambiguous` | 「- 執行：」行不唯一、body 排版損壞、或卡面層級不在 `MODEL_ROUTING` 語彙內 | **是** | `（卡面建議無法解析：…；理由：…）` |
+
+兩個刻意的取捨：
+
+- **`absent`／`ambiguous` 也要理由**，不比照 `matched` 放行。這兩格代表**沒有可比對的
+  基線**，不是「比對過且相符」；當成相符放行等於用沉默宣稱一致性。與本 CLI 既有慣例
+  一致——`assign` 對**目標卡自己**的資源宣告解析失敗同樣是 fail closed。代價只是舊卡
+  派工時多打一個 `--capability-deviation-reason`。
+- **`absent` 的 Log 不得寫成「偏離」**：沒有建議就沒有東西可偏離，寫成偏離是不實留痕。
+  四格各自措辭，`log_fragment` 沒有共用的模糊字串，未知結果態直接拋例外。
+
+理由政策存在顯式表（`_REASON_REQUIRED_BY_OUTCOME`），不是 `if/else` 加預設值：日後新增
+結果態卻忘了決定政策，`requires_reason` 會 `KeyError` 當場炸，而不是靜默沿用「不需要」。
+
+#### ⚠️ 卡面建議只在 Issue body 裡，解析有脆弱性
+
+`project.FIELD_SPECS` 的 13 個凍結欄位**沒有任何一個**存能力層級（不新增欄位的理由見
+下方「不進 Project 凍結欄位」），所以 `assign` 只能解析 Issue body 第 2 行。這是隱含
+前提會出事的地方，明列如下：
+
+1. **依賴渲染形狀**：解析器與 `format_routing_line` 同檔，並有 render → parse 的
+   round-trip 測試；改了渲染卻忘了改解析會當場紅。兩支正規表達式刻意分開維護
+   （測試那支是照 `templates/tasks-card.md` 寫的獨立 oracle），否則測試會變成套套邏輯。
+2. **依賴 body 沒被手改壞**：因此**不猜**——定位不到、不唯一、層級不在語彙內，一律
+   歸 `ambiguous` 要求理由，而不是「當作沒有建議」悄悄放行。
+3. **只讀 `## Log` 之前的區段**：Log 會引用被 `amend` 掉的舊值原文，其中可能含字面的
+   `- 執行：…（建議 …）`；不切掉就會把歷史當成現況讀。有專門測試鎖這條。
 
 ## `amend`：開卡後的卡面修訂（WF-CLI-CARD-AMEND1）
 
@@ -337,7 +389,8 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
   寫進卡面（Issue body 第 2 行＋git spec 檔），不新增 `FIELD_SPECS` 欄位。它是**規劃期
   的一次性建議**，不是會被 `assign`／`handoff` 持續改寫的 current-state；真正會變動的
   是「實際派到誰」（owner 欄）與偏離理由（claim 事件）。凍結欄位只放 current-state，
-  多開一欄反而製造第二個真相來源。
+  多開一欄反而製造第二個真相來源。**代價**：`assign` 因此只能解析 Issue body 取得建議，
+  該路徑的脆弱性與應對見上方「卡面建議只在 Issue body 裡」。
 - **`review` 不碰 iteration／owner／最後交接**（WF-22-CLI3）：iteration 的唯一遞增點
   是 `handoff --next-stage implementation`，review 若也動就會讓一次退回被記成兩次；
   裁決也不是交接，所以 owner 與最後交接同樣留給 `handoff`。`review` 只寫兩件事——

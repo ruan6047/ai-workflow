@@ -6,10 +6,17 @@ from pathlib import Path
 import pytest
 
 from wf_cli.card import (
+    CAPABILITY_BASELINE_ABSENT,
+    CAPABILITY_BASELINE_AMBIGUOUS,
+    CAPABILITY_COMPARISON_OUTCOMES,
+    CAPABILITY_DEVIATED,
+    CAPABILITY_MATCHED,
     CAPABILITY_TIERS,
     TIERS,
+    CapabilityComparison,
     Card,
     append_log_line,
+    compare_capability_to_card,
     format_branch_worktree,
     format_routing_line,
     now_iso8601,
@@ -219,6 +226,163 @@ def test_render_issue_body_embeds_resource_block_and_log():
     assert "file:demo.py" in body
     assert "## Log" in body
     assert "open by" in body
+
+
+# ---------------------------------------------------------------------------
+# 派工端比對：四格全函數（WF-CLI-ROUTING-TIER1 R1-001）
+# ---------------------------------------------------------------------------
+
+# 規劃期路由必填之前開的卡長這樣（#17／#19／#20／#21 實際形狀）。
+LEGACY_BODY = """- 需求：ruan6047　規劃：Claude Opus 5@Claude Code
+- 執行：待指派　查核：獨立校讀
+- Initiative：—　spec 基線：—
+
+## Log
+
+- 2026-08-11T02:22:49+08:00 open by Claude Opus 5@Claude Code；iteration 0。
+"""
+
+
+def _body_with_suggestion(exec_capability: str) -> str:
+    return render_issue_body(
+        _make_card(executor_capability=exec_capability, executor_capability_reason="理由")
+    )
+
+
+@pytest.mark.parametrize("outcome", CAPABILITY_COMPARISON_OUTCOMES)
+def test_reason_policy_is_defined_for_every_outcome(outcome):
+    # 全函數的第一半：四格各自有明確的理由政策，沒有 else 預設值。
+    comparison = CapabilityComparison(outcome, "主力型", None, "")
+    assert isinstance(comparison.requires_reason, bool)
+
+
+def test_unknown_outcome_raises_instead_of_defaulting_to_no_reason():
+    # 未來新增結果態卻忘了決定政策時，必須當場炸而不是靜默沿用「不需要理由」。
+    comparison = CapabilityComparison("something-new", "主力型", None, "")
+    with pytest.raises(KeyError):
+        _ = comparison.requires_reason
+
+
+def test_matched_when_actual_equals_card_suggestion():
+    c = compare_capability_to_card(_body_with_suggestion("主力型"), "主力型")
+    assert c.outcome == CAPABILITY_MATCHED
+    assert c.suggested == "主力型"
+    assert c.requires_reason is False
+
+
+def test_deviated_when_actual_differs_from_card_suggestion():
+    c = compare_capability_to_card(_body_with_suggestion("主力型"), "高階型")
+    assert c.outcome == CAPABILITY_DEVIATED
+    assert c.suggested == "主力型"
+    assert c.requires_reason is True
+
+
+def test_absent_for_cards_opened_before_routing_was_required():
+    # #17／#19／#20 那批舊卡：有「- 執行：」行但沒有括號段。
+    c = compare_capability_to_card(LEGACY_BODY, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_ABSENT
+    assert c.suggested is None
+    assert c.requires_reason is True
+
+
+def test_absent_when_there_is_no_executor_line_at_all():
+    c = compare_capability_to_card("- 需求：ruan6047\n\n## Log\n\n- x\n", "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_ABSENT
+
+
+def test_ambiguous_when_executor_line_is_not_unique():
+    body = LEGACY_BODY.replace(
+        "- 執行：待指派　查核：獨立校讀",
+        "- 執行：待指派　查核：獨立校讀\n- 執行：另一行（建議 高階型；理由）　查核：X（建議 高階型；理由）",
+    )
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert "2 行" in c.detail
+
+
+def test_ambiguous_when_card_face_tier_is_outside_model_routing_vocabulary():
+    # 有人手改卡面填了不存在的層級：不得當成「沒有建議」放行，也不得當成相符。
+    body = LEGACY_BODY.replace(
+        "- 執行：待指派　查核：獨立校讀",
+        "- 執行：待指派（建議 旗艦型；理由）　查核：獨立校讀（建議 高階型；理由）",
+    )
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert "旗艦型" in c.detail
+
+
+def test_ambiguous_when_body_layout_is_broken():
+    broken = LEGACY_BODY.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
+    c = compare_capability_to_card(broken, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+
+
+def test_all_four_outcomes_are_reachable():
+    # 全函數的第二半：四格都有實際輸入能到達，沒有死格。
+    observed = {
+        compare_capability_to_card(_body_with_suggestion("主力型"), "主力型").outcome,
+        compare_capability_to_card(_body_with_suggestion("主力型"), "高階型").outcome,
+        compare_capability_to_card(LEGACY_BODY, "主力型").outcome,
+        compare_capability_to_card(
+            LEGACY_BODY.replace("- 執行：", "- 執行：x\n- 執行：", 1), "主力型"
+        ).outcome,
+    }
+    assert observed == set(CAPABILITY_COMPARISON_OUTCOMES)
+
+
+def test_suggestion_is_read_from_card_face_not_from_log_history():
+    # Log 會引用被 amend 掉的舊值原文，其中可能含字面的「- 執行：…（建議 …）」。
+    # 讀到那裡就是把歷史當現況——必須仍判 absent。
+    body = append_log_line(
+        LEGACY_BODY,
+        "2026-08-11 amend → 原值「- 執行：待指派（建議 高階型；舊理由）　查核：X（建議 高階型；舊）」",
+    )
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_ABSENT
+
+
+def test_render_then_parse_round_trips_the_suggested_tier():
+    # 解析器與渲染器同檔：改了渲染形狀卻忘了改解析，這裡當場紅。
+    for tier in CAPABILITY_TIERS:
+        c = compare_capability_to_card(_body_with_suggestion(tier), tier)
+        assert c.outcome == CAPABILITY_MATCHED
+        assert c.suggested == tier
+
+
+def test_compare_rejects_actual_capability_outside_vocabulary():
+    with pytest.raises(ValueError) as exc_info:
+        compare_capability_to_card(_body_with_suggestion("主力型"), "T3")
+    assert "MODEL_ROUTING" in str(exc_info.value)
+
+
+def test_log_fragment_never_calls_a_missing_baseline_a_deviation():
+    absent = compare_capability_to_card(LEGACY_BODY, "主力型")
+    fragment = absent.log_fragment("暫無主力型額度")
+    assert "卡面無建議層級" in fragment
+    assert "偏離卡面建議" not in fragment  # 不得寫成不實的「偏離」留痕
+    assert "暫無主力型額度" in fragment
+
+
+def test_log_fragment_records_actual_and_suggested_on_deviation():
+    deviated = compare_capability_to_card(_body_with_suggestion("主力型"), "高階型")
+    fragment = deviated.log_fragment("主力型當下不可用")
+    assert "實際能力層級 高階型" in fragment
+    assert "偏離卡面建議 主力型" in fragment
+    assert "主力型當下不可用" in fragment
+
+
+def test_log_fragment_keeps_optional_note_when_matched():
+    matched = compare_capability_to_card(_body_with_suggestion("主力型"), "主力型")
+    assert matched.log_fragment("") == "實際能力層級 主力型（與卡面建議 主力型 相符）"
+    # 相符時理由非必填，但操作者若給了就照錄，不靜默丟棄。
+    assert "備註：順帶說明" in matched.log_fragment("順帶說明")
+
+
+def test_refusal_message_cites_model_routing_and_names_the_case():
+    deviated = compare_capability_to_card(_body_with_suggestion("主力型"), "高階型")
+    assert "MODEL_ROUTING" in deviated.refusal_message()
+    absent = compare_capability_to_card(LEGACY_BODY, "主力型")
+    assert "沒有可比對的建議層級" in absent.refusal_message()
 
 
 def test_append_log_line_creates_section_if_missing():

@@ -445,11 +445,194 @@ def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     return candidate, " ".join(old_repr.split())
 
 
+# --------------------------------------------------------------------------
+# 派工端：實際能力層級 vs 卡面建議（WF-CLI-ROUTING-TIER1 R1-001）
+# --------------------------------------------------------------------------
+#
+# ``MODEL_ROUTING.md`` 第 14 行後半：「派工時可依可用性偏離建議，但實際模型與偏離
+# 理由記入 claim 事件。」開卡端負責寫下建議，這一段負責在 assign 時把「實際」與
+# 「建議」對起來。
+#
+# **卡面建議只存在於 Issue body**：``project.FIELD_SPECS`` 的 13 個凍結欄位沒有任何
+# 一個放能力層級（2026-08-11 以 ``FIELD_SPECS``／``CARD_FIELD_MAP``／``open_cmd`` 的
+# values dict 三處查證），所以解析 body 第 2 行是唯一路徑。這條路徑的脆弱性必須明講，
+# 不能當成隱含前提：
+#
+#   1. 它依賴 ``format_routing_line`` 的輸出形狀。兩者同檔且有 round-trip 測試
+#      （render → parse 讀回同一層級），改渲染而忘了改解析會當場紅。
+#   2. 它依賴 body 沒有被人手改壞。因此**不猜**：定位不到、不唯一、或讀出來的層級
+#      不在 MODEL_ROUTING 語彙內，一律歸 ``ambiguous`` 而不是「當作沒有建議」放行。
+#   3. 只看 ``## Log`` 之前的區段（``split_at_log``）。Log 會引用被 amend 掉的舊值原文，
+#      其中可能含字面的「- 執行：」——不切掉就會把歷史當成現況讀。
+#
+# 分類是**全函數**：任一 body ＋ 任一合法實際層級，恰好落在下列四格之一，沒有「其餘」。
+
+CAPABILITY_MATCHED = "matched"
+CAPABILITY_DEVIATED = "deviated"
+CAPABILITY_BASELINE_ABSENT = "absent"
+CAPABILITY_BASELINE_AMBIGUOUS = "ambiguous"
+
+CAPABILITY_COMPARISON_OUTCOMES = (
+    CAPABILITY_MATCHED,
+    CAPABILITY_DEVIATED,
+    CAPABILITY_BASELINE_ABSENT,
+    CAPABILITY_BASELINE_AMBIGUOUS,
+)
+
+# 每一格的理由政策顯式列出，不留 ``else`` 預設值：新增結果態卻忘了決定政策時，
+# ``requires_reason`` 會 KeyError 當場炸，而不是靜默沿用「不需要理由」。
+#
+# 為什麼 absent／ambiguous 也要理由（而不是比照 matched 放行）：這兩格代表**沒有可
+# 比對的基線**，不是「比對過且相符」。當作相符放行等於用沉默宣稱一致性，正是本卡要
+# 消滅的失敗形態。本檔既有慣例也支持這個方向——assign 對「目標卡自己」的資源宣告
+# 解析失敗是 fail closed（見 commands/assign_cmd.py docstring），路由基線同樣長在
+# 目標卡自己身上。代價只是操作者多打一個 --capability-deviation-reason。
+_REASON_REQUIRED_BY_OUTCOME: dict[str, bool] = {
+    CAPABILITY_MATCHED: False,
+    CAPABILITY_DEVIATED: True,
+    CAPABILITY_BASELINE_ABSENT: True,
+    CAPABILITY_BASELINE_AMBIGUOUS: True,
+}
+
+_EXECUTOR_LINE_PREFIX = "- 執行："
+
+# 解析用；與測試裡那支「範本合規 oracle」刻意分開兩份，round-trip 測試才不是套套邏輯。
+_ROUTING_PARSE_RE = re.compile(
+    r"^- 執行：(?P<executor>[^（]*)（建議 (?P<exec_tier>[^；）]+)；(?P<exec_reason>[^）]*)）"
+    r"　查核：(?P<reviewer>[^（]*)（建議 (?P<rev_tier>[^；）]+)；(?P<rev_reason>[^）]*)）$"
+)
+
+
+@dataclass(frozen=True)
+class CapabilityComparison:
+    """實際能力層級與卡面建議的比對結果（四格全函數之一）。"""
+
+    outcome: str
+    actual: str
+    suggested: str | None  # 只有 matched／deviated 讀得到建議值
+    detail: str  # absent／ambiguous 的具體原因；其餘為空字串
+
+    @property
+    def requires_reason(self) -> bool:
+        return _REASON_REQUIRED_BY_OUTCOME[self.outcome]
+
+    def refusal_message(self) -> str:
+        """缺理由時的拒絕訊息；固定引用 MODEL_ROUTING.md 第 14 行後半。"""
+        citation = (
+            "MODEL_ROUTING.md「路由決定於規劃期」：「派工時可依可用性偏離建議，"
+            "但實際模型與偏離理由記入 claim 事件」"
+        )
+        if self.outcome == CAPABILITY_DEVIATED:
+            why = f"實際能力層級 {self.actual} 偏離卡面建議 {self.suggested}"
+        elif self.outcome == CAPABILITY_BASELINE_ABSENT:
+            why = f"卡面沒有可比對的建議層級（{self.detail}）"
+        elif self.outcome == CAPABILITY_BASELINE_AMBIGUOUS:
+            why = f"卡面建議層級無法可靠解析（{self.detail}）"
+        else:  # pragma: no cover - matched 不會走到這裡（requires_reason 為 False）
+            raise ValueError(f"outcome {self.outcome!r} 不需要理由，不該產生拒絕訊息")
+        return (
+            f"{why}，必須以 --capability-deviation-reason 說明後才可派工——{citation}。"
+            "無基線時同樣要求理由：沒有比對過的一致性不得以沉默宣稱"
+        )
+
+    def log_fragment(self, reason: str) -> str:
+        """寫進 assign／claim 事件 Log 的片段；四格各自措辭，不共用模糊字串。
+
+        關鍵是**不得把「無建議」寫成「偏離建議」**——那會產生不實留痕。
+        """
+        reason = (reason or "").strip()
+        if self.outcome == CAPABILITY_MATCHED:
+            base = f"實際能力層級 {self.actual}（與卡面建議 {self.suggested} 相符"
+            # 相符時理由非必填；操作者若仍寫了就照錄，不靜默丟棄其輸入。
+            return base + (f"；備註：{reason}）" if reason else "）")
+        if self.outcome == CAPABILITY_DEVIATED:
+            return (
+                f"實際能力層級 {self.actual}"
+                f"（偏離卡面建議 {self.suggested}；偏離理由：{reason}）"
+            )
+        if self.outcome == CAPABILITY_BASELINE_ABSENT:
+            return (
+                f"實際能力層級 {self.actual}"
+                f"（卡面無建議層級：{self.detail}；理由：{reason}）"
+            )
+        if self.outcome == CAPABILITY_BASELINE_AMBIGUOUS:
+            return (
+                f"實際能力層級 {self.actual}"
+                f"（卡面建議無法解析：{self.detail}；理由：{reason}）"
+            )
+        raise ValueError(f"未知的比對結果 {self.outcome!r}")  # pragma: no cover
+
+
+def compare_capability_to_card(body: str, actual_capability: str) -> CapabilityComparison:
+    """把「實際派到的能力層級」對上「卡面第 4 行的建議執行層級」。
+
+    只比**執行**軸：assign 寫的是 owner（執行者）。查核者的建議層級留在卡面供派查核
+    時使用，本函式不碰，以免用一個旗標同時宣稱兩件事。
+    """
+    if actual_capability not in CAPABILITY_TIERS:
+        raise ValueError(capability_tier_violation_message("實際", actual_capability))
+
+    try:
+        head, _ = split_at_log(body)
+    except AmendError as exc:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_AMBIGUOUS,
+            actual_capability,
+            None,
+            f"卡面排版已損壞，無法安全定位 Log 之前的區段（{exc}）",
+        )
+
+    lines = [ln.rstrip() for ln in head.splitlines() if ln.startswith(_EXECUTOR_LINE_PREFIX)]
+    if not lines:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_ABSENT,
+            actual_capability,
+            None,
+            "卡面沒有「- 執行：」行",
+        )
+    if len(lines) > 1:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_AMBIGUOUS,
+            actual_capability,
+            None,
+            f"卡面有 {len(lines)} 行「- 執行：」，無法判斷哪一行是規劃期建議",
+        )
+
+    match = _ROUTING_PARSE_RE.match(lines[0])
+    if not match:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_ABSENT,
+            actual_capability,
+            None,
+            "「- 執行：」行是規劃期路由必填之前的舊格式，沒有（建議 <層級>；<理由>）括號段",
+        )
+
+    suggested = match.group("exec_tier").strip()
+    if suggested not in CAPABILITY_TIERS:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_AMBIGUOUS,
+            actual_capability,
+            None,
+            f"卡面建議層級 {suggested!r} 不在 MODEL_ROUTING.md 語彙 {CAPABILITY_TIERS} 內",
+        )
+
+    outcome = (
+        CAPABILITY_MATCHED if suggested == actual_capability else CAPABILITY_DEVIATED
+    )
+    return CapabilityComparison(outcome, actual_capability, suggested, "")
+
+
 __all__ = [
+    "CAPABILITY_BASELINE_ABSENT",
+    "CAPABILITY_BASELINE_AMBIGUOUS",
+    "CAPABILITY_COMPARISON_OUTCOMES",
+    "CAPABILITY_DEVIATED",
+    "CAPABILITY_MATCHED",
     "CAPABILITY_TIERS",
     "CHAIN_DEPTH_HARD_CAP",
     "TIERS",
     "AmendError",
+    "CapabilityComparison",
     "Card",
     "amend_acceptance",
     "amend_resource_block",
@@ -459,6 +642,7 @@ __all__ = [
     "capability_reason_missing_message",
     "capability_tier_violation_message",
     "chain_depth_violation_message",
+    "compare_capability_to_card",
     "format_branch_worktree",
     "format_routing_line",
     "now_iso8601",
