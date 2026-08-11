@@ -526,8 +526,6 @@ _REASON_REQUIRED_BY_OUTCOME: dict[str, bool] = {
     CAPABILITY_BASELINE_AMBIGUOUS: True,
 }
 
-_EXECUTOR_LINE_PREFIX = "- 執行："
-
 # 解析用；與測試裡那支「範本合規 oracle」刻意分開兩份，round-trip 測試才不是套套邏輯。
 #
 # 理由欄用 ``[^）]+`` 而非 ``[^）]*``：空理由必須讓整行**不匹配**，不能匹配成功後
@@ -560,56 +558,110 @@ def _field_problems(match: re.Match[str]) -> list[str]:
 
 
 # --------------------------------------------------------------------------
-# 候選路由行的成員資格（R4-003）
+# 候選路由行的成員資格（R4-003 → R5-001 重新設計）
 # --------------------------------------------------------------------------
 #
-# **方向性紅線——這段的錯誤方向只准偏保守，不准偏寬鬆。**
+# **這一段被打穿兩次，兩次是同一個形狀：判準去列舉「什麼算雜訊」。**
 #
-# 判定流程有兩個內容比對步驟，兩者的失敗後果相反：
+#   R4-003：候選用 ``startswith("- 執行：")`` 收 → 第二條路由行前置一個 U+200B 就掉出
+#           候選集，兩條降成一條，``ambiguous`` 變 ``matched``。
+#   R5-001：改成「NFKC 折疊 ＋ 剝除 Cc／Cf／Mn／Me 與空白後比前綴」 → 前置 U+02B0
+#           （Lm）或 U+0378（Cn）這種**不在剝除清單裡**的碼位，照樣掉出候選集。
 #
-#   標記辨識失敗 → 少一個宣告 → ``absent`` → **要求理由**（保守側，安全）
-#   候選行漏收   → 少一條候選 → 可能剛好剩 1 條 → ``matched`` → **免除理由**（危險側）
+# 兩次的修法都是「再多列舉一類字元」。Unicode 的碼位與類別是開放集合，列舉必然還有
+# 第六次。問題不在清單不夠長，在**未知輸入被推到危險的那一側**：沒被列舉到的字元讓
+# 一行從候選集**消失**，剩下的唯一候選剛好緊鄰標記，於是判 ``matched`` 並免除偏離理由。
 #
-# R4-003 就是後者：候選集原本用 ``startswith("- 執行：")`` 收，前置一個 U+200B 那行就
-# 不符前綴而被整條略過，於是「兩條路由行 → 宣告不唯一 → ambiguous」被降成
-# 「只剩一條 → matched」。破損反而讓判定變寬鬆，還免除了偏離理由。
+# 現行設計把承擔未知的那一側翻過來：
 #
-# 這也修正了我在 R3-001 說「標記機制已在結構層解決，故不需要正規化」的**適用邊界**：
-# 那句話對**標記辨識**成立（漏認 → absent → 保守側），對**多行候選掃描**不成立——掃描
-# 本身就是內容比對，而它漏收會直接鬆綁義務。所以正規化只加在**偵測**這一側：
+#   **候選資格 ＝ 「已知非路由行」的補集。**
 #
-#   偵測（誰算候選）：寬鬆、正規化、**寧可多收**。多收 → 候選變多 → 更容易 ambiguous。
-#   受理（候選能否當基線）：嚴格、**用原始行**、不正規化。不合格 → ambiguous。
+# 標頭區的每一行，只有被**正面辨識**為 ``render_issue_body`` 會產出的某一種已知非路由
+# 行（需求／Initiative／DB／服務的原始目標／版本標記／純空白行）時才不算候選；其餘一律
+# 是候選，**包括任何我們看不懂的行**。由此得到一條可機械檢查的單調性：
 #
-# 兩側都不可能產出偽 ``matched``：多收只會讓結果更嚴，受理端從不放寬。
+#   **往標頭區的任何一行插入任何字元，只能讓它從「已知」掉進「候選」，不能反向。**
 #
-# 誠實邊界：偵測正規化涵蓋不可見／格式字元（Cf、Mn、Cc）、各種空白與全形半形（NFKC），
-# 不宣稱能窮盡所有 Unicode 擾動。**保證的是方向而非完備**——真有漏網的擾動，仍受
-# 「宣告必須緊鄰」這條純結構規則保護（見 compare_capability_to_card）。
+# 因為「已知」的判準是**原始行**對固定字面前綴的 ``startswith``：插入字元只會破壞前綴
+# 比對（→ 變成候選 → 更嚴），不可能憑空造出前綴。同理，往標頭區插入一整行——無論內容
+# 是什麼碼位——都是多一個候選 → ``ambiguous``。未知碼位因此天然落在保守側，本檔不再
+# 需要任何「哪些字元算雜訊」的清單，也就沒有下一次「再補一類」。
+#
+# 受理側（候選能否當基線）維持嚴格：一律用**原始行**比對，不套任何正規化。偵測的寬鬆
+# 只決定「這行要不要被檢查」，絕不用來幫破損的卡面補正。
+#
+# **不宣稱窮盡**：本設計保證的是「加字元／加行不會使候選集縮小」（見
+# ``tests/test_card.py`` 的單調性與逐位置性質測試）。它**不**保證有人把路由行的內容
+# 藏在某個已知前綴後面時一定被算成候選——那一面由下方 ``_carries_routing_shape``
+# 這條**非承載性**的額外收緊處理，其漏網只會退回本設計的保證，不會低於它。
 
-_DETECTION_STRIP_CATEGORIES = frozenset({"Cc", "Cf", "Mn", "Me"})
+# ``render_issue_body`` 標頭區的已知非路由行前綴。這份清單與渲染端同檔並有一致性測試
+# （``test_every_generated_header_line_is_positively_classified``）：渲染端新增或改名
+# 標頭欄位卻忘了同步這裡，該測試會當場紅；即使沒紅，漏掉的那一行也只會被當成候選路由行
+# 而使新卡落 ``ambiguous``——保守側的失敗，不是放行。
+_KNOWN_HEADER_PREFIXES = (
+    "- 需求：",
+    "- Initiative：",
+    "- DB：",
+    "- 服務的原始目標：",
+)
 
 
-def _detection_key(text: str) -> str:
-    """偵測用正規化：折疊全形半形、去掉不可見／格式字元與所有空白。
+def _carries_routing_shape(line: str) -> bool:
+    """（**非承載性**收緊）這行是否把路由行的形狀藏在某個已知前綴後面。
 
-    **只准用於「這行算不算候選」**，不得用於解析或取值——取值一律走原始行，否則
-    正規化就會變成「幫破損的卡面補正」，那是另一種猜。
+    唯一用途是把「``- DB：…　- 執行：…（建議 …）``」這種借殼行**降級**回候選，
+    多產生 ``ambiguous``。它是純粹的加嚴：
+    - 漏判（有人把 ``執行：`` 寫成別的形狀）→ 退回 ``_KNOWN_HEADER_PREFIXES`` 補集
+      這條承載性保證，不會比它更寬。
+    - 誤判（某張卡的 spec 基線真的引用了「執行：」字樣）→ 該卡落 ``ambiguous``，
+      派工時多帶一個理由。保守側的雜訊，不是放行。
+
+    因為它只加嚴不放寬，這裡用 NFKC 折疊＋去空白是安全的——即使折不到某種變體，
+    後果也只是回到補集判準。
     """
-    folded = unicodedata.normalize("NFKC", text)
-    return "".join(
-        ch
-        for ch in folded
-        if not ch.isspace() and unicodedata.category(ch) not in _DETECTION_STRIP_CATEGORIES
-    )
+    folded = unicodedata.normalize("NFKC", line)
+    return "執行:" in "".join(ch for ch in folded if not ch.isspace())
 
 
-_ROUTING_CANDIDATE_KEY = _detection_key(_EXECUTOR_LINE_PREFIX)
+def _duplicated_known_prefixes(header: list[str]) -> frozenset[str]:
+    """標頭區裡出現超過一次的已知前綴。
+
+    渲染端每個標頭欄位恰出現一次，重複即代表結構異常（例如有人刪掉真的 DB 行、另寫
+    一行借殼的 DB 行）。重複者一律不再享有「已知非路由行」豁免，全數回到候選集。
+    """
+    counts: dict[str, int] = {}
+    for line in header:
+        for prefix in _KNOWN_HEADER_PREFIXES:
+            if line.startswith(prefix):
+                counts[prefix] = counts.get(prefix, 0) + 1
+                break
+    return frozenset(prefix for prefix, n in counts.items() if n > 1)
 
 
-def _is_routing_candidate(line: str) -> bool:
-    """這行是否**試圖**成為路由行（寬鬆判定，寧可多收）。"""
-    return _detection_key(line).startswith(_ROUTING_CANDIDATE_KEY)
+def _is_known_non_routing_header_line(line: str, duplicated: frozenset[str]) -> bool:
+    """這行是否被**正面辨識**為已知的非路由標頭行。回 ``False`` 即進候選集。"""
+    stripped = line.strip()
+    if not stripped:
+        return True  # 純空白行不可能承載路由行
+    if stripped == ROUTING_MARKER:
+        return True
+    for prefix in _KNOWN_HEADER_PREFIXES:
+        if line.startswith(prefix):
+            if prefix in duplicated:
+                return False
+            return not _carries_routing_shape(line)
+    return False
+
+
+def _routing_line_candidates(header: list[str]) -> list[int]:
+    """標頭區裡所有**不能被正面辨識為已知非路由行**的行號（＝候選路由行）。"""
+    duplicated = _duplicated_known_prefixes(header)
+    return [
+        i
+        for i, line in enumerate(header)
+        if not _is_known_non_routing_header_line(line, duplicated)
+    ]
 
 
 @dataclass(frozen=True)
@@ -732,17 +784,18 @@ def compare_capability_to_card(body: str, actual_capability: str) -> CapabilityC
 
     # 以下：卡面**自我宣告**為新制，因此任何讀不出合格建議的情形都是 ambiguous，
     # 不再有「退回當舊卡」這條路——宣告了就要拿得出來。
-    # 候選集用**寬鬆偵測**收（見 _is_routing_candidate 的方向性紅線）：漏收會讓破損的
-    # 卡面反而變寬鬆，多收只會更嚴。收完先要求「恰好一條候選」，再要求它緊鄰宣告，
-    # 最後才用**原始行**嚴格解析。
-    candidates = [i for i, ln in enumerate(header) if _is_routing_candidate(ln)]
+    # 候選集是「已知非路由行」的**補集**（見 _routing_line_candidates 上方的說明）：
+    # 看不懂的行一律算候選，所以加字元／加行只會讓候選變多、判定更嚴。收完先要求
+    # 「恰好一條候選」，再要求它緊鄰宣告，最後才用**原始行**嚴格解析。
+    candidates = _routing_line_candidates(header)
     if len(candidates) != 1:
         return CapabilityComparison(
             CAPABILITY_BASELINE_AMBIGUOUS,
             actual_capability,
             None,
             f"卡面宣告 {ROUTING_MARKER}，但標頭區的候選路由行有 {len(candidates)} 行"
-            "（應恰為 1）——候選以寬鬆判定收集（忽略不可見字元、空白與全形半形差異），"
+            "（應恰為 1）——候選＝標頭區裡無法被正面辨識為已知欄位行"
+            f"（{'／'.join(_KNOWN_HEADER_PREFIXES)}／版本標記／純空白行）的每一行，"
             "多於一行即無法確定哪一行是規劃期建議",
         )
 

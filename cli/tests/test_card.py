@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from wf_cli.card import (
     AmendError,
     CapabilityComparison,
     Card,
+    _routing_line_candidates,
     amend_acceptance,
     amend_spec_baseline,
     amend_verification,
@@ -613,11 +615,21 @@ def test_amend_spec_baseline_rejects_newlines_that_would_inject_a_header_line():
         amend_spec_baseline(body, f"main abc\n{ROUTING_MARKER}")
 
 
-# --- R4-003：破損不得把 ambiguous 降成 matched ------------------------------
+# --- R4-003／R5-001：破損不得把 ambiguous 降成 matched ----------------------
 #
-# 本卡五輪來唯一一次錯在**不安全方向**。候選路由行原本用 startswith 收，前置一個
-# U+200B 那行就整條被略過，於是「兩條路由行 → ambiguous」被降成「剩一條 → matched」，
-# 連偏離理由都免除了。前幾輪的錯都在保守側（多要求理由），這次是放行。
+# 本卡唯二錯在**不安全方向**的兩輪，形狀相同：
+#
+#   R4-003：候選路由行用 startswith 收 → 前置 U+200B 那行整條被略過。
+#   R5-001：改成「NFKC ＋ 剝除 Cc／Cf／Mn／Me 與空白後比前綴」 → 前置 U+02B0（Lm）或
+#           U+0378（Cn）這種不在剝除清單裡的碼位，照樣掉出候選集。
+#
+# 兩次都是「兩條路由行 → ambiguous」被降成「剩一條 → matched」，連偏離理由都免除。
+# 修法不再是「多列舉一類字元」（那必然有第六次），而是把候選資格定義成**「已知非
+# 路由行」的補集**：看不懂的行一律算候選。下面的測試分三層——
+#
+#   (1) 查核者指定的兩個碼位（U+02B0／U+0378）與 Unicode 各 general category 的代表字元；
+#   (2) **全碼位**掃描：任何單一碼位當前綴都不得讓那行離開候選集（機械窮舉，非人工列舉）；
+#   (3) 單調性與逐位置性質：插字元／插整行只能讓候選變多，且位置覆蓋可被證明。
 
 INVISIBLE_CHARS = [
     "\u200b",  # ZWSP
@@ -627,6 +639,15 @@ INVISIBLE_CHARS = [
     "\u00ad",  # SOFT HYPHEN
     "\ufe0f",  # VS16
 ]
+
+# R5-001 \u67e5\u6838\u8005\u7684\u539f\u59cb\u6ce8\u5165\u6848\u4f8b\u3002\u5169\u8005\u90fd**\u4e0d\u5728**\u524d\u4e00\u7248\u7684\u525d\u9664\u6e05\u55ae\uff08Cc\uff0fCf\uff0fMn\uff0fMe\uff09\u5167\uff0c
+# \u6240\u4ee5\u524d\u4e00\u7248\u6703\u8b93\u7b2c\u4e8c\u689d\u8def\u7531\u884c\u975c\u9ed8\u6d88\u5931\u4e26\u56de\u5831 matched\u3002
+LM_MODIFIER = "\u02b0"  # MODIFIER LETTER SMALL H\uff0cgeneral category Lm
+CN_UNASSIGNED = "\u0378"  # \u672a\u6307\u6d3e\u78bc\u4f4d\uff0cgeneral category Cn
+
+# \u6027\u8cea\u6e2c\u8a66\u7528\u7684\u64fe\u52d5\u5b57\u5143\u3002**\u9019\u4efd\u6e05\u55ae\u4e0d\u662f\u6db5\u84cb\u9762\u7684\u8b49\u660e**\u2014\u2014\u6db5\u84cb\u9762\u7531\u4e0b\u9762\u7684\u5168\u78bc\u4f4d\u6383\u63cf\u8207
+# \u55ae\u8abf\u6027\u65b7\u8a00\u63d0\u4f9b\uff1b\u6e05\u55ae\u53ea\u662f\u8b93\u9010\u4f4d\u7f6e\u6383\u63cf\u6709\u5177\u9ad4\u5b57\u5143\u53ef\u63d2\u3002
+PERTURBATION_CHARS = [*INVISIBLE_CHARS, LM_MODIFIER, CN_UNASSIGNED]
 
 
 def _two_routing_lines_body(second: str) -> str:
@@ -674,6 +695,135 @@ def test_exactly_one_routing_line_still_matches():
     assert compare_capability_to_card(body, "主力型").outcome == CAPABILITY_MATCHED
 
 
+@pytest.mark.parametrize(
+    "prefix",
+    [LM_MODIFIER, CN_UNASSIGNED, LM_MODIFIER + CN_UNASSIGNED, CN_UNASSIGNED + ZWSP],
+    ids=["U+02B0(Lm)", "U+0378(Cn)", "Lm+Cn", "Cn+ZWSP"],
+)
+def test_second_routing_line_survives_categories_outside_any_strip_list(prefix):
+    """R5-001 查核者的原始注入案例：前一版對這兩個碼位回報 matched 且免除理由。
+
+    前一版剝除 Cc／Cf／Mn／Me；U+02B0 是 Lm、U+0378 是 Cn，兩者都不在清單內，於是
+    第二條路由行從候選集消失、「唯一候選」成立。現行判準不看字元類別，看的是這行能不能
+    被正面辨識為已知欄位行——認不出來就算候選。
+    """
+    c = compare_capability_to_card(_two_routing_lines_body(prefix + WELL_FORMED_LINE), "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert c.requires_reason is True
+    assert "有 2 行" in c.detail
+
+
+def _one_codepoint_per_general_category() -> dict[str, str]:
+    """每個 Unicode general category 取一個代表碼位（掃 BMP，取第一個命中）。"""
+    found: dict[str, str] = {}
+    for cp in range(0x110000):
+        if 0xD800 <= cp <= 0xDFFF:
+            continue
+        ch = chr(cp)
+        cat = unicodedata.category(ch)
+        if cat not in found:
+            found[cat] = ch
+        if cp > 0xFFFF and len(found) >= 30:
+            break
+    return found
+
+
+def test_every_general_category_prefix_keeps_the_line_in_the_candidate_set():
+    """逐 general category 的代表字元：前置任何一類都不得讓那行離開候選集。
+
+    這條刻意寫成「掃出所有類別」而非手打清單——手打清單正是 R5-001 的失敗形態
+    （清單裡沒有 Lm／Cn）。
+    """
+    representatives = _one_codepoint_per_general_category()
+    assert len(representatives) >= 25, f"只掃到 {len(representatives)} 個類別，掃描沒生效"
+    for category, ch in sorted(representatives.items()):
+        if ch in "\n\r":
+            continue  # 換行不是「行內字元」，它會多切一行，另有插行測試覆蓋
+        header = ["- 需求：x", ROUTING_MARKER, WELL_FORMED_LINE, ch + WELL_FORMED_LINE]
+        assert _routing_line_candidates(header) == [2, 3], (
+            f"category {category}（{ch!r}）前置後，第二條路由行離開了候選集"
+        )
+
+
+def test_no_single_codepoint_prefix_can_remove_a_line_from_the_candidate_set():
+    """**全碼位機械窮舉**：U+0000–U+10FFFF（扣除代理區與換行）每一個碼位當前綴。
+
+    這是本節唯一一條「窮盡」宣稱，且限定在明確的範圍內：**單一碼位前綴**這個攻擊面。
+    它不宣稱涵蓋所有輸入形態——多字元前綴、行內插入、插整行分別由單調性、逐位置性質
+    與插行測試覆蓋。
+    """
+    swept = 0
+    for cp in range(0x110000):
+        if 0xD800 <= cp <= 0xDFFF:
+            continue
+        ch = chr(cp)
+        if ch in "\n\r":
+            continue
+        header = ["- 需求：x", ROUTING_MARKER, WELL_FORMED_LINE, ch + WELL_FORMED_LINE]
+        assert _routing_line_candidates(header) == [2, 3], f"U+{cp:04X} 讓那行離開候選集"
+        swept += 1
+    # 掃描量由範圍算出來，不是「大於某個數」——少掃了會對不上。
+    assert swept == 0x110000 - 0x800 - 2
+
+
+def test_candidate_set_is_monotone_under_arbitrary_line_insertion():
+    """插一整行——**不論內容是什麼碼位**——都只會讓候選變多，絕不變少。
+
+    這是本設計的承載性保證：候選資格是「已知非路由行」的補集，插入的行只要不是那幾種
+    已知形狀就是候選。攻擊者無法用「系統看不懂的行」換到更寬鬆的判定。
+    """
+    base_header = ["- 需求：x", ROUTING_MARKER, WELL_FORMED_LINE]
+    assert _routing_line_candidates(base_header) == [2]
+
+    covered_positions: set[int] = set()
+    for insert_at in range(len(base_header) + 1):
+        for ch in PERTURBATION_CHARS:
+            for payload in (ch + WELL_FORMED_LINE, WELL_FORMED_LINE + ch, ch, ch * 3):
+                header = base_header[:insert_at] + [payload] + base_header[insert_at:]
+                assert len(_routing_line_candidates(header)) >= 2, (
+                    f"插在第 {insert_at} 行的 {payload!r} 沒被算成候選"
+                )
+                body = "\n".join(header) + "\n\n## Log\n\n- x\n"
+                assert compare_capability_to_card(body, "主力型").requires_reason is True
+        covered_positions.add(insert_at)
+    assert covered_positions == set(range(len(base_header) + 1))
+
+
+def test_every_generated_header_line_is_positively_classified():
+    """漂移守衛：渲染端產出的標頭行，除了路由行以外每一行都必須被正面辨識。
+
+    渲染端新增／改名標頭欄位卻沒同步 ``_KNOWN_HEADER_PREFIXES`` 時這條會紅。失敗方向
+    是保守的（新卡落 ambiguous），但仍要當場知道，而不是等派工時才發現全部卡都要理由。
+    """
+    body = render_issue_body(_make_card())
+    head = body.split("\n## ")[0]
+    header = head.split("\n")
+    routing_index = header.index(ROUTING_MARKER) + 1
+    assert _routing_line_candidates(header) == [routing_index]
+
+
+def test_routing_shape_hidden_behind_a_known_prefix_is_still_a_candidate():
+    # 借殼：把路由行接在已知前綴後面，企圖換到「已知非路由行」的豁免。
+    body = (
+        "- 需求：x\n"
+        f"{ROUTING_MARKER}\n"
+        f"{WELL_FORMED_LINE}\n"
+        f"- DB：db_scope=none {WELL_FORMED_LINE}\n"
+        "\n## Log\n\n- x\n"
+    )
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert c.requires_reason is True
+
+
+def test_duplicated_known_header_prefix_loses_its_exemption():
+    # 同一個已知欄位出現兩次＝結構異常；重複者全數回到候選集。
+    header = ["- 需求：x", ROUTING_MARKER, WELL_FORMED_LINE, "- DB：a", "- DB：b"]
+    assert _routing_line_candidates(header) == [2, 3, 4]
+    # 單次出現則照常豁免（證明上面的嚴格不是把已知欄位一律打成候選）。
+    assert _routing_line_candidates(["- 需求：x", ROUTING_MARKER, WELL_FORMED_LINE, "- DB：a"]) == [2]
+
+
 # 需要理由的基準卡面：性質斷言就是要證明「破損不會讓這些卡面變得不需要理由」。
 PERMISSIVENESS_BASES = {
     "兩條路由行(ambiguous)": _two_routing_lines_body(WELL_FORMED_LINE),
@@ -687,16 +837,35 @@ PERMISSIVENESS_BASES = {
 }
 
 
-def _invisible_char_perturbations(body: str):
-    """在 Log 之前的每一行、每個位置插入每種不可見字元。"""
+def _head_lines(body: str) -> tuple[list[str], str, str]:
     head, sep, tail = body.partition("\n\n## Log")
-    lines = head.split("\n")
+    return head.split("\n"), sep, tail
+
+
+def _char_perturbations(body: str):
+    """在 Log 之前的每一行、每個位置插入每種擾動字元。
+
+    yield ``(line_index, position, char, mutated_body)``——位置資訊一併回傳，呼叫端
+    才能斷言「掃描確實覆蓋了每一行的每一個位置」，而不是只數樣本數（R5-003）。
+    """
+    lines, sep, tail = _head_lines(body)
     for index, line in enumerate(lines):
-        for ch in INVISIBLE_CHARS:
+        for ch in PERTURBATION_CHARS:
             for pos in range(len(line) + 1):
                 mutated = lines[:]
                 mutated[index] = line[:pos] + ch + line[pos:]
-                yield "\n".join(mutated) + sep + tail
+                yield index, pos, ch, "\n".join(mutated) + sep + tail
+
+
+def _expected_perturbation_slots(body: str) -> set[tuple[int, int, str]]:
+    """掃描**應該**覆蓋的 (行號, 位置, 字元) 全集；獨立於受測產生器算出來。"""
+    lines, _, _ = _head_lines(body)
+    return {
+        (index, pos, ch)
+        for index, line in enumerate(lines)
+        for ch in PERTURBATION_CHARS
+        for pos in range(len(line) + 1)
+    }
 
 
 @pytest.mark.parametrize("name", sorted(PERMISSIVENESS_BASES))
@@ -704,27 +873,58 @@ def test_corruption_never_relaxes_the_reason_requirement(name):
     """性質斷言（非逐案例列舉）：破損不得讓結果比未破損更寬鬆。
 
     列舉永遠會漏下一種擾動，所以這裡改成掃描——在 Log 之前的每一行每個位置插入每種
-    不可見字元，斷言「原本要理由的卡面，破損後仍要理由」。``matched`` 是唯一免除理由
+    擾動字元，斷言「原本要理由的卡面，破損後仍要理由」。``matched`` 是唯一免除理由
     的結果，所以這等價於「破損不得產生偽 matched」。
+
+    R5-003：覆蓋面**不以樣本數宣稱**。實際掃到的 (行號, 位置, 字元) 三元組必須與
+    獨立算出的全集**相等**——少一個位置就當場紅，多一個也不行。
     """
     base = PERMISSIVENESS_BASES[name]
     actual = "高階型" if name.startswith("偏離") else "主力型"
     assert compare_capability_to_card(base, actual).requires_reason is True
 
-    checked = 0
-    for mutated in _invisible_char_perturbations(base):
+    visited: set[tuple[int, int, str]] = set()
+    for index, pos, ch, mutated in _char_perturbations(base):
         result = compare_capability_to_card(mutated, actual)
         assert result.requires_reason is True, (
-            f"{name}：插入不可見字元後變成 {result.outcome}（免除理由）——"
-            f"破損不得讓判定變寬鬆\n{mutated!r}"
+            f"{name}：在第 {index} 行第 {pos} 位插入 {ch!r} 後變成 {result.outcome}"
+            f"（免除理由）——破損不得讓判定變寬鬆\n{mutated!r}"
         )
-        checked += 1
-    assert checked > 100, f"擾動樣本只有 {checked} 個，掃描範圍可能沒生效"
+        visited.add((index, pos, ch))
+
+    expected = _expected_perturbation_slots(base)
+    assert visited == expected, (
+        f"{name}：掃描未覆蓋全部位置——缺 {sorted(expected - visited)[:5]}，"
+        f"多 {sorted(visited - expected)[:5]}"
+    )
 
 
-def test_detection_key_folds_invisibles_and_width_but_acceptance_does_not():
-    # 兩側分工的直接斷言：偵測寬鬆（同一行的各種擾動都算候選）、受理嚴格（原始行不合格）。
-    for ch in INVISIBLE_CHARS:
+def test_insertion_never_relaxes_a_matched_card_either():
+    """對照面：基準是 ``matched``（唯一免除理由的一格）時的逐位置性質。
+
+    上面那條測的是「要理由的卡面不得變成不要」，這條測的是「不要理由的卡面被動過之後，
+    要嘛結果完全不變，要嘛變成要理由」——不存在「動了手腳卻仍以 matched 免除理由，
+    但讀到的建議已經不是原本那一行」的中間態。
+    """
+    base = render_issue_body(_make_card(executor_capability="主力型"))
+    assert compare_capability_to_card(base, "主力型").outcome == CAPABILITY_MATCHED
+
+    visited: set[tuple[int, int, str]] = set()
+    for index, pos, ch, mutated in _char_perturbations(base):
+        result = compare_capability_to_card(mutated, "主力型")
+        assert result.requires_reason or result.outcome == CAPABILITY_MATCHED, (
+            f"第 {index} 行第 {pos} 位插入 {ch!r} 後變成 {result.outcome}"
+        )
+        if result.outcome == CAPABILITY_MATCHED:
+            # 仍判相符時，讀到的建議必須還是原本那個值——不得讀到別行去。
+            assert result.suggested == "主力型"
+        visited.add((index, pos, ch))
+    assert visited == _expected_perturbation_slots(base)
+
+
+def test_detection_is_permissive_while_acceptance_uses_the_raw_line():
+    # 兩側分工的直接斷言：偵測寬鬆（各種擾動仍算候選）、受理嚴格（原始行不合格）。
+    for ch in PERTURBATION_CHARS:
         corrupted = ch + WELL_FORMED_LINE
         body = (
             "- 需求：x\n"
@@ -733,10 +933,11 @@ def test_detection_key_folds_invisibles_and_width_but_acceptance_does_not():
             "\n## Log\n\n- x\n"
         )
         c = compare_capability_to_card(body, "主力型")
-        # 偵測收得到它（否則會變成 0 候選，訊息會是「候選路由行有 0 行」）…
+        # 偵測收得到它（漏收會變成 0 候選，detail 會是「候選路由行有 0 行」）…
         assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
-        # …但受理端不替它補正，所以仍是 ambiguous 而非 matched。
-        assert c.outcome != CAPABILITY_MATCHED
+        assert "候選路由行有" not in c.detail
+        # …但受理端不替它補正，所以是「格式不符」而非 matched。
+        assert "第 4 行格式" in c.detail
 
 
 def test_renderers_emit_the_version_marker():
