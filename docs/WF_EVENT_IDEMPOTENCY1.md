@@ -4,7 +4,9 @@
 >
 > spec 基線內容＝[#16](https://github.com/ruan6047/ai-workflow/issues/16) 設計文件 §3.1 於 SHA `2d361303ce438c6fecf475b2aaa1fcbc06518dc9` 的狀態（已歷 R5／R6／R7 三輪跨家族查核）。需求方 2026-08-11 裁定縮小 #16 射程後，機制本體歸本卡。
 >
-> 本檔是**設計與契約**，不含實作。所有可執行變更由衍生實作卡承接（§12）；本卡資源宣告僅含本檔，`cli/` 由 [#21](https://github.com/ruan6047/ai-workflow/issues/21) 佔用中。文內嵌入的三支探針（§4.4、§4.5、§7.1）皆為唯讀靜態分析，不連 GitHub、不寫任何狀態，可自 repo root 原樣重跑。
+> 本檔是**設計與契約**，不含實作。所有可執行變更由衍生實作卡承接（§12）；本卡資源宣告僅含本檔，`cli/` 由 [#21](https://github.com/ruan6047/ai-workflow/issues/21) 佔用中。
+>
+> **四支內嵌探針**（§4.4、§4.5、§7.1、§7.1.2）皆為唯讀靜態分析，不連 GitHub、不寫任何狀態，可自 repo root 原樣重跑。**執行指令一律釘為 `uv run python`**（專案 venv，實測 3.12.13）。理由是 `python3` 這個名字在本機解析到三個不同的直譯器（`/usr/bin/python3` 3.9.6、`mise` 3.14.3、venv 3.12.13），前一版 §4.4 寫 `python3` 而其中一個會直接 `TypeError`——探針的重跑性不能依賴讀者的 `PATH`。四支探針已另行實測可在 3.9.6／3.12.13／3.14.3 三者下產生一致結果（§4.4 末表），但**釘選的仍是 `uv run python`**：實測範圍不等於一般性可攜宣稱。
 
 ## 0. 這份設計要解什麼
 
@@ -40,11 +42,15 @@ canonical `AI_WORKFLOW.md:141` 的 lifecycle event 最小 schema **已經**含 `
 | **同號同 `event_id`** | 序號 N 有多筆，但 `event_id` 全部相同 | **不是撞號**。這是同一次寫入的重試或重複觀測，交 §5 冪等路徑處理 |
 | **撞號** | 序號 N 有多筆，且存在兩筆 `event_id` 不同 | **並行寫入的證據** → fail-closed：該卡降純偵測，人工裁定 |
 | **缺號** | 序列 `[min..max]` 有洞 | 有事件遺失或未落地 → fail-closed：該卡降純偵測 |
-| **無序號** | 事件不帶 `state_version` 欄位 | legacy epoch，以 `contract-baseline` 劃界（#16 §10），**不追溯**、不視為缺號 |
+| **無序號** | 事件不帶 `state_version` 欄位 | legacy 前綴，以 `epoch-anchor` 劃界（#16 §10.2），**不追溯**、不視為缺號；該卡若尚未錨定則**整條序列都無序號** → 自動修復降純偵測 |
 
 **「同號同 `event_id` 不是撞號」是本卡最重要的一條，也是最容易實作錯的一條。** 天真的實作會把「序號 N 已被佔用」直接當成撞號，於是每一次「寫入成功但回應遺失」後的重試都會把該卡永久降級——防護機制反而成為最主要的故障來源。降級是不可逆的懲罰，代價與防護必須對稱。
 
-> **為什麼 legacy 無序號不算缺號**：缺號的語意是「這條序列本來該有這一號」。legacy epoch 的事件從來不在同一條序列上，把它們算進去會讓每一張跨 cutover 的卡在第一次檢查時就全部降級。劃界的機制不是本卡新增的，見 #16 §10.2 的 `contract-baseline` 錨定。
+> **為什麼 legacy 無序號不算缺號**：缺號的語意是「這條序列本來該有這一號」。錨點之前的事件從來不在同一條序列上（#16 §10.2 明定錨點前為**不透明前綴**，reducer 不解析），把它們算進去會讓每一張跨 cutover 的卡在第一次檢查時就全部降級。劃界的機制不是本卡新增的。
+>
+> **這裡要引對機制**（前一版引錯，本輪更正）：#16 §10.1 明文要求**寫入守衛**與 **reconcile 自動修復**兩種保護分開講，並警告「兩者混講就會同時宣稱互相衝突的事」。序號屬**後者**，其劃界物是 §10.2 的 **`epoch-anchor`**（逐卡 one-shot，指派 `state_version = 1`，錨點前視為不透明前綴）；`contract-baseline`（§10.3 步驟 3）是**前者**的劃線物，管的是「線後所有寫入適用新制寫入守衛」，與序號無關。前一版把 `state_version` 的劃界寫成 `contract-baseline`，正是 §10.1 警告的那種混講。
+>
+> **連帶後果，明說**：`epoch-anchor` 依 #16 §10.2 **僅適用 quiescent 卡**，且「已錨定張數不保證收斂」。因此**未錨定的卡整條序列都無序號**——本卡的 §1.2 對它不報缺號（正確），但它也拿不到自動修復，只能純偵測。本卡不改變這個結論，也不宣稱能替未錨定的卡提供冪等保護。
 
 ---
 
@@ -143,11 +149,12 @@ canonical 同行給出可用的一層：「本機可採**原子目錄鎖**；跨
 ### 3.3 導出式
 
 ```
-event_id = uuid5(NS_WFCLI, canonical(owner, project, card_id, verb, args, attempt_salt))
+event_id = uuid5(NS_WFCLI, canonical(target, card_id, verb, args, attempt_salt))
 ```
 
 - `NS_WFCLI`：固定的 UUID namespace 常數，凍結於實作，變更即等同全體事件重新編號。
-- `args`：該動詞的全部使用者輸入，依 §4 逐欄位型別正規化後，以「欄位名 ‖ 長度 ‖ 位元組」串接。**長度前綴不可省**——沒有它，`(a="x", b="yz")` 與 `(a="xy", b="z")` 會串出相同位元組（§4.5 探針末段有可重跑的反例）。
+- `target`：**`resolve_target()` 解析後**的 `(owner, project, repo)` 三元組，**不是** `--owner`／`--project`／`--repo`／`--config` 四個原始旗標。這個區別是必要的而非潔癖：四個旗標是同一個目標的**四個來源**（`config.py:44`–`:50` 的優先序為 CLI flag > `--config` 檔 > 環境變數），`wfcli handoff --owner ruan6047` 與 `wfcli handoff --config f.json`（`f.json` 內 `owner` 為 `ruan6047`）**產生完全相同的事件**。若以原始旗標入鍵，兩者算出相異的鍵，於是第二次執行寫出重複事件——正是本卡要防的東西。故四個旗標一律**鍵外**（§4.1b），解析後的三元組直接入鍵。`repo` 為 `None`（draft issue 模式）時以零長度表示，與空字串 repo 不同型別故不碰撞。
+- `args`：該動詞**其餘**的全部使用者輸入，依 §4 逐欄位型別正規化後，以「欄位名 ‖ 長度 ‖ 位元組」串接。**長度前綴不可省**——沒有它，`(a="x", b="yz")` 與 `(a="xy", b="z")` 會串出相同位元組（§4.5 探針末段有可重跑的反例）。
 - `attempt_salt`：**旗標缺席時為零長度**；僅在操作者顯式帶 `--new-attempt <標籤>` 時取該標籤。它與 `args` 各欄位一樣是有型別的輸入，型別＝**嘗試標籤**，canonical bytes 定義見 §4.5，語意見 §5.3。
 - **不含鏈尖端、不含時鐘、不含 `state_version`。**
 
@@ -163,15 +170,47 @@ event_id = uuid5(NS_WFCLI, canonical(owner, project, card_id, verb, args, attemp
 
 進入 `event_id` 的輸入**全部**在此表內，包含 `attempt_salt`——前一版把它寫在 §3.3 而未給型別，等於留了一個表外的第七種輸入，那正是本節宣稱要消滅的東西。
 
+**「路徑」不再是其中一個型別**，理由見 §4.1b：那一列是分類錯誤，本輪已撤除。
+
 | 型別 | 規範化 | 歧義來源 |
 |---|---|---|
 | **自由文字**（`--evidence`、`--reason`、`--actor`、查核報告） | Unicode **NFC**；行尾一律 `LF`；去除每行尾隨空白與整體尾隨換行 | CRLF、貼上時的尾白、輸入法產生的 NFD |
 | **枚舉**（交付狀態、部署狀態、級別、`db_scope`、`next-stage`、`decision`） | **逐位元組取自 `FIELD_SPECS` 的凍結字串**；輸入含 **variation selector**（`U+FE0E`／`U+FE0F`）或零寬字元（`U+200B`–`U+200D`、`U+FEFF`）者**拒收** | 狀態值本身是 emoji，終端與輸入法會插入變體選擇符 |
-| **路徑**（`--worktree`、`--repo-path`、`--input`、`--config`、`--out-dir`、`--spec-dir`、`repo_root`） | #16 §7.2 →〔歸 [#24](https://github.com/ruan6047/ai-workflow/issues/24)〕的封閉 namespace 正規化 | 相對／絕對、symlink、尾斜線 |
-| **SHA／識別碼**（`--source-sha`、`card_id`、`--repo`、`--owner`、`--branch`） | 小寫 hex 且長度固定（SHA）；識別碼逐位元組比對，不做大小寫摺疊 | 大小寫、短 SHA |
+| **記錄型路徑**（`--worktree`） | **逐字寫入狀態面的字串**，套自由文字規範化（NFC、行尾、去尾白）；**不做任何檔案系統解析**（不 `realpath`、不展開 `~`、不摺疊尾斜線） | 見 §4.1b：解析反而會製造錯誤 |
+| **SHA／識別碼**（`--source-sha`、`card_id`、`--card-id`、`--main-ref`、`--branch`） | 小寫 hex 且長度固定（SHA）；識別碼逐位元組比對，不做大小寫摺疊 | 大小寫、短 SHA |
 | **整數／布林**（`--iteration`、`--escalation-epoch`、`--project`、各 `--dry-run` 類旗標） | 十進位無前導零／`true`\|`false` | 空白、`True`、`+1`、前導零 |
 | **結構化輸入**（`--acceptance`、`--verification`、`--resources`、findings 區塊） | 先解析為資料結構，再以**排序鍵、無註解、無錨點**的規範形式序列化；**不對原始文字取雜湊** | 縮排、鍵序、註解、YAML 別名 |
 | **嘗試標籤**（`--new-attempt`，即 `attempt_salt`） | **封閉 ASCII 字元類** `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`，不合者拒收；不做 NFC（非 ASCII 已被擋在門外）；旗標缺席＝零長度 | 空字串與缺席同形、NFC／NFD、變體選擇符、零寬、換行、尾白、路徑形、無上限長度（§4.5） |
+
+### 4.1b CLI 路徑引數：前一版的「路徑型別」是分類錯誤，本輪撤除
+
+前一版把七個看起來像路徑的引數（`--worktree`、`--repo-path`、`--config`、`--input`、`--out-dir`、`--spec-dir`、`repo_root`）歸為一個「路徑」型別，並把它的規範化交給 [#24](https://github.com/ruan6047/ai-workflow/issues/24) 的封閉 namespace，§10 的 A2／A3 列為待驗假設。
+
+**兩張卡都已交付，假設可判定了——不成立。** #24 §3.1 於其交付版明文劃界：該 namespace 規範的是**卡面 `file:` 資源宣告字串**，其規則 2／3 拒收 `/` 與 `~` 起始、規則 4 拒收 `..` 分量，理由是宣告必須是 repo 根相對路徑才有共同座標可比；而 CLI 引數必須解析到執行當下的真實檔案系統位置，絕對路徑與 `~` 在那裡合法且必要。#24 並把引數正規化明文**回指本卡**。兩者定義域不相容，`file:` 的規則套到 CLI 引數上是錯誤引用。
+
+**但真正的問題不是「該由誰定義路徑正規化」，而是「這些引數根本不該被當成同一個型別」。** 分類鍵應該是**該引數對事件內容的貢獻**，不是它的表面語法長得像不像路徑——這正是 §4.3 已經對 `--status` 立下的原則（分類鍵是目的地，不是宣告）。前一版對 `--status` 用了這條原則，對路徑卻沒有，於是七個貢獻方式完全不同的引數被綁進同一格。
+
+逐一追碼（承接的六個動詞，其餘三個引數只在不承接動詞上，見下）：
+
+| 引數 | 對事件內容的實際貢獻 | 處置 |
+|---|---|---|
+| `--worktree`（`assign`，**required**） | `format_branch_worktree(args.branch, args.worktree)`（`card.py:67`–`:70`，純字串內插，無檔案系統存取）→ 逐字寫入 `分支worktree` 欄位（`assign_cmd.py:113`／`:115`） | **記錄型路徑**：以字面字串入鍵 |
+| `--config`（六個動詞皆有） | 只供給 `resolve_target` 的 `(owner, project, repo)`（`config.py:44`–`:50`），本身不寫入任何欄位 | **鍵外**；解析後三元組入鍵（§3.3） |
+| `--owner`／`--project`／`--repo`（六個動詞皆有） | 與 `--config` 同為目標解析的四個來源之一 | **鍵外**；同上 |
+| `--repo-path`（`handoff`） | 僅唯讀驗證 `source_sha` 該 commit 存在（`handoff_cmd.py:77`–`:78`），不寫入事件內容 | **鍵外** |
+| `--input`（`review`） | 讀入檔案**內容**（`review_cmd.py:139` `_read_input`），內容以自由文字入鍵 | **鍵外**；內容入鍵，路徑不入鍵 |
+
+`--out-dir`／`--spec-dir`／`repo_root` 分別只存在於 `snapshot`／`open`／`doctor`——`open` 明示不承接（§8），`snapshot`／`doctor` 唯讀且不產生 lifecycle 事件，三者永不進 `event_id`。**這個豁免依據不是假設，是 §4.4 分類器的一條斷言**：任一者若出現在承接動詞上，檢查即紅（負向測試 D）。
+
+**目標解析四旗標的豁免依據同樣經過查證，不是推定**。該豁免只有在「四個旗標對事件內容的影響**全部**經由 `resolve_target` 的回傳值」時才成立——若任一動詞另外直接讀 `args.owner`／`args.repo` 去寫欄位，那條路徑就繞過了鍵。機械核對（`grep -rn "args\.owner\|args\.repo\b\|args\.project\|args\.config" cli/src/wf_cli/commands/`）：六個承接動詞對這四個名字**只有一處出現**，即 `resolve_target(...)` 的引數列（`review_cmd.py:178`–`:179`、`amend_cmd.py:273`–`:274`、`handoff_cmd.py:86`–`:87`、`assign_cmd.py:64`–`:65`、`deploy_declare_cmd.py:70`–`:71`、`deploy_state_cmd.py:86`–`:87`）；其餘直接取用只出現在 `doctor_cmd.py` 與 `snapshot_cmd.py`，兩者皆不承接且唯讀。實作卡須把這條核對一併落為 CI，理由與負向測試 D 相同：**豁免依據是關於碼的事實宣稱，事實會變，宣稱就需要執行者。**
+
+> **裁定：承接的六個動詞裡，沒有任何一個引數需要檔案系統路徑正規化。** 因此本卡**不定義**、也**不引用**任何 CLI 路徑正規化器；`event_id` 的位元組來源不再有任何一部分取自 #24。
+
+**為什麼不選「自己定義一套保守的 CLI 路徑正規化」**（查核者提的第二條路）：因為那會是一個新的全函數宣稱，而它**做不到**。要讓同一邏輯路徑在不同 cwd／symlink 狀態下產生同一組位元組，就得 `realpath`，而 `realpath` 對尚未存在的路徑沒有定義（`--out-dir` 正是這種）；要處理大小寫與 NFC／NFD，就得知道該卷是否大小寫敏感、是否正規化不敏感（macOS APFS 與 Linux ext4 答案不同），**那是執行期的檔案系統性質，不是設計期可判定的常數**。寫得出來的只會是一個在某些機器上摺疊過度、在另一些機器上摺疊不足的函式——而摺疊過度的後果是把操作者顯式的新意圖靜默回答成 `already_exists`（§5.3 明文禁止的那件事）。**本專案對這類宣稱的標準已經很清楚：#24 連兩輪被打的都是「宣稱大於證據」。** 與其新增一個撐不住的宣稱，不如證明它不需要。
+
+**為什麼也不是查核者提的第一條路（整批降級）**：實測顯示那會把卡打空。`--config` 存在於全部六個承接動詞，`assign --worktree` 是 **required**——以「引數面含路徑型別即該動詞退出冪等保護」實作，六個動詞會**全部**永久退出，本卡的保護面歸零。降級路徑（§4.2）仍然保留給未來真正需要檔案系統正規化的新引數，但今天沒有一個引數落在那裡。
+
+**這個處置的代價，明說**：`--worktree` 以字面字串入鍵，意謂 `/a/b` 與 `/a/b/`、絕對與相對、symlink 與實體路徑會算出**不同的鍵**。這是**刻意的**——它們寫進 `分支worktree` 欄位的值本來就不同，是不同的事件，摺疊才是錯的。殘餘曝險是：操作者若在重試時把路徑**改寫成另一種拼法**，會寫出第二筆事件。這不是路徑特有的性質（任一引數改動都會改鍵，§6 已裁定），但路徑的「同一個東西的不同拼法」表面比其他型別寬，故在 §11 單獨列為殘餘限制。
 
 ### 4.2 沒有「其餘」格，靠的是 fail-closed 收尾規則
 
@@ -182,6 +221,12 @@ event_id = uuid5(NS_WFCLI, canonical(owner, project, card_id, verb, args, attemp
 這條規則讓分類成為全函數：新欄位不是落進某個沉默的預設格，而是**擋下整個動詞**。代價是新增欄位時會踩到明顯的阻擋，這是刻意的——沉默的預設格正是 #22 在自己新增的表格上漏掉一整格的成因，而漏掉的那格不會有人發現，直到它產生錯誤的鍵。
 
 **「不得納入冪等鍵機制」的具體語意**：該動詞退回無冪等保護的狀態（即今日行為），**而非拒絕執行**。它必須在 stderr 明示「本動詞因欄位 X 無規範化定義而未受冪等保護，重試可能產生重複事件」。fail-closed 指的是不對未定義輸入計算鍵，不是把 CLI 鎖死。
+
+**§4.1b 的「鍵外輸入」不得成為這條規則的逃生口。** 一個引數被判為鍵外，只有在下述條件成立時才合法：
+
+> **鍵外條件**：該引數對「寫入的事件內容」的全部影響，已由其他入鍵材料完整涵蓋。
+
+這個條件必須**逐引數具名論證並登錄**（§4.4 的 `KEY_EXEMPT` 是附理由的封閉表），不得由分類器推導、更不得作為未登錄引數的預設。理由與 §4.2 本身相同：一個沉默的「這個大概不重要」預設格，會讓真正影響事件內容的引數靜默逸出鍵，而後果（兩個不同意圖算出同鍵 → 第二次被回答 `already_exists` → 操作者以為寫成功了）比未分類更糟，因為它不會報錯。分類器對鍵外輸入**逐理由印出筆數**，使豁免面可稽核而不是一團數字。
 
 ### 4.3 分類鍵是**目的地欄位**，不是 argparse 宣告
 
@@ -210,33 +255,61 @@ event_id = uuid5(NS_WFCLI, canonical(owner, project, card_id, verb, args, attemp
 ```python
 """§4.4 分類器：無沉默預設格。未登錄的參數即未分類 → 失敗。
 唯讀 argparse 內省，不連 GitHub、不寫任何狀態。自 repo root 執行。
-用法：python3 probe.py [base|inject]；DROP_ATTEMPT=1 為 §4.5 的負向測試。"""
+用法：uv run python probe44.py [base|inject]
+負向測試環境變數：DROP_ATTEMPT=1、DROP_DEST_ENUM=1、DROP_FREETEXT=1、LEAK_SPECDIR=1"""
 import argparse, sys, os
 sys.path.insert(0, "cli/src")
 from wf_cli.cli import build_parser
 
-PATH = {"--worktree", "--repo-path", "--config", "--input",
-        "--out-dir", "--spec-dir", "repo_root"}
+IDEMPOTENT_VERBS = {"review", "amend", "handoff", "assign",
+                    "deploy-declare", "deploy-state"}
+
+# §4.1 記錄型路徑：逐字寫入狀態面，不做檔案系統解析（canonical bytes 同自由文字）。
+RECORDED_PATH = {"--worktree"}
+# §4.1b 鍵外輸入：對事件內容的全部影響已由其他入鍵材料涵蓋。封閉登錄，附理由。
+KEY_EXEMPT = {
+    # 目標解析來源：四者皆只供給 resolve_target 的 (owner, project, repo)，
+    # 該三元組以「解析後的值」直接入鍵（§3.3）。個別旗標不入鍵，否則
+    # `--owner X` 與 `--config f`（f 內 owner=X）會產生同事件而異鍵。
+    "--owner":     "目標解析來源：以解析後的 (owner, project, repo) 入鍵",
+    "--project":   "目標解析來源：以解析後的 (owner, project, repo) 入鍵",
+    "--repo":      "目標解析來源：以解析後的 (owner, project, repo) 入鍵",
+    "--config":    "目標解析來源：以解析後的 (owner, project, repo) 入鍵",
+    "--repo-path": "唯讀本機驗證 source_sha，不寫入事件內容",
+    "--input":     "內容來源：讀入的文字以自由文字入鍵，路徑本身不入鍵",
+    "--out-dir":   "僅存在於不承接動詞（snapshot）",
+    "--spec-dir":  "僅存在於不承接動詞（open）",
+    "repo_root":   "僅存在於不承接動詞（doctor）",
+}
+# 上列後三者的豁免理由是「不在承接動詞上」，必須被機械釘住而非假設。
+NON_COVERED_ONLY = {"--out-dir", "--spec-dir", "repo_root"}
+
 SHA = {"--source-sha"}
-IDENT = {"card_id", "--repo", "--owner", "--card-id", "--main-ref", "--branch"}
+IDENT = {"card_id", "--card-id", "--main-ref", "--branch"}
 STRUCT = {"--acceptance", "--verification", "--resources"}
 FREETEXT = {"--evidence", "--reason", "--actor", "--reviewer", "--assignee",
             "--to", "--next-owner", "--feature", "--core-pain", "--service-goal",
             "--initiative", "--requested-by", "--planned-by", "--executor",
             "--spec-baseline"}
+if os.environ.get("DROP_FREETEXT"):
+    FREETEXT = FREETEXT - {"--evidence"}
 # §4.5 嘗試標籤：基線尚無此旗標，登錄先行以使 CI 在實作卡加入它的當下即生效。
 ATTEMPT = set() if os.environ.get("DROP_ATTEMPT") else {"--new-attempt"}
 # §4.3：argparse 宣告不足以決定型別者——直接寫入 FIELD_SPECS SINGLE_SELECT 欄位。
-DEST_ENUM = {("handoff", "--status"), ("assign", "--status"), ("amend", "--db-scope")}
-IDEMPOTENT_VERBS = {"review", "amend", "handoff", "assign",
-                    "deploy-declare", "deploy-state"}
+DEST_ENUM = set() if os.environ.get("DROP_DEST_ENUM") else {
+    ("handoff", "--status"), ("assign", "--status"), ("amend", "--db-scope")}
+
 
 def classify(verb, act, name):
     if name in ATTEMPT:
         return "嘗試標籤"
     if (verb, name) in DEST_ENUM:
         return "枚舉"
-    if isinstance(act, argparse._StoreTrueAction | argparse._StoreFalseAction):
+    if name in KEY_EXEMPT:
+        return "鍵外輸入"
+    if name in RECORDED_PATH:
+        return "記錄型路徑"
+    if isinstance(act, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
         return "整數／布林"
     if act.choices is not None:
         return "枚舉"
@@ -244,21 +317,23 @@ def classify(verb, act, name):
         return "整數／布林"
     if name in SHA or name in IDENT:
         return "SHA／識別碼"
-    if name in PATH:
-        return "路徑"
     if name in STRUCT:
         return "結構化輸入"
     if name in FREETEXT:
         return "自由文字"
     return None  # 無沉默預設格
 
+
 mode = sys.argv[1] if len(sys.argv) > 1 else "base"
 parser = build_parser()
 sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
 if mode == "inject":
-    for verb in IDEMPOTENT_VERBS:
+    for verb in sorted(IDEMPOTENT_VERBS):
         sub.choices[verb].add_argument("--new-attempt", help="§5.3 顯式新一筆")
-total, unclassified, counts = 0, [], {}
+if os.environ.get("LEAK_SPECDIR"):  # 負向測試 D：把只該在 open 的旗標漏到承接動詞上
+    sub.choices["handoff"].add_argument("--spec-dir", help="負向測試注入")
+
+total, unclassified, counts, leaked, exempt_by_reason = 0, [], {}, [], {}
 for verb, p in sub.choices.items():
     for act in p._actions:
         if isinstance(act, argparse._HelpAction):
@@ -270,69 +345,115 @@ for verb, p in sub.choices.items():
             unclassified.append((verb, name))
         else:
             counts[kind] = counts.get(kind, 0) + 1
-print(f"[{mode}] 總參數數 = {total}；未分類 = {len(unclassified)}")
+        if kind == "鍵外輸入":
+            r = KEY_EXEMPT[name]
+            exempt_by_reason.setdefault(r, []).append("%s %s" % (verb, name))
+        # 豁免理由「只在不承接動詞上」必須成立，否則該豁免無依據。
+        if name in NON_COVERED_ONLY and verb in IDEMPOTENT_VERBS:
+            leaked.append((verb, name))
+
+print("[%s] 直譯器 = %s" % (mode, ".".join(str(x) for x in sys.version_info[:3])))
+print("[%s] 總參數數 = %d；未分類 = %d；豁免依據失效 = %d"
+      % (mode, total, len(unclassified), len(leaked)))
 for v, n in unclassified:
-    print(f"  未分類 {v} {n}")
-print("分類分佈：" + "、".join(f"{k} {counts[k]}" for k in sorted(counts)))
-raise SystemExit(1 if unclassified else 0)
+    print("  未分類 %s %s" % (v, n))
+for v, n in leaked:
+    print("  豁免依據失效：%s 出現在承接動詞 %s 上" % (n, v))
+print("分類分佈：" + "、".join("%s %d" % (k, counts[k]) for k in sorted(counts)))
+print("鍵外輸入逐理由（豁免須可稽核，不得是一團數字）：")
+for r in sorted(exempt_by_reason):
+    print("  %2d 筆　%s" % (len(exempt_by_reason[r]), r))
+raise SystemExit(1 if (unclassified or leaked) else 0)
 ```
 
 **基線參數面實跑**（9 個子指令，`open`／`doctor`／`snapshot` 一併列入以確認分類器對唯讀與不承接動詞同樣是全函數）：
 
 ```
-[base] 總參數數 = 106；未分類 = 0
-分類分佈：SHA／識別碼 31、整數／布林 25、枚舉 10、結構化輸入 6、自由文字 20、路徑 14
+[base] 直譯器 = 3.12.13
+[base] 總參數數 = 106；未分類 = 0；豁免依據失效 = 0
+分類分佈：SHA／識別碼 13、整數／布林 16、枚舉 10、結構化輸入 6、自由文字 20、記錄型路徑 1、鍵外輸入 40
+鍵外輸入逐理由（豁免須可稽核，不得是一團數字）：
+   1 筆　僅存在於不承接動詞（doctor）
+   1 筆　僅存在於不承接動詞（open）
+   1 筆　僅存在於不承接動詞（snapshot）
+   1 筆　內容來源：讀入的文字以自由文字入鍵，路徑本身不入鍵
+   1 筆　唯讀本機驗證 source_sha，不寫入事件內容
+  35 筆　目標解析來源：以解析後的 (owner, project, repo) 入鍵
 exit=0
 ```
+
+**鍵外輸入 40 筆看似龐大，逐理由拆開後不是**：其中 **35 筆是 `--owner`／`--project`／`--repo`／`--config` 分佈在 9 個子指令上**，它們的值**並未離開鍵**，而是以 `resolve_target` 解析後的三元組入鍵一次（§3.3）——這是把同一個目標的四個來源收斂成一個鍵材料，不是豁免。真正「路徑形且不入鍵」的只有 5 筆，逐筆理由見 §4.1b。**逐理由列印是刻意的**：一個沒有拆解的「鍵外 40」無法被查核，而豁免面正是最需要被看見的地方。
 
 **注入 `--new-attempt` 後實跑**（六個承接動詞各加一個）：
 
 ```
-[inject] 總參數數 = 112；未分類 = 0
-分類分佈：SHA／識別碼 31、嘗試標籤 6、整數／布林 25、枚舉 10、結構化輸入 6、自由文字 20、路徑 14
+[inject] 直譯器 = 3.12.13
+[inject] 總參數數 = 112；未分類 = 0；豁免依據失效 = 0
+分類分佈：SHA／識別碼 13、嘗試標籤 6、整數／布林 16、枚舉 10、結構化輸入 6、自由文字 20、記錄型路徑 1、鍵外輸入 40
 exit=0
 ```
 
-**負向測試 A**（證明檢查非恆真）：自 `FREETEXT` 移除 `--evidence` 後重跑基線——
+**負向測試 A**（證明檢查非恆真）：`DROP_FREETEXT=1` 自 `FREETEXT` 移除 `--evidence` 後重跑基線——
 
 ```
-[base] 總參數數 = 106；未分類 = 2
+[base] 總參數數 = 106；未分類 = 2；豁免依據失效 = 0
   未分類 deploy-state --evidence
   未分類 handoff --evidence
-分類分佈：SHA／識別碼 31、整數／布林 25、枚舉 10、結構化輸入 6、自由文字 18、路徑 14
+分類分佈：SHA／識別碼 13、整數／布林 16、枚舉 10、結構化輸入 6、自由文字 18、記錄型路徑 1、鍵外輸入 40
 exit=1
 ```
 
 **負向測試 B**（證明 §4.5 的登錄是必要的，不是裝飾）：`DROP_ATTEMPT=1` 清空 `ATTEMPT` 後跑注入模式——
 
 ```
-[inject] 總參數數 = 112；未分類 = 6
+[inject] 總參數數 = 112；未分類 = 6；豁免依據失效 = 0
   未分類 assign --new-attempt
   未分類 amend --new-attempt
   未分類 deploy-declare --new-attempt
   未分類 deploy-state --new-attempt
   未分類 handoff --new-attempt
   未分類 review --new-attempt
-分類分佈：SHA／識別碼 31、整數／布林 25、枚舉 10、結構化輸入 6、自由文字 20、路徑 14
+分類分佈：SHA／識別碼 13、整數／布林 16、枚舉 10、結構化輸入 6、自由文字 20、記錄型路徑 1、鍵外輸入 40
 exit=1
 ```
 
-未登錄的參數確實會被指名並使檢查失敗。**沒有這兩個負向測試，「未分類 = 0」不構成證據**——它同樣可能來自一個永遠回傳某個型別的分類器。負向測試 B 另有一層意義：`--new-attempt` 在有沉默預設格的分類器下會落入自由文字並套 NFC，**而 NFC 不移除 `U+FE0F`**——與 §4.3 的 `--status` 是同一個缺陷模式，只是換一個旗標復發。
+未登錄的參數確實會被指名並使檢查失敗。**沒有這些負向測試，「未分類 = 0」不構成證據**——它同樣可能來自一個永遠回傳某個型別的分類器。負向測試 B 另有一層意義：`--new-attempt` 在有沉默預設格的分類器下會落入自由文字並套 NFC，**而 NFC 不移除 `U+FE0F`**——與 §4.3 的 `--status` 是同一個缺陷模式，只是換一個旗標復發。
 
-**§4.3 的證據**：把 `DEST_ENUM` 清空（即改以 argparse 宣告為唯一分類鍵）重跑基線——
+**負向測試 C（§4.3 的證據）**：`DROP_DEST_ENUM=1` 清空 `DEST_ENUM`（即改以 argparse 宣告為唯一分類鍵）重跑基線——
 
 ```
-[base] 總參數數 = 106；未分類 = 3
+[base] 總參數數 = 106；未分類 = 3；豁免依據失效 = 0
   未分類 assign --status
   未分類 amend --db-scope
   未分類 handoff --status
-分類分佈：SHA／識別碼 31、整數／布林 25、枚舉 7、結構化輸入 6、自由文字 20、路徑 14
+分類分佈：SHA／識別碼 13、整數／布林 16、枚舉 7、結構化輸入 6、自由文字 20、記錄型路徑 1、鍵外輸入 40
 exit=1
 ```
 
-這三個旗標**無法由 argparse 宣告分類**：它們既沒有 `choices`，也不屬於路徑／SHA／整數布林／結構化任何一類。有沉默預設格的分類器會把它們歸入自由文字並靜默通過（枚舉 7／自由文字 23），**於是 §4.1 的 emoji 拒收條款對真正的暴露面完全不生效**；無預設格的分類器則當場指名它們。這就是分類鍵必須是目的地欄位的機械證據。
+這三個旗標**無法由 argparse 宣告分類**：它們既沒有 `choices`，也不屬於記錄型路徑／SHA／整數布林／結構化任何一類。有沉默預設格的分類器會把它們歸入自由文字並靜默通過，**於是 §4.1 的 emoji 拒收條款對真正的暴露面完全不生效**；無預設格的分類器則當場指名它們。這就是分類鍵必須是目的地欄位的機械證據。
 
-實作卡須把本腳本落為 CI 檢查（`base` 與 `inject` 兩個模式都跑）：**新增參數而未能分類即 CI 紅**，使 §4.2 的 fail-closed 規則有機械執行者，而不是文件裡的一句「應該要」。
+**負向測試 D（§4.1b 豁免依據的證據，本輪新增）**：`--out-dir`／`--spec-dir`／`repo_root` 的豁免理由是「只出現在不承接動詞上」。這是一個**關於碼的事實宣稱**，不是設計者的斷言，因此必須有機械執行者。`LEAK_SPECDIR=1` 把 `--spec-dir` 合成加到 `handoff` 上模擬未來的擴充——
+
+```
+[base] 總參數數 = 107；未分類 = 0；豁免依據失效 = 1
+  豁免依據失效：--spec-dir 出現在承接動詞 handoff 上
+分類分佈：SHA／識別碼 13、整數／布林 16、枚舉 10、結構化輸入 6、自由文字 20、記錄型路徑 1、鍵外輸入 41
+exit=1
+```
+
+注意這一格的重要性：**分類本身沒有失敗（未分類 = 0），失敗的是豁免的依據。** 若只檢查「每個參數都分得出型別」，這個情形會靜默通過——`--spec-dir` 仍然被歸為鍵外輸入，於是一個真正影響事件內容的引數逸出了鍵，而且不會有任何紅燈。這正是 §4.2「鍵外條件」需要獨立執行者的原因。
+
+**跨直譯器實跑**（R2-002）：`python3` 在本機解析到三個不同的直譯器，故本節不宣稱一般性可攜，只報告**實測範圍**——
+
+| 直譯器 | 取得方式 | `base` 結果 |
+|---|---|---|
+| 3.9.6 | `/usr/bin/python3`（macOS 系統） | 總參數 106／未分類 0／豁免依據失效 0，exit=0 |
+| 3.12.13 | `uv run python`（專案 venv，**指令釘選於此**） | 同上，exit=0 |
+| 3.14.3 | `mise` 安裝於 `PATH` 前段 | 同上，exit=0 |
+
+三者輸出的分類分佈完全一致。**未實測 3.9.6 以下與 3.14.3 以上，本節不對該範圍外作任何宣稱。**
+
+實作卡須把本腳本落為 CI 檢查（`base` 與 `inject` 兩個模式都跑，四個負向測試一併釘住）：**新增參數而未能分類、或豁免依據失效，即 CI 紅**，使 §4.2 的兩條規則（型別閉包、鍵外條件）都有機械執行者，而不是文件裡的一句「應該要」。
 
 ### 4.5 嘗試標籤的 canonical bytes
 
@@ -486,6 +607,32 @@ exit=0
 步驟 5 是整個設計的收斂性論證：**鍵對鏈的狀態不敏感，所以重試必然自我辨識。** §3.2 的鏈尖端方案正是在這一步發散。
 
 呼叫 `ensure_fields` 的四個承接動詞（`review`／`amend`／`handoff`／`assign`，見 §7.1）須在步驟 0 之前、以 `L_project` 單獨完成該前綴並釋放（§2.2）。它**不進事件流、不消耗序號**。
+
+### 5.1.1 回讀契約：本卡只釘最小必要性質，不預設 #16 的形狀
+
+前一版自承的最大缺口是：§7.1.2 要求首寫**攜帶 `event_id`**，但它寫在留言／Log 的**哪個位置**、resume **怎麼解析回來**，本卡沒有定義，而是歸給 #16 §4.2。**#16 目前 ⏸阻塞（等本卡與 #24 落地），於是形成循環**：本卡步驟 3 要機械成立需要回讀契約 → 回讀契約歸 #16 → #16 等本卡。
+
+> **判定：這個循環不是真的。** 它成立的前提是「本卡需要知道**格式**」，但步驟 3 需要的不是格式，是**能力**。本卡可以在不指定任何序列化形式的前提下，把回讀契約必須滿足的性質釘死；#16（或其後繼卡）再選一個滿足它們的表示法。**消費者提需求、生產者選表示**，循環在這個方向上自然斷開。
+
+步驟 3 的機械成立，需要且只需要下列五條。**這是必要條件的列舉，不是充分條件**——滿足五條的表示法不只一種，本卡刻意不從中挑選：
+
+| # | 最小必要性質 | 為什麼是必要的 |
+|---|---|---|
+| **P1** | **可枚舉**：僅靠讀取該卡遠端狀態，即可列出已寫入的 `event_id` 集合 | 步驟 3 是「在剛重讀的事件流中查找本次的鍵」。查不到就退化成盲寫 |
+| **P2** | **唯一歸屬**：一則首寫恰帶一個 `event_id`，一個 `event_id` 恰歸屬一則首寫 | 一對多會讓 §1.2 的「同號同 `event_id`」判準失去意義；多對一則無法定位要補齊哪一串後續步驟 |
+| **P3** | **位元組穩定**：GitHub 的儲存與渲染不得改動該位元組（不被 Markdown 吞、不被自動連結改寫、不被截斷） | 鍵是逐位元組比對的。渲染改一個字元，重試就認不出自己——與 §3.2 的鏈尖端是同一類失效，只是成因在載體而非導出式 |
+| **P4** | **不觸發既有隔離**：載體不得在留言中引入審核事件 marker 的字面前綴 | `doctor.py:175` `inspect_event_marker` 對該前綴做**全文子字串比對**：首行不是 marker、或首行之外另有該前綴，一律回不合格並停該卡的自動裁決。載體若不慎帶入該字面，會**隔離整張卡**——這是本專案已實證的故障模式，不是假設 |
+| **P5** | **可與 payload 分離解析**：能在不解析 payload 語意的前提下取出 `event_id` | §5.4 要求「同鍵但 payload 語意不等 → fail-closed」。若取鍵必須先信任 payload，該判準就無法在 payload 已被竄改時成立 |
+
+**本卡另外指名一條由碼查出的硬約束**，它會直接限制 #16 的選項，因此在這裡先講清楚：
+
+> **既有的審核事件 marker（`v1`）不能直接載 `event_id`。** `templates/handoff-contract.md` §3.1.3 明文：「**鍵集合封閉**：`v1` 只有上列三鍵（`card_id`／`source_sha`／`attempt_id`）。出現任何未定義鍵即依 §3.1.4 處理……**要擴充欄位必須升版本**」，且 `doctor.py:168`–`:171` 的 `_CONFORMANT_MARKER_RE` 以固定順序、單一空白、封閉三鍵的整條 regex 比對，**多一個鍵即不匹配 → 該卡停機**。
+>
+> 因此「在既有 marker 上加一個 `event_id=` 欄」**不是低成本選項，而是會讓每一張卡當場停機的改動**。要走這條路必須升版本並改契約（紅線 PR）。
+>
+> 補充射程事實：該 marker 只存在於 **`review`** 的裁決留言；`amend`／`handoff`／`assign`／`deploy-declare`／`deploy-state` 五個動詞的首寫**沒有任何既有 marker 可搭**。回讀契約必須涵蓋六個動詞，不能只解 `review`。
+
+**這一節誠實的殘餘**（不因為釘了性質就消失）：釘住 P1–P5 讓本卡的設計**閉合**（步驟 3 的前提被完整陳述，且可被查核者檢驗），但**不讓實作可以開工**——在有人選定一個滿足 P1–P5 的具體表示法之前，衍生實作卡 A 寫不出解析器。所以循環在**設計層**斷開了，在**排程層**沒有：#16（或接手回讀契約的卡）仍然必須先於實作卡 A 定案。本卡把這件事寫進 §12 的前置欄，不假裝它已經解決。
 
 ### 5.2 `already_exists`：可辨識退出碼，零狀態寫入
 
@@ -740,7 +887,7 @@ exit=0
 | 前一版的宣稱 | 列舉輸出顯示的事實 | 後果 |
 |---|---|---|
 | 「**所有**寫入動詞共用」 | 呼叫者只有 `amend`(:278)、`assign`(:69)、`handoff`(:91)、`open`(:133)、`review`(:193)。**`deploy-declare` 與 `deploy-state` 不呼叫它**——兩者走唯讀 `list_fields` 並在欄位缺漏時直接失敗（`deploy_declare_cmd.py:79`、`deploy_state_cmd.py:95`） | 「共用前綴」的完整閉包宣稱不成立；deploy-* 的失敗模式與其他四個動詞**不同**（欄位不存在時 deploy-* 直接錯，其他四個會補建），矩陣須分開 |
-| 「**一個**注入點」 | `field-create` 在 `for name, ... in FIELD_SPECS.items()` 迴圈內（`project.py:157`–`:168`），**每個缺欄位一次獨立遠端寫入**。`FIELD_SPECS` 於基線有 **13** 個欄位（機械核對：`python3 -c "import sys;sys.path.insert(0,'cli/src');from wf_cli.project import FIELD_SPECS;print(len(FIELD_SPECS))"` → `13`）→ 每次呼叫 **0–13** 次寫入，各自可獨立失敗 | 「重試應為無操作」只在**全部 13 次都完成**時成立；中途回應遺失會留下部分建立的欄位集合 |
+| 「**一個**注入點」 | `field-create` 在 `for name, ... in FIELD_SPECS.items()` 迴圈內（`project.py:157`–`:168`），**每個缺欄位一次獨立遠端寫入**。`FIELD_SPECS` 於基線有 **13** 個欄位（機械核對：`uv run python -c "import sys;sys.path.insert(0,'cli/src');from wf_cli.project import FIELD_SPECS;print(len(FIELD_SPECS))"` → `13`）→ 每次呼叫 **0–13** 次寫入，各自可獨立失敗 | 「重試應為無操作」只在**全部 13 次都完成**時成立；中途回應遺失會留下部分建立的欄位集合 |
 | 「天然冪等」 | 冪等來自 `if name in existing: continue` 的**讀後跳過**，即另一個 read-modify-write。序列重跑下成立；**並行下不成立**——兩個程序可同時讀到「欄位不存在」而各自送出 `field-create` | 需要 §2.2 的 `L_project` 鎖。且該鎖不能是卡層鎖，因為併發的兩張卡屬同一專案 |
 
 另外 `set_item_body` 在 helper 內有**兩條**互斥的寫入路徑（DraftIssue 走 `project item-edit`:318、real issue 走 `issue edit`:322）。單次執行只走一條，故它仍是一個注入點，但**矩陣須覆蓋兩條分支**——只測 real issue 會漏掉 draft item 路徑。
@@ -820,7 +967,14 @@ print("\n注意：行序 ≠ 執行序（條件分支與提前返回會改變實
 | `handoff` | `set_field_value`(owner, :136) | ❌ | 四個欄位寫在 `set_item_body`(:146) 之前 |
 | `assign` | `set_field_value`(owner, :114) | ❌ | 三個欄位寫在 `set_item_body`(:123) 之前 |
 
-前三列與 #16 的既有稽核一致；`deploy-*` 在 #16 標為未稽核，本節補上（兩者皆合格）。**`amend --tier` 這一格是本輪新發現**——#16 只記錄「`amend` body Log 優先→合格」，未區分 `--tier` 分支。
+前三列與 #16 §4.3 的既有稽核一致；`deploy-declare`／`deploy-state` 在 #16 §4.3 明列為**未稽核**，本節補上（兩者皆合格）。
+
+**`amend --tier` 這一格與 #16 §4.3 直接衝突，且本卡這側才是對的**（本輪逐條核對 #16 原文後更正的說法——前一版只寫「#16 未區分 `--tier` 分支」，低估了落差）：
+
+- #16 §4.3 把 `amend` 的遠端寫入順序記為「**body Log → 級別欄（僅需要時）**」，據此判**合格**。
+- 實際順序相反：`set_field_value`(級別) 在 `:392`、`set_item_body` 在 `:423`，**欄位先於 body**。碼內註解自己寫明了理由：「級別先寫並讀回驗證，body 後寫。這個順序讓『欄位寫失敗』變成乾淨中止……而『欄位成功、body 失敗』留下的不一致，由下一次同樣的 amend 依 `_tier_change_logged` 偵測並只補寫 Log 自癒。」
+
+因此 #16 §4.3 對 `amend` 的「合格」**只在無 `--tier` 的路徑上成立**；`--tier` 路徑的首寫是裸欄位，不自描述。這不是本卡與 #16 的用詞差異，是一個**可由碼機械判定的事實落差**，#16 若要維持該表的「列舉閉包」宣稱應同步更正。本卡不代改 #16，只在此指名。
 
 > **裁定：§2.1 步驟 5 的「首次寫入」定義為「該動詞第一次攜帶 `event_id` 的寫入」，而非「第一次遠端寫入」。實作卡必須把該寫入**排到動詞的最前面**；在排序完成前，`handoff`、`assign`、`amend --tier` **不得宣稱通過 E1**。
 
@@ -936,25 +1090,32 @@ print("\n注意：行序 ≠ 執行序（條件分支與提前返回會改變實
 | `AI_WORKFLOW.md:139` remote coordination adapter 是唯一 lifecycle event writer | **不變**。本設計不新增 writer，只規範既有 writer 的取號與重試行為 |
 | `FIELD_SPECS`（`project.py:28`）為凍結欄位 schema | **引用為枚舉的權威來源**（§4.1），不自訂枚舉清單。§4.3 的裁定是「以該表為分類鍵」，強化而非覆蓋它 |
 | `handoff-contract.md:16` `event_id` 寫為 `<UUID>` | **需修訂**：UUIDv5 仍是合法 UUID，格式相容，但「隨機」的隱含語意須改為「由 §3.3 決定性導出」。此為契約修訂，走紅線 PR |
+| `handoff-contract.md` §3.1.3 審核事件 marker `v1`：**鍵集合封閉**，「要擴充欄位必須升版本」 | **遵守，且據以排除一個選項**（§5.1.1）：`event_id` **不得**以加欄方式搭上 `v1` marker——`doctor.py:168`–`:171` 的整條 regex 多一鍵即不匹配，後果是該卡停機。若回讀契約選擇走 marker，須升版本並改契約（實作卡 D）。本卡不選定表示法，只排除這條會靜默傷卡的捷徑 |
 
-**唯一需要契約修訂的是最後一列**，其餘皆為補完。
+**需要契約修訂的是最後兩列**，其餘皆為補完。第二列是**排除性結論**（指出一條不能走的路），不是本卡要求的修訂——是否真的要升版本，取決於回讀契約最後選了哪種表示法。
 
 ---
 
-## 10. 外部相依與其假設（不對齊，讓差異在查核時暴露）
+## 10. 對 #24 的相依：假設已判定，相依已解除
 
-§4.1 的**路徑**型別引用 [#24](https://github.com/ruan6047/ai-workflow/issues/24)（`WF-RESOURCE-WRITESET1`）的封閉 namespace 正規化。#24 本輪同樣在修正中，其 R1-001 是「無法解析的資源宣告 fail-open」——**該修正的方向會直接影響本卡路徑型別的閉包**。
+前一版把路徑型別的正規化交給 [#24](https://github.com/ruan6047/ai-workflow/issues/24)（`WF-RESOURCE-WRITESET1`），並把 A1–A4 四項列為**待驗假設**，明寫「刻意不對齊，讓差異在查核時暴露」。
 
-**本卡刻意不猜測 #24 會怎麼改，也不為了對齊而預先讓步。** 以下把依賴寫成顯式假設；若查核時發現假設不成立，該處即為兩卡的介面缺口，應當被看見而不是被兩邊各自的猜測填平。
+**兩張卡都已交付，假設可判定了。逐項結案：**
 
-| # | 假設 | 若不成立時本卡的行為 |
-|---|---|---|
-| A1 | #24 的路徑正規化是**全函數**，且對無法解析的路徑 **fail-closed**（拒絕，而非放行原字串） | 本卡的路徑型別退回 §4.2 的收尾規則：**該動詞退出冪等保護**並在 stderr 明示，**不得**沿用 #24 的 fail-open 結果去算鍵。fail-open 的正規化會讓兩個不同路徑摺疊成同一個鍵，那比沒有冪等保護更糟 |
-| A2 | #24 的正規化輸出是**位元組決定性**的：同一邏輯路徑在不同 cwd、不同 symlink 解析狀態下產生**同一個字串** | 若 #24 只保證「集合成員判定」（能回答「這條路徑在不在宣告的寫入集內」）而不保證決定性字串輸出，則它不足以當 canonical bytes 來源，本卡須自訂保守正規化，並在 §4.1 改寫該列 |
-| A3 | #24 的封閉 namespace 涵蓋本卡 §4.4 分類器 `PATH` 集合的全部七個參數（`--worktree`、`--repo-path`、`--config`、`--input`、`--out-dir`、`--spec-dir`、`repo_root`） | 未涵蓋者逐一走 §4.2 收尾規則。**不得**因為「大部分有涵蓋」就整批引用 |
-| A4 | 兩卡的修正**各自獨立**，本輪不互相對齊 | 這是刻意的。對齊要等兩邊都定稿後由查核者比對；提前猜測會讓一個錯誤的假設同時寫進兩份設計，反而更難發現 |
+| # | 前一版的假設 | 判定 | 依據 |
+|---|---|---|---|
+| A1 | #24 的路徑正規化對無法解析者 fail-closed | **已成立但不再相關** | #24 §8.7 已裁定 fail-closed。但本卡不再引用該正規化，故此假設對本卡失效 |
+| A2 | #24 的輸出是位元組決定性、可當 canonical bytes | **不成立** | #24 §2.1 的 `K(r)` 是 **casefold 後的分量 tuple**，供**相交判定**用；它刻意摺疊大小寫與尾斜線（§2.3-2、§3.1-7），**摺疊過的鍵不能反推位元組**，故不可當 canonical bytes 來源 |
+| A3 | #24 的 namespace 涵蓋本卡的七個路徑參數 | **不成立** | #24 §3.1 規則 2／3 拒收 `/` 與 `~` 起始、規則 4 拒收 `..` 分量。CLI 引數實務上多為絕對路徑，會被整批拒收 |
+| A4 | 兩卡各自獨立、本輪不對齊 | **已達成目的，可撤回** | 差異確實暴露了，且兩側收斂到同一個解（見下） |
 
-**降級路徑是本卡自己的，不依賴 #24**：任一假設失效時，路徑型別落回 §4.2「無規範化定義 → 該動詞退出冪等保護 → stderr 明示」。這條路徑保證的是**本卡不會因為外部相依變動而產生錯誤的鍵**，代價是那些動詞暫時沒有冪等保護。這個取捨與 §6 的裁定同向：可見的降級優於靜默的錯誤。
+**兩側的分歧與其收斂，記錄於此**：#24 的查核者從其側裁定「兩者本來就是不同輸入域，#24 應在文件明示不涵蓋 CLI 引數」，並判定那**不構成 #24 本輪的 blocking finding**；本卡的查核者則從本側判為 major blocking。**修法方向兩側一致**——#24 §3.1 已加上定義域界線告示框並把引數正規化回指本卡，本卡則撤除該引用。分歧只在「誰記為 blocking」，而那不影響任何一份設計的內容。前一版「刻意不對齊」的做法在這一格是有效的：它讓一個真實的介面錯配在兩側同時被看見，而不是被兩邊各自的猜測填平。
+
+> **裁定：本卡與 #24 之間，`event_id` 位元組來源方向的相依**已解除**。** §4.1b 已證明承接的六個動詞裡沒有任何引數需要檔案系統路徑正規化，故本卡不引用 #24 的任何正規化產物，也不自訂替代品。
+
+**這不代表兩卡無關**：#24 的資源宣告互斥語意仍然是 `assign` 能不能派工的前置（`assign_cmd.py:91` 的交集檢查），本卡的 §2.2 `L_project` 與 #24 的宣告互斥也解決不同層次的問題（前者是同機程序互斥，後者是卡與卡的資源互斥）。解除的只是**路徑正規化這一條介面**。
+
+**§4.2 的降級路徑仍然保留且仍然是本卡自己的**：未來若有新引數真的需要檔案系統正規化（今天沒有），它落回「無規範化定義 → 該動詞退出冪等保護 → stderr 明示」。這條路徑不依賴任何外部卡。
 
 ---
 
@@ -963,12 +1124,14 @@ print("\n注意：行序 ≠ 執行序（條件分支與提前返回會改變實
 - **不做跨主機並行預防**：無可用併發控制服務，只偵測（§2）。宣稱能預防即是假保證。
 - **不承接 `open` 的冪等性**（§8）。
 - **不改 lifecycle event 的欄位集合**：schema 是 canonical `:141` 的，本卡只定義既有欄位怎麼取值。
-- **不處理 legacy epoch 的追溯**：以 `contract-baseline` 劃界，界前事件不重新編號（§1.2）。
+- **不處理 legacy 前綴的追溯**：以 `epoch-anchor` 劃界（#16 §10.2），錨點前事件不重新編號（§1.2）。**未錨定的卡整條序列都無序號**，本卡對它不報缺號，但它也拿不到自動修復——`epoch-anchor` 僅適用 quiescent 卡且「已錨定張數不保證收斂」（#16 §10.2／§10.4），本卡不改變該結論。
 - **`--status`／`--db-scope` 缺 `choices` 驗證**：本卡以「分類鍵＝目的地欄位」使其不影響冪等鍵正確性（§4.3），但**旗標本身的輸入驗證仍缺**，屬實作卡範圍。
 - **殘留鎖的 TTL 具體值歸實作卡**：§2.3 已把**安全規則**釘死（不得僅以 TTL 奪鎖、只能在可證明死亡時回收、無法判定即 fail-closed、逃生門必須人工）。留給實作卡的只有「多久之後開始做死亡判定」這個數值，它調錯只影響等待時間，不影響正確性。
 - **`ensure_fields` 的部分完成狀態不被本卡消除**：§7.2.1 F2 只要求重跑能補齊，**不要求 13 個欄位的建立是原子的**——GitHub 沒有提供批次建立欄位的原子 API，宣稱原子即是假保證。
 - **`L_project` 只保護同機**：與 `L_card` 同一條 canonical 界線（`:148`），跨主機的兩個程序仍可能建出同名重複欄位，只能事後偵測。
-- **路徑型別依賴 #24**：見 §10 的四項假設與降級路徑。
+- **對 #24 的路徑正規化相依已解除**（§10）：本卡不再引用其封閉 namespace，也不自訂替代品——§4.1b 已證明承接的六個動詞裡沒有引數需要檔案系統路徑正規化。**未來若出現需要的新引數，它落 §4.2 降級路徑**（該動詞退出冪等保護＋stderr 明示），本卡今天不預先為它定義正規化。
+- **`--worktree` 以字面字串入鍵，不折疊路徑拼法**：`/a/b` 與 `/a/b/`、絕對與相對、symlink 與實體路徑算出不同的鍵（§4.1b）。這在語意上正確（它們寫進 `分支worktree` 欄位的值本來就不同），但殘餘曝險是**操作者在重試時改寫拼法會寫出第二筆事件**。這不是路徑特有的（任一引數改動都會改鍵，§6 已裁定），只是路徑的「同一個東西的不同拼法」表面比其他型別寬，故單獨列出。
+- **回讀契約只釘性質、未定形式**（§5.1.1）：本卡釘死 P1–P5 五條最小必要性質，並指名一條硬約束（既有審核事件 marker 的 `v1` 鍵集合封閉，載 `event_id` 須升版本＋改契約），但**不選定表示法**。設計層閉合，排程層未解——實作卡 A 仍須等回讀契約定案。
 - **`handoff`／`assign`／`amend --tier` 的首寫尚不自描述**：本卡給出裁定與驗收（§7.1.2），但排序本身是 `cli/` 的變更，歸實作卡 A′。**在它落地前，這三個動詞的 E1 不成立**——本檔不宣稱本設計已使全部六個承接動詞冪等，只宣稱設計完備且缺口已被指名。
 
 ---
@@ -977,10 +1140,12 @@ print("\n注意：行序 ≠ 執行序（條件分支與提前返回會改變實
 
 | 卡 | 內容 | 前置 |
 |---|---|---|
-| **A** | `event_id` 決定性導出 ＋ §4 七型別正規化（含 §4.5 嘗試標籤驗證器）＋ §4.4 分類器 CI（`base`＋`inject` 兩模式） | #21 釋放 `cli/` |
+| **A** | `event_id` 決定性導出（含 §3.3 的**解析後** `target` 三元組）＋ §4 型別正規化（含 §4.5 嘗試標籤驗證器）＋ §4.4 分類器 CI（`base`＋`inject` 兩模式，四個負向測試一併釘住） | #21 釋放 `cli/`；**且回讀契約（§5.1.1 P1–P5）已定案** |
 | **A′** | §7.1.2 的寫入順序調整（`handoff`／`assign`／`amend --tier`）＋ 首寫載荷探針 CI | 可與 A 併行，**是 E1 的前置** |
 | **B** | §2.1 固定臨界區 ＋ §2.2 兩個鎖層級 ＋ §2.3 死亡證明式回收 ＋ §1.2 五情形判準 ＋ 退出碼 `7` | A |
 | **C** | §7.2 A 類 23 注入點 × E1–E3 ＋ §7.2.1 F1–F5 ＋ §7.3 M1–M5 ＋ §7.3.1 S1–S7 ＋ §7.3.2 C1–C6 ＋ §7.1／§7.1.2 列舉器與探針 CI | A、A′、B |
-| **D** | `handoff-contract.md` 的 `event_id` 語意修訂（契約，紅線 PR） | A |
+| **D** | `handoff-contract.md` 的 `event_id` 語意修訂（契約，紅線 PR）。**若回讀契約選擇搭既有審核事件 marker，另須升版本**——`v1` 鍵集合封閉，加欄即停機（§5.1.1） | A |
 
 C 是驗收閘門：**A、A′、B 未通過 C 不得宣稱冪等性成立。** 其中 C1（同機同意圖並行）與 C4（`SIGSTOP` 不得被奪鎖）是 §2 兩條裁定各自的唯一驗收，缺任一項即 §2 的「可預防」退回文件宣稱；A′ 未完成則 `handoff`／`assign`／`amend --tier` 的 E1 不成立（§7.1.2）。
+
+**排程上的真前置**（§5.1.1）：回讀契約的**表示法**目前無卡承接——#16 ⏸阻塞，本卡只釘性質不選形式。**A 在它定案前寫不出解析器。** 這一格是本輪未關掉的洞，明列於此而非藏在前置欄裡。
