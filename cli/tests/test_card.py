@@ -14,9 +14,12 @@ from wf_cli.card import (
     CAPABILITY_TIERS,
     ROUTING_MARKER,
     TIERS,
+    AmendError,
     CapabilityComparison,
     Card,
     amend_acceptance,
+    amend_spec_baseline,
+    amend_verification,
     append_log_line,
     compare_capability_to_card,
     format_branch_worktree,
@@ -494,6 +497,120 @@ def test_old_card_can_be_byte_identical_to_a_new_one():
         compare_capability_to_card(_legacy_body_with_line(legacy_line), "主力型").outcome
         == CAPABILITY_BASELINE_ABSENT
     )
+
+
+# --- R4-001：宣告是結構位置，不是子字串出現 ---------------------------------
+#
+# 前一版寫 `ROUTING_MARKER in head`，把「出現」當成「宣告」。但 amend 能把任意文字寫進
+# Log 之前——舊卡的驗收條件只要提到這串標記，分類就從 absent 誤升 ambiguous。入口不在
+# 使用者手打，在本 CLI 自己的 amend。與 R3-001 是同一個病的不同層（內容 vs 存在性）。
+
+LEGACY_WITH_SECTIONS = (
+    "- 需求：x\n"
+    "- 執行：待指派　查核：獨立校讀\n"
+    "\n"
+    "## 驗收條件\n"
+    "\n"
+    "- [ ] 原條件\n"
+    "\n"
+    "## 驗證\n"
+    "\n"
+    "- [ ] 原驗證\n"
+    "\n"
+    "## Log\n"
+    "\n"
+    "- x\n"
+)
+
+
+@pytest.mark.parametrize(
+    "amend_fn,items",
+    [
+        (amend_acceptance, [f"驗收要求卡面帶 {ROUTING_MARKER} 標記"]),
+        (amend_acceptance, [ROUTING_MARKER]),
+        (amend_acceptance, [f"前段\n{ROUTING_MARKER}\n後段"]),
+        (amend_verification, [f"驗證卡面含 {ROUTING_MARKER}"]),
+        (amend_verification, [ROUTING_MARKER]),
+    ],
+    ids=["驗收含marker", "驗收整項是marker", "驗收內嵌換行", "驗證含marker", "驗證整項是marker"],
+)
+def test_amend_cannot_promote_a_legacy_card_by_writing_the_marker(amend_fn, items):
+    # R4-001 指定回歸：舊卡經 amend 寫入該字串後，仍須判 absent。
+    assert (
+        compare_capability_to_card(LEGACY_WITH_SECTIONS, "主力型").outcome
+        == CAPABILITY_BASELINE_ABSENT
+    )
+    amended, _ = amend_fn(LEGACY_WITH_SECTIONS, items)
+    assert ROUTING_MARKER in amended  # 字串確實進了 body（Log 之前）
+    c = compare_capability_to_card(amended, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_ABSENT  # 但那不是宣告
+    assert "卡面無建議層級" in c.log_fragment("舊卡無基線")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"- 執行：待指派 {ROUTING_MARKER}　查核：獨立校讀",
+        f"- 需求：x {ROUTING_MARKER}",
+        f"前後有字 {ROUTING_MARKER} 還有字",
+    ],
+    ids=["行內夾在執行行", "行內夾在需求行", "行內前後都有字"],
+)
+def test_marker_not_on_its_own_line_is_not_a_declaration(line):
+    # 條件 (1)：獨立成行。行內出現一律不算宣告。
+    body = f"- 需求：x\n{line}\n- 執行：待指派　查核：獨立校讀\n\n## Log\n\n- x\n"
+    assert (
+        compare_capability_to_card(body, "主力型").outcome == CAPABILITY_BASELINE_ABSENT
+    )
+
+
+def test_marker_below_the_first_heading_is_not_a_declaration():
+    # 條件 (2)：位於標頭區（第一個 `## ` 之前）。章節內的標記不算宣告。
+    body = (
+        "- 需求：x\n"
+        "- 執行：待指派　查核：獨立校讀\n"
+        "\n## 核心痛點\n\n"
+        f"{ROUTING_MARKER}\n"
+        f"{WELL_FORMED_LINE}\n"
+        "\n## Log\n\n- x\n"
+    )
+    assert (
+        compare_capability_to_card(body, "主力型").outcome == CAPABILITY_BASELINE_ABSENT
+    )
+
+
+def test_marker_in_header_but_not_adjacent_to_routing_line_is_ambiguous():
+    # 條件 (3)：緊鄰。標記在標頭區但沒挨著路由行 → 宣告成立卻讀不出基線 → ambiguous。
+    body = (
+        "- 需求：x\n"
+        f"{ROUTING_MARKER}\n"
+        "- DB：db_scope=none\n"
+        f"{WELL_FORMED_LINE}\n"
+        "\n## Log\n\n- x\n"
+    )
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert "緊鄰" in c.detail
+
+
+def test_two_declarations_in_header_are_ambiguous():
+    body = (
+        "- 需求：x\n"
+        f"{ROUTING_MARKER}\n"
+        f"{WELL_FORMED_LINE}\n"
+        f"{ROUTING_MARKER}\n"
+        "\n## Log\n\n- x\n"
+    )
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert "2 個" in c.detail
+
+
+def test_amend_spec_baseline_rejects_newlines_that_would_inject_a_header_line():
+    # 標頭區唯一的其他 amend 寫入路徑；單行欄位必須保持單行，否則可長出偽宣告行。
+    body = render_issue_body(_make_card())
+    with pytest.raises(AmendError):
+        amend_spec_baseline(body, f"main abc\n{ROUTING_MARKER}")
 
 
 def test_renderers_emit_the_version_marker():

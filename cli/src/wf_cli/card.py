@@ -440,6 +440,11 @@ def amend_spec_baseline(body: str, new_value: str) -> tuple[str, str]:
     """改 spec 基線（它內嵌在 Initiative 那一行）；回傳 (新 body, 原值)。"""
     if not new_value.strip():
         raise AmendError("spec 基線不得為空；無基線請明確填 `—`")
+    if "\n" in new_value or "\r" in new_value:
+        # spec 基線是單行欄位，內嵌換行會在**標頭區**多長出一行——而標頭區正是路由
+        # 版本宣告的判定範圍（見 compare_capability_to_card）。單行欄位就該保持單行，
+        # 這裡把它擋在寫入前，而不是讓下游去分辨那行是不是宣告。
+        raise AmendError("spec 基線是單行欄位，不得含換行（會在卡面標頭區插入額外行）")
     head, tail = split_at_log(body)
     lines = head.splitlines()
     hits = [i for i, line in enumerate(lines) if _SPEC_BASELINE_RE.match(line)]
@@ -632,41 +637,72 @@ def compare_capability_to_card(body: str, actual_capability: str) -> CapabilityC
             f"卡面排版已損壞，無法安全定位 Log 之前的區段（{exc}）",
         )
 
-    # 版本判準**只看機器標記**，完全不檢查自由文字內容。這是 R3-001 的修法核心：
-    # 舊卡可以逐位元組偽裝成新卡（見 ROUTING_MARKER 註解的實證），所以「從內容判斷
-    # 版本」在資訊上不可能為真；改由 open 在新制卡寫下標記，判準退化成布林查詢。
+    # 版本判準是**結構位置**，不是子字串存在性（R4-001）。
     #
-    # 刻意**不做**零寬／格式字元正規化：標記在不在是布林事實，不受行內字元破壞影響
-    # （前綴被 U+200B 打斷的新卡仍有標記，會落 ambiguous 而非 absent）。反過來，要是
-    # 加一層「哪些碼位可以剝除」的正規化，等於再造一個猜測層——正是本輪要消滅的東西。
-    if ROUTING_MARKER not in head:
+    # 前一版寫 ``ROUTING_MARKER in head``，把「出現」當成「宣告」。但 amend 可以把任意
+    # 文字寫進 Log 之前——舊卡的驗收條件只要提到這串標記，分類就從 absent 誤升
+    # ambiguous。**入口不在使用者手打，在本 CLI 自己的 amend。** 這與 R3-001 是同一個
+    # 病的不同層：R3 用內容猜版本，R4 用存在性猜版本；兩次都把「出現」當「宣告」。
+    #
+    # 宣告的定義收緊為三個結構條件同時成立：
+    #   (1) 獨立成行——整行 strip 後恰等於標記，不接受行內出現；
+    #   (2) 位於**標頭區**——第一個 ``## `` 標題之前。amend 的驗收／驗證／資源宣告都
+    #       寫在 ``## `` 章節內，結構上碰不到標頭區；
+    #   (3) **緊鄰**唯一一行合格路由行——標記與它宣告的那一行必須相鄰。
+    #
+    # 刻意**不做**零寬／格式字元正規化：標記是否成立由位置決定，不受路由行內字元破壞
+    # 影響（前綴被 U+200B 打斷的新卡，其標記仍在標頭區且仍相鄰，落 ambiguous 而非
+    # absent）。加一層「哪些碼位可剝除」等於再造一個猜測層。
+    head_lines = head.splitlines()
+    first_heading = next(
+        (i for i, ln in enumerate(head_lines) if ln.startswith("## ")), len(head_lines)
+    )
+    header = head_lines[:first_heading]
+
+    declarations = [i for i, ln in enumerate(header) if ln.strip() == ROUTING_MARKER]
+    if not declarations:
         return CapabilityComparison(
             CAPABILITY_BASELINE_ABSENT,
             actual_capability,
             None,
-            f"卡面沒有 {ROUTING_MARKER} 標記：本卡開立於規劃期路由必填之前",
+            f"卡面標頭區沒有獨立成行的 {ROUTING_MARKER} 宣告："
+            "本卡開立於規劃期路由必填之前",
         )
-
-    # 以下：卡面**自我宣告**為新制，因此任何讀不出合格建議的情形都是 ambiguous，
-    # 不再有「退回當舊卡」這條路——宣告了就要拿得出來。
-    executor_lines = [
-        ln.rstrip() for ln in head.splitlines() if ln.startswith(_EXECUTOR_LINE_PREFIX)
-    ]
-    parsed = [(ln, _ROUTING_PARSE_RE.match(ln)) for ln in executor_lines]
-    matches = [(ln, m) for ln, m in parsed if m is not None]
-
-    if len(matches) != 1:
+    if len(declarations) > 1:
         return CapabilityComparison(
             CAPABILITY_BASELINE_AMBIGUOUS,
             actual_capability,
             None,
-            f"卡面宣告 {ROUTING_MARKER}，但合格的路由行有 {len(matches)} 行（應恰為 1）；"
-            f"另有 {len(executor_lines) - len(matches)} 行以「- 執行：」開頭卻不符合 "
-            "templates/tasks-card.md 第 4 行格式（如全形／半形空白錯置、缺分號或括號、"
-            "理由為空、查核段缺失、前綴混入零寬字元）",
+            f"卡面標頭區有 {len(declarations)} 個 {ROUTING_MARKER} 宣告（應恰為 1）",
         )
 
-    match = matches[0][1]
+    # 以下：卡面**自我宣告**為新制，因此任何讀不出合格建議的情形都是 ambiguous，
+    # 不再有「退回當舊卡」這條路——宣告了就要拿得出來。
+    routing_rows = [
+        (i, m)
+        for i, ln in enumerate(header)
+        if (m := _ROUTING_PARSE_RE.match(ln.rstrip())) is not None
+    ]
+    if len(routing_rows) != 1:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_AMBIGUOUS,
+            actual_capability,
+            None,
+            f"卡面宣告 {ROUTING_MARKER}，但標頭區合格的路由行有 {len(routing_rows)} 行"
+            "（應恰為 1）；不合格的成因包括全形／半形空白錯置、缺分號或括號、理由為空、"
+            "查核段缺失、前綴混入零寬字元",
+        )
+
+    routing_index, match = routing_rows[0]
+    if routing_index != declarations[0] + 1:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_AMBIGUOUS,
+            actual_capability,
+            None,
+            f"{ROUTING_MARKER} 宣告在標頭區第 {declarations[0] + 1} 行，但合格路由行在"
+            f"第 {routing_index + 1} 行——標記必須緊鄰它所宣告的路由行",
+        )
+
     # 匹配成功不等於四欄都合格：層級要在語彙內、理由不得全空白。任一不合格都歸
     # ambiguous——「部分正確的建議」不可當成可信基線，更不可當成相符而免除理由。
     problems = _field_problems(match)
