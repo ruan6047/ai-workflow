@@ -83,6 +83,8 @@ class Env:
     wt: Path
     target: CleanupTarget
     registry: TasksMdRegistry
+    #: 收尾開始前的遠端分支 tip。條件式刪除的租約期望值必須等於它。
+    tip_before_cleanup: str = ""
 
 
 def _empty_registry() -> TasksMdRegistry:
@@ -114,6 +116,7 @@ def _build_env(tmp_path: Path, sandbox_repo: Path, *, merged: bool) -> Env:
             repo_root=sandbox_repo, card_id=CARD_ID, branch=BRANCH, worktree_path=wt
         ),
         registry=_empty_registry(),
+        tip_before_cleanup=git(wt, "rev-parse", "HEAD").strip(),
     )
 
 
@@ -471,6 +474,9 @@ def test_decision_identical_for_release_and_reconcile(env: Env, prober) -> None:
 # ---------------------------------------------------------------------------
 
 
+_HEX40 = "0123456789abcdef0123456789abcdef01234567"
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -479,11 +485,50 @@ def test_decision_identical_for_release_and_reconcile(env: Env, prober) -> None:
         ["worktree", "remove", "--force", "/tmp/x"],
         ["push", "--force-with-lease", "origin", "x"],
         ["clean", "-f"],
+        # 以下四種是「看起來像租約、其實會退化成無條件刪除」的近似形態，
+        # 逐一擋掉——它們才是這道防線真正的邊界，不是拼字明顯的 --force。
+        # 裸 lease＝拿本機 remote-tracking ref 當期望值（可能是幾小時前的）
+        ["push", "--force-with-lease=refs/heads/x", "origin", "--delete", "x"],
+        # 短名不會被 git 認成 lease 目標，租約靜默失效
+        ["push", f"--force-with-lease=x:{_HEX40}", "origin", "--delete", "x"],
+        # 全零＝「期望 ref 不存在」，刪既有分支時是自相矛盾且 fail-open 的期望
+        ["push", f"--force-with-lease=refs/heads/x:{'0' * 40}", "origin", "--delete", "x"],
+        # 期望值不是 SHA（分支名／ref 名可被解析成任意當下值）
+        ["push", "--force-with-lease=refs/heads/x:HEAD", "origin", "--delete", "x"],
+        # 租約合法，但同一條指令另外夾帶了真正的 force
+        ["push", f"--force-with-lease=refs/heads/x:{_HEX40}", "--force", "origin", "x"],
     ],
 )
 def test_force_flags_are_rejected_at_the_git_entrypoint(tmp_path: Path, args) -> None:
     with pytest.raises(CleanupGuardError):
         default_git_runner(tmp_path, args)
+
+
+def test_the_conditional_delete_lease_is_the_only_permitted_force_flag(tmp_path: Path) -> None:
+    """唯一開的窄口：帶明確期望 SHA 的條件式刪除，必須真的能送出去。
+
+    這條與上面那組是一對——只有拒絕測試而沒有這條，把 `_forbid_force` 寫成「全擋」
+    也會全綠，而那會讓遠端刪除完全發不出去（另一種靜默失效）。
+    """
+    lease = f"--force-with-lease=refs/heads/claude/X:{_HEX40}"
+    assert cleanup.is_conditional_delete_lease(lease)
+    # 走得進 subprocess：git 會因為 tmp_path 不是 repo 而失敗，但**不是**被守衛擋下
+    result = default_git_runner(tmp_path, ["push", lease, "origin", "--delete", "claude/X"])
+    assert isinstance(result, cleanup.GitResult)
+
+
+def test_conditional_delete_args_refuses_to_degrade_into_an_unconditional_delete() -> None:
+    target = CleanupTarget(
+        repo_root=Path("/nowhere"), card_id="X", branch="claude/X", worktree_path=None
+    )
+    argv = cleanup.conditional_delete_args(target, _HEX40)
+    assert argv == [
+        "push", f"--force-with-lease=refs/heads/claude/X:{_HEX40}",
+        "origin", "--delete", "claude/X",
+    ]
+    for bad in ("", "HEAD", "0" * 40, "not-a-sha"):
+        with pytest.raises(CleanupGuardError):
+            cleanup.conditional_delete_args(target, bad)
 
 
 def test_force_rejected_even_with_a_custom_runner(tmp_path: Path) -> None:
@@ -522,7 +567,18 @@ def test_doctor_rejects_force_flag(tmp_path: Path) -> None:
         build_parser().parse_args(["doctor", str(tmp_path), "--force"])
 
 
-def test_applied_run_never_sends_a_force_flag(env: Env) -> None:
+def _delete_pushes(log: list[list[str]]) -> list[list[str]]:
+    """實際送出的遠端刪除指令。
+
+    刻意用「argv[0] == push 且含 --delete」而不是比對固定前綴：前綴比對會在指令
+    形狀一改（例如中間插入租約旗標）時**靜靜地一條都對不上**，讓「最多刪一次」之
+    類的斷言變成恆真。
+    """
+    return [argv for argv in log if argv[:1] == ["push"] and "--delete" in argv]
+
+
+def test_applied_run_sends_no_force_flag_other_than_the_delete_lease(env: Env) -> None:
+    """放行路徑的 argv 逐一比對：唯一允許出現的 ``--force*`` 是刪除租約本身。"""
     log: list[list[str]] = []
     remote = FakeRemoteState()
     result = execute_closeout_transition(
@@ -533,8 +589,18 @@ def test_applied_run_never_sends_a_force_flag(env: Env) -> None:
     assert result.mode == "applied"
     assert log, "沒有記錄到任何 git 呼叫，這條驗證會變成空頭支票"
     flat = [a for argv in log for a in argv]
-    assert not [a for a in flat if a.startswith("--force") or a in {"-f", "-D", "-M"}]
+    assert not [a for a in flat if a in {"-f", "-D", "-M"}]
+    forced = [a for a in flat if a.startswith("--force")]
+    assert all(cleanup.is_conditional_delete_lease(a) for a in forced), forced
     assert ["branch", "-d", BRANCH] in log, "本地分支刪除應使用安全的 -d"
+
+    # 租約的期望值必須是**這一次複驗讀到的 tip**，不是任意值也不是本機 ref
+    pushes = _delete_pushes(log)
+    assert len(pushes) == 1, pushes
+    leases = [a for a in pushes[0] if a.startswith("--force-with-lease=")]
+    assert leases == [f"--force-with-lease=refs/heads/{BRANCH}:{env.tip_before_cleanup}"], (
+        f"遠端刪除沒有帶上複驗讀到的 tip：{pushes[0]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -680,38 +746,51 @@ def test_interrupt_at_each_gap_then_resume(env: Env, gap: str) -> None:
 
     assert count(["worktree", "remove"]) <= 1
     assert count(["branch", "-d"]) <= 1
-    assert count(["push", "origin", "--delete"]) <= 1
+    # 恰好一次：`<= 1` 在「一條都沒對上」時也會綠，而指令形狀一改就正好是那樣。
+    assert len(_delete_pushes(log)) == 1, _delete_pushes(log)
     assert writer.calls.count("close_issue") <= 1
     assert writer.calls.count("write_release_terminal") <= 1
     assert writer.calls[-1] == "write_release_terminal"
 
 
-def _silently_noop_runner(log: list[list[str]], prefix: list[str]):
+def _is_local_branch_delete(argv: list[str]) -> bool:
+    return argv[:2] == ["branch", "-d"]
+
+
+def _is_remote_branch_delete(argv: list[str]) -> bool:
+    return argv[:1] == ["push"] and "--delete" in argv
+
+
+def _silently_noop_runner(log: list[list[str]], matches) -> object:
     """讓某個刪除指令**回報成功但實際沒做**。
 
     這不是假想：受保護分支、鏡像同步、最終一致的遠端都可能讓 `push --delete`
     回 0 而分支還在。此時效果（第 4 步）若照寫，就會產生「Issue 已關但分支仍在」
     ——正是卡面驗證明文禁止的半完成組合。
+
+    比對用述詞而非固定前綴：前綴一旦與實際 argv 對不上，這個 runner 會退化成
+    「什麼都沒攔到的透明代理」，測試照樣全綠而覆蓋整條消失。
     """
 
     def run(cwd: Path, args):
-        log.append(list(args))
-        if list(args)[: len(prefix)] == prefix:
+        argv = list(args)
+        log.append(argv)
+        if matches(argv):
             return cleanup.GitResult(0, "", "")
-        return default_git_runner(cwd, args)
+        return default_git_runner(cwd, argv)
 
     return run
 
 
 @pytest.mark.parametrize(
-    ("prefix", "still_present"),
+    ("matches", "still_present"),
     [
-        (["branch", "-d"], "local"),
-        (["push", "origin", "--delete"], "remote"),
+        (_is_local_branch_delete, "local"),
+        (_is_remote_branch_delete, "remote"),
     ],
 )
 def test_effect_is_withheld_when_cleanup_did_not_actually_complete(
-    env: Env, prefix: list[str], still_present: str
+    env: Env, matches, still_present: str
 ) -> None:
     remote = FakeRemoteState()
     writer = FakeEffectWriter(remote)
@@ -719,7 +798,10 @@ def test_effect_is_withheld_when_cleanup_did_not_actually_complete(
     result = execute_closeout_transition(
         env.target, trigger="reconcile", registry=env.registry, card_body=CARD_BODY,
         remote_facts=remote.facts(), effect_writer=writer,
-        runner=_silently_noop_runner(log, prefix), occupancy_prober=free_prober,
+        runner=_silently_noop_runner(log, matches), occupancy_prober=free_prober,
+    )
+    assert [argv for argv in log if matches(argv)], (
+        "假成功 runner 一條指令都沒攔到——它退化成了透明代理，本案例形同不存在"
     )
     assert result.mode == "applied"
     assert writer.calls == [], "清理未真正完成就寫狀態面，會造出非法半完成組合"
@@ -742,11 +824,49 @@ def test_failed_worktree_removal_stops_before_touching_the_status_face(env: Env)
         execute_closeout_transition(
             env.target, trigger="release", registry=env.registry, card_body=CARD_BODY,
             remote_facts=remote.facts(), effect_writer=writer,
-            runner=_silently_noop_runner(log, ["worktree", "remove"]),
+            runner=_silently_noop_runner(log, lambda a: a[:2] == ["worktree", "remove"]),
             occupancy_prober=free_prober,
         )
     assert writer.calls == []
     assert not [a for argv in log for a in argv if a == "-D"]
+    assert_work_intact(env)
+
+
+def test_a_failing_worktree_removal_stops_the_run_instead_of_being_ignored(env: Env) -> None:
+    """`git worktree remove` **回非 0**（不是假成功）時必須停下來。
+
+    這條原本沒有：既有案例只覆蓋「回 0 卻沒做」，於是把失敗檢查整個拿掉的突變體
+    活了下來——後果是一個移不掉的 worktree 被當成已移除，接著往下刪分支。
+
+    斷言的是**停在哪一步**，不只是「有丟例外」：拿掉檢查之後這條路徑照樣會炸——
+    只是晚一步，炸在 `branch -d`（分支還被 checkout 著）。只驗 `pytest.raises` 會
+    因為錯誤的理由而綠，與上一輪 M30 同型。
+    """
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    log: list[list[str]] = []
+
+    def failing(cwd: Path, args):
+        argv = list(args)
+        log.append(argv)
+        if argv[:2] == ["worktree", "remove"]:
+            return cleanup.GitResult(1, "", "fatal: 無法移除 worktree（模擬失敗）")
+        return default_git_runner(cwd, argv)
+
+    with pytest.raises(CleanupGuardError, match="worktree remove"):
+        execute_closeout_transition(
+            env.target, trigger="release", registry=env.registry, card_body=CARD_BODY,
+            remote_facts=remote.facts(), effect_writer=writer,
+            runner=failing, occupancy_prober=free_prober,
+        )
+    assert [a for a in log if a[:2] == ["worktree", "remove"]], (
+        "失敗 runner 沒攔到 worktree remove，本案例形同不存在"
+    )
+    assert not [a for a in log if a[:2] == ["branch", "-d"]], (
+        "worktree 移除失敗卻繼續往下刪分支——失敗檢查沒有真的擋住這一步"
+    )
+    assert not _delete_pushes(log)
+    assert writer.calls == []
     assert_work_intact(env)
 
 
@@ -854,12 +974,138 @@ def test_remote_delete_refused_when_tip_moved_after_the_guard_passed(
     assert _content_recoverable_from_remote(tmp_path, env.remote, "resumed") == RESCUED_WORK
 
 
+# ---------------------------------------------------------------------------
+# 6.2 R2-001：複驗**之後**、刪除送出**之前**的窗
+# ---------------------------------------------------------------------------
+
+
+def _runner_pushing_between_recheck_and_delete(other: Path, log: list[list[str]], state: dict):
+    """在遠端刪除指令送進 subprocess 的前一刻，讓另一個 clone 推入新提交。
+
+    注入點的選擇是這條測試的全部價值所在。`step_hook("after_delete_local_branch")`
+    **不是**這個窗：那個時點在「遠端刪除這一步開始之前」，注入的提交在複驗跑的時候
+    就已經存在，於是複驗自己就會拒絕——那條測試驗的是複驗本身，不是複驗與刪除之間
+    的時間差。上一輪的實作在複驗與刪除之間沒有 compare-and-swap，查核者用的正是這
+    個窗，而既有測試一條都沒轉紅。
+
+    這裡改用 runner 攔截：`_run()` 會先組好含租約的完整 argv、送進 runner，再由
+    runner 交給 subprocess。在 runner 裡注入，等於卡在「複驗已回傳可刪」與「git 真
+    的被執行」之間——就是被打穿的那一段。
+    """
+
+    def run(cwd: Path, args):
+        argv = list(args)
+        if _is_remote_branch_delete(argv) and not state["injected"]:
+            state["injected"] = True
+            state["new_sha"] = _push_new_commit_from_other_clone(other)
+        log.append(argv)
+        return default_git_runner(cwd, argv)
+
+    return run
+
+
+def test_remote_delete_refused_when_the_tip_moves_between_recheck_and_push(
+    env: Env, tmp_path: Path
+) -> None:
+    """R2-001：複驗回傳「可刪」之後、`push` 送出之前推入的新提交也不得被刪掉。
+
+    複驗是**讀**，不是保證。關掉這段窗的是條件式刪除：複驗讀到的 tip 原樣成為
+    ``--force-with-lease=refs/heads/<branch>:<tip>`` 的期望值，遠端在這之間變動過，
+    git 在送出任何更新指令之前就以 ``(stale info)`` 拒絕。
+    """
+    other = _other_clone(tmp_path, env.remote)
+    remote_state = FakeRemoteState()
+    writer = FakeEffectWriter(remote_state)
+    log: list[list[str]] = []
+    state: dict = {"injected": False, "new_sha": ""}
+
+    result = execute_closeout_transition(
+        env.target, trigger="release", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote_state.facts(), effect_writer=writer,
+        runner=_runner_pushing_between_recheck_and_delete(other, log, state),
+        occupancy_prober=free_prober,
+    )
+
+    # 0) 反空轉：注入沒發生的話，底下每一條都會因為錯誤的理由而綠
+    assert state["injected"], "注入沒有發生——本案例形同不存在"
+    assert state["new_sha"] and state["new_sha"] != env.tip_before_cleanup
+
+    # 1) **先斷言真正重要的那件事**：別人的提交還在。
+    #    斷言順序刻意如此——租約被拿掉時，第一個轉紅的必須是「工作沒了」，而不是
+    #    某個欄位少一筆。前者說得出後果，後者只說得出記帳不符。
+    assert _remote_branch_exists(env.repo, "origin", BRANCH), "遠端分支連同新提交被刪掉了"
+    assert _remote_tip(env.repo, BRANCH) == state["new_sha"]
+    assert _content_recoverable_from_remote(tmp_path, env.remote, "cas") == RESCUED_WORK
+
+    # 2) 複驗當時是**通過**的（這正是與 6.1 的差別），擋下刪除的是租約
+    outcomes = [(c.check_id, c.outcome) for c in result.recheck_checks]
+    assert outcomes == [
+        (cleanup.RECHECK_REMOTE_ID, "pass"),
+        (cleanup.REMOTE_DELETE_CAS_ID, "fail"),
+    ], outcomes
+    assert result.mode == "aborted", result
+    assert result.actions_aborted == ("delete_remote_branch",)
+    assert result.actions_performed == ("remove_worktree", "delete_local_branch")
+    assert any(cleanup.REMOTE_DELETE_CAS_ID in r for r in result.blocking_reasons)
+
+    # 3) 送出的確實是條件式刪除，且租約期望值是複驗讀到的那個 tip（不是新的）
+    pushes = _delete_pushes(log)
+    assert len(pushes) == 1, pushes
+    assert f"--force-with-lease=refs/heads/{BRANCH}:{env.tip_before_cleanup}" in pushes[0]
+
+    # 4) 效果扣住、狀態停在合法暫時態
+    assert writer.calls == []
+    assert remote_state.issue_open is True and remote_state.terminal_written is False
+    assert result.state_after == "cleanup_in_progress"
+    assert result.legal_state
+
+    # 5) 重跑不會「第二次就刪掉」：前提複驗此時看到未併入的遠端 tip，直接純偵測
+    resumed = execute_closeout_transition(
+        env.target, trigger="reconcile", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote_state.facts(), effect_writer=writer, occupancy_prober=free_prober,
+    )
+    assert resumed.mode == "detect_only"
+    assert any("merge_verified_remote" in r for r in resumed.blocking_reasons)
+    assert _content_recoverable_from_remote(tmp_path, env.remote, "cas-resumed") == RESCUED_WORK
+
+
+def test_a_rejected_conditional_delete_aborts_rather_than_raising(env: Env) -> None:
+    """遠端拒絕刪除時的處置必須與守衛其餘拒絕路徑同型：aborted ＋ 效果扣住。
+
+    不是丟例外（呼叫端拿不到結構化理由），也不是靜默略過（會讓 `applied` 說謊）。
+    這裡用一個只讓刪除指令回非 0 的 runner，與「遠端真的拒絕」等價。
+    """
+    remote_state = FakeRemoteState()
+    writer = FakeEffectWriter(remote_state)
+
+    def refusing(cwd: Path, args):
+        argv = list(args)
+        if _is_remote_branch_delete(argv):
+            return cleanup.GitResult(1, "", "! [rejected] (delete) -> x (stale info)")
+        return default_git_runner(cwd, argv)
+
+    result = execute_closeout_transition(
+        env.target, trigger="reconcile", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote_state.facts(), effect_writer=writer,
+        runner=refusing, occupancy_prober=free_prober,
+    )
+    assert result.mode == "aborted"
+    assert result.actions_aborted == ("delete_remote_branch",)
+    assert [c.check_id for c in result.recheck_checks][-1] == cleanup.REMOTE_DELETE_CAS_ID
+    assert any("stale info" in r for r in result.blocking_reasons)
+    assert writer.calls == [], "刪除被拒卻寫了狀態面"
+    assert _remote_branch_exists(env.repo, "origin", BRANCH)
+    assert result.state_after == "cleanup_in_progress"
+    assert result.legal_state
+
+
 def test_recheck_reports_absent_remote_branch_as_nothing_to_delete(env: Env) -> None:
     """二次確認的 `absent` 不是拒絕：遠端分支本來就沒了，跳過即可，不得誤報阻擋。"""
     git(env.repo, "push", "-q", "origin", "--delete", BRANCH)
-    verdict, check = cleanup.recheck_remote_branch(env.target, default_git_runner)
-    assert verdict == "absent"
-    assert check.outcome == "pass"
+    decision = cleanup.recheck_remote_branch(env.target, default_git_runner)
+    assert decision.verdict == "absent"
+    assert decision.check.outcome == "pass"
+    assert decision.expected_tip is None, "沒有可刪對象卻帶回期望 tip＝組得出租約"
 
 
 def test_recheck_refuses_when_remote_is_unreadable(env: Env) -> None:
@@ -870,9 +1116,17 @@ def test_recheck_refuses_when_remote_is_unreadable(env: Env) -> None:
             return cleanup.GitResult(128, "", "fatal: unable to access remote")
         return default_git_runner(cwd, args)
 
-    verdict, check = cleanup.recheck_remote_branch(env.target, broken)
-    assert verdict == "refuse"
-    assert check.outcome == "unobservable"
+    decision = cleanup.recheck_remote_branch(env.target, broken)
+    assert decision.verdict == "refuse"
+    assert decision.check.outcome == "unobservable"
+    assert decision.expected_tip is None
+
+
+def test_recheck_hands_back_the_tip_it_judged(env: Env) -> None:
+    """複驗必須把據以裁決的 tip 一起交出來——否則刪除只能自己再讀一次，窗又開了。"""
+    decision = cleanup.recheck_remote_branch(env.target, default_git_runner)
+    assert decision.verdict == "delete"
+    assert decision.expected_tip == env.tip_before_cleanup
 
 
 def test_recheck_runs_on_the_happy_path_too(env: Env) -> None:

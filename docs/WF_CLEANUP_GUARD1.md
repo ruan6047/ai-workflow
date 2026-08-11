@@ -80,6 +80,37 @@ canonical `AI_WORKFLOW.md:146` 已經寫了：「回收前先檢查未提交變�
 
 **拒絕之後這一次 run 叫什麼**：`CloseoutResult.mode` 因此有第三個值 `aborted`。一個已經移除了 worktree 的 run 自稱「純偵測」是不誠實的，所以不併進 `detect_only`；呼叫端只需記住**只有 `applied` 代表轉換完成**。效果（第 4 步）一併扣住，狀態停在合法的 `cleanup_in_progress`，重跑會重新觀測——此時前提檢查會看到未併入的遠端 tip，直接純偵測，不會「第二次就刪掉」。
 
+### 3.3 二次確認不夠：刪除必須是**條件式**的（R2-001）
+
+上一輪把 §3.2 當成修好了。查核者 R2-001 用隔離實測證明沒有：
+
+> 在拋棄式 repo 內用自訂 git runner，在 `recheck_remote_branch()` 回傳 `delete` **之後**、`git push --delete` 送出**之前**推入一筆新提交 → `mode=applied`、遠端分支被刪、新提交消失。
+
+診斷很直白：**複驗是「讀」，刪除是「寫」，兩者之間沒有 compare-and-swap**。多讀一次只是把窗變窄，沒有把它關上。而既有的回歸測試一條都沒轉紅——`test_cleanup.py` 的注入點打在 `after_delete_local_branch`，那是「遠端刪除這一步開始之前」，注入的提交在複驗執行時就已存在，於是複驗自己就會拒絕。**那條測試驗的是複驗本身，不是複驗到刪除之間的時間差。**
+
+修法照需求方裁定先試**條件式刪除**：複驗讀到的那個 tip 不是印出來就算，它原樣成為刪除指令的租約期望值。
+
+```
+recheck_remote_branch() → RemoteDeleteDecision(verdict="delete", expected_tip=<tip>)
+                        → conditional_delete_args()
+                        → git push --force-with-lease=refs/heads/<branch>:<tip> origin --delete <branch>
+```
+
+檢查與刪除自此是**同一個原子操作**，不是先後兩件事。`RemoteDeleteDecision` 把 tip 一起交出來就是為了讓「不用它」變成寫不出來的東西——遠端刪除只有 `conditional_delete_args()` 一條路，而它沒有期望 tip 就組不出指令（丟 `CleanupGuardError`，不退回無條件刪除）。
+
+**為什麼 `--force-with-lease` 沒有牴觸「`--force` 不可用」**：它與其他 force 旗標**方向相反**。其他 force 說的是「不管遠端現在是什麼都照做」，它說的是「遠端不是我剛讀到的那個值就不要做」——正是原本缺的那個 CAS。`_forbid_force()` 因此只開一個**形狀完全固定**的窄口（`_LEASE_RE`），三個要求缺一不放行：
+
+| 被擋掉的近似寫法 | 為什麼危險 |
+|---|---|
+| 裸 `--force-with-lease`（無 `=`） | 拿本機 remote-tracking ref 當期望值，那份 ref 可能是幾小時前 fetch 的 |
+| `--force-with-lease=<短名>:<sha>` | 短名不會被 git 認成 lease 目標，租約**靜默失效** |
+| `--force-with-lease=refs/heads/x:0000…` | 全零＝「期望此 ref 不存在」，刪既有分支時自相矛盾且 fail-open |
+| `--force-with-lease=refs/heads/x:HEAD` | 期望值不是固定 SHA，會在送出當下才解析成任意值 |
+
+**刪除被拒的處置與守衛其餘拒絕路徑同型**：不丟例外（呼叫端拿不到結構化理由）、不靜默略過（會讓 `applied` 說謊），而是記一筆具名的 `remote_delete_lease_refused`、降 `aborted`、效果扣住。**不重試，也不降級為無條件刪除**——重試只會在遠端真的變動時把工作刪掉。
+
+**成敗判定只看 git 自己的 returncode**。`default_git_runner` 不經 shell、不接管線：`git push … | tail -3` 之後的 `$?` 是 `tail` 的結果，一個被 `(stale info)` 拒絕的 push 會看起來像成功。本 repo 已因這個形態出過一次事故（一個 review 被拒但後續指令照跑），所以它在 `default_git_runner` 的 docstring 裡被釘成不可改的約定。
+
 ## 4. 唯一機械 executor
 
 `release` 與 `reconcile --apply` 白名單第 2 條呼叫的是同一個 `execute_closeout_transition()`，共用同一個 `evaluate_cleanup_guard()`。
@@ -161,7 +192,9 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 
 ## 7. 驗證
 
-`cli/tests/test_cleanup.py`（57 例）＋ `cli/tests/test_release_cleanup.py`（13 例）＋ `cli/tests/test_doctor.py` 的預覽段。全部在 pytest `tmp_path` 沙箱 repo 內操作真實 git worktree、真實 bare remote，不碰任何實際專案。
+`cli/tests/test_cleanup.py`（68 例，本輪 57 → 68）＋ `cli/tests/test_release_cleanup.py`（14 例，13 → 14）＋ `cli/tests/test_doctor.py` 的預覽段。全部在 pytest `tmp_path` 沙箱 repo 內操作真實 git worktree、真實 bare remote，不碰任何實際專案。
+
+`cd cli && uv run pytest -q`：**379 passed**（R2-001 修正前的基線 **367 passed**，新增 12 例、無退化、無跳過）。
 
 - **五種危險情境全數拒絕**，且每一條都以 `assert_work_intact()` 核對**拒絕後工作內容仍完整存在**——檔案內容、本地分支、遠端分支、stash 逐項驗，不是只驗回傳碼。
 - **故障注入**：`step_hook` 在六個步驟間隙各丟一次例外，續作後必須到達 `completed`，中斷當下必須落在合法態，且每個破壞性 argv 在兩次執行加總後最多出現一次。
@@ -180,6 +213,23 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 - 重跑一次也不會刪：前提複驗此時看到未併入的遠端 tip，直接純偵測，內容再驗一次仍在。
 
 參數化成兩個分支覆蓋二次確認的兩種拒絕理由：新提交**不在**本地物件庫時是 `unobservable`；先 `git fetch` 讓本機看得見它之後則是 `merge-base` 不成立的 `fail`。沒有後半，只要有人在別處先 fetch 過，守衛就會退回舊行為而測試不知情。
+
+### 7.1.1 R2-001 的回歸測試：注入點差一步，覆蓋就差一整條
+
+上一條測試**驗不到** R2-001，而且原因要講清楚，否則同型的假綠會再犯一次。`step_hook("after_delete_local_branch")` 的時點在「遠端刪除這一步開始之前」——注入的提交在複驗跑的時候已經存在，複驗會正確拒絕，測試因此綠。它證明的是「複驗會擋住它在自己執行前就看得到的變動」，而 R2-001 問的是「複驗**之後**才發生的變動」。
+
+`test_remote_delete_refused_when_the_tip_moves_between_recheck_and_push` 改用 **runner 攔截**：`_run()` 先組好含租約的完整 argv、送進 runner，runner 才交給 subprocess。在 runner 裡注入，等於卡在「複驗已回傳可刪」與「git 真的被執行」之間，就是被打穿的那一段。
+
+四條反假綠的設計：
+
+1. **注入必須真的發生**（`assert state["injected"]`）。攔截述詞一旦與實際 argv 對不上，runner 會退化成透明代理而整條案例形同不存在。
+2. **先斷言工作還在，再斷言記帳**。租約被拿掉時第一個轉紅的是「遠端分支連同新提交被刪掉了」，而不是某個欄位少一筆——前者說得出後果，後者只說得出帳不符。
+3. **複驗這一筆必須是 `pass`**。這正是與 §7.1 的分野：擋下刪除的是租約，不是複驗；若複驗自己就擋住了，代表注入又跑到窗外去了。
+4. **租約的期望值必須等於複驗讀到的 tip**，逐字比對送出的 argv。用一個當下重讀的值當租約，等於把 CAS 換回兩件事。
+
+同一個窗在 CLI 層另有一條（`test_release_cleanup.py`），斷言 `rc == 5` 且狀態面一個字都沒寫。
+
+所有比對 argv 的地方一律改用**述詞**而非固定前綴。這不是預防性潔癖：本輪加上租約旗標後，`argv[:3] == ["push", "origin", "--delete"]` 立刻一條都對不上，`test_release_fails_when_cleanup_reported_success_but_did_not_complete` 的假成功 runner 當場退化成透明代理——它是被實際跑出來抓到的，不是想出來的。
 
 ### 7.2 R1-002 的接線怎麼證明
 
@@ -203,6 +253,38 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 - 兩個 repo 目前都沒有 `📦已合併` 的活卡，所以預覽段輸出零列——**守衛在真實收尾情境下的完整放行路徑尚未在真資料上跑過**，那部分的證據全部來自沙箱 repo（真 git、真 remote，但非真卡）。
 - `--registry` 只支援 `tasks-md`／`none`；已 cutover 到 GitHub Issues 的專案，其活卡讀不進 doctor 預覽（`registry.py` 未改動）。`release --cleanup` 這條路徑不受此限：它就地把 Project items 轉成 `RegisteredCard`（`handoff_cmd.registry_from_items`）。
 - `release --cleanup` 尚未對真實 Project／Issue 實跑過——它會關 Issue 與寫終態，屬 T4 不可逆操作，**須需求方 sign-off 後才做**。目前證據全來自真 git ＋ 假 GitHub（`ReleaseGhRunner`）。
+
+### 7.5 條件式刪除：對真實 GitHub 遠端**沒有**實證，以及替代證據到哪裡為止
+
+先講結論：**本輪沒有對真實 GitHub 遠端驗證過條件式刪除**。嘗試在 `origin` 上建一條拋棄式探針分支來實測，被執行環境的權限層擋下（`git push` 到真實遠端不被允許），未再嘗試繞道。以下是替代證據，以及它證明了什麼、沒證明什麼。
+
+替代證據在拋棄式本機 bare repo 上做，除了重現需求方的結果，另外用 `GIT_TRACE_PACKET` 把**線路上實際送了什麼**看出來：
+
+| 觀測 | 結果 |
+|---|---|
+| 租約過期時（另一個 clone 已推入新提交） | `! [rejected] (delete) -> feature (stale info)`，git returncode **1**，遠端分支與新提交存活，重新 clone 讀得回內容 |
+| 租約相符時 | `- [deleted] feature`，returncode **0** |
+| 被拒那次的線路內容 | 客戶端在收到 ref advertisement 後，**只送出一個 flush（`0000`）——一條更新指令都沒送** |
+| 被接受那次的線路內容 | `<old-oid> 0000…0000 refs/heads/feature`，刪除指令**帶著非零的 old-oid** |
+| 無租約的普通刪除 | old-oid **相同**（取自同一次 advertisement） |
+
+由此可以推出兩件事，而且它們是**傳輸層無關**的：
+
+1. **租約檢查完全發生在客戶端**，比對的對象是伺服器在同一條連線裡剛送出的 ref advertisement，不是本機的 remote-tracking ref。ref advertisement 是每一種傳輸（含 GitHub 的 HTTPS／SSH）都必有的第一步，因此這一層在 GitHub 上的行為沒有理由不同——它不依賴伺服器做任何額外的事。
+2. **客戶端只在 advertisement 與租約相符時才送出指令**，而送出的 old-oid 就是那個值。所以只要伺服器對 delete 指令做標準的 old-oid 交換檢查，我們的期望值就會被伺服器再驗一次。
+
+**沒有證明的部分，逐條列出**：
+
+- GitHub 的 receive-pack 是否對 delete 指令執行 old-oid CAS——本機 `git` 的 receive-pack 會（`ref_transaction_delete` 收 old_oid），GitHub 不是逐字的 stock git。這一條只有推定。
+- GitHub 的 ref advertisement 是否恆為最新（而非來自落後的 replica）。若 advertisement 落後，租約會拿舊值比舊值而通過。這個殘餘風險**所有 `--force-with-lease` 的使用者都共有**，客戶端無法自行消除。
+- 真實 GitHub 是否可能對帶租約的 delete 有自訂行為（例如整個忽略租約）。
+
+**這些殘餘風險不構成退回 fail-closed 的理由**，因為失敗方向是安全的：
+
+- 若 GitHub **忽略**租約，行為退化成本輪之前的無條件刪除——不比現況差，且窗仍比修改前窄（複驗仍在）。
+- 若 GitHub **誤拒**合法的刪除，處置是 `aborted` ＋ 效果扣住 ＋ `rc=5`，遠端分支留著等人處理——雜訊，不是資料遺失。
+
+因此保留條件式刪除，並把「對真實 GitHub 首次實跑」列為未關的洞（§9 第 8 項）與 sign-off 條件，而不是宣稱已驗證。
 
 ### 7.4 突變測試
 
@@ -232,6 +314,28 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 
 > M30 是最值得記的一個：測試本來就是綠的，而且斷言的正是想要的行為——它只是**因為錯誤的理由而綠**。exit code 相同不代表路徑相同，突變測試是唯一把這件事指出來的東西。
 
+**第三輪（R2-001）另跑 11 個突變體，11/11 被殺**：
+
+| 突變體 | 內容 | 結果 |
+|---|---|---|
+| M34 | 拿掉租約，退回無條件刪除（＝被打穿的那個版本） | KILLED |
+| M35 | `_forbid_force` 的阻擋整個失效 | KILLED |
+| M36 | 反向過緊：連合法租約也擋（遠端刪除從此發不出去） | KILLED |
+| M37 | 租約接受全零期望值 | KILLED |
+| M38 | 租約接受短名 refspec | KILLED |
+| M39 | 條件式刪除被拒仍當成功 | KILLED |
+| M40 | 刪除被拒改丟例外而非降 `aborted` | KILLED |
+| M41 | `worktree remove` 的失敗檢查失效 | KILLED（**第一輪存活**，見下） |
+| M42 | 複驗不再交出 `expected_tip` | KILLED |
+| M22 | 複驗退回「只看分支還在」（複驗本輪未退化） | KILLED |
+| M19 | 效果不再要求清理已完成（指定複驗項） | KILLED |
+
+三件比「11/11」本身更值得記的事：
+
+1. **M34 對舊測試（§7.1）跑出 SURVIVED，對新測試（§7.1.1）跑出 KILLED。** 這是「注入點差一步、覆蓋就差一整條」的直接證據，不是論述。
+2. **M36 是刻意加的反向突變體。** 只驗「非法 force 被擋」的話，把 `_forbid_force` 寫成全擋也會全綠——而那會讓遠端刪除永遠發不出去，是另一種靜默失效。一道防線要同時釘住「該擋的擋住」與「該過的過得去」。
+3. **M41 兩次才殺掉，而第一次的「殺掉」是假的。** 拿掉 `worktree remove` 的失敗檢查之後，這條路徑照樣會丟 `CleanupGuardError`——只是晚一步，炸在 `branch -d`（分支還被 checkout 著）。只驗 `pytest.raises` 會因為錯誤的理由而綠，與 M30 同型。補上「停在哪一步」的斷言（沒有嘗試過 `branch -d`、沒有送出任何刪除 push）之後才真的殺掉。順帶補上了一個既有缺口：原本沒有任何案例讓 `worktree remove` **回非 0**（既有案例只覆蓋「回 0 卻沒做」）。
+
 ## 8. 本卡不做的事
 
 - **不執行第 5–7 步**（卡檔封存／Ledger 投影／對帳三件套）：它們不寫狀態面，也不在本卡資源宣告內。
@@ -246,8 +350,11 @@ Issue 開關狀態讀不到時**fail closed**（exit 5，不動手）：猜「�
 
 1. **reconcile 側完全沒有守衛**（§4.1）。核心痛點——「無人看管的批次修復刪掉別人的工作」——只在 release 這一半被關上。
 2. **effect writer 回報成功不等於狀態面真的變了**。executor 在 writer 回傳後即認定第 4 步完成（`RemoteCardFacts(True, False)`），而不是回頭重讀 GitHub。這與 `push --delete` 回 0 卻沒刪掉是同一類問題——後者已被 `cleanup_done` 複驗接住，前者沒有。修法是給 executor 一個「重讀狀態面」的可注入讀取器，本輪未做。
+   > **本輪嚴重度上升，理由要記下來。** R2-001 證明的不是「複驗漏了一項」，而是「**讀一次不構成保證**」——讀與寫之間沒有 CAS 時，窗只會變窄不會關上。這條洞是同一個形狀在狀態面的翻版：writer 回傳成功只是一次寫入的回應，不是回頭讀到的事實，而 GitHub 側沒有 git 那種現成的 `--force-with-lease` 可用。git 這一側能修是因為傳輸協定本來就帶 old-oid 交換；狀態面要等價的保證，得自己做「讀取 → 帶條件寫入 → 重讀驗證」，成本高得多。**在那之前，這條洞不應再被描述為「與 §3.3 同類、已被同一招接住」。**
 3. **`--cleanup` 不是預設**，所以既有的 status-only release 仍會持續造出 `illegal_terminal_before_cleanup`（§4.2）。這是刻意的取捨，代價以警示與測試釘住，但洞還在。
 4. **`release --cleanup` 未對真實 Project／Issue 實跑**（§7.3）。T4 最高風險項須需求方 sign-off。
-5. **二次確認只覆蓋遠端分支刪除**。worktree 移除與本地分支刪除靠 git 自己的拒絕（`worktree remove` 不加 `--force` 會拒絕髒工作樹，`branch -d` 會拒絕未合併分支）當第二道防線，本模組沒有再加一層自己的複驗。
+5. **條件式刪除只覆蓋遠端分支**。worktree 移除與本地分支刪除靠 git 自己的拒絕（`worktree remove` 不加 `--force` 會拒絕髒工作樹，`branch -d` 會拒絕未合併分支）當第二道防線，本模組沒有再加一層自己的複驗，也沒有等價的 CAS。可接受的理由是這兩者刪掉的是**本機**副本、且都有 reflog；遠端分支被刪則可能是唯一一份。
 6. **`no_stash` 只認得 git 預設的 stash 訊息格式**。使用者自訂訊息的 stash 會被判 `unobservable`（fail closed，安全），但實務上會變成擋住合法收尾的雜訊。
 7. **第 4 步的「Issue 留結案留言」未實作**。`worktree-lifecycle.md` 第 11 行第 4 點寫的是「留結案留言**並**關閉」；本輪只關閉，留痕仍走既有的 body `## Log` append（與其餘 wfcli 指令一致）。差在留言是外部可見的收據，body Log 不是——這條差異刻意列出來，不當成已完成。
+8. **條件式刪除未對真實 GitHub 遠端實跑**（§7.5）。全部證據來自拋棄式本機 bare repo ＋ 線路封包追蹤；嘗試在真實遠端建拋棄式探針分支被執行環境權限層擋下。**失敗方向是安全的**（忽略租約＝退回修改前行為；誤拒＝雜訊而非資料遺失），但「已驗證」三個字現在不能說。列為 sign-off 條件。
+9. **殘餘窗：GitHub 的 ref advertisement 到套用刪除之間**。租約檢查在客戶端對 advertisement 完成，這段窗由遠端自己的 ref transaction 負責，客戶端無法涵蓋。它是毫秒級、且與本卡修掉的「整段本機清理」不同量級，但它存在，且所有 `--force-with-lease` 的使用者共有。

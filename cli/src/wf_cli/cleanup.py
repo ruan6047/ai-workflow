@@ -43,14 +43,23 @@ canonical ``AI_WORKFLOW.md:146``：「lease 可續約、可到期回收；**回�
 ／``-D`` 等旗標的 git 呼叫會在送進 subprocess 之前就丟 `CleanupGuardError`。這不是
 文件約定，是呼叫點的硬阻擋——日後有人「順手加個 --force」會直接炸在測試上。
 
-## 遠端刪除前的二次確認（R1-001）
+## 遠端刪除是**條件式**的（R1-001 → R2-001）
 
 前提檢查與 `git push --delete` 之間**有一段時間窗**：本機 worktree 移除與本地分支
 刪除就發生在其中。另一個 clone 在這段窗內把新提交推上同一條遠端分支時，只重新確認
 「分支還在」是不夠的——分支確實還在，但它指的已經是別人的新工作。
+
 `recheck_remote_branch()` 因此在按下刪除鍵前重讀 tip SHA、確認該 commit 可觀測、
-重驗祖先關係；任一不成立即拒絕該次刪除（`GuardMode` 降 ``detect_only``），
-本次 run 以 `mode="aborted"` 收場，效果（第 4 步）一併扣住。
+重驗祖先關係。**但「重讀」只是讀**：R2-001 的隔離實測證明，在 recheck 回傳
+``delete`` 之後、`push --delete` 送出之前推入的新提交仍會被刪掉——兩者之間沒有
+compare-and-swap，窗只是變窄，沒有被關上。
+
+修法是讓檢查與刪除變成**同一個原子操作**：recheck 讀到的那個 tip 原樣成為刪除的
+租約期望值（`RemoteDeleteDecision.expected_tip` → `conditional_delete_args()` →
+``--force-with-lease=refs/heads/<branch>:<tip>``）。遠端在這之間變動過，git 在
+**送出任何更新指令之前**就以 ``(stale info)`` 拒絕（見下方 `_LEASE_RE` 的註解）。
+拒絕即 `mode="aborted"`，效果（第 4 步）一併扣住——與守衛其餘拒絕路徑同型，
+不靜默略過、不重試、不降級為無條件刪除。
 """
 
 from __future__ import annotations
@@ -112,9 +121,38 @@ class CleanupGuardError(RuntimeError):
 _FORBIDDEN_EXACT = frozenset({"-f", "-D", "-M", "--delete-force"})
 _FORBIDDEN_PREFIX = "--force"
 
+#: **唯一**被放行的 ``--force*`` 形態：帶明確期望 SHA 的條件式刪除租約。
+#:
+#: 之所以只開這一個窄口，是因為它與其他 force 旗標**方向相反**：其他 force 的語意
+#: 是「不管遠端現在是什麼都照做」，而這一個是「遠端不是我剛讀到的那個值就不要做」
+#: ——它正是本模組原本缺的 compare-and-swap，不是繞過守衛的後門。
+#:
+#: 三個形狀要求，缺一不放行（每一個都對應一種會退化回無條件刪除的寫法）：
+#:
+#: 1. **必須有 ``=``**：裸的 ``--force-with-lease`` 是「拿本機 remote-tracking ref
+#:    當期望值」——那份 ref 可能是幾小時前 fetch 的，正是本卡要消滅的 stale
+#:    本機資訊。
+#: 2. **必須是 refspec 全名**（``refs/heads/<branch>``）：短名不會被 git 認成
+#:    lease 的目標，租約會靜默失效。
+#: 3. **期望值必須是 40／64 碼 hex 且非全零**：全零＝「期望這個 ref 不存在」，
+#:    對「刪除一條既有分支」而言是自相矛盾的期望，而且它會讓租約在分支已消失時
+#:    通過——與 fail-closed 相反。
+_LEASE_RE = re.compile(
+    r"^--force-with-lease=refs/heads/(?P<ref>[^\s:~^?*\[\\]+)"
+    r":(?P<expect>[0-9a-f]{40}|[0-9a-f]{64})$"
+)
+
+
+def is_conditional_delete_lease(arg: str) -> bool:
+    """這個 argv 是不是**唯一被允許**的那種租約旗標。"""
+    m = _LEASE_RE.match(arg)
+    return m is not None and set(m.group("expect")) != {"0"}
+
 
 def _forbid_force(args: Sequence[str]) -> None:
     for a in args:
+        if is_conditional_delete_lease(a):
+            continue
         if a in _FORBIDDEN_EXACT or a.startswith(_FORBIDDEN_PREFIX):
             raise CleanupGuardError(
                 f"reconcile／release 路徑禁用強制旗標（收到 {a!r}）。"
@@ -137,6 +175,13 @@ GitRunner = Callable[[Path, Sequence[str]], GitResult]
 
 
 def default_git_runner(cwd: Path, args: Sequence[str]) -> GitResult:
+    """執行 git 並回傳**git 自己的** returncode。
+
+    刻意不經 shell（無 ``shell=True``、無管線、無 ``tee``／``tail``）：一旦把 git 接
+    進管線，``$?`` 就變成管線最後一段的結果，一個被 ``(stale info)`` 拒絕的 push 會
+    看起來像成功。本 repo 已經因為這個形態出過一次事故（review 被拒卻照跑後續指令），
+    所以判斷成敗的唯一依據是 `GitResult.returncode`，而它只可能來自 git 本身。
+    """
     _forbid_force(args)
     proc = subprocess.run(
         ["git", "-C", str(cwd), *args], capture_output=True, text=True, check=False
@@ -608,14 +653,49 @@ def evaluate_cleanup_guard(
 #: **不同時刻**的同一件事，混用會讓報告看不出「是在哪一刻被擋下的」。
 RECHECK_REMOTE_ID = "remote_tip_still_merged"
 
+#: 條件式刪除被遠端拒絕時的 check_id。與 `RECHECK_REMOTE_ID` 分開命名：後者是
+#: 「我讀到的當下不該刪」，前者是「我讀到的當下可以刪，但送出的那一刻遠端已經不是
+#: 那個值了」——兩者是不同時刻、不同機制擋下的，混用會讓報告看不出是哪一層接住的。
+REMOTE_DELETE_CAS_ID = "remote_delete_lease_refused"
+
 #: 對「該不該送出 push --delete」的三值裁決。``absent`` 不是放行也不是拒絕：
 #: 遠端分支已不存在，本來就無事可做。
 RemoteDeleteVerdict = Literal["delete", "absent", "refuse"]
 
 
-def recheck_remote_branch(
-    target: CleanupTarget, runner: GitRunner
-) -> tuple[RemoteDeleteVerdict, GuardCheck]:
+@dataclass(frozen=True)
+class RemoteDeleteDecision:
+    """複驗的裁決，**連同它據以裁決的那個 tip 一起回傳**。
+
+    `expected_tip` 不是附帶資訊而是裁決的一部分：它會原樣成為刪除指令的租約期望
+    值，讓「檢查」與「刪除」共用同一個觀測值。把它丟掉再送一個無條件刪除，就是
+    R2-001 被隔離實測打穿的那個版本。
+    """
+
+    verdict: RemoteDeleteVerdict
+    check: GuardCheck
+    #: 僅 ``verdict == "delete"`` 時非 None。
+    expected_tip: str | None = None
+
+
+def conditional_delete_args(target: CleanupTarget, expected_tip: str) -> list[str]:
+    """組出**唯一**被允許的遠端刪除指令：帶租約的條件式刪除。
+
+    本模組沒有第二條刪遠端分支的路——想刪就得先有一個期望 tip，而期望 tip 只能來自
+    `recheck_remote_branch()`。租約字串在回傳前自我驗證一次；驗不過即丟
+    `CleanupGuardError`，而不是靜靜地退回成無條件刪除（那正是要防的退化方向）。
+    """
+    lease = f"--force-with-lease=refs/heads/{target.branch}:{expected_tip}"
+    if not is_conditional_delete_lease(lease):
+        raise CleanupGuardError(
+            f"組不出合法的條件式刪除租約（branch={target.branch!r}，"
+            f"expected_tip={expected_tip!r}）。無條件刪除不是後備選項——"
+            "組不出租約就不刪。"
+        )
+    return ["push", lease, target.remote, "--delete", target.branch]
+
+
+def recheck_remote_branch(target: CleanupTarget, runner: GitRunner) -> RemoteDeleteDecision:
     """按下 `push --delete` 前的最後一次確認：tip 是誰、看得見嗎、還是 main 祖先嗎。
 
     **為什麼只重新確認「分支還在」不夠**：前提檢查與遠端刪除之間隔著本機 worktree
@@ -631,52 +711,58 @@ def recheck_remote_branch(
     回傳的 `GuardCheck` 走與前提檢查同一套三值語意，因此
     ``aggregate_mode([check.outcome])`` 在拒絕時就是 ``detect_only``——「驗不過或
     觀測不到就降純偵測、不刪」在這裡與前提檢查是同一條規則，不是另立的例外。
+
+    **本函式只是讀，不構成保證**（R2-001）：它回傳 ``delete`` 到指令真的送出之間
+    仍有一段（雖然很短的）時間。關掉那一段的不是這裡的任何一次讀，而是把讀到的
+    `expected_tip` 交給 `conditional_delete_args()` 當租約——因此本函式**必須**把
+    tip 一起回傳，呼叫端**必須**用它，兩者少一邊，這段窗就還開著。
     """
     heads, err = _read_remote_heads(target, runner)
     if heads is None:
-        return "refuse", GuardCheck(
+        return RemoteDeleteDecision("refuse", GuardCheck(
             RECHECK_REMOTE_ID, "unobservable",
             f"刪除前重讀遠端失敗（{err}）；無法確認 tip 未變動，不刪", 2,
-        )
+        ))
     branch_sha = heads.get(target.branch)
     if branch_sha is None:
-        return "absent", GuardCheck(
+        return RemoteDeleteDecision("absent", GuardCheck(
             RECHECK_REMOTE_ID, "pass",
             f"遠端 {target.remote} 已無 {target.branch!r}，無可刪對象", 2,
-        )
+        ))
     main_sha = heads.get(target.main_ref)
     if main_sha is None:
-        return "refuse", GuardCheck(
+        return RemoteDeleteDecision("refuse", GuardCheck(
             RECHECK_REMOTE_ID, "unobservable",
             f"刪除前讀不到遠端 {target.main_ref}，無法比對祖先，不刪", 2,
-        )
+        ))
     if not _commit_observable(target, runner, branch_sha):
-        return "refuse", GuardCheck(
+        return RemoteDeleteDecision("refuse", GuardCheck(
             RECHECK_REMOTE_ID, "unobservable",
             f"遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
             "該 commit 不在本地物件庫——很可能是守衛通過後才被推上來的新提交；"
             "守衛不代為 fetch，也不刪自己沒看過的東西", 2,
-        )
+        ))
     if not _commit_observable(target, runner, main_sha):
-        return "refuse", GuardCheck(
+        return RemoteDeleteDecision("refuse", GuardCheck(
             RECHECK_REMOTE_ID, "unobservable",
             f"遠端 {target.main_ref} 的 tip {main_sha[:12]} 不在本地物件庫，"
             "無法驗證祖先關係，不刪", 2,
-        )
+        ))
     if not _run(runner, target.repo_root,
                 ["merge-base", "--is-ancestor", branch_sha, main_sha]).ok:
-        return "refuse", GuardCheck(
+        return RemoteDeleteDecision("refuse", GuardCheck(
             RECHECK_REMOTE_ID, "fail",
             f"遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
             f"不是遠端 {target.main_ref}（{main_sha[:12]}）的祖先；"
             "在 executor 內走到這一步代表前提檢查當時是通過的，"
             "也就是窗內有新提交進來——刪掉它會毀掉那份工作", 2,
-        )
-    return "delete", GuardCheck(
+        ))
+    return RemoteDeleteDecision("delete", GuardCheck(
         RECHECK_REMOTE_ID, "pass",
         f"刪除前複驗：遠端 {target.branch} tip {branch_sha[:12]} 仍是 "
-        f"{target.main_ref}（{main_sha[:12]}）的祖先", 2,
-    )
+        f"{target.main_ref}（{main_sha[:12]}）的祖先；"
+        f"該 tip 將原樣作為刪除租約的期望值", 2,
+    ), expected_tip=branch_sha)
 
 
 # ---------------------------------------------------------------------------
@@ -918,18 +1004,41 @@ def execute_closeout_transition(
             # R1-001：這裡不能只問「分支還在嗎」。守衛通過後、本機清理進行中的這段
             # 時間窗裡，別的 clone 可能已經把新提交推上同一條遠端分支——分支還在，
             # 但它指的已經是別人的新工作。因此重讀 tip、確認可觀測、重驗祖先。
-            verdict, check = recheck_remote_branch(target, runner)
-            rechecks.append(check)
-            if verdict == "absent":
+            #
+            # R2-001：但「重讀」到「送出」之間還有一段窗，而且它被隔離實測打穿過。
+            # 因此複驗讀到的 tip 不是印出來就算，它會**原樣**成為刪除指令的租約
+            # 期望值——檢查與刪除自此是同一個原子操作，不是先後兩件事。
+            recheck = recheck_remote_branch(target, runner)
+            rechecks.append(recheck.check)
+            if recheck.verdict == "absent":
                 skipped.append(action)
-            elif verdict == "refuse":
+            elif recheck.verdict == "refuse":
                 aborted.append(action)
                 break
+            elif recheck.expected_tip is None:
+                # 到不了的分支；真的到了代表複驗的回傳被改壞了，寧可停也不要
+                # 退回無條件刪除。
+                raise CleanupGuardError(
+                    "複驗回報可刪卻沒有帶回期望 tip，無法組出條件式刪除；不刪。"
+                )
             else:
                 res = _run(runner, target.repo_root,
-                           ["push", target.remote, "--delete", target.branch])
+                           conditional_delete_args(target, recheck.expected_tip))
                 if not res.ok:
-                    raise CleanupGuardError(f"刪除遠端分支失敗：{res.stderr.strip()}")
+                    # 判成敗的依據是 git 自己的 returncode（`default_git_runner` 不經
+                    # 管線），不是輸出長相。拒絕的處置與守衛其餘拒絕路徑同型：降
+                    # aborted、效果扣住、留下具名理由——不重試，也不改用無條件刪除。
+                    detail = (res.stderr.strip() or res.stdout.strip() or "無錯誤訊息")
+                    rechecks.append(GuardCheck(
+                        REMOTE_DELETE_CAS_ID, "fail",
+                        f"條件式刪除被拒（租約期望 tip "
+                        f"{recheck.expected_tip[:12]}，git returncode="
+                        f"{res.returncode}）：{detail}；"
+                        "遠端在複驗之後、刪除送出之前變動過，或遠端拒絕了本次刪除。"
+                        "不重試、不降級為無條件刪除——請人工確認遠端現在是誰的工作", 2,
+                    ))
+                    aborted.append(action)
+                    break
                 performed.append(action)
         step_hook(f"after_{action}")
 
@@ -983,6 +1092,7 @@ __all__ = [
     "LEGAL_STATES",
     "PRECONDITION_STEPS",
     "RECHECK_REMOTE_ID",
+    "REMOTE_DELETE_CAS_ID",
     "STEP_ROLES",
     "SUBSEQUENT_OBLIGATION_STEPS",
     "CleanupGuardError",
@@ -995,12 +1105,15 @@ __all__ = [
     "GuardDecision",
     "GitResult",
     "RemoteCardFacts",
+    "RemoteDeleteDecision",
     "WorktreeRecord",
     "aggregate_mode",
     "classify_state",
+    "conditional_delete_args",
     "default_git_runner",
     "evaluate_cleanup_guard",
     "execute_closeout_transition",
+    "is_conditional_delete_lease",
     "lsof_cwd_prober",
     "observe",
     "parse_worktree_records",

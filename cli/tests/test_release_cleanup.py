@@ -46,6 +46,16 @@ BASE_TARGET = ["--owner", "acme", "--project", "1", "--repo", REPO]
 WORK_CONTENT = "committed work\n"
 
 
+def _is_remote_branch_delete(argv: list[str]) -> bool:
+    """遠端刪除指令的形狀比對。
+
+    刻意不用固定前綴：條件式刪除在 ``push`` 後面插了租約旗標，任何 ``argv[:3] ==
+    [...]`` 的寫法都會靜靜地一條都對不上，讓攔截型 runner 退化成透明代理而測試照
+    樣全綠。攔到幾條由呼叫端另外斷言。
+    """
+    return argv[:1] == ["push"] and "--delete" in argv
+
+
 class ReleaseGhRunner(FakeGhRunner):
     """補上 `issue view --json state` 與 `issue close`。
 
@@ -360,17 +370,21 @@ def test_release_fails_when_cleanup_reported_success_but_did_not_complete(
     沒寫、Issue 沒關的情況下對操作者宣稱成功（突變測試 M32）。
     """
     real_runner = cleanup.default_git_runner
+    intercepted: list[list[str]] = []
 
     def lying_runner(cwd: Path, args):
-        if list(args)[:3] == ["push", "origin", "--delete"]:
+        argv = list(args)
+        if _is_remote_branch_delete(argv):
+            intercepted.append(argv)
             return cleanup.GitResult(0, "", "")  # 回 0 但什麼也沒做
-        return real_runner(cwd, args)
+        return real_runner(cwd, argv)
 
     monkeypatch.setattr(cleanup, "default_git_runner", lying_runner)
 
     rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
                               **{"--repo-path": str(env.repo), "--cleanup": True}))
 
+    assert intercepted, "假成功 runner 一條刪除指令都沒攔到，本案例形同不存在"
     assert rc == 5
     assert remote_branch_exists(env.repo), "前提設定失敗：遠端分支應該還在"
     assert card_fields(env.runner)["交付狀態"] == "📦已合併"
@@ -425,6 +439,53 @@ def test_status_face_stays_put_when_the_remote_delete_is_aborted(
     assert after_fields["交付狀態"] == "📦已合併"
     assert after_fields.get("最後交接") == before_fields.get("最後交接")
     assert after_fields.get("owner") == before_fields.get("owner")
+    assert env.runner.closed_issues == []
+
+
+def test_status_face_stays_put_when_the_tip_moves_between_recheck_and_push(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R2-001 走完整條 CLI：複驗**通過**之後、刪除送出之前，別人推了新提交。
+
+    與上一條的差別只在**注入時機**，但那正是被打穿的地方：上一條在複驗前注入，複驗
+    自己會拒絕；這一條在複驗之後注入，只剩條件式刪除的租約能接住。CLI 這一層必須跟
+    著回非 0，且狀態面一個字都沒寫。
+    """
+    other = tmp_path / "other-clone"
+    subprocess.run(["git", "clone", "-q", str(env.remote), str(other)], check=True)
+    git(other, "config", "user.email", "other@example.com")
+    git(other, "config", "user.name", "another clone")
+
+    real_runner = cleanup.default_git_runner
+    state: dict = {"injected": False, "new_sha": ""}
+
+    def inject_then_run(cwd: Path, args):
+        argv = list(args)
+        if _is_remote_branch_delete(argv) and not state["injected"]:
+            state["injected"] = True
+            git(other, "checkout", "-q", "-B", BRANCH, f"origin/{BRANCH}")
+            (other / "rescue.txt").write_text("別人的新工作\n", encoding="utf-8")
+            git(other, "add", "rescue.txt")
+            git(other, "commit", "-q", "-m", "work pushed after the recheck passed")
+            git(other, "push", "-q", "origin", BRANCH)
+            state["new_sha"] = git(other, "rev-parse", "HEAD").strip()
+        return real_runner(cwd, argv)
+
+    monkeypatch.setattr(cleanup, "default_git_runner", inject_then_run)
+
+    before_fields = dict(card_fields(env.runner))
+    rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
+                              **{"--repo-path": str(env.repo), "--cleanup": True}))
+
+    assert state["injected"], "注入沒有發生——本案例形同不存在"
+    assert rc == 5
+    assert remote_branch_exists(env.repo)
+    verify = tmp_path / "verify-cas-clone"
+    subprocess.run(["git", "clone", "-q", "-b", BRANCH, str(env.remote), str(verify)], check=True)
+    assert (verify / "rescue.txt").read_text(encoding="utf-8") == "別人的新工作\n"
+    after_fields = card_fields(env.runner)
+    assert after_fields["交付狀態"] == "📦已合併"
+    assert after_fields.get("最後交接") == before_fields.get("最後交接")
     assert env.runner.closed_issues == []
 
 
