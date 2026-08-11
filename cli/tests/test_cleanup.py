@@ -16,10 +16,13 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
 import itertools
+import re
 import shutil
 import subprocess
+import textwrap
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -467,6 +470,135 @@ def test_decision_identical_for_release_and_reconcile(env: Env, prober) -> None:
     assert a.decision.mode == b.decision.mode
     assert [c.outcome for c in a.decision.checks] == [c.outcome for c in b.decision.checks]
     assert a.blocking_reasons == b.blocking_reasons
+
+
+def test_executor_body_never_branches_on_the_trigger() -> None:
+    """卡面驗收「單一 executor 形狀」：`trigger` 只能是標籤，不能是開關。
+
+    上面兩條是**行為**面（同樣的輸入下兩個 trigger 的判定一致），但行為面永遠只
+    覆蓋跑過的情境。這條是**形狀**面：直接解析 `execute_closeout_transition` 的
+    AST，要求函式體內每一個 `trigger` 的讀取都落在 `CloseoutResult(...)` 的關鍵字
+    引數上——也就是只寫進結果，不進任何條件、比較或查表。
+
+    第二個斷言擋的是「不讀 `trigger` 也能分叉」的寫法（例如比對 `args.next_stage`
+    或任何寫死的 "release"／"reconcile" 字面值）：函式體內不得出現等於這兩個觸發
+    者名稱的字面常數。
+    """
+    source = textwrap.dedent(inspect.getsource(cleanup.execute_closeout_transition))
+    fn = ast.parse(source).body[0]
+
+    recorded: set[int] = set()
+    for node in ast.walk(fn):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "CloseoutResult"):
+            recorded.update(id(kw.value) for kw in node.keywords)
+
+    loads = [n for n in ast.walk(fn)
+             if isinstance(n, ast.Name) and n.id == "trigger"
+             and isinstance(n.ctx, ast.Load)]
+    assert loads, "找不到任何 trigger 讀取，這條測試可能已與實作脫節"
+    stray = [n.lineno for n in loads if id(n) not in recorded]
+    assert not stray, (
+        f"execute_closeout_transition 在第 {stray} 行把 trigger 用在結果紀錄之外；"
+        "依觸發者切分實作正是卡面禁止的事"
+    )
+
+    literals = [n.lineno for n in ast.walk(fn)
+                if isinstance(n, ast.Constant) and n.value in ("release", "reconcile")]
+    assert not literals, (
+        f"函式體第 {literals} 行出現觸發者名稱的字面常數；executor 不該認得自己"
+        "是被誰叫起來的"
+    )
+
+
+def _independent_env(root: Path) -> Env:
+    """在 `root` 底下自建一個與 `env` fixture 同構、但完全獨立的沙箱收尾情境。
+
+    兩個 trigger 必須各自跑在**自己的**乾淨 repo 上：共用一個 repo 時第二次執行看
+    到的是第一次留下的殘骸，兩者根本不是同一個情境，比較就沒有意義。
+    """
+    repo = root / "sandbox-repo"
+    repo.mkdir(parents=True)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "test@example.com")
+    git(repo, "config", "user.name", "wf-cli tests")
+    (repo / "README.md").write_text("sandbox\n", encoding="utf-8")
+    git(repo, "add", "README.md")
+    git(repo, "commit", "-q", "-m", "init")
+    return _build_env(root, repo, merged=True)
+
+
+_HEX40_RE = re.compile(r"\b[0-9a-f]{40}\b")
+
+
+def _normalise(text: str, root: Path) -> str:
+    """抹掉兩個獨立 repo 之間必然不同的東西：路徑與 commit SHA。"""
+    return _HEX40_RE.sub("<SHA>", text.replace(str(root), "<ROOT>"))
+
+
+def _closeout_fingerprint(result, *, root: Path, argv_log, writer_calls) -> dict:
+    """一次收尾在**可觀測面**上的全貌，`trigger` 標籤本身刻意不含在內。"""
+    return {
+        "mode": result.mode,
+        "decision_mode": result.decision.mode,
+        "checks": [(c.check_id, c.outcome) for c in result.decision.checks],
+        "performed": result.actions_performed,
+        "skipped": result.actions_skipped_absent,
+        "aborted": result.actions_aborted,
+        "rechecks": [(c.check_id, c.outcome) for c in result.recheck_checks],
+        "state_after": result.state_after,
+        "remaining": result.remaining_status_face_steps,
+        "obligations": result.outstanding_obligations,
+        "blocking": tuple(_normalise(r, root) for r in result.blocking_reasons),
+        "writer": tuple(writer_calls),
+        "argv": tuple(tuple(_normalise(a, root) for a in argv) for argv in argv_log),
+    }
+
+
+@pytest.mark.parametrize(
+    ("prober", "expected_mode"),
+    [(free_prober, "applied"), (occupied_prober, "detect_only")],
+)
+def test_swapping_the_trigger_changes_nothing_but_the_label(
+    tmp_path: Path, prober, expected_mode: str
+) -> None:
+    """換一個 trigger 值，**送出的 git 指令與寫入的效果逐字相同**。
+
+    與上面 `test_decision_identical_for_release_and_reconcile` 的差別有二，兩者都
+    是本條存在的理由：
+
+    1. 那條只比對 `decision`（守衛的判定），比不到「守衛放行之後 executor 做了
+       什麼」。一個只在 `trigger == "release"` 時才送出遠端刪除的實作，在那條測試
+       下完全可以是綠的。本條逐字比對實際送進 git runner 的 argv 與 effect writer
+       的呼叫序列。
+    2. 那條讓兩次執行共用同一個 repo，第二次跑在第一次的殘骸上；本條給兩個
+       trigger 各一個獨立沙箱，兩邊是同一個情境的兩份複本。
+
+    放行與拒絕兩條路徑都測：只測放行的話，「拒絕理由依觸發者不同」會漏掉。
+    """
+    fingerprints = {}
+    for trigger in ("release", "reconcile"):
+        root = tmp_path / trigger
+        env = _independent_env(root)
+        remote = FakeRemoteState()
+        writer = FakeEffectWriter(remote)
+        argv_log: list[list[str]] = []
+        result = execute_closeout_transition(
+            env.target, trigger=trigger, registry=env.registry, card_body=CARD_BODY,
+            remote_facts=remote.facts(), effect_writer=writer,
+            runner=recording_runner(argv_log), occupancy_prober=prober,
+        )
+        assert result.trigger == trigger
+        assert result.mode == expected_mode, result.blocking_reasons
+        # 反假綠：放行案例必須真的走完三個破壞性動作，否則「兩邊相同」比的是兩次
+        # 空跑——一個對兩個 trigger 都不刪的實作也會讓上面那個相等成立。
+        if expected_mode == "applied":
+            assert result.actions_performed == DESTRUCTIVE_ORDER
+        fingerprints[trigger] = _closeout_fingerprint(
+            result, root=root, argv_log=argv_log, writer_calls=writer.calls
+        )
+
+    assert fingerprints["release"] == fingerprints["reconcile"]
 
 
 # ---------------------------------------------------------------------------
