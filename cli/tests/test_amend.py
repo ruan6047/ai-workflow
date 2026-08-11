@@ -237,6 +237,8 @@ def card(fake_runner):
             "open", *BASE_TARGET, "AMEND-DEMO1",
             "--feature", "示範", "--tier", "T1", "--db-scope", "none",
             "--core-pain", "痛點", "--service-goal", "目標",
+            "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
+            "--review-capability", "主力型", "--review-capability-reason", "一般 review",
             "--resources", "file:demo.py",
             "--acceptance", "原條件甲",
             "--verification", "原驗證甲",
@@ -574,7 +576,9 @@ def issue_card(fake_runner):
     rc = run_cli(
         ["open", *BASE_TARGET, "--repo", "acme/wf", "ESC-DEMO1",
          "--feature", "示範", "--tier", "T1", "--db-scope", "none",
-         "--core-pain", "痛點", "--service-goal", "目標", "--spec-baseline", "原基線"]
+         "--core-pain", "痛點", "--service-goal", "目標", "--spec-baseline", "原基線",
+         "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
+         "--review-capability", "主力型", "--review-capability-reason", "一般 review"]
     )
     assert rc == 0
     project = resolve_project(fake_runner, "acme", 1)

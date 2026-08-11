@@ -9,7 +9,7 @@
 
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
-| `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深五＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
+| `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深／**規劃期路由**（執行與查核各一能力層級＋理由）六＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡 | 寫（有條件拒絕） |
 | `amend` | 開卡後修訂卡面：spec 基線／驗收條件／驗證項目／資源宣告／`級別`；`--reason` 必填，每個被改欄位各 append 一行 Log 記下**完整原值**（不截斷，Log 是唯一還原點）並帶同一 `op` 識別碼；值未變、內容為空、錨點不唯一一律拒絕；清單替換預設重設未勾選，`--preserve-checked` 才沿用；`級別` 先寫並讀回驗證再寫 body；寫入前重讀比對，被他人改動即中止；`--record-unlogged-change` 補救半寫入；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
@@ -27,6 +27,62 @@ uv sync
 uv run wfcli <command> --help
 uv run pytest        # 全套測試（本 repo 新增；數量以此指令輸出為準）
 ```
+
+## `open`：規劃期路由（WF-CLI-ROUTING-TIER1）
+
+canonical `AI_WORKFLOW.md` §3 Plan：「Plan 產出必含建議執行／查核能力層級與理由
+（層級語彙見專案 `MODEL_ROUTING.md`）」。`open` 因此有四個必填旗標：
+
+```bash
+wfcli open CARD-ID --repo owner/repo \
+  --tier T3 \
+  --exec-capability 主力型   --exec-capability-reason "跨模組改動、根因已知" \
+  --review-capability 高階型 --review-capability-reason "資料正確性紅線，須跨家族查核" \
+  ...
+```
+
+產出即 `templates/tasks-card.md` 第 4 行的形狀（`card.format_routing_line` 是唯一
+渲染點，git spec 檔與 Issue body 共用，兩處不會 drift）：
+
+```
+- 執行：待指派（建議 主力型；跨模組改動、根因已知）　查核：待指派（建議 高階型；資料正確性紅線，須跨家族查核）
+```
+
+### ⚠️ 兩條不同的「層級」：`--tier` vs `--exec/review-capability`
+
+**中英文都叫 tier／層級，但值域與語意完全不同，互不接受**：
+
+| 旗標 | 卡面欄位 | 值域 | 這條軸在講什麼 |
+|---|---|---|---|
+| `--tier`（`amend --tier` 同義） | 級別 | `T0`–`T4` | **變更風險**：紅線、可逆性、影響面 |
+| `--exec-capability`／`--review-capability` | 執行／查核括號內 | `經濟型`／`主力型`／`高階型` | **建議的模型能力**：這件事該派多強的執行者／查核者 |
+
+值域刻意零交集，兩邊都用 argparse `choices` 硬擋：`--tier 主力型` 與
+`--exec-capability T3` 都會直接被拒。
+
+能力層級的語彙**照抄** repo 根目錄 `MODEL_ROUTING.md`「預設能力等級」欄，CLI 不自創
+分類：該欄四列去掉修飾後恰好三級——「經濟型／deterministic automation」的斜線後段是
+同一級的英文同義註解；「高階型 + 跨家族 review」的加號後段是**查核獨立性的附加要求**
+（`templates/tasks-card.md` 第 4 行同樣寫「紅線須跨家族或人工」），寫進理由欄，不是第
+四個層級。枚舉封閉，沒有「其他／未定」逃生格；`tests/test_card.py` 直接解析
+`MODEL_ROUTING.md` 比對，語彙一漂移測試就紅。
+
+卡面引用**層級**而非模型名，是因為模型名單會過期、層級才是穩定介面
+（`MODEL_ROUTING.md` §「路由決定於規劃期」）。
+
+### 缺欄＝硬拒，CLI 不代填預設值
+
+四個旗標缺任何一個（argparse `required`）或理由為空白字串（`card.
+validate_capability_routing`），一律拒絕且**不建卡**。刻意不採「預設＋警示」：
+`MODEL_ROUTING.md` 要求「建議反映任務風險，不得因當下額度預先降級」，任何預設值都是在
+沒讀過這張卡的風險的前提下代替規劃者作答——那只是把「靜默產出不符範本的卡」換成
+「靜默填錯層級」，本能力要消除的痛點並未消失。
+
+檢查在 CLI 層與 model 層各做一次：`Card` 把這四項放在 dataclass 的**必填區**（無預設
+值），繞過 CLI 直接建構 `Card` 也產不出不符範本的卡。
+
+> 派工時可依可用性偏離建議（`MODEL_ROUTING.md` 同節），偏離與理由記入 claim 事件；
+> 本卡只負責**開卡端**必填，`assign` 的偏離留痕不在此範圍。
 
 ## `amend`：開卡後的卡面修訂（WF-CLI-CARD-AMEND1）
 
@@ -277,6 +333,11 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
   iteration 遞增接點依需求方 2026-08-05 裁決：`handoff --next-stage implementation`
   （承載「查核退回」語意）讀回現值＋1 寫回；`review`／`release` 不遞增；`--iteration
   N` 是顯式覆寫逃生門（印警示，覆寫理由說明於既有必填的 `--evidence`，不另立欄位）。
+- **規劃期路由不進 Project 凍結欄位**（WF-CLI-ROUTING-TIER1）：建議能力層級與理由只
+  寫進卡面（Issue body 第 2 行＋git spec 檔），不新增 `FIELD_SPECS` 欄位。它是**規劃期
+  的一次性建議**，不是會被 `assign`／`handoff` 持續改寫的 current-state；真正會變動的
+  是「實際派到誰」（owner 欄）與偏離理由（claim 事件）。凍結欄位只放 current-state，
+  多開一欄反而製造第二個真相來源。
 - **`review` 不碰 iteration／owner／最後交接**（WF-22-CLI3）：iteration 的唯一遞增點
   是 `handoff --next-stage implementation`，review 若也動就會讓一次退回被記成兩次；
   裁決也不是交接，所以 owner 與最後交接同樣留給 `handoff`。`review` 只寫兩件事——

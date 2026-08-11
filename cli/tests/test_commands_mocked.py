@@ -25,6 +25,7 @@ from wf_cli.project import (
 )
 
 from .fake_gh import FakeGhRunner
+from .test_card import ROUTING_LINE_RE
 
 
 @pytest.fixture
@@ -58,6 +59,10 @@ def _open_argv(card_id: str, **overrides) -> list[str]:
         "--db-scope": "none",
         "--core-pain": "痛點文字",
         "--service-goal": "服務的原始目標文字",
+        "--exec-capability": "主力型",
+        "--exec-capability-reason": "跨模組改動",
+        "--review-capability": "主力型",
+        "--review-capability-reason": "一般 review 即可",
     }
     defaults.update(overrides)
     argv = ["open", *BASE_TARGET, card_id]
@@ -173,6 +178,136 @@ def test_open_rejects_chain_depth_over_hard_cap(fake_runner, capsys):
     assert "整鏈重審" in err
     project = resolve_project(fake_runner, "acme", 1)
     assert find_item_by_card_id(list_items(fake_runner, project), "CHAINDEPTH-CARD-BAD") is None
+
+
+# ---------------------------------------------------------------------------
+# 規劃期路由欄位（WF-CLI-ROUTING-TIER1）
+# ---------------------------------------------------------------------------
+
+
+def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tmp_path: Path):
+    spec_dir = tmp_path / "tasks"
+    rc = run_cli(
+        _open_argv(
+            "ROUTING-CARD1",
+            **{
+                "--exec-capability": "主力型",
+                "--exec-capability-reason": "跨模組、根因已知",
+                "--review-capability": "高階型",
+                "--review-capability-reason": "資料正確性紅線，須跨家族",
+                "--spec-dir": str(spec_dir),
+            },
+        )
+    )
+    assert rc == 0
+    expected = (
+        "- 執行：待指派（建議 主力型；跨模組、根因已知）"
+        "　查核：待指派（建議 高階型；資料正確性紅線，須跨家族）"
+    )
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "ROUTING-CARD1")
+    assert item is not None
+    assert expected in item.body
+    assert expected in (spec_dir / "ROUTING-CARD1.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--exec-capability",
+        "--exec-capability-reason",
+        "--review-capability",
+        "--review-capability-reason",
+    ],
+)
+def test_open_argparse_requires_every_routing_flag(fake_runner, flag):
+    # 缺欄＝硬拒（argparse required），不得靜默產出不符範本第 4 行的卡。
+    argv = list(_open_argv("ROUTING-MISSING"))
+    idx = argv.index(flag)
+    del argv[idx : idx + 2]
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)
+
+
+@pytest.mark.parametrize(
+    "flag", ["--exec-capability-reason", "--review-capability-reason"]
+)
+def test_open_rejects_blank_routing_reason_without_creating_card(fake_runner, capsys, flag):
+    rc = run_cli(_open_argv("ROUTING-BLANK", **{flag: "   "}))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "必填" in err
+    project = resolve_project(fake_runner, "acme", 1)
+    assert find_item_by_card_id(list_items(fake_runner, project), "ROUTING-BLANK") is None
+
+
+@pytest.mark.parametrize("flag", ["--exec-capability", "--review-capability"])
+def test_open_rejects_risk_tier_value_in_capability_flag(fake_runner, flag):
+    # 命名碰撞的實際誤用：把 T0–T4 填進能力層級旗標，argparse choices 直接擋。
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(_open_argv("ROUTING-CONFUSED", **{flag: "T3"}))
+
+
+def test_open_rejects_capability_tier_value_in_risk_tier_flag(fake_runner):
+    # 反向：把能力層級填進 --tier（級別）也必須擋，兩軸值域互不接受。
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(_open_argv("ROUTING-CONFUSED2", **{"--tier": "主力型"}))
+
+
+# #17／#19／#20 的實際開卡情境重放：三張卡當初產出的執行行都是
+# 「- 執行：待指派　查核：獨立校讀」（缺括號內的層級與理由，即本卡的核心痛點）。
+# 以相同參數重跑新版 open，證明產出改為符合 templates/tasks-card.md 第 4 行。
+_REPLAY_CARDS = [
+    (
+        "WF-REVIEW-EVENT-MARKER-ENFORCE1",
+        "doctor 落實 wf-review-event:v1 不合格 marker 的 fail-closed",
+        "高階型",
+        "查核寫入通道的 fail-closed 判準，錯判會讓卡停機",
+    ),
+    (
+        "WF-CLI-CARD-AMEND1",
+        "wfcli 補上開卡後的通用卡面修訂能力",
+        "主力型",
+        "唯一寫入通道的新寫入路徑，跨模組",
+    ),
+    (
+        "WF-REVIEW-CHANNEL-THIRD-FACE1",
+        "doctor 補上三面一致的第三面（Project 交付狀態欄）",
+        "主力型",
+        "既有對帳邏輯延伸，根因與範圍已知",
+    ),
+]
+
+
+@pytest.mark.parametrize("card_id,feature,capability,reason", _REPLAY_CARDS)
+def test_open_replays_real_cards_into_template_line4_format(
+    fake_runner, card_id, feature, capability, reason
+):
+    rc = run_cli(
+        _open_argv(
+            card_id,
+            **{
+                "--feature": feature,
+                "--reviewer": "獨立校讀",
+                "--exec-capability": capability,
+                "--exec-capability-reason": reason,
+                "--review-capability": "高階型",
+                "--review-capability-reason": "跨家族獨立查核",
+            },
+        )
+    )
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), card_id)
+    assert item is not None
+    routing = [ln for ln in item.body.splitlines() if ln.startswith("- 執行：")]
+    assert len(routing) == 1
+    assert ROUTING_LINE_RE.match(routing[0]) is not None
+    # 三張卡當初的產出形狀（無層級無理由）不得再出現。
+    assert routing[0] != "- 執行：待指派　查核：獨立校讀"
 
 
 def _assign_argv(card_id: str, assignee: str, branch: str, worktree: str) -> list[str]:

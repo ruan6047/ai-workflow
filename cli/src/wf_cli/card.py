@@ -20,6 +20,20 @@ from .resources import ResourceDeclaration, render_block
 
 TIERS = ("T0", "T1", "T2", "T3", "T4")
 
+# 能力層級語彙**不在這裡新創**：唯一權威是 repo 根目錄 ``MODEL_ROUTING.md`` 的
+# 「預設能力等級」欄（第 7–10 列）。原文四列去掉修飾後恰好三級：
+#
+#   第 7 列「經濟型／deterministic automation」——「／deterministic automation」是
+#       同一級的英文同義註解，不是第四級。
+#   第 8 列「主力型」、第 10 列「主力型」——同一級。
+#   第 9 列「高階型 + 跨家族 review」——「+ 跨家族 review」是**查核側的附加要求**
+#       （templates/tasks-card.md 第 4 行同樣寫「紅線須跨家族或人工」），是能力層級
+#       之上疊加的獨立性條件，不是第四級。
+#
+# 因此本枚舉照抄權威的三級，且刻意**封閉**：沒有「其他」「未定」逃生格。每個輸入
+# 落在且僅落在一格——落不進去就是硬拒，不是歸進 fallback 桶。
+CAPABILITY_TIERS = ("經濟型", "主力型", "高階型")
+
 # 決議 5（鏈式停損協定，見 docs/research/WORKFLOW-REVIEW-2026-08-04.md）：
 # 鏈深硬上限＝原始目標之下 2 層；超過強制整鏈重審，不得逕行加深。
 CHAIN_DEPTH_HARD_CAP = 2
@@ -35,6 +49,58 @@ def chain_depth_violation_message(chain_depth: int) -> str:
         f"鏈深 {chain_depth} 超過硬上限：原始目標之下最深 {CHAIN_DEPTH_HARD_CAP} 層；"
         "超過須整鏈重審，不得逕行加深——見決議 5（鏈式停損協定）"
     )
+
+
+def capability_tier_violation_message(axis: str, value: str) -> str:
+    """能力層級不在權威語彙內時的拒絕訊息；CLI 層與 model 層共用同一段文字。
+
+    刻意在訊息裡點名「這不是 T0–T4」：``--tier``／``級別`` 是**風險級別**（另一條
+    軸），兩者都叫「tier／層級」，是本卡要消除的命名碰撞的主要誤用來源。
+    """
+    return (
+        f"{axis}能力層級必須是 {CAPABILITY_TIERS} 之一，收到 {value!r}"
+        "——語彙出自 MODEL_ROUTING.md「預設能力等級」欄，不得自創；"
+        f"注意這**不是** T0–T4 風險級別（那是另一條軸，欄位名「級別」／旗標 --tier）"
+    )
+
+
+def capability_reason_missing_message(axis: str) -> str:
+    """缺理由時的拒絕訊息。
+
+    **硬拒而非預設＋警示**，理由寫在這裡以便被擋的人直接看到取捨：能力層級可以有
+    「常見值」，但 canonical AI_WORKFLOW.md §3 Plan 要的是「建議**反映任務風險**」。
+    任何預設值都是在沒有讀過這張卡的風險的情況下先填一個答案，等於把「規劃者判斷」
+    降級成「CLI 猜測」——而本卡的核心痛點正是「規則寫在範本裡、產生端靜默不符」。
+    預設值只會把靜默不符換成靜默填錯，痛點沒消失。
+    """
+    return (
+        f"{axis}能力層級的理由必填，且不得為空白"
+        "——canonical AI_WORKFLOW.md §3 Plan：「Plan 產出必含建議執行／查核能力層級"
+        "與理由」「建議反映任務風險，不得因當下額度預先降級」。"
+        "此處硬拒不設預設值：預設值等於在未讀本卡風險的前提下代替規劃者作答"
+    )
+
+
+def validate_capability_routing(
+    *,
+    executor_capability: str,
+    executor_capability_reason: str,
+    reviewer_capability: str,
+    reviewer_capability_reason: str,
+) -> None:
+    """規劃期路由的機械檢查（執行／查核各一層級＋一理由）；不合格一律 ``ValueError``。
+
+    純函式、不碰網路，故 CLI 層（``commands/open_cmd.py``）與 model 層
+    （``Card.__post_init__``）呼叫同一份，兩層不會 drift 出不一致的判準。
+    """
+    for axis, tier, reason in (
+        ("執行", executor_capability, executor_capability_reason),
+        ("查核", reviewer_capability, reviewer_capability_reason),
+    ):
+        if tier not in CAPABILITY_TIERS:
+            raise ValueError(capability_tier_violation_message(axis, tier))
+        if not reason or not reason.strip():
+            raise ValueError(capability_reason_missing_message(axis))
 
 
 def now_iso8601() -> str:
@@ -89,6 +155,13 @@ class Card:
     core_pain: str
     service_goal: str
     resources: ResourceDeclaration
+    # 規劃期路由（無預設值＝建構 Card 就必須給）。刻意不設 default：範本第 4 行把
+    # 這四項列為卡面欄位，而本卡的痛點就是「產生端可以不給也不報錯」。放在
+    # dataclass 的必填區，等於連繞過 CLI 直接建 Card 都無法產出不符範本的卡。
+    executor_capability: str
+    executor_capability_reason: str
+    reviewer_capability: str
+    reviewer_capability_reason: str
     initiative: str | None = None
     requested_by: str = "—"
     planned_by: str = "—"
@@ -116,6 +189,12 @@ class Card:
                 "db_scope 與資源宣告內的 db_scope 不一致："
                 f"{self.db_scope!r} vs {self.resources.db_scope!r}"
             )
+        validate_capability_routing(
+            executor_capability=self.executor_capability,
+            executor_capability_reason=self.executor_capability_reason,
+            reviewer_capability=self.reviewer_capability,
+            reviewer_capability_reason=self.reviewer_capability_reason,
+        )
         if self.chain_depth > CHAIN_DEPTH_HARD_CAP:
             # 與 validation.validate_chain_depth 相同的機械紅線，這裡是繞過 CLI
             # 直接建構 Card（測試／未來呼叫端）時的防線；CLI 路徑應該在到達這裡
@@ -127,6 +206,26 @@ class Card:
         return format_branch_worktree(self.branch, self.worktree)
 
 
+def format_routing_line(c: Card) -> str:
+    """``templates/tasks-card.md`` 第 4 行（執行／查核＋建議能力層級＋理由）。
+
+    抽成單一函式是因為 git spec 檔與 Issue body 兩個渲染路徑都要輸出它——兩處各自
+    f-string 就會 drift，而範本一致性正是本欄位存在的理由。範本原文：
+
+        - 執行：<模型@工具／待指派>（建議 <MODEL_ROUTING 能力層級>；<能力軸理由>）
+          查核：<模型@工具／待指派>（<層級；紅線須跨家族或人工>；須 ≠ 執行）
+
+    括號內第一段填層級、第二段填理由；「紅線須跨家族或人工」「須 ≠ 執行」是範本給
+    規劃者的填寫指示（規則文字），不是要逐字複製進卡面的內容，故不渲染。
+    """
+    return (
+        f"- 執行：{c.executor}"
+        f"（建議 {c.executor_capability}；{c.executor_capability_reason}）"
+        f"　查核：{c.reviewer}"
+        f"（建議 {c.reviewer_capability}；{c.reviewer_capability_reason}）"
+    )
+
+
 def render_spec_markdown(c: Card) -> str:
     """git spec 檔骨架（寫入目標 repo ``tasks/<CARD_ID>.md``）。"""
     acceptance = "\n".join(f"- [ ] {line}" for line in c.acceptance)
@@ -134,7 +233,7 @@ def render_spec_markdown(c: Card) -> str:
     return f"""# {c.card_id} {c.feature}　〔{c.tier}〕
 
 - 需求：{c.requested_by}　規劃：{c.planned_by}
-- 執行：{c.executor}　查核：{c.reviewer}
+{format_routing_line(c)}
 - Initiative：{c.initiative or '—'}　spec 基線：{c.spec_baseline}
 - DB：db_scope={c.db_scope}
 - 服務的原始目標：{c.service_goal}
@@ -161,7 +260,7 @@ def render_issue_body(c: Card) -> str:
     verification = "\n".join(f"- [ ] {line}" for line in c.verification)
     resource_block = render_block(c.resources)
     return f"""- 需求：{c.requested_by}　規劃：{c.planned_by}
-- 執行：{c.executor}　查核：{c.reviewer}
+{format_routing_line(c)}
 - Initiative：{c.initiative or '—'}　spec 基線：{c.spec_baseline}
 - DB：db_scope={c.db_scope}
 - 服務的原始目標：{c.service_goal}
@@ -347,6 +446,7 @@ def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
 
 
 __all__ = [
+    "CAPABILITY_TIERS",
     "CHAIN_DEPTH_HARD_CAP",
     "TIERS",
     "AmendError",
@@ -356,11 +456,15 @@ __all__ = [
     "amend_spec_baseline",
     "amend_verification",
     "append_log_line",
+    "capability_reason_missing_message",
+    "capability_tier_violation_message",
     "chain_depth_violation_message",
     "format_branch_worktree",
+    "format_routing_line",
     "now_iso8601",
     "parse_branch_worktree",
     "render_issue_body",
     "render_spec_markdown",
     "split_at_log",
+    "validate_capability_routing",
 ]
