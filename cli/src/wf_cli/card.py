@@ -13,6 +13,7 @@ Issue/Project）：
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -558,6 +559,59 @@ def _field_problems(match: re.Match[str]) -> list[str]:
     return problems
 
 
+# --------------------------------------------------------------------------
+# 候選路由行的成員資格（R4-003）
+# --------------------------------------------------------------------------
+#
+# **方向性紅線——這段的錯誤方向只准偏保守，不准偏寬鬆。**
+#
+# 判定流程有兩個內容比對步驟，兩者的失敗後果相反：
+#
+#   標記辨識失敗 → 少一個宣告 → ``absent`` → **要求理由**（保守側，安全）
+#   候選行漏收   → 少一條候選 → 可能剛好剩 1 條 → ``matched`` → **免除理由**（危險側）
+#
+# R4-003 就是後者：候選集原本用 ``startswith("- 執行：")`` 收，前置一個 U+200B 那行就
+# 不符前綴而被整條略過，於是「兩條路由行 → 宣告不唯一 → ambiguous」被降成
+# 「只剩一條 → matched」。破損反而讓判定變寬鬆，還免除了偏離理由。
+#
+# 這也修正了我在 R3-001 說「標記機制已在結構層解決，故不需要正規化」的**適用邊界**：
+# 那句話對**標記辨識**成立（漏認 → absent → 保守側），對**多行候選掃描**不成立——掃描
+# 本身就是內容比對，而它漏收會直接鬆綁義務。所以正規化只加在**偵測**這一側：
+#
+#   偵測（誰算候選）：寬鬆、正規化、**寧可多收**。多收 → 候選變多 → 更容易 ambiguous。
+#   受理（候選能否當基線）：嚴格、**用原始行**、不正規化。不合格 → ambiguous。
+#
+# 兩側都不可能產出偽 ``matched``：多收只會讓結果更嚴，受理端從不放寬。
+#
+# 誠實邊界：偵測正規化涵蓋不可見／格式字元（Cf、Mn、Cc）、各種空白與全形半形（NFKC），
+# 不宣稱能窮盡所有 Unicode 擾動。**保證的是方向而非完備**——真有漏網的擾動，仍受
+# 「宣告必須緊鄰」這條純結構規則保護（見 compare_capability_to_card）。
+
+_DETECTION_STRIP_CATEGORIES = frozenset({"Cc", "Cf", "Mn", "Me"})
+
+
+def _detection_key(text: str) -> str:
+    """偵測用正規化：折疊全形半形、去掉不可見／格式字元與所有空白。
+
+    **只准用於「這行算不算候選」**，不得用於解析或取值——取值一律走原始行，否則
+    正規化就會變成「幫破損的卡面補正」，那是另一種猜。
+    """
+    folded = unicodedata.normalize("NFKC", text)
+    return "".join(
+        ch
+        for ch in folded
+        if not ch.isspace() and unicodedata.category(ch) not in _DETECTION_STRIP_CATEGORIES
+    )
+
+
+_ROUTING_CANDIDATE_KEY = _detection_key(_EXECUTOR_LINE_PREFIX)
+
+
+def _is_routing_candidate(line: str) -> bool:
+    """這行是否**試圖**成為路由行（寬鬆判定，寧可多收）。"""
+    return _detection_key(line).startswith(_ROUTING_CANDIDATE_KEY)
+
+
 @dataclass(frozen=True)
 class CapabilityComparison:
     """實際能力層級與卡面建議的比對結果（四格全函數之一）。"""
@@ -678,29 +732,40 @@ def compare_capability_to_card(body: str, actual_capability: str) -> CapabilityC
 
     # 以下：卡面**自我宣告**為新制，因此任何讀不出合格建議的情形都是 ambiguous，
     # 不再有「退回當舊卡」這條路——宣告了就要拿得出來。
-    routing_rows = [
-        (i, m)
-        for i, ln in enumerate(header)
-        if (m := _ROUTING_PARSE_RE.match(ln.rstrip())) is not None
-    ]
-    if len(routing_rows) != 1:
+    # 候選集用**寬鬆偵測**收（見 _is_routing_candidate 的方向性紅線）：漏收會讓破損的
+    # 卡面反而變寬鬆，多收只會更嚴。收完先要求「恰好一條候選」，再要求它緊鄰宣告，
+    # 最後才用**原始行**嚴格解析。
+    candidates = [i for i, ln in enumerate(header) if _is_routing_candidate(ln)]
+    if len(candidates) != 1:
         return CapabilityComparison(
             CAPABILITY_BASELINE_AMBIGUOUS,
             actual_capability,
             None,
-            f"卡面宣告 {ROUTING_MARKER}，但標頭區合格的路由行有 {len(routing_rows)} 行"
-            "（應恰為 1）；不合格的成因包括全形／半形空白錯置、缺分號或括號、理由為空、"
-            "查核段缺失、前綴混入零寬字元",
+            f"卡面宣告 {ROUTING_MARKER}，但標頭區的候選路由行有 {len(candidates)} 行"
+            "（應恰為 1）——候選以寬鬆判定收集（忽略不可見字元、空白與全形半形差異），"
+            "多於一行即無法確定哪一行是規劃期建議",
         )
 
-    routing_index, match = routing_rows[0]
+    routing_index = candidates[0]
     if routing_index != declarations[0] + 1:
         return CapabilityComparison(
             CAPABILITY_BASELINE_AMBIGUOUS,
             actual_capability,
             None,
-            f"{ROUTING_MARKER} 宣告在標頭區第 {declarations[0] + 1} 行，但合格路由行在"
+            f"{ROUTING_MARKER} 宣告在標頭區第 {declarations[0] + 1} 行，但候選路由行在"
             f"第 {routing_index + 1} 行——標記必須緊鄰它所宣告的路由行",
+        )
+
+    # 受理側：**原始行**、嚴格比對，不套用任何偵測正規化。偵測的寬鬆只用來決定
+    # 「這行要不要被檢查」，絕不用來幫破損的卡面補正。
+    match = _ROUTING_PARSE_RE.match(header[routing_index].rstrip())
+    if match is None:
+        return CapabilityComparison(
+            CAPABILITY_BASELINE_AMBIGUOUS,
+            actual_capability,
+            None,
+            "候選路由行不符合 templates/tasks-card.md 第 4 行格式"
+            "（如全形／半形空白錯置、缺分號或括號、理由為空、查核段缺失、混入零寬字元）",
         )
 
     # 匹配成功不等於四欄都合格：層級要在語彙內、理由不得全空白。任一不合格都歸

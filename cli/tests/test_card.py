@@ -613,6 +613,132 @@ def test_amend_spec_baseline_rejects_newlines_that_would_inject_a_header_line():
         amend_spec_baseline(body, f"main abc\n{ROUTING_MARKER}")
 
 
+# --- R4-003：破損不得把 ambiguous 降成 matched ------------------------------
+#
+# 本卡五輪來唯一一次錯在**不安全方向**。候選路由行原本用 startswith 收，前置一個
+# U+200B 那行就整條被略過，於是「兩條路由行 → ambiguous」被降成「剩一條 → matched」，
+# 連偏離理由都免除了。前幾輪的錯都在保守側（多要求理由），這次是放行。
+
+INVISIBLE_CHARS = [
+    "\u200b",  # ZWSP
+    "\u200d",  # ZWJ
+    "\ufeff",  # BOM / ZWNBSP
+    "\u2060",  # WORD JOINER
+    "\u00ad",  # SOFT HYPHEN
+    "\ufe0f",  # VS16
+]
+
+
+def _two_routing_lines_body(second: str) -> str:
+    return (
+        "- 需求：x\n"
+        f"{ROUTING_MARKER}\n"
+        f"{WELL_FORMED_LINE}\n"
+        f"{second}\n"
+        "\n## Log\n\n- x\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "make_second",
+    [
+        lambda: WELL_FORMED_LINE,
+        lambda: ZWSP + WELL_FORMED_LINE,
+        lambda: "\ufeff" + WELL_FORMED_LINE,
+        lambda: WELL_FORMED_LINE.replace("- 執行：", f"-{chr(0x200d)} 執行：", 1),
+        lambda: WELL_FORMED_LINE.replace("- 執行：", "- 執行:", 1),
+        lambda: WELL_FORMED_LINE.replace("執行", f"執{VS16}行", 1),
+        lambda: WELL_FORMED_LINE.replace("- 執行：", "-  執行：", 1),
+        lambda: WELL_FORMED_LINE + "   ",
+    ],
+    ids=[
+        "兩條都正常", "前置ZWSP", "前置BOM", "前綴內ZWJ",
+        "全形冒號改半形", "前綴含VS16", "前綴多空白", "行尾空白",
+    ],
+)
+def test_second_routing_line_cannot_be_hidden_by_format_chars(make_second):
+    # 候選集寧可多收：任何讓第二條「看起來不像」的擾動都不得使它從候選集消失。
+    c = compare_capability_to_card(_two_routing_lines_body(make_second()), "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert c.requires_reason is True
+
+
+def test_exactly_one_routing_line_still_matches():
+    # 對照組：沒有第二條時仍須正常判 matched，證明上面的嚴格不是把全部打成 ambiguous。
+    body = (
+        "- 需求：x\n"
+        f"{ROUTING_MARKER}\n"
+        f"{WELL_FORMED_LINE}\n"
+        "\n## Log\n\n- x\n"
+    )
+    assert compare_capability_to_card(body, "主力型").outcome == CAPABILITY_MATCHED
+
+
+# 需要理由的基準卡面：性質斷言就是要證明「破損不會讓這些卡面變得不需要理由」。
+PERMISSIVENESS_BASES = {
+    "兩條路由行(ambiguous)": _two_routing_lines_body(WELL_FORMED_LINE),
+    "舊卡(absent)": LEGACY_WITH_SECTIONS,
+    "偏離(deviated)": (
+        "- 需求：x\n"
+        f"{ROUTING_MARKER}\n"
+        f"{WELL_FORMED_LINE}\n"
+        "\n## Log\n\n- x\n"
+    ),
+}
+
+
+def _invisible_char_perturbations(body: str):
+    """在 Log 之前的每一行、每個位置插入每種不可見字元。"""
+    head, sep, tail = body.partition("\n\n## Log")
+    lines = head.split("\n")
+    for index, line in enumerate(lines):
+        for ch in INVISIBLE_CHARS:
+            for pos in range(len(line) + 1):
+                mutated = lines[:]
+                mutated[index] = line[:pos] + ch + line[pos:]
+                yield "\n".join(mutated) + sep + tail
+
+
+@pytest.mark.parametrize("name", sorted(PERMISSIVENESS_BASES))
+def test_corruption_never_relaxes_the_reason_requirement(name):
+    """性質斷言（非逐案例列舉）：破損不得讓結果比未破損更寬鬆。
+
+    列舉永遠會漏下一種擾動，所以這裡改成掃描——在 Log 之前的每一行每個位置插入每種
+    不可見字元，斷言「原本要理由的卡面，破損後仍要理由」。``matched`` 是唯一免除理由
+    的結果，所以這等價於「破損不得產生偽 matched」。
+    """
+    base = PERMISSIVENESS_BASES[name]
+    actual = "高階型" if name.startswith("偏離") else "主力型"
+    assert compare_capability_to_card(base, actual).requires_reason is True
+
+    checked = 0
+    for mutated in _invisible_char_perturbations(base):
+        result = compare_capability_to_card(mutated, actual)
+        assert result.requires_reason is True, (
+            f"{name}：插入不可見字元後變成 {result.outcome}（免除理由）——"
+            f"破損不得讓判定變寬鬆\n{mutated!r}"
+        )
+        checked += 1
+    assert checked > 100, f"擾動樣本只有 {checked} 個，掃描範圍可能沒生效"
+
+
+def test_detection_key_folds_invisibles_and_width_but_acceptance_does_not():
+    # 兩側分工的直接斷言：偵測寬鬆（同一行的各種擾動都算候選）、受理嚴格（原始行不合格）。
+    for ch in INVISIBLE_CHARS:
+        corrupted = ch + WELL_FORMED_LINE
+        body = (
+            "- 需求：x\n"
+            f"{ROUTING_MARKER}\n"
+            f"{corrupted}\n"
+            "\n## Log\n\n- x\n"
+        )
+        c = compare_capability_to_card(body, "主力型")
+        # 偵測收得到它（否則會變成 0 候選，訊息會是「候選路由行有 0 行」）…
+        assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+        # …但受理端不替它補正，所以仍是 ambiguous 而非 matched。
+        assert c.outcome != CAPABILITY_MATCHED
+
+
 def test_renderers_emit_the_version_marker():
     card = _make_card()
     for text in (render_spec_markdown(card), render_issue_body(card)):
