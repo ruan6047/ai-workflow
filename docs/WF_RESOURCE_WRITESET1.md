@@ -610,7 +610,8 @@ fail-closed、有界、且會製造修正該宣告的壓力。實測現存觸犯
 | 54 | 現存無法解析卡的普查 | **33 張全數落在 MIG1 封閉母體、母體外 0 張、帶 sentinel 卻失敗 0 張**（列舉產生，§9.7b） |
 | 55 | `git ls-tree` 對 `resource_check_rev` 查詢**失敗**（rev 不存在／非零 exit） | **拒絕派工**；不得與「查無此分量」（合法的「將要新增」）同格處置（§8.6-S7） |
 | 56 | realpath 解析拋 `OSError`（symlink 迴圈、權限不足） | **拒絕派工**；不得當成「路徑不存在」略過（§8.6-S8） |
-| 57 | 本檔 §9.9 的自檢落成 repo 內腳本並掛 CI，對本檔執行 | 退出碼 **0**；且對**人為植入**「f-string 取值部含反斜線」與「刪去一個探針區塊」兩種變異，退出碼 **非 0**（變異測試——只驗 PASS 的自檢等於沒驗，§9.9.2 已示範反向案例） |
+| 57 | 本檔 §9.9 的自檢落成 repo 內腳本並掛 CI，對本檔執行 | 退出碼 **0**；且對**人為植入**的三種變異退出碼 **非 0**：(a) 「f-string 取值部含反斜線」（PEP 701，3.12+ 才合法）、(b) **`type _MutAlias = int`（PEP 695 型別別名語句，3.12+ 才合法，與 f-string 無關）**、(c) 「刪去一個探針區塊」。(b) 的作用是釘住閘門**不是只認得已知那一種形狀**——它必須攔下任意高於下限的語法（實跑輸出見 §9.9.4） |
+| 57a | 自檢執行環境**找不到**版本 ≤ 3.11 的直譯器 | 退出碼 **非 0**，訊息為「可攜性宣稱無從佐證」；**不得**退回用執行中的直譯器編譯而靜默 PASS（§9.9.1-C） |
 
 **另須斷言**：`assign` 的程式路徑中**不存在**任何「解析失敗 → 記錄後 `continue`」的分支（`skipped_unparseable` 已移除）。此為結構性斷言，衍生卡須以測試覆蓋第 44 列的**退出碼**而非僅訊息文字。
 
@@ -709,7 +710,7 @@ C 目標：同 repo 0 對（其中歸屬未確立而 fail-closed 併入者 0）�
 # §9.7b 封閉母體普查。依賴：wf_cli（gh CLI 已登入）。唯讀。
 # 註：本區塊以四個反引號圍起，因為程式內含 ``` 字面（MIG1_JSON 正則要比對 fenced JSON）。
 # 註：所有含反斜線的正則一律先編譯成模組層常數，不得內嵌進 f-string 的取值部——
-#     那在 Python 3.12 以前是 SyntaxError（見 §9.9，該規則由自檢探針機械執行）。
+#     那在 Python 3.12 以前是 SyntaxError（§9.9 的自檢以真實 <=3.11 直譯器編譯本區塊來擋）。
 import json, re
 from collections import Counter
 from wf_cli.gh import default_runner
@@ -908,18 +909,24 @@ print(f"[裁決] {'PASS' if ok else 'FAIL'}")
 
 R2-001 的教訓不是「有一行寫錯」，而是**「文件內的證據可以原樣重跑」這件事本身沒有任何檢查**。§9.7／§9.7b／§9.8 三支探針是 §8.7.2、§8.8.1、§8.2、§8.5 全部完整性宣稱的唯一支撐，而其中一支壞了七天沒被發現——直到查核者手動 `sed | python3` 才撞上。**人工保證失效過一次，就不該再被當成保證。**
 
-下列程式**抽出本檔全部 `python` 圍籬區塊**，逐一編譯、檢查跨直譯器可攜性，並實際執行其中不需網路者。它自身也是一個 `python` 區塊，因此**會抽到自己**（以 `probe-selfcheck` 標記避免遞迴執行，但仍受編譯與可攜性檢查）。**無網路、無 `wf_cli` 依賴；退出碼非 0 即失敗，可直接掛 CI。**
+下列程式**抽出本檔全部 `python` 圍籬區塊**，把每一段交給一個**版本不高於宣稱可攜下限的真實直譯器**編譯，並實際執行其中不需網路者。它自身也是一個 `python` 區塊，因此**會抽到自己**（以 `probe-selfcheck` 標記避免遞迴執行，但仍受閘門編譯）。**無網路、無 `wf_cli` 依賴；退出碼非 0 即失敗，可直接掛 CI。**
+
+> **R3-001 的處置（本輪重寫）**：前一版用**執行中的直譯器** `ast.parse` 加一道「f-string 取值部反斜線」掃描來宣稱 3.11 可攜性。那個宣稱兌現不了——在 3.12+ 上跑，任何**其他** 3.12+ 新語法都會編譯通過又不被掃描命中。本輪改為查核者 disposition 的**第 1 條**：以真實舊直譯器實際編譯。為什麼不走第 2 條（版本化語法閘門），見 §9.9.2 的機械反例。
 
 ```python
-# §9.9 探針自檢（probe-selfcheck）：抽出本檔全部 python 探針，逐一編譯、檢查跨直譯器版本
-# 可攜性，並實際執行其中不需網路者。無網路、無 wf_cli 依賴；退出碼非 0 即失敗，可直接掛 CI。
-import ast, pathlib, re, sys
+# §9.9 探針自檢（probe-selfcheck）：抽出本檔全部 python 探針，交給一個版本**不高於**宣稱可攜
+# 下限的真實直譯器逐一編譯，並實際執行其中不需網路者。找不到這種直譯器即 fail-closed。
+# 無網路、無 wf_cli 依賴；退出碼非 0 即失敗，可直接掛 CI。
+import ast, os, pathlib, re, shutil, subprocess, sys
 
 DOC = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "docs/WF_RESOURCE_WRITESET1.md")
 TICK = chr(96)                   # 反引號；不寫字面，以免本區塊被自己的內容提前關閉
 FLOOR = (3, 11)                  # cli/pyproject.toml 的 requires-python 下限
 OPENER = re.compile("^(" + TICK + "{3,})python[ \t]*$")
 SELF = "probe-selfcheck"         # 本區塊自身的標記：抽到自己時不遞迴執行
+VER = "import sys; print('%d.%d.%d' % sys.version_info[:3])"
+COMPILE = "import ast, sys; ast.parse(sys.stdin.read())"
+
 
 def extract(text):
     """回傳 [(起始行, 結束行, 原始碼)]，行號 1-based 且含端點。"""
@@ -938,6 +945,7 @@ def extract(text):
         i = j + 1
     return out
 
+
 def imports_wf_cli(tree):
     """是否真的 import wf_cli。不可用字串比對：§9.8 的語料裡就有 cli/src/wf_cli/ 這條路徑。"""
     for node in ast.walk(tree):
@@ -947,35 +955,71 @@ def imports_wf_cli(tree):
             if (node.module or "").split(".")[0] == "wf_cli": return True
     return False
 
-def fstring_backslash(tree, src):
-    """f-string 取值部含反斜線者，在 Python 3.12 以前（PEP 701 之前）是 SyntaxError。"""
-    if sys.version_info < (3, 12):
-        return []                # 該版本的 compile() 本身即精確閘門，且 f-string 內位置不可靠
-    hits = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.JoinedStr): continue
-        for part in node.values:
-            if not isinstance(part, ast.FormattedValue): continue
-            seg = ast.get_source_segment(src, part.value) or ""
-            if "\\" in seg: hits.append((part.lineno, seg.strip()))
-    return hits
+
+def gate_candidates():
+    """列出可當閘門的直譯器 [(版本, 路徑)]；版本一律由直譯器自報，不從檔名推斷。"""
+    names = ["python3.%d" % m for m in range(FLOOR[1], 5, -1)] + ["python3", "python"]
+    paths = [shutil.which(n) for n in names] + ["/usr/bin/python3", sys.executable]
+    found, seen = [], set()
+    for p in paths:
+        if not p: continue
+        real = os.path.realpath(p)
+        if real in seen: continue
+        seen.add(real)
+        try:
+            r = subprocess.run([p, "-c", VER], capture_output=True, text=True, timeout=30)
+        except OSError:
+            continue
+        if r.returncode: continue
+        v = tuple(int(x) for x in r.stdout.strip().split("."))
+        if v[:2] <= FLOOR: found.append((v, p))
+    return sorted(found, reverse=True)
+
+
+def floor_hint(src):
+    """單向診斷。ast 的 feature_version 是 best-effort：它**接受** f-string 取值部反斜線
+    （正是 R2-001 那個 case），所以『接受』不帶任何資訊，只有『拒收』可採信。
+    因此它永遠不得當閘門，也不得用來放行。"""
+    if sys.version_info[:2] < FLOOR: return ""
+    try:
+        ast.parse(src, feature_version=FLOOR)
+    except SyntaxError:
+        return f"；feature_version={floor} 亦拒收 → 確屬下限違例"
+    return (f"；feature_version={floor} 未複現——該閘門 best-effort 且已知漏 PEP 701 這類，"
+            "故『接受』不代表下限合法；要分辨真違例與嚴於下限的誤拒只能裝真 3.11 複驗")
+
 
 text = DOC.read_text(encoding="utf-8")
 probes, failures, ran = extract(text), [], 0
-ver = ".".join(str(n) for n in sys.version_info[:3])
-floor = f"{FLOOR[0]}.{FLOOR[1]}"
-print(f"探針自檢：{DOC}；抽出 python 區塊 {len(probes)} 個；直譯器 {ver}；宣稱可攜下限 {floor}")
+run_ver = ".".join(str(n) for n in sys.version_info[:3])
+floor = "%d.%d" % FLOOR
+cands = gate_candidates()
+exact = [c for c in cands if c[0][:2] == FLOOR]
+gate = exact[0] if exact else (cands[0] if cands else None)
+mode = "exact" if exact else ("stricter" if cands else "none")
+print(f"探針自檢：{DOC}；抽出 python 區塊 {len(probes)} 個；執行直譯器 {run_ver}；宣稱可攜下限 {floor}")
+if gate is None:
+    print(f"可攜門檻：找不到版本 ≤ {floor} 的直譯器 → 無法佐證")
+    failures.append(("整份", f"本機無版本 ≤ {floor} 的直譯器，可攜性宣稱無從佐證（fail-closed）"))
+else:
+    gv = ".".join(str(n) for n in gate[0])
+    kind = "等於下限" if mode == "exact" else "低於下限：嚴於宣稱而非等價，見 §9.9.1"
+    print(f"可攜門檻：{gv}（{gate[1]}）｜模式 {mode}（{kind}）")
 if len(probes) < 4: failures.append(("整份", f"只抽到 {len(probes)} 個區塊，少於本檔登記的 4 個"))
 for start, end, src in probes:
     label, note = f"L{start}-{end}", []
+    if gate is not None:
+        r = subprocess.run([gate[1], "-c", COMPILE], input=src, capture_output=True, text=True)
+        if r.returncode:
+            tail = (r.stderr.strip().splitlines() or ["(無 stderr)"])[-1]
+            extra = floor_hint(src) if mode == "stricter" else ""
+            failures.append((label, f"閘門 {'.'.join(str(n) for n in gate[0])} 編譯失敗：{tail}{extra}"))
+            print(f"  {label}：閘門編譯失敗"); continue
+        note.append("閘門編譯 OK")
     try:
         tree = ast.parse(src, f"{DOC}:{start}")
     except SyntaxError as exc:
-        failures.append((label, f"編譯失敗：{exc}")); print(f"  {label}：編譯失敗"); continue
-    for lineno, seg in fstring_backslash(tree, src):
-        failures.append((label, f"第 {start + lineno - 1} 行 f-string 取值部含反斜線"
-                                f"（{floor} 上會 SyntaxError）：{seg}"))
-        note.append("可攜性違例")
+        failures.append((label, f"執行直譯器編譯失敗：{exc}")); print(f"  {label}：編譯失敗"); continue
     if SELF in src:
         note.append("自身，不遞迴執行")
     elif imports_wf_cli(tree):
@@ -990,59 +1034,110 @@ for start, end, src in probes:
             ran += 1
             note.append("已執行")
             if ns.get("ok") is False: failures.append((label, "該探針自身斷言判 FAIL"))
-    print(f"  {label}：編譯 OK；{'；'.join(note) or '—'}")
+    print(f"  {label}：{'；'.join(note) or '—'}")
 print(f"實際執行 {ran} 個離線探針；違例 {len(failures)} 筆")
 for label, msg in failures: print(f"  [FAIL] {label}：{msg}")
 print(f"[裁決] {'PASS' if not failures else 'FAIL'}")
 sys.exit(1 if failures else 0)
 ```
 
-#### 9.9.1 它檢查什麼，為什麼是這三件
+#### 9.9.1 它檢查什麼，為什麼是這四件
 
-1. **編譯**（`ast.parse`）：抓 R2-001 那一類「抽出來根本跑不起來」。在 3.12 以前的直譯器上，這一步就是精確閘門。
-2. **可攜性**（f-string 取值部的反斜線）：**這才是 R2-001 的真正形狀**。在 3.12+（PEP 701）該寫法合法，於是**用新直譯器自檢會看不見它**——查核者用系統 Python 3.9 撞到、執行者用 3.14 沒撞到，同一份檔案兩種結果。故在 3.12+ 上補一道 AST 掃描，把宣稱的可攜下限（`requires-python >= 3.11`）機械化。3.12 以下不掃：那些版本的 `compile()` 已是精確閘門，且 f-string 內的位置資訊不可靠，掃了會產生假陽性。
-3. **執行**：不 import `wf_cli` 的探針（今日只有 §9.8）**實際跑完**，並在其自訂 `ok` 為 `False` 時判 FAIL。需 `gh` 登入者只編譯——CI 不該依賴 GitHub 憑證，但**語法與可攜性不需要憑證就能守住**。
+**A. 閘門直譯器的選取（`gate_candidates`）。** 候選是 PATH 上的 `python3.6`–`python3.11`、`python3`、`python`，加上 `/usr/bin/python3` 與 `sys.executable`；**版本一律問直譯器本人**，不從檔名推斷——本機的 `/usr/bin/python3` 就是 3.9.6，而 PATH 上根本沒有叫 `python3.9` 的東西，信檔名會整批漏掉。取到恰為 3.11 者 → 模式 `exact`；否則取**低於下限中版本最高者** → 模式 `stricter`。
+
+**B. 逐區塊交給閘門實際編譯**（`subprocess` + `ast.parse(stdin)`）。這是 R3-001 disposition 的第 1 條：**不是**在執行中的直譯器上掃已知形狀，而是讓一個真的跑不動高版本語法的直譯器去拒收。它沒有「已知形狀」清單，因此攔得下 f-string 反斜線以外的任意高版本語法（§9.9.4 的變異 (b) 即為此而設）。
+
+**C. 找不到 ≤ 3.11 的直譯器 → fail-closed**（§9.6 第 57a 列）。**這是 R3-001 的核心**：前一版在這個情形會退回用執行中的直譯器編譯，於是在 3.12+ 的 CI 上靜默 PASS，宣稱與證據脫節。現在該情形直接 `[FAIL]` 並非 0 退出。
+
+**D. 執行**：不 import `wf_cli` 的探針（今日只有 §9.8）在**執行中的**直譯器上實跑完，並在其自訂 `ok` 為 `False` 時判 FAIL。需 `gh` 登入者只編譯——CI 不該依賴 GitHub 憑證，但**語法與可攜性不需要憑證就能守住**。
 
 `imports_wf_cli` 用 AST 判 import 而非字串比對，是因為 §9.8 的語料裡就有 `"cli/src/wf_cli/"` 這條**路徑字串**——用 `"wf_cli" in src` 會把離線探針誤判成需憑證而**靜默不執行它**。這是本檔反覆出現的同一種病：**用寬鬆的字面比對代替結構判定，代價是安靜地少做事。**
 
-#### 9.9.2 在修正前的檔案上執行的輸出（反向驗證）
+##### `stricter` 模式嚴在哪、以及它唯一沒機械化的前提（明說，不含糊）
+
+本機沒有 3.11，實跑用的是 3.9.6，所以本次交付的輸出是 `stricter` 而非 `exact`。這**嚴於**宣稱下限，不等價，具體是：
+
+- **正向可用**：3.9 接受 ⇒ 3.11 接受。這一步靠的是「3.10／3.11 沒有移除任何 3.9 合法的語法」這個**前提**。它與 CPython 那兩版的變更紀錄相符，但本檔**沒有把它機械化**——這是本節唯一未由程式產生的環節，如實記在此處，不寫進任何「已證明」的句子。
+- **反向會誤拒**：3.11 合法而 3.9 拒收者確實存在（3.10 的 `match`、3.11 的 `except*`）。若日後有探針用到這類語法，`stricter` 模式會**誤拒**。
+- **誤拒的處置是 fail-closed，不放寬**：訊息會附一則單向診斷（`floor_hint`）。它只採信「`feature_version=3.11` **也**拒收 → 確屬違例」這一向；**「接受」不帶任何資訊**，理由見 §9.9.2。要真正分辨真違例與誤拒，只能裝一個 3.11 直譯器複驗（CI 上用 `setup-python` 釘 3.11 即可得到 `exact`，這是衍生卡該做的事，§9.9.6）。
+- **現況**：本檔四個探針在 3.9.6 下**全數通過**，所以誤拒風險目前是零實例。那是現況，不是保證。
+
+#### 9.9.2 為什麼不走 disposition 的第 2 條（版本化語法閘門）
+
+第 2 條要求「等價且**可證明覆蓋完整** Python 3.11 語法」。標準庫裡唯一的現成候選是 `ast.parse(..., feature_version=)`，而 CPython 文件自述它是 best-effort、只影響語法的一個子集。這不是措辭保守，有機械反例——**它漏掉的正好就是 R2-001 那一個 case**：
+
+```text
+原始碼： print(f"{__import__('re').match(r'a\.b','a.b')}")
+ast.parse(feature_version=(3,11)) → 接受，無例外
+真實 3.9.6 直譯器 → SyntaxError: f-string expression part cannot include a backslash
+```
+
+**用它當閘門，會原樣放行本卡上一輪被打的那個 bug。** 要讓第 2 條成立，就得自備一份完整的 3.11 文法並證明其覆蓋完整——那正是「宣稱大於證據」的典型，也是本卡連兩輪被打的形態。故本輪明確放棄第 2 條，並把它記為已裁定的非目標。
+
+#### 9.9.3 在修正前的檔案上執行的輸出（反向驗證）
 
 自檢若只在修好之後跑一次，證明不了它抓得到東西。以 **R2 交付版**（`cb6028f`）的檔案為輸入：
 
 ```text
-探針自檢：docs/WF_RESOURCE_WRITESET1.md；抽出 python 區塊 3 個；直譯器 3.14.3；宣稱可攜下限 3.11
-  L609-664：編譯 OK；需 gh 登入，僅編譯
-  L692-733：編譯 OK；可攜性違例；需 gh 登入，僅編譯
-  L768-855：編譯 OK；已執行
+探針自檢：…/r2.md；抽出 python 區塊 3 個；執行直譯器 3.14.3；宣稱可攜下限 3.11
+可攜門檻：3.9.6（/usr/bin/python3）｜模式 stricter（低於下限：嚴於宣稱而非等價，見 §9.9.1）
+  L609-664：閘門編譯 OK；需 gh 登入，僅編譯
+  L692-733：閘門編譯失敗
+  L768-855：閘門編譯 OK；已執行
 實際執行 1 個離線探針；違例 2 筆
   [FAIL] 整份：只抽到 3 個區塊，少於本檔登記的 4 個
-  [FAIL] L692-733：第 720 行 f-string 取值部含反斜線（3.11 上會 SyntaxError）：sum(1 for it in items if not re.match(r'https://github\.com/([^/]+/[^/]+)/issues/', it.issue_url or ''))
+  [FAIL] L692-733：閘門 3.9.6 編譯失敗：SyntaxError: f-string expression part cannot include a backslash；feature_version=3.11 未複現——該閘門 best-effort 且已知漏 PEP 701 這類，故『接受』不代表下限合法；要分辨真違例與嚴於下限的誤拒只能裝真 3.11 複驗
 [裁決] FAIL
 ```
 
-（`[3]`／`[4]` 等 §9.8 自身的輸出在執行時會巢狀印出，此處略去。）
+（`[1]`–`[4]` 等 §9.8 自身巢狀印出的輸出此處略去；退出碼 `1`。）
 
-**它在 Python 3.14 上、且在 `compile()` 通過的情況下，仍然指到了第 720 行**——與查核者用系統 Python 3.9 手動 `sed -n '694,733p' | python3` 撞到的是同一行。第一筆 `[FAIL]` 則是自檢**抽到自己之前**的狀態（R2 版沒有 §9.9，只有 3 個區塊）。
+**新閘門在沒有任何「f-string」專用知識的情況下抓到了同一段**——它只是把那段碼丟給 3.9.6 去編譯。與查核者當初手動 `sed -n '694,733p' | python3` 撞到的是同一處。第一筆 `[FAIL]` 則是自檢**抽到自己之前**的狀態（R2 版沒有 §9.9，只有 3 個區塊）。
 
-#### 9.9.3 在本次交付版上的輸出
+#### 9.9.4 變異測試：三種變異、三次非 0（§9.6 第 57／57a 列）
+
+變異植入本檔 §9.7b 探針的首行之後（該區塊只編譯不執行——**刻意選它**，證明「從不執行的區塊」一樣被守住）。三次都以同一支自檢、同一條命令跑：
 
 ```text
-探針自檢：docs/WF_RESOURCE_WRITESET1.md；抽出 python 區塊 4 個；直譯器 3.14.3；宣稱可攜下限 3.11
-  L622-677：編譯 OK；需 gh 登入，僅編譯
-  L709-754：編譯 OK；需 gh 登入，僅編譯
-  L793-880：編譯 OK；已執行
-  L914-997：編譯 OK；自身，不遞迴執行
+變異 (a) f-string 取值部含反斜線（PEP 701，3.12+ 才合法）　　退出碼 1
+  [FAIL] L709-755：閘門 3.9.6 編譯失敗：SyntaxError: f-string expression part cannot include a backslash；feature_version=3.11 未複現……
+
+變異 (b) type _MutAlias = int（PEP 695 型別別名語句，3.12+ 才合法，與 f-string 無關）　　退出碼 1
+  [FAIL] L709-755：閘門 3.9.6 編譯失敗：SyntaxError: invalid syntax；feature_version=3.11 亦拒收 → 確屬下限違例
+
+變異 (c) 刪去 §9.8 整個探針區塊　　退出碼 1
+  [FAIL] 整份：只抽到 3 個區塊，少於本檔登記的 4 個
+
+情境 (57a) 把 FLOOR 改成本機不存在的 (3, 6) 以觸發「無可用閘門」分支　　退出碼 1
+  可攜門檻：找不到版本 ≤ 3.6 的直譯器 → 無法佐證
+  [FAIL] 整份：本機無版本 ≤ 3.6 的直譯器，可攜性宣稱無從佐證（fail-closed）
+```
+
+**變異 (b) 是本輪新增的、查核者指定的非 f-string 高版本語法變異**。它的意義不在於「PEP 695 也被擋住」，而在於：閘門攔下它時**沒有用到任何關於 PEP 695 的知識**——舊版的 AST 掃描只認得 f-string 反斜線，對 (b) 會靜默放行，這正是 R3-001 的實證。(b) 的診斷欄顯示 `feature_version` 這次**有**複現，(a) 則沒有；同一份診斷在兩個真違例上一真一假，正是 §9.9.2 拒絕第 2 條的理由。
+
+#### 9.9.5 在本次交付版上的輸出
+
+```text
+探針自檢：docs/WF_RESOURCE_WRITESET1.md；抽出 python 區塊 4 個；執行直譯器 3.14.3；宣稱可攜下限 3.11
+可攜門檻：3.9.6（/usr/bin/python3）｜模式 stricter（低於下限：嚴於宣稱而非等價，見 §9.9.1）
+  L623-678：閘門編譯 OK；需 gh 登入，僅編譯
+  L710-755：閘門編譯 OK；需 gh 登入，僅編譯
+  L794-881：閘門編譯 OK；已執行
+  L917-1041：閘門編譯 OK；自身，不遞迴執行
 實際執行 1 個離線探針；違例 0 筆
 [裁決] PASS
 ```
 
-（同樣略去 §9.8 在 `L793-880` 執行時巢狀印出的 `[1]`–`[4]` 與其 `[裁決] PASS`；退出碼 `0`。）
+（略去 §9.8 在 `L794-881` 執行時巢狀印出的 `[1]`–`[4]` 與其 `[裁決] PASS`；退出碼 `0`。）
 
-四個區塊即 §9.7（`L622-677`）、§9.7b（`L709-754`）、§9.8（`L793-880`）、§9.9 自身（`L914-997`）。**行號會隨本檔任何編輯而漂移，所以它由自檢輸出，不寫進正文其他地方。**
+四個區塊即 §9.7（`L623-678`）、§9.7b（`L710-755`）、§9.8（`L794-881`）、§9.9 自身（`L917-1041`）。**行號會隨本檔任何編輯而漂移，所以它由自檢輸出，不寫進正文其他地方**；本節四組行號全部落在 §9.9.5 之前，因此本節後續的編輯不會使它們失效。
 
-#### 9.9.4 CI 歸屬與行號的自動化
+**模式欄是 `stricter` 不是 `exact`，這是本次交付的實際狀態**：本機無 3.11 直譯器，閘門是 3.9.6。§9.9.1 已把「嚴於而非等價」與其唯一前提寫死在該處，不在此處重述。
 
-- **CI**：衍生卡須把本探針落成 repo 內腳本並掛進 CI（§9.6 第 57 列、§10）。**本卡只宣告 `docs/WF_RESOURCE_WRITESET1.md` 一個資源，不得新增 workflow 或 script 檔案**——這是資源宣告互斥語意的卡在自己身上的應用，不是偷懶。
+#### 9.9.6 CI 歸屬與行號的自動化
+
+- **CI**：衍生卡須把本探針落成 repo 內腳本並掛進 CI（§9.6 第 57／57a 列、§10），且 **CI runner 必須備妥 3.11 直譯器**（`actions/setup-python` 釘 `3.11` 即可），讓閘門在 CI 上是 `exact` 而非 `stricter`——本次交付因本機無 3.11 只能給 `stricter`，那是環境限制，不該被繼承成永久狀態。§9.6 第 57a 列同時保證：runner 若連 ≤ 3.11 都沒有，CI 是紅的而不是綠的。
+- **本卡只宣告 `docs/WF_RESOURCE_WRITESET1.md` 一個資源，不得新增 workflow 或 script 檔案**——這是資源宣告互斥語意的卡在自己身上的應用，不是偷懶。上一段那個「CI 上裝 3.11」的要求，本卡同樣只能寫成規格，不能自己去改 workflow。
 - **行號**：上列輸出的 `L<起>-<訖>` 即各探針在本檔中的行號區間，**由程式列出、不由人維護**。查核者若要沿用手動 `sed -n '<起>,<訖>p' docs/WF_RESOURCE_WRITESET1.md | PYTHONPATH=cli/src python3` 的重現方式，直接讀該次自檢輸出即可，不必信任文件裡任何寫死的行號。
 
 ---
@@ -1055,8 +1150,8 @@ sys.exit(1 if failures else 0)
 - `open_cmd.py`／`amend_cmd.py`：§3.4 拒收時機、§5.1 tracked symlink 逐分量走查、§7.1 存在性提示。
 - `assign_cmd.py`：§5.3 realpath 與 containment、§6 revision 釘選與 TOCTOU、§4.2 repo 歸屬 fail-closed、**§8.6 不變式 I 的各站處置、§8.7 移除 `skipped_unparseable`、§8.8 `--ignore-unparseable` 與 `UNPARSEABLE_EXEMPTION_SUNSET` 常數**。
 - `doctor.py`：§8.8.2 的母體殘量與距 sunset 天數輸出（唯讀報告）。
-- **CI ＋ 一支 repo 內腳本**：§9.9 的探針自檢（抽取本檔全部 `python` 區塊 → 編譯 ＋ 可攜性 ＋ 執行離線者），連同 §9.6 第 57 列的兩個變異測試。**本卡不落地它**——本卡只宣告 `docs/WF_RESOURCE_WRITESET1.md`，新增腳本或 workflow 會逸出自己的寫入集。
-- 測試：§9 全部 61 列（1–43 原有＋28a／28b＋44–57＋49a／49b 共 18 列新增）＋五項列舉式斷言（§9.2 零遷移負債、§9.3 第 28／28b、§9.6 第 54、§9.7／§9.7b／§9.8 的生成式輸出）。
+- **CI ＋ 一支 repo 內腳本**：§9.9 的探針自檢（抽取本檔全部 `python` 區塊 → **以 ≤ 3.11 的真實直譯器編譯** ＋ 執行離線者），連同 §9.6 第 57 列的三個變異測試與第 57a 列的無閘門情境；CI 須釘 3.11 以取得 `exact` 模式（§9.9.6）。**本卡不落地它**——本卡只宣告 `docs/WF_RESOURCE_WRITESET1.md`，新增腳本或 workflow 會逸出自己的寫入集。
+- 測試：§9 全部 62 列（1–43 原有＋28a／28b＋44–57＋49a／49b／57a 共 19 列新增）＋五項列舉式斷言（§9.2 零遷移負債、§9.3 第 28／28b、§9.6 第 54、§9.7／§9.7b／§9.8 的生成式輸出）。
 
 **排程限制**：`assign_cmd.py` 目前由 [#21](https://github.com/ruan6047/ai-workflow/issues/21) 佔用（宣告 `file:cli/src/wf_cli/commands/assign_cmd.py`），衍生卡須待其釋放。`resources.py` 目前**無活卡佔用**，故 §8.1 的立即階段可先行落地——這正是兩階段切分的實務價值。
 
@@ -1100,6 +1195,7 @@ sys.exit(1 if failures else 0)
 5. **活卡的定義**。沿用現行 `assign`（非終態＋已指派），未改動。**收緊它是 fail-open 方向的變更**，理由見 §8.8.4，須另開卡並以「這會漏掉什麼」為驗收。
 6. **`open`／`amend` 對既有 33 張 MIG1 佔位卡的批次補宣告**。§8.8 給了到期壓力，但**誰去補、怎麼補**是作業排程，不是契約語意。
 7. **CLI 路徑引數的正規化**（`--worktree` 等）。§3.1 的封閉 namespace 只規範卡面 `file:` 資源宣告；兩者定義域不相容，理由見該節的界線告示，歸屬 [#23](https://github.com/ruan6047/ai-workflow/issues/23)。
+8. **在單一直譯器內「證明覆蓋完整 Python 3.11 文法」的版本化語法閘門**（R3-001 disposition 的第 2 條）。經機械反例否決，理由與證據見 §9.9.2：唯一的現成候選 `ast.parse(feature_version=)` 是 best-effort，且**恰好漏掉 R2-001 那個 case**；自備完整文法即是本卡連兩輪被打的「宣稱大於證據」形態。本檔改走第 1 條（真實舊直譯器實際編譯），**並在 §9.9.1 明記其 `stricter` 模式不等價於下限**。
 
 ### 12.1 已從非目標移出並裁定的項目（記錄）
 
@@ -1117,7 +1213,11 @@ sys.exit(1 if failures else 0)
 - §1.1、§1.2、§3.2、§3.3、§4.1、§4.2、§8.2、§8.3、§8.7、§8.8、§9.7、§9.7b、§9.8 的所有數字，均由探查程式對真實 repo 與真實 Project #4 產生，非人工清點。四支探針（§9.7 活卡三規則、§9.7b 封閉母體普查、§9.8 離線窮舉、§9.9 探針自檢）**全部內嵌於本檔並可原樣抽出執行**，其中 §9.8 與 §9.9 不需網路與 `gh` 登入。
 - **上一句在 R2 交付版是假的，而它是我自己寫的。** R2 版逐字寫著「三支探針全部內嵌於本檔並可原樣重跑」，實際上 §9.7b 抽出來即 `SyntaxError`（f-string 取值部含反斜線，Python < 3.12），由查核者以 `sed | python3` 撞出（R2-001）。**這條紀律的教訓不是「要更小心」**：我在 Python 3.14 上寫、在 3.14 上驗，而該寫法在 3.14 合法——**同一份檔案在不同直譯器上有不同結果，靠自律看不見**。故 R3 不只修那一行，而是把「探針可原樣抽出執行」本身變成 §9.9 的機械檢查，並要求衍生卡以變異測試釘住它（§9.6 第 57 列）。
 - **R3（本輪）處理 R2-001**：修 §9.7b 的可攜性缺陷並以修正後程式重跑（§9.7／§9.7b 同一 session，釘選 2026-08-12 01:28 +0800）、新增 §9.9 探針自檢與 §9.6 第 57 列、補 §3.1 的定義域界線告示與 §12 第 7 項（跨卡裁決，對 [#23](https://github.com/ruan6047/ai-workflow/issues/23)）、修正 §4.2 對 §9.7／§9.7b 的誤標，並在 §1.2／§9.7 記錄「線上反例已消失」與上一版把線上狀態誤當不變量的措辭錯誤。**§2、§3（除新增告示）、§5–§8 未改動；§9.8 一字未改**（其 `[裁決] PASS` 在 R3 由 §9.9 自動執行複現）。
+- **R4（本輪）處理 R3-001**：§9.9 的自檢被判「兌現不了自己的一般性宣稱」——它固定宣稱 3.11 可攜，卻只掃一種已知形狀（f-string 反斜線）並用**執行中的**直譯器編譯，於是在 3.12+ 上任何**其他**高版本語法都會靜默通過。本輪把自檢改為 disposition 的**第 1 條**：以真實的 ≤ 3.11 直譯器 `subprocess` 實際編譯每個抽出的區塊，找不到這種直譯器即 fail-closed（§9.6 第 57a 列）。同時新增 §9.9.2（機械反例否決第 2 條）、§9.9.4（三種變異＋無閘門情境的實跑輸出）、§9.6 第 57 列的非 f-string 變異 (b)、§12 第 8 項。**§1–§8 一字未改；§9.1–§9.8 除第 57／57a 列外未改。**
+- **R4 的自我歸因（歸屬判斷 vs 嚴重度誤判）**：**是嚴重度誤判，不是歸屬遺漏。** R3 的報告確實自陳「可攜性檢查只涵蓋 f-string 反斜線這一種形狀」，可見我**看見了**這個洞；錯在我把它記成「涵蓋率待擴充」，於是歸給衍生卡的 CI 設定。正確的量尺是：§9.9 的**文字宣稱**是「檢查跨直譯器版本可攜性」，那是一般性宣稱，而實作只兌現一個特例——**這不是覆蓋率不足，是宣稱與實作不一致，而宣稱寫在本卡、實作也寫在本卡，因此修它從來不需要逸出寫入集**（本輪的修正正是一個字都沒動到 `docs/WF_RESOURCE_WRITESET1.md` 以外）。我用「還要多做多少」當量尺，該用「已寫下的宣稱有多少沒兌現」當量尺。這與本卡連兩輪被打的是同一個病灶的第三次發作：**宣稱大於證據**，只是這次發作在自檢自己身上。
 - **R2 處理 R1-001**：新增 §8.6–§8.9、§9.6 矩陣 13 列、§9.7b／§9.8 兩支探針，改寫 §4.2、§12.1，並補 §11 第 9／10 列。§2、§3、§5–§7 的既有內容未被修改（R1 查核已驗證通過的 `B ⊇ C`、窮舉 `b_misses_c=0`、`templates/` vs `templates2/a.md` 不相交三項結論在 §9.8 被重新生成並維持不變）。
+- **R4 自陳，未修（一）：本次交付的可攜性閘門是 `stricter`（3.9.6）不是 `exact`（3.11）。** 本機沒有 3.11 直譯器（`uv python list` 顯示 3.11.15 僅「可下載」），而下載安裝直譯器是對開發機的環境變更、且查核者的機器未必跟進，故不做。**「3.9 通過 ⇒ 3.11 通過」是一個未機械化的前提**（依據是 3.10／3.11 未移除 3.9 合法語法），§9.9.1 已把它與「反向會誤拒 `match`／`except*`」一起明寫。要升級成 `exact`，動作是 CI 釘 3.11（§9.9.6），**那確實在衍生卡**——但這次的歸屬理由與 R3 那次不同：本卡能寫下的規格（第 57／57a 列、§9.9.6）已經寫完，剩下的只有 workflow 檔案本身，那是真的逸出寫入集。
+- **R4 自陳，未修（二）：`floor_hint` 的診斷是單向的，本檔沒有辦法自動分辨「真違例」與「嚴於下限的誤拒」。** §9.9.4 的 (a)／(b) 兩個變異剛好示範了同一份診斷在兩個真違例上一真一假。目前的處置是**一律 fail-closed 並要求人去裝 3.11 複驗**——這在誤拒發生時會擋住合法的探針。本檔四支探針今日在 3.9.6 下全過，所以此洞**零實例**，但它是設計上真實存在的粗糙面，不是已解決。
 - **R3 自陳，未修：§9.9 的自檢只涵蓋內嵌於本檔的四支探針，本檔仍有數字不在其射程內。** 具體是 §1.1 的「送入宣告全數被接受」對照表、§4.1 的 repo 分佈表（非終態 10／44、已指派 7／11）、§3.2 的 `*`／`?`／`[` 計數（0／0／41）、§3.3 的 25 個非 ASCII 路徑——這些來自一次性 session 腳本，**與 R2-001 是同一族的「不可重跑證據」，只是還沒有人踩到**。本輪不補的理由是它們支撐的都是**定性結論**（語彙檢查為零、Project 跨兩 repo、中括號不可誤拒、CJK 路徑真實存在），定性結論不因計數漂移而翻轉；而 §8.7.2／§8.8.1 靠的是**具體數值與具名清單**，那才是非可重跑不可的。**這個界線是我畫的，查核者可以不接受**——若判定要全數補成內嵌探針，工作量在本檔內、不逸出寫入集。
 - **§8.2 的「258 組合」數字來自 R1 當時的一次性 session 腳本，不可重跑**；本輪以 §9.8 的內嵌程式取代其角色（23 條語料、276 組合、`b_misses_c = 0`），結論相同而證據升級為可稽核。兩者語料不同故組合數不同——**這是刻意的替換，不是數字對不上**。
 - §5.2 的 git symlink 行為以一個臨時 scratch repo 實測，該 repo 未進入本 repo；重現步驟即 §9.4 第 29–33 列。
