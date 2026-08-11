@@ -94,6 +94,8 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 
 第三格是 §5 末段既有規則的直接後果，不是新增出口：finding 被合法降級或撤銷採認後即非有效 open finding，adapter 本就必須將它移出 open set，因此它不可能同時是「未被處置」。**降級的合法性由 §2／§5 管轄**（衝突分類須經 `review-correction` 裁定），本節不另設判準。
 
+**六格的前提是穩定 `finding_id`。** §2 要求 `finding_id` 為 stable id，本節與 §5 的 checkpoint 推導都據此跨 attempt 對齊。因此**把同一缺陷以新的 `finding_id` 重新提出，不構成對舊 `finding_id` 的任何處置**：舊 id 未被明列閉合就仍在它自己的格內（通常是「未提及」）而觸發第二條件。這是刻意的 fail-closed——換號重開與置之不理在留痕上無法區分，而前者本身即違反穩定 id 的要求。本節**不**定義「接續／承接」關係：那會新增一條語意軸（舊 id 算不算閉合、occurrence 是否重複計、carry 成員資格是否移轉），而既有要求已經排除了產生該關係的動作。cutover 前不滿足穩定 `finding_id` 的歷史事件依 §5 末段的 `contract-baseline` 維持原貌，不得反向套進六格。
+
 「未提及」是預設格：**沉默不等於 deferred**。任何無法落入前五格的輸入一律落在此格並強制 `escalate`，adapter 不得另設「其餘」處置。同一 finding 的證據同時指向多格時，依「已離開 open set 的三格（`resolved`／`withdrawn`／已非有效 open finding）」＞ 仍開啟 ＞ deferred 的優先序取單一格；對已離開 open set 之 finding 的 defer 宣告視為無作用的冗贅，不使該 checkpoint 無效。
 
 **查核規格變更與 deferred finding。** 需求方收窄或改變某一輪的查核規格（例如裁定該輪只搜特定根因、明文不逐條複驗前輪處置）是合法動作。它會使 carry set 中的 finding 在該輪既非 `resolved` 也非 `withdrawn`，若無出口，收窄範圍就機械上必然強制下一輪升級——把流程的正常動作誤讀成執行者連續失敗。
