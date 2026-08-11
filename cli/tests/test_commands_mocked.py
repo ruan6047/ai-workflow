@@ -353,21 +353,95 @@ def test_assign_matched_capability_needs_no_reason_and_proceeds(fake_runner):
     assert "實際能力層級 主力型（與卡面建議 主力型 相符）" in log
 
 
-def test_assign_deviation_without_reason_is_refused_with_zero_writes(fake_runner, capsys):
-    # 情形 2：不符且未給理由 → fail-closed 拒絕，且**完全沒有寫入**。
+class _RecordingRunner:
+    """把每一次 gh 呼叫記下來的代理（R2-002）。
+
+    先前那版「零寫入」測試只比對最終狀態值——`FakeGhRunner` 不記呼叫，所以測不出
+    「有沒有發生 mutation」，只測得出「最後看起來一樣」。狀態比對過不了「探針通過
+    但程式不正確」這關（例如寫進去又改回來），改用呼叫紀錄才是真證據。
+
+    刻意做在測試檔內而非改 `tests/fake_gh.py`：後者不在本卡資源宣告內。
+    """
+
+    # gh 子命令中會改變遠端狀態的那些；其餘（view／field-list／item-list）是唯讀。
+    MUTATING = (
+        ("project", "item-edit"),
+        ("project", "item-create"),
+        ("project", "item-add"),
+        ("project", "field-create"),
+        ("issue", "create"),
+        ("issue", "edit"),
+        ("issue", "comment"),
+    )
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.calls: list[list[str]] = []
+
+    def execute(self, args, input=None):
+        self.calls.append(list(args))
+        return self.inner.execute(args, input)
+
+    def run_json(self, args):
+        self.calls.append(list(args))
+        return self.inner.run_json(args)
+
+    def graphql(self, query: str, **variables):
+        self.calls.append(["graphql", query])
+        return self.inner.graphql(query, **variables)
+
+    def mutations(self) -> list[list[str]]:
+        found = []
+        for call in self.calls:
+            is_mutating_subcommand = any(
+                call[: len(m)] == list(m) for m in self.MUTATING
+            )
+            is_mutating_graphql = call[0] == "graphql" and "mutation" in call[1]
+            if is_mutating_subcommand or is_mutating_graphql:
+                found.append(call)
+        return found
+
+
+def test_assign_deviation_without_reason_is_refused_before_any_mutation(
+    fake_runner, capsys, monkeypatch
+):
+    # 情形 2：不符且未給理由 → fail-closed 拒絕。
+    #
+    # 保證的**精確範圍**：拒絕路徑不發生任何 mutation 呼叫。注意 assign 在能力檢查
+    # 之前會呼叫 ensure_fields，那是冪等的欄位 schema 準備——本測試在欄位已存在的
+    # project 上跑，故連 field-create 都不該發生；但「絕對零寫入」不是本指令在所有
+    # 情境下的保證（全新 project 會先建欄位），因此不用那個更強的詞。
     run_cli(_open_argv("DEV-FAIL1", **{"--exec-capability": "主力型"}))
     project = resolve_project(fake_runner, "acme", 1)
     before = find_item_by_card_id(list_items(fake_runner, project), "DEV-FAIL1")
+
+    spy = _RecordingRunner(fake_runner)
+    monkeypatch.setattr(assign_cmd, "default_runner", spy)
     rc = run_cli(
         _assign_argv("DEV-FAIL1", "某模型@某工具", "b", "/w", actual_capability="高階型")
     )
     assert rc == 2
-    err = capsys.readouterr().err
-    assert "MODEL_ROUTING" in err
+    assert "MODEL_ROUTING" in capsys.readouterr().err
+
+    # 真證據：整條拒絕路徑上一次 mutation 都沒有。
+    assert spy.mutations() == []
+    assert spy.calls, "代理必須真的攔到呼叫，否則這個斷言是空的"
+
+    # 狀態值也確實沒變（與呼叫紀錄互為佐證）。
     after = find_item_by_card_id(list_items(fake_runner, project), "DEV-FAIL1")
-    assert after.fields["owner"] == before.fields["owner"]  # owner 未被改
+    assert after.fields["owner"] == before.fields["owner"]
     assert after.fields["交付狀態"] == before.fields["交付狀態"]
-    assert after.body == before.body  # Log 也沒有半套紀錄
+    assert after.body == before.body
+
+
+def test_recording_runner_actually_detects_mutations(fake_runner, monkeypatch):
+    # 防「探針本身壞掉」：成功派工必須被同一支代理看見 mutation。
+    # 沒有這條，上面的 mutations()==[] 可能只是代理沒接上。
+    run_cli(_open_argv("DEV-SPY1", **{"--exec-capability": "主力型"}))
+    spy = _RecordingRunner(fake_runner)
+    monkeypatch.setattr(assign_cmd, "default_runner", spy)
+    assert run_cli(_assign_argv("DEV-SPY1", "某模型@某工具", "b", "/w")) == 0
+    assert spy.mutations() != []
 
 
 def test_assign_deviation_with_reason_records_both_and_reads_back(fake_runner):

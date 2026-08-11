@@ -497,10 +497,51 @@ _REASON_REQUIRED_BY_OUTCOME: dict[str, bool] = {
 _EXECUTOR_LINE_PREFIX = "- 執行："
 
 # 解析用；與測試裡那支「範本合規 oracle」刻意分開兩份，round-trip 測試才不是套套邏輯。
+#
+# 理由欄用 ``[^）]+`` 而非 ``[^）]*``：空理由必須讓整行**不匹配**，不能匹配成功後
+# 才靠後續檢查補救（R2-001 就是後者漏掉的）。全空白理由 ``+`` 擋不掉，由下方
+# ``_field_problems`` 的 strip 檢查接手。
 _ROUTING_PARSE_RE = re.compile(
-    r"^- 執行：(?P<executor>[^（]*)（建議 (?P<exec_tier>[^；）]+)；(?P<exec_reason>[^）]*)）"
-    r"　查核：(?P<reviewer>[^（]*)（建議 (?P<rev_tier>[^；）]+)；(?P<rev_reason>[^）]*)）$"
+    r"^- 執行：(?P<executor>[^（]*)（建議 (?P<exec_tier>[^；）]+)；(?P<exec_reason>[^）]+)）"
+    r"　查核：(?P<reviewer>[^（]*)（建議 (?P<rev_tier>[^；）]+)；(?P<rev_reason>[^）]+)）$"
 )
+
+# 「這一行是否**自稱**新制路由」的訊號。用途是把兩種失敗分開：
+#
+#   有訊號但不完整符合欄位格式 → ``ambiguous``（卡面明明寫了建議，只是壞了）
+#   完全沒有訊號              → ``absent``（規劃期路由必填之前開的舊卡）
+#
+# R2-001 的根因就是沒有分開這兩者：任何不匹配都被當成舊卡，於是「半形空格」這種
+# 純粹的排版損壞被寫成「卡面無建議層級」——卡面明明有建議，那是不實留痕。
+#
+# 訊號取「建議」字樣**或**任一能力層級值出現在行內。誤判方向刻意偏向 ``ambiguous``
+# （要求理由）而非 ``absent``：前者只是多打一個旗標，後者會產生不實留痕。
+_ROUTING_SIGNAL_TOKEN = "建議"
+
+
+def _claims_new_format(line: str) -> bool:
+    return _ROUTING_SIGNAL_TOKEN in line or any(t in line for t in CAPABILITY_TIERS)
+
+
+def _field_problems(match: re.Match[str]) -> list[str]:
+    """匹配成功後的逐欄檢查；回傳所有問題（空清單＝四欄皆合格）。
+
+    層級值先 ``strip`` 再查表——前後空白不帶語意，值本身仍必須落在 MODEL_ROUTING
+    語彙內。理由則只要求 strip 後非空：內容是規劃者的判斷，CLI 不評價其品質。
+    """
+    problems: list[str] = []
+    for axis, tier_key, reason_key in (
+        ("執行", "exec_tier", "exec_reason"),
+        ("查核", "rev_tier", "rev_reason"),
+    ):
+        tier = match.group(tier_key).strip()
+        if tier not in CAPABILITY_TIERS:
+            problems.append(
+                f"{axis}建議層級 {tier!r} 不在 MODEL_ROUTING.md 語彙 {CAPABILITY_TIERS} 內"
+            )
+        if not match.group(reason_key).strip():
+            problems.append(f"{axis}能力層級理由為空白")
+    return problems
 
 
 @dataclass(frozen=True)
@@ -600,6 +641,16 @@ def compare_capability_to_card(body: str, actual_capability: str) -> CapabilityC
 
     match = _ROUTING_PARSE_RE.match(lines[0])
     if not match:
+        # 有新制痕跡卻不完整符合欄位格式＝壞掉的建議，不是「沒有建議」。
+        if _claims_new_format(lines[0]):
+            return CapabilityComparison(
+                CAPABILITY_BASELINE_AMBIGUOUS,
+                actual_capability,
+                None,
+                "「- 執行：」行有新制路由的痕跡（「建議」字樣或能力層級值）卻不完整符合"
+                "templates/tasks-card.md 第 4 行格式（如全形／半形空白錯置、缺分號或"
+                "括號、理由為空、查核段缺失）",
+            )
         return CapabilityComparison(
             CAPABILITY_BASELINE_ABSENT,
             actual_capability,
@@ -607,15 +658,18 @@ def compare_capability_to_card(body: str, actual_capability: str) -> CapabilityC
             "「- 執行：」行是規劃期路由必填之前的舊格式，沒有（建議 <層級>；<理由>）括號段",
         )
 
-    suggested = match.group("exec_tier").strip()
-    if suggested not in CAPABILITY_TIERS:
+    # 匹配成功不等於四欄都合格：層級要在語彙內、理由不得全空白。任一不合格都歸
+    # ambiguous——「部分正確的建議」不可當成可信基線，更不可當成相符而免除理由。
+    problems = _field_problems(match)
+    if problems:
         return CapabilityComparison(
             CAPABILITY_BASELINE_AMBIGUOUS,
             actual_capability,
             None,
-            f"卡面建議層級 {suggested!r} 不在 MODEL_ROUTING.md 語彙 {CAPABILITY_TIERS} 內",
+            "；".join(problems),
         )
 
+    suggested = match.group("exec_tier").strip()
     outcome = (
         CAPABILITY_MATCHED if suggested == actual_capability else CAPABILITY_DEVIATED
     )

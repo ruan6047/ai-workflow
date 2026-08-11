@@ -300,6 +300,100 @@ def test_ambiguous_when_executor_line_is_not_unique():
     assert "2 行" in c.detail
 
 
+# --- 破損卡面的系統性列舉（R2-001 回歸）-------------------------------------
+#
+# R2-001 的根因：解析器把「任何不匹配」都當成舊卡（absent），於是排版損壞的卡面被
+# 寫成「卡面無建議層級」——不實留痕。修法是先判「這行是否自稱新制」，自稱了就必須
+# 完整合格，否則 ambiguous。
+#
+# 下表把「不完整符合新制欄位」的破壞方式逐一列出。原則：**卡面看得出有建議、但讀
+# 不出可信的層級 → 一律 ambiguous 並要求理由**；只有完全沒有新制痕跡才是 absent。
+
+WELL_FORMED_LINE = (
+    "- 執行：待指派（建議 主力型；理由甲）　查核：獨立校讀（建議 高階型；理由乙）"
+)
+
+
+def _body_with_line(line: str) -> str:
+    return f"- 需求：x\n{line}\n\n## Log\n\n- x\n"
+
+
+CORRUPTED_ROUTING_LINES = [
+    # (破壞方式, 該行內容)
+    ("執行理由為空", WELL_FORMED_LINE.replace("；理由甲", "；")),
+    ("查核理由為空", WELL_FORMED_LINE.replace("；理由乙", "；")),
+    ("執行理由只有空白", WELL_FORMED_LINE.replace("理由甲", "   ")),
+    ("查核理由只有空白", WELL_FORMED_LINE.replace("理由乙", "   ")),
+    ("全形分隔空白被改成半形", WELL_FORMED_LINE.replace("）　查核", "） 查核")),
+    ("執行層級不在語彙內", WELL_FORMED_LINE.replace("建議 主力型", "建議 旗艦型")),
+    ("查核層級不在語彙內", WELL_FORMED_LINE.replace("建議 高階型", "建議 旗艦型")),
+    ("缺分號", WELL_FORMED_LINE.replace("主力型；理由甲", "主力型 理由甲")),
+    ("缺右括號", WELL_FORMED_LINE.replace("理由甲）", "理由甲")),
+    ("缺左括號", WELL_FORMED_LINE.replace("待指派（建議", "待指派 建議")),
+    ("查核段整段缺失", "- 執行：待指派（建議 主力型；理由甲）"),
+    ("執行段舊式但查核段新式", "- 執行：待指派　查核：獨立校讀（建議 高階型；理由乙）"),
+    (
+        "括號與分號被改成半形",
+        WELL_FORMED_LINE.replace("（", "(").replace("）", ")").replace("；", ";"),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "how,line", CORRUPTED_ROUTING_LINES, ids=[c[0] for c in CORRUPTED_ROUTING_LINES]
+)
+def test_corrupted_routing_line_is_ambiguous_never_absent(how, line):
+    c = compare_capability_to_card(_body_with_line(line), "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS, how
+    assert c.requires_reason is True
+    assert c.suggested is None
+
+
+@pytest.mark.parametrize(
+    "how,line", CORRUPTED_ROUTING_LINES, ids=[c[0] for c in CORRUPTED_ROUTING_LINES]
+)
+def test_corrupted_routing_line_log_never_claims_missing_baseline(how, line):
+    # 查核者指定的回歸點：Log 不得把「格式受損的建議」寫成「卡面無建議層級」。
+    fragment = compare_capability_to_card(_body_with_line(line), "主力型").log_fragment(
+        "查核者指定的回歸情境"
+    )
+    assert "卡面建議無法解析" in fragment, how
+    assert "卡面無建議層級" not in fragment
+    assert "偏離卡面建議" not in fragment
+
+
+@pytest.mark.parametrize(
+    "how,line",
+    [
+        ("層級值前後有空白（空白不帶語意）", WELL_FORMED_LINE.replace("建議 主力型", "建議  主力型 ")),
+        ("行尾有多餘空白", WELL_FORMED_LINE + "   "),
+    ],
+)
+def test_insignificant_whitespace_still_parses_as_matched(how, line):
+    # 明列「哪些變形仍算合格」，避免把寬容度也留成未定義行為。
+    c = compare_capability_to_card(_body_with_line(line), "主力型")
+    assert c.outcome == CAPABILITY_MATCHED, how
+    assert c.suggested == "主力型"
+
+
+def test_empty_reason_no_longer_counts_as_matched():
+    # R2-001 (1) 的精確回歸：理由被清空的卡不得判 matched，更不得因此免除理由要求。
+    c = compare_capability_to_card(
+        _body_with_line(WELL_FORMED_LINE.replace("；理由甲", "；")), "主力型"
+    )
+    assert c.outcome != CAPABILITY_MATCHED
+    assert c.requires_reason is True
+
+
+def test_halfwidth_separator_no_longer_counts_as_absent():
+    # R2-001 (2) 的精確回歸：排版損壞不得被寫成「卡面無建議」。
+    c = compare_capability_to_card(
+        _body_with_line(WELL_FORMED_LINE.replace("）　查核", "） 查核")), "主力型"
+    )
+    assert c.outcome != CAPABILITY_BASELINE_ABSENT
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+
+
 def test_ambiguous_when_card_face_tier_is_outside_model_routing_vocabulary():
     # 有人手改卡面填了不存在的層級：不得當成「沒有建議」放行，也不得當成相符。
     body = LEGACY_BODY.replace(
