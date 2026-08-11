@@ -18,23 +18,47 @@
   C. ai-workflow#16 的 R1→R8 **忠實**回放（legacy）。
   D. 構造情境：deferred 出口、清償、連續 defer、carry 成員資格、epoch 邊界、
      條件1 可失效性。全部明確標示為構造。
+  D2. `instruction-omitted` 的缺漏證據（§4 專節 (a)(b)(c)）：含 R3-001 隔離探針的
+     逐字重跑與四種反例。全部明確標示為構造。
 
 --------------------------------------------------------------------------
 A 的宣稱界線（R2-003）
 --------------------------------------------------------------------------
 A 段列舉的是 **`classify()` 這個函式的輸入空間**：finding 的五個結構化欄位、
-「本輪是否明列仍 open」、以及 defer 是否成立所需的七個布林條件。它證明的是
+「本輪是否明列仍 open」、以及 defer 是否成立所需的十一個布林條件。它證明的是
 **分類器對其宣告值域是一個分割**，僅此而已。
 
-它**不**涵蓋（這些改由 B～D 的事件層測試或明確聲明未涵蓋處理）：
+它**不**涵蓋（這些改由 B～D2 的事件層測試或明確聲明未涵蓋處理）：
 
   1. finding 是否屬於本 checkpoint 的 carry set（→ D「carry 成員資格」）
   2. epoch 邊界對計數／carry／prev_deferred 的重置（→ D「epoch 邊界」）
   3. review-correction 相對 checkpoint 的**位置**（→ B 六格情境以事件順序驅動）
-  4. 同一 finding 的**衝突事件**與 §2 的待裁決 gate ——**未涵蓋**。本引擎不模擬
+  4. 十一款 defer 條件各自的**真值如何從事件流算出**（→ D2；A 段只把它們當自由
+     布林軸，證明「缺一即不成立」）
+  5. 同一 finding 的**衝突事件**與 §2 的待裁決 gate ——**未涵蓋**。本引擎不模擬
      衝突偵測，也不模擬同 SHA 多 reviewer 合併後的 fail loud。任何「本腳本證明
      §2 衝突處理正確」的宣稱都是假的。
-  5. 留痕解析停機（§1／§5 `review-marker-clearance`）——**未涵蓋**。
+  6. 留痕解析停機（§1／§5 `review-marker-clearance`）——**未涵蓋**。
+
+--------------------------------------------------------------------------
+D2 的宣稱界線（R3-001）
+--------------------------------------------------------------------------
+`instruction-omitted` 宣稱的是否定事實（某一則派審指示**沒有**要求逐項回報閉環）。
+本腳本把該事實建模為事件流上的結構化欄位：派審事件的 `review_prompt_url` 與
+`closure_reporting_requested`（§4 專節 (a)(b)）。因此 D2 證明的是**規則對這些欄位
+有鑑別力**——欄位缺、值為 true、指向別輪、URL 不能解析為本卡留言、理由未指涉同一
+則留痕，五者任一即該筆 defer 失效。
+
+它**不**證明：某一則真實 GitHub 留言的原文已被讀取核對。本腳本不連網，dispatch
+事件是 fixture。取得真實欄位是 adapter（ai-workflow#9）的義務；取不到時 §4 專節 (c)
+要求 fail-closed，本腳本的**預設 `CTX` 即為該狀態**（`instruction_omitted_supported`
+=False，對應本 repo 現況：`handoff` payload 尚無該兩欄、`wfcli` 尚無 checkpoint
+writer）。正例必須明示改用 `CTX_SUPPORTED` 才跑得出來，且已標示為構造。
+
+`spec-narrowed` 仍**不**核對其 ruling 留言的內容：該 cause 宣稱的是需求方的肯定
+作為，其留痕本身即該作為的紀錄；否定事實則不能靠指向文件成立。這個不對稱是刻意
+的設計判斷，不是實作偷懶——但它確實表示 `spec-narrowed` 的保證強度較低，止於
+「URL 解析為本卡留言 ＋ 理由指涉同一則 ＋ 需求方身分」。
 
 --------------------------------------------------------------------------
 C 的資料來源與轉錄聲明
@@ -85,6 +109,7 @@ closed。本腳本**不**做任何「舊 id 已被接續故不套用六格」的
 from __future__ import annotations
 
 import itertools
+import re
 import sys
 
 # --------------------------------------------------------------------------
@@ -107,6 +132,20 @@ CELLS = ("resolved", "withdrawn", "已非有效 open finding", "仍開啟", "def
 TRIGGERING = ("仍開啟", "未提及")
 SETTLED = ("resolved", "withdrawn", "已非有效 open finding", "仍開啟")
 
+# 本卡（#16 事件流）所屬 issue；constructed 情境沿用同一 issue 只為 URL 形狀。
+CARD_ISSUE_URL = "https://github.com/ruan6047/ai-workflow/issues/16"
+
+
+def ruling_url(comment_id, issue_url=CARD_ISSUE_URL) -> str:
+    return f"{issue_url}#issuecomment-{comment_id}"
+
+
+def parse_ruling_id(url, issue_url) -> str | None:
+    """§4 第 5 款：URL 必須解析為**本卡 issue** 的單一留言。"""
+    m = re.fullmatch(re.escape(issue_url) + r"#issuecomment-(\d+)", (url or "").strip())
+    return m.group(1) if m else None
+
+
 # §4 單筆 defer 的必要條件，逐項具名（缺一即該筆無效）。
 DEFER_CONDITIONS = (
     "in_carry",            # 1. finding 存在且屬本 checkpoint 的 carry set
@@ -114,7 +153,14 @@ DEFER_CONDITIONS = (
     "not_self_interested",  # 3. deferred_by 不是 owner，也不是本 epoch 任一 reviewer
     "cause_declared",      # 4a. defer_cause 取值於列舉
     "reason_nonempty",     # 4b. defer_reason 非空
-    "ruling_url",          # 5. defer_ruling_url 非空
+    "ruling_url_on_card",  # 5. defer_ruling_url 解析為本卡 issue 的單一留言
+    "reason_cites_ruling",  # 6. defer_reason 逐字含該留言的數字 id
+    # 7 = §4「instruction-omitted 的有效性必須可機械核對」專節 (a)(b)(c)。
+    # 三款只對 instruction-omitted 生效；spec-narrowed 宣稱的是需求方的肯定作為，
+    # 其留痕本身即該作為的紀錄，故不需同等強度的內容核對（不對稱是刻意的）。
+    "omission_dispatch_identified",  # 7a. 派審事件以 review_prompt_url 指認同一則，且派的是 trigger attempt
+    "omission_declared_false",       # 7b. 該派審事件的 closure_reporting_requested 恰為 false
+    "cause_available",               # 7c. 寫入通道／adapter 具備 (a)(b) 能力，否則本 cause 不可用
     "not_consecutive",     # §4「不得連續 defer」
 )
 
@@ -168,6 +214,8 @@ A_NOT_COVERED = [
     "carry set 成員資格（由 D 的事件層測試涵蓋）",
     "epoch 邊界的計數／carry／prev_deferred 重置（由 D 涵蓋）",
     "review-correction 相對 checkpoint 的位置（由 B 的事件順序涵蓋）",
+    "十一款 defer 條件的真值如何從事件流算出（由 D2 涵蓋；A 段視為自由布林軸）",
+    "派審指示**留言原文**是否真的不含逐項閉環要求 —— 未涵蓋（以結構化欄位建模）",
     "同一 finding 的衝突事件與 §2 待裁決 gate —— 未涵蓋",
     "同 SHA 多 reviewer 合併後的 fail loud —— 未涵蓋",
     "留痕解析停機（§1／§5 review-marker-clearance）—— 未涵蓋",
@@ -229,12 +277,35 @@ def prove_each_defer_condition_necessary():
 #   attempt   {label, new:{fid:(rc, overrides)}, updates:{fid: partial}, counted}
 #   correction{updates:{fid: partial}}            # review-correction
 #   epoch     {}                                   # escalation-epoch-change
+#   dispatch  {for_attempt, url, closure_reporting_requested}   # 派審事件（handoff）
 #   checkpoint{deferred:[{finding_id, defer_reason, deferred_by,
 #                         defer_ruling_url, defer_cause}]}
 #
 # updates 中 {"status": "open"} 表示「本輪明列該 finding 仍開啟」。
+#
+# ⚠️ **dispatch 事件在本腳本是 fixture**：它模擬 handoff-contract.md §2 的派審事件在
+# 補上 `review_prompt_url`／`closure_reporting_requested` 後的形狀。本腳本因此證明的是
+# **規則對這些欄位有鑑別力**，不是「某一則真實留言已被讀取核對」。取得真實欄位是
+# adapter（ai-workflow#9）的義務；取不到時 §4 專節 (c) 要求 fail-closed，見
+# `CTX` 的 `instruction_omitted_supported=False` 預設。
 
-CTX = {"requester": "ruan6047", "owner": "executor-agent", "reviewers": ("reviewer-x",)}
+CTX = {
+    "requester": "ruan6047",
+    "owner": "executor-agent",
+    "reviewers": ("reviewer-x",),
+    "issue_url": CARD_ISSUE_URL,
+    # 本 repo 現況：handoff payload 無 review_prompt_url／closure_reporting_requested，
+    # wfcli 亦無 checkpoint writer（#9 未完成）→ instruction-omitted 不可用。
+    "instruction_omitted_supported": False,
+}
+
+
+def ctx_with(**kw) -> dict:
+    return {**CTX, **kw}
+
+
+# 【構造】假想已完成 #9、派審事件已帶兩欄的採用專案。
+CTX_SUPPORTED = ctx_with(instruction_omitted_supported=True)
 
 
 def A(label, new=None, updates=None, counted=True):
@@ -254,32 +325,76 @@ def CP(deferred=None):
     return {"kind": "checkpoint", "deferred": deferred or []}
 
 
-def defer_entry(fid, *, by=None, reason="規格收窄", url="https://example/ruling",
-                cause="spec-narrowed"):
-    return {"finding_id": fid, "deferred_by": by or CTX["requester"],
-            "defer_reason": reason, "defer_ruling_url": url, "defer_cause": cause}
+def DISPATCH(for_attempt, comment_id, *, closure_reporting_requested, url=None):
+    """派審事件（handoff）。`closure_reporting_requested=False` 記錄一次偏離
+    review-prompt.md §6（未把「前輪 finding 逐項閉環驗證」帶進派審指示）。"""
+    return {"kind": "dispatch", "for_attempt": for_attempt,
+            "url": url or ruling_url(comment_id),
+            "closure_reporting_requested": closure_reporting_requested}
+
+
+CONSTRUCTED_RULING_ID = "9000000001"   # 構造情境的規格變更裁定留言
+CONSTRUCTED_DISPATCH_ID = "9000000042"  # 構造情境的派審指示留言
+
+
+def defer_entry(fid, *, by=None, reason=None, comment_id=CONSTRUCTED_RULING_ID,
+                url=None, cause="spec-narrowed"):
+    """預設理由逐字含 `comment_id`（§4 第 6 款），URL 預設為本卡該留言。"""
+    cid = str(comment_id)
+    return {
+        "finding_id": fid,
+        "deferred_by": by or CTX["requester"],
+        "defer_reason": (reason if reason is not None
+                         else f"需求方於 issuecomment-{cid} 裁定本輪改窄規格，明文不逐條複驗"),
+        "defer_ruling_url": ruling_url(cid) if url is None else url,
+        "defer_cause": cause,
+    }
 
 
 class Checkpoint:
     __slots__ = ("trigger", "count", "epoch", "cond1_rcs", "cells",
-                 "overdue", "cond2", "forced", "inert_defers")
+                 "overdue", "cond2", "forced", "inert_defers", "defer_audit")
 
-    def __init__(self, trigger, count, epoch, cond1_rcs, cells, overdue, cond2, inert):
+    def __init__(self, trigger, count, epoch, cond1_rcs, cells, overdue, cond2,
+                 inert, defer_audit):
         self.trigger, self.count, self.epoch = trigger, count, epoch
         self.cond1_rcs, self.cells, self.overdue, self.cond2 = cond1_rcs, cells, overdue, cond2
         self.inert_defers = inert
+        self.defer_audit = defer_audit
         self.forced = bool(cond1_rcs) or cond2
 
+    def failed_conditions(self, fid):
+        """該筆 defer 是被哪幾款打掉的（供查核者逐款對照 §4）。"""
+        return [c for c, ok in self.defer_audit.get(fid, {}).items() if not ok]
 
-def _defer_conditions(entry, fid, carry, prev_deferred, ctx):
+
+def _defer_conditions(entry, fid, carry, prev_deferred, ctx, dispatches, trigger, epoch):
+    cause = entry.get("defer_cause")
+    reason = (entry.get("defer_reason") or "").strip()
+    url = (entry.get("defer_ruling_url") or "").strip()
+    ruling_id = parse_ruling_id(url, ctx["issue_url"])
+    is_omitted = cause == "instruction-omitted"
+
+    # §4 專節 (a)：由派審事件指認，不由 defer 自述。
+    d = dispatches.get(url)
+    identified = bool(d) and d["for_attempt"] == trigger and d["epoch"] == epoch
+
     return {
         "in_carry": fid in carry,
         "by_requester": bool(ctx["requester"]) and entry.get("deferred_by") == ctx["requester"],
         "not_self_interested": (entry.get("deferred_by") != ctx["owner"]
                                 and entry.get("deferred_by") not in ctx["reviewers"]),
-        "cause_declared": entry.get("defer_cause") in DEFER_CAUSES,
-        "reason_nonempty": bool((entry.get("defer_reason") or "").strip()),
-        "ruling_url": bool((entry.get("defer_ruling_url") or "").strip()),
+        "cause_declared": cause in DEFER_CAUSES,
+        "reason_nonempty": bool(reason),
+        "ruling_url_on_card": ruling_id is not None,
+        "reason_cites_ruling": ruling_id is not None and ruling_id in reason,
+        "omission_dispatch_identified": identified if is_omitted else True,
+        # `is False` 而非 falsy：缺欄（None）與 true 一樣不成立。
+        "omission_declared_false": (
+            (identified and d.get("closure_reporting_requested") is False)
+            if is_omitted else True),
+        "cause_available": (bool(ctx.get("instruction_omitted_supported"))
+                            if is_omitted else True),
         "not_consecutive": fid not in prev_deferred,
     }
 
@@ -293,6 +408,7 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
     occurrences: dict[tuple[int, str], set[str]] = {}
     snapshot: dict[str, set[str]] = {}
     mentioned: dict[str, set[str]] = {}
+    dispatches: dict[str, dict] = {}
     structural: list[str] = []
 
     epoch = 0
@@ -332,6 +448,13 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
                 if len(counted) >= 3:
                     pending_cp += 1
 
+        elif kind == "dispatch":
+            if ev["url"] in dispatches:
+                structural.append(f"dispatch: review_prompt_url 重複 {ev['url']}")
+            dispatches[ev["url"]] = {
+                "for_attempt": ev["for_attempt"], "epoch": epoch,
+                "closure_reporting_requested": ev["closure_reporting_requested"]}
+
         elif kind == "correction":
             apply(ev["updates"], last_label)
 
@@ -352,11 +475,15 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
             entries = {e["finding_id"]: e for e in ev["deferred"]} if allow_defer else {}
 
             cells: dict[str, str] = {}
+            audit: dict[str, dict] = {}
             for fid in sorted(carry):
                 entry = entries.get(fid)
                 ok = False
                 if entry is not None:
-                    ok = all(_defer_conditions(entry, fid, carry, prev_deferred, ctx).values())
+                    conds = _defer_conditions(entry, fid, carry, prev_deferred, ctx,
+                                              dispatches, trigger, epoch)
+                    audit[fid] = conds
+                    ok = all(conds.values())
                 cells[fid] = classify(
                     state[fid],
                     mentioned_open=fid in mentioned.get(trigger, set()),
@@ -377,7 +504,7 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None):
             cond2 = any(c in TRIGGERING for c in cells.values()) or bool(overdue)
 
             cps[trigger] = Checkpoint(trigger, len(counted), epoch,
-                                      cond1, cells, overdue, cond2, inert)
+                                      cond1, cells, overdue, cond2, inert, audit)
             prev_deferred = [f for f, c in cells.items() if c == "deferred"]
             pending_cp = max(0, pending_cp - 1)
 
@@ -401,6 +528,10 @@ def render(title, cps, only=None):
         print(f"    逾期未清償          : {cp.overdue or '—'}")
         if cp.inert_defers:
             print(f"    無作用的 defer 宣告 : {cp.inert_defers}")
+        for fid in sorted(cp.defer_audit):
+            bad = cp.failed_conditions(fid)
+            if bad:
+                print(f"    defer {fid} 被打掉的款 : {bad}")
         print(f"    條件2               : {'TRUE' if cp.cond2 else 'false'}")
         print(f"    => 強制為: {'escalate' if cp.forced else '不強制（continue/replan 皆合法）'}")
 
@@ -409,12 +540,15 @@ def render(title, cps, only=None):
 # C. #16 忠實回放（legacy；不做任何 id 正規化）
 # ==========================================================================
 
-# 5248665281 逐字：只有兩筆。
+# 5248665281（需求方 R4 裁定）逐字：deferred 只有兩筆。
+# `defer_ruling_url` 依 §4 第 5 款指向**規格變更裁定本身**＝ 5248549305（R3 收窄），
+# 理由逐字含該 id（第 6 款）。5248665281 是宣告 deferred 的那一則，不是被指向的事實。
+SPEC_NARROW_RULING_ID = "5248549305"
+_R3_REASON = (f"R3 依需求方於 issuecomment-{SPEC_NARROW_RULING_ID} 的裁定改為窄規格，"
+              "明文不逐條複驗")
 DEFER_AT_C_R3 = [
-    defer_entry("R2-001", reason="R3 依需求方裁定改為窄規格，明文不逐條複驗",
-                url="https://github.com/ruan6047/ai-workflow/issues/16#issuecomment-5248665281"),
-    defer_entry("R2-002", reason="R3 依需求方裁定改為窄規格，明文不逐條複驗",
-                url="https://github.com/ruan6047/ai-workflow/issues/16#issuecomment-5248665281"),
+    defer_entry("R2-001", reason=_R3_REASON, comment_id=SPEC_NARROW_RULING_ID),
+    defer_entry("R2-002", reason=_R3_REASON, comment_id=SPEC_NARROW_RULING_ID),
 ]
 
 EVENTS_16 = [
@@ -489,11 +623,16 @@ def six_cell_stream():
     ]
 
 
-def defer_stream(defer_ids, *, cause="spec-narrowed", by=None, drop_field=None):
-    """【構造】三項 carry 全部合法 deferred → 不強制；少一筆即強制。"""
+def defer_stream(defer_ids, *, cause="spec-narrowed", by=None, drop_field=None,
+                 dispatch=None, **entry_kw):
+    """【構造】三項 carry 全部合法 deferred → 不強制；少一筆即強制。
+
+    `dispatch` 為選填的派審事件（§4 專節 (a)(b) 的證據）；不給即等同「事件流上
+    沒有可指認的派審指示」，這正是本 repo 現況。
+    """
     entries = []
     for fid in defer_ids:
-        e = defer_entry(fid, by=by, cause=cause)
+        e = defer_entry(fid, by=by, cause=cause, **entry_kw)
         if drop_field:
             e[drop_field] = ""
         entries.append(e)
@@ -501,9 +640,32 @@ def defer_stream(defer_ids, *, cause="spec-narrowed", by=None, drop_field=None):
         A("B0", new={"B0-001": ("rc-b0", {})}),
         A("B1", new={"B-001": ("rc-b1", {}), "B-002": ("rc-b2", {}), "B-003": ("rc-b3", {})},
           updates={"B0-001": {"status": "resolved"}}),
+        *([dispatch] if dispatch else []),
         A("B3", new={"B3-001": ("rc-b5", {})}),
         CP(deferred=entries),
     ]
+
+
+def omitted_stream(*, dispatch=True, closure_requested=False, for_attempt="B3",
+                   url=None, reason=None, ids=("B-001", "B-002", "B-003")):
+    """【構造】`instruction-omitted` 的證據軸：派審事件在／不在、是否宣告缺漏、
+    是否指向本輪、URL／理由是否與該則留痕綁定。"""
+    dsp = DISPATCH(for_attempt, CONSTRUCTED_DISPATCH_ID,
+                   closure_reporting_requested=closure_requested) if dispatch else None
+    return defer_stream(list(ids), cause="instruction-omitted", dispatch=dsp,
+                        comment_id=CONSTRUCTED_DISPATCH_ID, url=url, reason=reason)
+
+
+def reviewer_probe_r3_001():
+    """R3-001 的隔離探針，逐字重建查核者所用的輸入：
+
+        defer_stream(..., cause="instruction-omitted") ＋ 預設 defer_reason「規格收窄」
+        ＋ 假 URL https://example/ruling
+
+    上一輪此輸入得 forced=False、三筆全 deferred；本輪必須全部落「未提及」。
+    """
+    return defer_stream(["B-001", "B-002", "B-003"], cause="instruction-omitted",
+                        reason="規格收窄", url="https://example/ruling")
 
 
 def repay_stream(second_cp_deferred, *, settle):
@@ -560,12 +722,8 @@ def stable_id_repair_of_16():
     「以新 id 重新提出」改為「明列同一 finding 仍 open」。這是唯一能讓 #16 的實質
     走完新契約的方式，也是本卡兩項驗證條文在**合法事件流**上的證據。
     """
-    defer = [defer_entry(
-        "R1-002", reason="R3 依需求方裁定改為窄規格，明文不逐條複驗",
-        url="https://github.com/ruan6047/ai-workflow/issues/16#issuecomment-5248665281"),
-        defer_entry(
-        "R1-006", reason="R3 依需求方裁定改為窄規格，明文不逐條複驗",
-        url="https://github.com/ruan6047/ai-workflow/issues/16#issuecomment-5248665281")]
+    defer = [defer_entry("R1-002", reason=_R3_REASON, comment_id=SPEC_NARROW_RULING_ID),
+             defer_entry("R1-006", reason=_R3_REASON, comment_id=SPEC_NARROW_RULING_ID)]
     return [
         A("R1", new={"R1-001": ("rc-r1-001", {}), "R1-002": (RC_MARKER, {}),
                      "R1-003": ("rc-r1-003", {}), "R1-004": ("rc-r1-004", {}),
@@ -695,7 +853,7 @@ def main() -> int:
     minus_one, _ = replay(defer_stream(all_ids[:-1]))
     bad_by, _ = replay(defer_stream(all_ids, by=CTX["owner"]))
     bad_url, _ = replay(defer_stream(all_ids, drop_field="defer_ruling_url"))
-    omitted, _ = replay(defer_stream(all_ids, cause="instruction-omitted"))
+    off_card, _ = replay(defer_stream(all_ids, url="https://example/ruling"))
     bad_cause, _ = replay(defer_stream(all_ids, cause="executor-was-busy"))
     render("D. deferred 出口【構造】：三項 carry 全部合法 defer", full, only={"B3"})
     render("D. 敏感度【構造】：少 defer 一筆（B-003）", minus_one, only={"B3"})
@@ -708,10 +866,76 @@ def main() -> int:
          bad_by["B3"].forced and set(bad_by["B3"].cells.values()) == {"未提及"}),
         ("缺 defer_ruling_url 時該筆失效並強制 escalate",
          bad_url["B3"].forced and set(bad_url["B3"].cells.values()) == {"未提及"}),
-        ("新增的 instruction-omitted 成因可用：查核指示缺漏亦可 defer",
-         not omitted["B3"].forced and set(omitted["B3"].cells.values()) == {"deferred"}),
+        ("§4 第 5 款：URL 不能解析為本卡留言時失效（含站外任意 URL）",
+         off_card["B3"].forced
+         and off_card["B3"].failed_conditions("B-001") == ["ruling_url_on_card",
+                                                           "reason_cites_ruling"]),
         ("列舉外的 defer_cause 一律失效（不得自創成因）",
          bad_cause["B3"].forced and set(bad_cause["B3"].cells.values()) == {"未提及"}),
+    ]
+
+    # ---- D2：instruction-omitted 的缺漏證據（R3-001）-------------------------
+    #
+    # 上一輪本 cause 只驗「欄位非空」，因而機械上恆真。以下每一條都以事件層
+    # 引擎跑出，並印出被打掉的款次供逐款對照 §4 專節。
+    probe, _ = replay(reviewer_probe_r3_001())              # 預設 ctx ＝本 repo 現況
+    ok_omit, _ = replay(omitted_stream(), ctx=CTX_SUPPORTED)
+    unsupported, _ = replay(omitted_stream())               # (c) 本 cause 不可用
+    no_dispatch, _ = replay(omitted_stream(dispatch=False), ctx=CTX_SUPPORTED)
+    any_url, _ = replay(omitted_stream(url="https://example/ruling"), ctx=CTX_SUPPORTED)
+    bare_reason, _ = replay(omitted_stream(reason="規格收窄"), ctx=CTX_SUPPORTED)
+    copied_reason, _ = replay(omitted_stream(
+        reason=f"需求方於 issuecomment-{CONSTRUCTED_RULING_ID} 裁定本輪改窄規格，"
+               "明文不逐條複驗"), ctx=CTX_SUPPORTED)
+    asked_closure, _ = replay(omitted_stream(closure_requested=True), ctx=CTX_SUPPORTED)
+    wrong_round, _ = replay(omitted_stream(for_attempt="B1"), ctx=CTX_SUPPORTED)
+
+    render("D2. R3-001 隔離探針【構造】：查核者逐字輸入（假 URL ＋「規格收窄」理由）",
+           probe, only={"B3"})
+    render("D2. 反例【構造】：任意 URL", any_url, only={"B3"})
+    render("D2. 反例【構造】：spec-narrowed 的理由配 instruction-omitted 的 cause",
+           copied_reason, only={"B3"})
+    render("D2. 反例【構造】：派審指示**確實含**逐項閉環要求", asked_closure, only={"B3"})
+    render("D2. 本 repo 現況【構造】：寫入通道未產出缺漏證據 → 本 cause 不可用",
+           unsupported, only={"B3"})
+    render("D2. 正例【構造：假想已完成 #9】：派審事件指認本輪且宣告 closure_reporting_requested=false",
+           ok_omit, only={"B3"})
+
+    def _omit_fail(cps, cond):
+        cp = cps["B3"]
+        return (cp.forced and set(cp.cells.values()) == {"未提及"}
+                and all(cond in cp.failed_conditions(f) for f in ("B-001", "B-002", "B-003")))
+
+    checks += [
+        ("R3-001 隔離探針：查核者逐字輸入現在全部落「未提及」並強制 escalate"
+         "（上一輪為 forced=False、三筆全 deferred）",
+         probe["B3"].forced and set(probe["B3"].cells.values()) == {"未提及"}),
+        ("R3-001 探針被打掉的款包含 URL 綁定、理由指涉與全部三款缺漏證據",
+         set(probe["B3"].failed_conditions("B-001")) == {
+             "ruling_url_on_card", "reason_cites_ruling",
+             "omission_dispatch_identified", "omission_declared_false",
+             "cause_available"}),
+        ("反例 1（任意 URL）：URL 不能解析為本卡留言即失效，且無從指認派審事件",
+         _omit_fail(any_url, "ruling_url_on_card")
+         and _omit_fail(any_url, "omission_dispatch_identified")),
+        ("反例 2a（理由只泛稱「規格收窄」）：未指涉本次留痕即失效",
+         _omit_fail(bare_reason, "reason_cites_ruling")),
+        ("反例 2b（整段複製 spec-narrowed 的理由、指涉另一則留言）：同樣失效",
+         _omit_fail(copied_reason, "reason_cites_ruling")),
+        ("反例 3（派審指示確實含逐項閉環要求）：closure_reporting_requested=true 即失效；"
+         "指認成立故只掉這一款",
+         _omit_fail(asked_closure, "omission_declared_false")
+         and asked_closure["B3"].failed_conditions("B-001") == ["omission_declared_false"]),
+        ("缺漏證據不存在（事件流無派審事件）即 fail-closed，不得預設成立",
+         _omit_fail(no_dispatch, "omission_dispatch_identified")),
+        ("指認須為**本輪**：派審事件屬前一輪時失效",
+         _omit_fail(wrong_round, "omission_dispatch_identified")),
+        ("§4 專節 (c)：寫入通道未支援時本 cause 不可用——本 repo 現況即此格",
+         _omit_fail(unsupported, "cause_available")),
+        ("本 cause 並非死條文：派審事件指認本輪且宣告 closure_reporting_requested=false 時成立",
+         not ok_omit["B3"].forced and set(ok_omit["B3"].cells.values()) == {"deferred"}),
+        ("正例的成立**只**靠結構化事實：預設 ctx（本 repo）下同一事件流仍強制 escalate",
+         replay(omitted_stream())[0]["B3"].forced),
     ]
 
     settled, _ = replay(repay_stream([], settle=True))
@@ -811,6 +1035,11 @@ def main() -> int:
     print("     finding 仍開啟。見上方 D 段。改寫流已標示為構造，不冒充事實。")
     print("  4. #16 為 cutover 前的 legacy 事件流；依 §4／§5 末段不得反向套進六格。C 段是")
     print("     診斷性 what-if，不主張 #16 應被重新裁決。")
+    print("  5. `instruction-omitted` 在**本 repo 現況下不可用**：預設 CTX 的")
+    print("     instruction_omitted_supported=False 對應 handoff payload 尚無")
+    print("     review_prompt_url／closure_reporting_requested、wfcli 尚無 checkpoint")
+    print("     writer（#9）。D2 的正例必須明示改用 CTX_SUPPORTED 才成立，且已標為構造。")
+    print("     故本卡自身的 escalation checkpoint 亦不得引用本 cause。")
 
     # ---- 斷言彙總 ----------------------------------------------------------
     print("\n===== 斷言 =====")
