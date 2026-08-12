@@ -26,8 +26,11 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  cli-tests:
-    name: cli tests
+  tests:
+    # ⚠️ 這個 name 就是 check 的名字，也就是 required status check 要比對的字串。
+    # 一旦需求方把它設為 required（見 docs/DEV_AIWF_MINIMAL_CI1.md §7），
+    # **改名或拆成多個 job 會讓所有 PR 永遠停在 pending**。改名前先改 ruleset。
+    name: tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -66,3 +69,15 @@ jobs:
         working-directory: cli
         # --frozen：完全照 uv.lock 裝，不在 CI 裡重解相依。
         run: uv run --frozen pytest -q
+
+      - name: escalation replay
+        # cli/pyproject.toml 的 testpaths = ["tests"] 讓 pytest 永遠看不到這支腳本，
+        # 它至今沒有任何自動執行者。純標準庫、不連網、不讀檔、0.9 秒，退出碼即判定。
+        # 裁定理由見 docs/DEV_AIWF_MINIMAL_CI1.md §1.3。
+        #
+        # !cancelled() 而非 always()：pytest 紅了仍要跑完這支（兩個訊號一次拿到），
+        # 但使用者按取消時不要多跑。**這不是 continue-on-error**——本步驟失敗
+        # 一樣讓整個 job 判紅。
+        if: ${{ !cancelled() }}
+        # 用 uv 釘住的直譯器，不用 runner 的預設 python3（那個沒有釘）。
+        run: uv run --no-project --python 3.12 scripts/replay_escalation_rules.py
