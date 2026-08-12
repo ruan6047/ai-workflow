@@ -34,21 +34,34 @@ R1 之後的每一輪，報告須有本節，把上一輪每一筆 `accepted` �
 | `<卡ID>-R<n>-<序>` | `resolved`／`withdrawn`／仍 `open` | `<可重現的重現方式或來源>` |
 
 - **carry set 以 Issue 上的前輪 review event 為準，不以派審詞列的清單為準。** 派審詞裡的清單是便民摘要（＝次要來源，同 §1）；兩者不符時以 review event 為準，並把差異寫成 finding。**推導 carry set 所需的留痕都在 Issue 上**，所以派審詞漏列或錯列時你不必依賴它，也不必回頭問 Coordinator。
-- **但先驗那些 event 讀不讀得出來——回對了權威來源不代表值解得開。** 逐項閉環之前先做這個前置驗證：
+- **但先驗那些 event 讀不讀得出來——回對了權威來源不代表值解得開。** 逐項閉環之前先做前置驗證。**三個判準輸入分屬三個載體，能力差很多，別混為一談**：
 
-  **要讀的兩個平面、三個欄位**：前輪 `review` event 留言的結構化區塊取 `finding_id`；同一筆的 `accepted` 與 `status` 取自 **lifecycle writer 的標記**（`review-escalation.md` §2：由 writer 於寫入 event 前標記，**reviewer 不得自行決定是否消耗 escalation 額度**）。另對 Issue `## Log` 的同 attempt 索引行與 Project 交付狀態欄——三面不一致即該 event 不可信。
+  | 判準輸入 | 權威載體 | 今天的能力 |
+  |---|---|---|
+  | 通道健全性（marker 解析、三面一致） | `wfcli doctor --review-channel`（唯讀） | **可機械偵測** |
+  | 每筆 finding 的 `accepted`／`status` | 前輪 `review` event **留言本文**的結構化區塊 | **須自行讀取比對**，`doctor` 不輸出 |
+  | `contract-baseline` cutover 是否存在 | — | **今天無可讀載體，無法判定** |
 
-  **可自己跑的檢測**：`wfcli doctor --review-channel --repo <owner/repo> --issue-number <n> --card-id <CARD_ID> --owner <owner> --project <n> --source-sha <前輪 SHA> <repo_root>`（唯讀）。它會報出 `marker_quarantined` 與 `half_written`（`cli/src/wf_cli/doctor.py` 的 `audit_review_channel`，基線 `6e6e8ab` 時在 :312，兩個判定分別在 :419／:460）。**偵測是機械的**；下面的處置是**約定**。
+  **`doctor` 的作用域邊界——別高估它**：`audit_review_channel`（`cli/src/wf_cli/doctor.py`，基線 `6e6e8ab` 時在 :312）只回**一個** review-channel 狀態，列舉值恰為 `recorded`／`receipt_untranscribed`／`unobservable`／`marker_quarantined`／`half_written`（:70–80；後兩者判在 :419／:460）。它**不輸出任何 finding 的 `accepted`／`status`，也不枚舉或驗證 `contract-baseline`**。它能證明的只有「這條通道健不健全」，**證明不了 carry set 算不算得出來**。
 
-  **三態，不是兩態**：
+  - 通道：`wfcli doctor --review-channel --repo <owner/repo> --issue-number <n> --card-id <CARD_ID> --owner <owner> --project <n> --source-sha <前輪 SHA> <repo_root>`
+  - 欄位：`gh api repos/<owner>/<repo>/issues/comments/<留言 id>`，逐 `finding_id` 自行比對 `accepted`／`status`（由 lifecycle writer 標記；`review-escalation.md` §2：**reviewer 不得自行決定是否消耗 escalation 額度**）。
 
-  1. **可判定**——前輪 event 解析得開，且 `accepted`／`status` 都取得到 → 依 `accepted: true` ＋ `blocking: true` ＋ `status: open` 推出 carry set，照上表逐列。
-  2. **不可判定**——該 event 在**已宣告的 `contract-baseline` cutover 之後**，卻 `marker_quarantined`／`half_written`／缺 `accepted` 或 `status` → **明示 input 不可判定並自判 `review-invalid`**。不得當成空 carry set。
-  3. **legacy**——該 event 在 cutover 之前，或專案根本還沒發過 `contract-baseline` → 依 `review-escalation.md` §4／§5，cutover 前歷史**維持原貌、不得反向套進六格**，故**不因此判 `review-invalid`**。但**必須明示**：寫出你採用的是 legacy 路徑、逐列列出你在報告平面看到的前輪 finding，並標記其 `accepted` **未經 writer 標記**、escalation 帳無法據此推導。
+  **分類軸不用 `contract-baseline`**：契約（`review-escalation.md` §4／§5）確以 cutover 界定 legacy，但**該軸今天沒有可讀載體**——merged main 沒有產生它的動詞，`doctor` 也不枚舉它。**沒有載體的軸不能拿來分類**，否則等於用查核者驗不了的東西決定他的義務。改用下面兩個都驗得到的判準。
 
-  **為什麼是三態**：`accepted`／`status` 的 writer 今天**不在已併入 main 的碼裡**（該通道屬 #9，未併），故現階段**每一筆** event 都缺這兩個值。若把「缺值」一律判 `review-invalid`，等於今天起所有 iteration ≥ 1 的查核全部無效——那不是 fail-closed，是死鎖，而 `review-escalation.md` §2／§4 明文要求數個 gate **不得互相鎖死**。三態把「讀不出來」與「不該讀」分開。
+  **三態，依「偵測到損壞」與「產生器不存在」劃分**：
 
-  **一條硬禁止**：**不得以 review report 的 `blocking` 欄代替 `accepted`**。`blocking` 由 reviewer 自己填、`accepted` 由 lifecycle writer 標；拿前者當後者等於讓被判定方自己決定要不要進帳。第 3 態把前輪 finding 列出來是**揭露**，不是替代——列出供人接續可以，**計入 escalation 帳不行**。
+  1. **可判定**——`doctor` 未報 `marker_quarantined`／`half_written`，且該 event 逐 `finding_id` 取得到 `accepted` 與 `status` → 依 `accepted: true` ＋ `blocking: true` ＋ `status: open` 推 carry set，照上表逐列。
+  2. **已知損壞 → `review-invalid`**——`doctor` 報 `marker_quarantined` 或 `half_written`，**或**產生 `accepted`／`status` 的 writer 在被審樹裡存在而該 event 仍缺值。**明示 input 不可判定並自判 `review-invalid`**，不得當空 carry set。**缺 cutover 不是本態的赦免事由**：偵測到的損壞就是損壞，與有沒有發過 cutover 無關。
+  3. **產生器系統性不存在 → 受限續行**——三件**同時**成立才可用：(i) `doctor` 未報損壞；(ii) 該 event 缺 `accepted`／`status`；(iii) **你出示得了產生它們的 writer 不在被審樹裡**（例如 `git grep -n "mark-not-accepted" -- cli/src` 無命中，且該 Issue 歷來無任何 event 帶過該欄）。**(iii) 舉不出來就落第 2 態**——「沒證明產生器不存在」不等於「產生器不存在」。本態須明示：走的是受限路徑、逐列列出報告平面看到的前輪 finding、標記其 `accepted` 未經 writer 標記且 escalation 帳無法據此推導。
+
+  **遷移條件現在就驗得了，不是等未來合併**：第 3 態隨 (iii) 自動失效——writer 一旦出現在被審樹裡，同樣的缺值就從「系統性不存在」變成「該筆損壞」而落第 2 態。這個判準你當場跑得完，**不需要任何人宣告 cutover，也不把未來的合併當成已完成的解除**。
+
+  **為什麼仍留第 3 態**：`accepted`／`status` 的 writer 今天不在已併入 main 的碼裡，故現階段每一筆 event 都缺這兩個值。若「缺值一律 `review-invalid`」，今天起所有 iteration ≥ 1 查核全部無效——那不是 fail-closed，是死鎖，而 `review-escalation.md` §2／§4 明文要求數個 gate **不得互相鎖死**。**但第 3 態只赦免「從來沒被產生過」，不赦免「被偵測到壞掉」**——界線由第 2 態末句釘死。
+
+  **一條硬禁止**：**不得以 review report 的 `blocking` 欄代替 `accepted`**。`blocking` 由 reviewer 自己填、`accepted` 由 lifecycle writer 標；拿前者當後者等於讓被判定方自己決定要不要進帳。第 3 態列出前輪 finding 是**揭露**，不是替代——供人接續可以，**計入 escalation 帳不行**。
+
+  **本前置驗證的作用域總結**：只有「通道健全性」有機械執行者（`doctor.audit_review_channel`，且僅限上列五個列舉值）。「讀 `accepted`／`status`」「出示產生器不存在」「三態的處置」**全部是約定**——`gh api` 與 `git grep` 是你手上的工具，**不是會擋你的閘門**。
 - **逐列是判準的一部分，不是排版偏好**：[`review-escalation.md`](review-escalation.md) §4 逐 `finding_id` 推導 checkpoint 的格位，整體式結論映射不到任何一格，與未提及等價。
 - 缺本節、或 carry set 中有 `finding_id` 未表態 → 查核者**自判** `review-invalid`，不進實質查核（處置同 §1）。
 - **仍 `open` 是合法且常常正確的表態**，不是失敗；defer 延後的是評估而非結果（`review-escalation.md` §4）。把仍未解的寫成 `resolved` 才是失分。
