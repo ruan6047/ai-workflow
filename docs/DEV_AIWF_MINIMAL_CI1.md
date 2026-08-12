@@ -577,7 +577,37 @@ gh pr merge 61 --repo ruan6047/ai-workflow --merge
 需求方 2026-08-12 指派本項納入本輪（`#48` 的 `issuecomment-5267275511`）。成因：`#42` 的對帳器
 只在 UTF-8 locale 下 `exit 1`（`line 36: min?: unbound variable`），在 `LC_ALL=C` 下 PASS，
 而 PM 的 shell 是 `LANG=""`／`LC_CTYPE=C`，於是「四種環境全綠」實際上只驗到同一個軸。
-**本 CI 跑在 ubuntu runner，那是 UTF-8 那一側**——本 repo 因此存在一整類「本機綠、CI 紅」的落差。
+
+### 10.0 ⚠️ 先更正指派文字裡的一個前提：runner 的預設**不是** UTF-8
+
+指派逐字寫「**本卡的 CI 跑在 GitHub 的 ubuntu runner，那是 UTF-8 locale**」，並據此推論
+本 repo 存在一類「本機綠、CI 紅」的落差。**前半句是錯的。** 本卡把 image 的預設值印進 log
+實測（run [31612860735](https://github.com/ruan6047/ai-workflow/actions/runs/31612860735)，
+`env -u LANG -u LC_ALL locale`）：
+
+```
+--- runner image 的預設（不受本 workflow env 影響）---
+LANG=
+LANGUAGE=
+LC_CTYPE="POSIX"
+LC_COLLATE="POSIX"
+...（其餘 LC_* 全為 POSIX）
+```
+
+`ubuntu-latest` 的預設是 `LANG` **未設**、所有 `LC_*` 落在 **`POSIX`**——
+也就是 **C locale，與 PM 那台本機同一側**。
+
+這把結論反轉了：**若不顯式釘 locale，本 CI 會與 PM 的 shell 一樣對 `#42` 那一類問題失明。**
+指派原本假設 CI 天生就是比較嚴的那一邊、只要把腳本推進來就會抓到；實際上不釘的話，
+CI 只會把同一個盲點複製一份，而且是複製到一個大家更會信任的地方。
+
+- 對照組（同一 run，`locale` 印生效值）：`LANG=C.UTF-8`、全部 `LC_*` 為 `C.UTF-8`
+  → **`ci.yml:32-34` 的宣告確實生效，且 `C.UTF-8` 在 `ubuntu-latest` 上存在、未靜默退回 `POSIX`。**
+- 同一 run 全綠：`701 passed`、replay `65/65 通過`、check `tests (branch head)` = `success`。
+  **釘 UTF-8 沒有讓現有的東西變紅。**
+
+本 repo 因此存在的落差要重述為：**「本機綠、CI 也綠、但在任何一台正常設定 locale 的機器上紅」**
+——比原本的說法更糟，因為那一類問題在兩道關卡都不會被發現。下面四問的裁定建立在這個更正之上。
 
 以下四問逐一裁定。**先講三件本卡實測到的事**，因為它們決定了答案：
 
@@ -586,6 +616,7 @@ gh pr merge 61 --repo ruan6047/ai-workflow --merge
 | `LC_ALL=C uv run --frozen pytest -q`（本機） | `701 passed` |
 | `LC_ALL=C.UTF-8 uv run --frozen pytest -q`（本機） | `701 passed` |
 | `replay_escalation_rules.py` 在 `LC_ALL=C` 與 `LC_ALL=C.UTF-8` | 兩者皆 `exit=0` |
+| 同兩者在 CI 的 `C.UTF-8` 下（run `31612860735`） | `701 passed` ＋ `65/65 通過`，job success |
 
 也就是說：**本 CI 今天實際執行的三個步驟，經實測對 locale 不敏感。**
 `#42` 那一類是 **bash** 的變數名掃描行為，而**本 CI 一行 bash 腳本都沒跑**（只有 workflow 自己
@@ -595,15 +626,17 @@ gh pr merge 61 --repo ruan6047/ai-workflow --merge
 
 已實作（`ci.yml:32-34`，workflow 層 `env:`，所有 step 一律生效）。三個理由：
 
-1. **不釘不等於中立，等於繼承一個沒人在版控裡看得見的值。** runner image 的預設 locale 是
-   image 的實作細節，GitHub 可以在任何一次 image 更新裡改它。判定基準託付給那種值，
-   等於本 repo 的紅綠會在沒有任何 commit 的情況下改變——這與 §5 釘死 uv／Python／action SHA
-   的理由完全相同，是同一條紀律的漏項。
-2. **選 UTF-8 而不是 C：CI 該是比較嚴的那一邊。** 釘 `C` 會讓 CI 與 PM 那一台本機一致，
-   但對每一台其他機器、以及對真實使用者環境失明——**那是把偵測器調成永遠不會響**。
-   需求方的問題把兩個方向都寫成正當的，我不同意這是對稱的：`C` 那一側的唯一好處是
-   「與已知會漏掉問題的那台機器一致」，而那正是 08-12 誤判的成因。
-3. **今天釘幾乎沒有代價**（上表：兩個 payload 在兩種 locale 下都綠），
+1. **不釘的預設值是 `POSIX`，不是中立值**（§10.0 實測）。不釘＝把 CI 調成與已知會漏掉問題的
+   那台機器同一側。這一條在拿到 log 之前只是原則，拿到之後是事實。
+2. **就算預設是 UTF-8，不釘仍然錯。** runner image 的預設 locale 是 image 的實作細節，
+   GitHub 可以在任何一次 image 更新裡改它。判定基準託付給那種值，等於本 repo 的紅綠
+   會在沒有任何 commit 的情況下改變——這與 §5 釘死 uv／Python／action SHA 的理由完全相同，
+   是同一條紀律的漏項。
+3. **選 UTF-8 而不是 C：CI 該是比較嚴的那一邊。** 需求方的問題把兩個方向都寫成正當的，
+   我不同意這是對稱的：釘 `C` 的唯一好處是「與已知會漏掉問題的那台機器一致」——
+   **那是把偵測器調成永遠不會響**，而那正是 08-12 誤判的成因。至於「釘 UTF-8 可能讓既有腳本
+   一開就紅」這個顧慮，§10.0 的 run 已證偽：全綠。
+4. **今天釘幾乎沒有代價**（上表與 §10.0 的 run：兩個 payload 在兩種 locale、本機與 CI 都綠），
    **而以後釘就會有代價**——等到有腳本進 CI 才釘，就要同時吸收「釘住」與「修好」兩件事。
 
 順帶把「宣告值」與「生效值」拆開印在每一 run 的 log 裡（`ci.yml:80-86`）：
@@ -611,9 +644,9 @@ gh pr merge 61 --repo ruan6047/ai-workflow --merge
 理由是 `LC_ALL=C.UTF-8` 若在該 image 上不存在，glibc 會**靜默退回** `POSIX` 而不報錯；
 不印出來就看不見。**這是觀測，不是判定**——兩者不一致不會讓 job 變紅，只會在 log 裡看得到。
 
-⚠️ **未實測**：本節寫下時本 workflow 尚未在釘住 locale 之後跑過任何一次 CI；
-`C.UTF-8` 在 `ubuntu-latest` 上是否存在、以及退回行為是否如上，**要等第一筆 run 的 log 才算數**。
-交回時若該 log 已存在，逐字貼在本節之下；若不存在，本節整段仍為預測。
+✅ **已實測**（run [31612860735](https://github.com/ruan6047/ai-workflow/actions/runs/31612860735)，
+`checked-out = 8d3adbf`）：`C.UTF-8` 在 `ubuntu-latest` 上存在、宣告生效、未退回 `POSIX`，
+且釘住之後 `701 passed` ＋ replay `65/65` 全綠。逐字輸出見 §10.0。
 
 ### 10.2 第二問：要不要跑兩次？——**不要，現在不要**
 
@@ -783,6 +816,8 @@ ROADMAP §4 寫得很明白：`core_pain_resolved: no` → **退回**，本政�
 | 紅色 PR 會被閘門擋下（`R1-01`） | **未閉環** | `rulesets` 仍為 `[]`（本輪複驗）；`#61` 仍 `UNSTABLE`／`MERGEABLE`。需 §7.0 全四步，皆為需求方動作 |
 | 不合併地關閉 `#61`（`R1-02` 後半） | **未執行，且刻意不執行** | §7.4 與 §9 都以 `#61` 為套用後的現成失敗案例；本輪亦被明令不得關閉它。**merge ref 的取證本身已閉環**（run `31592615503`，`event=pull_request`，`conclusion=failure`）——未閉環的只有清理動作，且它與 `R1-01` 的驗證程序直接衝突 |
 | 只有 base 含 `ci.yml` 時 PR 是否產生 `tests` | **未實測** | 見 §7.0；`#61` 的 head 自己含 `.github`，故現有實跑不能當證據 |
-| `C.UTF-8` 在 `ubuntu-latest` 上存在且不靜默退回 | **未實測** | 見 §10.1；要等釘住 locale 之後的第一筆 run log |
+| `C.UTF-8` 在 `ubuntu-latest` 上存在且不靜默退回 | ✅ **已實測** | run `31612860735`，見 §10.0／§10.1 |
+| 「所有 locale 敏感形狀都已被排除」 | **不宣稱，且不可能宣稱** | 本卡只把基準釘住，一個蟲都沒有找。PM 自己也只排除了「`$var` 緊接全形標點」一種形狀。**釘 UTF-8 不等於已預防**（`ROADMAP.md` §2） |
+| 釘 UTF-8 之後不會有既有東西變紅 | **只對今天的三個步驟成立** | run `31612860735` 全綠，但那三個步驟本來就對 locale 不敏感（§10 上表）。日後接進來的東西沒有這個保證——那正是釘住的目的 |
 | required check 是否對 commit SHA 判定（§7.3 路徑 2） | **未實測** | 需先有 ruleset。前一輪已標為待驗證的預測，本輪未改變 |
 | `main` 上既有 ruff 違規的筆數 | **未查證** | §1.5 沿用派工包數字，本卡未安裝 ruff |
