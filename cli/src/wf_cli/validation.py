@@ -24,10 +24,11 @@ from .review import (
     CORE_PAIN_VALUES,
     FINDING_CLASSES,
     FINDING_KEYS,
-    PREFLIGHT_BASIS_BINDING,
+    PREFLIGHT_NOT_ESTABLISHED,
     REVIEW_RESULTS,
     SEVERITIES,
     WRITER_ONLY_KEYS,
+    WRITER_STAMPED_KEYS,
     AcceptedMark,
     CheckpointFacts,
     EscalationFacts,
@@ -331,6 +332,27 @@ def validate_review_report(data: Mapping[str, Any]) -> ReviewReport:
             "否則執行者無從修起（需求方 2026-08-06 裁決，ruan6047/ai-workflow#8）"
         )
 
+    # writer 加蓋的鍵：**提交面出現即拒收**，即使值恰好等於導出值（ai-workflow#39 §5
+    # 第 7 款「驗來源不驗值」）。與 WRITER_ONLY_KEYS 的「警示並忽略」刻意不同——綁定值
+    # 一旦可被提交面影響，「它是導出的」這句話就不再成立。
+    raw_findings = data.get("findings")
+    stamped = sorted(
+        {k for k in data if k in WRITER_STAMPED_KEYS}
+        | {
+            k
+            for item in (raw_findings if isinstance(raw_findings, list) else [])
+            if isinstance(item, Mapping)
+            for k in item
+            if k in WRITER_STAMPED_KEYS
+        }
+    )
+    if stamped:
+        errors.append(
+            f"查核輸出含 writer 加蓋的鍵 {stamped}：這些鍵由 lifecycle writer 導出並加蓋，"
+            "提交面不得出現，**即使值恰好等於導出值也一樣拒收**（驗來源不驗值，"
+            "review-escalation.md §5／ai-workflow#39）。請整段移除後重送。"
+        )
+
     if errors:
         raise ValidationError(errors)
 
@@ -566,7 +588,11 @@ def build_issue_event_history(comments: Sequence[Mapping[str, Any]]) -> IssueEve
 
 
 def counted_attempts(history: IssueEventHistory, escalation_epoch: int) -> list[EscalationFacts]:
-    """本 epoch 依 §3 計數的 attempt，依留言順序去重（§3：同一 attempt 最多計一次）。"""
+    """本 epoch 依 §3 計數的 attempt，依留言順序去重（§3：同一 attempt 最多計一次）。
+
+    ``fact.counts`` 只在逐字斷言 ``true`` 時為真，故 ``escalation_account: not-asserted``
+    的 attempt 一律不在此列——但**那不代表它們沒發生**，見 ``unasserted_attempts``。
+    """
     seen: set[str] = set()
     out: list[EscalationFacts] = []
     for fact in history.scoped_facts:
@@ -579,13 +605,39 @@ def counted_attempts(history: IssueEventHistory, escalation_epoch: int) -> list[
     return out
 
 
-def require_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
-    """**所有遠端寫入之前**的閘門：取得 §3 第 1 款的依據，取不到就不建立 review event。
+def unasserted_attempts(
+    history: IssueEventHistory, escalation_epoch: int
+) -> list[EscalationFacts]:
+    """本 epoch **明示不對帳作斷言**的 attempt（``escalation_account: not-asserted``）。
 
-    **本函式今天恆拋 ``ValidationError``**，因為本 repo 的依據綁定恆為
-    ``review.PREFLIGHT_BASIS_BINDING``（``structurally-unavailable``）。回傳型別是給承接卡
-    落地後用的，不是給今天用的——簽章保留 ``card_id``／``source_sha`` 因為它們正是承接卡
-    的實作必須逐字比對的兩件事，今天則逐字寫進拒絕訊息。
+    存在的理由是「未斷言」不得靜靜地長得像「不計數」。今天本 repo 的每一則裁決都落在這裡
+    （依據綁定恆為 ``structurally-unavailable``），所以任何據 ``counted_attempts`` 判斷
+    「執行者累計幾次」的消費者，**必須**同時看本函式，否則會把一整串真實退回讀成零。
+    """
+    seen: set[str] = set()
+    out: list[EscalationFacts] = []
+    for fact in history.scoped_facts:
+        if fact.escalation_epoch != escalation_epoch or fact.account_asserted:
+            continue
+        if fact.attempt_id in seen:
+            continue
+        seen.add(fact.attempt_id)
+        out.append(fact)
+    return out
+
+
+def derive_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
+    """導出 §3 第 1 款的依據。**本 repo 今天恆為 ``not-established``。**
+
+    ``card_id``／``source_sha`` 是承接卡的實作必須逐字比對的兩件事，故留在簽章上；今天
+    **不比對任何東西**，因為沒有可比對的對象——本函式刻意不掃留言（見下）。
+
+    ⚠️ 需求方 2026-08-12 裁定：**本函式不得拋錯**。本輪初稿讓它無條件拒絕，導致
+    ``wfcli review`` 寫不出任何裁決，等於讓狀態面再次分不出「已查核」與「未查核」——那是
+    WF-25-REVIEW-WRITE-CHANNEL1（ai-workflow#13）解過的問題，且今天有八張卡的跨家族裁決
+    靠這條通道落地。正解是**照寫，但把恆虛性導出到事件上**：呼叫端拿到
+    ``not-established`` 後，``review.derive_preflight_basis_binding`` 會導出
+    ``structurally-unavailable`` 並由 writer 加蓋進 review event（提交面不得含該鍵）。
 
     四輪的線（同一 ``root_cause_id: unproven-preflight-counting``）：
 
@@ -603,32 +655,14 @@ def require_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
     本 repo 唯一可能的通道訊號（留言 author）在此結構上無鑑別力——人與每個 AI agent 共用
     同一個 GitHub 帳號，同 ``accepted_marking_binding: structurally-vacuous`` 的成因。
 
-    故採本 repo 既有的處置形態（ai-workflow#39 面對恆真授權款時的作法）：**不寫出一條看似
-    有檢查的條文，改把恆拒本身寫成明文**。代價明說：``wfcli review`` 在承接卡落地前
-    **寫不進任何裁決事件**，不只是可計數的那些。替代路徑不變——查核證據走
-    ``handoff-contract.md`` §3.1.2 的收據與報告全文（那正是為「查核者無法執行 wfcli」設計
-    的證據面），格式自檢走 ``--validate-only``（不連 GitHub、不受本閘門影響）。
+    故採本 repo 既有的處置形態（ai-workflow#39 §5 第 7 款面對恆真授權款時的作法）：**不寫出
+    一條看似有檢查的條文，改把恆虛性導出成事件上的一個欄位**。代價明說且寫在事件裡：
+    escalation 自動計數在承接卡落地前不可用（**包括本卡自己的三振門檻**），且該事件缺
+    §5:168 的 ``preflight_passed: true``，是一則不完整的 review event。
+
+    **本函式刻意不掃留言**（``comments`` 不在簽章上）：能被留言影響的依據就不是導出值。
     """
-    raise ValidationError(
-        [
-            (
-                f"§3 第 1 款的 preflight 依據在本 repo 恆不可得（依據綁定："
-                f"{PREFLIGHT_BASIS_BINDING}），依 review-escalation.md §1 不建立 "
-                f"review event（未寫入任何遠端狀態）。卡 {card_id}／source_sha {source_sha}。"
-                "§5:168 把 review event 的 preflight_passed 釘為字面 true，斷不出 true 的"
-                "事件不是合格的 review event；**不得以 unknown／unavailable 之類的新值擴充"
-                "該布林欄位**，也**不得以一則長得像 preflight event 的 Issue 留言充當依據**"
-                "——canonical §4.1 的「受管轄」是通道屬性，判定不出通道就沒有依據"
-                "（WF-22-CLI4-R4-01）。"
-                "解除條件有兩件，缺一則本閘門維持拒絕：(1) 受管轄的 preflight pass event "
-                "writer（需 handoff 的寫入集，不在本卡射程內，已交由承接卡）；(2) 該事件的"
-                "可驗證格式，即消費者憑什麼斷定它出自該 writer——在單帳號結構下這不會由"
-                "多驗幾個欄位得到。"
-                "在它落地前，查核證據請走 handoff-contract.md §3.1.2 的收據，"
-                "格式自檢請用 `wfcli review --validate-only`（不寫任何狀態，不受本閘門影響）。"
-            )
-        ]
-    )
+    return PREFLIGHT_NOT_ESTABLISHED
 
 
 def check_attempt_not_duplicated(history: IssueEventHistory, target_attempt_id: str) -> None:
@@ -829,8 +863,9 @@ __all__ = [
     "check_checkpoint_gate",
     "counted_attempts",
     "derive_accepted_marking_binding",
-    "require_preflight_basis",
+    "derive_preflight_basis",
     "review_invalid_reasons",
+    "unasserted_attempts",
     "validate_accepted_overrides",
     "validate_chain_depth",
     "validate_checkpoint_input",

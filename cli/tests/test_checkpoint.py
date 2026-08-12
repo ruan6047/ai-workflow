@@ -70,11 +70,16 @@ class EventGhRunner(FakeGhRunner):
 # 模擬「承接卡落地後的世界」（WF-22-CLI4-R4-01）
 # --------------------------------------------------------------------------
 #
-# 本 repo 今天沒有受管轄的 preflight pass event writer，也沒有該事件的可驗證格式，
-# 故 `validation.require_preflight_basis` **無條件拋出**，`wfcli review` 寫不進任何裁決。
-# 端對端測「承接卡落地後」的行為，唯一的辦法是**把那個閘門換掉**——這件事本身就是本輪的
-# 核心事實：沒有任何 Issue 留言、旗標或輸入能解鎖它（窮舉見 test_validation 的
-# `test_no_issue_comment_of_any_shape_can_establish_a_preflight_basis`），只有改碼可以。
+# 本 repo 今天沒有受管轄的 preflight pass event writer，也沒有該事件的可驗證格式，故
+# `validation.derive_preflight_basis` **恆回 not-established**，`wfcli review` 寫出的每一則
+# 裁決都帶 `preflight_basis_binding: structurally-unavailable` ＋
+# `escalation_account: not-asserted`。**寫入本身照常運作**（需求方 2026-08-12 裁定）。
+#
+# 要端對端測「帳被斷言」那一半（counts=true、三次門檻、checkpoint 閘門），唯一的辦法是
+# **把那個導出函式換掉**——這件事本身就是本輪的核心事實：沒有任何 Issue 留言、旗標或輸入
+# 能讓它回 event-verified（窮舉見 test_validation 的
+# `test_no_issue_comment_of_any_shape_can_establish_a_preflight_basis` 與 AST 掃描），
+# 只有改碼可以。
 #
 # 上一輪這裡是 `arm_preflight()` 往 timeline 貼一則四欄 YAML 留言——那正是查核者用來
 # 重現 R4-01 的同一件事。它現在改成純測試側的登記表，src 不再有對應的讀取器。
@@ -91,31 +96,31 @@ def event_verified(card_id: str, sha: str) -> PreflightBasis:
 
 
 def arm_preflight(card_id: str, sha: str) -> None:
-    """登記「承接卡已為該卡該 SHA 寫出 preflight event」。只影響被換掉的閘門。"""
+    """登記「承接卡已為該卡該 SHA 寫出 preflight event」。只影響被換掉的導出函式。"""
     _SIMULATED_PREFLIGHT.add((card_id, sha))
 
 
-def _simulated_require_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
+def _simulated_derive_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
     if (card_id, source_sha) in _SIMULATED_PREFLIGHT:
         return event_verified(card_id, source_sha)
-    # 未登記時的行為必須與 src 的真實閘門一致：拒絕，而不是回一個 not-established
-    # 讓下游自己判——真實閘門今天就是恆拋。
-    return _real_require_preflight_basis(card_id=card_id, source_sha=source_sha)
+    # 未登記時**必須逐字回落到 src 的真身**，不得自行捏一個 not-established：
+    # 「宣告成功前先核執行身分」——未登記路徑測到的要是產線行為。
+    return _real_derive_preflight_basis(card_id=card_id, source_sha=source_sha)
 
 
-_real_require_preflight_basis = review_cmd.require_preflight_basis
+_real_derive_preflight_basis = review_cmd.derive_preflight_basis
 
 
 @pytest.fixture(autouse=True)
 def simulated_preflight_writer(monkeypatch):
-    """把 review_cmd 的 preflight 閘門換成「承接卡落地後」的版本（預設登記表為空）。
+    """把 review_cmd 的 preflight 導出換成「承接卡落地後」的版本（預設登記表為空）。
 
-    autouse 是刻意的：本模組每個端對端寫入測試都需要它，而**沒有登記的卡仍會被真實閘門
-    擋下**（見 `_simulated_require_preflight_basis`），所以它不會把 fail-closed 洗掉。
+    autouse 是刻意的：本模組多個測試需要「帳被斷言」的世界，而**沒有登記的卡一律回落到
+    src 真身**（見 `_simulated_derive_preflight_basis`），所以它不會把產線語意洗掉。
     """
     _SIMULATED_PREFLIGHT.clear()
     monkeypatch.setattr(
-        review_cmd, "require_preflight_basis", _simulated_require_preflight_basis
+        review_cmd, "derive_preflight_basis", _simulated_derive_preflight_basis
     )
     yield
     _SIMULATED_PREFLIGHT.clear()

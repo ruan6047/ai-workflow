@@ -110,9 +110,11 @@ def test_validate_chain_depth_rejects_over_hard_cap(depth):
 from wf_cli.review import (
     CHECKPOINT_BLOCK_KEY,
     CHECKPOINT_LOG_TAG,
+    ESCALATION_ACCOUNT_STATES,
     PREFLIGHT_BASES,
     PREFLIGHT_BASIS_BINDING,
     PREFLIGHT_BASIS_BINDINGS,
+    WRITER_STAMPED_KEYS,
     AcceptedMark,
     CheckpointFacts,
     Finding,
@@ -123,6 +125,7 @@ from wf_cli.review import (
     counting_eligible,
     default_accepted_marks,
     derive_counts_toward_escalation,
+    derive_preflight_basis_binding,
     find_block_by_key,
     log_line_indexes,
     render_checkpoint_comment,
@@ -137,10 +140,12 @@ from wf_cli.validation import (
     check_checkpoint_gate,
     counted_attempts,
     derive_accepted_marking_binding,
-    require_preflight_basis,
+    derive_preflight_basis,
+    unasserted_attempts,
     validate_accepted_overrides,
     validate_checkpoint_input,
     validate_marked_by,
+    validate_review_report,
 )
 
 SHA_A, SHA_B, SHA_C = "a" * 40, "b" * 40, "c" * 40
@@ -160,6 +165,19 @@ EVENT_VERIFIED = PreflightBasis(
 # 判定就會被永久隔離（docs/CONSUMER_CONFORMANCE.md 記錄 #15／#17／#21 三張卡的實測）。
 # 測試檔本身不是留言，但保持同一紀律可讓「交回前 grep 新增 0 處」成為機械可查的動作。
 _MARKER_V1 = "wf-review-" + "event:v1"
+
+
+# 一份合格的 finding 提交載荷（給 validate_review_report 用，非 Finding 物件）。
+_FINDING_PAYLOAD = {
+    "finding_id": "F-01",
+    "severity": "major",
+    "blocking": "true",
+    "finding_class": "implementation",
+    "attribution": "executor",
+    "root_cause_id": "rc-1",
+    "evidence": "重現步驟",
+    "disposition": "修好",
+}
 
 
 def _finding(fid="F-01", **overrides) -> Finding:
@@ -736,6 +754,11 @@ def test_missing_owner_key_does_not_make_the_attempt_unknown_to_the_gate():
 # 前三輪都在換「寫什麼值」，R3 才動「要不要寫」，R4 打的是「憑什麼判定可以寫」。
 # 本輪的處置不是把讀取器驗得更嚴，是**移除讀取器**：canonical §4.1 的「受管轄」是通道
 # 屬性，留言內文任何人都寫得出來，補欄位只是把同一個洞往後推一格。
+#
+# ⚠️ 需求方 2026-08-12 裁定另否決了本輪初稿的「恆拒寫入」：那會讓狀態面再次分不出
+# 「已查核」與「未查核」（ai-workflow#13 解過的問題）。故最終判準是**照寫，但把恆虛性
+# 導出到事件上**——`preflight_basis_binding: structurally-unavailable` ＋
+# `escalation_account: not-asserted`，由 writer 加蓋、提交面不得含此鍵（#39 §5 第 7 款）。
 
 
 def test_preflight_basis_has_no_writer_attested_option_any_more():
@@ -745,21 +768,59 @@ def test_preflight_basis_has_no_writer_attested_option_any_more():
 
 
 def test_the_binding_is_named_structurally_unavailable_not_merely_absent():
-    """恆拒的成因必須有名字：等承接卡，不是等下一則留言（形狀同 #39 的 structurally-vacuous）。"""
+    """恆虛的成因必須有名字：等承接卡，不是等下一則留言（形狀同 #39 的 structurally-vacuous）。"""
     assert PREFLIGHT_BASIS_BINDING == "structurally-unavailable"
     assert PREFLIGHT_BASIS_BINDINGS == ("event-verified", "structurally-unavailable")
+    assert ESCALATION_ACCOUNT_STATES == ("asserted", "not-asserted")
 
 
-def test_require_preflight_basis_refuses_unconditionally():
-    """R4-01 的處置：本 repo 拿不到依據，故**恆拒**——沒有「有依據就放行」這條分支可測。"""
-    with pytest.raises(ValidationError) as exc_info:
-        require_preflight_basis(card_id="CARD-A", source_sha=SHA_A)
-    message = "；".join(exc_info.value.errors)
-    assert "不建立 review event" in message
-    assert PREFLIGHT_BASIS_BINDING in message  # 成因寫在明面上
-    assert "不得以 unknown／unavailable 之類的新值擴充該布林欄位" in message
-    assert "--validate-only" in message  # 指出仍可用的自檢路徑
-    assert "CARD-A" in message and SHA_A in message  # 逐字帶出被拒的那一輪
+def test_derive_preflight_basis_never_establishes_and_never_raises():
+    """R4-01＋需求方裁定：依據恆不成立，但**不得拒絕寫入**（否則狀態面又分不出已查核）。"""
+    basis = derive_preflight_basis(card_id="CARD-A", source_sha=SHA_A)
+    assert basis.established is False
+    assert basis.basis == "not-established"
+    # 導出綁定：恆為 structurally-unavailable，且**呼叫端塞不進值**（只吃 basis 物件）。
+    assert derive_preflight_basis_binding(basis) == "structurally-unavailable"
+    assert derive_preflight_basis_binding(EVENT_VERIFIED) == "event-verified"
+    assert derive_preflight_basis_binding(None) == "structurally-unavailable"
+
+
+def test_writer_stamped_keys_are_rejected_on_the_submission_side():
+    """#39 §5 第 7 款：驗來源不驗值——提交面含此鍵即拒收，**即使值等於導出值**。"""
+    assert WRITER_STAMPED_KEYS == (
+        "preflight_passed",
+        "preflight_basis_binding",
+        "escalation_account",
+    )
+    for key, value in (
+        ("preflight_basis_binding", "structurally-unavailable"),  # 恰好等於導出值
+        ("escalation_account", "not-asserted"),
+        ("preflight_passed", "true"),
+    ):
+        payload = {
+            "review_result": "REQUEST_CHANGES",
+            "core_pain_resolved": "yes",
+            "self_run": [{"command": "uv run pytest", "observed": "1 failed"}],
+            "findings": [dict(_FINDING_PAYLOAD)],
+            key: value,
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            validate_review_report(payload)
+        message = "；".join(exc_info.value.errors)
+        assert key in message
+        assert "即使值恰好等於導出值也一樣拒收" in message
+    # finding 層級同樣擋。
+    finding_payload = dict(_FINDING_PAYLOAD)
+    finding_payload["escalation_account"] = "asserted"
+    with pytest.raises(ValidationError):
+        validate_review_report(
+            {
+                "review_result": "REQUEST_CHANGES",
+                "core_pain_resolved": "yes",
+                "self_run": [{"command": "uv run pytest", "observed": "1 failed"}],
+                "findings": [finding_payload],
+            }
+        )
 
 
 def test_no_reader_from_comment_content_exists_any_more():
@@ -774,18 +835,22 @@ def test_no_reader_from_comment_content_exists_any_more():
     for name in ("find_preflight_basis", "check_preflight_event_present"):
         assert not hasattr(validation_mod, name), f"validation.{name} 應已移除"
 
-    # 唯一與 preflight 有關的函式是那道閘門，且它不吃任何留言內容。
+    # 與 preflight 有關的函式恰為兩個導出器，**兩個都不吃任何留言內容**。
     producers = {
         f"{mod.__name__}.{name}"
         for mod in (review_mod, validation_mod)
         for name in dir(mod)
         if "preflight" in name.lower() and inspect.isfunction(getattr(mod, name, None))
     }
-    assert producers == {"wf_cli.validation.require_preflight_basis"}, producers
-    assert list(inspect.signature(require_preflight_basis).parameters) == [
+    assert producers == {
+        "wf_cli.validation.derive_preflight_basis",
+        "wf_cli.review.derive_preflight_basis_binding",
+    }, producers
+    assert list(inspect.signature(derive_preflight_basis).parameters) == [
         "card_id",
         "source_sha",
     ]
+    assert list(inspect.signature(derive_preflight_basis_binding).parameters) == ["preflight"]
 
 
 @pytest.mark.parametrize(
@@ -848,9 +913,11 @@ def test_no_issue_comment_of_any_shape_can_establish_a_preflight_basis(body, lab
             f"{label}：{name}() 由留言內文產出了 preflight 依據（R4-01 的形狀）"
         )
     assert probed, "沒有掃到任何吃 body 的公開函式，證據無效"
-    # 依據仍取不到，閘門照樣拒絕。
-    with pytest.raises(ValidationError):
-        require_preflight_basis(card_id="CARD-A", source_sha=SHA_A)
+    # 判準（需求方 2026-08-12 裁定後）：不是「一律拒絕」，是**一律導出
+    # structurally-unavailable**——留言擺在那裡也改變不了導出值。
+    basis = derive_preflight_basis(card_id="CARD-A", source_sha=SHA_A)
+    assert basis.established is False
+    assert derive_preflight_basis_binding(basis) == PREFLIGHT_BASIS_BINDING
 
 
 def test_no_source_path_constructs_an_event_verified_basis():
@@ -898,7 +965,8 @@ def test_counts_derivation_refuses_to_run_without_an_established_basis():
     assert derive_counts_toward_escalation(report, marks, EVENT_VERIFIED) is True
 
 
-def test_renderer_refuses_to_emit_an_event_without_a_preflight_basis():
+def test_renderer_refuses_to_assert_the_account_without_a_basis():
+    """防禦縱深：無依據卻帶 counts＝本卡族四輪的病灶本體，直接拋錯。"""
     report = _report(findings=[_finding()])
     with pytest.raises(ValueError):
         render_escalation_facts_block(
@@ -906,12 +974,42 @@ def test_renderer_refuses_to_emit_an_event_without_a_preflight_basis():
             escalation_epoch=0,
             report=report,
             marks=default_accepted_marks(report.findings),
-            counts_toward_escalation=True,
+            counts_toward_escalation=True,  # 無 preflight 卻要斷言
+        )
+    # 反向：有依據卻不給 counts，也是留白，同樣拒絕。
+    with pytest.raises(ValueError):
+        render_escalation_facts_block(
+            attempt=f"CARD-A-e0-{SHA_A}",
+            escalation_epoch=0,
+            report=report,
+            marks=default_accepted_marks(report.findings),
+            counts_toward_escalation=None,
+            preflight=EVENT_VERIFIED,
         )
 
 
+def test_unavailable_block_stamps_the_binding_and_omits_the_two_asserting_keys():
+    """需求方裁定的核心：寫得出事件，且**事件上看得見**這道閘門沒有鑑別力。"""
+    report = _report(findings=[_finding()])
+    block = render_escalation_facts_block(
+        attempt=f"CARD-A-e0-{SHA_A}",
+        escalation_epoch=0,
+        report=report,
+        marks=default_accepted_marks(report.findings),
+        counts_toward_escalation=None,
+    )
+    assert "preflight_basis_binding: structurally-unavailable" in block
+    assert "escalation_account: not-asserted" in block
+    # 兩個斷言用的鍵**都不出現**——不是寫成 unknown／unavailable（R3-01 的禁令）。
+    assert "preflight_passed" not in block
+    assert "counts_toward_escalation" not in block
+    assert "unknown" not in block and "unavailable:" not in block
+    # findings 仍逐項落地：不斷言帳，不等於不記錄查核內容。
+    assert "finding_id: F-01" in block and "accepted: true" in block
+
+
 def test_written_block_asserts_preflight_passed_true_as_a_literal():
-    """§5:168 把該欄釘為字面 true；寫出來的事件必須逐字如此。"""
+    """§5:168 把該欄釘為字面 true；依據成立時寫出來的事件必須逐字如此。"""
     report = _report(findings=[_finding()])
     block = render_escalation_facts_block(
         attempt=f"CARD-A-e0-{SHA_A}",
@@ -922,6 +1020,8 @@ def test_written_block_asserts_preflight_passed_true_as_a_literal():
         preflight=EVENT_VERIFIED,
     )
     assert "preflight_passed: true" in block
+    assert "preflight_basis_binding: event-verified" in block
+    assert "escalation_account: asserted" in block
     assert "unknown" not in block and "unavailable" not in block
 
 
@@ -934,6 +1034,62 @@ def test_non_boolean_counts_value_is_unreadable_not_a_third_state():
     history = build_issue_event_history([comment])
     assert history.scoped_facts == ()
     assert any("未知" in reason for reason in history.unknown_reasons)
+
+
+def test_not_asserted_event_is_readable_but_never_counts():
+    """「未斷言」與「讀不懂」必須分開：前者讀得出來、閘門不擋，但一律不計數。"""
+    report = _report(findings=[_finding()])
+    body = render_verdict_comment(
+        card_id="CARD-A",
+        report=report,
+        source_sha=SHA_A,
+        reviewer="Codex",
+        escalation_epoch=0,
+        timestamp="2026-08-12T12:00:00+08:00",
+    )
+    history = build_issue_event_history([{"body": body, "url": "u1"}])
+    assert history.unknown_reasons == ()  # 讀得懂 → 下一則裁決不會被閘門擋住
+    (fact,) = history.scoped_facts
+    assert fact.counts_toward_escalation is None
+    assert fact.account_asserted is False
+    assert fact.counts is False  # 不計數
+    assert fact.preflight_basis_binding == "structurally-unavailable"
+    assert counted_attempts(history, 0) == []
+    # 但**不得**被讀成「執行者沒有累計」：未斷言的 attempt 拿得到。
+    assert [f.attempt_id for f in unasserted_attempts(history, 0)] == [f"CARD-A-e0-{SHA_A}"]
+
+
+@pytest.mark.parametrize(
+    "mangle, label",
+    [
+        (lambda b: b.replace("escalation_account: not-asserted", "escalation_account: asserted"),
+         "帳狀態與綁定互相矛盾"),
+        (lambda b: b.replace(
+            "preflight_basis_binding: structurally-unavailable",
+            "preflight_basis_binding: structurally-unavailable\ncounts_toward_escalation: true"),
+         "未斷言的事件卻帶 counts"),
+        (lambda b: b.replace(
+            "preflight_basis_binding: structurally-unavailable",
+            "preflight_basis_binding: structurally-unavailable\npreflight_passed: true"),
+         "未斷言的事件卻帶 preflight_passed"),
+        (lambda b: b.replace("escalation_account: not-asserted", "escalation_account: 隨便"),
+         "帳狀態不在封閉列舉內"),
+    ],
+)
+def test_self_contradictory_account_blocks_are_unreadable(mangle, label):
+    """事後被改過的事件不得被半信半疑地採用：自相矛盾一律回未知 → 閘門 fail-closed。"""
+    report = _report(findings=[_finding()])
+    body = render_verdict_comment(
+        card_id="CARD-A",
+        report=report,
+        source_sha=SHA_A,
+        reviewer="Codex",
+        escalation_epoch=0,
+        timestamp="2026-08-12T12:00:00+08:00",
+    )
+    history = build_issue_event_history([{"body": mangle(body), "url": "u1"}])
+    assert history.scoped_facts == (), label
+    assert any("未知" in reason for reason in history.unknown_reasons), label
 
 
 # --------------------------------------------------------------------------
@@ -959,10 +1115,10 @@ assert wf_cli.__file__.startswith(os.environ["EXPECT_ROOT"]), (
 from wf_cli.review import (
     PREFLIGHT_BASES, PREFLIGHT_BASIS_BINDING, AcceptedMark, Finding,
     PreflightBasis, ReviewReport, SelfRunEntry, derive_counts_toward_escalation,
-    render_escalation_facts_block,
+    derive_preflight_basis_binding, render_escalation_facts_block,
 )
 from wf_cli.validation import (
-    ValidationError, build_issue_event_history, require_preflight_basis,
+    ValidationError, build_issue_event_history, derive_preflight_basis,
 )
 
 SHA = "a" * 40
@@ -1019,26 +1175,93 @@ def _run_probe(probe_body: str, mutation: tuple[str, str, str] | None) -> subpro
 # 等於自陳；那個缺口本身就是本卡族被打的同一種病。
 _MUTANTS = [
     (
-        "寫入前的閘門不再恆拒，改回傳一個依據（R4-01 的形狀：解鎖了寫入）",
+        "依據導出器改成回傳 event-verified（R4-01 的形狀：任意輸入即可解鎖計數）",
         "wf_cli/validation.py",
-        "    raise ValidationError(\n        [\n            (\n                f\"§3 第 1 款的 preflight 依據在本 repo 恆不可得",
-        "    return PreflightBasis(basis=\"event-verified\", source_event=\"x\")\n    raise ValidationError(\n        [\n            (\n                f\"§3 第 1 款的 preflight 依據在本 repo 恆不可得",
+        "    **本函式刻意不掃留言**（``comments`` 不在簽章上）：能被留言影響的依據就不是導出值。\n    \"\"\"\n    return PREFLIGHT_NOT_ESTABLISHED",
+        "    **本函式刻意不掃留言**（``comments`` 不在簽章上）：能被留言影響的依據就不是導出值。\n    \"\"\"\n    return PreflightBasis(basis=\"event-verified\", source_event=\"x\")",
         (
-            "raises(ValidationError, lambda: require_preflight_basis(\n"
-            "    card_id='C', source_sha=SHA))\n"
+            "b = derive_preflight_basis(card_id='C', source_sha=SHA)\n"
+            "assert b.established is False\n"
+            "assert derive_preflight_basis_binding(b) == 'structurally-unavailable'\n"
         ),
     ),
     (
-        "依據綁定被改寫成「只是這一則沒有」（恆拒的成因從訊息裡消失）",
+        "綁定導出器把恆虛性說成 event-verified（事件上再也看不見閘門沒有鑑別力）",
+        "wf_cli/review.py",
+        'return "event-verified" if (preflight and preflight.established) else PREFLIGHT_BASIS_BINDING',
+        'return "event-verified"',
+        (
+            "assert derive_preflight_basis_binding(None) == 'structurally-unavailable'\n"
+            "assert derive_preflight_basis_binding(PreflightBasis()) == "
+            "'structurally-unavailable'\n"
+        ),
+    ),
+    (
+        "綁定值被改寫成「只是這一則沒有」（等承接卡 vs 等下一則留言，處置不同）",
         "wf_cli/review.py",
         'PREFLIGHT_BASIS_BINDING = "structurally-unavailable"',
         'PREFLIGHT_BASIS_BINDING = "not-established"',
         (
             "assert PREFLIGHT_BASIS_BINDING == 'structurally-unavailable'\n"
-            "try:\n"
-            "    require_preflight_basis(card_id='C', source_sha=SHA)\n"
-            "except ValidationError as exc:\n"
-            "    assert 'structurally-unavailable' in '；'.join(exc.errors)\n"
+            "b = derive_preflight_basis(card_id='C', source_sha=SHA)\n"
+            "assert derive_preflight_basis_binding(b) == 'structurally-unavailable'\n"
+        ),
+    ),
+    (
+        "無依據時偷偷把帳斷言成 false（洗白：本該未斷言的 attempt 變成已判定不計數）",
+        "wf_cli/review.py",
+        "    if not asserted and counts_toward_escalation is not None:",
+        "    if False:",
+        (
+            "r = report()\n"
+            "blk = render_escalation_facts_block(attempt='C-e0-' + SHA, escalation_epoch=0,\n"
+            "    report=r, marks=marks(r.findings), counts_toward_escalation=None)\n"
+            "assert 'escalation_account: not-asserted' in blk\n"
+            "assert 'counts_toward_escalation' not in blk\n"
+            "raises(ValueError, lambda: render_escalation_facts_block(\n"
+            "    attempt='C-e0-' + SHA, escalation_epoch=0, report=r,\n"
+            "    marks=marks(r.findings), counts_toward_escalation=False))\n"
+        ),
+    ),
+    (
+        "無依據時仍寫出 preflight_passed: true（R1-01 的偽造，換個位置回來）",
+        "wf_cli/review.py",
+        '    if asserted:\n        # §5:168 的字面 true，且**只在依據成立時**才寫得出來。\n        lines.append("preflight_passed: true")',
+        '    if True:\n        lines.append("preflight_passed: true")',
+        (
+            "r = report()\n"
+            "blk = render_escalation_facts_block(attempt='C-e0-' + SHA, escalation_epoch=0,\n"
+            "    report=r, marks=marks(r.findings), counts_toward_escalation=None)\n"
+            "assert 'preflight_passed' not in blk\n"
+        ),
+    ),
+    (
+        "讀取側把「未斷言」當成「已判定不計數」（消費者會把真實退回讀成零）",
+        "wf_cli/review.py",
+        "        return self.counts_toward_escalation is True",
+        "        return self.counts_toward_escalation is not True",
+        (
+            "from wf_cli.review import EscalationFacts\n"
+            "f = EscalationFacts(attempt_id='C-e0-' + SHA, escalation_epoch=0,\n"
+            "    review_result='REQUEST_CHANGES', counts_toward_escalation=None)\n"
+            "assert f.counts is False\n"
+        ),
+    ),
+    (
+        "讀取側接受自相矛盾的事件（帳狀態與綁定不一致仍照收）",
+        "wf_cli/review.py",
+        '    if (account == "asserted") != (binding == "event-verified"):\n        return None',
+        "    pass",
+        (
+            "r = report()\n"
+            "blk = render_escalation_facts_block(attempt='C-e0-' + SHA, escalation_epoch=0,\n"
+            "    report=r, marks=marks(r.findings), counts_toward_escalation=None)\n"
+            "from wf_cli.review import escalation_facts_from_body\n"
+            # 綁定說「依據成立」、帳狀態說「未斷言」——拿掉一致性檢查就會照收，
+            # 並在事件流上留下一則綁定值不可信的事實。
+            "bad = blk.replace('preflight_basis_binding: structurally-unavailable',\n"
+            "                  'preflight_basis_binding: event-verified')\n"
+            "assert escalation_facts_from_body(bad) is None\n"
         ),
     ),
     (
@@ -1062,15 +1285,16 @@ _MUTANTS = [
         ),
     ),
     (
-        "渲染器在無依據時照常產出 review event",
+        "渲染器在無依據時照常斷言帳（防禦縱深被拆掉）",
         "wf_cli/review.py",
-        "    if not attestation.established:",
+        "    if asserted and counts_toward_escalation is None:",
         "    if False:",
         (
             "r = report()\n"
             "raises(ValueError, lambda: render_escalation_facts_block(\n"
             "    attempt='C-e0-' + SHA, escalation_epoch=0, report=r,\n"
-            "    marks=marks(r.findings), counts_toward_escalation=True))\n"
+            "    marks=marks(r.findings), counts_toward_escalation=None,\n"
+            "    preflight=PreflightBasis(basis='event-verified', source_event='u')))\n"
         ),
     ),
     (
@@ -1090,9 +1314,10 @@ _MUTANTS = [
 ]
 # ⚠️ 移除了三條錨定在 `preflight_basis_from_body` 的突變（不比對 source_sha／card_id／
 # preflight_passed）。**該讀取器本輪已刪除**，錨點不存在的突變會被 harness 判 SKIP，而
-# 「錨點失效的突變等於沒測」（R2 那輪的 M04 已踩過一次）。取代它們的是上方三條錨在
-# 「恆拒」與「依據 sentinel」上的突變，加上 `test_no_source_path_constructs_an_event_verified_basis`
-# 的 AST 窮舉——後者擋的正是「讀取器換個名字重新長出來」。
+# 「錨點失效的突變等於沒測」（R2 那輪的 M04 已踩過一次）。取代它們的是上方錨在兩個導出器、
+# 綁定值、以及「未斷言 vs 已判定不計數」上的突變，加上
+# `test_no_source_path_constructs_an_event_verified_basis` 的 AST 窮舉——後者擋的正是
+# 「讀取器換個名字重新長出來」。
 
 
 @pytest.mark.parametrize("name, rel, old, new, probe", _MUTANTS, ids=[m[0] for m in _MUTANTS])

@@ -465,10 +465,12 @@ def render_verdict_comment(
     review_attempt_id = attempt_id(card_id, escalation_epoch, source_sha)
     marks = dict(accepted_marks or default_accepted_marks(report.findings))
     attestation = preflight or PREFLIGHT_NOT_ESTABLISHED
+    # 依據不成立時 counts 是 **None（未斷言）**，不是 False——寫 false 是洗白，
+    # 寫 true 是偽造，兩者是同一種病的兩個方向（WF-22-CLI4 R3 的原話，本輪仍成立）。
     counts = (
         derive_counts_toward_escalation(report, marks, attestation)
         if attestation.established
-        else False
+        else None
     )
     lines = [
         (
@@ -502,15 +504,12 @@ def render_verdict_comment(
         )
         lines.append(f"  - evidence：{_fence_safe(f.evidence)}")
         lines.append(f"  - disposition：{_fence_safe(f.disposition)}")
-    # 沒有 preflight 依據時**整個帳區塊都不渲染**，而不是渲染一個較誠實的值。
-    # 產線上走不到這條路（``validation.require_preflight_basis`` 擋在所有遠端寫入
-    # 之前，且今天無條件拒絕），它存在只為了讓不寫 lifecycle 事件的呼叫端（例如 doctor
-    # 的測試替身）仍能
-    # 產生留言。省略＝不作任何宣稱；寫 unknown／unavailable 才是擴充 §5:168 的布林
-    # schema，那正是 R3-01 指出的錯誤。缺帳區塊的事件會被
-    # ``build_issue_event_history`` 判為未知，閘門照樣 fail-closed。
-    if attestation.established:
-        lines += [
+    # 帳區塊**一律渲染**（需求方 2026-08-12 裁定：保留寫入能力）。依據不成立時它渲染成
+    # ``escalation_account: not-asserted`` ＋ ``preflight_basis_binding:
+    # structurally-unavailable``——把「這道閘門今天沒有鑑別力」寫在事件上，而不是省略。
+    # 省略在上一版是「不作任何宣稱」，但它同時讓消費者分不出「沒有 writer」與「有人漏填」，
+    # 且會讓下一則裁決被「帳可重建」閘門擋住（狀態面又回到分不出已查核／未查核）。
+    lines += [
         "",
         "### escalation 帳（lifecycle writer 標記，review-escalation.md §2／§3／§5）",
         "",
@@ -523,7 +522,7 @@ def render_verdict_comment(
             preflight=attestation,
             owner_field_at_verdict_write=owner_field_at_verdict_write,
         ),
-        ]
+    ]
     lines += [
         "",
         "---",
@@ -535,17 +534,26 @@ def render_verdict_comment(
             "`counts_toward_escalation` 為依 §3 算出的投影，不接受手填。"
         ),
         (
-            "`preflight_passed` 只在事件流上有受管轄的 preflight pass event"
-            "（`review-escalation.md` §5 的 `handoff-accepted` 或等價，帶 source_sha、"
-            "檢查結果與摘要）時才為 `true`；**寫入者的具結不算依據**，任何一則長得像該"
-            "事件的 Issue 留言也不算——「受管轄」是通道屬性，判定不出來就不是依據。"
+            "`preflight_basis_binding` 由本指令**加蓋**（提交面不得出現此鍵，出現即拒收，"
+            "即使值恰好等於導出值）。它是 `event-verified` 時，§3 第 1 款是一條真的會擋下"
+            "東西的檢查；是 **`structurally-unavailable`** 時，代表本 repo 沒有受管轄的 "
+            "preflight pass event writer、也沒有該事件的可驗證格式——**這道閘門今天沒有"
+            "鑑別力**。任何一則長得像該事件的 Issue 留言都不算依據：「受管轄」是通道屬性，"
+            "而本 repo 的人類與每個 AI agent 共用同一個 GitHub 帳號，內文判定不出通道。"
         ),
         (
-            "缺該依據時本指令**不建立 review event**（`review-escalation.md` §1），"
-            "而不是寫一個較誠實的值：§5:168 把 `preflight_passed` 釘為字面 `true`，"
-            "`unknown`／`unavailable` 都是擴充該欄位。本 repo 今天沒有該事件的 writer 與"
-            "可驗證格式，故 escalation 自動計數在承接卡落地前不可用——消費者不得把"
-            "「事件流上沒有可計數 attempt」讀成「執行者沒有累計」。"
+            "綁定為 `structurally-unavailable` 時，本事件**不寫** `preflight_passed`、"
+            "**也不寫** `counts_toward_escalation`，改以 `escalation_account: not-asserted` "
+            "顯式宣告「不對 escalation 帳作任何斷言」。這不是把那個布林欄位擴充成三值"
+            "（`unknown`／`unavailable` 仍為禁止），是不對它斷言。⚠️ 因此本事件是一則"
+            "**缺 §5:168 `preflight_passed: true` 的不完整 review event**；此落差刻意不藏，"
+            "應登記於 `docs/CONSUMER_CONFORMANCE.md`。"
+        ),
+        (
+            "消費者**不得**把 `not-asserted` 讀成「已判定為不計數」，也不得把「本 epoch 沒有"
+            "可計數 attempt」讀成「執行者沒有累計」——escalation 自動計數在承接卡"
+            "（受管轄 preflight pass event 的 writer ＋ 可驗證格式）落地前不可用，"
+            "**包括三振門檻**。那些 attempt 仍真實發生過，只是帳上沒有斷言。"
         ),
         (
             "`owner_field_at_verdict_write` 是 Project「owner」欄在**本則裁決寫入當下**的"
@@ -642,13 +650,17 @@ PREFLIGHT_BASES = ("event-verified", "not-established")
 # （與 ``ACCEPTED_MARKING_BINDINGS`` 的 ``structurally-vacuous`` 同一個成因）。
 #
 # 因此本輪不再造第二個「看起來像驗證」的讀取器，改用本 repo 既有的處置形態
-# （WF-ESCALATION-RESOLUTION-GAP1／ai-workflow#39 對恆真授權款的處理）：**把恆拒本身
-# 寫成明文**。§3 第 1 款的依據綁定在本 repo 恆為 ``structurally-unavailable``，
-# ``validation.require_preflight_basis`` 因此**無條件拒絕**，``wfcli review`` 今天寫不出
-# 任何裁決事件。這是 R4-01 disposition 的第二句（「在該 event writer 和其可驗證格式
-# 落地前維持拒絕寫入」）的字面實作。
+# （WF-ESCALATION-RESOLUTION-GAP1／ai-workflow#39 §5 第 7 款對恆真授權款的處理、以及
+# ``ACCEPTED_MARKING_BINDINGS``）：**不寫出看似有檢查的條文，改把恆虛性導出成事件上的
+# 一個欄位**。§3 第 1 款的依據綁定在本 repo 恆為 ``structurally-unavailable``。
 #
-# 承接卡要交付的是**兩件**，缺一則本檔仍應維持恆拒：
+# ⚠️ 需求方 2026-08-12 裁定（推翻本輪初稿的「恆拒寫入」）：**保留寫入能力**。恆拒的後果
+# 是狀態面上「已查核」與「未查核」再次無法區分，而那正是 WF-25-REVIEW-WRITE-CHANNEL1
+# （ai-workflow#13，已結案）解決過的問題；今天有八張卡的跨家族裁決靠 ``wfcli review``
+# 寫進狀態面。故正解不是不寫，是**寫下去、並把「這道閘門今天沒有鑑別力」寫在事件上**，
+# 讓查核者與未來的消費者從事件本身讀得到，而不是只留在 stderr 或註解裡。
+#
+# 承接卡要交付的是**兩件**，缺一則本檔仍導出 ``structurally-unavailable``：
 #   (1) 受管轄的 preflight pass event **writer**（``handoff --next-stage review`` 或新事件
 #       型別，需 ``handoff`` 的寫入集）；
 #   (2) 該事件的**可驗證格式**——即消費者憑什麼斷定它出自該 writer 而非任何人的留言。
@@ -661,6 +673,32 @@ PREFLIGHT_BASIS_BINDINGS = ("event-verified", "structurally-unavailable")
 # ``not-established`` 是「這一則沒有依據」，可能下一則就有；``structurally-unavailable``
 # 是「本 repo 沒有任何路徑能產生依據」，等待的對象是承接卡而不是下一則留言。
 PREFLIGHT_BASIS_BINDING = "structurally-unavailable"
+
+# 帳是否被斷言。**這不是 ``counts_toward_escalation`` 的第三個值**——R3-01 明文禁止擴充
+# 那個布林欄位，本輪沒有違反：綁定為 ``structurally-unavailable`` 時，區塊裡
+# ``preflight_passed`` 與 ``counts_toward_escalation`` **兩個鍵都不出現**，改由本鍵顯式
+# 宣告「本事件不對 escalation 帳作任何斷言」。省略若無這個顯式宣告就與漏填無法區分
+# （同 ``findings: []`` 必須顯式的紀律），所以兩者必須成對出現，讀取器也據此交叉檢查。
+ESCALATION_ACCOUNT_STATES = ("asserted", "not-asserted")
+
+# 由 writer 加蓋、**提交面不得出現**的鍵（ai-workflow#39 §5 第 7 款：驗來源不驗值——
+# 提交面含此鍵即無效，即使值恰好等於導出值）。與 ``WRITER_ONLY_KEYS``（警示並忽略）
+# 的差別是刻意的：那三個鍵的既有處置是查核者填了就忽略，而綁定值一旦可被提交面影響，
+# 「它是導出的」這句話就不再成立——那正是本卡族四輪被打的同一種病。
+WRITER_STAMPED_KEYS = ("preflight_passed", "preflight_basis_binding", "escalation_account")
+
+
+def derive_preflight_basis_binding(preflight: PreflightBasis | None) -> str:
+    """導出 §3 第 1 款的依據綁定；**呼叫端不得手填**（形狀同 ai-workflow#39）。
+
+    - ``event-verified``：依據成立，第 1 款是一條真的會擋下東西的檢查。
+    - ``structurally-unavailable``：以上不成立。**本 repo 今天恆為此值**，且成因不是
+      「這一輪剛好沒有」，是沒有 writer、也沒有可驗證的格式（見上方區塊）。
+
+    ``structurally-unavailable`` **不使裁決無效**（否則狀態面又回到分不出已查核／未查核），
+    但消費者**不得**據以宣稱該 attempt 已被判定為不計數——它是「未斷言」，不是「不計數」。
+    """
+    return "event-verified" if (preflight and preflight.established) else PREFLIGHT_BASIS_BINDING
 
 
 @dataclass(frozen=True)
@@ -721,17 +759,28 @@ class EscalationFacts:
     ``owner_field_at_verdict_write`` 三態，刻意不合併：``None`` ＝該鍵不存在（未知）、
     ``""`` ＝鍵存在但 Project owner 欄當下為空、其餘為快照值。省略與空值混為一談正是
     本檔各處反覆拒絕的形狀（``findings: []`` 必須顯式同理）。
+
+    ``counts_toward_escalation`` 為 ``None`` 表示**該事件顯式宣告不對帳作斷言**
+    （``escalation_account: not-asserted``，綁定為 ``structurally-unavailable``）。它與
+    「讀不出這則事件」不同：後者仍回 ``None``（整個 ``EscalationFacts`` 不存在）並讓閘門
+    fail-closed。**未斷言不得被讀成不計數**——``counts`` 只在逐字 ``true`` 時為真。
     """
 
     attempt_id: str
     escalation_epoch: int
     review_result: str
-    counts_toward_escalation: bool
+    counts_toward_escalation: bool | None
     owner_field_at_verdict_write: str | None = None
+    preflight_basis_binding: str = PREFLIGHT_BASIS_BINDING
 
     @property
     def counts(self) -> bool:
-        return self.counts_toward_escalation
+        """只有逐字斷言 ``true`` 才計數；未斷言（``None``）一律不計，也不得反推為不計數。"""
+        return self.counts_toward_escalation is True
+
+    @property
+    def account_asserted(self) -> bool:
+        return self.counts_toward_escalation is not None
 
 
 @dataclass(frozen=True)
@@ -868,7 +917,7 @@ def render_escalation_facts_block(
     escalation_epoch: int,
     report: ReviewReport,
     marks: Mapping[str, AcceptedMark],
-    counts_toward_escalation: bool,
+    counts_toward_escalation: bool | None,
     preflight: PreflightBasis | None = None,
     owner_field_at_verdict_write: str | None = None,
 ) -> str:
@@ -877,6 +926,22 @@ def render_escalation_facts_block(
     ``self_run`` 不重複進本區塊：它已逐項落在留言散文，複製一份只會讓同一事實有兩個
     可能不同步的來源。本區塊只承載**先前只存在於人腦裡**的那幾件事——``accepted``、
     ``status``、``counts_toward_escalation``，以及 owner 欄的時點快照。
+
+    ## 兩種形狀，由 ``preflight_basis_binding`` 分派（WF-22-CLI4-R4-01 的處置）
+
+    ``preflight_basis_binding`` **一律寫出**，值由 ``derive_preflight_basis_binding``
+    導出、呼叫端塞不進來：
+
+    - ``event-verified``：依據成立。寫 ``preflight_passed: true``（§5:168 的字面值）、
+      ``escalation_account: asserted`` 與布林 ``counts_toward_escalation``。
+    - ``structurally-unavailable``：依據在本 repo 結構上不可得。**``preflight_passed`` 與
+      ``counts_toward_escalation`` 兩個鍵都不寫**，改寫 ``escalation_account: not-asserted``。
+      這不是把那個布林欄位擴充成三值（R3-01 的禁令），是**不對它作任何斷言**，並用一個
+      顯式的鍵把「沒有斷言」與「漏填」分開。
+
+    第二種形狀是一則**不完整的 §5 review event**（缺 ``preflight_passed: true``），這一點
+    刻意不藏：事件散文與本區塊同時載明缺的是什麼、為什麼缺、由誰承接。該落差應登記於
+    ``docs/CONSUMER_CONFORMANCE.md``（不在本卡寫入集，故只指名未代改）。
 
     ## ``owner_field_at_verdict_write``：時點快照，不是 attempt 的固有屬性
 
@@ -889,29 +954,47 @@ def render_escalation_facts_block(
     在讀回時是兩個不同的狀態（見 ``EscalationFacts``）。
     """
     attestation = preflight or PREFLIGHT_NOT_ESTABLISHED
-    if not attestation.established:
-        # 防禦縱深：即使呼叫端漏擋，也不得渲染出一則斷不出 preflight_passed: true 的
-        # review event（§5:168 把該欄釘為字面 true）。
+    binding = derive_preflight_basis_binding(attestation)
+    asserted = binding == "event-verified"
+    if asserted and counts_toward_escalation is None:
+        # 防禦縱深：依據成立卻不給 counts，等於把該斷言的東西留白。
         raise ValueError(
-            "缺 event-verified 的 preflight 依據，不得渲染 review event"
-            "（review-escalation.md §1：preflight 缺口不得建立 review event）"
+            "preflight 依據已成立（event-verified）卻未提供 counts_toward_escalation；"
+            "帳可斷言時必須斷言（review-escalation.md §5）"
+        )
+    if not asserted and counts_toward_escalation is not None:
+        # 反向防禦縱深：依據不成立卻帶著 counts，就是本卡族四輪的病灶本體——
+        # 沒有任何東西證實過第 1 款，卻以事實的語氣寫下它的結論。
+        raise ValueError(
+            "preflight 依據為 structurally-unavailable 卻提供了 counts_toward_escalation；"
+            "無依據不得斷言帳（WF-22-CLI4：R1 預設 true／R2 具結 true 的同一個形狀）"
         )
     lines = [
         "```yaml",
         f"{FACTS_BLOCK_KEY}: {BLOCK_VERSION}",
         f"attempt_id: {_yaml_scalar(attempt)}",
         f"escalation_epoch: {escalation_epoch}",
-        # 沒有依據時寫 unknown，**不寫 true**。契約 §5 的 schema 是 `preflight_passed: true`，
-        # 但那是給「依據存在」的情形；沒有依據卻照抄 true 等於偽造事實（R1-01）。
-        "preflight_passed: true",
+    ]
+    if asserted:
+        # §5:168 的字面 true，且**只在依據成立時**才寫得出來。
+        lines.append("preflight_passed: true")
+    lines += [
         f"review_result: {report.review_result}",
         f"core_pain_resolved: {report.core_pain_resolved}",
-        f"counts_toward_escalation: {_yaml_scalar(counts_toward_escalation)}",
-        f"owner_field_at_verdict_write: {_yaml_scalar(owner_field_at_verdict_write or '')}",
-        f"preflight_basis: {attestation.basis}",
-        f"preflight_source_event: {_yaml_scalar(attestation.source_event)}",
-        f"preflight_summary: {_yaml_scalar(attestation.summary)}",
+        # writer 加蓋，提交面不得出現（WRITER_STAMPED_KEYS）。
+        f"preflight_basis_binding: {binding}",
+        f"escalation_account: {'asserted' if asserted else 'not-asserted'}",
     ]
+    if asserted:
+        lines += [
+            f"counts_toward_escalation: {_yaml_scalar(counts_toward_escalation)}",
+            f"preflight_basis: {attestation.basis}",
+            f"preflight_source_event: {_yaml_scalar(attestation.source_event)}",
+            f"preflight_summary: {_yaml_scalar(attestation.summary)}",
+        ]
+    lines.append(
+        f"owner_field_at_verdict_write: {_yaml_scalar(owner_field_at_verdict_write or '')}"
+    )
     if not report.findings:
         lines.append("findings: []")
     else:
@@ -978,12 +1061,29 @@ def _as_int(value: Any) -> int | None:
         return None
 
 
+def _owner_snapshot(data: Mapping[str, Any]) -> str | None:
+    """owner 欄的時點快照。
+
+    **不是**閘門的輸入，故缺它不使本則變成「未知」——把它列為必填只會多一條讓閘門拒絕
+    的路徑，卻不使任何裁決更安全。它是給未來 §5 第 3 款消費者的載荷，因此「鍵不存在」
+    (``None``) 與「值為空」(``""``) 必須可分辨，由該消費者自行 fail-closed。
+    """
+    raw = data.get("owner_field_at_verdict_write")
+    return raw if isinstance(raw, str) else None
+
+
 def escalation_facts_from_body(body: str) -> EscalationFacts | None:
     """自一則 review event 留言讀回 escalation 帳事實；欄位讀不齊一律回 None。
 
     回 None 代表「**未知**」而不是「不計數」——呼叫端（``validation`` 的閘門）必須
     據此 fail-closed。這正是 review-escalation.md:276 的 cutover 語意：baseline 之前
     的 attempt 沒有 counts 事實，不得推定為不計數。
+
+    ``escalation_account: not-asserted`` 是**另一回事**：它是一則讀得懂的事件，明說自己
+    不對帳作斷言（``preflight_basis_binding: structurally-unavailable``）。它回傳
+    ``EscalationFacts(counts_toward_escalation=None)``——讀得懂、不計數、也**不得**被
+    反推為「已判定為不計數」。兩者必須分開，否則「沒有 writer」與「有人漏填」在消費者
+    眼裡長得一樣。
     """
     data = find_block_by_key(body, FACTS_BLOCK_KEY)
     if data is None:
@@ -997,22 +1097,55 @@ def escalation_facts_from_body(body: str) -> EscalationFacts | None:
     # fail-closed），不得被當成第三種合法狀態（R3-01：不得以新值擴充既有布林 schema）。
     counts = True if raw_counts == "true" else False if raw_counts == "false" else None
     result = str(data.get("review_result") or "").strip()
-    if not attempt or epoch is None or counts is None or result not in REVIEW_RESULTS:
+    if not attempt or epoch is None or result not in REVIEW_RESULTS:
         return None
     decomposed = parse_attempt_id(attempt)
     if decomposed is None or decomposed[1] != epoch:
         return None
-    # owner 快照**不是**閘門的輸入，故缺它不使本則變成「未知」——把它列為必填只會多一條
-    # 讓閘門拒絕的路徑，卻不使任何裁決更安全。它是給未來 §5 第 3 款消費者的載荷，因此
-    # 「鍵不存在」(None) 與「值為空」("") 必須可分辨，由該消費者自行 fail-closed。
-    raw_owner = data.get("owner_field_at_verdict_write")
-    owner = raw_owner if isinstance(raw_owner, str) else None
+
+    # ---- 綁定與帳狀態：兩個鍵必須成對自洽，否則整則判讀不懂 ----
+    binding = str(data.get("preflight_basis_binding") or "").strip()
+    account = str(data.get("escalation_account") or "").strip()
+    has_passed = "preflight_passed" in data
+    if binding not in PREFLIGHT_BASIS_BINDINGS or account not in ESCALATION_ACCOUNT_STATES:
+        # 含 baseline 之前的舊事件（兩個鍵都不存在）：維持既有語意——有嚴格布林 counts
+        # 且逐字帶 preflight_passed 才算讀得懂，否則未知。
+        if binding or account:
+            return None  # 有一個鍵但值不合法／缺另一個 → 讀不懂，不猜
+        if counts is None:
+            return None
+        return EscalationFacts(
+            attempt_id=attempt,
+            escalation_epoch=epoch,
+            review_result=result,
+            counts_toward_escalation=counts,
+            owner_field_at_verdict_write=_owner_snapshot(data),
+            preflight_basis_binding="event-verified" if has_passed else PREFLIGHT_BASIS_BINDING,
+        )
+    if (account == "asserted") != (binding == "event-verified"):
+        return None  # 兩鍵互相矛盾
+    if account == "not-asserted":
+        # 未斷言的事件**不得**同時帶著斷言用的兩個鍵；帶了就是自相矛盾，判讀不懂。
+        if has_passed or raw_counts:
+            return None
+        return EscalationFacts(
+            attempt_id=attempt,
+            escalation_epoch=epoch,
+            review_result=result,
+            counts_toward_escalation=None,
+            owner_field_at_verdict_write=_owner_snapshot(data),
+            preflight_basis_binding=binding,
+        )
+    # asserted：§5:168 的字面 true 與嚴格布林 counts 缺一不可。
+    if str(data.get("preflight_passed") or "").strip() != "true" or counts is None:
+        return None
     return EscalationFacts(
         attempt_id=attempt,
         escalation_epoch=epoch,
         review_result=result,
         counts_toward_escalation=counts,
-        owner_field_at_verdict_write=owner,
+        owner_field_at_verdict_write=_owner_snapshot(data),
+        preflight_basis_binding=binding,
     )
 
 
@@ -1040,7 +1173,8 @@ def checkpoint_facts_from_body(body: str) -> CheckpointFacts | None:
 # ``preflight_basis_from_body`` 曾在此（讀一則留言 → ``event-verified``）。**已刪除**，
 # 理由見上方 ``PREFLIGHT_BASIS_BINDING`` 區塊（WF-22-CLI4-R4-01）：留言內文判定不出
 # canonical §4.1 的「受管轄」，補欄位只是把同一個洞往後推一格。取代它的不是另一個讀取器，
-# 而是 ``validation.require_preflight_basis`` 的無條件拒絕。
+# 而是 ``validation.derive_preflight_basis``（恆回 ``not-established``）＋
+# ``derive_preflight_basis_binding`` 加蓋到事件上的 ``structurally-unavailable``。
 
 
 def body_has_contract_baseline(body: str) -> bool:
@@ -1153,6 +1287,7 @@ __all__ = [
     "CORE_PAIN_VALUES",
     "COUNTING_ATTRIBUTION",
     "COUNTING_FINDING_CLASSES",
+    "ESCALATION_ACCOUNT_STATES",
     "FACTS_BLOCK_KEY",
     "FINDING_CLASSES",
     "FINDING_KEYS",
@@ -1165,6 +1300,7 @@ __all__ = [
     "SEVERITIES",
     "STATUS_BY_RESULT",
     "WRITER_ONLY_KEYS",
+    "WRITER_STAMPED_KEYS",
     "AcceptedMark",
     "CheckpointFacts",
     "EscalationFacts",
@@ -1180,6 +1316,7 @@ __all__ = [
     "counting_eligible",
     "default_accepted_marks",
     "derive_counts_toward_escalation",
+    "derive_preflight_basis_binding",
     "escalation_facts_from_body",
     "extract_structured_block",
     "find_block_by_key",

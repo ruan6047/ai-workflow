@@ -21,10 +21,15 @@ from wf_cli.project import (
     resolve_project,
     set_field_value,
 )
-from wf_cli.review import ReviewParseError, parse_structured_block
+from wf_cli.review import (
+    FACTS_BLOCK_KEY,
+    ReviewParseError,
+    find_block_by_key,
+    parse_structured_block,
+)
 from wf_cli.validation import (
     ValidationError,
-    require_preflight_basis,
+    derive_preflight_basis,
     review_invalid_reasons,
     validate_review_report,
 )
@@ -63,11 +68,10 @@ def open_card(
 ) -> int:
     """開卡；``runner`` 有給時順便為 ``preflight_shas`` 登記「承接卡已寫出的」preflight 依據。
 
-    自 R3-01 起 `wfcli review` 沒有 preflight 依據就不建立 review event，而自 R4-01 起
-    **本 repo 拿不到依據**（閘門無條件拒絕），故登記只作用在被換掉的閘門上
-    （見 test_checkpoint 的 ``simulated_preflight_writer``），不是往 timeline 貼留言。
-    **刻意做成顯式參數而不是自動**：驗證閘門本身的測試傳 ``runner=None``（或空 tuple），
-    一眼看得出它是故意不登記的。
+    本 repo 今天拿不到依據（導出值恆為 ``structurally-unavailable``），故登記只作用在被換掉
+    的導出器上（見 test_checkpoint 的 ``simulated_preflight_writer``），不是往 timeline 貼
+    留言。**刻意做成顯式參數而不是自動**：測產線語意的測試傳 ``runner=None``（或空 tuple），
+    一眼看得出它是故意不登記的——那些測試看到的就是今天真實的行為。
     """
     rc = _open_card(card_id, repo=repo)
     if runner is not None:
@@ -917,6 +921,13 @@ def last_comment(fake_runner, card_id: str) -> str:
     return issue_comments(fake_runner, card_item(fake_runner, card_id).issue_url)[-1]
 
 
+def facts_block_of(body: str) -> dict:
+    """裁決留言裡的結構化帳區塊。**斷言只看它，不看散文**——散文本來就會提到那些鍵名。"""
+    data = find_block_by_key(body, FACTS_BLOCK_KEY)
+    assert data is not None, "裁決留言沒有 escalation 帳區塊"
+    return data
+
+
 def verdict_comments(fake_runner, card_id: str) -> list[str]:
     """只算裁決留言——preflight event 也是留言，不能混進「有沒有寫入」的判定。"""
     item = card_item(fake_runner, card_id)
@@ -994,49 +1005,65 @@ def test_duplicate_attempt_id_is_refused_before_writing(fake_runner, tmp_path, c
     assert "marker_quarantined" in err
     after = verdict_comments(fake_runner, "DUP-CARD1")
     assert len(after) == 1  # 沒有寫出第二則
-def test_review_without_a_preflight_event_writes_nothing_at_all(fake_runner, tmp_path, capsys):
-    """R3-01 的核心回歸：缺受管轄的 preflight 依據 → **不建立 review event**。
+def test_review_without_a_preflight_basis_still_writes_but_asserts_nothing(
+    fake_runner, tmp_path, capsys, monkeypatch
+):
+    """需求方 2026-08-12 裁定的核心：**寫得進去**，且事件上看得見閘門沒有鑑別力。
 
-    前三輪都在調整寫進去的值；R3 那輪動的是「要不要寫」。這裡驗證的是一則裁決留言都沒有、
-    交付狀態沒被翻動、Log 沒有新行。
+    這條同時守著兩個相反方向的錯誤：往回退成「恆拒」（狀態面又分不出已查核／未查核，
+    ai-workflow#13 解過的問題），或往前滑成「寫個 false／true」（洗白／偽造）。
     """
-    open_card("PF-CARD1", runner=None)  # 刻意不登記 preflight
+    monkeypatch.setattr(review_cmd, "derive_preflight_basis", derive_preflight_basis)
+    open_card("PF-CARD1", runner=None)  # 刻意不登記 preflight → 走 src 真身
     before = card_item(fake_runner, "PF-CARD1")
-    assert _counting_review(tmp_path, "PF-CARD1", SHA, "PF-CARD1-R1-01") == 2
-    err = capsys.readouterr().err
-    assert "不建立 review event" in err
-    assert "--validate-only" in err  # 指出仍可用的自檢路徑
-    assert verdict_comments(fake_runner, "PF-CARD1") == []
+
+    assert _counting_review(tmp_path, "PF-CARD1", SHA, "PF-CARD1-R1-01") == 0
+    block = facts_block_of(last_comment(fake_runner, "PF-CARD1"))
+    assert block["preflight_basis_binding"] == "structurally-unavailable"
+    assert block["escalation_account"] == "not-asserted"
+    # 兩個斷言用的鍵都不出現——不寫 true（偽造）、不寫 false（洗白）、不擴充成三值。
+    assert "preflight_passed" not in block
+    assert "counts_toward_escalation" not in block
+
     after = card_item(fake_runner, "PF-CARD1")
-    assert after.fields.get("交付狀態") == before.fields.get("交付狀態")
-    assert after.body == before.body
+    assert after.fields.get("交付狀態") != before.fields.get("交付狀態")  # 狀態面真的翻了
+    assert "escalation_account not-asserted" in after.body  # Log 索引行同樣不寫 false
+    err = capsys.readouterr().err
+    assert "不對 escalation 帳作任何斷言" in err
+    assert "含三振門檻" in err
+    assert "執行者沒有累計" in err  # 明說消費者不得如此讀
 
 
-def test_preflight_event_for_another_sha_does_not_unlock_this_round(fake_runner, tmp_path, capsys):
-    """source_sha 逐字比對＝免時鐘的新鮮性：上一輪的 preflight 掩護不了本輪。"""
-    open_card("PF-CARD2", runner=fake_runner, preflight_shas=("b" * 40,))
-    assert _counting_review(tmp_path, "PF-CARD2", SHA, "PF-CARD2-R1-01") == 2
-    assert "不建立 review event" in capsys.readouterr().err
-    assert verdict_comments(fake_runner, "PF-CARD2") == []
+def test_a_second_review_is_not_blocked_by_the_first_unasserted_one(
+    fake_runner, tmp_path, capsys, monkeypatch
+):
+    """恆拒版的真正代價在這裡：未斷言的事件必須**讀得懂**，否則下一輪就寫不進去。"""
+    monkeypatch.setattr(review_cmd, "derive_preflight_basis", derive_preflight_basis)
+    open_card("PF-CARD4", runner=None)
+    assert _counting_review(tmp_path, "PF-CARD4", SHA, "PF-CARD4-R1-01") == 0
+    assert _counting_review(tmp_path, "PF-CARD4", "e" * 40, "PF-CARD4-R2-01") == 0
+    assert len(verdict_comments(fake_runner, "PF-CARD4")) == 2
 
 
 def test_validate_only_still_works_without_any_preflight_event(fake_runner, tmp_path, capsys):
-    """閘門擋的是狀態面的寫入，不是查核輸出的格式檢查。"""
+    """--validate-only 只驗格式；但它必須把「實寫時帳不會被斷言」講在前面。"""
     open_card("PF-CARD3", runner=None)
     path = write_input(tmp_path, COUNTING_REPORT.format(fid="PF-CARD3-R1-01"), name="pf3.md")
     assert run_cli(review_argv("PF-CARD3", path) + ["--validate-only"]) == 0
     out, err = capsys.readouterr()
     assert "驗證通過" in out
-    # 通過格式檢查 ≠ 實寫會成功；訊息必須自己講清楚，否則就是另一種宣稱大於證據。
-    assert "不代表實寫會成功" in err
+    assert "structurally-unavailable" in err
+    assert "not-asserted" in err
 
 
 # ---- R4-01：查核者的重現在 CLI 層的端對端回歸 ----
 #
 # R4-01 的重現是「把任意四欄 YAML 餵給 `preflight_basis_from_body` 就得 event-verified，
 # 缺 event_url 也照過」。那個讀取器已刪除；這裡從 CLI 這一端釘死同一件事：**無論 timeline
-# 上有什麼留言**，裁決都寫不出來。用真實閘門（不套 `simulated_preflight_writer` 的登記表，
-# 登記表預設為空即走真實閘門）。
+# 上有什麼留言**，導出值都是 structurally-unavailable、帳都不被斷言。
+#
+# ⚠️ 判準在需求方 2026-08-12 裁定後改了：不是「一律拒絕寫入」，是「一律導出
+# structurally-unavailable，且沒有任何輸入能把它變成 event-verified」。裁決照寫。
 
 
 def _preflight_lookalike(card_id: str, sha: str, *, extra_lines: tuple[str, ...] = ()) -> str:
@@ -1080,8 +1107,8 @@ def test_no_lookalike_comment_unlocks_the_write(
     fake_runner, tmp_path, capsys, monkeypatch, extra_lines, label
 ):
     """補欄位不會讓留言變成受管轄事件——「受管轄」是通道屬性，不是內文屬性。"""
-    # 「宣告成功前先核執行身分」：明確把閘門還原成 src 的真身，不倚賴模擬版的 fallthrough。
-    monkeypatch.setattr(review_cmd, "require_preflight_basis", require_preflight_basis)
+    # 「宣告成功前先核執行身分」：明確把導出器還原成 src 的真身，不倚賴模擬版的 fallthrough。
+    monkeypatch.setattr(review_cmd, "derive_preflight_basis", derive_preflight_basis)
     open_card("R4-CARD1", runner=None)
     item = card_item(fake_runner, "R4-CARD1")
     fake_runner.execute(
@@ -1090,16 +1117,15 @@ def test_no_lookalike_comment_unlocks_the_write(
             "--body", _preflight_lookalike("R4-CARD1", SHA, extra_lines=extra_lines),
         ]
     )
-    before = card_item(fake_runner, "R4-CARD1")
 
-    assert _counting_review(tmp_path, "R4-CARD1", SHA, "R4-CARD1-R1-01") == 2, label
-    err = capsys.readouterr().err
-    assert "不建立 review event" in err
-    assert "structurally-unavailable" in err  # 恆拒的成因寫在明面上
-    assert verdict_comments(fake_runner, "R4-CARD1") == []
-    after = card_item(fake_runner, "R4-CARD1")
-    assert after.fields.get("交付狀態") == before.fields.get("交付狀態")
-    assert after.body == before.body
+    assert _counting_review(tmp_path, "R4-CARD1", SHA, "R4-CARD1-R1-01") == 0, label
+    block = facts_block_of(last_comment(fake_runner, "R4-CARD1"))
+    # 那則留言就擺在 timeline 上，導出值仍是 structurally-unavailable。
+    assert block["preflight_basis_binding"] == "structurally-unavailable", label
+    assert block["escalation_account"] == "not-asserted", label
+    assert "preflight_passed" not in block, label
+    assert "counts_toward_escalation" not in block, label
+    assert "不對 escalation 帳作任何斷言" in capsys.readouterr().err, label
 
 
 

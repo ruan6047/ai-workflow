@@ -37,15 +37,20 @@
 （§2：新採認的 blocking finding 以 open 開始），並依 §3 推導 ``counts_toward_escalation``
 寫進留言的結構化區塊與 Log 索引行。reviewer 自填的這三個鍵仍一律警示並忽略。
 
-寫入前另有四道 fail-closed 閘門（全部走 exit 2，未寫入任何遠端狀態）：
+§3 第 1 款（preflight）**不是閘門**，是一個由 writer 加蓋到事件上的導出值
+（``preflight_basis_binding``）。今天恆為 ``structurally-unavailable``：本 repo 沒有受管轄的
+preflight pass event writer，也沒有該事件的可驗證格式，故該款無從成立，本指令寫出的每一則
+裁決都帶 ``escalation_account: not-asserted``（不對帳作斷言），並**缺** §5:168 的
+``preflight_passed: true``——已知且刻意記錄的 schema 落差。
 
-0. **§3 第 1 款的 preflight 依據**（``validation.require_preflight_basis``）。
-   ⚠️ **今天無條件拒絕**：本 repo 沒有受管轄的 preflight pass event writer，也沒有該事件
-   的可驗證格式，故 ``wfcli review`` **寫不進任何裁決事件**（不只是可計數的那些）。
-   這是 WF-22-CLI4-R4-01 的處置：上一輪改成「缺依據就不寫」，卻把「有沒有依據」交給一個
-   讀留言內文的讀取器，於是任意四欄 YAML 就能解鎖。留言內文判定不出 canonical §4.1 的
-   「受管轄」（那是通道屬性），所以本輪刪掉讀取器、把恆拒寫成明文。替代路徑：查核證據走
-   ``handoff-contract.md`` §3.1.2 的收據與報告全文；格式自檢走 ``--validate-only``。
+這是 WF-22-CLI4-R4-01 的處置＋需求方 2026-08-12 的裁定：上一輪把「有沒有依據」交給一個讀
+留言內文的讀取器，任意四欄 YAML 就能解鎖（留言內文判定不出 canonical §4.1 的「受管轄」，
+那是通道屬性）；本輪刪掉讀取器，但**不改成恆拒**——恆拒會讓狀態面再次分不出「已查核」與
+「未查核」，那是 WF-25-REVIEW-WRITE-CHANNEL1（ai-workflow#13）解過的問題。正解是照寫並
+把恆虛性寫在事件上。
+
+寫入前另有三道 fail-closed 閘門（全部走 exit 2，未寫入任何遠端狀態）：
+
 1. **``attempt_id`` 去重**：同一 attempt 已存在即拒。必須擋在寫入前——``doctor.py``
    對重複 attempt 判 ``marker_quarantined``，而該隔離的解除表示法未定義（#30）。
 2. **帳可重建**：cutover（``contract-baseline``）之後的留痕若有讀不懂的 marker，或
@@ -76,6 +81,7 @@ from ..review import (
     ReviewParseError,
     attempt_id,
     derive_counts_toward_escalation,
+    derive_preflight_basis_binding,
     parse_structured_block,
     render_verdict_comment,
 )
@@ -86,8 +92,9 @@ from ..validation import (
     check_attempt_not_duplicated,
     check_checkpoint_gate,
     counted_attempts,
-    require_preflight_basis,
+    derive_preflight_basis,
     review_invalid_reasons,
+    unasserted_attempts,
     validate_accepted_overrides,
     validate_marked_by,
     validate_review_report,
@@ -244,11 +251,11 @@ def run(args: argparse.Namespace) -> int:
             f"self_run {len(report.self_run)} 項／findings {len(report.findings)} 項"
         )
         print(
-            "[review] 注意：--validate-only 不連 GitHub，因此 preflight 依據、去重與 "
-            "checkpoint 三道閘門都未執行；實寫時才會檢查。⚠️ 第一道今天**無條件拒絕**"
-            "（本 repo 沒有受管轄的 preflight pass event writer 與可驗證格式，"
-            "WF-22-CLI4-R4-01），故本次驗證通過**不代表實寫會成功**。查核輸出的格式與"
-            "契約檢查在此已完整跑過，不受那三道閘門影響。",
+            "[review] 注意：--validate-only 不連 GitHub，因此去重、帳可重建與 checkpoint "
+            "三道閘門都未執行；實寫時才會檢查。⚠️ 另請知悉：實寫時 preflight_basis_binding "
+            "今天恆為 structurally-unavailable（本 repo 沒有受管轄的 preflight pass event "
+            "writer 與可驗證格式），故該則裁決會帶 escalation_account: not-asserted、"
+            "不對 escalation 帳作任何斷言。查核輸出的格式與契約檢查在此已完整跑過。",
             file=sys.stderr,
         )
         return 0
@@ -298,14 +305,13 @@ def run(args: argparse.Namespace) -> int:
     target_attempt = attempt_id(args.card_id, args.escalation_epoch, args.source_sha)
     comments = fetch_issue_comments(runner, target.repo, item.issue_number)
     history = build_issue_event_history(comments)
+    # §3 第 1 款的依據：**刻意不掃留言**——留言內文判定不出 canonical §4.1 的「受管轄」，
+    # 上一輪就是在這裡放了一個讀取器而讓任意四欄 YAML 解鎖（R4-01）。本 repo 今天恆回
+    # not-established，其恆虛性由 render_verdict_comment 以
+    # preflight_basis_binding: structurally-unavailable 加蓋進事件（需求方 2026-08-12
+    # 裁定：保留寫入能力，把空虛性寫進事件，而不是拒寫）。
+    preflight = derive_preflight_basis(card_id=args.card_id, source_sha=args.source_sha)
     try:
-        # §3 第 1 款先判：沒有受管轄的 preflight event 就**不建立 review event**（§1），
-        # 而不是寫一個較誠實的值進去（R3-01）。本 repo 今天沒有該事件的 writer 與可驗證
-        # 格式，故此呼叫**恆拋**——**刻意不掃留言**：留言內文判定不出 canonical §4.1 的
-        # 「受管轄」，上一輪就是在這裡放了一個讀取器而讓任意四欄 YAML 解鎖（R4-01）。
-        preflight = require_preflight_basis(
-            card_id=args.card_id, source_sha=args.source_sha
-        )
         check_attempt_not_duplicated(history, target_attempt)
         check_checkpoint_gate(
             history, escalation_epoch=args.escalation_epoch, card_body=item.body
@@ -358,14 +364,25 @@ def run(args: argparse.Namespace) -> int:
     add_issue_comment(runner, target.repo, item.issue_number, comment)
     set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
 
-    counts = derive_counts_toward_escalation(report, marks, preflight)
+    binding = derive_preflight_basis_binding(preflight)
+    counts = (
+        derive_counts_toward_escalation(report, marks, preflight)
+        if preflight.established
+        else None
+    )
+    # Log 索引行同樣不得把「未斷言」寫成 false——那是洗白（R3 的原話）。
+    counts_text = (
+        f"counts_toward_escalation {'true' if counts else 'false'}"
+        if counts is not None
+        else f"escalation_account not-asserted（preflight_basis_binding {binding}）"
+    )
     log_line = (
         f"{timestamp} review by wf-cli → {report.review_result}"
         f"（{report.delivery_status}）；查核者 {args.reviewer}；"
         f"core_pain_resolved {report.core_pain_resolved}；"
         f"self_run {len(report.self_run)} 項；findings {len(report.findings)} 項"
         f"（blocking {len(report.blocking_findings)}）；"
-        f"counts_toward_escalation {'true' if counts else 'false'}；"
+        f"{counts_text}；"
         f"attempt {target_attempt}。"
     )
     new_body = append_log_line(item.body, log_line)
@@ -387,6 +404,18 @@ def run(args: argparse.Namespace) -> int:
             "[review] iteration 不由本指令遞增：請以 "
             "`wfcli handoff --next-stage implementation` 把卡交回執行者，"
             "遞增在該處發生（WF-22-CLI2 既有規則）"
+        )
+    if counts is None:
+        prior = len(unasserted_attempts(history, args.escalation_epoch)) + 1
+        print(
+            f"[review] ⚠️ preflight_basis_binding={binding}：本則裁決**不對 escalation 帳"
+            f"作任何斷言**（escalation_account: not-asserted），本 epoch 累計 {prior} 個"
+            "未斷言 attempt。本 repo 沒有受管轄的 preflight pass event writer 與可驗證格式，"
+            "故 §3 第 1 款無從成立——自動計數（**含三振門檻**）在承接卡落地前不可用，"
+            "請勿把「沒有可計數 attempt」讀成「執行者沒有累計」。"
+            "本事件另缺 review-escalation.md §5:168 的 preflight_passed: true，"
+            "屬已知且刻意記錄的 schema 落差（登記於 docs/CONSUMER_CONFORMANCE.md）。",
+            file=sys.stderr,
         )
     if counts:
         ordinal = len(counted_attempts(history, args.escalation_epoch)) + 1
