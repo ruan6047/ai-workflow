@@ -102,10 +102,18 @@ def run_cli(argv: list[str]) -> int:
 
 
 def _open_argv(card_id: str) -> list[str]:
+    # 能力層級走 WF-CLI-ROUTING-TIER1 的必填路由旗標。值刻意反映這張沙箱卡本身的性質
+    # 而非佔位字串：它是 T4，且做的是刪 worktree／本地與遠端分支、關 Issue 這類不可逆
+    # 動作，故執行取高階型；AI_WORKFLOW.md §2「T4 紅線＝T3 ＋ 跨家族或人工審核」，
+    # 查核同取高階型。
     return [
         "open", *BASE_TARGET, card_id,
         "--feature", "收尾清理接線示範",
         "--tier", "T4",
+        "--exec-capability", "高階型",
+        "--exec-capability-reason", "不可逆的破壞性清理，刪 worktree 與本地及遠端分支並關 Issue",
+        "--review-capability", "高階型",
+        "--review-capability-reason", "T4 紅線，須跨家族或人工查核",
         "--db-scope", "none",
         "--core-pain", "痛點文字",
         "--service-goal", "服務的原始目標文字",
@@ -177,11 +185,15 @@ def env(tmp_path: Path, sandbox_repo: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(cleanup, "lsof_cwd_prober", lambda _p: ("free", "測試探針"))
 
     assert run_cli(_open_argv(CARD_ID)) == 0
+    # --actual-capability 取與卡面建議執行層級相同的值：這張 fixture 要的是「順利派工」，
+    # 不是偏離情境，取相同值才不會多要一個 --capability-deviation-reason 而把無關的
+    # 偏離路徑拉進本檔的前置條件裡。
     assert run_cli([
         "assign", *BASE_TARGET, CARD_ID,
         "--assignee", "Claude@Claude Code",
         "--branch", BRANCH,
         "--worktree", str(wt),
+        "--actual-capability", "高階型",
     ]) == 0
     project = resolve_project(runner, "acme", 1)
     fields = ensure_fields(runner, "acme", 1)
