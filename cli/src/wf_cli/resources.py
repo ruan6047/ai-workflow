@@ -109,10 +109,13 @@ def render_block(decl: ResourceDeclaration) -> str:
 def _split_at_log(body: str) -> tuple[str, str]:
     """切成「``## Log`` 之前」與「``## Log`` 起的全部」。定位只准看前者。
 
-    語意刻意等同 ``card.split_at_log``（該檔 352 行）：以**獨立標題行**判定，多於一個
+    語意刻意等同 ``card.py`` 的 ``split_at_log()``：以**獨立標題行**判定，多於一個
     即拒絕，出現字樣卻無獨立標題行即拒絕（排版已被字面 ``\\n`` 破壞時，任何依標題
     定位的切段都可能把 Log 的歷史回音當成現況）。**不 import 重用是因為 card.py 已
     import 本模組的 render_block，反向 import 會成環**。
+
+    引用一律錨定**函式名**、不寫行號：``card.py`` 在別人手上（WF-CARD-FIELD-CORRECTION1
+    已於本卡在飛期間 +156 行），行號會漂，錨定函式名才找得回來。
     """
     lines = body.splitlines()
     idx = [i for i, line in enumerate(lines) if line.strip() == _LOG_HEADING]
