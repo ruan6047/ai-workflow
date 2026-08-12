@@ -4,18 +4,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib import import_module
 
-from .commands import (
-    amend_cmd,
-    assign_cmd,
-    deploy_declare_cmd,
-    deploy_state_cmd,
-    doctor_cmd,
-    handoff_cmd,
-    open_cmd,
-    review_cmd,
-    snapshot_cmd,
-)
+from .commands import COMMAND_MODULES
 from .config import ConfigError
 from .gh import GhError
 from .git_ops import GitError
@@ -44,15 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    open_cmd.add_parser(subparsers)
-    assign_cmd.add_parser(subparsers)
-    amend_cmd.add_parser(subparsers)
-    deploy_declare_cmd.add_parser(subparsers)
-    deploy_state_cmd.add_parser(subparsers)
-    handoff_cmd.add_parser(subparsers)
-    review_cmd.add_parser(subparsers)
-    doctor_cmd.add_parser(subparsers)
-    snapshot_cmd.add_parser(subparsers)
+    # 動詞註冊集合是 commands/__init__.py 的顯式封閉 tuple（見該檔 docstring）。
+    # 這裡只負責照該清單的**字面順序**迭代——順序即 --help 的動詞順序。
+    for module_name in COMMAND_MODULES:
+        import_module(f".commands.{module_name}", __package__).add_parser(subparsers)
     return parser
 
 
