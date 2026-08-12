@@ -19,11 +19,13 @@ from .doctor import inspect_event_marker
 from .resources import DB_SCOPES, ResourceDeclaration
 from .review import (
     ATTRIBUTIONS,
+    BLOCK_VERSION,
     CHECKPOINT_DECISIONS,
     CHECKPOINT_LOG_TAG,
     CORE_PAIN_VALUES,
     FINDING_CLASSES,
     FINDING_KEYS,
+    PREFLIGHT_BLOCK_KEY,
     REVIEW_RESULTS,
     SEVERITIES,
     WRITER_ONLY_KEYS,
@@ -31,6 +33,7 @@ from .review import (
     CheckpointFacts,
     EscalationFacts,
     Finding,
+    PreflightBasis,
     ReviewParseError,
     ReviewReport,
     SelfRunEntry,
@@ -39,6 +42,7 @@ from .review import (
     escalation_facts_from_body,
     log_line_indexes,
     parse_attempt_id,
+    preflight_basis_from_body,
 )
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -577,19 +581,62 @@ def counted_attempts(history: IssueEventHistory, escalation_epoch: int) -> list[
     return out
 
 
-def escalation_account_unavailable(
-    history: IssueEventHistory, escalation_epoch: int
-) -> tuple[EscalationFacts, ...]:
-    """本 epoch 內「本會計數、但第 1 款依據不可得」的 attempt。
+def find_preflight_basis(
+    comments: Sequence[Mapping[str, Any]], *, card_id: str, source_sha: str
+) -> PreflightBasis:
+    """掃 Issue 留言找受管轄的 preflight pass event；找不到回 ``not-established``。"""
+    for comment in comments:
+        try:
+            basis = preflight_basis_from_body(
+                str(comment.get("body") or ""), card_id=card_id, source_sha=source_sha
+            )
+        except ReviewParseError:
+            continue
+        if basis is not None:
+            url = str(comment.get("url") or comment.get("html_url") or "").strip()
+            return basis if not url else PreflightBasis(
+                basis=basis.basis, source_event=url, summary=basis.summary
+            )
+    return PreflightBasis()
 
-    這些 attempt **不是**「不計數」。呼叫端必須把它們的存在講出來，否則消費者會把
-    ``counted_attempts`` 為空讀成「執行者沒有累計」——那正是 R1／R2 兩輪同一個根因
-    （宣稱大於證據）換到讀取側的樣子。
+
+def check_preflight_event_present(basis: PreflightBasis, *, source_sha: str) -> None:
+    """**所有遠端寫入之前**的閘門：沒有受管轄的 preflight event 就不建立 review event。
+
+    這是 WF-22-CLI4-R3-01 的處置，也是本卡族第一次動「要不要寫」而不是「寫什麼值」。
+    前三輪分別把 ``preflight_passed`` 寫成無來源的 ``true``、任意字串具結的 ``true``、
+    以及擴充 schema 的 ``unknown``／``unavailable``——三次都在找一個誠實的值，卻沒問
+    「這一則到底該不該存在」。
+
+    契約的答案是不該：§1 明定 preflight 缺口「不得建立 review event 或派 reviewer」；
+    §5:168 的 review event schema 把 ``preflight_passed`` 釘為**字面 ``true``**（對照
+    同區塊的 ``escalation_epoch: <integer>``、``counts_toward_escalation: <boolean
+    derived from §3>`` 即知那不是型別佔位）。斷不出 ``true`` 的事件不是合格的 review
+    event，寫下去只是製造一則不合 schema 的留痕。
+
+    我先前反對這條的理由是「拒絕等於把真實發生的查核從狀態面抹掉」。**該理由不成立**：
+    查核仍可留在 Issue 的收據（``handoff-contract.md`` §3.1.2 的 ``wf-review-receipt``）
+    與報告全文裡，那正是為「查核者無法執行 wfcli」設計的證據面；被拒絕的只有**狀態面
+    的裁決事件**，而狀態面本來就要求 preflight 已通過。用 ``--validate-only`` 仍可完整
+    驗證查核輸出格式，不受本閘門影響。
     """
-    return tuple(
-        fact
-        for fact in history.scoped_facts
-        if fact.escalation_epoch == escalation_epoch and fact.counting_unavailable
+    if basis.established:
+        return
+    raise ValidationError(
+        [
+            (
+                "找不到本卡、本 source_sha 的受管轄 preflight pass event，"
+                "依 review-escalation.md §1 不建立 review event（未寫入任何遠端狀態）。"
+                f"需要 timeline 上有一則 `{PREFLIGHT_BLOCK_KEY}: {BLOCK_VERSION}` 區塊，"
+                f"逐字帶 preflight_passed: true、card_id、source_sha: {source_sha}。"
+                "§5:168 把 review event 的 preflight_passed 釘為字面 true，"
+                "斷不出 true 的事件不是合格的 review event；"
+                "**不得以 unknown／unavailable 之類的新值擴充該布林欄位**。"
+                "產出該事件的 writer 需要 handoff 的寫入集，不在本卡射程內，已交由承接卡；"
+                "在它落地前，查核證據請走 handoff-contract.md §3.1.2 的收據，"
+                "格式自檢請用 `wfcli review --validate-only`（不寫任何狀態，不受本閘門影響）。"
+            )
+        ]
     )
 
 
@@ -789,9 +836,10 @@ __all__ = [
     "build_issue_event_history",
     "check_attempt_not_duplicated",
     "check_checkpoint_gate",
+    "check_preflight_event_present",
     "counted_attempts",
     "derive_accepted_marking_binding",
-    "escalation_account_unavailable",
+    "find_preflight_basis",
     "review_invalid_reasons",
     "validate_accepted_overrides",
     "validate_chain_depth",

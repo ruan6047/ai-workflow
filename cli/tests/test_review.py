@@ -28,7 +28,7 @@ from wf_cli.validation import (
     validate_review_report,
 )
 
-from .test_checkpoint import EventGhRunner, inject_counted_attempt
+from .test_checkpoint import EventGhRunner, arm_preflight, inject_counted_attempt
 
 BASE_TARGET = ["--owner", "acme", "--project", "1"]
 REPO = "acme/demo"
@@ -52,7 +52,23 @@ def run_cli(argv: list[str]) -> int:
     return args.func(args)
 
 
-def open_card(card_id: str, *, repo: str | None = REPO) -> int:
+def open_card(
+    card_id: str, *, repo: str | None = REPO, runner=None, preflight_shas=(SHA,)
+) -> int:
+    """開卡；``runner`` 有給時順便為 ``preflight_shas`` 佈署受管轄的 preflight event。
+
+    自 R3-01 起 `wfcli review` 沒有 preflight event 就不建立 review event，故絕大多數
+    測試都要先佈署。**刻意做成顯式參數而不是自動**：驗證閘門本身的測試傳 ``runner=None``
+    （或空 tuple），一眼看得出它是故意不佈署的。
+    """
+    rc = _open_card(card_id, repo=repo)
+    if runner is not None:
+        for sha in preflight_shas:
+            arm_preflight(runner, card_id, sha)
+    return rc
+
+
+def _open_card(card_id: str, *, repo: str | None = REPO) -> int:
     argv = ["open", *BASE_TARGET]
     if repo:
         argv += ["--repo", repo]
@@ -155,7 +171,7 @@ def write_input(tmp_path: Path, text: str, name: str = "review.md") -> Path:
 
 
 def test_valid_approve_writes_comment_and_flips_status(fake_runner, tmp_path, capsys):
-    open_card("DEMO-CARD1")
+    open_card("DEMO-CARD1", runner=fake_runner)
     item_before = card_item(fake_runner, "DEMO-CARD1")
     set_field_value(
         fake_runner,
@@ -170,7 +186,7 @@ def test_valid_approve_writes_comment_and_flips_status(fake_runner, tmp_path, ca
 
     item = card_item(fake_runner, "DEMO-CARD1")
     assert item.fields["交付狀態"] == "✅通過"
-    comments = issue_comments(fake_runner, item.issue_url)
+    comments = verdict_comments(fake_runner, "DEMO-CARD1")
     assert len(comments) == 1
     body = comments[0]
     assert "查核裁決：APPROVE" in body
@@ -182,7 +198,7 @@ def test_valid_approve_writes_comment_and_flips_status(fake_runner, tmp_path, ca
 
 def test_valid_approve_does_not_touch_iteration_or_owner(fake_runner, tmp_path):
     """iteration 由 handoff 獨占（WF-22-CLI2）；review 併動會讓一次退回被記兩次。"""
-    open_card("ITER-CARD1")
+    open_card("ITER-CARD1", runner=fake_runner)
     run_cli(
         [
             "handoff", *BASE_TARGET, "--repo", REPO, "ITER-CARD1",
@@ -212,7 +228,7 @@ def test_valid_approve_does_not_touch_iteration_or_owner(fake_runner, tmp_path):
 
 
 def test_valid_request_changes_flips_to_returned_and_lists_findings(fake_runner, tmp_path, capsys):
-    open_card("DEMO-CARD2")
+    open_card("DEMO-CARD2", runner=fake_runner)
     rc = run_cli(
         review_argv("DEMO-CARD2", write_input(tmp_path, REQUEST_CHANGES_REPORT))
     )
@@ -220,7 +236,7 @@ def test_valid_request_changes_flips_to_returned_and_lists_findings(fake_runner,
 
     item = card_item(fake_runner, "DEMO-CARD2")
     assert item.fields["交付狀態"] == "↩退回"
-    body = issue_comments(fake_runner, item.issue_url)[0]
+    body = next(c for c in issue_comments(fake_runner, item.issue_url) if "查核裁決" in c)
     assert "DEMO-CARD1-R1-01" in body
     assert "severity=major" in body and "blocking=true" in body
     assert "core_pain_resolved：**no**" in body
@@ -235,7 +251,7 @@ def test_valid_request_changes_flips_to_returned_and_lists_findings(fake_runner,
 
 
 def test_approve_without_self_run_is_rejected_as_review_invalid(fake_runner, tmp_path, capsys):
-    open_card("INVALID-CARD1")
+    open_card("INVALID-CARD1", runner=fake_runner)
     before = card_item(fake_runner, "INVALID-CARD1")
 
     rc = run_cli(review_argv("INVALID-CARD1", write_input(tmp_path, APPROVE_WITHOUT_SELF_RUN)))
@@ -248,7 +264,7 @@ def test_approve_without_self_run_is_rejected_as_review_invalid(fake_runner, tmp
 
     after = card_item(fake_runner, "INVALID-CARD1")
     assert after.fields["交付狀態"] == before.fields["交付狀態"]  # 狀態不變
-    assert issue_comments(fake_runner, after.issue_url) == []  # 未寫任何遠端狀態
+    assert [c for c in issue_comments(fake_runner, after.issue_url) if "查核裁決" in c] == []  # 未寫任何遠端狀態
 
 
 def test_approve_with_self_run_entries_that_have_no_command_is_review_invalid(tmp_path):
@@ -275,12 +291,12 @@ review_result: REQUEST_CHANGES
 findings: []
 ```
 """
-    open_card("NOSELFRUN-CARD1")
+    open_card("NOSELFRUN-CARD1", runner=fake_runner)
     rc = run_cli(review_argv("NOSELFRUN-CARD1", write_input(tmp_path, text)))
     assert rc == 2
     err = capsys.readouterr().err
     assert "self_run 必填" in err
-    assert issue_comments(fake_runner, card_item(fake_runner, "NOSELFRUN-CARD1").issue_url) == []
+    assert verdict_comments(fake_runner, "NOSELFRUN-CARD1") == []
 
 
 # --------------------------------------------------------------------------
@@ -297,13 +313,13 @@ self_run:
 findings: []
 ```
 """
-    open_card("NOPAIN-CARD1")
+    open_card("NOPAIN-CARD1", runner=fake_runner)
     rc = run_cli(review_argv("NOPAIN-CARD1", write_input(tmp_path, text)))
     assert rc == 2
     err = capsys.readouterr().err
     assert "core_pain_resolved 必填" in err
     assert "§5.1" in err  # 第一判準出處
-    assert issue_comments(fake_runner, card_item(fake_runner, "NOPAIN-CARD1").issue_url) == []
+    assert verdict_comments(fake_runner, "NOPAIN-CARD1") == []
 
 
 def test_core_pain_no_with_approve_is_rejected():
@@ -337,13 +353,13 @@ findings:
     evidence: 缺 blocking／finding_class／attribution／root_cause_id／disposition
 ```
 """
-    open_card("BADFINDING-CARD1")
+    open_card("BADFINDING-CARD1", runner=fake_runner)
     rc = run_cli(review_argv("BADFINDING-CARD1", write_input(tmp_path, text)))
     assert rc == 2
     err = capsys.readouterr().err
     for missing in ("blocking", "finding_class", "attribution", "root_cause_id", "disposition"):
         assert missing in err
-    assert issue_comments(fake_runner, card_item(fake_runner, "BADFINDING-CARD1").issue_url) == []
+    assert verdict_comments(fake_runner, "BADFINDING-CARD1") == []
 
 
 @pytest.mark.parametrize(
@@ -491,7 +507,7 @@ findings:
     disposition: 修法
 ```
 """
-    open_card("HARD-CARD1")
+    open_card("HARD-CARD1", runner=fake_runner)
     assert run_cli(review_argv("HARD-CARD1", write_input(tmp_path, approve_with_blocking))) == 2
     assert "語意矛盾" in capsys.readouterr().err
 
@@ -504,13 +520,13 @@ self_run:
 findings: []
 ```
 """
-    open_card("HARD-CARD2")
+    open_card("HARD-CARD2", runner=fake_runner)
     assert run_cli(review_argv("HARD-CARD2", write_input(tmp_path, empty_request_changes))) == 2
     assert "至少一項" in capsys.readouterr().err
 
     for card_id in ("HARD-CARD1", "HARD-CARD2"):
         item = card_item(fake_runner, card_id)
-        assert issue_comments(fake_runner, item.issue_url) == []
+        assert [c for c in issue_comments(fake_runner, item.issue_url) if "查核裁決" in c] == []
         assert item.fields["交付狀態"] == "📥Backlog"  # 兩者都沒翻板
 
 
@@ -554,7 +570,7 @@ findings: []
 
 
 def test_stdin_input_is_accepted(fake_runner, monkeypatch, capsys):
-    open_card("STDIN-CARD1")
+    open_card("STDIN-CARD1", runner=fake_runner)
     monkeypatch.setattr("sys.stdin", io.StringIO(APPROVE_REPORT))
     rc = run_cli(
         [
@@ -567,7 +583,7 @@ def test_stdin_input_is_accepted(fake_runner, monkeypatch, capsys):
 
 
 def test_validate_only_touches_nothing_remote(fake_runner, tmp_path, capsys):
-    open_card("VALIDATE-CARD1")
+    open_card("VALIDATE-CARD1", runner=fake_runner)
     before = card_item(fake_runner, "VALIDATE-CARD1")
     rc = run_cli(
         review_argv("VALIDATE-CARD1", write_input(tmp_path, APPROVE_REPORT), validate_only=True)
@@ -575,17 +591,17 @@ def test_validate_only_touches_nothing_remote(fake_runner, tmp_path, capsys):
     assert rc == 0
     after = card_item(fake_runner, "VALIDATE-CARD1")
     assert after.fields["交付狀態"] == before.fields["交付狀態"]
-    assert issue_comments(fake_runner, after.issue_url) == []
+    assert [c for c in issue_comments(fake_runner, after.issue_url) if "查核裁決" in c] == []
     assert "未寫入任何狀態" in capsys.readouterr().out
 
 
 def test_missing_repo_is_fail_closed(fake_runner, tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("WFCLI_REPO", raising=False)
-    open_card("NOREPO-CARD1")
+    open_card("NOREPO-CARD1", runner=fake_runner)
     rc = run_cli(review_argv("NOREPO-CARD1", write_input(tmp_path, APPROVE_REPORT), repo=None))
     assert rc == 2
     assert "--repo" in capsys.readouterr().err
-    assert issue_comments(fake_runner, card_item(fake_runner, "NOREPO-CARD1").issue_url) == []
+    assert verdict_comments(fake_runner, "NOREPO-CARD1") == []
 
 
 def test_draft_item_without_issue_timeline_is_rejected(fake_runner, tmp_path, capsys):
@@ -619,7 +635,7 @@ def test_bad_source_sha_is_rejected_before_reading_input(fake_runner, capsys):
     [("--reviewer", "  ", "reviewer"), ("--escalation-epoch", "-1", "escalation-epoch")],
 )
 def test_reviewer_and_epoch_guards_are_fail_closed(fake_runner, tmp_path, capsys, flag, value, expected):
-    open_card("GUARD-CARD1")
+    open_card("GUARD-CARD1", runner=fake_runner)
     argv = [
         "review", *BASE_TARGET, "--repo", REPO, "GUARD-CARD1",
         "--input", str(write_input(tmp_path, APPROVE_REPORT)),
@@ -631,7 +647,7 @@ def test_reviewer_and_epoch_guards_are_fail_closed(fake_runner, tmp_path, capsys
         argv += [flag, value]
     assert run_cli(argv) == 2
     assert expected in capsys.readouterr().err
-    assert issue_comments(fake_runner, card_item(fake_runner, "GUARD-CARD1").issue_url) == []
+    assert verdict_comments(fake_runner, "GUARD-CARD1") == []
 
 
 def test_missing_input_file_is_rejected(fake_runner, capsys):
@@ -649,7 +665,7 @@ def test_missing_input_file_is_rejected(fake_runner, capsys):
 def test_status_mismatch_warns_but_does_not_block(fake_runner, tmp_path, capsys):
     # 契約沒規定「非 🔍待查核 不得下裁決」（補記舊裁決／⏸阻塞 期間收報告都是實務
     # 情境），所以只警示不硬擋；是否升級為硬拒屬新裁量，留給需求方。
-    open_card("STATUS-CARD1")  # 停在 📥Backlog，不是 🔍待查核
+    open_card("STATUS-CARD1", runner=fake_runner)  # 停在 📥Backlog，不是 🔍待查核
     rc = run_cli(review_argv("STATUS-CARD1", write_input(tmp_path, APPROVE_REPORT)))
     assert rc == 0
     err = capsys.readouterr().err
@@ -668,12 +684,12 @@ self_run:
 findings: []
 ```
 """
-    open_card("WRITERONLY-CARD1")
+    open_card("WRITERONLY-CARD1", runner=fake_runner)
     rc = run_cli(review_argv("WRITERONLY-CARD1", write_input(tmp_path, text)))
     assert rc == 0
     err = capsys.readouterr().err
     assert "counts_toward_escalation" in err
-    body = issue_comments(fake_runner, card_item(fake_runner, "WRITERONLY-CARD1").issue_url)[0]
+    body = verdict_comments(fake_runner, "WRITERONLY-CARD1")[0]
     # reviewer 自填的 writer-only 值一律忽略：自 WF-22-CLI4 起 lifecycle writer 會自己
     # 依 §3 推導並寫進結構化區塊，而不是把該鍵留給別人。
     assert "counts_toward_escalation: false" in body
@@ -893,21 +909,27 @@ def last_comment(fake_runner, card_id: str) -> str:
     return issue_comments(fake_runner, card_item(fake_runner, card_id).issue_url)[-1]
 
 
+def verdict_comments(fake_runner, card_id: str) -> list[str]:
+    """只算裁決留言——preflight event 也是留言，不能混進「有沒有寫入」的判定。"""
+    item = card_item(fake_runner, card_id)
+    return [c for c in issue_comments(fake_runner, item.issue_url) if "查核裁決" in c]
+
+
 def test_accepted_defaults_to_true_without_any_flag_and_counts_is_derived(fake_runner, tmp_path):
-    open_card("ACC-CARD1")
+    open_card("ACC-CARD1", runner=fake_runner)
     assert _counting_review(tmp_path, "ACC-CARD1", SHA, "ACC-CARD1-R1-01") == 0
     body = last_comment(fake_runner, "ACC-CARD1")
     assert "accepted: true" in body  # 免旗標的 fail-closed 預設
     assert "status: open" in body
     assert "counting_eligible: true" in body
-    # 第 2～4 款成立，但第 1 款的依據不可得 → unavailable，不是 true 也不是 false。
-    assert "counts_toward_escalation: unavailable" in body
-    assert "counts_toward_escalation unavailable" in card_item(fake_runner, "ACC-CARD1").body
+    assert "counts_toward_escalation: true" in body
+    assert "counts_toward_escalation true" in card_item(fake_runner, "ACC-CARD1").body
+    assert "preflight_passed: true" in body  # §5:168 的字面 true，由 preflight event 支撐
 
 
 def test_non_counting_finding_class_does_not_consume_escalation_quota(fake_runner, tmp_path):
     """§3 第 3～4 款：governance／非 executor 歸屬不得消耗 executor 額度。"""
-    open_card("ACC-CARD2")
+    open_card("ACC-CARD2", runner=fake_runner)
     assert run_cli(review_argv("ACC-CARD2", write_input(tmp_path, NON_COUNTING_REPORT))) == 0
     body = last_comment(fake_runner, "ACC-CARD2")
     assert "accepted: true" in body  # 仍然採認
@@ -916,7 +938,7 @@ def test_non_counting_finding_class_does_not_consume_escalation_quota(fake_runne
 
 
 def test_mark_not_accepted_requires_reason_and_records_platform_identity(fake_runner, tmp_path, capsys):
-    open_card("ACC-CARD3")
+    open_card("ACC-CARD3", runner=fake_runner)
     rc = _counting_review(
         tmp_path, "ACC-CARD3", SHA, "ACC-CARD3-R1-01",
         extra=["--mark-not-accepted", "ACC-CARD3-R1-01=證據不可重現，經需求方裁定撤銷採認"],
@@ -942,68 +964,62 @@ def test_mark_not_accepted_requires_reason_and_records_platform_identity(fake_ru
     ],
 )
 def test_mark_not_accepted_is_fail_closed_and_writes_nothing(fake_runner, tmp_path, capsys, value, needle):
-    open_card("ACC-CARD4")
-    item_before = card_item(fake_runner, "ACC-CARD4")
+    open_card("ACC-CARD4", runner=fake_runner)
     rc = _counting_review(
         tmp_path, "ACC-CARD4", SHA, "ACC-CARD4-R1-01", extra=["--mark-not-accepted", value]
     )
     assert rc == 2
     assert needle in capsys.readouterr().err
-    assert issue_comments(fake_runner, item_before.issue_url) == []
+    assert verdict_comments(fake_runner, "ACC-CARD4") == []
 
 
 def test_duplicate_attempt_id_is_refused_before_writing(fake_runner, tmp_path, capsys):
     """doctor 對重複 attempt_id 判 marker_quarantined 且該隔離永久，故必須擋在寫入前。"""
-    open_card("DUP-CARD1")
+    open_card("DUP-CARD1", runner=fake_runner)
     assert _counting_review(tmp_path, "DUP-CARD1", SHA, "DUP-CARD1-R1-01") == 0
-    before = issue_comments(fake_runner, card_item(fake_runner, "DUP-CARD1").issue_url)
+    before = verdict_comments(fake_runner, "DUP-CARD1")
     assert len(before) == 1
 
     assert _counting_review(tmp_path, "DUP-CARD1", SHA, "DUP-CARD1-R1-01") == 2
     err = capsys.readouterr().err
     assert "已存在於本 Issue timeline" in err
     assert "marker_quarantined" in err
-    after = issue_comments(fake_runner, card_item(fake_runner, "DUP-CARD1").issue_url)
+    after = verdict_comments(fake_runner, "DUP-CARD1")
     assert len(after) == 1  # 沒有寫出第二則
+def test_review_without_a_preflight_event_writes_nothing_at_all(fake_runner, tmp_path, capsys):
+    """R3-01 的核心回歸：缺受管轄的 preflight event → **不建立 review event**。
 
-
-def test_same_sha_in_a_new_epoch_is_not_a_duplicate(fake_runner, tmp_path):
-    open_card("EPOCH-CARD1")
-    assert _counting_review(tmp_path, "EPOCH-CARD1", SHA, "EPOCH-CARD1-R1-01") == 0
-    rc = _counting_review(
-        tmp_path, "EPOCH-CARD1", SHA, "EPOCH-CARD1-R2-01", extra=["--escalation-epoch", "1"]
-    )
-    assert rc == 0
-def test_counting_eligible_verdict_records_unavailable_and_says_so_loudly(
-    fake_runner, tmp_path, capsys
-):
-    """R2-01 的核心回歸：符合第 2～4 款、無第 1 款依據 → unavailable，且必須講出來。"""
-    open_card("CNT-CARD1")
-    assert _counting_review(tmp_path, "CNT-CARD1", "a" * 40, "CNT-CARD1-R1-01") == 0
-    out = capsys.readouterr().out
-    assert "counts_toward_escalation=unavailable" in out
-    assert "不可用" in out
-    assert "不表示執行者沒有累計" in out  # 讀取側的誤讀也要被擋
-    assert "先建立 escalation-checkpoint" not in out  # 不可用時不得假裝在計數
-
-
-def test_no_cli_input_can_produce_a_counting_verdict_today(fake_runner, tmp_path, capsys):
-    """`counts=true` 目前**結構上不可達**：沒有任何旗標或輸入構造得出第 1 款依據。
-
-    這是 R2-01 disposition 的正面驗證——不是「我們不採信具結」，而是「連具結的入口
-    都不存在」。旗標一旦回來，本測試會轉紅。
+    前三輪都在調整寫進去的值；本輪動的是「要不要寫」。這裡驗證的是一則裁決留言都沒有、
+    交付狀態沒被翻動、Log 沒有新行。
     """
-    parser_flags = set()
-    for action in build_parser()._subparsers._group_actions[0].choices["review"]._actions:
-        parser_flags.update(action.option_strings)
-    assert not any("preflight" in flag for flag in parser_flags)
+    open_card("PF-CARD1", runner=None)  # 刻意不佈署 preflight
+    before = card_item(fake_runner, "PF-CARD1")
+    assert _counting_review(tmp_path, "PF-CARD1", SHA, "PF-CARD1-R1-01") == 2
+    err = capsys.readouterr().err
+    assert "不建立 review event" in err
+    assert "--validate-only" in err  # 指出仍可用的自檢路徑
+    assert verdict_comments(fake_runner, "PF-CARD1") == []
+    after = card_item(fake_runner, "PF-CARD1")
+    assert after.fields.get("交付狀態") == before.fields.get("交付狀態")
+    assert after.body == before.body
 
-    open_card("CNT-CARD2")
-    assert _counting_review(tmp_path, "CNT-CARD2", "a" * 40, "CNT-CARD2-R1-01") == 0
-    body = last_comment(fake_runner, "CNT-CARD2")
-    assert "counts_toward_escalation: true" not in body
-    assert "preflight_passed: true" not in body
-    assert "preflight_basis: not-established" in body
+
+def test_preflight_event_for_another_sha_does_not_unlock_this_round(fake_runner, tmp_path, capsys):
+    """source_sha 逐字比對＝免時鐘的新鮮性：上一輪的 preflight 掩護不了本輪。"""
+    open_card("PF-CARD2", runner=fake_runner, preflight_shas=("b" * 40,))
+    assert _counting_review(tmp_path, "PF-CARD2", SHA, "PF-CARD2-R1-01") == 2
+    assert "不建立 review event" in capsys.readouterr().err
+    assert verdict_comments(fake_runner, "PF-CARD2") == []
+
+
+def test_validate_only_still_works_without_any_preflight_event(fake_runner, tmp_path, capsys):
+    """閘門擋的是狀態面的寫入，不是查核輸出的格式檢查。"""
+    open_card("PF-CARD3", runner=None)
+    path = write_input(tmp_path, COUNTING_REPORT.format(fid="PF-CARD3-R1-01"), name="pf3.md")
+    assert run_cli(review_argv("PF-CARD3", path) + ["--validate-only"]) == 0
+    assert "驗證通過" in capsys.readouterr().out
+
+
 
 
 def test_fourth_review_is_refused_until_the_third_checkpoint_exists(fake_runner, tmp_path, capsys):
@@ -1012,18 +1028,18 @@ def test_fourth_review_is_refused_until_the_third_checkpoint_exists(fake_runner,
     三個可計數 attempt 以 `inject_counted_attempt` 直接構造（帶 event-verified 依據），
     因為 `wfcli review` 今天產不出 counts=true。
     """
-    open_card("GATE-CARD1")
+    open_card("GATE-CARD1", runner=fake_runner, preflight_shas=("d" * 40,))
     attempts = [
         inject_counted_attempt(fake_runner, "GATE-CARD1", sha, f"GATE-CARD1-R{i}-01")
         for i, sha in enumerate(["a" * 40, "b" * 40, "c" * 40], start=1)
     ]
     capsys.readouterr()
 
-    before = len(issue_comments(fake_runner, card_item(fake_runner, "GATE-CARD1").issue_url))
+    before = len(verdict_comments(fake_runner, "GATE-CARD1"))
     assert _counting_review(tmp_path, "GATE-CARD1", "d" * 40, "GATE-CARD1-R4-01") == 2
     err = capsys.readouterr().err
     assert "尚未建立 escalation-checkpoint" in err
-    assert len(issue_comments(fake_runner, card_item(fake_runner, "GATE-CARD1").issue_url)) == before
+    assert len(verdict_comments(fake_runner, "GATE-CARD1")) == before
 
     assert run_cli(
         [
@@ -1039,7 +1055,7 @@ def test_fourth_review_is_refused_until_the_third_checkpoint_exists(fake_runner,
 
 def test_unreadable_marker_makes_the_account_unknown_and_blocks_the_write(fake_runner, tmp_path, capsys):
     """未知不得推定為不計數（review-escalation.md:276）。"""
-    open_card("UNK-CARD1")
+    open_card("UNK-CARD1", runner=fake_runner)
     item = card_item(fake_runner, "UNK-CARD1")
     fake_runner.execute(
         [
@@ -1063,7 +1079,7 @@ def test_owner_snapshot_records_the_reviewer_not_the_executor_under_the_dispatch
     不是產出 source_sha 的執行者——`review-escalation.md` §5 第 3 款要比對的卻是後者。
     這一條就是本欄不足以直接支撐該款的機械證據。
     """
-    open_card("OWNER-CARD1")
+    open_card("OWNER-CARD1", runner=fake_runner)
     run_cli(
         [
             "handoff", *BASE_TARGET, "--repo", REPO, "OWNER-CARD1",

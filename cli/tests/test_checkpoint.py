@@ -14,8 +14,10 @@ from wf_cli.commands import checkpoint_cmd, handoff_cmd, open_cmd, review_cmd
 from wf_cli.project import find_item_by_card_id, list_items, resolve_project
 from wf_cli.review import (
     BASELINE_LOG_TAG,
+    BLOCK_VERSION,
     CHECKPOINT_LOG_TAG,
-    PreflightBasis,
+    PREFLIGHT_BLOCK_KEY,
+    preflight_basis_from_body,
     render_verdict_comment,
 )
 from wf_cli.validation import validate_review_report
@@ -120,7 +122,10 @@ findings:
 """
 
 
-def write_review(tmp_path, card_id: str, sha: str, fid: str, **extra) -> int:
+def write_review(tmp_path, card_id: str, sha: str, fid: str, runner=None, **extra) -> int:
+    """跑一次 `wfcli review`；`runner` 有給時先佈署該 SHA 的 preflight event。"""
+    if runner is not None:
+        arm_preflight(runner, card_id, sha)
     path = tmp_path / f"{fid}.md"
     path.write_text(COUNTING_REPORT.format(fid=fid), encoding="utf-8")
     argv = [
@@ -145,15 +150,48 @@ def checkpoint_argv(card_id: str, trigger: str, **overrides) -> list[str]:
     return argv
 
 
+def preflight_event_body(card_id: str, sha: str) -> str:
+    """一則受管轄的 preflight pass event（review-escalation.md §5 的 handoff-accepted 等價）。
+
+    **本 CLI 只讀不寫**：產出它的 writer 需要 `handoff` 的寫入集，不在本卡射程內，已交由
+    承接卡。測試自行構造，是為了驗證讀取器與閘門——以及承接卡落地後整條鏈會自動生效。
+    """
+    return "\n".join(
+        [
+            "## Preflight pass",
+            "",
+            "```yaml",
+            f"{PREFLIGHT_BLOCK_KEY}: {BLOCK_VERSION}",
+            f"card_id: {card_id}",
+            f"source_sha: {sha}",
+            "preflight_passed: true",
+            'summary: "分支已推、工作區乾淨、pytest 全綠、trailer 已檢查"',
+            "```",
+        ]
+    )
+
+
+def arm_preflight(runner: EventGhRunner, card_id: str, sha: str) -> None:
+    """把該卡、該 SHA 的 preflight event 放進 timeline，讓 `wfcli review` 得以寫入。"""
+    item = card_item(runner, card_id)
+    runner.execute(
+        [
+            "issue", "comment", str(item.issue_number), "--repo", REPO,
+            "--body", preflight_event_body(card_id, sha),
+        ]
+    )
+
+
 # §3 第 1 款唯一合法的依據形狀。**`wfcli review` 今天產不出它**——本 repo 沒有 preflight
 # 事件 writer（WF-22-CLI4-R2-01；該 writer 不在本卡寫入集，已交由承接卡）。因此凡是需要
 # `counts_toward_escalation: true` 的端對端測試，都必須自行構造「承接卡落地後」的狀態，
 # 而不能經由 CLI 產生——這件事本身就是本輪的核心事實，故用註解與函式名寫明。
-EVENT_VERIFIED = PreflightBasis(
-    basis="event-verified",
-    source_event="https://github.com/acme/demo/issues/1#issuecomment-preflight",
-    summary="preflight: 分支已推、工作區乾淨、pytest 全綠",
-)
+def event_verified(card_id: str, sha: str):
+    basis = preflight_basis_from_body(
+        preflight_event_body(card_id, sha), card_id=card_id, source_sha=sha
+    )
+    assert basis is not None and basis.established
+    return basis
 
 
 def inject_counted_attempt(runner: EventGhRunner, card_id: str, sha: str, fid: str) -> str:
@@ -187,7 +225,7 @@ def inject_counted_attempt(runner: EventGhRunner, card_id: str, sha: str, fid: s
         reviewer="Codex",
         escalation_epoch=0,
         timestamp="2026-08-12T12:00:00+08:00",
-        preflight=EVENT_VERIFIED,
+        preflight=event_verified(card_id, sha),
     )
     item = card_item(runner, card_id)
     runner.execute(
@@ -345,8 +383,8 @@ def test_contract_baseline_moves_unreadable_history_out_of_scope(fake_runner, tm
             "--body", "派審詞：請注意留言不得出現 wf-review-event" + ":v1 的字面。",
         ]
     )
-    assert write_review(tmp_path, "BASE-SCOPE1", "a" * 40, "BASE-SCOPE1-R1-01") == 2
+    assert write_review(tmp_path, "BASE-SCOPE1", "a" * 40, "BASE-SCOPE1-R1-01", runner=fake_runner) == 2
     assert "無法自事件流重建" in capsys.readouterr().err
 
     assert run_cli(baseline_argv("BASE-SCOPE1")) == 0
-    assert write_review(tmp_path, "BASE-SCOPE1", "a" * 40, "BASE-SCOPE1-R1-01") == 0
+    assert write_review(tmp_path, "BASE-SCOPE1", "a" * 40, "BASE-SCOPE1-R1-01") == 0  # preflight 已於上方佈署

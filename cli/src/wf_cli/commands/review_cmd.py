@@ -66,8 +66,6 @@ from ..project import (
     set_item_body,
 )
 from ..review import (
-    COUNTS_TRUE,
-    COUNTS_UNAVAILABLE,
     ReviewParseError,
     attempt_id,
     derive_counts_toward_escalation,
@@ -80,8 +78,9 @@ from ..validation import (
     build_issue_event_history,
     check_attempt_not_duplicated,
     check_checkpoint_gate,
+    check_preflight_event_present,
     counted_attempts,
-    escalation_account_unavailable,
+    find_preflight_basis,
     review_invalid_reasons,
     validate_accepted_overrides,
     validate_marked_by,
@@ -238,12 +237,12 @@ def run(args: argparse.Namespace) -> int:
             f"{report.review_result}／core_pain_resolved={report.core_pain_resolved}／"
             f"self_run {len(report.self_run)} 項／findings {len(report.findings)} 項"
         )
-        if overrides:
-            print(
-                "[review] 注意：--validate-only 不連 GitHub，因此 accepted=false 的 marked_by"
-                "（`gh api user`）與去重／checkpoint 閘門都未執行；實寫時才會檢查。",
-                file=sys.stderr,
-            )
+        print(
+            "[review] 注意：--validate-only 不連 GitHub，因此 preflight event、去重與 "
+            "checkpoint 三道閘門都未執行；實寫時才會檢查。查核輸出的格式與契約檢查"
+            "在此已完整跑過，不受那三道閘門影響。",
+            file=sys.stderr,
+        )
         return 0
 
     target = resolve_target(
@@ -287,12 +286,17 @@ def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    # ---- 寫入前的 escalation 帳閘門（全部 fail-closed，未寫入任何遠端狀態）----
+    # ---- 寫入前的閘門（全部 fail-closed，未寫入任何遠端狀態）----
     target_attempt = attempt_id(args.card_id, args.escalation_epoch, args.source_sha)
-    history = build_issue_event_history(
-        fetch_issue_comments(runner, target.repo, item.issue_number)
+    comments = fetch_issue_comments(runner, target.repo, item.issue_number)
+    history = build_issue_event_history(comments)
+    preflight = find_preflight_basis(
+        comments, card_id=args.card_id, source_sha=args.source_sha
     )
     try:
+        # §3 第 1 款先判：沒有受管轄的 preflight event 就**不建立 review event**
+        # （§1），而不是寫一個較誠實的值進去（R3-01）。
+        check_preflight_event_present(preflight, source_sha=args.source_sha)
         check_attempt_not_duplicated(history, target_attempt)
         check_checkpoint_gate(
             history, escalation_epoch=args.escalation_epoch, card_body=item.body
@@ -334,6 +338,7 @@ def run(args: argparse.Namespace) -> int:
         escalation_epoch=args.escalation_epoch,
         timestamp=timestamp,
         accepted_marks=marks,
+        preflight=preflight,
         # current-state 平面的時點快照（見 review.render_escalation_facts_block 的說明）。
         # 每次 handoff 都會覆寫這一欄，故它只有在 append-only 的事件留言裡才留得住；
         # 但留住的是「寫裁決那一刻該欄長什麼樣」，不是 attempt 的固有屬性。
@@ -344,14 +349,14 @@ def run(args: argparse.Namespace) -> int:
     add_issue_comment(runner, target.repo, item.issue_number, comment)
     set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
 
-    counts = derive_counts_toward_escalation(report, marks)
+    counts = derive_counts_toward_escalation(report, marks, preflight)
     log_line = (
         f"{timestamp} review by wf-cli → {report.review_result}"
         f"（{report.delivery_status}）；查核者 {args.reviewer}；"
         f"core_pain_resolved {report.core_pain_resolved}；"
         f"self_run {len(report.self_run)} 項；findings {len(report.findings)} 項"
         f"（blocking {len(report.blocking_findings)}）；"
-        f"counts_toward_escalation {counts}；"
+        f"counts_toward_escalation {'true' if counts else 'false'}；"
         f"attempt {target_attempt}。"
     )
     new_body = append_log_line(item.body, log_line)
@@ -374,20 +379,7 @@ def run(args: argparse.Namespace) -> int:
             "`wfcli handoff --next-stage implementation` 把卡交回執行者，"
             "遞增在該處發生（WF-22-CLI2 既有規則）"
         )
-    if counts == COUNTS_UNAVAILABLE:
-        unavailable = escalation_account_unavailable(history, args.escalation_epoch)
-        print(
-            "[review] ⚠️ counts_toward_escalation=unavailable：本則符合 review-escalation.md "
-            "§3 第 2～4 款，但第 1 款的 preflight 依據在本 repo 不可得——事件流上沒有受管轄的 "
-            "preflight pass event（§5 的 handoff-accepted 或等價），而產出該事件的 writer "
-            "不在本卡的寫入集內，已交由承接卡。"
-        )
-        print(
-            f"[review] ⚠️ escalation 計數因此**不可用**：本 epoch 已累計 {len(unavailable) + 1} "
-            "個本會計數但無依據的 attempt。`counted_attempts` 為空**不表示執行者沒有累計**；"
-            "第三次退回的門檻在該 writer 落地前無法由本 CLI 機械判定，須由需求方人工掌握。"
-        )
-    if counts == COUNTS_TRUE:
+    if counts:
         ordinal = len(counted_attempts(history, args.escalation_epoch)) + 1
         print(
             f"[review] counts_toward_escalation=true：本輪是本 epoch 第 {ordinal} 個可計數 attempt。"

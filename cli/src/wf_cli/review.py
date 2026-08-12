@@ -465,7 +465,11 @@ def render_verdict_comment(
     review_attempt_id = attempt_id(card_id, escalation_epoch, source_sha)
     marks = dict(accepted_marks or default_accepted_marks(report.findings))
     attestation = preflight or PREFLIGHT_NOT_ESTABLISHED
-    counts = derive_counts_toward_escalation(report, marks, attestation)
+    counts = (
+        derive_counts_toward_escalation(report, marks, attestation)
+        if attestation.established
+        else False
+    )
     lines = [
         (
             "<!-- wf-review-event:v1 "
@@ -498,7 +502,14 @@ def render_verdict_comment(
         )
         lines.append(f"  - evidence：{_fence_safe(f.evidence)}")
         lines.append(f"  - disposition：{_fence_safe(f.disposition)}")
-    lines += [
+    # 沒有 preflight 依據時**整個帳區塊都不渲染**，而不是渲染一個較誠實的值。
+    # 產線上走不到這條路（``validation.check_preflight_event_present`` 擋在所有遠端寫入
+    # 之前），它存在只為了讓不寫 lifecycle 事件的呼叫端（例如 doctor 的測試替身）仍能
+    # 產生留言。省略＝不作任何宣稱；寫 unknown／unavailable 才是擴充 §5:168 的布林
+    # schema，那正是 R3-01 指出的錯誤。缺帳區塊的事件會被
+    # ``build_issue_event_history`` 判為未知，閘門照樣 fail-closed。
+    if attestation.established:
+        lines += [
         "",
         "### escalation 帳（lifecycle writer 標記，review-escalation.md §2／§3／§5）",
         "",
@@ -511,6 +522,8 @@ def render_verdict_comment(
             preflight=attestation,
             owner_field_at_verdict_write=owner_field_at_verdict_write,
         ),
+        ]
+    lines += [
         "",
         "---",
         "",
@@ -610,17 +623,11 @@ ACCEPTED_MARKING_BINDINGS = ("substantive", "structurally-vacuous", "not-applica
 # 並把機械事件 writer 交由具該寫入集的卡承接，**而不是以 writer-attested 作為計數依據**」。
 PREFLIGHT_BASES = ("event-verified", "not-established")
 
-# ``counts_toward_escalation`` 的三個取值。它**不是布林**，因為第三種狀態真實存在且
-# 與另外兩個都不同：
-#
-# ``true``／``false``：四款推導有結論，且結論有依據。
-# ``unavailable``：§3 第 2～4 款成立，但第 1 款的依據在本 repo **不可得**（沒有 preflight
-#   事件 writer）。寫 ``true`` 是偽造，寫 ``false`` 是洗白——本該進執行者帳的 attempt
-#   被記成不進帳。兩者都是宣稱大於證據，只是方向相反。第三個值是唯一誠實的選項。
-COUNTS_TRUE = "true"
-COUNTS_FALSE = "false"
-COUNTS_UNAVAILABLE = "unavailable"
-COUNTS_VALUES = (COUNTS_TRUE, COUNTS_FALSE, COUNTS_UNAVAILABLE)
+# 受管轄 preflight pass event 在留言平面的區塊鍵（review-escalation.md §5 的
+# ``handoff-accepted`` 或等價事件）。**本 CLI 只讀不寫**：產出該事件的 writer 需要
+# ``handoff`` 的寫入集，已交由承接卡。這裡定義的是**消費者接受什麼形狀**，schema 的
+# 歸屬在承接卡；形狀若不同，改的是本讀取器。
+PREFLIGHT_BLOCK_KEY = "wf_preflight_pass"
 
 
 @dataclass(frozen=True)
@@ -680,17 +687,12 @@ class EscalationFacts:
     attempt_id: str
     escalation_epoch: int
     review_result: str
-    counts_toward_escalation: str
+    counts_toward_escalation: bool
     owner_field_at_verdict_write: str | None = None
 
     @property
     def counts(self) -> bool:
-        """只有逐字 ``true`` 才算計入；``unavailable`` 一律不是「不計數」的同義詞。"""
-        return self.counts_toward_escalation == COUNTS_TRUE
-
-    @property
-    def counting_unavailable(self) -> bool:
-        return self.counts_toward_escalation == COUNTS_UNAVAILABLE
+        return self.counts_toward_escalation
 
 
 @dataclass(frozen=True)
@@ -768,7 +770,7 @@ def derive_counts_toward_escalation(
     report: ReviewReport,
     marks: Mapping[str, AcceptedMark],
     preflight: PreflightBasis | None = None,
-) -> str:
+) -> bool:
     """§3 的四款推導；``review-escalation.md:276``：這是投影，不得由 reviewer 自填。
 
     **第 1 款（preflight 已通過且 review 有效）不再由事件型別本身承擔。** 先前這裡寫
@@ -777,21 +779,26 @@ def derive_counts_toward_escalation(
     （WF-22-CLI4-R1-01，跨家族查核於 78d4064 自跑重現）。自陳「這條沒有執行者」不等於
     處置：規則若沒有執行者，就不該以事實的語氣寫下它的結論。
 
-    R2-01 的修法（第二次同根因）：第 1 款**只認 ``event-verified``**，而那在本 repo
-    無 writer，因此 ``COUNTS_TRUE`` 目前**結構上不可達**。回傳三值而非布林：
+    R3-01 的修法（第三次同根因，也是第一次動「要不要寫」而不是「寫什麼值」）：
+    前三輪都在調整這個函式的**回傳值**（預設 ``true`` → 具結 ``true`` → ``unavailable``），
+    而 §5:168 的 review event schema 把 ``preflight_passed`` 釘死為字面 ``true``
+    ——不是 ``<boolean>``，與同區塊的 ``escalation_epoch: <integer>``、
+    ``counts_toward_escalation: <boolean derived from §3>`` 對照即知。**斷不出 ``true``
+    的 review event 根本不是合格的 review event**，§1 也明文 preflight 缺口不得建立
+    review event。所以正解不是找一個誠實的第三個值，是**不要寫**。
 
-    - 第 2～4 款不成立 → ``false``。這個 ``false`` 是**有依據的**：它與 preflight 無關，
-      由結論與 finding 分類自己決定。
-    - 第 2～4 款成立、第 1 款有事件依據 → ``true``。
-    - 第 2～4 款成立、第 1 款無依據 → ``unavailable``。**不得寫 false**：那會讓本該進
-      執行者帳的 attempt 靠「依據拿不到」脫帳，是與偽造 true 反向的同一種病。
+    因此本函式回到布林：呼叫端保證只在 ``preflight.established`` 時才會走到這裡
+    （``validation.check_preflight_event_present`` 擋在所有遠端寫入之前，
+    ``render_escalation_facts_block`` 另有一道不變式）。第 1 款在此已成立，
+    本函式只判第 2～4 款。
     """
+    if preflight is None or not preflight.established:
+        raise ValueError(
+            "derive_counts_toward_escalation 在 preflight 未成立時被呼叫；"
+            "缺依據的 review event 不該被建立（review-escalation.md §1／§5:168）"
+        )
     not_accepted = {fid for fid, mark in marks.items() if not mark.accepted}
-    if not counting_clauses_2_to_4(report, not_accepted):
-        return COUNTS_FALSE
-    if preflight is not None and preflight.established:
-        return COUNTS_TRUE
-    return COUNTS_UNAVAILABLE
+    return counting_clauses_2_to_4(report, not_accepted)
 
 
 # --------------------------------------------------------------------------
@@ -822,7 +829,7 @@ def render_escalation_facts_block(
     escalation_epoch: int,
     report: ReviewReport,
     marks: Mapping[str, AcceptedMark],
-    counts_toward_escalation: str,
+    counts_toward_escalation: bool,
     preflight: PreflightBasis | None = None,
     owner_field_at_verdict_write: str | None = None,
 ) -> str:
@@ -843,6 +850,13 @@ def render_escalation_facts_block(
     在讀回時是兩個不同的狀態（見 ``EscalationFacts``）。
     """
     attestation = preflight or PREFLIGHT_NOT_ESTABLISHED
+    if not attestation.established:
+        # 防禦縱深：即使呼叫端漏擋，也不得渲染出一則斷不出 preflight_passed: true 的
+        # review event（§5:168 把該欄釘為字面 true）。
+        raise ValueError(
+            "缺 event-verified 的 preflight 依據，不得渲染 review event"
+            "（review-escalation.md §1：preflight 缺口不得建立 review event）"
+        )
     lines = [
         "```yaml",
         f"{FACTS_BLOCK_KEY}: {BLOCK_VERSION}",
@@ -850,10 +864,10 @@ def render_escalation_facts_block(
         f"escalation_epoch: {escalation_epoch}",
         # 沒有依據時寫 unknown，**不寫 true**。契約 §5 的 schema 是 `preflight_passed: true`，
         # 但那是給「依據存在」的情形；沒有依據卻照抄 true 等於偽造事實（R1-01）。
-        f"preflight_passed: {'true' if attestation.established else 'unknown'}",
+        "preflight_passed: true",
         f"review_result: {report.review_result}",
         f"core_pain_resolved: {report.core_pain_resolved}",
-        f"counts_toward_escalation: {counts_toward_escalation}",
+        f"counts_toward_escalation: {_yaml_scalar(counts_toward_escalation)}",
         f"owner_field_at_verdict_write: {_yaml_scalar(owner_field_at_verdict_write or '')}",
         f"preflight_basis: {attestation.basis}",
         f"preflight_source_event: {_yaml_scalar(attestation.source_event)}",
@@ -940,7 +954,9 @@ def escalation_facts_from_body(body: str) -> EscalationFacts | None:
     attempt = str(data.get("attempt_id") or "").strip()
     epoch = _as_int(data.get("escalation_epoch"))
     raw_counts = str(data.get("counts_toward_escalation") or "").strip()
-    counts = raw_counts if raw_counts in COUNTS_VALUES else None
+    # 嚴格布林：``unknown``／``unavailable`` 這類擴充值一律視為讀不懂（→ 未知 → 閘門
+    # fail-closed），不得被當成第三種合法狀態（R3-01：不得以新值擴充既有布林 schema）。
+    counts = True if raw_counts == "true" else False if raw_counts == "false" else None
     result = str(data.get("review_result") or "").strip()
     if not attempt or epoch is None or counts is None or result not in REVIEW_RESULTS:
         return None
@@ -979,6 +995,43 @@ def checkpoint_facts_from_body(body: str) -> CheckpointFacts | None:
         trigger_attempt_id=trigger,
         unique_attempt_count=count,
         checkpoint_decision=decision,
+    )
+
+
+def preflight_basis_from_body(body: str, *, card_id: str, source_sha: str) -> PreflightBasis | None:
+    """自一則留言讀出受管轄的 preflight pass event（review-escalation.md §5）。
+
+    **只讀不寫**：產出該事件的 writer 需要 ``handoff`` 的寫入集，不在本卡宣告內，已交由
+    承接卡。本函式是 adapter 側的對應物——沒有它，「可從 append-only 事件流驗證」這句話
+    在本 CLI 內不可實作，而承接卡落地後也不會自動生效。
+
+    四項都必須逐字成立，缺一即回 ``None``（fail-closed）：
+
+    1. 區塊版本為 ``v1``；
+    2. ``preflight_passed`` 逐字為 ``true``（§5:168 對 review event 的要求即由此滿足）；
+    3. ``card_id`` 與本卡逐字相同——不接受他卡的 preflight；
+    4. ``source_sha`` 與被審的 SHA 逐字相同。這給出**免時鐘的新鮮性**（同 §4 (b′-2) 的
+       手法）：任何早於該 commit 的 preflight 事件都不可能帶著它，故上一輪的 preflight
+       無法被搬來掩護本輪。
+
+    ``summary`` 只作留痕，不參與判定——它是人讀脈絡，不是依據；把它列入判準就會退回
+    R2-01 的「打字即依據」。
+    """
+    data = find_block_by_key(body, PREFLIGHT_BLOCK_KEY)
+    if data is None:
+        return None
+    if str(data.get(PREFLIGHT_BLOCK_KEY)).strip() != BLOCK_VERSION:
+        return None
+    if str(data.get("preflight_passed") or "").strip() != "true":
+        return None
+    if str(data.get("card_id") or "").strip() != card_id:
+        return None
+    if str(data.get("source_sha") or "").strip() != source_sha:
+        return None
+    return PreflightBasis(
+        basis="event-verified",
+        source_event=str(data.get("event_url") or "").strip() or "(URL 未提供)",
+        summary=str(data.get("summary") or "").strip(),
     )
 
 
@@ -1092,15 +1145,12 @@ __all__ = [
     "CORE_PAIN_VALUES",
     "COUNTING_ATTRIBUTION",
     "COUNTING_FINDING_CLASSES",
-    "COUNTS_FALSE",
-    "COUNTS_TRUE",
-    "COUNTS_UNAVAILABLE",
-    "COUNTS_VALUES",
     "FACTS_BLOCK_KEY",
     "FINDING_CLASSES",
     "FINDING_KEYS",
     "FINDING_STATUSES",
     "PREFLIGHT_BASES",
+    "PREFLIGHT_BLOCK_KEY",
     "PREFLIGHT_NOT_ESTABLISHED",
     "REVIEW_RESULTS",
     "SEVERITIES",
@@ -1127,6 +1177,7 @@ __all__ = [
     "log_line_indexes",
     "parse_attempt_id",
     "parse_structured_block",
+    "preflight_basis_from_body",
     "render_checkpoint_comment",
     "render_contract_baseline_comment",
     "render_escalation_facts_block",
