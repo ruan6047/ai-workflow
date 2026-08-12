@@ -12,6 +12,13 @@ db:* 資源雙方 db_scope 皆為 read 時可共用。
 別卡（非本次目標卡）若資源宣告解析不出來，只警告、不擋本次 assign——本卡是唯一
 寫入通道的「新」入口，遷移期間舊卡尚未補宣告不該讓新卡整個卡死；但目標卡「自己」
 的宣告解析失敗則直接拒絕（fail closed on self）。
+
+**規劃期路由的派工端**（WF-CLI-ROUTING-TIER1 R1-001）：``MODEL_ROUTING.md`` 第 14 行
+後半要求「派工時可依可用性偏離建議，但實際模型與偏離理由記入 claim 事件」。因此
+``--actual-capability`` 必填（實際模型以能力層級表述，語彙同開卡端；``--assignee``
+記的是具體模型名），並與卡面第 4 行的建議執行層級比對——非「相符」一律 fail-closed
+要求 ``--capability-deviation-reason``。比對是四格全函數，見
+``card.compare_capability_to_card``。
 """
 
 from __future__ import annotations
@@ -20,7 +27,9 @@ import argparse
 import sys
 
 from ..card import (
+    CAPABILITY_TIERS,
     append_log_line,
+    compare_capability_to_card,
     format_branch_worktree,
     is_owner_assigned,
     now_iso8601,
@@ -57,6 +66,20 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--status", default="🚧進行中", help="assign 後的交付狀態；預設 🚧進行中"
     )
+    p.add_argument(
+        "--actual-capability",
+        required=True,
+        choices=list(CAPABILITY_TIERS),
+        help="**實際**派到的能力層級（MODEL_ROUTING.md「預設能力等級」語彙；具體模型名"
+        "寫在 --assignee）。會與卡面第 4 行的建議執行層級比對，非相符即需偏離理由。"
+        "**不是** T0–T4 風險級別（那是卡面「級別」欄，由 open --tier／amend --tier 寫）。",
+    )
+    p.add_argument(
+        "--capability-deviation-reason",
+        default=None,
+        help="實際能力層級與卡面建議不符時的偏離理由；卡面無建議或建議無法解析時同樣"
+        "必填（無基線不得以沉默宣稱一致）。相符時可省略，若仍提供則以備註寫入 Log。",
+    )
     p.set_defaults(func=run)
 
 
@@ -78,6 +101,14 @@ def run(args: argparse.Namespace) -> int:
         mine = parse_block(item.body)
     except ResourceDeclarationError as exc:
         print(f"[assign] 拒絕：目標卡資源宣告解析失敗（{exc}），無法安全派工", file=sys.stderr)
+        return 2
+
+    # 規劃期路由的派工端閘門。刻意排在所有 set_field_value 之前：拒絕時必須零寫入，
+    # 不能留下「owner 已改、Log 沒有偏離紀錄」的半套狀態。
+    comparison = compare_capability_to_card(item.body, args.actual_capability)
+    deviation_reason = (args.capability_deviation_reason or "").strip()
+    if comparison.requires_reason and not deviation_reason:
+        print(f"[assign] 拒絕：{comparison.refusal_message()}", file=sys.stderr)
         return 2
 
     conflicts: list[tuple[str, list[str]]] = []
@@ -117,10 +148,14 @@ def run(args: argparse.Namespace) -> int:
 
     log_line = (
         f"{now_iso8601()} assign by wf-cli → owner {args.assignee}；"
-        f"分支worktree {branch_worktree}；交付狀態 {args.status}。"
+        f"分支worktree {branch_worktree}；交付狀態 {args.status}；"
+        f"{comparison.log_fragment(deviation_reason)}。"
     )
     new_body = append_log_line(item.body, log_line)
     set_item_body(runner, item.content_type, item.content_id, project, target.repo, item.issue_number, new_body)
 
-    print(f"[assign] 已指派 {args.card_id} → {args.assignee}（{branch_worktree}）")
+    print(
+        f"[assign] 已指派 {args.card_id} → {args.assignee}（{branch_worktree}）；"
+        f"{comparison.log_fragment(deviation_reason)}"
+    )
     return 0

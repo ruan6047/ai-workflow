@@ -10,7 +10,12 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from ..doctor import audit_review_channel, run_doctor
+from ..doctor import (
+    TRAILER_GUARD_EPOCH,
+    audit_commit_trailers,
+    audit_review_channel,
+    run_doctor,
+)
 from ..gh import default_runner
 from ..project import find_item_by_card_id, list_items, resolve_project
 from ..registry import load_tasks_md_registry
@@ -33,6 +38,33 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="另對帳指定 Issue 的外部查核收據與 wfcli review event（唯讀、fail-closed）",
     )
+    p.add_argument(
+        "--cleanup-preview",
+        action="store_true",
+        help="預覽 `📦已合併` 卡的破壞性收尾前提是否成立（唯讀；doctor 永不刪除任何東西）",
+    )
+    p.add_argument(
+        "--commit-trailers",
+        action="store_true",
+        help="檢查 --commit-range 內每筆 commit 的 §6 來歷 trailer 完整性（唯讀；不阻擋任何 push）",
+    )
+    p.add_argument(
+        "--commit-range",
+        help="--commit-trailers 的 git rev range，例如 origin/main..HEAD。刻意不給預設："
+        "`HEAD` 在 git log 語意下是整段歷史，猜錯範圍比要求明講糟得多",
+    )
+    p.add_argument(
+        "--trailer-epoch",
+        default=TRAILER_GUARD_EPOCH,
+        help=f"分流界線（committer date，ISO8601）；早於此者列為界線前、不計違規。"
+        f"預設 {TRAILER_GUARD_EPOCH}；傳 none 則全範圍一律判定",
+    )
+    p.add_argument(
+        "--require-planned-by",
+        action="store_true",
+        help="把 Planned-by 缺席計入違規。⚠️ 卡的級別不在 commit 裡，本旗標是**呼叫端**"
+        "宣告該範圍屬 T2 以上，不是檢查器導出的判準",
+    )
     p.add_argument("--repo", help="--review-channel 的 GitHub repo，格式 owner/repo")
     p.add_argument("--issue-number", type=int, help="--review-channel 的 Issue/PR number")
     p.add_argument("--card-id", help="--review-channel 的卡 ID")
@@ -50,17 +82,22 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.set_defaults(func=run)
 
 
-def build_json_payload(report, review_channel_finding) -> dict:
+def build_json_payload(report, review_channel_finding, commit_trailer_report=None) -> dict:
     """組出 ``--json`` 的輸出。
 
     先前只序列化 ``DoctorReport``，而 review-channel 的判定結果**不在其中**——
     停機（`marker_quarantined`）因此只出現在人類可讀的 stdout。本卡的目的正是讓
     停機可被機器偵測，而 #16 要消費 doctor 輸出做對帳；一個機器讀不到的狀態等於
     沒有對外提供。新增的是獨立鍵，既有消費者不受影響。
+
+    `commit_trailers` 同理：#48 的 CI 要能機器判讀，不能只有人類可讀那份。
     """
     payload = asdict(report)
     payload["review_channel"] = (
         asdict(review_channel_finding) if review_channel_finding is not None else None
+    )
+    payload["commit_trailers"] = (
+        asdict(commit_trailer_report) if commit_trailer_report is not None else None
     )
     return payload
 
@@ -72,6 +109,9 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     # 參數驗證一律先於實際工作：旗標打錯時不該先跑完整套 doctor 掃描再報錯。
+    if args.commit_trailers and not args.commit_range:
+        print("[doctor] --commit-trailers 缺必要旗標：--commit-range", file=sys.stderr)
+        return 2
     if args.review_channel:
         missing = [
             flag for flag, value in (
@@ -106,6 +146,7 @@ def run(args: argparse.Namespace) -> int:
         registry,
         lease_ttl_hours=args.lease_ttl_hours,
         main_ref=args.main_ref,
+        cleanup_preview=args.cleanup_preview,
     )
     # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
     # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。
@@ -143,7 +184,9 @@ def run(args: argparse.Namespace) -> int:
         )
         review_channel_finding = finding
         out = sys.stderr if args.json else sys.stdout
-        print("\n## 5. 跨工具查核寫入通道", file=out)
+        # 編號改 6：報告本體（render_text）新增了「## 5. 收尾清理前提」，此處若仍是 5
+        # 會出現兩個同號章節。整份報告的章節編號由 render_text 的順序決定。
+        print("\n## 6. 跨工具查核寫入通道", file=out)
         print(f"- [{finding.status}] {finding.detail}", file=out)
         for url, author in zip(finding.receipt_urls, finding.receipt_authors, strict=True):
             print(f"  - receipt: {url}（GitHub author: {author}）", file=out)
@@ -154,14 +197,29 @@ def run(args: argparse.Namespace) -> int:
             # 停機的價值在於「要人去修哪一則留言」。只印狀態不印原因，使用者只知道
             # 卡住了卻不知道卡在哪，那和沒偵測到差不多。
             print(f"  - 停機原因: {reason}", file=out)
+    commit_trailer_report = None
+    if args.commit_trailers:
+        epoch = None if str(args.trailer_epoch).lower() == "none" else args.trailer_epoch
+        commit_trailer_report = audit_commit_trailers(
+            repo_root,
+            args.commit_range,
+            epoch=epoch,
+            require_planned_by=args.require_planned_by,
+        )
+        print(
+            "\n" + commit_trailer_report.render_text(),
+            file=sys.stderr if args.json else sys.stdout,
+        )
+
     if args.json:
-        print(json.dumps(build_json_payload(report, review_channel_finding),
+        print(json.dumps(build_json_payload(report, review_channel_finding, commit_trailer_report),
                          ensure_ascii=False, indent=2, default=str))
 
     if args.strict and (
         report.orphan_worktrees()
         or report.orphan_branches
         or (review_channel_finding is not None and review_channel_finding.status != "recorded")
+        or (commit_trailer_report is not None and commit_trailer_report.violations)
     ):
         return 1
     return 0
