@@ -1,0 +1,83 @@
+name: CI
+
+# 本檔的裁定理由、擋得住／擋不住什麼、以及尚未機械化的部分，見
+# docs/DEV_AIWF_MINIMAL_CI1.md。改觸發事件或移除步驟前先讀該檔。
+
+on:
+  # 無分支過濾：
+  #   - push 到任一分支 → 測「分支頭」，給執行者自己的回饋。
+  #   - pull_request    → GitHub 取出的是 refs/pull/N/merge，也就是**合併結果**，
+  #                       不是分支頭。2026-08-12 的事故正是「分支頭綠、合併結果紅」，
+  #                       只有這一支看得到。兩者互補，故刻意都留。
+  push:
+  pull_request:
+
+# 刻意不加 paths / paths-ignore：一旦本 workflow 被設為 required status check，
+# 被 path filter 跳過的 PR 會永遠停在 pending 而無法合併。省下的幾十秒
+# 不值得換這個陷阱。
+permissions:
+  contents: read
+
+concurrency:
+  # event_name 進 group：同一分支的 push run 與 pull_request run 測的是不同的樹
+  # （分支頭 vs 合併結果），不可互相取消。
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # main 上的 run 是事後偵測的唯一訊號，不取消；其餘分支可取消以省額度。
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  tests:
+    # ⚠️ 這個 name 就是 check 的名字，也就是 required status check 要比對的字串。
+    # 一旦需求方把它設為 required（見 docs/DEV_AIWF_MINIMAL_CI1.md §7），
+    # **改名或拆成多個 job 會讓所有 PR 永遠停在 pending**。改名前先改 ruleset。
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        # v7.0.1；釘 commit SHA 而非 tag：tag 可被重指。
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # 本 job 不需要任何寫入權；不留憑證在 runner 上。
+          persist-credentials: false
+
+      - name: 標示實際受測的樹
+        # 讓 log 自證「這一 run 測的到底是哪棵樹」。PR 事件下這裡印出的 SHA
+        # 會是 merge commit，不是分支頭——這正是本 CI 的重點。
+        run: |
+          echo "event          = ${{ github.event_name }}"
+          echo "checked-out    = $(git rev-parse HEAD)"
+          echo "cli/ tree      = $(git rev-parse HEAD:cli)"
+          git log -1 --format='subject        = %s'
+
+      - name: setup uv
+        # v9.0.0，同樣釘 SHA。
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          # 釘死 uv 與 Python：本 repo 沒有 .python-version，本機的 3.12 是
+          # uv 當下的偶然解析結果。CI 若不釘，兩邊會無聲分歧。
+          version: "0.11.19"
+          python-version: "3.12"
+          working-directory: cli
+          enable-cache: true
+
+      - name: 鎖檔未過期
+        working-directory: cli
+        run: uv lock --check
+
+      - name: pytest
+        working-directory: cli
+        # --frozen：完全照 uv.lock 裝，不在 CI 裡重解相依。
+        run: uv run --frozen pytest -q
+
+      - name: escalation replay
+        # cli/pyproject.toml 的 testpaths = ["tests"] 讓 pytest 永遠看不到這支腳本，
+        # 它至今沒有任何自動執行者。純標準庫、不連網、不讀檔、0.9 秒，退出碼即判定。
+        # 裁定理由見 docs/DEV_AIWF_MINIMAL_CI1.md §1.3。
+        #
+        # !cancelled() 而非 always()：pytest 紅了仍要跑完這支（兩個訊號一次拿到），
+        # 但使用者按取消時不要多跑。**這不是 continue-on-error**——本步驟失敗
+        # 一樣讓整個 job 判紅。
+        if: ${{ !cancelled() }}
+        # 用 uv 釘住的直譯器，不用 runner 的預設 python3（那個沒有釘）。
+        run: uv run --no-project --python 3.12 scripts/replay_escalation_rules.py
