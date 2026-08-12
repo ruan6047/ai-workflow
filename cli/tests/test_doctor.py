@@ -5,7 +5,20 @@ import pytest
 import shutil
 from pathlib import Path
 
-from wf_cli.doctor import DoctorReport, audit_review_channel, run_doctor
+from wf_cli.doctor import (
+    COMMIT_TRAILER_ROOT_CAUSE_ID,
+    SUPERSEDED_ROOT_CAUSE_IDS,
+    TRAILER_GUARD_EPOCH,
+    CommitRecord,
+    DoctorReport,
+    audit_commit_trailers,
+    audit_review_channel,
+    classify_commit_shape,
+    evaluate_commit_trailers,
+    required_trailers,
+    run_doctor,
+    severed_declared_keys,
+)
 from wf_cli.registry import RegisteredCard, TasksMdRegistry
 from wf_cli.review import render_verdict_comment
 from wf_cli.validation import validate_review_report
@@ -471,6 +484,8 @@ def test_doctor_rejects_invalid_source_sha_instead_of_reporting_unobservable(bad
         repo_root=str(tmp_path), registry="none", review_channel=True,
         repo="acme/x", issue_number=1, card_id="CARD-A", source_sha=bad_sha,
         owner="acme", project=1,
+        commit_trailers=False, commit_range=None,
+        trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=False, strict=False,
     )
     assert doctor_cmd.run(args) == 2
@@ -536,6 +551,8 @@ def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
         repo_root=str(tmp_path), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=False,
+        commit_trailers=False, commit_range=None,
+        trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
     )
     assert doctor_cmd.run(args) == 0
@@ -920,9 +937,353 @@ def test_cleanup_preview_json_payload_carries_previews(sandbox_repo, tmp_path, c
         repo_root=str(sandbox_repo), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=True,
+        commit_trailers=False, commit_range=None,
+        trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
     )
     assert doctor_cmd.run(args) == 0
     payload = jsonlib.loads(capsys.readouterr().out)
     assert payload["cleanup_preview_enabled"] is True
     assert payload["cleanup_previews"] == []  # registry=none 時沒有卡可預覽
+
+
+# --------------------------------------------------------------------------
+# commit trailer 完整性（DEV-COMMIT-TRAILER-GUARD1）
+# --------------------------------------------------------------------------
+#
+# 這一段的固定裝置全部是**真的 git commit**，不是拼出來的字串：本檢查器的整個
+# 賣點是「用 git 自己的 trailer parser 判定」，用假訊息測等於繞過那一點。
+
+
+def _rec(**kw) -> CommitRecord:
+    base = {
+        "sha": "a" * 40, "parents": ("b" * 40,), "committed_at": "2026-08-20T10:00:00+08:00",
+        "authored_at": "2026-08-20T10:00:00+08:00", "subject": "s", "message": "s\n",
+        "trailers": (), "changed_paths": ("f.txt",), "merge_content_paths": (),
+    }
+    base.update(kw)
+    return CommitRecord(**base)  # type: ignore[arg-type]
+
+
+_FULL = ("Requested-by: ruan6047", "Planned-by: M@Tool", "Implemented-by: M@Tool")
+
+
+def _commit(repo, path: str | None, subject: str, tail: str = "\n".join(_FULL)) -> str:
+    """在 sandbox 建一筆 commit；`path=None` 代表空 commit。"""
+    args = ["commit", "-q", "-m", f"{subject}\n\n說明段落。\n\n{tail}" if tail else f"{subject}\n\n說明段落。"]
+    if path is None:
+        args.insert(2, "--allow-empty")
+    else:
+        (repo / path).write_text(path + "\n", encoding="utf-8")
+        git(repo, "add", path)
+    git(repo, *args)
+    return git(repo, "rev-parse", "HEAD").strip()
+
+
+# ---- 形狀判定：四種形狀各自的裁定（卡面驗收第 2 條） --------------------
+
+
+def test_shape_merge_without_combined_diff_is_not_an_implementation_commit():
+    """乾淨 merge 的 tree 完全由 parent 解釋得出，沒有自己著作的內容。"""
+    rec = _rec(parents=("b" * 40, "c" * 40), changed_paths=(), merge_content_paths=())
+    assert classify_commit_shape(rec) == "merge_clean"
+    # §6:222 對 merge commit 仍要求 Reviewed-by，但不要求實作三件式。
+    assert required_trailers("merge_clean") == ("Reviewed-by",)
+
+
+def test_shape_merge_with_combined_diff_is_held_to_the_implementation_floor():
+    """衝突解法／evil merge 是在 merge 當下寫下的內容，必須有來歷。
+
+    這一格同時是規避路徑的堵口：把改動塞進 merge commit 就能免除 trailer 的話，
+    整個檢查器可以用一個 `--no-ff` 繞過去。
+    """
+    rec = _rec(parents=("b" * 40, "c" * 40), changed_paths=(), merge_content_paths=("x.py",))
+    assert classify_commit_shape(rec) == "merge_with_content"
+    assert required_trailers("merge_with_content") == ("Requested-by", "Implemented-by", "Reviewed-by")
+
+
+def test_shape_empty_commit_requires_nothing_and_grants_nothing():
+    """空 commit 沒有著作內容 → 無所要求；且**不繼承給任何其他 commit**。"""
+    rec = _rec(changed_paths=(), trailers=(("Requested-by", "r"), ("Implemented-by", "i")))
+    assert classify_commit_shape(rec) == "empty"
+    assert required_trailers("empty") == ()
+    finding = evaluate_commit_trailers(rec, epoch=None)
+    assert finding.status == "not_applicable"
+    assert "不繼承" in finding.detail, "必須明說它不會讓別的 commit 變綠"
+
+
+def test_shape_root_commit_is_an_implementation_commit():
+    """root commit 相對空樹的差異就是它的內容，不是特例。"""
+    assert classify_commit_shape(_rec(parents=(), changed_paths=("a.txt",))) == "implementation"
+
+
+# ---- 判定層 -------------------------------------------------------------
+
+
+def test_floor_is_the_intersection_of_both_tiers_so_no_card_lookup_is_needed():
+    """`Requested-by`／`Implemented-by` 是 T0/T1 與 T2 的交集，故不需知道級別。
+
+    級別是卡面欄位、不在 commit 裡；把它做成必要輸入就違反「判準須可從 commit
+    本身導出」。
+    """
+    assert required_trailers("implementation") == ("Requested-by", "Implemented-by")
+
+
+def test_planned_by_is_reported_but_not_a_violation_unless_caller_declares_tier():
+    rec = _rec(trailers=(("Requested-by", "r"), ("Implemented-by", "i")))
+    default = evaluate_commit_trailers(rec, epoch=None)
+    assert default.status == "compliant"
+    assert default.undecidable == ("Planned-by",), "缺席要如實回報，只是不判違規"
+
+    declared = evaluate_commit_trailers(rec, epoch=None, require_planned_by=True)
+    assert declared.status == "violation" and declared.missing == ("Planned-by",)
+
+
+def test_missing_floor_trailer_is_a_violation():
+    rec = _rec(trailers=(("Co-Authored-By", "x"),))
+    finding = evaluate_commit_trailers(rec, epoch=None)
+    assert finding.status == "violation"
+    assert finding.missing == ("Requested-by", "Implemented-by")
+
+
+def test_commit_before_the_epoch_is_triaged_not_counted_as_a_violation():
+    """界線前的 commit 補不了（禁改寫已推送歷史），列為界線前而非違規。"""
+    rec = _rec(committed_at="2026-08-11T10:00:00+08:00", trailers=())
+    finding = evaluate_commit_trailers(rec)
+    assert finding.status == "pre_guard"
+    assert finding.missing == ("Requested-by", "Implemented-by"), "分流不等於不記錄"
+    assert "不裁定" in finding.detail, "採認與否是規則層裁定，本檢查器不得代為裁定"
+
+
+def test_epoch_none_grades_the_whole_range():
+    rec = _rec(committed_at="2020-01-01T00:00:00+08:00", trailers=())
+    assert evaluate_commit_trailers(rec, epoch=None).status == "violation"
+
+
+# ---- 「寫了但被空行切斷」的偵測（AI_WORKFLOW.md:220） -------------------
+
+
+def test_severed_block_is_reported_separately_from_never_written():
+    """兩種病不同：一種要補寫，一種要刪掉那個空行。"""
+    message = (
+        "subj\n\n說明。\n\n"
+        "Requested-by: r\nPlanned-by: p\nImplemented-by: i\n\n"
+        "Co-Authored-By: X <x@e>\n"
+    )
+    assert severed_declared_keys(message, {"co-authored-by"}) == (
+        "Requested-by", "Implemented-by", "Planned-by",
+    )
+
+
+def test_prose_mentioning_the_trailer_names_is_not_reported_as_severed():
+    """全文 regex 會把「討論 trailer 規則的 commit 訊息」誤判——本卡自己就是。"""
+    message = (
+        "subj\n\n本卡要求 Implemented-by: 這種欄位能被解析，並說明 Requested-by: 的語意。\n\n"
+        "Requested-by: r\nImplemented-by: i\n"
+    )
+    assert severed_declared_keys(message, {"requested-by", "implemented-by"}) == ()
+
+
+# ---- git 整合 + 突變注入 ------------------------------------------------
+
+
+def test_audit_reads_real_git_history_and_classifies_every_shape(sandbox_repo, tmp_path):
+    repo = sandbox_repo
+    green = _commit(repo, "green.txt", "feat: 帶齊 trailer")
+    bare = _commit(repo, "bare.txt", "feat: 完全沒寫 trailer", tail="")
+    empty = _commit(repo, None, "chore: 空 commit")
+
+    git(repo, "checkout", "-q", "-b", "topic", green)
+    topic = _commit(repo, "topic.txt", "feat: topic 側")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", "topic", "-m", "Merge topic\n\nReviewed-by: R@Tool")
+    clean_merge = git(repo, "rev-parse", "HEAD").strip()
+
+    report = audit_commit_trailers(repo, "main", epoch=None)
+    by_sha = {f.sha: f for f in report.findings}
+
+    assert by_sha[green].status == "compliant" and by_sha[green].shape == "implementation"
+    assert by_sha[bare].status == "violation"
+    assert by_sha[bare].missing == ("Requested-by", "Implemented-by")
+    assert by_sha[empty].status == "not_applicable" and by_sha[empty].shape == "empty"
+    assert by_sha[topic].status == "compliant"
+    assert by_sha[clean_merge].shape == "merge_clean"
+    assert by_sha[clean_merge].status == "compliant", "帶 Reviewed-by 的乾淨 merge 合規"
+
+
+def test_evil_merge_content_is_detected_through_the_combined_diff(sandbox_repo):
+    """把改動夾進 merge commit 不得因此免除 trailer。"""
+    repo = sandbox_repo
+    base = _commit(repo, "base.txt", "feat: base")
+    git(repo, "checkout", "-q", "-b", "side", base)
+    _commit(repo, "side.txt", "feat: side")
+    git(repo, "checkout", "-q", "main")
+    _commit(repo, "mainside.txt", "feat: main side")
+    git(repo, "merge", "--no-ff", "--no-commit", "side")
+    (repo / "smuggled.py").write_text("print('smuggled')\n", encoding="utf-8")
+    git(repo, "add", "smuggled.py")
+    git(repo, "commit", "-q", "-m", "Merge side\n\nReviewed-by: R@Tool")
+    evil = git(repo, "rev-parse", "HEAD").strip()
+
+    finding = {f.sha: f for f in audit_commit_trailers(repo, "main", epoch=None).findings}[evil]
+    assert finding.shape == "merge_with_content"
+    assert finding.status == "violation"
+    assert finding.missing == ("Requested-by", "Implemented-by")
+
+
+def test_cherry_pick_needs_no_special_case_because_the_message_travels(sandbox_repo):
+    """`-x` 那一行不是 `key: value`，`only=true` 會濾掉，不切斷同區塊其他 trailer。"""
+    repo = sandbox_repo
+    base = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "checkout", "-q", "-b", "src", base)
+    src = _commit(repo, "picked.txt", "feat: 會被 cherry-pick 的變更")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "cherry-pick", "-x", src)
+    picked = git(repo, "rev-parse", "HEAD").strip()
+
+    finding = {f.sha: f for f in audit_commit_trailers(repo, "main", epoch=None).findings}[picked]
+    assert finding.shape == "implementation"
+    assert finding.status == "compliant"
+    assert "cherry picked from" in git(repo, "log", "-1", "--format=%B")
+
+
+@pytest.mark.parametrize(
+    "mutant_tail, expect_missing, expect_severed",
+    [
+        # 突變 1：拿掉一行 trailer。
+        (
+            "Requested-by: ruan6047\nPlanned-by: M@Tool\nCo-Authored-By: X <x@e>",
+            ("Implemented-by",),
+            (),
+        ),
+        # 突變 2：在治理 trailer 與 Co-Authored-By 之間插入空行（§6.1 第 5 條）。
+        # 肉眼看訊息「三件都寫了」，`interpret-trailers` 在空行處切斷，實際一件都沒有。
+        (
+            "Requested-by: ruan6047\nPlanned-by: M@Tool\nImplemented-by: M@Tool\n\nCo-Authored-By: X <x@e>",
+            ("Requested-by", "Implemented-by"),
+            ("Requested-by", "Implemented-by", "Planned-by"),
+        ),
+    ],
+    ids=["drop-one-trailer-line", "blank-line-severs-the-block"],
+)
+def test_mutations_of_a_green_commit_are_killed(sandbox_repo, mutant_tail, expect_missing, expect_severed):
+    """突變注入：先證 baseline 為綠，再證同一形狀的突變被判紅。
+
+    baseline 必須在同一個測試裡跑過——否則「突變被判紅」可能只是因為固定裝置
+    本來就紅，斷言等於沒有鑑別力。
+    """
+    repo = sandbox_repo
+    green_tail = "\n".join((*_FULL, "Co-Authored-By: X <x@e>"))
+    green = _commit(repo, "green.txt", "feat: baseline", tail=green_tail)
+    baseline = {f.sha: f for f in audit_commit_trailers(repo, "main", epoch=None).findings}[green]
+    assert baseline.status == "compliant", "baseline 必須先是綠的，否則突變測試無意義"
+
+    mutant = _commit(repo, "mutant.txt", "feat: mutant", tail=mutant_tail)
+    finding = {f.sha: f for f in audit_commit_trailers(repo, "main", epoch=None).findings}[mutant]
+    assert finding.status == "violation"
+    assert finding.missing == expect_missing
+    assert finding.severed == expect_severed
+
+
+def test_epoch_triage_splits_history_from_new_commits_on_real_history(sandbox_repo, monkeypatch):
+    """同一份歷史、同一個檢查器，界線兩側判定不同——這就是「分流」。"""
+    repo = sandbox_repo
+    old = _commit(repo, "old.txt", "feat: 界線前", tail="")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-08-20T10:00:00+08:00")
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-08-20T10:00:00+08:00")
+    new = _commit(repo, "new.txt", "feat: 界線後", tail="")
+
+    report = audit_commit_trailers(repo, "main", epoch="2026-08-13T00:00:00+08:00")
+    by_sha = {f.sha: f for f in report.findings}
+    assert by_sha[old].status == "pre_guard"
+    assert by_sha[new].status == "violation"
+    assert len(report.violations) == 1
+
+
+# ---- 根因命名的裁定 ------------------------------------------------------
+
+
+def test_canonical_root_cause_id_is_pinned_and_superseded_names_are_recorded():
+    """名字一改，升級門檻的 join key 就變了；固定住它，並留下舊名對照。
+
+    對照表是**唯讀紀錄**，不回寫任何已寫入的事件（本專案禁止追溯改寫）。
+    """
+    assert COMMIT_TRAILER_ROOT_CAUSE_ID == "commit-trailer-required-but-missing"
+    assert "governance-provenance-trailer-omission" in SUPERSEDED_ROOT_CAUSE_IDS
+    assert any(n.startswith("unknown-") for n in SUPERSEDED_ROOT_CAUSE_IDS)
+    assert COMMIT_TRAILER_ROOT_CAUSE_ID not in SUPERSEDED_ROOT_CAUSE_IDS
+
+
+def test_agents_md_records_the_canonical_root_cause_id():
+    """裁定要寫在後續查核者引用得到的地方，不能只活在程式碼常數裡。"""
+    agents = (Path(__file__).resolve().parents[2] / "AGENTS.md").read_text(encoding="utf-8")
+    assert COMMIT_TRAILER_ROOT_CAUSE_ID in agents
+    for superseded in SUPERSEDED_ROOT_CAUSE_IDS:
+        assert superseded in agents, "舊名要留在對照表裡，否則後來的人看不出是同一族"
+
+
+# ---- CLI ----------------------------------------------------------------
+
+
+def _trailer_args(repo, **overrides):
+    import argparse
+
+    defaults = {
+        "repo_root": str(repo), "registry": "none", "review_channel": False,
+        "repo": None, "issue_number": None, "card_id": None, "source_sha": None,
+        "owner": None, "project": None, "cleanup_preview": False,
+        "commit_trailers": True, "commit_range": "main",
+        "trailer_epoch": "none", "require_planned_by": False,
+        "main_ref": "main", "lease_ttl_hours": 48.0, "json": False, "strict": False,
+    }
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def test_cli_requires_an_explicit_commit_range(sandbox_repo, capsys):
+    """`HEAD` 在 git log 語意下是整段歷史；猜錯範圍比要求明講糟得多。"""
+    from wf_cli.commands import doctor_cmd
+
+    assert doctor_cmd.run(_trailer_args(sandbox_repo, commit_range=None)) == 2
+    assert "--commit-range" in capsys.readouterr().err
+
+
+def test_cli_strict_exits_non_zero_on_violation_and_zero_when_clean(sandbox_repo, capsys):
+    from wf_cli.commands import doctor_cmd
+
+    _commit(sandbox_repo, "ok.txt", "feat: 合規")
+    assert doctor_cmd.run(_trailer_args(sandbox_repo, strict=True, commit_range="HEAD~1..HEAD")) == 0
+    _commit(sandbox_repo, "bad.txt", "feat: 不合規", tail="")
+    assert doctor_cmd.run(_trailer_args(sandbox_repo, strict=True, commit_range="HEAD~1..HEAD")) == 1
+    capsys.readouterr()
+
+
+def test_cli_json_payload_carries_commit_trailers_for_machine_consumers(sandbox_repo, capsys):
+    """#48 的 CI 要機器判讀；只有人類可讀那份等於沒對外提供。"""
+    import json as jsonlib
+
+    from wf_cli.commands import doctor_cmd
+
+    _commit(sandbox_repo, "bad.txt", "feat: 不合規", tail="")
+    assert doctor_cmd.run(_trailer_args(sandbox_repo, json=True, commit_range="HEAD~1..HEAD")) == 0
+    payload = jsonlib.loads(capsys.readouterr().out)
+    assert payload["commit_trailers"]["rev_range"] == "HEAD~1..HEAD"
+    assert [f["status"] for f in payload["commit_trailers"]["findings"]] == ["violation"]
+    assert "worktrees" in payload and payload["review_channel"] is None
+
+
+def test_cli_json_payload_omits_commit_trailers_when_not_requested(sandbox_repo, capsys):
+    import json as jsonlib
+
+    from wf_cli.commands import doctor_cmd
+
+    assert doctor_cmd.run(_trailer_args(sandbox_repo, json=True, commit_trailers=False)) == 0
+    assert jsonlib.loads(capsys.readouterr().out)["commit_trailers"] is None
+
+
+def test_rendered_report_refuses_to_claim_it_blocks_anything(sandbox_repo):
+    """ROADMAP §2：偵測器不得宣稱「已預防」。#57 R1-01 正是因此被判 blocking。"""
+    _commit(sandbox_repo, "bad.txt", "feat: 不合規", tail="")
+    text = audit_commit_trailers(sandbox_repo, "main", epoch=None).render_text()
+    assert "唯讀" in text and "不阻擋" in text
+    assert "DEV-AIWF-MINIMAL-CI1" in text, "必須指名強制面的承接者"
