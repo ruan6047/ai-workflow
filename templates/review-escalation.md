@@ -158,6 +158,44 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 
 需求方核可重規劃或更換執行者時，以 `escalation-epoch-change` 明示授權並將 `escalation_epoch` 逐一遞增；新 epoch 從零計數，舊 events 保留，不回寫或刪除。review 自行填入較大 epoch 不構成授權，adapter 必須拒絕 epoch 跳號、倒退或未經授權的切換。
 
+**`escalate` 之後的第三種結果：維持同執行者。** 本節前段與 §5 末段規定的是**機械判定**，不是最終處置：`escalate` 的語意是「需求方必須介入」，而介入的結果實際有三種——重新規劃、更換執行者，或**看過同一組事實後裁定維持同執行者、繼續下一輪**。前兩種以 `escalation-epoch-change` 的 `replan`／`change-executor` 表示，第三種在本契約先前**沒有任何表示法**，寫入者因而只能自創未定義鍵，該事實隨即只存在於自由文字而 replay 重建不出來。本節補上它，並先說明為什麼另外兩種候選形狀被否決——三者的差別在 replay 後果，不在改動大小。
+
+- **（甲）當成 `escalation-epoch-change` 的第三個理由——否決。** 該事件的定義就是遞增 epoch，而「新 epoch 從零計數」。把維持同執行者塞進去，會使需求方的一次 `continue` 順帶抹掉本 epoch 的全部 escalation 帳：第一條件的 occurrence 累計歸零、carry set 依新 epoch 重新界定、`deferred_findings` 的清償義務隨舊 epoch 消滅。也就是說，甲案會把「需求方看過事實後決定繼續」實作成「escalation 歷史被刪除」，下一次觸發要從零重新累積三次——**這比缺口更糟：缺口只是記不下來，甲案是記錯**。何況 `escalation-epoch-change` 的 schema 裡沒有 owner，「維持同執行者」連個放的地方都沒有，只能由「事件流上沒有出現交接」反推，而本節已多次拒絕由沉默推定（「沉默不等於 deferred」）。
+- **（乙）當成 checkpoint 上的獨立欄位——否決。** 它把**告警與解除綁進同一則事件**。checkpoint 是機械可導的：trigger attempt 的裁決一落地，`escalate` 就已成立，不需要任何人開口；裁定則要等人。兩者同體只有兩種寫法——等裁定到了才寫 checkpoint，或先寫再編輯。後者湮滅原文（§5「修復方式有優先序」已否決編輯路徑）；前者使**機械判定成為人類裁定的人質**：需求方一天不表態，`escalate` 一天不進事件流，於是「條件已成立但尚無人裁定」這個真實狀態又變成無表示法，而漏建 checkpoint 的誘因被制度化。§5 對 `forged-rejected` 已寫下同型判斷——「宣告與恢復是**兩個動作**，刻意不合併：合併就等於讓一則事件同時扮演告警與解除」。`escalate` 是停機，維持同執行者是解除，形狀完全相同，沒有理由在此反過來。
+- **（丙）新的事件型別 `escalation-resolution`——採用。** checkpoint 在裁決落地當下即記 `escalate`，卡片轉 `🚨已升級`；裁定到達時另發一則 `escalation-resolution` 解除它。兩則之間的區間**就是**升級狀態本身，於是「已升級、尚無人裁定」有了表示法，而不是被壓成一則事後才寫得出來的事件。schema 見 §5。
+
+`escalation-resolution` **不遞增 epoch、不重置任何計數、不建立 attempt、不計 iteration、不消耗 escalation 額度、不改變任何 finding 的 `status`／`accepted`／分類／根因**。它只做一件事：把某一則 `checkpoint_decision=escalate` 的 checkpoint 所宣告的升級狀態，以需求方的裁定解除，並**正面記下下一輪的 owner**。owner 必填且逐字比對，不得由「沒有交接事件」反推——這正是「僅憑事件流可重建出該輪維持同執行者」所需要的那一欄。要重規劃或換人仍走 `escalation-epoch-change`，本型別不提供那兩條路，兩者不得混用也不得同時附在一則事件上。
+
+**一次裁定的效力恰好涵蓋一則 checkpoint。** checkpoint 的節奏是「第三個及其後每個可計數 attempt」，故下一個可計數 attempt 必然產生下一則 checkpoint；若它再度被強制 `escalate`，那是**另一個**升級狀態，需要另一則 `escalation-resolution`。一次裁定不得涵蓋兩則被強制的 checkpoint——否則「需求方已同意繼續」會像第一條件的純累計讀法一樣**一旦成立即永久為真**，紅線閘門從此無鑑別力。
+
+**沿用必須重新表態，而且要看得出是沿用。** 事實確實未變時重發一則事件的成本極低（無論如何都是 writer 在寫），要禁止的是**沉默地援用**。故 `escalation-resolution` 必填 `resolution_basis`：
+
+- `fresh-ruling`：需求方對本則 checkpoint 的新裁定，須附其獨立留痕（§5 第 5 款）。
+- `carried-forward`：援用本 epoch 既有的一則 `fresh-ruling`。此時 `resolved_by` 維持原裁定者，另必填 `carried_by` 記下**實際寫下本事件的帳號**。兩欄分開是刻意的：把援用寫成「需求方今天又裁定了一次」會使二手事實看起來像一手事實，而那正是本缺口最初被自創鍵掩蓋的形態。
+
+**沿用的「事實未變」是機械判準，不是措辭。** 設 C_f 為被援用之 `fresh-ruling` 所解除的 checkpoint，C_c 為本次援用的 checkpoint。`carried-forward` 有效需**全部**成立：
+
+1. 兩則 checkpoint 的**強制成因集合相同**（第一條件、第二條件各自成立與否逐一相同）；
+2. 第一條件成立時：強制它成立的 `root_cause_id` 集合相同，且每個成員的 occurrence 累計數在 C_c 與在 C_f **相同**。累計數永不遞減（見「第一條件的存活判準」），故「相同」等價於「其間沒有新增 occurrence」；
+3. 第二條件成立時：在 C_c 落入「仍開啟」或「未提及」格的 `finding_id` 集合，是 C_f 當時同一集合的**子集**；且 C_c 不因逾期未清償或連續 defer 而另有成因。
+
+任一項不成立即 `carried-forward` 無效，升級狀態維持，須另發 `fresh-ruling`。這把「若本輪查核產生第 N+1 次同家族 finding 則原裁定不再涵蓋」從人讀警語變成可比對的條件——條件式效力必須納入表示法，否則它只是寫在理由欄裡、沒有執行者的一句話。
+
+**不得連續沿用。** `carried_from` 只能指向 `resolution_basis=fresh-ruling` 的事件，不得指向另一則 `carried-forward`。一次裁定至多被援用一次；連兩輪需求方沒有真正表態而升級狀態一再被解除，正是需求方必須開口的狀態。此規則與「不得連續 defer」同型且同理由。
+
+**授權：今天買不到實質授權，故本節只有一部分有執行者。** 本裁定移除的是一個紅線閘門，故不得由被它嘉惠的一方自行記錄。§5 第 5 款要求 `resolution_ruling_url` 指向的留言其 **GitHub comment author** 逐字等於卡面 `需求：` 欄帳號，形式上與 §4 (a′) 同構。**但在採用專案的需求方帳號同時屬於被授權 writer 集合時，該比對恆真、分不開任何兩方**：本 repo 即為此狀態——`ruan6047` 同時是需求方、PM 與唯一 lifecycle writer，而執行者與查核者根本不是 GitHub 帳號（是「<模型>@<工具>」這類自由文字），故 §4 第 3 款那種「不得等於 owner 或 reviewer」的排除在此也一併恆真：兩邊型別不同，永遠不可能相等。**本檔不假裝相反。** 故 adapter 必須導出並寫入 `authorization_binding`，取值：
+
+- `substantive`：卡面 `需求：` 欄宣告的是 GitHub 帳號，**且**該帳號不在 `handoff-contract.md` §5 宣告的被授權 review event writer 集合內，**且**本卡 owner 與本 epoch 全部 reviewer 的身分皆為可與之逐字比對的平台帳號。
+- `structurally-vacuous`：以上任一不成立。
+
+`structurally-vacuous` **不使事件無效**——否則本 repo 無法運作，而把一個治理事實鎖進不可寫狀態並不會讓它消失。它的作用是把恆真本身寫進事件流：消費者**不得**把 `structurally-vacuous` 的 `escalation-resolution` 讀成「已有第二方獨立核可」，任何以本欄為據宣稱該裁定經獨立授權者即為誤讀。本款何時開始有鑑別力也一併指名：需求方帳號與 writer 集合分離，**或**執行者／查核者取得可與帳號逐字比對的平台身分，兩者任一成立即轉 `substantive`；在那之前，本段是**約定**，其執行者是人。
+
+今天仍非恆真、確實會擋下東西的是另外三件，它們分開的是**留痕**而不是人，但一樣可機械核對：(i) 裁定必須以**獨立的一則留言**存在，不得是該 checkpoint 或任何 review event 所在的那一則——`decided_by` 寫在被裁定的文本自己裡面不構成裁定留痕；(ii) 該留言現行 body 必須**逐字含本則 checkpoint 的 `trigger_attempt_id`**，其中含本輪 source SHA，故任何早於該 commit 的留言都不可能覆蓋本輪，這是免時鐘的新鮮性，與 §4 (b′-2) 同法；(iii) 一則 checkpoint 至多被一則有效 `escalation-resolution` 解除，且沿用有上限。**已知限制與 (b′-2) 相同：author 不可變、body 可變**，具 repo 寫入權者能編輯他人留言，故 (ii) 的保證止於「沒有人事後改寫需求方的裁定」。
+
+**cutover 前的既有留痕：標為 legacy，不改寫、不追溯補建。** 本 repo 在本節生效前，曾以未定義鍵（`escalation_resolution`／`decided_by`／`counts_toward_escalation`／`attempts_so_far`）在 checkpoint 留言上記錄本情形。依 §5 末段的 `contract-baseline` cutover，那些事件**維持原貌**：不編輯留言（編輯會湮滅原文，見 §5「修復方式有優先序」）、不重發、**尤其不追溯補建任何當時未建立的 checkpoint 或裁定**——事後補一則自稱當時作出的裁定，是本專案明令禁止的形態，本節不為它開任何出口。新條文**只約束 cutover 之後的寫入**，既有留痕不因本節而被追溯判定為合規，也不得被本節用來事後正當化。此後不得再寫那四個鍵；其中 `counts_toward_escalation` 尤其不得出現在 checkpoint 上——§1 表列 checkpoint 不消耗 escalation 額度，§5 把該鍵定義為 review event 依 §3 導出的投影，寫在 checkpoint 上是分類錯誤，且與寫入端既有的 writer-only 鍵同名不同義。
+
+**對 checkpoint writer 實作卡的介面。** 在本節落地前，checkpoint writer 遇到「條件成立、需求方裁定維持同執行者」應 **fail-closed 並指名等待本節**，不得靜默沿用未定義鍵。本節落地後，該實作須據此更新三件事：(1) `escalation-checkpoint` 的 `checkpoint_decision` 維持機械導出，**不因裁定而改寫**——裁定改的是升級狀態，不是 checkpoint 的判定；(2) 新增 `escalation-resolution` 的寫入與校驗（§5 的必填欄與必要條件，含 `carried-forward` 的三項事實未變比對與沿用上限）；(3) `authorization_binding` 由 adapter 導出、**不得手填**，且在 `structurally-vacuous` 時仍須寫出該值而非省略。新增 event type 屬契約變更，其在 `control-plane-contract.md` §2 type 列舉中的登記由該檔管轄，本檔不代為修改。
+
 ## 5. Adapter 必填欄位
 
 `handoff-accepted` 或等價 preflight pass event 應記 `preflight_passed=true` 與檢查摘要。`review` event 另記：
@@ -208,6 +246,35 @@ deferred_findings:          # 選填，預設空陣列；語意與必要條件�
 `spec-narrowed` 另需該留言的 **GitHub comment author** 逐字等於需求方帳號，且其內容逐字綁定 trigger attempt 的 `attempt_id`、該筆 `finding_id` 與 `defer_cause: spec-narrowed`（結構化路徑 (b′-1) 到位後可改以事件欄位承載）（§4 專節 (a′)(b′)）；adapter 既無結構化欄位又無法取得留言 author／body 時本 cause 不可用，一律 fail-closed（同節 (c′)）。**兩個 cause 的內容證據不得以 `defer_ruling_url` 或 `defer_reason` 的自述替代。**
 
 `deferred_findings` 只表達「本輪不要求對該 finding 表態」，不得用來變更 finding 的 `status`／`accepted`／分類／根因，也不得用來閉合 finding——那些只能走 `review-correction`。單筆缺欄、`defer_cause` 不在列舉內、`defer_ruling_url` 不能解析為本卡留言、`defer_reason` 未指涉該留言、`instruction-omitted` 的缺漏證據不成立、`spec-narrowed` 的裁定證據不成立（留言 author 非需求方、內容未逐字綁定本輪 attempt 與本筆 finding）、該 cause 在本專案不可用、身分不符（§4 第 2、3 款）、finding 不在 carry set，或違反「不得連續 defer」者，該筆無效，對應 finding 落回「未提及」格並強制 `escalate`；其餘筆數不受牽連。空陣列與省略本欄語意相同。**對不在 carry set 的 finding 所作的宣告是無作用的冗贅**（§4 末段），不使整個 checkpoint 無效。
+
+`escalation-resolution` 解除某一則 `checkpoint_decision=escalate` 所宣告的升級狀態，語意與必要條件見 §4「`escalate` 之後的第三種結果」，必填：
+
+```yaml
+escalation_epoch: <integer；逐字等於被解除 checkpoint 的 epoch。本事件不遞增、不重置任何計數>
+checkpoint_ref: <被解除的 escalation-checkpoint 事件識別；須為本 epoch 既存且 checkpoint_decision=escalate>
+trigger_attempt_id: <逐字等於該 checkpoint 的 trigger_attempt_id>
+resolution: continue-same-executor
+continued_owner: <下一輪 owner 的宣告字串；必填非空，不得由「沒有交接事件」反推>
+resolution_basis: fresh-ruling | carried-forward
+resolved_by: <裁定者帳號；fresh-ruling 為卡面「需求：」欄帳號，carried-forward 沿用被援用事件的同欄值>
+resolution_ruling_url: <fresh-ruling 必填：本卡 issue 的單一留言 URL，且非任何 checkpoint／review event 所在的留言>
+carried_from: <carried-forward 必填：本 epoch 既存且 resolution_basis=fresh-ruling 的 escalation-resolution 事件識別>
+carried_by: <carried-forward 必填：實際寫下本事件的帳號>
+authorization_binding: substantive | structurally-vacuous   # adapter 導出，不得手填
+resolution_rationale: <非空>
+```
+
+單則有效的必要條件（缺一即該則無效，升級狀態維持，卡片留在 `🚨已升級`）：
+
+1. `checkpoint_ref` 指向本 epoch 既存的 `escalation-checkpoint`，其 `checkpoint_decision` 為 `escalate`，且 `trigger_attempt_id` 與之逐字相同；`escalation_epoch` 亦逐字相同。
+2. 一則 checkpoint 至多被一則有效 `escalation-resolution` 解除，一則 `escalation-resolution` 至多解除一則 checkpoint；重複解除同一則者，第二則起無效。
+3. `continued_owner` 非空。**本款是雙相的**：裁定寫入當下，下一個 attempt 尚不存在，故此時只驗非空；其正確性在事件流往後走時才可核對——該 checkpoint 之後、本 epoch 內的任一 attempt，其 owner 必須逐字等於最後一則有效 `escalation-resolution` 的 `continued_owner`，不等即**該 attempt** fail-closed（換人本就該先走 `escalation-epoch-change` 的 `change-executor`，不得以本型別表示）。違反時故意**不**反過來追溯使該 resolution 無效：append-only 事件流不得因後來的事件而回改既有判定，該罰的是那個違反宣告的 attempt。把本款寫成單相的「等於下一個 attempt 的 owner」會產生一個寫入當下恆真的檢查——那是本節明確要避免的形狀。
+4. `resolution` 只有 `continue-same-executor` 一個合法值；本型別不承載 `replan`／`change-executor`，也不得與 `escalation-epoch-change` 附在同一則事件上。
+5. `resolution_basis=fresh-ruling` 另需：`resolved_by` 逐字等於卡面 `需求：` 欄帳號；`resolution_ruling_url` 解析為**本卡 issue 的單一留言 URL**（`…/issues/<本卡 issue 編號>#issuecomment-<數字 id>`）；該留言的 **GitHub comment author** 逐字等於 `resolved_by`；其**現行** body 逐字含 `trigger_attempt_id`；且該留言不是本則 checkpoint 或任何 review event 所在的留言。adapter 取不到 author 或 body 時本 basis 不可用，一律 fail-closed，不得以自述成立。
+6. `resolution_basis=carried-forward` 另需：`carried_from` 指向本 epoch 既存且 `resolution_basis=fresh-ruling` 的事件（不得指向另一則 `carried-forward`）；該事件尚未被援用過；且 §4 的三項事實未變比對（強制成因集合相同、第一條件的根因集合與 occurrence 累計數相同、第二條件的觸發 finding 集合為子集且無新增逾期／連續 defer 成因）全部成立。
+7. `authorization_binding` 由 adapter 依 §4 的兩款定義導出並寫入；手填、缺欄或省略即本則無效。取值 `structurally-vacuous` **不使本則無效**，但消費者不得據以宣稱該裁定經第二方獨立核可。
+
+有效解除後卡片離開 `🚨已升級`、回到採用專案宣告的執行態（預設 `🔨執行中`）；該狀態轉移須登記於 `control-plane-contract.md` §2，本檔不代為宣告。本 type 不建立 attempt、不計 iteration、不消耗 escalation 額度，也不得用來變更 finding、attempt、epoch 或 `checkpoint_decision`——checkpoint 的判定依 §3／§4 機械導出，**不因本事件而改寫**。新增此 type 屬契約變更，適用範圍依本節末段的 `contract-baseline` cutover 機制；cutover 前的歷史事件維持原貌，不追溯要求補發，也不得被本 type 追溯正當化。
 
 `review-marker-clearance` 解除 §1 的留痕解析停機，必填：
 
