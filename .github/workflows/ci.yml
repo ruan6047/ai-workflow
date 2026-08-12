@@ -20,6 +20,19 @@ on:
 permissions:
   contents: read
 
+# ⚠️ locale 顯式宣告，不繼承 runner image 的預設。裁定與理由見
+# docs/DEV_AIWF_MINIMAL_CI1.md §10。三句話版本：
+#   1. 本 repo 的文件、卡面、腳本訊息大量使用中文與全形標點，而 bash 在 UTF-8 與在 C
+#      locale 下對「$var 緊接多位元組字元」的變數名掃描行為不同——2026-08-12 的 #42
+#      對帳器就是只在 UTF-8 下炸、在 C 下 PASS。
+#   2. runner image 的預設 locale 是 image 的實作細節，可能無聲改變；不宣告就等於把
+#      判定基準託付給一個沒人在版控裡看得到的值。
+#   3. 選 UTF-8 而不是 C：CI 該是比較嚴的那一邊。釘 C 會讓 CI 與某一台本機一致，
+#      卻對所有其他環境失明——那是把偵測器調成永遠不會響。
+env:
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+
 concurrency:
   # event_name 進 group：同一分支的 push run 與 pull_request run 測的是不同的樹
   # （分支頭 vs 合併結果），不可互相取消。
@@ -51,14 +64,26 @@ jobs:
           # 本 job 不需要任何寫入權；不留憑證在 runner 上。
           persist-credentials: false
 
-      - name: 標示實際受測的樹
+      - name: 標示實際受測的樹與 locale
         # 讓 log 自證「這一 run 測的到底是哪棵樹」。PR 事件下這裡印出的 SHA
         # 會是 merge commit，不是分支頭——這正是本 CI 的重點。
+        #
+        # locale 一併印出來的理由：它是判定基準的一部分（見上方 env 與
+        # docs/DEV_AIWF_MINIMAL_CI1.md §10）。上面那三行是「我要求什麼」，
+        # 這裡印的是「實際生效的是什麼」——兩者不一致時要看得見，
+        # 例如 runner image 缺少 C.UTF-8 而 glibc 靜默退回 POSIX。
         run: |
           echo "event          = ${{ github.event_name }}"
           echo "checked-out    = $(git rev-parse HEAD)"
           echo "cli/ tree      = $(git rev-parse HEAD:cli)"
           git log -1 --format='subject        = %s'
+          echo "--- locale ---"
+          # 生效值；不是本 workflow 宣告的值。
+          locale
+          echo "--- runner image 的預設（不受本 workflow env 影響）---"
+          # env -u 清掉本 workflow 注入的兩個變數，看 image 自己是什麼。
+          # 純觀測，不影響任何判定。
+          env -u LANG -u LC_ALL locale 2>&1 || true
 
       - name: setup uv
         # v9.0.0，同樣釘 SHA。
