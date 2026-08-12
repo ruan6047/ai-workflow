@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+
 from wf_cli.registry import (
     OWNERSHIP_DECISIONS,
     RepoOwnershipVerdict,
@@ -10,13 +12,17 @@ from wf_cli.registry import (
     card_repo_from_issue_url,
     check_assign_repo_ownership,
     check_worktree_repo_ownership,
+    enumerate_ownership,
+    fetch_project_ownership_rows,
     load_tasks_md_registry,
+    main,
     normalize_repo_slug,
     parse_active_ledger,
     parse_archived_card_ids,
     parse_markdown_tables,
     probe_worktree_repo,
     run_git_readonly,
+    summarize_ownership,
 )
 
 from .conftest import git
@@ -173,8 +179,8 @@ def test_only_match_produces_allow_exhaustively():
 
 def _probe(slug):
     return WorktreeRepoProbe(
-        slug=slug, probed_dir="/tmp/x", common_dir="/tmp/x/.git",
-        remote_url="git@github.com:o/r.git", detail="probe detail",
+        slug=slug, source="target_dir", resolved_target="/tmp/x", probed_dir="/tmp/x",
+        common_dir="/tmp/x/.git", remote_url="git@github.com:o/r.git", detail="probe detail",
     )
 
 
@@ -207,7 +213,7 @@ def test_verdict_fail_closed_when_card_repo_undeterminable():
 def test_verdict_fail_closed_when_worktree_repo_undeterminable():
     v = check_worktree_repo_ownership(
         card_repo="ruan6047/ai-workflow",
-        worktree_probe=WorktreeRepoProbe(None, None, None, None, "路徑不存在"),
+        worktree_probe=WorktreeRepoProbe(slug=None, detail="路徑不存在"),
     )
     assert v.reason_code == "worktree_repo_undeterminable"
     assert v.decision == "block"
@@ -343,6 +349,268 @@ def test_probe_reports_commondir_and_remote(two_repos):
 
 def test_run_git_readonly_returns_none_instead_of_raising(tmp_path: Path):
     assert run_git_readonly(tmp_path, ["rev-parse", "--git-common-dir"]) is None
+
+
+# --- R1-02：可判定的目標 repo 語意 -------------------------------------------
+#
+# 舊版的錯誤前提是「worktree 的 repo 由目標路徑座落在哪決定」。git 的真語意是
+# 「由 git worktree add 的來源 repo 決定，與目標路徑落在磁碟哪裡無關」，而
+# canonical §4.5 明文路徑由實際建立者決定、未限定巢狀於 repo。以下四條把
+# 「repo 外的合法新 worktree」與「相對路徑不再吃 cwd」釘成回歸。
+
+
+def test_absolute_target_outside_any_repo_is_allowed_with_source_repo(two_repos, tmp_path):
+    """**R1-02 的正面反例**：目標在 repo 外（祖先是非 git 目錄）且尚未建立。
+
+    canonical §4.5 允許這種配置。舊版必然走到 ``worktree_repo_undeterminable``
+    並 block；給了來源 repo 之後它是可判定的，且判定正確。
+    """
+    _aiwf, cpbl = two_repos
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()  # 存在但不是 git repo——舊版祖先探測就是死在這一格
+    target = outside / "cpbl-card-wt"
+    assert not target.exists()
+
+    without = check_assign_repo_ownership(issue_url=CPBL_ISSUE, worktree_path=target)
+    assert without.decision == "block"
+    assert without.reason_code == "worktree_repo_undeterminable"
+    assert "source_repo" in without.detail  # 必須指名補法，否則就是無出路的誤擋
+
+    with_source = check_assign_repo_ownership(
+        issue_url=CPBL_ISSUE, worktree_path=target, source_repo=cpbl
+    )
+    assert with_source.decision == "allow"
+    assert with_source.reason_code == "match"
+
+
+def test_source_repo_overrides_misleading_path_nesting(two_repos):
+    """來源 repo 是權威，路徑巢狀只是資訊。
+
+    合法情境：從 cpbl 執行 ``git worktree add`` 到一個座落在 ai-workflow 目錄樹底下
+    的新路徑。純看路徑會推成 ai-workflow（誤擋 cpbl 的卡）；看來源 repo 才是對的。
+    巢狀事實不丟——``nested_repo`` 照樣報出來，那正是 §8.3 漂移隱形的形狀。
+    """
+    aiwf, cpbl = two_repos
+    target = aiwf / ".claude" / "worktrees" / "cpbl-wt-not-created"
+    (aiwf / ".claude" / "worktrees").mkdir(parents=True)
+
+    inferred = check_assign_repo_ownership(issue_url=CPBL_ISSUE, worktree_path=target)
+    assert inferred.decision == "block" and inferred.inferred is True
+
+    probe = probe_worktree_repo(target, source_repo=cpbl)
+    assert probe.slug == "ruan6047/cpbl-analytics"
+    assert probe.source == "source_repo"
+    assert probe.inferred is False
+    assert probe.nested_repo == "ruan6047/ai-workflow"
+    assert check_worktree_repo_ownership(
+        card_repo="ruan6047/cpbl-analytics", worktree_probe=probe
+    ).decision == "allow"
+
+
+def test_source_repo_is_not_a_force_flag(two_repos, tmp_path):
+    """給錯來源 repo 照樣被擋——它補的是事實，不是繞過比對。"""
+    aiwf, _cpbl = two_repos
+    target = tmp_path / "elsewhere" / "wt"
+    (tmp_path / "elsewhere").mkdir()
+    v = check_assign_repo_ownership(
+        issue_url=CPBL_ISSUE, worktree_path=target, source_repo=aiwf
+    )
+    assert v.decision == "block"
+    assert v.reason_code == "repo_mismatch"
+    assert v.worktree_repo == "ruan6047/ai-workflow"
+
+
+def test_source_repo_must_exist(tmp_path):
+    v = check_assign_repo_ownership(
+        issue_url=CPBL_ISSUE, worktree_path=tmp_path / "wt",
+        source_repo=tmp_path / "no-such-dir",
+    )
+    assert v.decision == "block"
+    assert "不是既存目錄" in v.detail
+
+
+def test_relative_path_without_base_dir_never_reads_cwd(two_repos, monkeypatch):
+    """相對路徑必須綁定明確 base_dir；沒綁定就是不可判定，**不拿 cwd 補**。
+
+    直接把 cwd 切進 ai-workflow repo 再問：若還讀 cwd，這裡會得到
+    ``repo_mismatch``（cwd 那個 repo）。得到 ``worktree_path_unanchored`` 才證明
+    cwd 完全沒被查詢——這是「67 筆中 18 筆相對路徑、cwd 錯置會讓誤擋暴增」那條
+    自陳的機械封堵。
+    """
+    aiwf, _cpbl = two_repos
+    (aiwf / ".claude" / "worktrees").mkdir(parents=True)
+    monkeypatch.chdir(aiwf)
+
+    v = check_assign_repo_ownership(
+        issue_url=CPBL_ISSUE, worktree_path=".claude/worktrees/card-x"
+    )
+    assert v.reason_code == "worktree_path_unanchored"
+    assert v.decision == "block"
+    assert v.worktree_repo is None
+    assert "base_dir" in v.refusal_message()
+
+
+def test_unanchored_relative_path_is_still_decidable_with_source_repo(two_repos, monkeypatch):
+    """給了來源 repo，相對路徑就不必錨定——repo 歸屬本來就與路徑無關。"""
+    aiwf, cpbl = two_repos
+    monkeypatch.chdir(aiwf)
+    v = check_assign_repo_ownership(
+        issue_url=CPBL_ISSUE, worktree_path=".claude/worktrees/card-x", source_repo=cpbl
+    )
+    assert v.decision == "allow"
+
+
+def test_inferred_block_message_names_the_source_repo_remedy(two_repos):
+    aiwf, _cpbl = two_repos
+    (aiwf / ".claude" / "worktrees").mkdir(parents=True)
+    v = check_assign_repo_ownership(
+        issue_url=CPBL_ISSUE, worktree_path=aiwf / ".claude" / "worktrees" / "new"
+    )
+    assert v.inferred is True
+    msg = v.refusal_message()
+    assert "推測" in msg
+    assert "source_repo" in msg
+
+
+def test_existing_worktree_outside_its_repo_is_determinable_without_source_repo(two_repos, tmp_path):
+    """已建立的 worktree 不需要 source_repo：它的 ``.git`` 直接指回來源 repo。"""
+    _aiwf, cpbl = two_repos
+    outside = tmp_path / "detached-worktrees"
+    outside.mkdir()
+    wt = outside / "cpbl-card"
+    git(cpbl, "worktree", "add", "-q", "-b", "claude/CPBL-OUT1", str(wt))
+    probe = probe_worktree_repo(wt)
+    assert probe.slug == "ruan6047/cpbl-analytics"
+    assert probe.source == "target_dir"
+    assert probe.inferred is False
+    assert check_assign_repo_ownership(issue_url=CPBL_ISSUE, worktree_path=wt).decision == "allow"
+
+
+# --- R1-03：唯讀枚舉器 --------------------------------------------------------
+
+
+def _input_rows(aiwf: Path, cpbl: Path) -> list[dict]:
+    return [
+        {"card_id": "WF-OK", "issue_url": AIWF_ISSUE,
+         "branch_worktree": f"claude/WF-OK @ {aiwf}"},
+        {"card_id": "CPBL-DRIFT", "issue_url": CPBL_ISSUE,
+         "branch_worktree": f"claude/CPBL-DRIFT @ {aiwf}"},
+        {"card_id": "REL-UNANCHORED", "issue_url": CPBL_ISSUE,
+         "branch_worktree": "claude/REL @ .claude/worktrees/rel"},
+        {"card_id": "DRAFT", "issue_url": None,
+         "branch_worktree": f"claude/DRAFT @ {cpbl}"},
+    ]
+
+
+def test_enumerator_reports_every_row_with_reason_and_decision(two_repos):
+    aiwf, cpbl = two_repos
+    rows = enumerate_ownership(_input_rows(aiwf, cpbl))
+    by_id = {r.card_id: r for r in rows}
+    assert len(rows) == 4
+    assert by_id["WF-OK"].decision == "allow"
+    assert by_id["CPBL-DRIFT"].reason_code == "repo_mismatch"
+    assert by_id["CPBL-DRIFT"].worktree_repo == "ruan6047/ai-workflow"
+    assert by_id["REL-UNANCHORED"].reason_code == "worktree_path_unanchored"
+    assert by_id["DRAFT"].reason_code == "card_repo_undeterminable"
+    assert by_id["WF-OK"].branch == "claude/WF-OK"
+
+
+def test_enumerator_strips_markdown_backticks_from_registration(two_repos):
+    """Project 欄位實測存著 ``` `branch @ path` ```；不剝反引號會讓存在的目錄被判成不存在。"""
+    aiwf, _cpbl = two_repos
+    rows = enumerate_ownership(
+        [{"card_id": "TICKED", "issue_url": AIWF_ISSUE,
+          "branch_worktree": f"`claude/TICKED @ {aiwf}`"}]
+    )
+    assert rows[0].branch == "claude/TICKED"
+    assert rows[0].worktree_raw == str(aiwf)
+    assert rows[0].target_exists is True
+    assert rows[0].decision == "allow"
+
+
+def test_summary_counts_are_derived_from_the_same_rows(two_repos):
+    """§6.2：宣稱的數字與 artifact 同源。摘要不是另外數的。"""
+    aiwf, cpbl = two_repos
+    rows = enumerate_ownership(_input_rows(aiwf, cpbl))
+    summary = summarize_ownership(rows)
+    assert summary["total"] == len(rows)
+    assert summary["allow"] + summary["block"] == summary["total"]
+    assert summary["allow"] == sum(1 for r in rows if r.decision == "allow")
+    assert sum(summary["by_reason_code"].values()) == len(rows)
+
+
+def test_enumerator_cli_artifact_replay_is_a_fixed_point(two_repos, tmp_path):
+    """產物可直接餵回 ``--input``，且逐字節相同（§6.2 的不動點要求）。"""
+    aiwf, cpbl = two_repos
+    src = tmp_path / "input.json"
+    src.write_text(json.dumps({"rows": _input_rows(aiwf, cpbl)}), encoding="utf-8")
+
+    first, second = tmp_path / "a.json", tmp_path / "b.json"
+    assert main(["--input", str(src), "--output", str(first)]) == 0
+    assert main(["--input", str(first), "--output", str(second)]) == 0
+    assert first.read_text(encoding="utf-8") == second.read_text(encoding="utf-8")
+
+    artifact = json.loads(first.read_text(encoding="utf-8"))
+    assert artifact["summary"]["total"] == 4
+    assert len(artifact["input"]["rows"]) == 4  # 產物內含它用過的全部輸入
+    assert artifact["rows"][0]["reason_code"]
+
+
+def test_enumerator_tsv_carries_the_same_summary(two_repos, tmp_path, capsys):
+    aiwf, cpbl = two_repos
+    src = tmp_path / "input.json"
+    src.write_text(json.dumps({"rows": _input_rows(aiwf, cpbl)}), encoding="utf-8")
+    assert main(["--input", str(src), "--format", "tsv"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].split("\t")[:2] == ["card_id", "card_repo"]
+    assert len(out) == 1 + 4 + 1  # header + 4 列 + summary
+    assert json.loads(out[-1].split("\t", 1)[1])["total"] == 4
+
+
+def test_fetch_project_rows_paginates_and_drops_rows_without_worktree():
+    """注入假的 graphql runner：驗分頁、中文欄位名擷取、以及「無 worktree 註冊」被濾掉。"""
+    pages = [
+        {
+            "data": {"user": {"projectV2": {"items": {
+                "pageInfo": {"hasNextPage": True, "endCursor": "CUR"},
+                "nodes": [
+                    {"content": {"__typename": "Issue", "url": AIWF_ISSUE},
+                     "fieldValues": {"nodes": [
+                         {"text": "WF-A", "field": {"name": "卡ID"}},
+                         {"text": "b @ /p/a", "field": {"name": "分支worktree"}},
+                     ]}},
+                    {"content": {"__typename": "Issue", "url": CPBL_ISSUE},
+                     "fieldValues": {"nodes": [
+                         {"text": "NO-WT", "field": {"name": "卡ID"}},
+                         {"text": "—", "field": {"name": "分支worktree"}},
+                     ]}},
+                ],
+            }}}}
+        },
+        {
+            "data": {"user": {"projectV2": {"items": {
+                "pageInfo": {"hasNextPage": False},
+                "nodes": [
+                    {"content": {"__typename": "DraftIssue"},
+                     "fieldValues": {"nodes": [
+                         {"text": "DRAFT-B", "field": {"name": "卡ID"}},
+                         {"text": "b @ /p/b", "field": {"name": "分支／worktree"}},
+                     ]}},
+                ],
+            }}}}
+        },
+    ]
+    seen: list[object] = []
+
+    def fake_run(payload):
+        seen.append(payload["variables"]["after"])
+        return pages[len(seen) - 1]
+
+    rows = fetch_project_ownership_rows("ruan6047", 4, run=fake_run)
+    assert seen == [None, "CUR"]
+    assert [r["card_id"] for r in rows] == ["WF-A", "DRAFT-B"]
+    assert rows[1]["issue_url"] is None  # DraftIssue 沒有 Issue URL，不猜
+    assert rows[0]["branch_worktree"] == "b @ /p/a"
 
 
 def test_guard_verdict_unaffected_by_stale_tasks_md_projection(two_repos):
