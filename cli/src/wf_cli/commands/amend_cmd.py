@@ -20,7 +20,137 @@ tier 開卡時填錯——這些都是常態，但 CLI 沒有入口，於是每�
 - **完成證據不隱式沿用**：清單整份替換預設重設為未勾選；要沿用須顯式 `--preserve-checked`（R1-04）。
 
 退出碼：0 成功／2 參數或內容檢查失敗（未寫入）／3 找不到卡／5 級別寫入後讀回驗證不符
-（body 未寫，stderr 印出補記留痕的恢復指令）／6 body 在本次操作期間被其他 writer 改動。
+（body 未寫，stderr 印出補記留痕的恢復指令）／6 body 在本次操作期間被其他 writer 改動／
+7 body 已寫入但雙居所欄位的 Project 側補寫失敗（見下方「雙居所欄位」）。
+
+--------------------------------------------------------------------------
+核心痛點的授權模型：為什麼它不能只要 --reason
+--------------------------------------------------------------------------
+
+核心痛點餵給查核第一判準 ``core_pain_resolved``，而該判準**具否決權**
+（canonical §5.1、``templates/review-prompt.md`` §2：痛點未消即 REQUEST_CHANGES，
+即使驗收清單全過）。查核詞是**以卡面痛點原文組裝**的，所以「誰能改這行字」
+等價於「誰能改自己的及格線」。
+
+危害不在文字會變，而在**變更路徑弱於產生路徑**。canonical §3.1 規劃閘門三級制：
+T3 的痛點須過「核心痛點三問」且**需求方批註放行**才進 📥Backlog；Initiative／T4／
+不可逆須**同步對抗式質詢真對話**，且明文「不得以 brief 代替對話」。一個只要求
+自由文字 ``--reason`` 的旗標，嚴格弱於建立該值的閘門——那不是補上缺口，是把
+閘門拆掉。
+
+但**不給路徑已被證明更糟**：缺口不會阻止重界定，只會把它趕到看不見的地方。
+實例是本輪撞到的那張 T4 卡——需求方裁定縮小其射程時，痛點段落改不了，只能改由
+新驗收條文的判準去吸收，PM 當場自記「那是繞過而非修好」；跨家族查核者隨即判為
+critical blocking，逐字指出「amend 僅改驗收條件，不能更改 canonical §5.1 的第一
+判準」。**該次繞道確實改變了查核者被要求判斷的東西，而痛點欄毫無痕跡。**
+
+所以本指令採第三條路：**可改，但綁定需求方的平台身分**。
+
+- ``--core-pain`` 必須併 ``--ruling-url``，指向**本卡 issue 的單一留言**；
+- 取該留言的 **GitHub comment author**，逐字比對卡面「需求：」欄（``parse_requested_by``）；
+- 追加 ``author ≠ 當前 owner`` 的排除；
+- 取不到 author、URL 指向他卡、或「需求：」欄無法解析，一律 fail-closed。
+
+這**不是新發明的標準**：``review-escalation.md`` §4 對 ``spec-narrowed`` 的
+(a′) 款已要求同一件事，並明寫「這是平台可驗證身分，不是留言內文的自述」；
+第 3 款要求裁定者不得是被該裁定嘉惠的人。本指令沿用該標準，不另立一套。
+
+**已知上限（明說，不假裝相反）**：author 不可變、body 可變。具 repo 寫入權者能
+編輯他人留言，故本檢查的保證止於「沒有人事後改寫需求方的裁定」。消除它需要
+結構化事件承載授權（``review-escalation.md`` §4 (b′-1)），那屬 checkpoint writer
+的射程，不在本指令。
+
+**本指令關不掉的洞（指名記下，因為它是唯一出路）**：``review.py`` 的裁決留言
+只寫 ``core_pain_resolved：yes|no``，**不寫它所判斷的痛點原文**。裁決事件是
+append-only 且不可改，它所依據的前提卻可變——痛點一經更正，**歷史上每一筆
+``core_pain_resolved`` 都失去可回溯解讀性**：沒有人能分辨那個 yes/no 是在判哪
+一個問題。授權綁定擋得住「未經需求方改寫」，擋不住這件事。唯一的修法是讓
+裁決事件快照痛點原文或其 hash，那屬 ``review.py``（另一張卡持有），本卡不得動。
+
+--------------------------------------------------------------------------
+級別降級的不對稱：為什麼與核心痛點同機制、但理由不同、觸發更窄
+--------------------------------------------------------------------------
+
+``--tier`` 先前對升降級完全對稱。升級是安全方向（加保護），降級不是：
+**T4→T2 會移除紅線卡的跨家族／人工 sign-off 要求**，而這正是本卡開卡時就自己
+寫下的風險，交付時未被兌現。
+
+但降級的授權理由**不同於核心痛點**，不可直接套用：
+
+- 核心痛點的授權來源是「**需求方是問題的擁有者**」——那行字描述的是他要解的問題。
+- 級別的授權來源是「**需求方是被移除閘門的操作者**」——canonical §3.1 把 T3 的
+  三問放行與 T4／Initiative 的同步質詢都交給需求方**親自**執行。降級移除的是
+  他本人操作過的閘門。
+
+兩者恰好指向同一個人，所以用同一個機制；但**觸發範圍更窄**：只有原級別為
+T3／T4 時才要裁定留痕（見 ``card.tier_downgrade_needs_ruling``）。T2 以下沒有
+需求方閘門可移除，只需 ``--reason``，Log 仍逐字標記為降級以利稽核。
+
+刻意**不**要求「降級須無既有查核紀錄」：那需要解析 timeline 的裁決事件，屬
+doctor／review 的射程，且會讓本指令與 marker 契約耦合。授權綁定已足以讓降級
+可歸屬，剩下的由人判斷。
+
+--------------------------------------------------------------------------
+雙居所欄位：body 與 Project 欄位各存一份時的寫入順序取捨
+--------------------------------------------------------------------------
+
+卡面欄位有三種居所，而它決定了實作風險，與「筆誤 vs 重界定」的治理軸正交：
+
+===================  ======  ==============  ==============
+欄位                 body    Project 欄位    進 Ledger 快照
+===================  ======  ==============  ==============
+核心痛點             唯一    無              否
+spec 基線／驗收／驗證 唯一    無              否
+級別                 無      唯一            是
+資源宣告             有      有              **兩者都讀**
+Initiative           有      有              是
+===================  ======  ==============  ==============
+
+**已知缺陷（本次修復）**：``snapshot.build_rows`` 的 ``resource_summary`` 讀
+**Project 欄位**，``resource_db_scope``／``resources`` 讀 **body 區塊**；而本指令
+先前只改 body，從不寫 ``資源宣告`` 欄位。後果不是潔癖問題而是**安全問題**：
+本輪四次 ``--resources`` 全部只落 body，其中三張卡的欄位比實際**寬**（保守方向），
+但有一張 T4 卡的欄位比實際**窄**——看板顯示它只佔一份文件，實際持有八個檔，
+含 ``cleanup.py``／``doctor.py``／``handoff_cmd.py``。那是 fail-open 方向：任何靠
+看板／Ledger 判斷佔用的人都會低估它。（``assign`` 的交集檢查讀 body，所以擋派工
+是對的；壞的是看板那一面。）該案例已釘進 ``test_amend.py`` 的迴歸測試。
+
+**取捨（是取捨，不是解法）**：雙居所欄位**沒有**任何寫入順序能同時做到
+(a) 首寫自描述、(b) 中途崩潰不留下不一致。必須擇一並為另一種失敗提供偵測：
+
+- **級別**（單居所）現行為「欄位先寫、讀回驗證、body 後寫」。欄位失敗＝乾淨中止，
+  代價是**首寫不自描述**（該判定見既有的動詞稽核卡）。
+- **雙居所欄位**本次採**相反**順序：**body 先寫**（body 攜帶 Log 行，故首寫自描述、
+  不新增第三個不自描述的首寫），Project 欄位後寫並讀回驗證。失敗模式因此變成
+  「body 已更新、欄位過期」——**與現存的四張卡完全同型**，而那正是已經有偵測
+  慣用法的那一種：``_tier_change_logged`` 對級別做的事（比對 Log 有沒有記過這筆
+  變更），這裡由「欄位值 ≠ body 導出值」直接偵測，更強——不需要靠 Log 推測，
+  兩個居所的實際值可以直接比。
+
+因此**重跑即修復**：``--resources`` 帶與 body 相同的值時，先前一律拒為 no-op；
+現在會先比對 Project 欄位，只有**兩個居所都已一致**才拒絕，否則走欄位補寫路徑
+並留 Log。這讓已經不同步的卡有一條合規的收斂路徑，不必手改 Project UI。
+
+--------------------------------------------------------------------------
+未納入的欄位與理由（讓下一個人拿得到判準，而不是只拿到「沒做」）
+--------------------------------------------------------------------------
+
+- **服務的原始目標**：不補。它是**鏈級**欄位（canonical §3.3「這根鏈最終要解的
+  問題」），是鏈式停損兩問的錨。單卡改會與同鏈其他卡去同步，而 CLI 沒有鏈的
+  視野。它的變更本質是 ``baseline-cascade.md`` 的 ``invalidated``（退回 Gate 或
+  由需求方裁定停止），不是欄位編輯。
+- **鏈深**：不補。降鏈深等於規避 canonical §3.3 的硬上限（>2 強制整鏈重審，
+  「預設答案是擱置或降級，不是繼續鑽」）。真的需要改，代表該重審，不是該改欄位。
+- **feature（卡片標題）**：不補。``card_id`` 取自 Project 的 ``卡ID`` TEXT 欄位而
+  非標題（``find_item_by_card_id``），全 CLI 對 ``.title`` 零消費者，故標題錯誤
+  **零機械後果**，只誤導人讀。而補它必須新增 ``project.py`` 的標題寫入函式
+  （真實 Issue 與 draft 走兩條不同的 ID 命名空間），超出本卡宣告的寫入集。
+
+  **這個裁定的代價已經實現，記在這裡以免下一個人以為它是免費的**：本卡自己的
+  標題描述的是一個**已由他卡交付**的能力，而正因為 ``feature`` 沒有更正路徑，
+  該標題永遠修不掉。最後的處置不是修好它，而是**繞過**——結案本卡、以正確標題
+  另開一張承接殘餘射程。也就是說，「不補 feature」的實際代價是：標題一旦錯，
+  修法只剩開新卡。若日後這種情形變得頻繁，本裁定就該重審。
 
 **併發保證的界線（誠實聲明）**：本指令在寫入前會重讀並比對 body，但那**不是**原子的
 compare-and-swap——GitHub 對 issue body 沒有條件寫入。重讀只把競態窗口從「整條指令
@@ -31,18 +161,25 @@ compare-and-swap——GitHub 對 issue body 沒有條件寫入。重讀只把競
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import uuid
 
 from ..card import (
     TIERS,
     AmendError,
+    RequesterUnparseable,
     amend_acceptance,
+    amend_core_pain,
+    amend_initiative,
     amend_resource_block,
     amend_spec_baseline,
     amend_verification,
     append_log_line,
+    is_tier_downgrade,
     now_iso8601,
+    parse_requested_by,
+    tier_downgrade_needs_ruling,
 )
 from ..config import add_target_args, resolve_target
 from ..gh import default_runner
@@ -95,6 +232,25 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help="逗號分隔資源清單，整份取代；空字串代表清空",
     )
     p.add_argument("--tier", choices=TIERS, default=None, help="更正級別（Project 欄位）")
+    p.add_argument(
+        "--initiative",
+        default=None,
+        help="更正 Initiative 父卡（body 標頭行＋Project 欄位雙面同寫）；無父卡填 `—`",
+    )
+    p.add_argument(
+        "--core-pain",
+        default=None,
+        help="更正核心痛點。**須併 --ruling-url**，且不得與其他欄位旗標同一次調用："
+        "此欄餵給具否決權的 core_pain_resolved，一次調用＝一次治理裁定",
+    )
+    p.add_argument(
+        "--ruling-url",
+        default=None,
+        help="需求方裁定留言的 URL（本卡 issue 的單一留言，形如 "
+        "https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<id>）。"
+        "其 GitHub comment author 須逐字等於卡面「需求：」欄；"
+        "核心痛點更正與 T3／T4 降級必填",
+    )
     p.add_argument(
         "--record-unlogged-change",
         action="store_true",
@@ -257,18 +413,134 @@ def _tier_change_logged(body: str, tier: str) -> bool:
     )
 
 
+# 只認完整、單一留言的 URL 形狀。與 review-escalation.md §4 第 5 款同一個判準：
+# 「必須解析為本卡 issue 的單一留言 URL；無法解析、指向他卡、指向非留言資源
+# （含任意站外 URL）者，該筆無效。」
+_ISSUECOMMENT_URL_RE = re.compile(
+    r"^https://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+)/issues/"
+    r"(?P<issue>\d+)#issuecomment-(?P<comment_id>\d+)$"
+)
+
+
+class RulingError(ValueError):
+    """裁定留痕無法機械核對。一律 fail-closed，不得以自述成立。"""
+
+
+def _resolve_ruling_author(runner, target, item, ruling_url: str) -> tuple[str, str]:
+    """核對裁定留言屬於本卡，並回傳 (comment_id, GitHub comment author)。
+
+    只走**唯讀** API。取 author 而非讀內文，是因為 author 是平台可驗證身分，
+    內文是自述——``review-escalation.md`` §4 (a′) 對此已有明文，本函式沿用。
+    """
+    match = _ISSUECOMMENT_URL_RE.match(ruling_url.strip())
+    if not match:
+        raise RulingError(
+            f"--ruling-url 不是單一留言 URL：{ruling_url!r}；"
+            "須形如 https://github.com/<owner>/<repo>/issues/<n>#issuecomment-<id>"
+        )
+    if item.content_type != "Issue" or item.issue_number is None:
+        raise RulingError(
+            "本卡是 draft item，沒有可指向的 issue 留言 timeline；"
+            "授權綁定不可用，拒絕更正（draft 卡請先轉為真實 Issue）"
+        )
+    url_repo = f"{match.group('owner')}/{match.group('repo')}"
+    if not target.repo or url_repo != target.repo:
+        raise RulingError(
+            f"--ruling-url 指向 {url_repo}，與本次目標 repo {target.repo!r} 不符；"
+            "裁定必須落在本卡自己的 issue"
+        )
+    if int(match.group("issue")) != item.issue_number:
+        raise RulingError(
+            f"--ruling-url 指向 issue #{match.group('issue')}，本卡是 "
+            f"#{item.issue_number}；指向他卡的裁定不成立"
+        )
+    comment_id = match.group("comment_id")
+    try:
+        payload = runner.run_json(["api", f"/repos/{url_repo}/issues/comments/{comment_id}"])
+    except Exception as exc:
+        # 任何讀取失敗都轉成 RulingError：取不到 author 一律 fail-closed，
+        # 不得以「讀不到就當作成立」放行（review-escalation.md §4 (c′) 同向）。
+        raise RulingError(
+            f"讀取裁定留言 {comment_id} 失敗（{type(exc).__name__}: {exc}）；"
+            "無法核對 author，拒絕更正"
+        ) from exc
+    user = (payload or {}).get("user") or {}
+    author = user.get("login") if isinstance(user, dict) else None
+    if not author:
+        raise RulingError(
+            f"裁定留言 {comment_id} 取不到 GitHub comment author；"
+            "無法機械核對授權，拒絕更正"
+        )
+    return comment_id, str(author)
+
+
+def _authorize_by_requester_ruling(runner, target, item, args, what: str) -> str:
+    """核對「這次更正確經需求方以其平台身分裁定」，回傳寫進 Log 的授權註記。
+
+    三道檢查，缺一即拒（對齊 ``review-escalation.md`` §4 (a′) 與第 2、3 款）：
+
+    1. 卡面「需求：」欄可解析（``parse_requested_by``，fail-closed）；
+    2. 裁定留言的 GitHub comment author **逐字等於**該帳號；
+    3. 該 author **不等於本卡當前 owner**——裁定者不得是被該裁定嘉惠的人。
+    """
+    if not args.ruling_url:
+        raise RulingError(
+            f"{what}須併 --ruling-url 指向需求方的裁定留言；"
+            "此欄的變更是治理事件，不接受只有 --reason 的自述"
+        )
+    requester = parse_requested_by(item.body)
+    comment_id, author = _resolve_ruling_author(runner, target, item, args.ruling_url)
+    if author != requester:
+        raise RulingError(
+            f"裁定留言 {comment_id} 的 GitHub author 是 {author!r}，"
+            f"卡面「需求：」欄是 {requester!r}，兩者不符；"
+            f"{what}的授權只能來自需求方本人"
+        )
+    owner = (item.text("owner") or "").strip()
+    if owner and author == owner:
+        raise RulingError(
+            f"裁定留言 author {author!r} 逐字等於本卡當前 owner；"
+            "裁定者不得是被該裁定嘉惠的人（review-escalation.md §4 第 3 款同向）"
+        )
+    return (
+        f"依需求方 {author} 於 {args.ruling_url} 的裁定"
+        f"（GitHub comment author 已逐字核對，非留言內文自述）"
+    )
+
+
 def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢查本就是平鋪的
     if not args.reason.strip():
         print("[amend] 拒絕：--reason 不得為空（每次修訂都要能回答為什麼）", file=sys.stderr)
         return 2
 
     wants_resources = args.db_scope is not None or args.resources is not None
-    field_flags = [args.spec_baseline, args.acceptance, args.verification, args.tier]
+    field_flags = [
+        args.spec_baseline,
+        args.acceptance,
+        args.verification,
+        args.tier,
+        args.initiative,
+        args.core_pain,
+    ]
     wants_fields = any(f is not None for f in field_flags) or wants_resources
 
     if not wants_fields:
         print("[amend] 拒絕：沒有指定任何要修訂的欄位", file=sys.stderr)
         return 2
+
+    # 核心痛點獨占一次調用：op 識別碼與一次治理裁定必須 1:1。混在其他欄位裡改，
+    # 會讓 Log 上同一個 op 同時承載「需求方裁定的問題重界定」與「順手改的筆誤」，
+    # 稽核者無從分辨那份 --ruling-url 授權的究竟是哪一項。
+    if args.core_pain is not None:
+        others = [f for f in field_flags if f is not None and f is not args.core_pain]
+        if others or wants_resources:
+            print(
+                "[amend] 拒絕：--core-pain 不得與其他欄位旗標同一次調用；"
+                "此欄餵給具否決權的 core_pain_resolved，一次調用＝一次治理裁定，"
+                "請單獨執行",
+                file=sys.stderr,
+            )
+            return 2
 
     target = resolve_target(
         owner=args.owner, project=args.project, repo=args.repo, config=args.config
@@ -285,23 +557,62 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
 
     op_id = uuid.uuid4().hex[:8]
     body = item.body
-    changes: list[tuple[str, str, str]] = []  # (欄位, 原值, 新值)
+    # (欄位, 原值, 新值, 授權註記或 None)
+    changes: list[tuple[str, str, str, str | None]] = []
     tier_needs_field_write = False
+    old_tier = item.text("級別")
+    # 雙居所欄位在 body 寫入**之後**要補寫的 Project 欄位：{欄位名: 目標值}
+    pending_field_writes: dict[str, str] = {}
+
+    # ---- 授權綁定：必須在任何寫入之前完成，且只走唯讀 API ----
+    #
+    # 放在這裡而不是各欄位的分支裡，是為了讓「哪些欄位需要裁定」成為一份可讀的
+    # 清單，而不是散在條件式中——漏掉一個就等於少一道閘門。
+    ruling_note: str | None = None
+    needs_ruling_for: list[str] = []
+    if args.core_pain is not None:
+        needs_ruling_for.append("核心痛點更正")
+    if args.tier is not None and tier_downgrade_needs_ruling(old_tier, args.tier):
+        needs_ruling_for.append(f"級別由 {old_tier} 降為 {args.tier}（移除需求方操作過的規劃閘門）")
+    if needs_ruling_for:
+        try:
+            ruling_note = _authorize_by_requester_ruling(
+                runner, target, item, args, "、".join(needs_ruling_for)
+            )
+        except (RulingError, RequesterUnparseable) as exc:
+            print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
+            return 2
+    elif args.ruling_url:
+        # 刻意**不**把未經核對的 URL 寫進 Log：一個指標不證明它指向什麼，
+        # 而 Log 裡出現裁定連結會讓稽核者誤以為它已被核對過
+        # （review-escalation.md §4 第 5 款「此欄只是形狀檢查」的同型陷阱）。
+        print(
+            "[amend] 提示：本次修訂不需要需求方裁定授權，--ruling-url 未被核對，"
+            "亦不寫入 Log（避免留下看似已授權的痕跡）",
+            file=sys.stderr,
+        )
 
     try:
         if args.spec_baseline is not None:
             body, old = amend_spec_baseline(body, args.spec_baseline)
-            changes.append(("spec 基線", old, args.spec_baseline))
+            changes.append(("spec 基線", old, args.spec_baseline, None))
+        if args.initiative is not None:
+            body, old = amend_initiative(body, args.initiative)
+            changes.append(("Initiative", old, args.initiative, None))
+            pending_field_writes["Initiative"] = args.initiative
+        if args.core_pain is not None:
+            body, old = amend_core_pain(body, args.core_pain)
+            changes.append(("核心痛點", old, args.core_pain, ruling_note))
         if args.acceptance is not None:
             body, old = amend_acceptance(
                 body, args.acceptance, preserve_checked=args.preserve_checked
             )
-            changes.append(("驗收條件", old, "；".join(args.acceptance)))
+            changes.append(("驗收條件", old, "；".join(args.acceptance), None))
         if args.verification is not None:
             body, old = amend_verification(
                 body, args.verification, preserve_checked=args.preserve_checked
             )
-            changes.append(("驗證", old, "；".join(args.verification)))
+            changes.append(("驗證", old, "；".join(args.verification), None))
         if wants_resources:
             current = parse_block(item.body)
             db_scope = args.db_scope if args.db_scope is not None else current.db_scope
@@ -311,8 +622,30 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 else current.resources
             )
             decl = ResourceDeclaration(db_scope=db_scope, resources=resources)
-            body, old = amend_resource_block(body, render_block(decl))
-            changes.append(("資源宣告", old, decl.summary()))
+            summary = decl.summary()
+            current_field = item.text("資源宣告")
+            if decl != current:
+                # 一般路徑：body 與 Project 欄位都要更新。
+                body, old = amend_resource_block(body, render_block(decl))
+                changes.append(("資源宣告", old, summary, None))
+                pending_field_writes["資源宣告"] = summary
+            elif current_field != summary:
+                # body 已是目標值但 Project 欄位過期——這正是先前「只寫 body」
+                # 留下的不同步。不再一律拒為 no-op，改走欄位補寫路徑讓它收斂。
+                changes.append(
+                    (
+                        "資源宣告（Project 欄位補寫；body 已是目標值）",
+                        current_field or "（未設定）",
+                        summary,
+                        None,
+                    )
+                )
+                pending_field_writes["資源宣告"] = summary
+            else:
+                raise AmendError(
+                    "資源宣告與現值相同（body 與 Project 欄位皆已一致）；"
+                    "拒絕寫入不實的修訂留痕"
+                )
     except (AmendError, ResourceDeclarationError) as exc:
         print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
         if _is_layout_failure(exc):
@@ -326,7 +659,6 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             )
         return 2
 
-    old_tier = item.text("級別")
     if args.tier is not None:
         already_logged = _tier_change_logged(item.body, args.tier)
         if old_tier == args.tier and not args.record_unlogged_change:
@@ -365,24 +697,31 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                     "級別（補記先前未留痕的變更）",
                     "（Project 欄位已是目標值但 Log 無紀錄；操作者判定為先前半寫入）",
                     args.tier,
+                    None,
                 )
             )
         else:
             tier_needs_field_write = True
-            changes.append(("級別", old_tier or "（未設定）", args.tier))
+            # 降級逐字標記在欄位名裡：稽核者掃 Log 時不必自己比對 T 值大小，
+            # 也讓「這是降級」成為留痕的一部分而非讀者的推論。
+            label = "級別（降級）" if is_tier_downgrade(old_tier, args.tier) else "級別"
+            changes.append((label, old_tier or "（未設定）", args.tier, ruling_note))
 
     timestamp = now_iso8601()
-    for field_name, old, new in changes:
+    for field_name, old, new, note in changes:
+        authority = f"；授權 {_fold(note)}" if note else ""
         body = append_log_line(
             body,
             f"{timestamp} amend by wf-cli（op {op_id}）→ {field_name}："
-            f"原值「{_fold(old)}」→ 新值「{_fold(new)}」；理由 {_fold(args.reason)}。",
+            f"原值「{_fold(old)}」→ 新值「{_fold(new)}」；理由 {_fold(args.reason)}{authority}。",
         )
 
     if args.dry_run:
         print(f"[amend] dry-run（未寫入任何狀態）：{args.card_id} 將修訂 {len(changes)} 個欄位")
-        for field_name, old, new in changes:
+        for field_name, old, new, note in changes:
             print(f"  - {field_name}：「{_short(old)}」→「{_short(new)}」")
+            if note:
+                print(f"    授權：{_short(note)}")
         return 0
 
     # 級別先寫並讀回驗證，body 後寫。這個順序讓「欄位寫失敗」變成乾淨中止
@@ -424,7 +763,39 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         runner, item.content_type, item.content_id, project, target.repo, item.issue_number, body
     )
 
+    # ---- 雙居所欄位：body 之後補寫 Project 側，並讀回驗證 ----
+    #
+    # 順序與級別相反（級別是欄位先寫），理由見模組 docstring「雙居所欄位」：
+    # body 攜帶 Log 行，body 先寫使**首寫自描述**，不新增第三個不自描述的首寫。
+    # 代價是失敗模式變成「body 已更新、欄位過期」——但那一種是**可直接偵測**的
+    # （兩個居所的實際值可以互比），且重跑本指令即收斂，不需要 --record-unlogged-change
+    # 那種由操作者宣告的補救。這是取捨不是解法：雙居所欄位沒有任何順序能同時
+    # 做到首寫自描述與崩潰不留不一致。
+    if pending_field_writes:
+        stale: list[str] = []
+        for field_name, value in pending_field_writes.items():
+            set_field_value(runner, project, item.item_id, fields[field_name], value)
+        after = find_item_by_card_id(list_items(runner, project), args.card_id)
+        for field_name, value in pending_field_writes.items():
+            actual = after.text(field_name) if after else None
+            if actual != value:
+                stale.append(f"{field_name}（預期 {value!r}，實際 {actual!r}）")
+        if stale:
+            print(
+                "[amend] body 已寫入，但下列 Project 欄位補寫後讀回不符："
+                + "；".join(stale)
+                + "。\n"
+                "  卡片現在處於「body 已更新、Project 欄位過期」——這是可直接偵測的\n"
+                "  不一致（兩個居所的值可互比），且**重跑同一條 amend 即會收斂**：\n"
+                f"     wfcli amend {args.card_id} --reason '<說明先前補寫為何中斷>' <原本的旗標>\n"
+                "  重跑時 body 已是目標值，本指令會走欄位補寫路徑而非拒為 no-op。",
+                file=sys.stderr,
+            )
+            return 7
+
     print(f"[amend] 已修訂 {args.card_id}（op {op_id}，{len(changes)} 個欄位，原值已完整寫入 Log）")
-    for field_name, old, new in changes:
+    for field_name, old, new, note in changes:
         print(f"  - {field_name}：「{_short(old, 80)}」→「{_short(new, 80)}」")
+        if note:
+            print(f"    授權：{_short(note, 80)}")
     return 0

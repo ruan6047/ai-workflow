@@ -345,8 +345,11 @@ class AmendError(ValueError):
 _ACCEPTANCE_HEADING = "## 驗收條件"
 _VERIFICATION_HEADING = "## 驗證"
 _RESOURCE_HEADING = "## 資源宣告"
+_CORE_PAIN_HEADING = "## 核心痛點"
 _SPEC_BASELINE_RE = re.compile(r"^- Initiative：(?P<init>.*)　spec 基線：(?P<base>.*)$")
 _CHECKBOX_RE = re.compile(r"^- \[(?P<state>[ xX])\] (?P<text>.*)$")
+_CORE_PAIN_RE = re.compile(r"^- \*\*痛點\*\*：(?P<pain>.*)$")
+_REQUESTED_BY_RE = re.compile(r"^- 需求：(?P<requested>.*?)　規劃：(?P<planned>.*)$")
 
 
 def split_at_log(body: str) -> tuple[str, str]:
@@ -475,6 +478,147 @@ def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     if candidate == _join(head, tail):
         raise AmendError("資源宣告與現值相同；拒絕寫入不實的修訂留痕")
     return candidate, " ".join(old_repr.split())
+
+
+def amend_initiative(body: str, new_value: str) -> tuple[str, str]:
+    """改 Initiative（與 spec 基線同一行）；回傳 (新 body, 原值)。
+
+    刻意與 ``amend_spec_baseline`` 分成兩個函式而非一個帶兩參數的：兩者的授權
+    層級相同（都只需 ``--reason``），但**語意不同**——spec 基線是版本釘選，
+    Initiative 是父卡身分。同一次修訂改動其中一個時，另一個必須逐字保留，
+    分開實作才能讓「只改一半」成為型別上的預設而不是要記得做的事。
+    """
+    if not new_value.strip():
+        raise AmendError("Initiative 不得為空；無父卡請明確填 `—`")
+    if "\n" in new_value or "\r" in new_value:
+        # 與 spec 基線同理：這是標頭區的單行欄位，內嵌換行會多長出一行，
+        # 而標頭區正是路由版本宣告的判定範圍（見 compare_capability_to_card）。
+        raise AmendError("Initiative 是單行欄位，不得含換行（會在卡面標頭區插入額外行）")
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    hits = [i for i, line in enumerate(lines) if _SPEC_BASELINE_RE.match(line)]
+    if len(hits) != 1:
+        raise AmendError(
+            f"`- Initiative：…　spec 基線：…` 這一行在 Log 之前命中 {len(hits)} 次，必須恰好 1 次"
+        )
+    match = _SPEC_BASELINE_RE.match(lines[hits[0]])
+    assert match is not None
+    old = match.group("init")
+    if old.strip() == new_value.strip():
+        raise AmendError("Initiative 與現值相同；拒絕寫入不實的修訂留痕")
+    lines[hits[0]] = f"- Initiative：{new_value}　spec 基線：{match.group('base')}"
+    return _join("\n".join(lines), tail), old
+
+
+def amend_core_pain(body: str, new_value: str) -> tuple[str, str]:
+    """改核心痛點；回傳 (新 body, 原值)。
+
+    **這個欄位與其他被 amend 的欄位不同類。** 它餵給查核第一判準
+    ``core_pain_resolved``（canonical §5.1、``templates/review-prompt.md`` §2），
+    該判準具否決權：痛點未消即 ``REQUEST_CHANGES``，即使驗收清單全過。
+
+    因此本函式**刻意只做字串替換、不含任何授權判斷**——授權屬指令層
+    （見 ``commands/amend_cmd.py`` 的「核心痛點的授權模型」）。純函式層保持
+    無副作用可測，但呼叫端不得繞過指令層的授權檢查直接用它改卡。
+    """
+    if not new_value.strip():
+        raise AmendError("核心痛點不得為空——它是查核第一判準的來源，空值等於移除否決權")
+    if "\n" in new_value or "\r" in new_value:
+        # 痛點在範本裡是 `- **痛點**：…` 單行條目。允許換行會讓下一次修訂
+        # 定位不到唯一錨點（_CORE_PAIN_RE 逐行比對），把可改欄位變成不可改。
+        raise AmendError("核心痛點是單行欄位，不得含換行（會破壞 `- **痛點**：` 錨點的唯一性）")
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    start, end = _locate_section(lines, _CORE_PAIN_HEADING)
+    hits = [i for i in range(start + 1, end) if _CORE_PAIN_RE.match(lines[i].strip())]
+    if len(hits) != 1:
+        raise AmendError(
+            f"`- **痛點**：…` 這一行在 `{_CORE_PAIN_HEADING}` 章節內命中 {len(hits)} 次，必須恰好 1 次"
+        )
+    match = _CORE_PAIN_RE.match(lines[hits[0]].strip())
+    assert match is not None
+    old = match.group("pain")
+    if old.strip() == new_value.strip():
+        raise AmendError("核心痛點與現值相同；拒絕寫入不實的修訂留痕")
+    lines[hits[0]] = f"- **痛點**：{new_value}"
+    return _join("\n".join(lines), tail), old
+
+
+class RequesterUnparseable(AmendError):
+    """卡面「需求：」欄缺漏或無法解析。
+
+    獨立成一個類別而非沿用 ``AmendError``，是因為它的**處置方式不同**：一般
+    ``AmendError`` 是「這次修訂不合法」，本例外是「**授權無法機械核對**」。
+    ``review-escalation.md`` §4 第 2 款對此已有明文：「該欄未宣告或無法解析時
+    本出口不可用，adapter 一律 fail-closed——無法機械核對的授權不得以自述成立」。
+    呼叫端必須據此拒絕，不得退回「找不到就當作放行」。
+    """
+
+
+def parse_requested_by(body: str) -> str:
+    """讀出卡面「需求：」欄宣告的帳號（``wfcli open`` 寫入的 ``requested_by``）。
+
+    **本函式刻意具名並公開匯出，供跨卡共用。** 目前有兩個已知消費者：
+
+    1. 本檔的卡面修訂授權（核心痛點更正、紅線級別降級）——比對裁定留言的
+       GitHub comment author 是否為需求方；
+    2. ``review-escalation.md`` §4 的 ``deferred_findings`` 出口——第 2 款要求
+       ``deferred_by`` 逐字等於本欄、第 3 款要求它不等於 owner／reviewer。
+       該 checkpoint writer 尚未實作（屬另一張卡）。
+
+    兩處若各寫一份解析器就會 drift，而 drift 的後果是**兩個授權閘門對「誰是
+    需求方」給出不同答案**。因此這裡先落一份，後續消費者匯入而非重寫。
+
+    只讀 ``## Log`` 之前的區段：Log 會逐字引用被 amend 掉的舊值原文，其中可能
+    含字面的「- 需求：」，不切掉就會把歷史當成現況讀（與
+    ``compare_capability_to_card`` 同一個理由）。
+
+    fail closed：命中次數不等於 1、或值為空／佔位符時拋 ``RequesterUnparseable``。
+    """
+    head, _ = split_at_log(body)
+    hits = [m for m in (_REQUESTED_BY_RE.match(line) for line in head.splitlines()) if m]
+    if len(hits) != 1:
+        raise RequesterUnparseable(
+            f"`- 需求：…　規劃：…` 這一行在 Log 之前命中 {len(hits)} 次，必須恰好 1 次；"
+            "無法機械核對需求方身分，拒絕以自述成立"
+        )
+    value = hits[0].group("requested").strip()
+    # 佔位字串判準與 is_owner_assigned 共用同一組前綴，避免兩處對「這欄填了沒」
+    # 漂移出不一致的答案。
+    if not value or value.startswith(_OWNER_PLACEHOLDER_PREFIXES):
+        raise RequesterUnparseable(
+            f"卡面「需求：」欄為 {value or '（空）'!r}，未宣告實際帳號；"
+            "無法機械核對需求方身分，拒絕以自述成立"
+        )
+    return value
+
+
+def is_tier_downgrade(old_tier: str | None, new_tier: str) -> bool:
+    """新級別是否低於原級別。原級別未知（未設定／不在語彙內）時一律回 False。
+
+    未知即 False 是刻意的：把「讀不出原值」當成降級會讓正常的補值操作被擋，
+    而降級的額外要求本就該由**可確認的**原值觸發。讀不出原值時真正的問題是
+    卡面壞了，那由其他檢查處理。
+    """
+    if old_tier not in TIERS or new_tier not in TIERS:
+        return False
+    return TIERS.index(new_tier) < TIERS.index(old_tier)
+
+
+# 需求方**親自操作**規劃閘門的級別（canonical §3.1 三級制）：
+#
+#   - Initiative／T4／不可逆 → 同步對抗式質詢真對話（「不得以 brief 代替對話」）
+#   - T3                     → 核心痛點三問，**需求方批註放行**後才進 📥Backlog
+#   - 所有 T2 以上           → 前提清單附實查證據（規劃者的義務，非需求方閘門）
+#
+# 從 T3／T4 降下來，移除的是需求方**本人**操作過的閘門；T2 以下沒有這種閘門。
+# 這就是降級授權要求只綁在這兩級的理由，見 amend_cmd「級別降級的不對稱」。
+REQUESTER_GATED_TIERS = ("T3", "T4")
+
+
+def tier_downgrade_needs_ruling(old_tier: str | None, new_tier: str) -> bool:
+    """降級是否需要需求方裁定留痕（而非只要 ``--reason``）。"""
+    return is_tier_downgrade(old_tier, new_tier) and old_tier in REQUESTER_GATED_TIERS
 
 
 # --------------------------------------------------------------------------
@@ -847,12 +991,16 @@ __all__ = [
     "CAPABILITY_MATCHED",
     "CAPABILITY_TIERS",
     "CHAIN_DEPTH_HARD_CAP",
+    "REQUESTER_GATED_TIERS",
     "ROUTING_MARKER",
     "TIERS",
     "AmendError",
     "CapabilityComparison",
     "Card",
+    "RequesterUnparseable",
     "amend_acceptance",
+    "amend_core_pain",
+    "amend_initiative",
     "amend_resource_block",
     "amend_spec_baseline",
     "amend_verification",
@@ -863,10 +1011,13 @@ __all__ = [
     "compare_capability_to_card",
     "format_branch_worktree",
     "format_routing_line",
+    "is_tier_downgrade",
     "now_iso8601",
     "parse_branch_worktree",
+    "parse_requested_by",
     "render_issue_body",
     "render_spec_markdown",
     "split_at_log",
+    "tier_downgrade_needs_ruling",
     "validate_capability_routing",
 ]
