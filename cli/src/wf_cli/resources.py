@@ -16,6 +16,17 @@
 
 Project 上另有一個同名 TEXT 欄位（見 project.py FIELD_SPECS）只放摘要／人類可讀版，
 machine-of-record 一律是 body 這個區塊（對照表方案 C）。
+
+**定位是兩層的，不是全文搜尋**（WF-RESOURCE-BLOCK-ANCHOR1）：先以**獨立標題行**
+``## 資源宣告`` 切出區段，再**只在該區段內**找哨兵。舊版 ``_BLOCK_RE.search(body)``
+取全文第一個命中，任何寫在真區塊之前的同名哨兵字面（例如把格式示範寫進驗收條件、
+或 amend 把舊宣告原樣回音進 ``## Log``）都會贏，且無任何錯誤訊息——那是治理閘門的
+靜默 fail-open，因為結果直接餵給 ``find_conflicts`` 與 ``assign`` 的寫入集閘門。
+
+fail-closed 紀律刻意與 ``card.split_at_log``／``card._locate_section`` 同一組（以獨立
+標題行定位、排版損壞即拒絕、同名標題多於一個即拒絕）。**沒有直接 import 重用是因為
+``card.py`` 已 import 本模組的 ``render_block``，反向 import 會成環**；語意對齊靠
+``tests/test_resources.py`` 的對照測試釘住，不是靠約定。
 """
 
 from __future__ import annotations
@@ -34,6 +45,9 @@ _RESOURCE_PREFIX_RE = re.compile(
 )
 
 _SECTION_HEADING = "## 資源宣告"
+# ``## Log`` 是 append-only 留痕區（見 card.append_log_line）。amend 會把被覆寫的舊
+# 宣告原樣寫進 Log，因此 Log 內幾乎必然有哨兵字面的歷史回音——它是歷史，不是宣告。
+_LOG_HEADING = "## Log"
 _BEGIN = "<!-- resource-claims:begin -->"
 _END = "<!-- resource-claims:end -->"
 
@@ -92,17 +106,102 @@ def render_block(decl: ResourceDeclaration) -> str:
     )
 
 
+def _split_at_log(body: str) -> tuple[str, str]:
+    """切成「``## Log`` 之前」與「``## Log`` 起的全部」。定位只准看前者。
+
+    語意刻意等同 ``card.split_at_log``（該檔 352 行）：以**獨立標題行**判定，多於一個
+    即拒絕，出現字樣卻無獨立標題行即拒絕（排版已被字面 ``\\n`` 破壞時，任何依標題
+    定位的切段都可能把 Log 的歷史回音當成現況）。**不 import 重用是因為 card.py 已
+    import 本模組的 render_block，反向 import 會成環**。
+    """
+    lines = body.splitlines()
+    idx = [i for i, line in enumerate(lines) if line.strip() == _LOG_HEADING]
+    if len(idx) > 1:
+        raise ResourceDeclarationError(
+            f"body 內有 {len(idx)} 個 `{_LOG_HEADING}` 標題，無法安全切出「Log 之前」的定位範圍"
+        )
+    if not idx:
+        if _LOG_HEADING in body:
+            raise ResourceDeclarationError(
+                f"body 含 `{_LOG_HEADING}` 字樣但它不是獨立標題行（排版可能已被字面 \\n "
+                "破壞）；拒絕定位資源宣告，以免把 Log 內的歷史回音當成現行宣告"
+            )
+        return body, ""
+    return "\n".join(lines[: idx[0]]), "\n".join(lines[idx[0] :])
+
+
+def _declaration_section(body: str) -> str:
+    """回傳 ``## 資源宣告`` 標題行**之後、下一個 ``## `` 標題之前**的區段內文。
+
+    定位失效一律拋 ``ResourceDeclarationError``，沒有「退回全文搜尋」的補救路徑——
+    那正是本模組要消滅的失敗形態。
+    """
+    head, tail = _split_at_log(body)
+    lines = head.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.strip() == _SECTION_HEADING]
+    if len(starts) > 1:
+        raise ResourceDeclarationError(
+            f"body 的 Log 之前有 {len(starts)} 個 `{_SECTION_HEADING}` 標題，"
+            "無法判定哪一個是現行宣告；拒絕取第一個"
+        )
+    if not starts:
+        if _SECTION_HEADING in head:
+            hint = (
+                f"（`{_SECTION_HEADING}` 字樣出現在 Log 之前但不是獨立標題行，"
+                "排版可能已被字面 \\n 破壞）"
+            )
+        elif _SECTION_HEADING in tail:
+            hint = (
+                f"（`{_SECTION_HEADING}` 字樣只出現在 `{_LOG_HEADING}` 區段內，"
+                "那是 append-only 的歷史回音，不是現行宣告）"
+            )
+        else:
+            hint = ""
+        raise ResourceDeclarationError(
+            f"body 內找不到獨立標題行 `{_SECTION_HEADING}`{hint}"
+        )
+    start = starts[0]
+    end = next(
+        (j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")),
+        len(lines),
+    )
+    return "\n".join(lines[start + 1 : end])
+
+
 def parse_block(body: str) -> ResourceDeclaration:
     """從卡片 body 解析資源宣告；找不到或格式錯誤一律拋 ``ResourceDeclarationError``。
 
     刻意 fail closed（不得靜默略過）：assign 的交集檢查若讀不到宣告，代表該卡
     根本沒有走 CLI 開卡流程，這本身就是治理缺口，必須讓呼叫端知道，不能當成
     「無資源」悄悄放行。
+
+    定位分兩層（見模組 docstring）：``_declaration_section`` 先以標題結構切出區段，
+    哨兵只在該區段內找。區段外的哨兵字面——不論在驗收條件、核心痛點還是 Log——
+    一律不參與定位，也不會讓解析「改用」它們。
     """
-    match = _BLOCK_RE.search(body or "")
+    section = _declaration_section(body or "")
+    begins, ends = section.count(_BEGIN), section.count(_END)
+    if begins != 1 or ends != 1:
+        if begins == 0 and ends == 0:
+            outside = ""
+            if _BEGIN in (body or ""):
+                outside = (
+                    "；哨兵字面出現在該區段之外（驗收條件／核心痛點／Log 內的示範或"
+                    "歷史回音都不算宣告）"
+                )
+            raise ResourceDeclarationError(
+                f"`{_SECTION_HEADING}` 區段內找不到 {_BEGIN} ... {_END} 之間的 "
+                f"fenced JSON 資源宣告區塊{outside}"
+            )
+        raise ResourceDeclarationError(
+            f"`{_SECTION_HEADING}` 區段內有 {begins} 個 begin／{ends} 個 end 哨兵，"
+            "必須各恰好 1 個才能判定哪一組是宣告；拒絕取第一個"
+        )
+    match = _BLOCK_RE.search(section)
     if not match:
         raise ResourceDeclarationError(
-            f"body 內找不到 {_BEGIN} ... {_END} 之間的 fenced JSON 資源宣告區塊"
+            f"`{_SECTION_HEADING}` 區段內的 {_BEGIN} ... {_END} 之間不是合法的 "
+            "```json fenced 區塊"
         )
     raw = match.group("json").strip()
     try:
