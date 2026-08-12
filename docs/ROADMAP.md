@@ -81,9 +81,11 @@
   而且本卡無法讓它變真**（#48 執行者 2026-08-12 指出，PM 複驗接受）。CI 產生的是**紅叉**；
   紅叉要變成**閘門**，需要 repo 的 `required_status_checks` ruleset，而
   **repo setting 不是檔案、不在資源模型的值域裡、不可能被宣告進任何寫入集**。
-- **牙齒長出來的時點是 ruleset 套用那一刻**，不是 #48 合併那一刻。順序見 #48 交付文件 §7.0：
-  合併 #48 → 確認 `main` push 的 `tests` 綠 → 套 ruleset → 驗 PR #61 被擋。
-  **中間三步都是需求方的動作，不是任何一張卡的交付物。**
+- **牙齒長出來的時點是 ruleset 套用那一刻**，不是 #48 合併那一刻。**該時點已於 2026-08-13 到達**：
+  ruleset `id 20768920`（`~DEFAULT_BRANCH`、`bypass_actors: 0`、`strict: true`、required check `tests`）
+  已套用生效。閘門在 PR #71 上實際運作過一次：`BEHIND` → `update-branch` → 兩筆 check 綠 → `CLEAN` → 才合併。
+  ⚠️ **驗證的限度**：#61 關閉時 `mergeStateStatus` 是 `DIRTY`（base 前進造成衝突）而非 `BLOCKED`，
+  故**未取得「紅色 check 直接擋下合併」的直接證據**，取而代之的是設定面證據。需求方裁定接受。
 - 其餘全是**偵測器**（`doctor`、對帳器、枚舉器）。偵測器讓缺失可被列舉，**不阻止任何人 push**。
 - **偵測器的卡不得宣稱「已預防」**——`WF-WORKTREE-REPO-OWNERSHIP1`（#57）的 R1-01 正是因此被判 blocking。
 - 需要牙齒的偵測器，**等的是上面那第 3 步**，不是 #48 的 merge。
@@ -118,9 +120,11 @@ LC_CTYPE="POSIX"    （其餘 LC_* 全為 POSIX）
 |---|---|---|
 | `WF-RESOURCE-BLOCK-ANCHOR1`（#43） | 1 | ✅ **已完成並收尾**（2026-08-13 補收結案債，見下） |
 | `WF-RESOURCE-WRITESET1`（#24） | 1 | ✅ **已完成並收尾**（同上） |
-| `DEV-AIWF-MINIMAL-CI1`（#48） | 1 | ✅ **已合併**（`main` 0ea7aba，跨家族查核 APPROVE／0 blocking）。⚠️ 閘門尚未套用，見 §2 |
-| `DEV-COMMIT-TRAILER-GUARD1`（#63） | 2 | 🚧 實作中（R1 判 `core_pain_resolved: yes`，1 blocking：定時炸彈測試） |
-| `WF-WORKTREE-REPO-OWNERSHIP1`（#57） | 1 | ⏸ 未動——**必要集合裡唯一還沒開工的**。射程已縮為登記面 |
+| `DEV-AIWF-MINIMAL-CI1`（#48） | 1 | ✅ **已合併**（跨家族查核 APPROVE／0 blocking）。**閘門已於 2026-08-13 套用生效**，見 §2 |
+| `DEV-COMMIT-TRAILER-GUARD1`（#63） | 2 | ✅ **已合併**（squash `d0397e0`，APPROVE／0 blocking） |
+| `WF-WORKTREE-REPO-OWNERSHIP1`（#57） | 1 | 🔍 待查核（`544e162`，射程已縮為登記面） |
+| `DEV-STATE-FACE-DRIFT-GUARD1`（#65） | 1 | 📥 已開卡未派——看板失真數小時無人發現；純比對、機械可判 |
+| `WF-DISPATCH-FROM-HANDOFF1`（#66） | 2 | 📥 已開卡未派——派審詞與 handoff 兩個來源必然漂移，當日發作三次 |
 
 ### 2026-08-13 補收的結案債
 
@@ -133,8 +137,6 @@ LC_CTYPE="POSIX"    （其餘 LC_* 全為 POSIX）
 
 ⚠️ PM 一度把這個處置說成「說謊」而傾向留著不動。**那個判斷是錯的**：真正說謊的是讓看板顯示
 🏁完成 而清理一步都沒做——那正是它們前一天的狀態。
-| 6 | `DEV-STATE-FACE-DRIFT-GUARD1`（#65） | 1 | 2026-08-12 看板四處失真數小時無人發現；純比對、機械可判 |
-| 7 | `WF-DISPATCH-FROM-HANDOFF1`（#66） | 2 | 派審詞與 handoff 兩個來源必然漂移，當日發作三次 |
 
 ### 2026-08-12 對執行中卡片的分類（需求方裁定）
 
@@ -169,6 +171,42 @@ LC_CTYPE="POSIX"    （其餘 LC_* 全為 POSIX）
 
 **#42／#58 特別說明**：它們解決「兩份事件型別語彙互不知情」，而該分歧**今天 0 寫入端 0 讀取端、
 不可能造成錯誤裁決**（#58 執行者自己的論證）。這是「有最好」的典型。
+
+## 3.5 合併方式：一律 squash（2026-08-13 裁定）
+
+### 問題
+
+`AI_WORKFLOW.md §6:222` 要求 merge commit 帶 `Reviewed-by`，而 **GitHub 的 merge 按鈕
+結構上產不出這一行**。`TRAILER_GUARD_EPOCH`（`2026-08-13T00:00:00+08:00`）跨過之後，
+**每一次以 merge 按鈕合併的 PR 都會是一筆違規**——實測 `0ea7aba` 與 `dbf18d7` 的
+`git interpret-trailers --parse` 解析出**零個** trailer。
+
+`required_status_checks` 的 `strict` 政策使這件事無法迴避：落後的分支必須先更新，
+而更新會產生 merge commit。
+
+### 裁定
+
+**卡片一律以 squash 合併。** 依據是實測而非偏好：
+
+- `d0397e0`（#63 的 squash commit）**自己帶齊五行 trailer 含 `Reviewed-by`**——
+  是第一筆會通過它剛落地的檢查器的 main commit
+- **`gh pr update-branch` 產生的 merge commit 只存在於 PR 分支上，squash 會把它壓掉**，
+  不落 main。既滿足 strict 政策，又不製造違規
+- 不需要改 `TRAILER_GUARD_EPOCH`，也不需要動已通過查核的碼或 canonical
+
+### 代價，不掩飾
+
+**被審 SHA 不會出現在 main 的歷史上**，查核留痕與 main 的 commit 對不起來。
+這對目標 2（可稽核的內容）是實質損失。
+
+**緩解**：squash 訊息**必須逐字記下被審 SHA**，以及該輪查核的結論。今天 `d0397e0`
+即為範例。**這是約定，沒有機械執行者。**
+
+### 明確不涵蓋
+
+- `§6:222` 的文字**不改**。squash 之後沒有 merge commit 落 main，該條的觸發條件消失，
+  改文字是解一個已經不會發生的問題。**若日後恢復 merge 合併，該條重新生效。**
+- 本裁定只約束**卡片合併**。分支內部的整合行為不受限。
 
 ## 4. 驗收政策（2026-08-12 裁定）
 
