@@ -8,6 +8,7 @@ import sys
 from .commands import (
     amend_cmd,
     assign_cmd,
+    checkpoint_cmd,
     deploy_declare_cmd,
     deploy_state_cmd,
     doctor_cmd,
@@ -51,6 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_state_cmd.add_parser(subparsers)
     handoff_cmd.add_parser(subparsers)
     review_cmd.add_parser(subparsers)
+    # checkpoint_cmd 同時註冊 `checkpoint` 與 `contract-baseline` 兩個動詞
+    # （escalation 帳的兩個事件型別；同檔的理由見該模組 docstring）。
+    checkpoint_cmd.add_parser(subparsers)
     doctor_cmd.add_parser(subparsers)
     snapshot_cmd.add_parser(subparsers)
     return parser

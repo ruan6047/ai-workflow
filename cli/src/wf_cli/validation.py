@@ -10,22 +10,35 @@ command 裡各自判斷、drift 出不一致的檢查標準。查核輸出的**�
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from .card import CHAIN_DEPTH_HARD_CAP, TIERS, chain_depth_violation_message
+from .doctor import inspect_event_marker
 from .resources import DB_SCOPES, ResourceDeclaration
 from .review import (
     ATTRIBUTIONS,
+    CHECKPOINT_DECISIONS,
+    CHECKPOINT_LOG_TAG,
     CORE_PAIN_VALUES,
     FINDING_CLASSES,
     FINDING_KEYS,
     REVIEW_RESULTS,
     SEVERITIES,
     WRITER_ONLY_KEYS,
+    AcceptedMark,
+    CheckpointFacts,
+    EscalationFacts,
     Finding,
+    ReviewParseError,
     ReviewReport,
     SelfRunEntry,
+    body_has_contract_baseline,
+    checkpoint_facts_from_body,
+    escalation_facts_from_body,
+    log_line_indexes,
+    parse_attempt_id,
 )
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -332,13 +345,388 @@ def validate_review_report(data: Mapping[str, Any]) -> ReviewReport:
     )
 
 
+# --------------------------------------------------------------------------
+# escalation 帳的機械檢查（WF-22-CLI4 切片 A）
+# --------------------------------------------------------------------------
+
+
+def validate_accepted_overrides(
+    raw_values: Sequence[str], findings: Iterable[Finding]
+) -> dict[str, str]:
+    """解析並檢查 ``--mark-not-accepted FINDING_ID=理由``；回傳 ``{finding_id: 理由}``。
+
+    ``accepted`` 的預設是 true 且免旗標（見 ``review.default_accepted_marks``）；
+    **標成 false 是把 finding 移出 open set 的那一側**，所以三件事缺一不可：顯式旗標、
+    非空理由、以及呼叫端另行取得的 ``marked_by``（見 ``validate_marked_by``）。
+    """
+    known = {f.finding_id for f in findings}
+    errors: list[str] = []
+    overrides: dict[str, str] = {}
+    for raw in raw_values:
+        if "=" not in raw:
+            errors.append(
+                f"--mark-not-accepted 需寫成 `FINDING_ID=非空理由`，收到 {raw!r}"
+                "（review-escalation.md §2：撤銷採認必須留下可稽核的理由）"
+            )
+            continue
+        finding_id, _, reason = raw.partition("=")
+        finding_id = finding_id.strip()
+        reason = reason.strip()
+        if not finding_id:
+            errors.append(f"--mark-not-accepted 的 finding_id 為空：{raw!r}")
+            continue
+        if finding_id not in known:
+            errors.append(
+                f"--mark-not-accepted 指名的 finding_id {finding_id!r} 不在本次查核輸出內"
+                f"（本次 findings：{sorted(known) or '（無）'}）；"
+                "跨 attempt 的事後降級屬 review-correction，不是本指令的射程"
+            )
+            continue
+        if not reason:
+            errors.append(f"finding {finding_id!r} 標 accepted=false 但理由為空；理由必填")
+            continue
+        if finding_id in overrides:
+            errors.append(f"--mark-not-accepted 對同一 finding {finding_id!r} 給了多次，無法判定採用哪一個")
+            continue
+        overrides[finding_id] = reason
+    if errors:
+        raise ValidationError(errors)
+    return overrides
+
+
+def validate_marked_by(marked_by: str, owner_field: str | None) -> None:
+    """``accepted=false`` 的標記者身分檢查。
+
+    ``marked_by`` 由呼叫端以 ``gh api user --jq .login`` 取得——**平台身分，不是自陳
+    字串**。機械檢查只有一條：不得逐字等於卡面 owner 欄（標記者不得是被該標記嘉惠
+    的執行者本人）。
+
+    ⚠️ **這條檢查今天恆真，是已知的 fail-closed 落差**：本 repo 只有 ``ruan6047``
+    一個人類 GitHub 帳號，而 owner 欄裝的是「Claude Opus 5@Claude Code（子 agent）」
+    這類自由文字，兩者不在同一個命名空間，永遠不可能逐字相等。此落差應登記於
+    ``docs/CONSUMER_CONFORMANCE.md``（該檔不在本卡寫入集，故此處只指名，不代改）。
+    在 owner 欄承載平台帳號之前，本檢查提供的是**形狀**保證而非身分保證。
+    """
+    if not (marked_by or "").strip():
+        raise ValidationError(
+            [
+                (
+                    "accepted=false 需要 marked_by（平台身分），但取不到 `gh api user` 的 login；"
+                    "無法機械核對的授權不得以自述成立（review-escalation.md §4 第 2 款同向）"
+                )
+            ]
+        )
+    if owner_field and marked_by.strip() == owner_field.strip():
+        raise ValidationError(
+            [
+                (
+                    f"marked_by（{marked_by}）逐字等於卡面 owner；"
+                    "撤銷採認的裁定者不得是被該標記嘉惠的執行者本人"
+                )
+            ]
+        )
+
+
+def build_accepted_marks(
+    findings: Iterable[Finding], overrides: Mapping[str, str], marked_by: str
+) -> dict[str, AcceptedMark]:
+    """把預設 true 與顯式 false 疊成最終的 ``accepted`` 標記表。"""
+    marks: dict[str, AcceptedMark] = {}
+    for finding in findings:
+        reason = overrides.get(finding.finding_id)
+        if reason is None:
+            marks[finding.finding_id] = AcceptedMark(finding_id=finding.finding_id, accepted=True)
+        else:
+            marks[finding.finding_id] = AcceptedMark(
+                finding_id=finding.finding_id,
+                accepted=False,
+                reason=reason,
+                marked_by=marked_by,
+            )
+    return marks
+
+
+@dataclass(frozen=True)
+class IssueEventHistory:
+    """自 Issue timeline 掃出的 escalation 帳歷史（唯讀投影）。
+
+    ``all_attempt_ids`` 涵蓋**整條 timeline**（去重用）；其餘欄位只涵蓋
+    ``contract-baseline`` 事件**之後**的留言——review-escalation.md:276 的 cutover
+    語意：baseline 之前的歷史事件「維持原貌」，不追溯要求補欄。沒有 baseline 時
+    scope 即全部留言，於是任何一則讀不出帳的舊事件都會讓閘門 fail-closed。
+    """
+
+    all_attempt_ids: tuple[str, ...] = ()
+    scoped_facts: tuple[EscalationFacts, ...] = ()
+    unknown_reasons: tuple[str, ...] = ()
+    checkpoints: tuple[CheckpointFacts, ...] = ()
+    baseline_count: int = 0
+
+
+def build_issue_event_history(comments: Sequence[Mapping[str, Any]]) -> IssueEventHistory:
+    """掃 Issue 留言，重建 escalation 帳可用的事實。
+
+    ``comments`` 依建立順序（``gh issue view --json comments`` 的回傳順序）；
+    cutover 位置以「第一則 contract-baseline 事件」的索引界定。
+    """
+    baseline_indexes = [
+        i for i, c in enumerate(comments) if body_has_contract_baseline(str(c.get("body") or ""))
+    ]
+    scope_start = baseline_indexes[0] if baseline_indexes else 0
+
+    all_attempts: list[str] = []
+    facts: list[EscalationFacts] = []
+    unknown: list[str] = []
+    checkpoints: list[CheckpointFacts] = []
+
+    for index, comment in enumerate(comments):
+        body = str(comment.get("body") or "")
+        url = str(comment.get("url") or comment.get("html_url") or "（URL 未提供）")
+        attempt, reason = inspect_event_marker(body)
+        if attempt is not None:
+            all_attempts.append(attempt)
+        if index < scope_start:
+            continue
+        if reason is not None:
+            unknown.append(f"{reason}（{url}）")
+            continue
+        try:
+            if attempt is not None:
+                found = escalation_facts_from_body(body)
+                if found is None or found.attempt_id != attempt:
+                    unknown.append(
+                        f"attempt {attempt} 的 review event 沒有可讀的 escalation 帳事實"
+                        f"（{url}）；依 review-escalation.md:276 這是**未知**而非「不計數」"
+                    )
+                else:
+                    facts.append(found)
+            checkpoint = checkpoint_facts_from_body(body)
+            if checkpoint is not None:
+                checkpoints.append(checkpoint)
+        except ReviewParseError as exc:
+            unknown.append(f"{exc}（{url}）")
+
+    return IssueEventHistory(
+        all_attempt_ids=tuple(all_attempts),
+        scoped_facts=tuple(facts),
+        unknown_reasons=tuple(unknown),
+        checkpoints=tuple(checkpoints),
+        baseline_count=len(baseline_indexes),
+    )
+
+
+def counted_attempts(history: IssueEventHistory, escalation_epoch: int) -> list[EscalationFacts]:
+    """本 epoch 依 §3 計數的 attempt，依留言順序去重（§3：同一 attempt 最多計一次）。"""
+    seen: set[str] = set()
+    out: list[EscalationFacts] = []
+    for fact in history.scoped_facts:
+        if fact.escalation_epoch != escalation_epoch or not fact.counts_toward_escalation:
+            continue
+        if fact.attempt_id in seen:
+            continue
+        seen.add(fact.attempt_id)
+        out.append(fact)
+    return out
+
+
+def check_attempt_not_duplicated(history: IssueEventHistory, target_attempt_id: str) -> None:
+    """寫入前的 ``attempt_id`` 去重（review-escalation.md §3：一個 attempt 一個識別符）。
+
+    必須擋在**寫入前**：``doctor.py:409-415`` 對重複 ``attempt_id`` 判
+    ``marker_quarantined``，而該隔離**沒有解除表示法**（歸 #30），寫下去就是製造一個
+    今天解不開的狀態。
+
+    邊界（無機械執行者的部分，誠實寫明）：去重只涵蓋**讀得出 marker** 的既有事件。
+    一則受管轄但不合格的 marker 背後若藏著同一個 attempt，本檢查看不見它——那正是
+    切片 B 被 #30 擋住的同一個解析層缺口。呼叫端另以 ``unknown_reasons`` fail-closed
+    間接覆蓋這條路徑（讀不懂就不准寫），但那是閘門 4 的副作用，不是本函式的保證。
+    """
+    if target_attempt_id in history.all_attempt_ids:
+        raise ValidationError(
+            [
+                (
+                    f"attempt_id {target_attempt_id} 已存在於本 Issue timeline，拒絕重複寫入。"
+                    "同一 attempt 多則事件會讓 `doctor --review-channel` 永久判 marker_quarantined"
+                    "（handoff-contract.md §3.1.5 的保守停機），而解除表示法尚未定義。"
+                    "要重新裁決同一 SHA 須先經 escalation-epoch-change 遞增 epoch"
+                    "（review-escalation.md §4 末段）。"
+                )
+            ]
+        )
+
+
+def check_checkpoint_gate(
+    history: IssueEventHistory,
+    *,
+    escalation_epoch: int,
+    card_body: str,
+) -> None:
+    """checkpoint 漏建的閘門：寫第 N 輪裁決前，第 N-1 輪的 checkpoint 必須已存在。
+
+    §4：「第三個及其後每個可計數 attempt 出現時先建立 ``escalation-checkpoint``」，
+    且 §4「checkpoint 的評估時點」要求 trigger attempt 的裁決**已落地**。兩者合起來
+    唯一可機械檢查的時點就是**下一輪裁決寫入前**：此時第 N-1 輪的裁決已在事件流上，
+    它的 checkpoint 若還沒建，就是真的漏了。
+
+    未知一律拒絕（不得推定為不計數）：``unknown_reasons`` 非空即 fail-closed。
+
+    已知較早的位置是 ``handoff --next-stage review`` 派審前（更貼近 §4「例行建立」的
+    語意），但 ``handoff_cmd.py`` 不在本卡宣告的寫入集內，故列為後續卡的建議，不為它
+    擴張宣告。代價是**晚一輪**：PM 實際漏建的兩次（#22 第四個 attempt 前、#24 第三個
+    attempt 前）都會被這道抓到，只是在下一次裁決寫入時才擋。
+    """
+    if history.baseline_count > 1:
+        raise ValidationError(
+            [
+                (
+                    f"本 Issue timeline 有 {history.baseline_count} 則 contract-baseline 事件；"
+                    "該 marker 是 one-shot cutover，啟用後再次出現必須 fail loud"
+                    "（review-escalation.md:276）"
+                )
+            ]
+        )
+    if history.unknown_reasons:
+        raise ValidationError(
+            [
+                "escalation 帳無法自事件流重建，拒絕寫入（不得推定為不計數）："
+                + "；".join(history.unknown_reasons)
+                + "。處置：修好該留痕，或由需求方以 `wfcli contract-baseline` 明示 cutover "
+                "後重試——baseline 之前的事件依 review-escalation.md:276 維持原貌。"
+            ]
+        )
+
+    counted = counted_attempts(history, escalation_epoch)
+    if len(counted) < 3:
+        return
+    previous = counted[-1]
+    for checkpoint in history.checkpoints:
+        if (
+            checkpoint.trigger_attempt_id == previous.attempt_id
+            and checkpoint.escalation_epoch == escalation_epoch
+            and log_line_indexes(card_body, CHECKPOINT_LOG_TAG, previous.attempt_id)
+        ):
+            return
+    raise ValidationError(
+        [
+            (
+                f"第 {len(counted)} 個可計數 attempt（{previous.attempt_id}）尚未建立 "
+                "escalation-checkpoint，拒絕寫入下一輪裁決。"
+                "review-escalation.md §4：第三個及其後每個可計數 attempt 出現時先建立 checkpoint，"
+                "不得只按整數直接寫 🚨已升級。請先跑 `wfcli checkpoint`"
+                f" --trigger-attempt-id {previous.attempt_id}。"
+                "（判準是**兩面一致**：留言的結構化區塊 ＋ Issue body ## Log 的同行索引；"
+                "只有其一視為未建立。）"
+            )
+        ]
+    )
+
+
+def validate_checkpoint_input(
+    *,
+    card_id: str,
+    escalation_epoch: int,
+    trigger_attempt_id: str,
+    unique_attempt_count: int,
+    checkpoint_decision: str,
+    checkpoint_rationale: str,
+    escalation_resolution: str | None = None,
+    deferred_findings: Sequence[str] = (),
+) -> None:
+    """``escalation-checkpoint`` 事件的欄位檢查（review-escalation.md §5）。
+
+    刻意**不**接受 PM 手寫六則裡多出的四個未定義鍵：``escalation_resolution``、
+    ``decided_by``、``counts_toward_escalation``、``attempts_so_far``。其中：
+
+    - ``counts_toward_escalation`` 放在 checkpoint 上是分類錯誤——§5 把它定為 review
+      event 的欄位，§1 表列 checkpoint 本身不計 escalation 額度；而它又剛好是
+      ``review.WRITER_ONLY_KEYS`` 裡的名字，同名不同義。
+    - ``attempts_so_far`` 不等於 ``unique_attempt_count``（差一）：PM 的建立時點慣例是
+      「派下一輪審之前」，而 §4 要求 trigger attempt 的裁決已落地。本指令以
+      ``trigger_attempt_id`` 正名該語意。
+    - ``escalation_resolution`` 是**真實的契約缺口**（§4 規定條件成立時
+      ``checkpoint_decision`` 只能是 ``escalate``，但「escalate 之後需求方選擇維持同
+      執行者」在契約裡沒有表示法——``escalation-epoch-change`` 只有 ``replan``／
+      ``change-executor``）。缺口回頭補進契約、另開卡承接（PM 負責開）；本 writer
+      不得靜默沿用這個未定義鍵，遇到即 fail-closed。
+    """
+    errors: list[str] = []
+
+    decomposed = parse_attempt_id(trigger_attempt_id)
+    if decomposed is None:
+        errors.append(
+            f"--trigger-attempt-id 不符 `<card>-e<epoch>-<40 hex sha>` 形式：{trigger_attempt_id!r}"
+            "（review-escalation.md §5）"
+        )
+    else:
+        trigger_card, trigger_epoch, _ = decomposed
+        if trigger_card != card_id:
+            errors.append(
+                f"--trigger-attempt-id 反解出的卡（{trigger_card}）與本次 card_id（{card_id}）不符"
+            )
+        if trigger_epoch != escalation_epoch:
+            errors.append(
+                f"--trigger-attempt-id 的 epoch（e{trigger_epoch}）與 --escalation-epoch"
+                f"（{escalation_epoch}）不符；checkpoint 只結本 epoch 的帳（§4 末段：新 epoch 從零計數）"
+            )
+
+    if unique_attempt_count < 3:
+        errors.append(
+            f"unique_attempt_count 必須 >= 3，收到 {unique_attempt_count}"
+            "（review-escalation.md §5；checkpoint 只在第三個及其後的可計數 attempt 建立）"
+        )
+
+    if checkpoint_decision not in CHECKPOINT_DECISIONS:
+        errors.append(
+            f"checkpoint_decision 必須是 {list(CHECKPOINT_DECISIONS)} 之一，收到 {checkpoint_decision!r}"
+        )
+
+    if not (checkpoint_rationale or "").strip():
+        errors.append("checkpoint_rationale 必填且不得為空（review-escalation.md §5）")
+    elif "```" in checkpoint_rationale:
+        errors.append(
+            "checkpoint_rationale 含 ``` 圍籬字元，會破壞結構化區塊；請改寫（本欄是區塊純量）"
+        )
+
+    if escalation_resolution is not None:
+        errors.append(
+            "`escalation_resolution` 不是 review-escalation.md §5 定義的 checkpoint 欄位，"
+            "本 writer 拒絕靜默沿用。這是真實的契約缺口——§4 規定條件成立時 "
+            "checkpoint_decision 只能是 escalate，但「escalate 之後需求方選擇維持同執行者」"
+            "在契約裡沒有表示法（escalation-epoch-change 只有 replan／change-executor）。"
+            "需求方已裁定該缺口回頭補進契約、另開卡承接（PM 負責開）；請等該契約卡落地，"
+            "在此之前把該裁定寫進 checkpoint_rationale 的散文，不要自創欄位。"
+        )
+
+    if deferred_findings:
+        errors.append(
+            "`deferred_findings` 在本 repo 尚不可用，一律拒收（review-escalation.md §4 專節 "
+            "(c)／(c′)）：`instruction-omitted` 依賴 handoff payload 的 review_prompt_url 與 "
+            "closure_reporting_requested 兩欄（尚未存在）；`spec-narrowed` 依賴讀取留言 author "
+            "與 body 並逐字綁定本輪 attempt_id 與 finding_id（本 writer 未實作）。契約明文："
+            "證據不可得時本 cause 不可用，對應 finding 落「未提及」格並強制 escalate；"
+            "adapter 不得以「讀不到證據」為由改判成立。"
+        )
+
+    if errors:
+        raise ValidationError(errors)
+
+
 __all__ = [
     "SELF_RUN_CITATION",
     "SHA_RE",
+    "IssueEventHistory",
     "ValidationError",
+    "build_accepted_marks",
+    "build_issue_event_history",
+    "check_attempt_not_duplicated",
+    "check_checkpoint_gate",
+    "counted_attempts",
     "review_invalid_reasons",
+    "validate_accepted_overrides",
     "validate_chain_depth",
+    "validate_checkpoint_input",
     "validate_evidence",
+    "validate_marked_by",
     "validate_open_fields",
     "validate_review_report",
     "validate_source_sha",

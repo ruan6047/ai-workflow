@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from wf_cli.cli import build_parser
-from wf_cli.commands import handoff_cmd, open_cmd, review_cmd
+from wf_cli.commands import checkpoint_cmd, handoff_cmd, open_cmd, review_cmd
 from wf_cli.project import (
     ensure_fields,
     find_item_by_card_id,
@@ -28,7 +28,7 @@ from wf_cli.validation import (
     validate_review_report,
 )
 
-from .fake_gh import FakeGhRunner
+from .test_checkpoint import EventGhRunner
 
 BASE_TARGET = ["--owner", "acme", "--project", "1"]
 REPO = "acme/demo"
@@ -37,8 +37,11 @@ SHA = "a" * 40
 
 @pytest.fixture
 def fake_runner(monkeypatch):
-    runner = FakeGhRunner()
-    for module in (open_cmd, handoff_cmd, review_cmd):
+    # EventGhRunner（見 tests/test_checkpoint.py）＝ FakeGhRunner ＋ 事件平面：
+    # 留言可唯讀讀回、每則留言有自己的 URL、`gh api user`。review 自 WF-22-CLI4 起
+    # 會在寫入前掃 timeline（去重／checkpoint 閘門），沒有這三條路徑就跑不起來。
+    runner = EventGhRunner()
+    for module in (open_cmd, handoff_cmd, review_cmd, checkpoint_cmd):
         monkeypatch.setattr(module, "default_runner", runner)
     return runner
 
@@ -68,12 +71,12 @@ def open_card(card_id: str, *, repo: str | None = REPO) -> int:
     return run_cli(argv)
 
 
-def card_item(runner: FakeGhRunner, card_id: str):
+def card_item(runner: EventGhRunner, card_id: str):
     project = resolve_project(runner, "acme", 1)
     return find_item_by_card_id(list_items(runner, project), card_id)
 
 
-def issue_comments(runner: FakeGhRunner, issue_url: str) -> list[str]:
+def issue_comments(runner: EventGhRunner, issue_url: str) -> list[str]:
     return runner.issues[issue_url].get("comments", [])
 
 
@@ -664,8 +667,10 @@ findings: []
     err = capsys.readouterr().err
     assert "counts_toward_escalation" in err
     body = issue_comments(fake_runner, card_item(fake_runner, "WRITERONLY-CARD1").issue_url)[0]
-    assert "counts_toward_escalation" in body  # 只在說明段出現
-    assert "由 lifecycle writer" in body
+    # reviewer 自填的 writer-only 值一律忽略：自 WF-22-CLI4 起 lifecycle writer 會自己
+    # 依 §3 推導並寫進結構化區塊，而不是把該鍵留給別人。
+    assert "counts_toward_escalation: false" in body
+    assert "reviewer 自填一律忽略" in body
 
 
 # --------------------------------------------------------------------------
@@ -825,3 +830,185 @@ def test_sequence_item_must_start_with_dash():
     text = "review_result: APPROVE\nself_run:\n  command: pytest\n"
     with pytest.raises(ReviewParseError):
         parse_structured_block(text)
+
+
+# --------------------------------------------------------------------------
+# escalation 帳（WF-22-CLI4 切片 A）：accepted 標記／去重／counts／checkpoint 閘門
+# --------------------------------------------------------------------------
+
+COUNTING_REPORT = """```yaml
+core_pain_resolved: yes
+review_result: REQUEST_CHANGES
+self_run:
+  - command: uv run pytest
+    observed: 3 failed, 25 passed
+findings:
+  - finding_id: {fid}
+    severity: major
+    blocking: true
+    finding_class: implementation
+    attribution: executor
+    root_cause_id: rc-1
+    evidence: pytest 失敗
+    disposition: 修好再送
+```
+"""
+
+NON_COUNTING_REPORT = """```yaml
+core_pain_resolved: yes
+review_result: REQUEST_CHANGES
+self_run:
+  - command: uv run pytest
+    observed: 1 failed
+findings:
+  - finding_id: GOV-01
+    severity: minor
+    blocking: true
+    finding_class: governance
+    attribution: coordinator
+    root_cause_id: rc-gov
+    evidence: 卡面缺 baseline 欄
+    disposition: 補欄
+```
+"""
+
+
+def _counting_review(tmp_path, card_id: str, sha: str, fid: str, *, extra=()) -> int:
+    path = write_input(tmp_path, COUNTING_REPORT.format(fid=fid), name=f"{fid}.md")
+    argv = review_argv(card_id, path, source_sha=sha)
+    argv += list(extra)
+    return run_cli(argv)
+
+
+def last_comment(fake_runner, card_id: str) -> str:
+    return issue_comments(fake_runner, card_item(fake_runner, card_id).issue_url)[-1]
+
+
+def test_accepted_defaults_to_true_without_any_flag_and_counts_is_derived(fake_runner, tmp_path):
+    open_card("ACC-CARD1")
+    assert _counting_review(tmp_path, "ACC-CARD1", SHA, "ACC-CARD1-R1-01") == 0
+    body = last_comment(fake_runner, "ACC-CARD1")
+    assert "accepted: true" in body  # 免旗標的 fail-closed 預設
+    assert "status: open" in body
+    assert "counting_eligible: true" in body
+    assert "counts_toward_escalation: true" in body
+    assert "counts_toward_escalation true" in card_item(fake_runner, "ACC-CARD1").body
+
+
+def test_non_counting_finding_class_does_not_consume_escalation_quota(fake_runner, tmp_path):
+    """§3 第 3～4 款：governance／非 executor 歸屬不得消耗 executor 額度。"""
+    open_card("ACC-CARD2")
+    assert run_cli(review_argv("ACC-CARD2", write_input(tmp_path, NON_COUNTING_REPORT))) == 0
+    body = last_comment(fake_runner, "ACC-CARD2")
+    assert "accepted: true" in body  # 仍然採認
+    assert "counting_eligible: false" in body
+    assert "counts_toward_escalation: false" in body
+
+
+def test_mark_not_accepted_requires_reason_and_records_platform_identity(fake_runner, tmp_path, capsys):
+    open_card("ACC-CARD3")
+    rc = _counting_review(
+        tmp_path, "ACC-CARD3", SHA, "ACC-CARD3-R1-01",
+        extra=["--mark-not-accepted", "ACC-CARD3-R1-01=證據不可重現，經需求方裁定撤銷採認"],
+    )
+    assert rc == 0
+    body = last_comment(fake_runner, "ACC-CARD3")
+    assert "accepted: false" in body
+    assert "ruan6047" in body  # marked_by 取自 gh api user，不是自陳字串
+    assert "counts_toward_escalation: false" in body  # 移出 open set 後不再計數
+    assert "marked_by=ruan6047" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "value, needle",
+    [
+        ("ACC-CARD4-R1-01", "FINDING_ID=非空理由"),
+        ("ACC-CARD4-R1-01=", "理由必填"),
+        ("NOT-A-FINDING=理由", "不在本次查核輸出內"),
+    ],
+)
+def test_mark_not_accepted_is_fail_closed_and_writes_nothing(fake_runner, tmp_path, capsys, value, needle):
+    open_card("ACC-CARD4")
+    item_before = card_item(fake_runner, "ACC-CARD4")
+    rc = _counting_review(
+        tmp_path, "ACC-CARD4", SHA, "ACC-CARD4-R1-01", extra=["--mark-not-accepted", value]
+    )
+    assert rc == 2
+    assert needle in capsys.readouterr().err
+    assert issue_comments(fake_runner, item_before.issue_url) == []
+
+
+def test_duplicate_attempt_id_is_refused_before_writing(fake_runner, tmp_path, capsys):
+    """doctor 對重複 attempt_id 判 marker_quarantined 且該隔離永久，故必須擋在寫入前。"""
+    open_card("DUP-CARD1")
+    assert _counting_review(tmp_path, "DUP-CARD1", SHA, "DUP-CARD1-R1-01") == 0
+    before = issue_comments(fake_runner, card_item(fake_runner, "DUP-CARD1").issue_url)
+    assert len(before) == 1
+
+    assert _counting_review(tmp_path, "DUP-CARD1", SHA, "DUP-CARD1-R1-01") == 2
+    err = capsys.readouterr().err
+    assert "已存在於本 Issue timeline" in err
+    assert "marker_quarantined" in err
+    after = issue_comments(fake_runner, card_item(fake_runner, "DUP-CARD1").issue_url)
+    assert len(after) == 1  # 沒有寫出第二則
+
+
+def test_same_sha_in_a_new_epoch_is_not_a_duplicate(fake_runner, tmp_path):
+    open_card("EPOCH-CARD1")
+    assert _counting_review(tmp_path, "EPOCH-CARD1", SHA, "EPOCH-CARD1-R1-01") == 0
+    rc = _counting_review(
+        tmp_path, "EPOCH-CARD1", SHA, "EPOCH-CARD1-R2-01", extra=["--escalation-epoch", "1"]
+    )
+    assert rc == 0
+
+
+def test_third_counted_attempt_warns_that_a_checkpoint_is_now_required(fake_runner, tmp_path, capsys):
+    open_card("CNT-CARD1")
+    for index, sha in enumerate(["a" * 40, "b" * 40, "c" * 40], start=1):
+        assert _counting_review(tmp_path, "CNT-CARD1", sha, f"CNT-CARD1-R{index}-01") == 0
+        out = capsys.readouterr().out
+        if index < 3:
+            assert "先建立 escalation-checkpoint" not in out
+        else:
+            assert "第 3 個可計數 attempt" in out
+            assert "先建立 escalation-checkpoint" in out
+
+
+def test_fourth_review_is_refused_until_the_third_checkpoint_exists(fake_runner, tmp_path, capsys):
+    open_card("GATE-CARD1")
+    shas = ["a" * 40, "b" * 40, "c" * 40]
+    for index, sha in enumerate(shas, start=1):
+        assert _counting_review(tmp_path, "GATE-CARD1", sha, f"GATE-CARD1-R{index}-01") == 0
+    capsys.readouterr()
+
+    before = len(issue_comments(fake_runner, card_item(fake_runner, "GATE-CARD1").issue_url))
+    assert _counting_review(tmp_path, "GATE-CARD1", "d" * 40, "GATE-CARD1-R4-01") == 2
+    err = capsys.readouterr().err
+    assert "尚未建立 escalation-checkpoint" in err
+    assert len(issue_comments(fake_runner, card_item(fake_runner, "GATE-CARD1").issue_url)) == before
+
+    trigger = f"GATE-CARD1-e0-{shas[2]}"
+    assert run_cli(
+        [
+            "checkpoint", *BASE_TARGET, "--repo", REPO, "GATE-CARD1",
+            "--trigger-attempt-id", trigger, "--unique-attempt-count", "3",
+            "--decision", "escalate", "--rationale", "第二條件成立。",
+        ]
+    ) == 0
+    assert _counting_review(tmp_path, "GATE-CARD1", "d" * 40, "GATE-CARD1-R4-01") == 0
+
+
+def test_unreadable_marker_makes_the_account_unknown_and_blocks_the_write(fake_runner, tmp_path, capsys):
+    """未知不得推定為不計數（review-escalation.md:276）。"""
+    open_card("UNK-CARD1")
+    item = card_item(fake_runner, "UNK-CARD1")
+    fake_runner.execute(
+        [
+            "issue", "comment", str(item.issue_number), "--repo", REPO,
+            "--body", "討論：留言若含 wf-review-event" + ":v1 的字面就會被判受管轄。",
+        ]
+    )
+    assert _counting_review(tmp_path, "UNK-CARD1", SHA, "UNK-CARD1-R1-01") == 2
+    err = capsys.readouterr().err
+    assert "無法自事件流重建" in err
+    assert "不得推定為不計數" in err

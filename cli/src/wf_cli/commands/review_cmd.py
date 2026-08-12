@@ -30,6 +30,21 @@
 - review 只寫兩件事：Issue 留言（裁決全文，canonical §4.3「事件＝Issue timeline ＋
   結構化 comment」）＋交付狀態（``✅通過``／``↩退回``，review-escalation.md §1）；
   另在 body 的 ``## Log`` 補一行索引，與 assign／handoff 的留痕慣例一致。
+
+## escalation 帳（WF-22-CLI4 切片 A）
+
+本指令自此以 **lifecycle writer** 身分標記 ``accepted``、把 ``status`` 記為 ``open``
+（§2：新採認的 blocking finding 以 open 開始），並依 §3 推導 ``counts_toward_escalation``
+寫進留言的結構化區塊與 Log 索引行。reviewer 自填的這三個鍵仍一律警示並忽略。
+
+寫入前另有三道 fail-closed 閘門（全部走 exit 2，未寫入任何遠端狀態）：
+
+1. **``attempt_id`` 去重**：同一 attempt 已存在即拒。必須擋在寫入前——``doctor.py``
+   對重複 attempt 判 ``marker_quarantined``，而該隔離的解除表示法未定義（#30）。
+2. **帳可重建**：cutover（``contract-baseline``）之後的留痕若有讀不懂的 marker，或
+   review event 缺結構化 counts 事實，一律拒絕；**未知不得推定為不計數**
+   （review-escalation.md:276）。
+3. **checkpoint 漏建**：上一個可計數 attempt 序位 ≥3 卻找不到對應 checkpoint 即拒。
 """
 
 from __future__ import annotations
@@ -53,17 +68,48 @@ from ..project import (
 from ..review import (
     ReviewParseError,
     attempt_id,
+    derive_counts_toward_escalation,
     parse_structured_block,
     render_verdict_comment,
 )
 from ..validation import (
     ValidationError,
+    build_accepted_marks,
+    build_issue_event_history,
+    check_attempt_not_duplicated,
+    check_checkpoint_gate,
+    counted_attempts,
     review_invalid_reasons,
+    validate_accepted_overrides,
+    validate_marked_by,
     validate_review_report,
     validate_source_sha,
 )
 
 AWAITING_REVIEW_STATUS = "🔍待查核"
+
+
+def fetch_issue_comments(runner, repo: str, issue_number: int) -> list[dict]:
+    """讀回 Issue 的留言（唯讀）。依 ``gh`` 回傳順序，即建立順序。
+
+    刻意不放 ``project.py``：那是 Projects v2 adapter，而留言屬 Issue timeline；且
+    ``project.py`` 不在本卡宣告的寫入集內。``runner`` 只需具備 ``run_json``（鴨子型別），
+    因此本函式不引入任何新的模組相依。
+    """
+    data = runner.run_json(
+        ["issue", "view", str(issue_number), "--repo", repo, "--json", "comments"]
+    )
+    return list((data or {}).get("comments") or [])
+
+
+def resolve_platform_login(runner) -> str:
+    """``accepted=false`` 標記者的平台身分：``gh api user --jq .login``。
+
+    刻意不接受自陳字串：``--reviewer`` 那一欄只驗非空（handoff-contract.md §3.1.1
+    明記此洞），身分維度上等同無佐證；撤銷採認是把 finding 移出 open set 的動作，
+    不能靠自述成立。
+    """
+    return runner.execute(["api", "user", "--jq", ".login"]).strip()
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -94,6 +140,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         default=0,
         help="attempt_id 的 epoch（review-escalation.md §5，預設 0）；"
         "epoch 遞增須另有 escalation-epoch-change 授權，本指令不代為切換",
+    )
+    p.add_argument(
+        "--mark-not-accepted",
+        action="append",
+        default=[],
+        metavar="FINDING_ID=理由",
+        help="把某個 finding 標為 accepted=false（預設全部 true，見 review-escalation.md §2）；"
+        "理由必填，標記者身分取自 `gh api user`。可重複給。",
     )
     p.add_argument(
         "--validate-only",
@@ -167,12 +221,26 @@ def run(args: argparse.Namespace) -> int:
             "依可重現證據標記，reviewer 不得自行決定，本次一律忽略其值。",
             file=sys.stderr,
         )
+    try:
+        overrides = validate_accepted_overrides(args.mark_not_accepted, report.findings)
+    except ValidationError as exc:
+        print("[review] 拒收：accepted 標記不合格（未寫入任何遠端狀態）", file=sys.stderr)
+        for error in exc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 2
+
     if args.validate_only:
         print(
             f"[review] 驗證通過（--validate-only，未寫入任何狀態）："
             f"{report.review_result}／core_pain_resolved={report.core_pain_resolved}／"
             f"self_run {len(report.self_run)} 項／findings {len(report.findings)} 項"
         )
+        if overrides:
+            print(
+                "[review] 注意：--validate-only 不連 GitHub，因此 accepted=false 的 marked_by"
+                "（`gh api user`）與去重／checkpoint 閘門都未執行；實寫時才會檢查。",
+                file=sys.stderr,
+            )
         return 0
 
     target = resolve_target(
@@ -216,6 +284,34 @@ def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # ---- 寫入前的 escalation 帳閘門（全部 fail-closed，未寫入任何遠端狀態）----
+    target_attempt = attempt_id(args.card_id, args.escalation_epoch, args.source_sha)
+    history = build_issue_event_history(
+        fetch_issue_comments(runner, target.repo, item.issue_number)
+    )
+    try:
+        check_attempt_not_duplicated(history, target_attempt)
+        check_checkpoint_gate(
+            history, escalation_epoch=args.escalation_epoch, card_body=item.body
+        )
+    except ValidationError as exc:
+        print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+        for error in exc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 2
+
+    marked_by = ""
+    if overrides:
+        marked_by = resolve_platform_login(runner)
+        try:
+            validate_marked_by(marked_by, item.owner_field)
+        except ValidationError as exc:
+            print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+            for error in exc.errors:
+                print(f"  - {error}", file=sys.stderr)
+            return 2
+    marks = build_accepted_marks(report.findings, overrides, marked_by)
+
     timestamp = now_iso8601()
     comment = render_verdict_comment(
         card_id=args.card_id,
@@ -224,19 +320,22 @@ def run(args: argparse.Namespace) -> int:
         reviewer=args.reviewer,
         escalation_epoch=args.escalation_epoch,
         timestamp=timestamp,
+        accepted_marks=marks,
     )
     # 先留言、後翻狀態：反過來若留言失敗，板上會出現沒有裁決全文的 ✅通過，
     # 那正是本卡要消滅的「宣稱與證據脫節」。
     add_issue_comment(runner, target.repo, item.issue_number, comment)
     set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
 
+    counts = derive_counts_toward_escalation(report, marks)
     log_line = (
         f"{timestamp} review by wf-cli → {report.review_result}"
         f"（{report.delivery_status}）；查核者 {args.reviewer}；"
         f"core_pain_resolved {report.core_pain_resolved}；"
         f"self_run {len(report.self_run)} 項；findings {len(report.findings)} 項"
         f"（blocking {len(report.blocking_findings)}）；"
-        f"attempt {attempt_id(args.card_id, args.escalation_epoch, args.source_sha)}。"
+        f"counts_toward_escalation {'true' if counts else 'false'}；"
+        f"attempt {target_attempt}。"
     )
     new_body = append_log_line(item.body, log_line)
     set_item_body(
@@ -247,10 +346,29 @@ def run(args: argparse.Namespace) -> int:
         f"[review] 已寫入裁決 {args.card_id} → {report.review_result}"
         f"（交付狀態={report.delivery_status}，留言於 #{item.issue_number}）"
     )
+    if overrides:
+        print(
+            "[review] accepted=false 標記："
+            + "、".join(f"{fid}（marked_by={marked_by}）" for fid in sorted(overrides))
+        )
     if report.review_result == "REQUEST_CHANGES":
         print(
             "[review] iteration 不由本指令遞增：請以 "
             "`wfcli handoff --next-stage implementation` 把卡交回執行者，"
             "遞增在該處發生（WF-22-CLI2 既有規則）"
         )
+    if counts:
+        ordinal = len(counted_attempts(history, args.escalation_epoch)) + 1
+        print(
+            f"[review] counts_toward_escalation=true：本輪是本 epoch 第 {ordinal} 個可計數 attempt。"
+        )
+        if ordinal >= 3:
+            print(
+                "[review] ⚠️ review-escalation.md §4：第三個及其後每個可計數 attempt 出現時"
+                "**先建立 escalation-checkpoint**，不得只按整數直接寫 🚨已升級。請執行："
+                f"`wfcli checkpoint {args.card_id} --trigger-attempt-id {target_attempt} "
+                f"--unique-attempt-count {ordinal} --escalation-epoch {args.escalation_epoch} "
+                "--decision <continue|replan|change-executor|escalate> --rationale <理由>`。"
+                "下一輪裁決寫入前若仍缺此 checkpoint，`wfcli review` 會拒絕。"
+            )
     return 0
