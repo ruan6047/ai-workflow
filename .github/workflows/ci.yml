@@ -5,7 +5,9 @@ name: CI
 
 on:
   # 無分支過濾：
-  #   - push 到任一分支 → 測「分支頭」，給執行者自己的回饋。
+  #   - push 到任一分支 → 測「分支頭」，給執行者自己的回饋。**非 main 分支的
+  #                       push run 會被改名為 tests (branch head)**（見下方 job name），
+  #                       所以它永遠不是 required check，只是參考。
   #   - pull_request    → GitHub 取出的是 refs/pull/N/merge，也就是**合併結果**，
   #                       不是分支頭。2026-08-12 的事故正是「分支頭綠、合併結果紅」，
   #                       只有這一支看得到。兩者互補，故刻意都留。
