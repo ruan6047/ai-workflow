@@ -37,10 +37,12 @@ canonical ``AI_WORKFLOW.md:146``：「lease 可續約、可到期回收；**回�
 **該側因此完全沒有守衛**（卡面驗收第 4 條把它劃出本卡射程，歸 #16 §9 的 G 卡）。
 
 它被寫出來時必須呼叫同一個函式，而不是自己另寫一條。這件事在本模組內能保證的是
-「這份實作不會為了單一觸發者而分叉」：`trigger` 只進結果紀錄，**不進任何判斷**
-（`tests/test_cleanup.py::test_executor_body_never_branches_on_the_trigger` 以 AST
-釘住），而 `evaluate_cleanup_guard()` 的簽章裡根本沒有 trigger 參數，因此「依觸發者
-放寬前提」在型別層就寫不出來。**「不會有人繞過它」不在本模組能保證的範圍內。**
+「這份實作不會為了單一觸發者而分叉」，而保證的方式是**資料流限制**而非行為約定：
+真正做事的 `_execute_closeout()` **收不到觸發者標籤**——不是參數、不是自由變數、也
+沒有同名模組全域，`execute_closeout_transition()` 在它回傳之後才把標籤 `replace`
+上去。`evaluate_cleanup_guard()` 的簽章同樣沒有 trigger 參數。強度、釘住它的三條測試
+與**買不到的部分**（走呼叫堆疊仍讀得到外層 frame）見 `docs/WF_CLEANUP_GUARD1.md`
+§4.0。**「不會有人繞過它」不在本模組能保證的範圍內。**
 
 ## --force 為何是「不可用」而非「不建議」
 
@@ -71,7 +73,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Literal, Mapping, Protocol, Sequence
 
@@ -894,7 +896,6 @@ CloseoutMode = Literal["applied", "detect_only", "aborted"]
 
 @dataclass(frozen=True)
 class CloseoutResult:
-    trigger: Trigger
     mode: CloseoutMode
     decision: GuardDecision
     observation_before: CloseoutObservation
@@ -909,6 +910,12 @@ class CloseoutResult:
     actions_aborted: tuple[str, ...] = ()
     #: 二次確認的逐項結果（供報告與對帳；正常放行時也會有一筆 pass）。
     recheck_checks: tuple[GuardCheck, ...] = ()
+    #: 觸發者標籤。**破壞性函式體 `_execute_closeout()` 造不出這個欄位的值**——它
+    #: 收不到 `trigger`，構造 `CloseoutResult` 時一律留 `None`，由外層的
+    #: `execute_closeout_transition()` 在**函式回傳之後**貼上（R4-002，見 §4.0）。
+    #: 因此欄位型別是 `Trigger | None`：`None` 只在那一瞬間存在，任何呼叫端拿到的
+    #: 結果都已貼好標籤。
+    trigger: Trigger | None = None
 
     @property
     def legal_state(self) -> bool:
@@ -927,13 +934,58 @@ def execute_closeout_transition(
     occupancy_prober: OccupancyProber | None = None,
     step_hook: Callable[[str], None] = _noop_hook,
 ) -> CloseoutResult:
+    """收尾轉換的公開入口：**跑完破壞性轉換，然後貼上觸發者標籤**。
+
+    本函式刻意只有一個運算式，而且它做的兩件事在時間上是分開的：先呼叫
+    `_execute_closeout()`（真正的機械 executor，**簽章裡沒有 `trigger`**），拿到結果
+    之後才 `replace(..., trigger=trigger)` 把標籤補上。
+
+    **這個切法是 R4-002 的處置，不是排版偏好。** 先前 `trigger` 是 executor 自己的
+    參數，於是「不得依觸發者分叉」只能靠一條 AST 規則維持；查核者用
+    `locals()["trig" + "ger"]` 這種動態名稱在兩行內繞過了它。現在該值**根本不在破壞
+    性函式體的 scope 裡**——不是參數、不是自由變數、也不是模組全域，動態名稱查表因此
+    查不到東西。強度與其邊界見 `docs/WF_CLEANUP_GUARD1.md` §4.0；釘住它的是
+    `test_the_destructive_body_cannot_name_the_trigger`（名稱面，窮舉 CPython 的名稱
+    表）與 `test_the_destructive_body_frame_never_holds_a_trigger_value`（值面，抓改
+    名夾帶）。本函式自身則由 `test_the_labelling_wrapper_is_pinned_to_call_and_relabel`
+    以位元碼符號集合釘死——它只准認得 `_execute_closeout` 與 `replace` 兩個名字。
+    """
+    return replace(
+        _execute_closeout(
+            target,
+            registry=registry,
+            card_body=card_body,
+            remote_facts=remote_facts,
+            effect_writer=effect_writer,
+            runner=runner,
+            occupancy_prober=occupancy_prober,
+            step_hook=step_hook,
+        ),
+        trigger=trigger,
+    )
+
+
+def _execute_closeout(
+    target: CleanupTarget,
+    *,
+    registry: TasksMdRegistry | None,
+    card_body: str | None,
+    remote_facts: RemoteCardFacts,
+    effect_writer: CloseoutEffectWriter | None = None,
+    runner: GitRunner | None = None,
+    occupancy_prober: OccupancyProber | None = None,
+    step_hook: Callable[[str], None] = _noop_hook,
+) -> CloseoutResult:
     """收尾轉換的**唯一機械 executor**（設計為兩個觸發者共用；目前只有 release 接線）。
 
-    `trigger` 只寫進結果，不參與任何判斷——**函式體內它只出現在下面四個
-    `CloseoutResult(...)` 的關鍵字引數上**，`test_executor_body_never_branches_on_the_trigger`
-    以 AST 釘住這件事（卡面驗收「單一 executor 形狀」）。因此接 reconcile 時只需新增
-    呼叫點，本函式不必改。`step_hook` 是故障注入點（正常執行為 no-op），讓測試能在
-    每個步驟間隙中斷並驗證續作。
+    **本函式看不到是誰叫它的。** 觸發者標籤不是參數、不是自由變數、也沒有同名的模
+    組全域，因此「依觸發者分叉」在這裡連寫都寫不出來——不必再靠一條「不准讀
+    `trigger`」的規則去追各種寫法。它回傳的 `CloseoutResult.trigger` 恆為 `None`，
+    由 `execute_closeout_transition()` 在回傳後貼上。
+
+    `step_hook` 是故障注入點（正常執行為 no-op），讓測試能在每個步驟間隙中斷並驗證
+    續作；`test_the_destructive_body_frame_never_holds_a_trigger_value` 也借它在每個
+    間隙探本函式的 frame，確認沒有任何區域變數（含換名夾帶的）帶著觸發者的值。
 
     續作安全性靠兩件事，都不依賴本機紀錄：
     1. 每個破壞性動作**執行前重讀當下事實**，已不存在就跳過（不重複刪除）；
@@ -948,7 +1000,7 @@ def execute_closeout_transition(
 
     if classify_state(before) == "illegal_terminal_before_cleanup":
         return CloseoutResult(
-            trigger=trigger, mode="detect_only",
+            mode="detect_only",
             decision=GuardDecision("detect_only", ()),
             observation_before=before, observation_after=before,
             state_after="illegal_terminal_before_cleanup",
@@ -967,7 +1019,7 @@ def execute_closeout_transition(
     )
     if decision.mode == "detect_only":
         return CloseoutResult(
-            trigger=trigger, mode="detect_only", decision=decision,
+            mode="detect_only", decision=decision,
             observation_before=before, observation_after=before,
             state_after=classify_state(before),
             actions_performed=(), actions_skipped_absent=(),
@@ -1055,7 +1107,7 @@ def execute_closeout_transition(
         # Issue 不關。停在合法的暫時態，交給下一次觀測式續作或人判斷。
         halted = observe(target, remote_facts, runner)
         return CloseoutResult(
-            trigger=trigger, mode="aborted", decision=decision,
+            mode="aborted", decision=decision,
             observation_before=before, observation_after=halted,
             state_after=classify_state(halted),
             actions_performed=tuple(performed), actions_skipped_absent=tuple(skipped),
@@ -1079,7 +1131,7 @@ def execute_closeout_transition(
 
     after = observe(target, remote_facts, runner)
     return CloseoutResult(
-        trigger=trigger, mode="applied", decision=decision,
+        mode="applied", decision=decision,
         observation_before=before, observation_after=after,
         state_after=classify_state(after),
         actions_performed=tuple(performed), actions_skipped_absent=tuple(skipped),

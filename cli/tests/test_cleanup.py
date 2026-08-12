@@ -17,12 +17,15 @@
 from __future__ import annotations
 
 import ast
+import dis
 import inspect
 import itertools
 import re
 import shutil
 import subprocess
+import sys
 import textwrap
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -472,43 +475,221 @@ def test_decision_identical_for_release_and_reconcile(env: Env, prober) -> None:
     assert a.blocking_reasons == b.blocking_reasons
 
 
-def test_executor_body_never_branches_on_the_trigger() -> None:
-    """卡面驗收「單一 executor 形狀」：`trigger` 只能是標籤，不能是開關。
+# --- R4-002：形狀面從「AST 規則」換成「資料流限制」 -------------------------
+#
+# 上一版只有一條 AST 規則：函式體內不得把 `trigger` 讀在結果紀錄之外，且不得出現
+# 觸發者名稱的字面常數。查核者兩行就繞過了它——`locals()["trig" + "ger"]` 不是
+# `ast.Name(trigger)`，`"rec" + "oncile"` 不是完整的字面常數，AST 兩條規則都不認得。
+#
+# 修法不是再多列幾條「也不准這樣寫」（那是軍備競賽：封堵得再多也只是把繞過成本
+# 抬高），而是把那個值**移出破壞性函式體的 scope**：`execute_closeout_transition()`
+# 收下 `trigger` 之後只做兩件事——呼叫 `_execute_closeout()`（簽章裡沒有 trigger），
+# 拿回結果後 `replace(..., trigger=...)` 貼標籤。函式體裡因此沒有任何名為 trigger
+# 的區域變數、自由變數或模組全域，動態名稱查表查不到東西。
+#
+# 三條測試分別釘住三件事，強度與邊界寫在 docs/WF_CLEANUP_GUARD1.md §4.0：
+#   T1 名稱面：窮舉 CPython 的名稱表，證明「按名字拿」拿不到。
+#   T2 值面：在每個步驟間隙探 frame，抓「換個名字夾帶進去」。
+#   T3 呼叫端：把貼標籤那層的位元碼符號集合釘死，讓它藏不下任何機關。
 
-    上面兩條是**行為**面（同樣的輸入下兩個 trigger 的判定一致），但行為面永遠只
-    覆蓋跑過的情境。這條是**形狀**面：直接解析 `execute_closeout_transition` 的
-    AST，要求函式體內每一個 `trigger` 的讀取都落在 `CloseoutResult(...)` 的關鍵字
-    引數上——也就是只寫進結果，不進任何條件、比較或查表。
+#: 破壞性函式體**允許**載入的全域／內建名稱。
+#:
+#: 這是允許清單，不是禁止清單，差別在漏一個的後果：禁止清單漏掉 `locals` 就被繞
+#: 過；允許清單漏掉一個合法的新名字只是轉紅，得有人回來把它加進來——而那正是要
+#: 的複核動作。`locals`／`globals`／`getattr`／`vars`／`eval`／`sys` 等等不必逐一
+#: 列進禁止清單，它們單純不在這裡面。
+_BODY_ALLOWED_GLOBALS = frozenset({
+    "CleanupGuardError", "CloseoutResult", "DESTRUCTIVE_ORDER", "GuardCheck",
+    "GuardDecision", "REMOTE_DELETE_CAS_ID", "RemoteCardFacts",
+    "SUBSEQUENT_OBLIGATION_STEPS", "_run", "bool", "classify_state",
+    "conditional_delete_args", "default_git_runner", "evaluate_cleanup_guard",
+    "observe", "recheck_remote_branch", "remaining_status_face_steps", "str", "tuple",
+})
 
-    第二個斷言擋的是「不讀 `trigger` 也能分叉」的寫法（例如比對 `args.next_stage`
-    或任何寫死的 "release"／"reconcile" 字面值）：函式體內不得出現等於這兩個觸發
-    者名稱的字面常數。
+_TRIGGER_VALUES = frozenset({"release", "reconcile"})
+
+
+def _all_code_objects(code):
+    """`code` 及其所有巢狀 code object（comprehension／lambda／巢狀函式）。"""
+    yield code
+    for const in code.co_consts:
+        if hasattr(const, "co_code"):
+            yield from _all_code_objects(const)
+
+
+def _loaded_globals(code) -> set[str]:
+    """位元碼實際以**全域／內建**身分載入的名稱（不含屬性存取）。
+
+    用 `dis` 而不是 `co_names`：後者把 `LOAD_ATTR` 的屬性名也混在一起，會逼得允許
+    清單得列出每一個屬性名，於是任何無關的重構都讓它轉紅——一條天天轉紅的測試等
+    於沒有測試。
     """
-    source = textwrap.dedent(inspect.getsource(cleanup.execute_closeout_transition))
-    fn = ast.parse(source).body[0]
+    out: set[str] = set()
+    for sub in _all_code_objects(code):
+        for ins in dis.get_instructions(sub):
+            if ins.opname in ("LOAD_GLOBAL", "LOAD_NAME", "STORE_GLOBAL", "DELETE_GLOBAL"):
+                out.add(ins.argval)
+    return out
 
-    recorded: set[int] = set()
-    for node in ast.walk(fn):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == "CloseoutResult"):
-            recorded.update(id(kw.value) for kw in node.keywords)
 
-    loads = [n for n in ast.walk(fn)
-             if isinstance(n, ast.Name) and n.id == "trigger"
-             and isinstance(n.ctx, ast.Load)]
-    assert loads, "找不到任何 trigger 讀取，這條測試可能已與實作脫節"
-    stray = [n.lineno for n in loads if id(n) not in recorded]
-    assert not stray, (
-        f"execute_closeout_transition 在第 {stray} 行把 trigger 用在結果紀錄之外；"
-        "依觸發者切分實作正是卡面禁止的事"
+def test_the_destructive_body_cannot_name_the_trigger() -> None:
+    """T1 名稱面：破壞性函式體內**沒有任何叫 trigger 的東西可以拿**。
+
+    CPython 的名稱只可能從三張表來：`co_varnames`（區域變數，含參數）、
+    `co_freevars`／`co_cellvars`（閉包）、`co_names`（全域與屬性）。`locals()`／
+    `globals()`／`getattr()` 這些動態查法查的也是同一批表，不會憑空多出東西。所以
+    只要三張表裡都沒有 `trigger`、模組層也沒有同名全域，動態名稱查表必然落空——
+    這是窮舉，不是逐條堵。
+
+    最後一條斷言是允許清單：函式體只能載入 `_BODY_ALLOWED_GLOBALS` 裡的全域名。
+    查核者那個 `locals()["trig" + "ger"]` 會在這裡先轉紅，理由指名 `locals`。
+    """
+    body = cleanup._execute_closeout
+    assert "trigger" not in inspect.signature(body).parameters, (
+        "破壞性函式體又收下 trigger 了——資料流限制被還原成上一版的 AST 規則"
     )
 
-    literals = [n.lineno for n in ast.walk(fn)
-                if isinstance(n, ast.Constant) and n.value in ("release", "reconcile")]
-    assert not literals, (
-        f"函式體第 {literals} 行出現觸發者名稱的字面常數；executor 不該認得自己"
-        "是被誰叫起來的"
+    for sub in _all_code_objects(body.__code__):
+        assert "trigger" not in sub.co_varnames, f"{sub.co_name} 有名為 trigger 的區域變數"
+        assert "trigger" not in sub.co_freevars, f"{sub.co_name} 從閉包拿得到 trigger"
+        assert "trigger" not in sub.co_cellvars, f"{sub.co_name} 把 trigger 裝進 cell"
+        assert "trigger" not in sub.co_names, f"{sub.co_name} 以全域／屬性名參照 trigger"
+
+    assert "trigger" not in vars(cleanup), (
+        "模組層出現了 trigger 全域——`globals()['trigger']` 會因此拿得到值"
     )
+
+    consts = [c for sub in _all_code_objects(body.__code__) for c in sub.co_consts]
+    assert not [c for c in consts if isinstance(c, str) and c in _TRIGGER_VALUES], (
+        "函式體出現觸發者名稱的字面常數"
+    )
+
+    strays = _loaded_globals(body.__code__) - _BODY_ALLOWED_GLOBALS
+    assert not strays, (
+        f"破壞性函式體載入了不在允許清單內的全域名稱：{sorted(strays)}。"
+        "若是正當的新相依，請把它加進 _BODY_ALLOWED_GLOBALS 並在 review 說明；"
+        "若它是 locals／globals／getattr／vars／eval／sys 之類的動態查名工具，"
+        "那正是本條要擋的東西"
+    )
+
+
+def _carries_a_trigger_value(value, depth: int = 0) -> bool:
+    """`value` 本身或其淺層容器元素裡，有沒有等於觸發者名稱的字串。
+
+    覆蓋範圍**刻意寫死**：字串本身、以及三層以內的 tuple／list／set／dict 元素。
+    藏進自訂物件屬性的夾帶不在覆蓋內（見 §4.0 的邊界說明）——那需要遍歷任意物件
+    圖，代價與誤報率都不成比例。
+    """
+    if isinstance(value, str):
+        return value in _TRIGGER_VALUES
+    if depth >= 3:
+        return False
+    if isinstance(value, Mapping):
+        return any(_carries_a_trigger_value(v, depth + 1)
+                   for v in itertools.chain(value.keys(), value.values()))
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return any(_carries_a_trigger_value(v, depth + 1) for v in value)
+    return False
+
+
+def test_the_destructive_body_frame_never_holds_a_trigger_value(env: Env) -> None:
+    """T2 值面：**換個名字夾帶**也不行——按值抓，不按名字抓。
+
+    T1 只保證「沒有叫 trigger 的東西」。一個把觸發者改名成 `mode_hint` 傳進來的
+    版本會通過 T1，卻照樣分叉得起來。這條在**每個步驟間隙**回頭探破壞性函式體的
+    frame，逐一檢查它當下的區域變數有沒有誰的值是 "release"／"reconcile"。
+
+    反假綠：先斷言探針真的打在 `_execute_closeout` 的 frame 上、且至少打了四次
+    （guard_passed ＋ 三個破壞性動作），否則「沒抓到」可能只是根本沒探到。
+    """
+    seen: list[str] = []
+
+    def probing_hook(step: str) -> None:
+        frame = sys._getframe(1)
+        assert frame.f_code is cleanup._execute_closeout.__code__, (
+            f"探針打在 {frame.f_code.co_name}，不是破壞性函式體——本案例形同不存在"
+        )
+        seen.append(step)
+        carriers = {k: v for k, v in frame.f_locals.items()
+                    if _carries_a_trigger_value(v)}
+        assert not carriers, (
+            f"步驟 {step} 時破壞性函式體的區域變數帶著觸發者的值：{sorted(carriers)}；"
+            "改個名字夾帶進來，資料流限制就形同虛設"
+        )
+
+    remote = FakeRemoteState()
+    result = execute_closeout_transition(
+        env.target, trigger="release", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote.facts(), effect_writer=FakeEffectWriter(remote),
+        occupancy_prober=free_prober, step_hook=probing_hook,
+    )
+    assert result.mode == "applied", result.blocking_reasons
+    assert len(seen) >= 1 + len(DESTRUCTIVE_ORDER), f"探針只打了 {seen}"
+    # 標籤本身仍要貼得上，否則「值不在裡面」可以靠「根本沒有標籤」達成
+    assert result.trigger == "release"
+
+
+def test_the_labelling_wrapper_is_pinned_to_call_and_relabel() -> None:
+    """T3 呼叫端：貼標籤那一層**只准認得兩個名字**。
+
+    資料流限制把 `trigger` 擋在破壞性函式體之外，代價是它落在了外面這一層——所以
+    這一層必須小到藏不下東西。位元碼的符號表窮舉了它能碰到的一切：`co_names`（全域
+    ＋屬性）、`co_varnames`（區域變數）、`co_consts`（常數）。把三者釘死之後，任何
+    機關都得先讓其中一張表長出新東西：政策查表要有 dict 常數或全域名、`locals()`
+    要有 `locals`、屬性分派要有屬性名——三者都會在這裡轉紅。
+    """
+    fn = cleanup.execute_closeout_transition
+    code = fn.__code__
+
+    assert set(code.co_names) == {"_execute_closeout", "replace"}, (
+        f"貼標籤層碰到了預期外的名字：{sorted(code.co_names)}"
+    )
+    assert code.co_varnames == tuple(inspect.signature(fn).parameters), (
+        "貼標籤層多了參數以外的區域變數——它應該只有一個運算式"
+    )
+    assert code.co_freevars == () and code.co_cellvars == ()
+
+    consts = [c for c in code.co_consts if c is not fn.__doc__]
+    for const in consts:
+        # 只允許 None 與「關鍵字引數名稱的元組」（CPython 呼叫慣例產生的常數）
+        assert const is None or (isinstance(const, tuple)
+                                 and all(isinstance(x, str) for x in const)), (
+            f"貼標籤層出現預期外的常數 {const!r}"
+        )
+    flat = {x for c in consts if isinstance(c, tuple) for x in c}
+    assert not (flat & _TRIGGER_VALUES), "貼標籤層出現觸發者名稱的字面常數"
+
+
+def test_a_dynamic_name_lookup_from_inside_the_body_finds_nothing(env: Env) -> None:
+    """§4.0 說「動態名稱查表查不到」，這裡就是那句話的一次**實際嘗試且失敗**。
+
+    查核者的原句是在函式體內寫 `locals()["trig" + "ger"]`。這條測試不改原始碼，改
+    從步驟間隙拿到**同一個 frame**再查一次：`frame.f_locals` 與函式體內 `locals()`
+    讀的是同一批 fast locals，查不到就是查不到。`f_globals` 同理。
+
+    這條與 T1 的分工：T1 證明的是「表裡沒有」（靜態、窮舉），這條證明的是「真的去
+    拿會拿不到」（動態、實例）。承重宣稱要附一個失敗的繞過實例，指的就是它。
+    """
+    attempts: list[str] = []
+
+    def bypass_attempt(step: str) -> None:
+        frame = sys._getframe(1)
+        assert frame.f_code is cleanup._execute_closeout.__code__
+        attempts.append(step)
+        with pytest.raises(KeyError):
+            _ = frame.f_locals["trig" + "ger"]      # 查核者的原句，一字未改
+        with pytest.raises(KeyError):
+            _ = frame.f_globals["trig" + "ger"]
+        assert not hasattr(cleanup, "trig" + "ger")
+
+    remote = FakeRemoteState()
+    result = execute_closeout_transition(
+        env.target, trigger="reconcile", registry=env.registry, card_body=CARD_BODY,
+        remote_facts=remote.facts(), effect_writer=FakeEffectWriter(remote),
+        occupancy_prober=free_prober, step_hook=bypass_attempt,
+    )
+    assert result.mode == "applied", result.blocking_reasons
+    assert attempts, "一次都沒試到——本案例形同不存在"
 
 
 def _independent_env(root: Path) -> Env:
@@ -1000,6 +1181,120 @@ def test_a_failing_worktree_removal_stops_the_run_instead_of_being_ignored(env: 
     assert not _delete_pushes(log)
     assert writer.calls == []
     assert_work_intact(env)
+
+
+# ---------------------------------------------------------------------------
+# 6.0 R4-002：每一條保險絲都要有行為測試走過
+#
+# M48 之所以能在兩輪查核之間存活，不是因為規則寫得不夠多，是因為它分叉的那條保險
+# 絲（複驗回報可刪卻沒帶回期望 tip）**整份行為套件一次都沒走過**。形狀面的規則不
+# 挑路徑，所以它撐住了；但形狀面被繞過時，底下就什麼都沒有。
+#
+# 下面兩條分別補上：一條真的把那條保險絲走一遍，一條防止下一條保險絲又被漏掉。
+# ---------------------------------------------------------------------------
+
+
+class _TiplessRecheck:
+    """複驗回報「可以刪」卻不交出期望 tip——保險絲的觸發條件。
+
+    這是被改壞的複驗（正常路徑下 `verdict == "delete"` 必帶 tip），所以要靠注入才
+    到得了。到得了不代表它可以被略過：沒有期望 tip 就組不出租約，退回無條件刪除
+    正是 R2-001 被打穿的那個版本。
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, target, runner):
+        self.calls += 1
+        return cleanup.RemoteDeleteDecision(
+            verdict="delete",
+            check=cleanup.GuardCheck(
+                cleanup.RECHECK_REMOTE_ID, "pass", "（注入）複驗說可刪，但沒帶回 tip", 2
+            ),
+            expected_tip=None,
+        )
+
+
+@pytest.mark.parametrize("trigger", ["release", "reconcile"])
+def test_a_recheck_that_reports_deletable_without_a_tip_stops_the_run(
+    env: Env, monkeypatch: pytest.MonkeyPatch, trigger: str
+) -> None:
+    """複驗沒帶回期望 tip 時**停下來**，不刪、不寫狀態面（M48 的行為覆蓋）。
+
+    斷言的是「停在哪一步」而不只是「有丟例外」（M30／M41 的教訓）：worktree 與本地
+    分支已經照順序處理完，遠端刪除**一條都沒送出**，遠端分支還在，第 4 步一個字
+    都沒寫。兩個 trigger 各跑一次——這條保險絲要是依觸發者分叉，其中一邊會綠。
+    """
+    fake = _TiplessRecheck()
+    monkeypatch.setattr(cleanup, "recheck_remote_branch", fake)
+
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    log: list[list[str]] = []
+
+    with pytest.raises(CleanupGuardError, match="期望 tip"):
+        execute_closeout_transition(
+            env.target, trigger=trigger, registry=env.registry, card_body=CARD_BODY,
+            remote_facts=remote.facts(), effect_writer=writer,
+            runner=recording_runner(log), occupancy_prober=free_prober,
+        )
+
+    assert fake.calls == 1, "注入的複驗沒被呼叫到——本案例形同不存在"
+    assert [a for a in log if a[:2] == ["worktree", "remove"]], "根本沒走到破壞性動作"
+    assert not _delete_pushes(log), "沒有期望 tip 卻還是送出了遠端刪除"
+    assert _remote_branch_exists(env.repo, "origin", BRANCH), "遠端分支被刪掉了"
+    assert writer.calls == [], "清理未完成卻寫了狀態面"
+    assert remote.issue_open is True and remote.terminal_written is False
+
+
+#: 破壞性函式體內每一條 `raise CleanupGuardError` ↔ 走過它的行為測試。
+#:
+#: key 是保險絲訊息的可辨識片段，value 是本模組內確實會走到該保險絲的測試函式名。
+_FUSE_BEHAVIOURAL_COVERS = {
+    "git worktree remove 失敗":
+        "test_a_failing_worktree_removal_stops_the_run_instead_of_being_ignored",
+    "git branch -d 失敗":
+        "test_failed_worktree_removal_stops_before_touching_the_status_face",
+    "複驗回報可刪卻沒有帶回期望 tip":
+        "test_a_recheck_that_reports_deletable_without_a_tip_stops_the_run",
+}
+
+
+def test_every_fuse_in_the_destructive_body_has_a_registered_behavioural_cover() -> None:
+    """新增一條保險絲卻沒有行為測試走過它 → 轉紅。
+
+    這條**不驗**登記的測試是不是真的走到那條保險絲（那需要逐行追蹤，成本與誤判率
+    都不划算），它驗的是「有沒有人被迫想過這件事」：M48 的成因是一條保險絲被寫下
+    來、而沒有任何行為案例走過它，形狀面因此成了唯一防線。要求登記，就讓下一條保
+    險絲不可能默默地只靠形狀面撐著。
+    """
+    source = textwrap.dedent(inspect.getsource(cleanup._execute_closeout))
+    fn = ast.parse(source).body[0]
+
+    fuses: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Raise) or node.exc is None:
+            continue
+        call = node.exc
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                and call.func.id == "CleanupGuardError"):
+            continue
+        text = " ".join(
+            part.value for arg in call.args for part in ast.walk(arg)
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        )
+        fuses.append(text)
+
+    assert len(fuses) == len(_FUSE_BEHAVIOURAL_COVERS), (
+        f"破壞性函式體有 {len(fuses)} 條保險絲，登記表有 "
+        f"{len(_FUSE_BEHAVIOURAL_COVERS)} 條：{fuses}"
+    )
+    for text in fuses:
+        matched = [k for k in _FUSE_BEHAVIOURAL_COVERS if k in text]
+        assert len(matched) == 1, f"保險絲「{text[:40]}…」在登記表裡找不到唯一對應"
+        cover = _FUSE_BEHAVIOURAL_COVERS[matched[0]]
+        assert callable(globals().get(cover)), f"登記的行為測試 {cover} 不存在"
 
 
 # ---------------------------------------------------------------------------
