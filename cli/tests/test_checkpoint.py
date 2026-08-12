@@ -204,7 +204,9 @@ def test_checkpoint_rejects_undefined_escalation_resolution_key(fake_runner, tmp
     assert rc == 2
     err = capsys.readouterr().err
     assert "escalation_resolution" in err
-    assert "另開卡承接" in err  # 指名等待契約卡，而不是自己補一個欄位
+    # ai-workflow#39 否決了「checkpoint 上的獨立欄位」，採獨立事件型別；訊息須指向後者。
+    assert "永遠不會是" in err
+    assert "escalation-resolution" in err
     assert len(comments_of(fake_runner, "CP-RESOL1")) == before
 
 

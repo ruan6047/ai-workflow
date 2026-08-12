@@ -124,6 +124,7 @@ from wf_cli.validation import (
     check_attempt_not_duplicated,
     check_checkpoint_gate,
     counted_attempts,
+    derive_accepted_marking_binding,
     validate_accepted_overrides,
     validate_checkpoint_input,
     validate_marked_by,
@@ -269,6 +270,66 @@ def test_build_accepted_marks_layers_defaults_and_overrides():
     assert marks["F-01"].accepted is True and marks["F-01"].marked_by == ""
     assert marks["F-02"].accepted is False
     assert marks["F-02"].marked_by == "ruan6047" and marks["F-02"].reason == "撤銷理由"
+
+
+def test_accepted_marking_binding_is_vacuous_while_the_writer_set_is_undeclared():
+    """handoff-contract.md §5 的 writer 集合未宣告 → 恆為 structurally-vacuous。
+
+    形狀取自 review-escalation.md §4／§5 的 authorization_binding（ai-workflow#39）：
+    比對在結構上不可能失敗時，要把恆真寫進事件流，不是留一個看似有檢查的欄位。
+    """
+    assert (
+        derive_accepted_marking_binding("ruan6047", "Claude Opus 5@Claude Code（子 agent）")
+        == "structurally-vacuous"
+    )
+    # 宣告了 writer 集合，但 owner 欄仍是自由文字（不在集合內）→ 仍然無鑑別力。
+    assert (
+        derive_accepted_marking_binding(
+            "ruan6047",
+            "Claude Opus 5@Claude Code（子 agent）",
+            authorized_writers=["ruan6047", "someone-else"],
+        )
+        == "structurally-vacuous"
+    )
+    # 兩者都落在已宣告的帳號集合內 → 「不得等於 owner」這條檢查才可能失敗。
+    assert (
+        derive_accepted_marking_binding(
+            "ruan6047", "someone-else", authorized_writers=["ruan6047", "someone-else"]
+        )
+        == "substantive"
+    )
+
+
+def test_accepted_true_carries_not_applicable_binding_written_explicitly():
+    """accepted=true 沒有行使授權；但**顯式寫出**而非省略——省略與漏填無法區分。"""
+    marks = build_accepted_marks([_finding("F-01")], {}, "")
+    assert marks["F-01"].binding == "not-applicable"
+
+    report = _report(findings=[_finding("F-01")])
+    block = render_escalation_facts_block(
+        attempt=f"CARD-A-e0-{SHA_A}",
+        escalation_epoch=0,
+        report=report,
+        marks=marks,
+        counts_toward_escalation=True,
+    )
+    assert "accepted_marking_binding: not-applicable" in block
+
+
+def test_binding_is_derived_not_hand_filled():
+    """呼叫端無法從外部塞值：build_accepted_marks 只吃導出所需的輸入。"""
+    marks = build_accepted_marks(
+        [_finding("F-01")],
+        {"F-01": "撤銷"},
+        "ruan6047",
+        owner_field="someone-else",
+        authorized_writers=["ruan6047", "someone-else"],
+    )
+    assert marks["F-01"].binding == "substantive"
+    marks_vacuous = build_accepted_marks(
+        [_finding("F-01")], {"F-01": "撤銷"}, "ruan6047", owner_field="自由文字 owner"
+    )
+    assert marks_vacuous["F-01"].binding == "structurally-vacuous"
 
 
 # ---- 事件流的讀回與閘門 ----
@@ -467,12 +528,22 @@ def test_validate_checkpoint_input_is_fail_closed(overrides, needle):
     assert needle in "；".join(exc_info.value.errors)
 
 
-def test_checkpoint_rejects_the_four_undefined_keys_pm_invented():
-    """`escalation_resolution` 是真實契約缺口，不得由 writer 靜默沿用。"""
+def test_checkpoint_rejects_escalation_resolution_and_points_at_the_separate_event_type():
+    """缺口已由 ai-workflow#39 補上，而補法**否決**了 checkpoint 欄位這條路。
+
+    拒收行為本身不變；此測試釘住的是訊息指向的方向——不得再暗示「等契約卡落地後
+    這個鍵就會合法」，也不得叫人把裁定寫進 checkpoint_rationale 冒充裁定。
+    """
     with pytest.raises(ValidationError) as exc_info:
         validate_checkpoint_input(**_checkpoint_kwargs(escalation_resolution="continue"))
     message = "；".join(exc_info.value.errors)
-    assert "escalation_resolution" in message and "另開卡承接" in message
+    assert "escalation_resolution" in message
+    assert "永遠不會是" in message
+    assert "escalation-resolution" in message  # 指向獨立事件型別
+    assert "不構成裁定" in message  # rationale 只是人讀脈絡
+    # 舊訊息把讀者導向一個已被否決的結局，不得復活。
+    assert "另開卡承接" not in message
+    assert "請等該契約卡落地" not in message
 
 
 def test_checkpoint_rejects_deferred_findings_because_both_causes_are_unavailable():

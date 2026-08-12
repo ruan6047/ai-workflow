@@ -915,6 +915,9 @@ def test_mark_not_accepted_requires_reason_and_records_platform_identity(fake_ru
     body = last_comment(fake_runner, "ACC-CARD3")
     assert "accepted: false" in body
     assert "ruan6047" in body  # marked_by 取自 gh api user，不是自陳字串
+    # 本 repo 的「標記者不得等於 owner」比對在結構上恆真；把恆真本身寫進事件流，
+    # 而不是留一個看似有檢查的欄位（形狀同 ai-workflow#39 的 authorization_binding）。
+    assert "accepted_marking_binding: structurally-vacuous" in body
     assert "counts_toward_escalation: false" in body  # 移出 open set 後不再計數
     assert "marked_by=ruan6047" in capsys.readouterr().out
 

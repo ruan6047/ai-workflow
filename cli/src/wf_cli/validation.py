@@ -427,10 +427,57 @@ def validate_marked_by(marked_by: str, owner_field: str | None) -> None:
         )
 
 
+def derive_accepted_marking_binding(
+    marked_by: str,
+    owner_field: str | None,
+    *,
+    authorized_writers: Sequence[str] | None = None,
+) -> str:
+    """導出 ``accepted=false`` 標記的授權綁定值；**呼叫端不得手填**。
+
+    與 review-escalation.md §4／§5 的 ``authorization_binding``（ai-workflow#39）同一個
+    述詞，套在另一組角色上：``validate_marked_by`` 要求標記者不得逐字等於卡面 owner，
+    而**該比對是否可能失敗**，取決於兩個值是否落在同一個命名空間。
+
+    - ``substantive``：``handoff-contract.md`` §5 已宣告被授權的 review event writer
+      帳號集合，且 ``marked_by`` 與 owner 欄兩者都落在該集合內——此時「不得等於 owner」
+      是一條真的會擋下東西的檢查。
+    - ``structurally-vacuous``：以上任一不成立。**本 repo 今天恆為此值**：
+      ``handoff-contract.md`` §5 的 writer 集合仍是未填的樣板佔位，且 owner 欄裝的是
+      「Claude Opus 5@Claude Code（子 agent）」這類自由文字、與 GitHub login 不同型別，
+      兩者永遠不可能相等。
+
+    ``structurally-vacuous`` **不使標記無效**（否則本 repo 無法運作），但消費者**不得**
+    據以宣稱該次撤銷採認經第二方獨立核可。何時開始有鑑別力也一併指名：§5 宣告 writer
+    集合，**且** owner 欄承載可與帳號逐字比對的平台身分。在那之前這是**約定**，
+    其執行者是人——該落差應登記於 ``docs/CONSUMER_CONFORMANCE.md``（不在本卡寫入集）。
+    """
+    if not authorized_writers:
+        return "structurally-vacuous"
+    writers = {w.strip() for w in authorized_writers if w and w.strip()}
+    if not marked_by.strip() or not (owner_field or "").strip():
+        return "structurally-vacuous"
+    if marked_by.strip() in writers and owner_field.strip() in writers:
+        return "substantive"
+    return "structurally-vacuous"
+
+
 def build_accepted_marks(
-    findings: Iterable[Finding], overrides: Mapping[str, str], marked_by: str
+    findings: Iterable[Finding],
+    overrides: Mapping[str, str],
+    marked_by: str,
+    *,
+    owner_field: str | None = None,
+    authorized_writers: Sequence[str] | None = None,
 ) -> dict[str, AcceptedMark]:
-    """把預設 true 與顯式 false 疊成最終的 ``accepted`` 標記表。"""
+    """把預設 true 與顯式 false 疊成最終的 ``accepted`` 標記表。
+
+    ``binding`` 一律由 ``derive_accepted_marking_binding`` 導出；``accepted=true`` 沒有
+    行使任何授權，取 ``not-applicable``（顯式寫出，不省略）。
+    """
+    binding = derive_accepted_marking_binding(
+        marked_by, owner_field, authorized_writers=authorized_writers
+    )
     marks: dict[str, AcceptedMark] = {}
     for finding in findings:
         reason = overrides.get(finding.finding_id)
@@ -442,6 +489,7 @@ def build_accepted_marks(
                 accepted=False,
                 reason=reason,
                 marked_by=marked_by,
+                binding=binding,
             )
     return marks
 
@@ -634,7 +682,7 @@ def validate_checkpoint_input(
 ) -> None:
     """``escalation-checkpoint`` 事件的欄位檢查（review-escalation.md §5）。
 
-    刻意**不**接受 PM 手寫六則裡多出的四個未定義鍵：``escalation_resolution``、
+    刻意**不**接受 PM 手寫七則裡多出的四個未定義鍵：``escalation_resolution``、
     ``decided_by``、``counts_toward_escalation``、``attempts_so_far``。其中：
 
     - ``counts_toward_escalation`` 放在 checkpoint 上是分類錯誤——§5 把它定為 review
@@ -643,11 +691,10 @@ def validate_checkpoint_input(
     - ``attempts_so_far`` 不等於 ``unique_attempt_count``（差一）：PM 的建立時點慣例是
       「派下一輪審之前」，而 §4 要求 trigger attempt 的裁決已落地。本指令以
       ``trigger_attempt_id`` 正名該語意。
-    - ``escalation_resolution`` 是**真實的契約缺口**（§4 規定條件成立時
-      ``checkpoint_decision`` 只能是 ``escalate``，但「escalate 之後需求方選擇維持同
-      執行者」在契約裡沒有表示法——``escalation-epoch-change`` 只有 ``replan``／
-      ``change-executor``）。缺口回頭補進契約、另開卡承接（PM 負責開）；本 writer
-      不得靜默沿用這個未定義鍵，遇到即 fail-closed。
+    - ``escalation_resolution`` 曾是真實的契約缺口，但該缺口已由
+      ``WF-ESCALATION-RESOLUTION-GAP1``（ai-workflow#39，``058100ad``）補上，而補法
+      **否決了 checkpoint 欄位這條路**：它是獨立的事件型別 ``escalation-resolution``，
+      **永遠不會**成為 checkpoint 的欄位。詳見下方拒收訊息。
     """
     errors: list[str] = []
 
@@ -689,12 +736,18 @@ def validate_checkpoint_input(
 
     if escalation_resolution is not None:
         errors.append(
-            "`escalation_resolution` 不是 review-escalation.md §5 定義的 checkpoint 欄位，"
-            "本 writer 拒絕靜默沿用。這是真實的契約缺口——§4 規定條件成立時 "
-            "checkpoint_decision 只能是 escalate，但「escalate 之後需求方選擇維持同執行者」"
-            "在契約裡沒有表示法（escalation-epoch-change 只有 replan／change-executor）。"
-            "需求方已裁定該缺口回頭補進契約、另開卡承接（PM 負責開）；請等該契約卡落地，"
-            "在此之前把該裁定寫進 checkpoint_rationale 的散文，不要自創欄位。"
+            "`escalation_resolution` 不是 checkpoint 的欄位，而且**永遠不會是**。"
+            "review-escalation.md §4「escalate 之後的第三種結果」已裁定"
+            "（WF-ESCALATION-RESOLUTION-GAP1，ai-workflow#39，058100ad）："
+            "把它做成 checkpoint 上的獨立欄位是候選（乙），已被否決——那會把**告警與解除"
+            "綁進同一則事件**，使機械判定成為人類裁定的人質（需求方一天不表態，escalate "
+            "一天不進事件流），且「條件已成立但尚無人裁定」變成無表示法，漏建誘因被制度化；"
+            "先寫再編輯則湮滅原文，§5 已否決編輯路徑。採用的是候選（丙）：獨立事件型別 "
+            "`escalation-resolution`——checkpoint 照常記 escalate、卡片轉 🚨已升級，"
+            "裁定到達時**另發一則**解除事件，兩則之間的區間就是升級狀態本身。"
+            "本 CLI 尚未實作該 writer（在 WF-22-CLI4 切片 A 之外），故此處 fail-closed。"
+            "checkpoint_rationale 可記人讀脈絡，但它**不構成裁定**——升級狀態的解除須待 "
+            "escalation-resolution writer，不得以自創鍵或散文代替。"
         )
 
     if deferred_findings:
@@ -721,6 +774,7 @@ __all__ = [
     "check_attempt_not_duplicated",
     "check_checkpoint_gate",
     "counted_attempts",
+    "derive_accepted_marking_binding",
     "review_invalid_reasons",
     "validate_accepted_overrides",
     "validate_chain_depth",

@@ -561,6 +561,18 @@ BASELINE_LOG_TAG = "contract-baseline by wf-cli"
 _ATTEMPT_ID_RE = re.compile(r"^(?P<card>.+)-e(?P<epoch>\d+)-(?P<sha>[0-9a-f]{40})$")
 
 
+# ``accepted=false`` 這個標記的**授權綁定**取值。形狀取自 review-escalation.md §4／§5
+# 的 ``authorization_binding``（WF-ESCALATION-RESOLUTION-GAP1，ai-workflow#39），理由同源：
+# 當「標記者不得是被該標記嘉惠的一方」這個比對在本專案結構上恆真時，正確的處置是**把恆真
+# 本身寫進事件流**，而不是留下一個看似有檢查的欄位讓消費者誤讀成「已有第二方獨立核可」。
+#
+# ⚠️ 這**不是** #39 的那個欄位：#39 的 ``authorization_binding`` 是 ``escalation-resolution``
+# 事件的必填欄，其導出依需求方帳號與被授權 writer 集合；此處是同一個述詞套在另一組角色
+# （標記者 vs 被嘉惠的執行者）上。故另取名，不共用鍵名——若日後有契約卡定義 accepted 標記
+# 的授權 schema，本鍵應服從該 schema。
+ACCEPTED_MARKING_BINDINGS = ("substantive", "structurally-vacuous", "not-applicable")
+
+
 @dataclass(frozen=True)
 class AcceptedMark:
     """一個 finding 的 ``accepted`` 標記（review-escalation.md §2：lifecycle writer 職權）。
@@ -568,12 +580,17 @@ class AcceptedMark:
     ``marked_by``／``reason`` 只在 ``accepted=false`` 時有值：標 true 是保守方向
     （finding 留在 open set），標 false 才是把 finding 移出 open set、同時抹掉它對
     carry、對根因 occurrence 與對 attempt 計數的貢獻。
+
+    ``binding`` 由 adapter 導出、**不得手填**，且 ``structurally-vacuous`` 時仍須寫出
+    而非省略（省略與漏填無法區分，與 ``findings: []`` 必須顯式同一紀律）。
+    ``accepted=true`` 是免旗標的預設、不行使任何授權，故取 ``not-applicable``。
     """
 
     finding_id: str
     accepted: bool
     reason: str = ""
     marked_by: str = ""
+    binding: str = "not-applicable"
 
 
 @dataclass(frozen=True)
@@ -724,6 +741,7 @@ def render_escalation_facts_block(
                 f"  - finding_id: {_yaml_scalar(finding.finding_id)}",
                 f"    accepted: {_yaml_scalar(mark.accepted)}",
                 f"    accepted_marked_by: {_yaml_scalar(mark.marked_by)}",
+                f"    accepted_marking_binding: {mark.binding}",
                 f"    accepted_reason: {_yaml_scalar(mark.reason)}",
                 "    status: open",
                 f"    blocking: {_yaml_scalar(finding.blocking)}",
@@ -937,6 +955,7 @@ def render_contract_baseline_comment(
 
 
 __all__ = [
+    "ACCEPTED_MARKING_BINDINGS",
     "ATTRIBUTIONS",
     "BASELINE_BLOCK_KEY",
     "BASELINE_LOG_TAG",

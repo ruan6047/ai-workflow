@@ -1,7 +1,7 @@
 """``wfcli checkpoint`` 與 ``wfcli contract-baseline``：escalation 帳的兩個事件 writer。
 
 痛點：``review-escalation.md`` §4／§5 的 ``escalation-checkpoint`` 在本 repo 從來沒有
-授權寫入通道——PM 只能手寫留言，六則全部不合契約（缺三個必填欄、多出四個未定義鍵）。
+授權寫入通道——PM 只能手寫留言，七則全部不合契約（缺三個必填欄、多出四個未定義鍵）。
 沒有 writer，``deferred_findings`` 整個機制也上不了線（§4 末段已明記這是本卡的缺口）。
 
 ## 兩個指令在同一個檔案
@@ -256,6 +256,13 @@ def run_checkpoint(args: argparse.Namespace) -> int:
             "[checkpoint] 提醒：本指令不改交付狀態。decision=escalate 時卡片應轉 🚨已升級，"
             "請以 `wfcli handoff --status 🚨已升級` 由既有的狀態寫入通道完成——"
             "交付狀態是 current-state 平面，不屬本事件的射程。"
+        )
+        print(
+            "[checkpoint] 升級狀態的**解除**是另一則事件：review-escalation.md §4「escalate "
+            "之後的第三種結果」定義的 `escalation-resolution`（ai-workflow#39）。本 checkpoint "
+            "的 decision 維持機械導出，不因需求方裁定而改寫；重規劃／換人仍走 "
+            "escalation-epoch-change。該 writer 尚未實作（WF-22-CLI4 切片 A 之外），"
+            "在它落地前，裁定只能以人讀留言存在，事件流上該區間仍是升級中。"
         )
     print(
         "[checkpoint] 誠實聲明：unique_attempt_count 與 decision 未由事件流機械推導"

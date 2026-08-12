@@ -310,7 +310,17 @@ def run(args: argparse.Namespace) -> int:
             for error in exc.errors:
                 print(f"  - {error}", file=sys.stderr)
             return 2
-    marks = build_accepted_marks(report.findings, overrides, marked_by)
+    marks = build_accepted_marks(
+        report.findings,
+        overrides,
+        marked_by,
+        owner_field=item.owner_field,
+        # handoff-contract.md §5 的「被授權的 review event writer 帳號集合」在本 repo
+        # 仍是未填的樣板佔位，故傳 None——導出值因此恆為 structurally-vacuous，而那正是
+        # 要被寫進事件流的事實（review-escalation.md §4／§5 同型處理，ai-workflow#39）。
+        # 本 CLI 不代為解析該樣板：那是跨檔的契約宣告，應由專案自己的設定承載。
+        authorized_writers=None,
+    )
 
     timestamp = now_iso8601()
     comment = render_verdict_comment(
