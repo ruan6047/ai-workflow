@@ -30,7 +30,15 @@ jobs:
     # ⚠️ 這個 name 就是 check 的名字，也就是 required status check 要比對的字串。
     # 一旦需求方把它設為 required（見 docs/DEV_AIWF_MINIMAL_CI1.md §7），
     # **改名或拆成多個 job 會讓所有 PR 永遠停在 pending**。改名前先改 ruleset。
-    name: tests
+    #
+    # 為什麼要用表達式而不是固定字串：同一個 head SHA 會同時收到「分支頭 push run」
+    # 與「PR merge ref run」兩個 check。若兩者同名，同一個 SHA 上就會出現兩個同名
+    # 但結論相反的 check（實測：run 31592201889 success 與 31592230166 failure 都
+    # 叫 tests、都掛在 f36c00e 上，完成時間相差 27 秒）。同名時哪一個算數是平台
+    # 內部行為，而兩者完成順序只差幾十秒、實質是擲硬幣——閘門不能建在擲硬幣上。
+    # 這裡直接讓它不可能發生：**required 的名字只由「合併結果」與 main 產生**，
+    # 分支頭那一支改叫別的名字，永遠只是參考。判定見 docs/DEV_AIWF_MINIMAL_CI1.md §1.4。
+    name: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && 'tests' || 'tests (branch head)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
