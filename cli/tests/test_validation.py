@@ -619,3 +619,70 @@ def test_two_same_type_blocks_in_one_comment_are_refused_not_guessed():
     doubled = body + "\n" + body
     with pytest.raises(ReviewParseError):
         find_block_by_key(doubled, CHECKPOINT_BLOCK_KEY)
+
+
+# ---- owner 的時點快照（#39 §5 第 3 款的載荷） ----
+
+
+def test_owner_snapshot_key_is_named_as_a_point_in_time_not_an_intrinsic_property():
+    """鍵名承載語意：叫 `owner` 會讓下游把時點值當成 attempt 的固有屬性。"""
+    report = _report(findings=[_finding()])
+    block = render_escalation_facts_block(
+        attempt=f"CARD-A-e0-{SHA_A}",
+        escalation_epoch=0,
+        report=report,
+        marks=default_accepted_marks(report.findings),
+        counts_toward_escalation=True,
+        owner_field_at_verdict_write="Codex",
+    )
+    assert "owner_field_at_verdict_write: Codex" in block
+    # 不得出現裸的頂層 `owner:` 鍵——那正是要避免的讀法。
+    assert not any(line.strip().startswith("owner:") for line in block.splitlines())
+
+
+def test_owner_snapshot_is_written_even_when_the_project_field_is_empty():
+    """省略與漏填無法區分：欄位為空時寫 ""（鍵在、值空），不是不寫。"""
+    report = _report(findings=[])
+    block = render_escalation_facts_block(
+        attempt=f"CARD-A-e0-{SHA_A}",
+        escalation_epoch=0,
+        report=report,
+        marks={},
+        counts_toward_escalation=False,
+        owner_field_at_verdict_write=None,
+    )
+    assert 'owner_field_at_verdict_write: ""' in block
+
+
+def test_absent_owner_key_and_empty_owner_value_are_distinguishable_on_read_back():
+    """三態：None＝鍵不存在（未知）／""＝欄位為空／其餘＝快照值。"""
+    def facts_for(owner):
+        comment = _verdict_comment("CARD-A", SHA_A, findings=[_finding()])
+        body = comment["body"]
+        if owner is None:  # 模擬「鍵根本不在」的舊事件
+            body = "\n".join(
+                line for line in body.splitlines()
+                if not line.strip().startswith("owner_field_at_verdict_write:")
+            )
+        else:
+            body = body.replace(
+                'owner_field_at_verdict_write: ""',
+                f"owner_field_at_verdict_write: {owner}" if owner else 'owner_field_at_verdict_write: ""',
+            )
+        return build_issue_event_history([{"body": body, "url": "u"}]).scoped_facts[0]
+
+    assert facts_for(None).owner_field_at_verdict_write is None
+    assert facts_for("").owner_field_at_verdict_write == ""
+    assert facts_for("Codex").owner_field_at_verdict_write == "Codex"
+
+
+def test_missing_owner_key_does_not_make_the_attempt_unknown_to_the_gate():
+    """owner 快照不是閘門輸入：缺它不得多產生一條讓閘門拒絕的路徑。"""
+    body = _verdict_comment("CARD-A", SHA_A, findings=[_finding()])["body"]
+    body = "\n".join(
+        line for line in body.splitlines()
+        if not line.strip().startswith("owner_field_at_verdict_write:")
+    )
+    history = build_issue_event_history([{"body": body, "url": "u"}])
+    assert history.unknown_reasons == ()
+    assert len(history.scoped_facts) == 1

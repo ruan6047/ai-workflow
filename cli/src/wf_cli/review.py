@@ -453,6 +453,7 @@ def render_verdict_comment(
     timestamp: str,
     accepted_marks: Mapping[str, AcceptedMark] | None = None,
     preflight_passed: bool = True,
+    owner_field_at_verdict_write: str | None = None,
 ) -> str:
     """渲染寫進 Issue timeline 的裁決留言（canonical §4.3「事件＝結構化 comment」）。
 
@@ -507,6 +508,7 @@ def render_verdict_comment(
             marks=marks,
             counts_toward_escalation=counts,
             preflight_passed=preflight_passed,
+            owner_field_at_verdict_write=owner_field_at_verdict_write,
         ),
         "",
         "---",
@@ -516,6 +518,13 @@ def render_verdict_comment(
             "`accepted` 由本指令以 lifecycle writer 身分標記（reviewer 自填一律忽略）；"
             "`status` 新採認一律 `open`（review-escalation.md §2）；"
             "`counts_toward_escalation` 為依 §3 算出的投影，不接受手填。"
+        ),
+        (
+            "`owner_field_at_verdict_write` 是 Project「owner」欄在**本則裁決寫入當下**的"
+            "快照，**不是該 attempt 全程的 owner**。依現行派審慣例"
+            "（`handoff --next-stage review --to <查核者>` 會把該欄改成查核者），"
+            "此值通常是**查核者**而非產出 source_sha 的執行者；用於 "
+            "`review-escalation.md` §5 第 3 款的 `continued_owner` 比對前必須先確認這一點。"
         ),
     ]
     return "\n".join(lines)
@@ -595,12 +604,18 @@ class AcceptedMark:
 
 @dataclass(frozen=True)
 class EscalationFacts:
-    """一則已落地 review event 的 escalation 帳事實（自留言的結構化區塊讀回）。"""
+    """一則已落地 review event 的 escalation 帳事實（自留言的結構化區塊讀回）。
+
+    ``owner_field_at_verdict_write`` 三態，刻意不合併：``None`` ＝該鍵不存在（未知）、
+    ``""`` ＝鍵存在但 Project owner 欄當下為空、其餘為快照值。省略與空值混為一談正是
+    本檔各處反覆拒絕的形狀（``findings: []`` 必須顯式同理）。
+    """
 
     attempt_id: str
     escalation_epoch: int
     review_result: str
     counts_toward_escalation: bool
+    owner_field_at_verdict_write: str | None = None
 
 
 @dataclass(frozen=True)
@@ -712,12 +727,23 @@ def render_escalation_facts_block(
     marks: Mapping[str, AcceptedMark],
     counts_toward_escalation: bool,
     preflight_passed: bool = True,
+    owner_field_at_verdict_write: str | None = None,
 ) -> str:
     """渲染 review event 的 escalation 帳區塊（review-escalation.md §5 的 adapter 欄位）。
 
     ``self_run`` 不重複進本區塊：它已逐項落在留言散文，複製一份只會讓同一事實有兩個
     可能不同步的來源。本區塊只承載**先前只存在於人腦裡**的那幾件事——``accepted``、
-    ``status`` 與 ``counts_toward_escalation``。
+    ``status``、``counts_toward_escalation``，以及 owner 欄的時點快照。
+
+    ## ``owner_field_at_verdict_write``：時點快照，不是 attempt 的固有屬性
+
+    鍵名刻意不叫 ``owner``。它的值是 **Project「owner」欄在本則裁決寫入當下**被讀到的
+    字串——一個 current-state 平面的快照，不是「該 attempt 全程的 owner」。把它寫成
+    ``owner`` 會讓下游把時點值當歷史事實用，與「``counts_toward_escalation`` 放在
+    checkpoint 上是分類錯誤」同型（那也是把 review event 的投影誤植到別的事件上）。
+
+    值一律寫出、不省略：Project 欄位為空時寫 ``""``（鍵存在、值為空），與「鍵根本不在」
+    在讀回時是兩個不同的狀態（見 ``EscalationFacts``）。
     """
     lines = [
         "```yaml",
@@ -728,6 +754,7 @@ def render_escalation_facts_block(
         f"review_result: {report.review_result}",
         f"core_pain_resolved: {report.core_pain_resolved}",
         f"counts_toward_escalation: {_yaml_scalar(counts_toward_escalation)}",
+        f"owner_field_at_verdict_write: {_yaml_scalar(owner_field_at_verdict_write or '')}",
     ]
     if not report.findings:
         lines.append("findings: []")
@@ -827,11 +854,17 @@ def escalation_facts_from_body(body: str) -> EscalationFacts | None:
     decomposed = parse_attempt_id(attempt)
     if decomposed is None or decomposed[1] != epoch:
         return None
+    # owner 快照**不是**閘門的輸入，故缺它不使本則變成「未知」——把它列為必填只會多一條
+    # 讓閘門拒絕的路徑，卻不使任何裁決更安全。它是給未來 §5 第 3 款消費者的載荷，因此
+    # 「鍵不存在」(None) 與「值為空」("") 必須可分辨，由該消費者自行 fail-closed。
+    raw_owner = data.get("owner_field_at_verdict_write")
+    owner = raw_owner if isinstance(raw_owner, str) else None
     return EscalationFacts(
         attempt_id=attempt,
         escalation_epoch=epoch,
         review_result=result,
         counts_toward_escalation=counts,
+        owner_field_at_verdict_write=owner,
     )
 
 

@@ -331,6 +331,10 @@ def run(args: argparse.Namespace) -> int:
         escalation_epoch=args.escalation_epoch,
         timestamp=timestamp,
         accepted_marks=marks,
+        # current-state 平面的時點快照（見 review.render_escalation_facts_block 的說明）。
+        # 每次 handoff 都會覆寫這一欄，故它只有在 append-only 的事件留言裡才留得住；
+        # 但留住的是「寫裁決那一刻該欄長什麼樣」，不是 attempt 的固有屬性。
+        owner_field_at_verdict_write=item.owner_field,
     )
     # 先留言、後翻狀態：反過來若留言失敗，板上會出現沒有裁決全文的 ✅通過，
     # 那正是本卡要消滅的「宣稱與證據脫節」。

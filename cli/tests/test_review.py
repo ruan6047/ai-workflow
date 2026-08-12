@@ -1015,3 +1015,37 @@ def test_unreadable_marker_makes_the_account_unknown_and_blocks_the_write(fake_r
     err = capsys.readouterr().err
     assert "無法自事件流重建" in err
     assert "不得推定為不計數" in err
+
+
+def test_owner_snapshot_records_the_reviewer_not_the_executor_under_the_dispatch_convention(
+    fake_runner, tmp_path
+):
+    """快照的可信度邊界，以實跑釘住而不是只寫在註解裡。
+
+    `handoff --next-stage review --to <查核者>` 會把 Project 的 owner 欄改成查核者
+    （handoff_cmd.py:136），而裁決是在那之後寫的。所以這個時點快照**通常是查核者**，
+    不是產出 source_sha 的執行者——`review-escalation.md` §5 第 3 款要比對的卻是後者。
+    這一條就是本欄不足以直接支撐該款的機械證據。
+    """
+    open_card("OWNER-CARD1")
+    run_cli(
+        [
+            "handoff", *BASE_TARGET, "--repo", REPO, "OWNER-CARD1",
+            "--to", "執行者A", "--next-stage", "implementation",
+            "--source-sha", SHA, "--evidence", "開工",
+        ]
+    )
+    run_cli(
+        [
+            "handoff", *BASE_TARGET, "--repo", REPO, "OWNER-CARD1",
+            "--to", "查核者B", "--next-stage", "review",
+            "--source-sha", SHA, "--evidence", "pytest 全綠",
+        ]
+    )
+    assert _counting_review(tmp_path, "OWNER-CARD1", SHA, "OWNER-CARD1-R1-01") == 0
+
+    body = last_comment(fake_runner, "OWNER-CARD1")
+    assert "owner_field_at_verdict_write: 查核者B" in body  # ← 不是「執行者A」
+    assert "執行者A" not in body
+    # 留言散文必須把這個可信度邊界寫給人看，不能只有機器讀得到。
+    assert "不是該 attempt 全程的 owner" in body
