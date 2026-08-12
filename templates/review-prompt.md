@@ -8,7 +8,7 @@
 - 被審分支：`<branch>`　`source_sha`：`<完整 40 碼 SHA>`
 - **進駐後第一件事**：核對 `git rev-parse HEAD` 與 handoff 指定的 `source_sha` 完全相同、工作區乾淨。不同即停，回報 `review-invalid`，不進實質查核。
 - 卡與基線：`<CARD_ID>`（`<owner/repo>#<n>`）；spec 基線 `<版本>`——與父卡當前版本不一致即退回。
-- **基線須自行驗為祖先**：派審詞給的「基線」是界定 diff 範圍的座標，由 Coordinator 手填、**送出前無任何前置檢查**。進駐後跑 `git merge-base --is-ancestor <基線> HEAD`；exit 非 0 即停，回報 `review-invalid`。判準本身是機械的（git 的 exit code），但**沒有東西強制查核者跑它**，故本條是**約定**；把結果寫進 §5 `self_run` 後，`self_run` 非空由 `cli/src/wf_cli/validation.py:261`／`:265` 強制（經 `commands/review_cmd.py:155`）。
+- **基線須自行驗為祖先**：派審詞給的「基線」是界定 diff 範圍的座標，由 Coordinator 手填、**送出前無任何前置檢查**。進駐後跑 `git merge-base --is-ancestor <基線> HEAD`；exit 非 0 即停，回報 `review-invalid`。判準本身是機械的（git 的 exit code），但**沒有東西強制查核者跑它**，故本條是**約定**；把結果寫進 §5 `self_run` 後，`self_run` 非空由 `cli/src/wf_cli/validation.py` 的 `validate_review_report` 強制（基線 `6e6e8ab` 時在 :261／:265）——**但那只強制「有寫東西」，不驗這個檢查真的跑過**。
   - 本條防的**不是** Coordinator 填錯（那在派審當下已成立，範本層擋不到），而是**查核者在未驗證的基線上做完整輪查核**。2026-08-11 同一個錯誤基線（`0d4d282`，非任何卡的祖先）送給四位查核者，四種處置：一位據此停手（正確）、一位寫下「基線仍為被審 SHA 的祖先」——**該斷言不成立**，只是結論恰好無害。無此條時「有沒有驗」不留痕，兩者在報告上無法區分。
 
 ## 2. 第一判準（具否決權）
@@ -33,9 +33,13 @@ R1 之後的每一輪，報告須有本節，把上一輪每一筆 `accepted` �
 - 缺本節、或 carry set 中有 `finding_id` 未表態 → 查核者**自判** `review-invalid`，不進實質查核（處置同 §1）。
 - **仍 `open` 是合法且常常正確的表態**，不是失敗；defer 延後的是評估而非結果（`review-escalation.md` §4）。把仍未解的寫成 `resolved` 才是失分。
 
-**本節今天沒有機械執行者，故為約定而非強制。** `wfcli review` 的寫入前閘門（`cli/src/wf_cli/validation.py:224` `validate_review_report`，由 `cli/src/wf_cli/commands/review_cmd.py:155` 呼叫）只驗 §5 區塊的欄位與列舉，**既不檢查本節是否存在，也不知道前輪的 carry set**。「iteration ≥ 1 未逐項指名前輪 accepted blocking finding 即拒寫」的機械閘門屬 `ai-workflow#9`。
+**本節今天沒有機械執行者，故為約定而非強制。** `wfcli review` 的寫入前閘門（`cli/src/wf_cli/validation.py` 的 `validate_review_report`，基線 `6e6e8ab` 時在 :224，由 `commands/review_cmd.py:155` 呼叫；函式名才是穩定錨點，行號會隨在飛的卡位移）只驗 §5 區塊的欄位與列舉，**既不檢查本節是否存在，也不知道前輪的 carry set**。
 
-**條文有效的前提是它送到了能執行它的人手上——而送到了也不保證被執行。** 本檔的讀者是查核者，故本節在派審詞被組裝進去時即可被自查；`review-invalid` 曾被查核者依派審詞字面真的判出並停手，證明文字條款確實會被執行。但 2026-08-11 的兩次 checkpoint 觸發（#21 R5、#22 R2）是反面：兩份派審詞**都逐字寫了**該要求，缺的是報告那一側。**送達是必要條件，不是充分條件**——這正是機械閘門（#9）不可被本節取代的理由。
+**「iteration ≥ 1 未逐項指名前輪 accepted blocking finding 即拒寫」這個閘門目前無人承接**——請不要讀成某張卡的待辦而停止追問。`ai-workflow#9` **不涵蓋本節**：其驗收逐字為「accepted 標記寫入通道（lifecycle writer 語意）；attempt_id 去重；counts_toward_escalation 推導與 checkpoint 觸發警示」，其中第四項是 **checkpoint 漏建**閘門（上一個可計數 attempt 序位 ≥3 卻無對應 checkpoint 即 exit 2，`validation.check_checkpoint_gate`），輸入、判準與失敗模式都與「報告有沒有逐項指名前輪 finding」不同。
+
+**被誰擋住**：該閘門的實作落點是 `review.py`／`validation.py`／`commands/review_cmd.py`，而這三個檔都在 #9 的資源宣告內，故 **#9 交付並釋出寫入集之前，任何承接卡都開不了**。需要它的人須自行舉證並開卡，不得假定已有人在做。
+
+**條文有效的前提是它送到了能執行它的人手上——而送到了也不保證被執行。** 本檔的讀者是查核者，故本節在派審詞被組裝進去時即可被自查；`review-invalid` 曾被查核者依派審詞字面真的判出並停手，證明文字條款確實會被執行。但 2026-08-11 的兩次 checkpoint 觸發（#21 R5、#22 R2）是反面：兩份派審詞**都逐字寫了**該要求，缺的是報告那一側。**送達是必要條件，不是充分條件**——這正是機械閘門不可被本節取代的理由，而該閘門今天無人承接（見上）。
 
 ## 4. 環境紅線
 
