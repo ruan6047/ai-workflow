@@ -28,7 +28,7 @@ from wf_cli.validation import (
     validate_review_report,
 )
 
-from .test_checkpoint import EventGhRunner
+from .test_checkpoint import EventGhRunner, inject_counted_attempt
 
 BASE_TARGET = ["--owner", "acme", "--project", "1"]
 REPO = "acme/demo"
@@ -143,10 +143,6 @@ findings: []
 """
 
 
-# 會計數的裁決自 R1-01 起必須具結 preflight（review-escalation.md §3 第 1 款）。
-PREFLIGHT_SUMMARY = "preflight: 分支已推、工作區乾淨、pytest 全綠、trailer 已檢查"
-
-
 def write_input(tmp_path: Path, text: str, name: str = "review.md") -> Path:
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
@@ -199,11 +195,7 @@ def test_valid_approve_does_not_touch_iteration_or_owner(fake_runner, tmp_path):
 
     assert (
         run_cli(
-            review_argv(
-                "ITER-CARD1",
-                write_input(tmp_path, REQUEST_CHANGES_REPORT),
-                preflight_passed=PREFLIGHT_SUMMARY,
-            )
+            review_argv("ITER-CARD1", write_input(tmp_path, REQUEST_CHANGES_REPORT))
         )
         == 0
     )
@@ -222,11 +214,7 @@ def test_valid_approve_does_not_touch_iteration_or_owner(fake_runner, tmp_path):
 def test_valid_request_changes_flips_to_returned_and_lists_findings(fake_runner, tmp_path, capsys):
     open_card("DEMO-CARD2")
     rc = run_cli(
-        review_argv(
-            "DEMO-CARD2",
-            write_input(tmp_path, REQUEST_CHANGES_REPORT),
-            preflight_passed=PREFLIGHT_SUMMARY,
-        )
+        review_argv("DEMO-CARD2", write_input(tmp_path, REQUEST_CHANGES_REPORT))
     )
     assert rc == 0
 
@@ -892,13 +880,11 @@ findings:
 """
 
 
-def _counting_review(
-    tmp_path, card_id: str, sha: str, fid: str, *, extra=(), preflight=PREFLIGHT_SUMMARY
-) -> int:
+def _counting_review(tmp_path, card_id: str, sha: str, fid: str, *, extra=()) -> int:
+    """符合 §3 第 2～4 款的裁決。**它不會計數**——第 1 款的依據在本 repo 不可得，
+    故 counts 落 `unavailable`（見 test_..._records_unavailable_not_false）。"""
     path = write_input(tmp_path, COUNTING_REPORT.format(fid=fid), name=f"{fid}.md")
     argv = review_argv(card_id, path, source_sha=sha)
-    if preflight is not None:
-        argv += ["--preflight-passed", preflight]
     argv += list(extra)
     return run_cli(argv)
 
@@ -914,8 +900,9 @@ def test_accepted_defaults_to_true_without_any_flag_and_counts_is_derived(fake_r
     assert "accepted: true" in body  # 免旗標的 fail-closed 預設
     assert "status: open" in body
     assert "counting_eligible: true" in body
-    assert "counts_toward_escalation: true" in body
-    assert "counts_toward_escalation true" in card_item(fake_runner, "ACC-CARD1").body
+    # 第 2～4 款成立，但第 1 款的依據不可得 → unavailable，不是 true 也不是 false。
+    assert "counts_toward_escalation: unavailable" in body
+    assert "counts_toward_escalation unavailable" in card_item(fake_runner, "ACC-CARD1").body
 
 
 def test_non_counting_finding_class_does_not_consume_escalation_quota(fake_runner, tmp_path):
@@ -941,7 +928,8 @@ def test_mark_not_accepted_requires_reason_and_records_platform_identity(fake_ru
     # 本 repo 的「標記者不得等於 owner」比對在結構上恆真；把恆真本身寫進事件流，
     # 而不是留一個看似有檢查的欄位（形狀同 ai-workflow#39 的 authorization_binding）。
     assert "accepted_marking_binding: structurally-vacuous" in body
-    assert "counts_toward_escalation: false" in body  # 移出 open set 後不再計數
+    # 移出 open set 後第 2～4 款不再成立，故 false 是**有依據的**，不是 unavailable。
+    assert "counts_toward_escalation: false" in body
     assert "marked_by=ruan6047" in capsys.readouterr().out
 
 
@@ -986,25 +974,49 @@ def test_same_sha_in_a_new_epoch_is_not_a_duplicate(fake_runner, tmp_path):
         tmp_path, "EPOCH-CARD1", SHA, "EPOCH-CARD1-R2-01", extra=["--escalation-epoch", "1"]
     )
     assert rc == 0
-
-
-def test_third_counted_attempt_warns_that_a_checkpoint_is_now_required(fake_runner, tmp_path, capsys):
+def test_counting_eligible_verdict_records_unavailable_and_says_so_loudly(
+    fake_runner, tmp_path, capsys
+):
+    """R2-01 的核心回歸：符合第 2～4 款、無第 1 款依據 → unavailable，且必須講出來。"""
     open_card("CNT-CARD1")
-    for index, sha in enumerate(["a" * 40, "b" * 40, "c" * 40], start=1):
-        assert _counting_review(tmp_path, "CNT-CARD1", sha, f"CNT-CARD1-R{index}-01") == 0
-        out = capsys.readouterr().out
-        if index < 3:
-            assert "先建立 escalation-checkpoint" not in out
-        else:
-            assert "第 3 個可計數 attempt" in out
-            assert "先建立 escalation-checkpoint" in out
+    assert _counting_review(tmp_path, "CNT-CARD1", "a" * 40, "CNT-CARD1-R1-01") == 0
+    out = capsys.readouterr().out
+    assert "counts_toward_escalation=unavailable" in out
+    assert "不可用" in out
+    assert "不表示執行者沒有累計" in out  # 讀取側的誤讀也要被擋
+    assert "先建立 escalation-checkpoint" not in out  # 不可用時不得假裝在計數
+
+
+def test_no_cli_input_can_produce_a_counting_verdict_today(fake_runner, tmp_path, capsys):
+    """`counts=true` 目前**結構上不可達**：沒有任何旗標或輸入構造得出第 1 款依據。
+
+    這是 R2-01 disposition 的正面驗證——不是「我們不採信具結」，而是「連具結的入口
+    都不存在」。旗標一旦回來，本測試會轉紅。
+    """
+    parser_flags = set()
+    for action in build_parser()._subparsers._group_actions[0].choices["review"]._actions:
+        parser_flags.update(action.option_strings)
+    assert not any("preflight" in flag for flag in parser_flags)
+
+    open_card("CNT-CARD2")
+    assert _counting_review(tmp_path, "CNT-CARD2", "a" * 40, "CNT-CARD2-R1-01") == 0
+    body = last_comment(fake_runner, "CNT-CARD2")
+    assert "counts_toward_escalation: true" not in body
+    assert "preflight_passed: true" not in body
+    assert "preflight_basis: not-established" in body
 
 
 def test_fourth_review_is_refused_until_the_third_checkpoint_exists(fake_runner, tmp_path, capsys):
+    """閘門本身沒壞：一旦承接卡讓 preflight 事件存在，整條鏈照常運作。
+
+    三個可計數 attempt 以 `inject_counted_attempt` 直接構造（帶 event-verified 依據），
+    因為 `wfcli review` 今天產不出 counts=true。
+    """
     open_card("GATE-CARD1")
-    shas = ["a" * 40, "b" * 40, "c" * 40]
-    for index, sha in enumerate(shas, start=1):
-        assert _counting_review(tmp_path, "GATE-CARD1", sha, f"GATE-CARD1-R{index}-01") == 0
+    attempts = [
+        inject_counted_attempt(fake_runner, "GATE-CARD1", sha, f"GATE-CARD1-R{i}-01")
+        for i, sha in enumerate(["a" * 40, "b" * 40, "c" * 40], start=1)
+    ]
     capsys.readouterr()
 
     before = len(issue_comments(fake_runner, card_item(fake_runner, "GATE-CARD1").issue_url))
@@ -1013,15 +1025,16 @@ def test_fourth_review_is_refused_until_the_third_checkpoint_exists(fake_runner,
     assert "尚未建立 escalation-checkpoint" in err
     assert len(issue_comments(fake_runner, card_item(fake_runner, "GATE-CARD1").issue_url)) == before
 
-    trigger = f"GATE-CARD1-e0-{shas[2]}"
     assert run_cli(
         [
             "checkpoint", *BASE_TARGET, "--repo", REPO, "GATE-CARD1",
-            "--trigger-attempt-id", trigger, "--unique-attempt-count", "3",
+            "--trigger-attempt-id", attempts[2], "--unique-attempt-count", "3",
             "--decision", "escalate", "--rationale", "第二條件成立。",
         ]
     ) == 0
     assert _counting_review(tmp_path, "GATE-CARD1", "d" * 40, "GATE-CARD1-R4-01") == 0
+
+
 
 
 def test_unreadable_marker_makes_the_account_unknown_and_blocks_the_write(fake_runner, tmp_path, capsys):
@@ -1072,53 +1085,3 @@ def test_owner_snapshot_records_the_reviewer_not_the_executor_under_the_dispatch
     assert "執行者A" not in body
     # 留言散文必須把這個可信度邊界寫給人看，不能只有機器讀得到。
     assert "不是該 attempt 全程的 owner" in body
-
-
-def test_counting_verdict_without_preflight_attestation_writes_nothing(fake_runner, tmp_path, capsys):
-    """WF-22-CLI4-R1-01 的回歸：會計數的裁決缺 preflight 依據時，一則留言都不得寫出。"""
-    open_card("PF-CARD1")
-    item = card_item(fake_runner, "PF-CARD1")
-    assert _counting_review(tmp_path, "PF-CARD1", SHA, "PF-CARD1-R1-01", preflight=None) == 2
-    err = capsys.readouterr().err
-    assert "第 1 款的 preflight 依據不存在" in err
-    assert issue_comments(fake_runner, item.issue_url) == []
-    assert card_item(fake_runner, "PF-CARD1").fields.get("交付狀態") != "↩退回"
-
-
-def test_non_counting_verdict_needs_no_preflight_and_records_unknown(fake_runner, tmp_path):
-    """APPROVE 的 counts 因第 2～4 款自己就是 false，與 preflight 無關，照常寫入。"""
-    open_card("PF-CARD2")
-    assert run_cli(review_argv("PF-CARD2", write_input(tmp_path, APPROVE_REPORT))) == 0
-    body = last_comment(fake_runner, "PF-CARD2")
-    assert "preflight_passed: unknown" in body
-    assert "preflight_basis: not-established" in body
-    assert "counts_toward_escalation: false" in body
-
-
-def test_attested_preflight_lands_in_the_event_with_its_platform_identity(fake_runner, tmp_path):
-    open_card("PF-CARD3")
-    assert _counting_review(tmp_path, "PF-CARD3", SHA, "PF-CARD3-R1-01") == 0
-    body = last_comment(fake_runner, "PF-CARD3")
-    assert "preflight_passed: true" in body
-    assert "preflight_basis: writer-attested" in body
-    assert "preflight_attested_by: ruan6047" in body  # gh api user，不是自陳字串
-    assert "counts_toward_escalation: true" in body
-
-
-def test_empty_preflight_summary_is_refused(fake_runner, tmp_path, capsys):
-    open_card("PF-CARD4")
-    item = card_item(fake_runner, "PF-CARD4")
-    assert _counting_review(tmp_path, "PF-CARD4", SHA, "PF-CARD4-R1-01", preflight="   ") == 2
-    assert "檢查摘要" in capsys.readouterr().err
-    assert issue_comments(fake_runner, item.issue_url) == []
-
-
-def test_validate_only_warns_about_the_preflight_gate_but_still_exits_zero(fake_runner, tmp_path, capsys):
-    """查核者自檢不掌握 preflight；那裡只警示，但必須明說實寫會被拒。"""
-    open_card("PF-CARD5")
-    path = write_input(tmp_path, COUNTING_REPORT.format(fid="PF-CARD5-R1-01"), name="pf5.md")
-    rc = run_cli(review_argv("PF-CARD5", path) + ["--validate-only"])
-    assert rc == 0
-    err = capsys.readouterr().err
-    assert "實寫會被拒" in err
-    assert "第 1 款的 preflight 依據不存在" in err

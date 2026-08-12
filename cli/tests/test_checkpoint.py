@@ -12,7 +12,13 @@ import pytest
 from wf_cli.cli import build_parser
 from wf_cli.commands import checkpoint_cmd, handoff_cmd, open_cmd, review_cmd
 from wf_cli.project import find_item_by_card_id, list_items, resolve_project
-from wf_cli.review import BASELINE_LOG_TAG, CHECKPOINT_LOG_TAG
+from wf_cli.review import (
+    BASELINE_LOG_TAG,
+    CHECKPOINT_LOG_TAG,
+    PreflightBasis,
+    render_verdict_comment,
+)
+from wf_cli.validation import validate_review_report
 
 from .fake_gh import FakeGhRunner, _parse_flags
 
@@ -120,8 +126,6 @@ def write_review(tmp_path, card_id: str, sha: str, fid: str, **extra) -> int:
     argv = [
         "review", *BASE_TARGET, "--repo", REPO, card_id,
         "--input", str(path), "--source-sha", sha, "--reviewer", "Codex",
-        # 會計數的裁決須具結 preflight（§3 第 1 款；WF-22-CLI4-R1-01 的處置）。
-        "--preflight-passed", "preflight: 工作區乾淨、分支已推、測試全綠",
     ]
     for flag, value in extra.items():
         argv += [f"--{flag.replace('_', '-')}", str(value)]
@@ -141,13 +145,71 @@ def checkpoint_argv(card_id: str, trigger: str, **overrides) -> list[str]:
     return argv
 
 
+# §3 第 1 款唯一合法的依據形狀。**`wfcli review` 今天產不出它**——本 repo 沒有 preflight
+# 事件 writer（WF-22-CLI4-R2-01；該 writer 不在本卡寫入集，已交由承接卡）。因此凡是需要
+# `counts_toward_escalation: true` 的端對端測試，都必須自行構造「承接卡落地後」的狀態，
+# 而不能經由 CLI 產生——這件事本身就是本輪的核心事實，故用註解與函式名寫明。
+EVENT_VERIFIED = PreflightBasis(
+    basis="event-verified",
+    source_event="https://github.com/acme/demo/issues/1#issuecomment-preflight",
+    summary="preflight: 分支已推、工作區乾淨、pytest 全綠",
+)
+
+
+def inject_counted_attempt(runner: EventGhRunner, card_id: str, sha: str, fid: str) -> str:
+    """直接把一則**帶 event-verified 依據**的裁決事件寫進 timeline ＋ Log 索引行。
+
+    模擬承接卡讓 preflight 事件存在之後的世界；回傳 attempt_id。
+    """
+    report = validate_review_report(
+        {
+            "review_result": "REQUEST_CHANGES",
+            "core_pain_resolved": "yes",
+            "self_run": [{"command": "uv run pytest", "observed": "3 failed"}],
+            "findings": [
+                {
+                    "finding_id": fid,
+                    "severity": "major",
+                    "blocking": "true",
+                    "finding_class": "implementation",
+                    "attribution": "executor",
+                    "root_cause_id": "rc-1",
+                    "evidence": "pytest 失敗",
+                    "disposition": "修好再送",
+                }
+            ],
+        }
+    )
+    body = render_verdict_comment(
+        card_id=card_id,
+        report=report,
+        source_sha=sha,
+        reviewer="Codex",
+        escalation_epoch=0,
+        timestamp="2026-08-12T12:00:00+08:00",
+        preflight=EVENT_VERIFIED,
+    )
+    item = card_item(runner, card_id)
+    runner.execute(
+        ["issue", "comment", str(item.issue_number), "--repo", REPO, "--body", body]
+    )
+    attempt = f"{card_id}-e0-{sha}"
+    new_body = (
+        item.body.rstrip("\n")
+        + f"\n- 2026-08-12 review by wf-cli → REQUEST_CHANGES；attempt {attempt}。\n"
+    )
+    runner.execute(["issue", "edit", str(item.issue_number), "--repo", REPO, "--body", new_body])
+    return attempt
+
+
 def seed_three_counted_attempts(fake_runner, tmp_path, card_id: str) -> list[str]:
-    """開卡並寫三輪都計數的裁決；回傳三個 attempt_id。"""
+    """開卡並注入三個**可計數**的 attempt；回傳三個 attempt_id。"""
     open_card(card_id)
     shas = ["a" * 40, "b" * 40, "c" * 40]
-    for index, sha in enumerate(shas, start=1):
-        assert write_review(tmp_path, card_id, sha, f"{card_id}-R{index}-01") == 0
-    return [f"{card_id}-e0-{sha}" for sha in shas]
+    return [
+        inject_counted_attempt(fake_runner, card_id, sha, f"{card_id}-R{i}-01")
+        for i, sha in enumerate(shas, start=1)
+    ]
 
 
 # --------------------------------------------------------------------------
