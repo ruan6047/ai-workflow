@@ -14,6 +14,13 @@ from typing import Any, Literal
 
 from . import git_ops
 from .card import now_iso8601
+from .cleanup import (
+    SUBSEQUENT_OBLIGATION_STEPS,
+    CleanupTarget,
+    GuardMode,
+    OccupancyProber,
+    evaluate_cleanup_guard,
+)
 from .registry import RegisteredCard, TasksMdRegistry
 from .review import STATUS_BY_RESULT
 
@@ -85,6 +92,24 @@ class ReviewChannelFinding:
     actual_delivery_status: str | None = None
 
 
+@dataclass(frozen=True)
+class CleanupPreviewFinding:
+    """`📦已合併` 但收尾未完成的卡：破壞性清理的前提現在成不成立（**唯讀**）。
+
+    這是 reconcile 白名單第 2 條的偵測面。doctor 永遠只印，不動手；真正執行由
+    `cleanup.execute_closeout_transition` 負責，兩者共用同一份 `evaluate_cleanup_guard`，
+    所以「doctor 說可以」與「executor 願意做」不可能各說各話。
+    """
+
+    card_id: str
+    branch: str | None
+    worktree_path: str | None
+    mode: GuardMode
+    blocking_reasons: tuple[str, ...]
+    #: 第 5–7 步永遠列在這裡：它們是其後義務，不寫狀態面，**不阻擋 release**。
+    outstanding_obligations: tuple[int, ...] = SUBSEQUENT_OBLIGATION_STEPS
+
+
 @dataclass
 class DoctorReport:
     repo_root: str
@@ -94,6 +119,8 @@ class DoctorReport:
     submodules: list[SubmoduleFinding] = field(default_factory=list)
     orphan_branches: list[BranchFinding] = field(default_factory=list)
     stale_leases: list[LeaseFinding] = field(default_factory=list)
+    cleanup_previews: list[CleanupPreviewFinding] = field(default_factory=list)
+    cleanup_preview_enabled: bool = False
 
     def orphan_worktrees(self) -> list[WorktreeFinding]:
         return [w for w in self.worktrees if w.is_orphan]
@@ -140,6 +167,22 @@ class DoctorReport:
             age = f"，已 {lease.age_hours:.1f} 小時未交接" if lease.age_hours is not None else ""
             lines.append(f"- {lease.card_id}（owner={lease.owner}）{lease.reason}{age}")
         lines.append("")
+        if self.cleanup_preview_enabled:
+            lines.append("## 5. 收尾清理前提（唯讀預覽；doctor 不執行任何刪除）")
+            if not self.cleanup_previews:
+                lines.append("（無 `📦已合併` 待收尾的卡）")
+            for prev in self.cleanup_previews:
+                verdict = "前提全部成立（仍須由 release／reconcile 發動）" if prev.mode == "proceed" \
+                    else "前提未全部成立 → 純偵測，不得刪除"
+                lines.append(f"- [{prev.mode}] {prev.card_id}（分支={prev.branch or '—'}）{verdict}")
+                for reason in prev.blocking_reasons:
+                    lines.append(f"  - 阻擋：{reason}")
+                lines.append(
+                    "  - 其後義務（第 "
+                    + "／".join(str(s) for s in prev.outstanding_obligations)
+                    + " 步）不寫狀態面，未完成不阻擋 release"
+                )
+            lines.append("")
         n_orphan = len(self.orphan_worktrees())
         lines.append(
             f"摘要：{len(self.worktrees)} 個額外 worktree，{n_orphan} 個孤兒；"
@@ -515,6 +558,9 @@ def run_doctor(
     registry: TasksMdRegistry | None = None,
     lease_ttl_hours: float = 48.0,
     main_ref: str = "main",
+    cleanup_preview: bool = False,
+    card_bodies: dict[str, str] | None = None,
+    occupancy_prober: OccupancyProber | None = None,
 ) -> DoctorReport:
     repo_root = repo_root.resolve()
     active: list[RegisteredCard] = registry.active if registry else []
@@ -525,6 +571,7 @@ def run_doctor(
         repo_root=str(repo_root),
         generated_at=now_iso8601(),
         registry_sources=[str(p) for p in (registry.source_paths if registry else [])],
+        cleanup_preview_enabled=cleanup_preview,
     )
 
     # 1) worktree list vs 卡註冊 + prunable
@@ -633,11 +680,42 @@ def run_doctor(
                 )
             )
 
+    # 5) 收尾清理前提（唯讀）。只看 `📦已合併`：那是「merge 已完成、收尾未走完」的
+    #    可觀測標記，也正是 reconcile --apply 白名單第 2 條的分歧形態。刻意**不看**
+    #    第 4 步（Issue 是否關閉／是否已寫終態）——那是本轉換的效果，拿它當前提會
+    #    構成循環，release 將永遠無法發動。
+    if cleanup_preview:
+        bodies = card_bodies or {}
+        for rc in active:
+            if (rc.delivery_status or "") != "📦已合併" or not rc.branch:
+                continue
+            wt = None
+            if rc.worktree_path:
+                candidate = Path(rc.worktree_path)
+                wt = candidate if candidate.is_absolute() else repo_root / candidate
+            decision = evaluate_cleanup_guard(
+                CleanupTarget(
+                    repo_root=repo_root, card_id=rc.card_id, branch=rc.branch,
+                    worktree_path=wt, main_ref=main_ref,
+                ),
+                registry=registry,
+                card_body=bodies.get(rc.card_id),
+                occupancy_prober=occupancy_prober,
+            )
+            report.cleanup_previews.append(
+                CleanupPreviewFinding(
+                    card_id=rc.card_id, branch=rc.branch,
+                    worktree_path=str(wt) if wt else None,
+                    mode=decision.mode, blocking_reasons=decision.reasons,
+                )
+            )
+
     return report
 
 
 __all__ = [
     "BranchFinding",
+    "CleanupPreviewFinding",
     "DoctorReport",
     "LeaseFinding",
     "ReviewChannelFinding",
