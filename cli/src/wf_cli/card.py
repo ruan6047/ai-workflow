@@ -110,6 +110,11 @@ def capability_reason_missing_message(axis: str) -> str:
 #     留痕不符），再判斷…」正是被舊 ``[^）]+`` 攔掉的真實個案，assign 當場硬拒）。
 #     禁全形空格則有硬理由：名字與層級都不含它之後，**整行唯一的全形空格就是軸分隔
 #     符**，這條唯一性把「哪裡切開執行段與查核段」變成確定性的，不再靠正則貪婪回溯。
+#
+#     ⚠️ **「名字段禁四個、理由段只禁一個」不是漏寫，是實測結論。** 需求方 2026-08-12
+#     的裁定原文是「全形左右括號、全形分號、全形空格…不得出現在執行者／查核者名的
+#     值裡」——只涵蓋名字段。把同一份清單照抄到理由段會當場擋掉 #38 那條合法理由，
+#     等於用一個新缺陷換掉舊缺陷。要改動這一格，請先重跑 24 格逐欄位往返實測。
 #   * **層級段**（``exec_tier``／``rev_tier``）：不設保留字元清單，因為它是**封閉語彙**
 #     （``CAPABILITY_TIERS``），值不可能由使用者自由輸入。這條保護以測試釘住
 #     （語彙成員不得含任何結構字元）。實測中唯一會**靜默錯讀**的格子在這裡：層級值
@@ -174,12 +179,14 @@ def validate_routing_names(*, executor: str, reviewer: str) -> None:
     的兩個呼叫端（``commands/open_cmd.py``、``Card.__post_init__``）不會同時改，
     加一個有預設值的參數等於留一個「沒傳就不檢查」的靜默洞——正是本卡要消滅的形態。
 
-    **本函式目前只由 ``Card.__post_init__`` 呼叫。** 這使 ``wfcli open`` 在建構 Card
-    時即硬拒（Card 建構早於任何 GitHub 寫入，故 fail-closed、不留半寫狀態），但拋出的
-    是未被 ``cli.py`` 的 ``KNOWN_ERRORS`` 收攏的 ``ValueError``，訊息以 traceback 呈現
-    而非 ``[open] 拒絕：…`` ＋ 退出碼 2。要補上那一半必須在 ``commands/open_cmd.py``
-    的既有 ``validate_capability_routing`` 前置檢查旁多呼叫本函式——該檔**不在本卡的
-    資源宣告內**，故本卡不動它，逸出情形寫在交付報告由需求方裁定。
+    **兩個呼叫端各自負責一半，缺一不可**：
+
+    - ``commands/open_cmd.py`` 的前置檢查給的是**乾淨的拒絕**——``[open] 拒絕：…``
+      ＋ 退出碼 2，與理由側同一種形狀。``cli.py`` 的 ``KNOWN_ERRORS`` 不收
+      ``ValueError``，少了這一道就會以 traceback 收場，而**以 stack trace 收場的
+      fail-closed 不算乾淨拒絕**。
+    - ``Card.__post_init__`` 給的是**防線**：繞過 CLI 直接建 Card 的路徑同樣擋得住，
+      且 Card 建構早於任何 GitHub 寫入，故拒收不留半寫狀態。
     """
     for axis, name in (("執行者", executor), ("查核者", reviewer)):
         validate_routing_field(f"{axis}名", name, ROUTING_NAME_RESERVED)

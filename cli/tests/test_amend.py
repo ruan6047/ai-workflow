@@ -1635,27 +1635,58 @@ def test_open_rejects_fullwidth_space_in_reason_without_creating_the_card(
     assert find_item_by_card_id(list_items(fake_runner, project), f"RESERVED-REASON-{axis}") is None
 
 
-def test_open_refuses_an_unreadable_name_before_touching_github(fake_runner):
-    """名字側的拒收同樣 fail-closed：Card 建構早於任何 GitHub 寫入，故不留半寫狀態。
+def _reserved_name_argv(card_id="RESERVED-NAME1"):
+    return [
+        "open", *BASE_TARGET, card_id,
+        "--feature", "示範", "--tier", "T2", "--db-scope", "none",
+        "--core-pain", "痛點", "--service-goal", "目標",
+        "--executor", "Claude Opus 5@Claude Code（子 agent）",
+        "--exec-capability", "主力型", "--exec-capability-reason", "理由甲",
+        "--review-capability", "高階型", "--review-capability-reason", "理由乙",
+    ]
 
-    ⚠️ 這裡斷言的是 ``ValueError`` 而不是退出碼 2——``cli.py`` 的 ``KNOWN_ERRORS``
-    不收 ``ValueError``，要把它轉成 ``[open] 拒絕：…`` 必須動 ``open_cmd.py``，
-    該檔**不在本卡資源宣告內**。本測試把現況釘成已知事實而不是留白：拒收成立、
-    訊息品質待需求方裁定是否為此擴充宣告。
+
+def test_open_refuses_an_unreadable_name_before_touching_github(fake_runner, monkeypatch):
+    """名字側的拒收 fail-closed：全程沒有任何 GitHub 寫入呼叫，不留半寫狀態。
+
+    這條釘的是**深層性質**，與訊息品質（退出碼與前綴，見下一條）是兩件事，所以
+    ``open_cmd`` 補上前置檢查之後仍然保留、也不被下一條取代。第二段刻意**停用**
+    那道前置檢查，證明即使它被拿掉，``Card.__post_init__`` 仍是防線——而 Card
+    建構早於任何 GitHub 呼叫，這正是「拒收不留半寫狀態」的機制來源。
     """
     before = len(fake_runner.graphql_calls)
+    assert run_cli(_reserved_name_argv()) == 2
+    assert len(fake_runner.graphql_calls) == before, "CLI 前置檢查那條路徑不得有任何寫入呼叫"
+
+    monkeypatch.setattr(open_cmd, "validate_routing_names", lambda **kw: None)
     with pytest.raises(ValueError, match="保留字元"):
-        run_cli(
-            [
-                "open", *BASE_TARGET, "RESERVED-NAME1",
-                "--feature", "示範", "--tier", "T2", "--db-scope", "none",
-                "--core-pain", "痛點", "--service-goal", "目標",
-                "--executor", "Claude Opus 5@Claude Code（子 agent）",
-                "--exec-capability", "主力型", "--exec-capability-reason", "理由甲",
-                "--review-capability", "高階型", "--review-capability-reason", "理由乙",
-            ]
-        )
-    assert len(fake_runner.graphql_calls) == before, "拒收必須早於任何寫入呼叫"
+        run_cli(_reserved_name_argv("RESERVED-NAME1-BYPASS"))
+    assert len(fake_runner.graphql_calls) == before, (
+        "前置檢查被停用時，model 層防線同樣必須早於任何寫入呼叫"
+    )
+
+
+def test_open_rejects_a_reserved_char_name_with_exit_code_2_and_no_traceback(
+    fake_runner, capsys
+):
+    """名字側的拒收必須與理由側同一種形狀：``[open] 拒絕：…`` ＋ 退出碼 2。
+
+    **以 stack trace 收場的 fail-closed 不算乾淨拒絕**——本卡存在的理由正是建立
+    乾淨的寫入端拒收。``cli.py`` 的 ``KNOWN_ERRORS`` 不收 ``ValueError``，所以
+    只靠 ``Card.__post_init__`` 那條防線會吐 traceback；乾淨的那一半由
+    ``open_cmd`` 的前置檢查提供。
+    """
+    try:
+        rc = run_cli(_reserved_name_argv("RESERVED-NAME-CLEAN1"))
+    except ValueError as exc:  # pragma: no cover - 只在缺前置檢查時走到
+        pytest.fail(f"名字未被乾淨拒絕，以 ValueError 收場（CLI 會呈現為 traceback）：{exc}")
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert err.startswith("[open] 拒絕："), f"訊息前綴須與理由側一致，實際：{err[:40]!r}"
+    assert "保留字元" in err
+    assert "Traceback" not in err
+    project = resolve_project(fake_runner, "acme", 1)
+    assert find_item_by_card_id(list_items(fake_runner, project), "RESERVED-NAME-CLEAN1") is None
 
 
 # --- 驗證：既有 18 張永久 absent 卡的既成狀態不得被改變 -----------------------
