@@ -82,6 +82,109 @@ def capability_reason_missing_message(axis: str) -> str:
     )
 
 
+# --------------------------------------------------------------------------
+# 路由行的保留字元（WF-CARD-FIELD-CORRECTION1；需求方 2026-08-12 裁定）
+# --------------------------------------------------------------------------
+#
+# **這一段是「保留字元清單」的機器可讀居所。** ``templates/tasks-card.md`` 第 4 行
+# 早就逐字寫出了這些分隔符，缺的從來不是文件詳盡度，而是**沒有任何一處宣告它們是
+# 保留字**、且寫入端對名字**完全不做格式檢查**。後果是 #21 的往返缺陷：
+#
+#     open 寫得出 ``- 執行：Claude Opus 5@Claude Code（子 agent）（建議 主力型；…）``
+#     assign 讀不回（``_ROUTING_PARSE_RE`` 的名字段在第一個全形左括號就停）
+#     → 同一張卡的同一行被兩支給出不一致的解讀（#21 已 🏁完成後才被發現）
+#
+# 修法方向是**保留字元**而非跳脫：結構字元不得同時當資料。寫入端拒收，讀取端也不把
+# 它們當資料收（見 ``_ROUTING_PARSE_RE`` 的字元類與本清單同源）。
+#
+# **清單逐欄位不同，而且是實測出來的、不是照第 4 行的外觀推的。**
+# 2026-08-12 對六個值欄位 × 四個候選結構字元做過往返實測（24 格；探針形狀見
+# ``cli/tests/test_amend.py`` 的「保留字元完整性」測試，該測試就是探針的常駐版本）。
+# 結論按欄位分三類：
+#
+#   * **名字段**（``executor``／``reviewer``）：四個字元全禁。實測四格全部使解析失配，
+#     故這裡的禁止與需求方 2026-08-12 的裁定重合，不是為了對齊裁定而多禁。
+#   * **理由段**（``exec_reason``／``rev_reason``）：**只禁全形空格**。
+#     ``（``／``）``／``；`` 實測全部往返成立，且是**現行真實用法**——中文散文本來就
+#     大量使用全形括號（#38 的規劃理由「…真實歸因（PM 的 checkpoint 記錄與可稽核
+#     留痕不符），再判斷…」正是被舊 ``[^）]+`` 攔掉的真實個案，assign 當場硬拒）。
+#     禁全形空格則有硬理由：名字與層級都不含它之後，**整行唯一的全形空格就是軸分隔
+#     符**，這條唯一性把「哪裡切開執行段與查核段」變成確定性的，不再靠正則貪婪回溯。
+#   * **層級段**（``exec_tier``／``rev_tier``）：不設保留字元清單，因為它是**封閉語彙**
+#     （``CAPABILITY_TIERS``），值不可能由使用者自由輸入。這條保護以測試釘住
+#     （語彙成員不得含任何結構字元）。實測中唯一會**靜默錯讀**的格子在這裡：層級值
+#     若含全形分號，解析會讀成截斷後的前半段而不是失配——正因如此，封閉語彙那條
+#     保證不能只留在註解裡。
+#
+# 換行字元對名字與理由皆禁：路由行是單行結構，塞進換行會在標頭區多長出一行，使候選
+# 路由行不唯一 → ``ambiguous``。這同樣是「寫得出、讀不回」，與全形空格同一類。
+ROUTING_NAME_RESERVED = ("（", "）", "；", "　")
+ROUTING_REASON_RESERVED = ("　",)
+ROUTING_TIER_SEPARATORS = ("；", "　")
+# 路由行用到的**全部**結構字元（＝逐欄位清單的聯集，也是實測矩陣的行）。與
+# ``ROUTING_NAME_RESERVED`` 目前值相同純屬巧合——名字段恰好把四個全禁；兩者語意不同，
+# 不可互相取代。
+ROUTING_STRUCTURAL_CHARS = ("（", "）", "；", "　")
+_ROUTING_LINE_BREAKS = ("\n", "\r")
+
+_ROUTING_RESERVED_ROLE = {
+    "（": "界定「（建議 <層級>；<理由>）」段的左界",
+    "）": "界定該段的右界",
+    "；": "分隔建議層級與理由",
+    "　": "分隔執行軸與查核軸，且是整行唯一的軸分隔訊號",
+    "\n": "路由行是單行結構，換行會在標頭區多長出一行",
+    "\r": "路由行是單行結構，換行會在標頭區多長出一行",
+}
+
+
+def routing_reserved_char_message(field_label: str, value: str, offending: tuple[str, ...]) -> str:
+    """路由行欄位含保留字元時的拒絕訊息；寫入端與 model 層共用同一段文字。
+
+    訊息裡逐字說明每個字元承擔什麼結構，並給出可用的替代寫法——被擋的人要的是
+    「那我該怎麼寫」，不是「你錯了」。半形括號／分號／空白不承擔結構，可直接用。
+    """
+    roles = "、".join(f"{ch!r}（{_ROUTING_RESERVED_ROLE[ch]}）" for ch in offending)
+    return (
+        f"{field_label}不得含路由行保留字元：{roles}"
+        "——這些字元在 templates/tasks-card.md 第 4 行承擔結構，寫進值裡會讓 open "
+        "寫得出、assign 讀不回（WF-CLI-ROUTING-TIER1 的往返缺陷）。"
+        "改用半形括號 ()／半形分號 ;／半形空白，它們不承擔結構。"
+        "（理由欄只禁全形空格；全形括號與全形分號在理由裡合法，不必改寫。）"
+        f"收到 {value!r}"
+    )
+
+
+def validate_routing_field(field_label: str, value: str, reserved: tuple[str, ...]) -> None:
+    """單一路由行欄位的保留字元檢查；不合格一律 ``ValueError``。
+
+    ``reserved`` 由呼叫端指定（名字段與理由段的清單不同，見上方說明），這裡不內建
+    預設值——「哪些字元對這個欄位是結構」是欄位的性質，不該由本函式代為猜測。
+    """
+    offending = tuple(
+        ch for ch in (*reserved, *_ROUTING_LINE_BREAKS) if ch in (value or "")
+    )
+    if offending:
+        raise ValueError(routing_reserved_char_message(field_label, value, offending))
+
+
+def validate_routing_names(*, executor: str, reviewer: str) -> None:
+    """執行者／查核者**名字**的保留字元檢查；不合格一律 ``ValueError``。
+
+    刻意獨立成具名函式而不是塞進 ``validate_capability_routing`` 的可選參數：後者
+    的兩個呼叫端（``commands/open_cmd.py``、``Card.__post_init__``）不會同時改，
+    加一個有預設值的參數等於留一個「沒傳就不檢查」的靜默洞——正是本卡要消滅的形態。
+
+    **本函式目前只由 ``Card.__post_init__`` 呼叫。** 這使 ``wfcli open`` 在建構 Card
+    時即硬拒（Card 建構早於任何 GitHub 寫入，故 fail-closed、不留半寫狀態），但拋出的
+    是未被 ``cli.py`` 的 ``KNOWN_ERRORS`` 收攏的 ``ValueError``，訊息以 traceback 呈現
+    而非 ``[open] 拒絕：…`` ＋ 退出碼 2。要補上那一半必須在 ``commands/open_cmd.py``
+    的既有 ``validate_capability_routing`` 前置檢查旁多呼叫本函式——該檔**不在本卡的
+    資源宣告內**，故本卡不動它，逸出情形寫在交付報告由需求方裁定。
+    """
+    for axis, name in (("執行者", executor), ("查核者", reviewer)):
+        validate_routing_field(f"{axis}名", name, ROUTING_NAME_RESERVED)
+
+
 def validate_capability_routing(
     *,
     executor_capability: str,
@@ -93,6 +196,10 @@ def validate_capability_routing(
 
     純函式、不碰網路，故 CLI 層（``commands/open_cmd.py``）與 model 層
     （``Card.__post_init__``）呼叫同一份，兩層不會 drift 出不一致的判準。
+
+    理由段的保留字元一併在此檢查——這兩個呼叫端都已存在，故理由側的拒收在
+    ``open`` 是完整的（``[open] 拒絕：…`` ＋ 退出碼 2）。名字側見
+    ``validate_routing_names`` 的說明。
     """
     for axis, tier, reason in (
         ("執行", executor_capability, executor_capability_reason),
@@ -102,6 +209,7 @@ def validate_capability_routing(
             raise ValueError(capability_tier_violation_message(axis, tier))
         if not reason or not reason.strip():
             raise ValueError(capability_reason_missing_message(axis))
+        validate_routing_field(f"{axis}能力層級理由", reason, ROUTING_REASON_RESERVED)
 
 
 def now_iso8601() -> str:
@@ -196,6 +304,10 @@ class Card:
             reviewer_capability=self.reviewer_capability,
             reviewer_capability_reason=self.reviewer_capability_reason,
         )
+        # 寫入端拒收（WF-CARD-FIELD-CORRECTION1 驗收 (b)）：不得靜默接受一個自己
+        # 讀不回的名字。放在 Card 建構而非只放 CLI，是因為繞過 CLI 直接建 Card 的
+        # 路徑（測試／未來呼叫端）同樣不該產出無法解析的路由行。
+        validate_routing_names(executor=self.executor, reviewer=self.reviewer)
         if self.chain_depth > CHAIN_DEPTH_HARD_CAP:
             # 與 validation.validate_chain_depth 相同的機械紅線，這裡是繞過 CLI
             # 直接建構 Card（測試／未來呼叫端）時的防線；CLI 路徑應該在到達這裡
@@ -672,12 +784,44 @@ _REASON_REQUIRED_BY_OUTCOME: dict[str, bool] = {
 
 # 解析用；與測試裡那支「範本合規 oracle」刻意分開兩份，round-trip 測試才不是套套邏輯。
 #
-# 理由欄用 ``[^）]+`` 而非 ``[^）]*``：空理由必須讓整行**不匹配**，不能匹配成功後
-# 才靠後續檢查補救（R2-001 就是後者漏掉的）。全空白理由 ``+`` 擋不掉，由下方
-# ``_field_problems`` 的 strip 檢查接手。
+# 理由欄用 ``+`` 而非 ``*``（現行字元類是 ``[^　]+``）：空理由必須讓整行**不匹配**，
+# 不能匹配成功後才靠後續檢查補救（R2-001 就是後者漏掉的）。全空白理由 ``+`` 擋不掉，
+# 由下方 ``_field_problems`` 的 strip 檢查接手。
+#
+# 三個字元類與寫入端的保留字元清單**同源**（``ROUTING_NAME_RESERVED``／
+# ``ROUTING_REASON_RESERVED``／``ROUTING_TIER_SEPARATORS``），由 ``_char_class``
+# 生成而非兩處各手打一份：寫入端禁什麼，讀取端就不把什麼當資料收。這條對稱性正是
+# #21 往返缺陷缺的那一半——當時名字段寫成 ``[^（]*``（只擋左括號），寫入端則什麼都不擋。
+#
+# 兩個方向的改動各自的射程，明列以便查核：
+#
+#   * 名字段 ``[^（]*`` → ``[^（）；　]*``：**加嚴**。原先名字含 ``）``／``；``／``　``
+#     能靠貪婪回溯讀回；現在一律失配。只會 matched → ambiguous，不會反向放行。
+#   * 理由段 ``[^）]+`` → ``[^　]+``：**放寬全形括號與全形分號、收緊全形空格**。
+#     放寬是為了修 #38 那一類真實個案（理由是中文散文，本來就含全形括號）；
+#     它不會造成歧義，因為名字與層級都不含全形空格之後，整行唯一的全形空格就是軸
+#     分隔符，``[^　]+`` 的貪婪邊界因此是確定性的、不依賴回溯順序。
+#   * 層級段 ``[^；）]+`` → ``[^；　]+``：跟著上一條走（``）`` 不再是理由的邊界）。
+#     層級的真正保護是封閉語彙 ``CAPABILITY_TIERS``，由 ``_field_problems`` 查表。
+#
+# 兩個方向都碰不到永久 absent 的舊卡：解析只在卡面已宣告 ``ROUTING_MARKER`` 時才跑，
+# 而那 18 張卡的標頭區沒有標記，在到達本正則之前就已判 absent。
+
+
+def _char_class(reserved: tuple[str, ...]) -> str:
+    """把保留字元清單轉成正規表示式的否定字元類內容（含跳脫）。"""
+    return "".join(re.escape(ch) for ch in reserved)
+
+
+_NAME_CLASS = _char_class(ROUTING_NAME_RESERVED)
+_REASON_CLASS = _char_class(ROUTING_REASON_RESERVED)
+_TIER_CLASS = _char_class(ROUTING_TIER_SEPARATORS)
+
 _ROUTING_PARSE_RE = re.compile(
-    r"^- 執行：(?P<executor>[^（]*)（建議 (?P<exec_tier>[^；）]+)；(?P<exec_reason>[^）]+)）"
-    r"　查核：(?P<reviewer>[^（]*)（建議 (?P<rev_tier>[^；）]+)；(?P<rev_reason>[^）]+)）$"
+    rf"^- 執行：(?P<executor>[^{_NAME_CLASS}]*)（建議 (?P<exec_tier>[^{_TIER_CLASS}]+)；"
+    rf"(?P<exec_reason>[^{_REASON_CLASS}]+)）"
+    rf"　查核：(?P<reviewer>[^{_NAME_CLASS}]*)（建議 (?P<rev_tier>[^{_TIER_CLASS}]+)；"
+    rf"(?P<rev_reason>[^{_REASON_CLASS}]+)）$"
 )
 
 def _field_problems(match: re.Match[str]) -> list[str]:
@@ -993,6 +1137,10 @@ __all__ = [
     "CHAIN_DEPTH_HARD_CAP",
     "REQUESTER_GATED_TIERS",
     "ROUTING_MARKER",
+    "ROUTING_NAME_RESERVED",
+    "ROUTING_REASON_RESERVED",
+    "ROUTING_STRUCTURAL_CHARS",
+    "ROUTING_TIER_SEPARATORS",
     "TIERS",
     "AmendError",
     "CapabilityComparison",
@@ -1017,7 +1165,10 @@ __all__ = [
     "parse_requested_by",
     "render_issue_body",
     "render_spec_markdown",
+    "routing_reserved_char_message",
     "split_at_log",
     "tier_downgrade_needs_ruling",
     "validate_capability_routing",
+    "validate_routing_field",
+    "validate_routing_names",
 ]

@@ -7,12 +7,23 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
 from wf_cli.card import (
+    _ROUTING_PARSE_RE,
+    CAPABILITY_BASELINE_ABSENT,
+    CAPABILITY_BASELINE_AMBIGUOUS,
+    CAPABILITY_MATCHED,
+    CAPABILITY_TIERS,
     REQUESTER_GATED_TIERS,
+    ROUTING_MARKER,
+    ROUTING_NAME_RESERVED,
+    ROUTING_REASON_RESERVED,
+    ROUTING_STRUCTURAL_CHARS,
     AmendError,
+    Card,
     RequesterUnparseable,
     amend_acceptance,
     amend_core_pain,
@@ -20,6 +31,8 @@ from wf_cli.card import (
     amend_resource_block,
     amend_spec_baseline,
     amend_verification,
+    compare_capability_to_card,
+    format_routing_line,
     is_tier_downgrade,
     parse_requested_by,
     split_at_log,
@@ -1341,3 +1354,412 @@ def test_stale_field_after_body_write_reports_exit_7_with_recovery(gov_card, mon
     assert parse_block(item.body).resources == ["file:z.py"]
     assert item.text("資源宣告") == "db_scope=none；file:demo.py"
     assert "→ 資源宣告：" in item.body, "首寫是 body 且自描述：Log 已記下這筆變更"
+
+
+# --------------------------------------------------------------------------
+# 路由行保留字元與讀寫往返（WF-CARD-FIELD-CORRECTION1，2026-08-12 追加驗收）
+# --------------------------------------------------------------------------
+#
+# **為什麼這一段長在 test_amend.py 而不是 test_card.py：** 本卡的資源宣告只圈了
+# ``card.py``／``amend_cmd.py``／``test_amend.py`` 三個檔，``test_card.py`` 不在其中。
+# 主題上這些測試更貼近 test_card.py，但寫入集是硬界線，逸出要由需求方裁定而不是由
+# 執行者自行擴張，故落在這裡並以本註解說明歸屬。
+#
+# 修的缺陷（WF-CLI-ROUTING-TIER1／#21 已 🏁完成、APPROVE 0 finding、已併入 main 之後
+# 才被發現）：``open`` 寫得出的路由行，``assign`` 讀不回。已知的兩個真實形態——
+#
+#   形態一（名字）  ``- 執行：Claude Opus 5@Claude Code（子 agent）（建議 主力型；…）``
+#   形態二（理由）  ``…（建議 主力型；…真實歸因（PM 的 checkpoint…不符），再判斷…）``
+#                   ← #38 開卡當下中招，assign 硬拒；同批的 #39 理由無全形括號則一次通過
+#
+# 兩者根因相同、修法方向相反，而方向是**實測**決定的，不是照範本第 4 行的外觀推的：
+# 名字段對四個結構字元全部失配（禁），理由段只對全形空格失配（其餘放行）。
+
+
+def _routing_line(
+    executor="待指派",
+    exec_tier="主力型",
+    exec_reason="理由甲",
+    reviewer="獨立校讀",
+    rev_tier="高階型",
+    rev_reason="理由乙",
+):
+    """獨立於 ``format_routing_line`` 的第二份組裝器（往返測試不可自我對照）。"""
+    return (
+        f"- 執行：{executor}（建議 {exec_tier}；{exec_reason}）"
+        f"　查核：{reviewer}（建議 {rev_tier}；{rev_reason}）"
+    )
+
+
+ROUTING_FIELD_NAMES = ("executor", "reviewer")
+ROUTING_FIELD_REASONS = ("exec_reason", "rev_reason")
+ROUTING_FIELD_TIERS = ("exec_tier", "rev_tier")
+
+# 逐欄位的**宣告**保留字元；下方測試逐格比對「宣告」與「實測」是否一致。
+_DECLARED = {
+    **{f: ROUTING_NAME_RESERVED for f in ROUTING_FIELD_NAMES},
+    **{f: ROUTING_REASON_RESERVED for f in ROUTING_FIELD_REASONS},
+}
+
+_MATRIX = [
+    (field, ch)
+    for field in (*ROUTING_FIELD_NAMES, *ROUTING_FIELD_REASONS)
+    for ch in ROUTING_STRUCTURAL_CHARS
+]
+
+
+@pytest.mark.parametrize("field,ch", _MATRIX, ids=[f"{f}-{ord(c):04X}" for f, c in _MATRIX])
+def test_declared_reserved_chars_match_measured_parser_sensitivity(field, ch):
+    """(a) 保留字元清單必須逐欄位對上**實測**的解析敏感度，不得多禁也不得少禁。
+
+    這是本輪最重要的一條，因為它把「格式規定得夠不夠清楚」從人的判斷換成機器：
+    每個欄位 × 每個結構字元恰好落在兩格之一，沒有第三格——
+
+      * 宣告為保留 → 讀取端必須**失配**（不把它當資料收）
+      * 未宣告為保留 → 讀取端必須**往返成立**（讀回逐字相同的值）
+
+    少禁會留下「寫得出、讀不回」（#21／#38 的缺陷）；多禁會擋掉合法卡面
+    （理由是中文散文，全形括號與全形分號是常態，禁它們就是製造第二個缺陷）。
+    """
+    value = f"甲{ch}乙"
+    match = _ROUTING_PARSE_RE.match(_routing_line(**{field: value}))
+    if ch in _DECLARED[field]:
+        assert match is None, (
+            f"{field} 宣告 {ch!r} 為保留字元，讀取端卻仍收下它——寫入端會白擋"
+        )
+    else:
+        assert match is not None, (
+            f"{field} 未宣告 {ch!r} 為保留字元，讀取端卻失配——這正是 #38 的形態"
+        )
+        assert match.group(field) == value, (
+            f"{field} 讀回 {match.group(field)!r} 與寫入的 {value!r} 不同（靜默錯讀）"
+        )
+
+
+def test_reserved_lists_are_pinned_to_the_measured_per_field_policy():
+    """逐欄位清單的**內容**本身要有守門人，不只是「宣告與解析器一致」。
+
+    上一條測的是一致性；但解析器的字元類與宣告同源，改宣告會讓兩者一起變，一致性
+    因此擋不住「把清單改小／改大」。這條把 2026-08-12 實測＋需求方裁定的結論釘死：
+    改動任一格都必須是**刻意**的，並且要重跑那次逐欄位實測。
+    """
+    assert ROUTING_NAME_RESERVED == ("（", "）", "；", "　"), "名字段四個結構字元全禁"
+    assert ROUTING_REASON_RESERVED == ("　",), (
+        "理由段只禁全形空格——全形括號與全形分號是中文散文的常態用法，"
+        "禁它們會重現 #38 那條被硬拒的合法理由"
+    )
+
+
+@pytest.mark.parametrize("field", ROUTING_FIELD_TIERS)
+def test_tier_fields_are_protected_by_closed_vocabulary_not_by_a_reserved_list(field):
+    """層級段不設保留字元清單，其保護是封閉語彙——這條保證必須有機械執行者。
+
+    實測中唯一會**靜默錯讀**的格子就在層級段：層級值若含全形分號，解析讀回的是被
+    截斷的前半段而不是失配。因此「使用者不可能寫出這種值」不能只留在註解裡。
+    """
+    for tier in CAPABILITY_TIERS:
+        for ch in ROUTING_STRUCTURAL_CHARS:
+            assert ch not in tier, f"能力層級語彙 {tier!r} 含結構字元 {ch!r}"
+        match = _ROUTING_PARSE_RE.match(_routing_line(**{field: tier}))
+        assert match is not None and match.group(field) == tier
+
+
+# --- (c) 讀寫往返：語料含真實使用過的值 --------------------------------------
+
+# 三筆語料由需求方 2026-08-12 指名，全部取自真實開卡：
+#   1. 名字形態（#37 的 owner 名，改寫為合規的半形括號）
+#   2. 理由形態（#38 的 --exec-capability-reason 原文，全形括號原樣保留）
+#   3. 兩者同時
+PM_REAL_REASON = (
+    "須先自行查證兩起來源事故的真實歸因（PM 的 checkpoint 記錄與可稽核留痕不符），"
+    "再判斷正解落在範本層、CLI 層還是偵測層；推理鏈中等但要求不接受上游敘述。"
+)
+PM_REAL_NAME = "Claude Opus 5@Claude Code (子 agent)"
+
+ROUND_TRIP_CORPUS = [
+    ("純樸素值", {}),
+    ("真實名字（#37 owner，半形括號）", {"executor": PM_REAL_NAME, "reviewer": PM_REAL_NAME}),
+    ("真實理由含全形括號（#38 中招處）", {"exec_reason": PM_REAL_REASON}),
+    (
+        "名字與理由同時",
+        {"executor": PM_REAL_NAME, "reviewer": PM_REAL_NAME, "exec_reason": PM_REAL_REASON},
+    ),
+    ("理由含全形分號（#35／#37 現行用法）", {"exec_reason": "紅線卡須跨模型家族；查核重點在授權綁定"}),
+    ("理由以全形右括號結尾", {"exec_reason": "見 review-escalation.md §4 (a′)（需求方平台身分）"}),
+]
+
+
+@pytest.mark.parametrize(
+    "label,overrides", ROUND_TRIP_CORPUS, ids=[c[0] for c in ROUND_TRIP_CORPUS]
+)
+def test_open_written_routing_line_is_readable_by_the_assign_side(
+    fake_runner, label, overrides
+):
+    """(c) ``open`` 寫得出的路由行，``assign`` 的兩支消費者都必須讀得回。
+
+    刻意走**完整指令**而不是直接呼叫 ``format_routing_line``：缺陷正是出在
+    「寫入端與讀取端各自成立、合起來不成立」，只測純函式就會漏掉它。
+    """
+    card_id = f"ROUNDTRIP-{abs(hash(label)) % 10**6}"
+    values = {
+        "executor": "待指派",
+        "reviewer": "獨立校讀",
+        "exec_reason": "理由甲",
+        "rev_reason": "理由乙",
+        **overrides,
+    }
+    rc = run_cli(
+        [
+            "open", *BASE_TARGET, card_id,
+            "--feature", "往返語料", "--tier", "T2", "--db-scope", "none",
+            "--core-pain", "痛點", "--service-goal", "目標",
+            "--executor", values["executor"], "--reviewer", values["reviewer"],
+            "--exec-capability", "主力型", "--exec-capability-reason", values["exec_reason"],
+            "--review-capability", "高階型", "--review-capability-reason", values["rev_reason"],
+        ]
+    )
+    assert rc == 0, f"{label}：open 拒絕了一個它本該寫得出的值"
+
+    project = resolve_project(fake_runner, "acme", 1)
+    body = find_item_by_card_id(list_items(fake_runner, project), card_id).body
+
+    # 消費者一：assign 的能力層級比對（實際唯一會被消費的欄位）
+    comparison = compare_capability_to_card(body, "主力型")
+    assert comparison.outcome == CAPABILITY_MATCHED, (
+        f"{label}：assign 讀不回 open 剛寫下的建議（{comparison.detail}）"
+    )
+    assert comparison.requires_reason is False
+
+    # 消費者二：解析器逐欄位的值保真（層級以外的欄位不被消費，但錯讀即是資料損壞）
+    line = next(ln for ln in body.splitlines() if ln.startswith("- 執行："))
+    match = _ROUTING_PARSE_RE.match(line)
+    assert match is not None, label
+    for field, expected in (
+        ("executor", values["executor"]),
+        ("reviewer", values["reviewer"]),
+        ("exec_reason", values["exec_reason"]),
+        ("rev_reason", values["rev_reason"]),
+    ):
+        assert match.group(field) == expected, f"{label}：{field} 讀回的值與寫入的不同"
+
+
+def test_the_exact_line_that_broke_assign_on_card_38_now_matches():
+    """#38 的實時重現：同一條路由行，修法前 ambiguous、修法後 matched。
+
+    語料是 2026-08-12 從 ai-workflow#38 卡面取回的**原文**（未經改寫），對照組是
+    同批開卡的 #39（理由無全形括號，當時即一次通過）——證明差異由值的內容決定，
+    不是環境問題。
+    """
+    broke = _routing_line(exec_reason=PM_REAL_REASON)
+    body = f"- 需求：ruan6047　規劃：PM\n{ROUTING_MARKER}\n{broke}\n\n## Log\n\n- x\n"
+    assert compare_capability_to_card(body, "主力型").outcome == CAPABILITY_MATCHED
+
+    # 舊解析器（理由段 [^）]+）在此語料上失配——這條把「修法前確實壞」寫成機械事實，
+    # 免得後人以為這條測試從一開始就是綠的。
+    old = re.compile(
+        r"^- 執行：(?P<executor>[^（]*)（建議 (?P<exec_tier>[^；）]+)；(?P<exec_reason>[^）]+)）"
+        r"　查核：(?P<reviewer>[^（]*)（建議 (?P<rev_tier>[^；）]+)；(?P<rev_reason>[^）]+)）$"
+    )
+    assert old.match(broke) is None, "語料選錯了：這條線在舊解析器上本來就通過"
+
+
+# --- (b) 寫入端拒收 ---------------------------------------------------------
+
+
+def _card_kwargs(**overrides):
+    base = {
+        "card_id": "RESERVED-DEMO1",
+        "feature": "示範",
+        "tier": "T2",
+        "db_scope": "none",
+        "core_pain": "痛點",
+        "service_goal": "目標",
+        "resources": ResourceDeclaration(db_scope="none", resources=[]),
+        "executor_capability": "主力型",
+        "executor_capability_reason": "理由甲",
+        "reviewer_capability": "高階型",
+        "reviewer_capability_reason": "理由乙",
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.mark.parametrize("axis", ["executor", "reviewer"])
+@pytest.mark.parametrize("ch", ROUTING_NAME_RESERVED, ids=[f"{ord(c):04X}" for c in ROUTING_NAME_RESERVED])
+def test_card_refuses_to_hold_a_name_it_could_not_read_back(axis, ch):
+    """(b) 寫入端不得靜默接受一個自己讀不回的名。
+
+    擋在 ``Card`` 建構而不是只擋在 CLI：繞過 CLI 直接建 Card 的路徑同樣不該產出
+    無法解析的路由行。訊息必須說明字元承擔什麼結構並給出替代寫法——被擋的人要的
+    是「那我該怎麼寫」。
+    """
+    with pytest.raises(ValueError) as exc:
+        Card(**_card_kwargs(**{axis: f"某人{ch}某工具"}))
+    message = str(exc.value)
+    assert "保留字元" in message
+    assert repr(ch) in message
+    assert "半形" in message
+
+
+@pytest.mark.parametrize("axis", ["executor", "reviewer"])
+def test_card_refuses_a_name_carrying_a_line_break(axis):
+    """換行同屬「寫得出、讀不回」：它會在標頭區多長出一行，使候選路由行不唯一。"""
+    with pytest.raises(ValueError, match="保留字元"):
+        Card(**_card_kwargs(**{axis: "某人\n<!-- 偽造宣告 -->"}))
+
+
+@pytest.mark.parametrize("axis", ["exec", "review"])
+def test_open_rejects_fullwidth_space_in_reason_without_creating_the_card(
+    fake_runner, capsys, axis
+):
+    """理由段唯一的保留字元是全形空格；``open`` 這一側是完整的（退出碼 2、不建卡）。
+
+    理由段的拒收落在 ``validate_capability_routing``，而 ``open_cmd`` 已經呼叫它，
+    所以訊息與退出碼都正常——名字段沒有這一半，差別見 ``validate_routing_names``
+    的 docstring 與本卡交付報告的逸出裁定。
+    """
+    rc = run_cli(
+        [
+            "open", *BASE_TARGET, f"RESERVED-REASON-{axis}",
+            "--feature", "示範", "--tier", "T2", "--db-scope", "none",
+            "--core-pain", "痛點", "--service-goal", "目標",
+            "--exec-capability", "主力型",
+            "--exec-capability-reason", "理由甲　含全形空格" if axis == "exec" else "理由甲",
+            "--review-capability", "高階型",
+            "--review-capability-reason", "理由乙　含全形空格" if axis == "review" else "理由乙",
+        ]
+    )
+    assert rc == 2
+    assert "保留字元" in capsys.readouterr().err
+    project = resolve_project(fake_runner, "acme", 1)
+    assert find_item_by_card_id(list_items(fake_runner, project), f"RESERVED-REASON-{axis}") is None
+
+
+def test_open_refuses_an_unreadable_name_before_touching_github(fake_runner):
+    """名字側的拒收同樣 fail-closed：Card 建構早於任何 GitHub 寫入，故不留半寫狀態。
+
+    ⚠️ 這裡斷言的是 ``ValueError`` 而不是退出碼 2——``cli.py`` 的 ``KNOWN_ERRORS``
+    不收 ``ValueError``，要把它轉成 ``[open] 拒絕：…`` 必須動 ``open_cmd.py``，
+    該檔**不在本卡資源宣告內**。本測試把現況釘成已知事實而不是留白：拒收成立、
+    訊息品質待需求方裁定是否為此擴充宣告。
+    """
+    before = len(fake_runner.graphql_calls)
+    with pytest.raises(ValueError, match="保留字元"):
+        run_cli(
+            [
+                "open", *BASE_TARGET, "RESERVED-NAME1",
+                "--feature", "示範", "--tier", "T2", "--db-scope", "none",
+                "--core-pain", "痛點", "--service-goal", "目標",
+                "--executor", "Claude Opus 5@Claude Code（子 agent）",
+                "--exec-capability", "主力型", "--exec-capability-reason", "理由甲",
+                "--review-capability", "高階型", "--review-capability-reason", "理由乙",
+            ]
+        )
+    assert len(fake_runner.graphql_calls) == before, "拒收必須早於任何寫入呼叫"
+
+
+# --- 驗證：既有 18 張永久 absent 卡的既成狀態不得被改變 -----------------------
+
+# 2026-08-12 以 ``gh issue view`` 逐張取回 ai-workflow#7–#25 的卡面第 4 行原文
+# （#14 無此行，非卡片，故 18 張）。R4-002 的需求方裁定是「既有卡永久以 absent
+# 派工、不補標記、不新增遷移入口」，本卡的修法不得動搖那個既成狀態。
+#
+# **這份語料的邊界要說清楚**：釘住的是 18 條**真實路由行**放進標準舊卡 body 的判定，
+# 不是 18 份真實 body 的逐位元組重放。真實 body 另有一張（#15）因其 ``## Log``
+# 排版本就損壞而落 ambiguous——那是 #21 當時就記錄在案的既有狀態，與本卡無關。
+REAL_LEGACY_ROUTING_LINES = [
+    (7, "- 執行：待指派　查核：待指派"),
+    (8, "- 執行：待指派　查核：待指派"),
+    (9, "- 執行：待指派　查核：待指派"),
+    (10, "- 執行：待指派　查核：待指派"),
+    (11, "- 執行：待指派　查核：待指派"),
+    (12, "- 執行：待指派　查核：待指派"),
+    (13, "- 執行：待指派　查核：待指派"),
+    (15, "- 執行：待指派　查核：獨立校讀"),
+    (16, "- 執行：待指派（先 grilling）　查核：跨家族架構查核"),
+    (17, "- 執行：待指派　查核：獨立校讀"),
+    (18, "- 執行：待指派　查核：獨立校讀"),
+    (19, "- 執行：待指派　查核：獨立校讀"),
+    (20, "- 執行：待指派　查核：獨立校讀"),
+    (21, "- 執行：待指派　查核：獨立校讀"),
+    (22, "- 執行：待指派　查核：跨家族查核（契約本體，依 AI_WORKFLOW.md B2 例外須走 PR）"),
+    (23, "- 執行：待指派　查核：跨家族查核（契約本體，須走 PR）"),
+    (24, "- 執行：待指派　查核：跨家族查核（契約本體，須走 PR）"),
+    (25, "- 執行：待指派　查核：跨家族查核（T4 紅線：不可逆且會毀資料，須人工 sign-off）"),
+]
+
+
+def test_the_legacy_corpus_really_is_the_eighteen_cards():
+    assert len(REAL_LEGACY_ROUTING_LINES) == 18
+
+
+@pytest.mark.parametrize(
+    "issue,line", REAL_LEGACY_ROUTING_LINES, ids=[f"#{n}" for n, _ in REAL_LEGACY_ROUTING_LINES]
+)
+def test_legacy_cards_stay_absent_after_the_round_trip_fix(issue, line):
+    """R4-002 的既成狀態：這 18 張永久以 absent 派工，不得變成 ambiguous 或 matched。"""
+    body = f"- 需求：ruan6047　規劃：PM\n{line}\n\n## Log\n\n- x\n"
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_ABSENT, f"#{issue} 的既成狀態被改變了"
+    assert "卡面無建議層級" in c.log_fragment("舊卡無基線")
+
+
+@pytest.mark.parametrize("ch", ROUTING_STRUCTURAL_CHARS, ids=[f"{ord(c):04X}" for c in ROUTING_STRUCTURAL_CHARS])
+def test_absent_verdict_does_not_depend_on_routing_line_content_at_all(ch):
+    """比逐張釘住更強的一條：未宣告標記的卡面，判定與路由行內容**無關**。
+
+    absent 在到達解析器之前就決定了（標記不在標頭區即 absent），所以任何對保留字元
+    或字元類的調整都在結構上碰不到那 18 張卡。這條把「碰不到」從論證變成測試。
+    """
+    line = _routing_line(executor=f"某人{ch}某工具", exec_reason=f"理由{ch}甲")
+    body = f"- 需求：ruan6047　規劃：PM\n{line}\n\n## Log\n\n- x\n"
+    assert compare_capability_to_card(body, "主力型").outcome == CAPABILITY_BASELINE_ABSENT
+
+
+def test_already_written_fullwidth_paren_names_stay_ambiguous_never_matched():
+    """#35／#37 那種**已經寫進卡面**的全形括號名，仍是 ambiguous（fail-closed）。
+
+    寫入端拒收只防新的；已寫下的不會被本卡追溯修好，也不得被悄悄放行成 matched
+    ——那會讓一個從未被解析成功的建議冒充成「比對過且相符」。
+    """
+    line = _routing_line(executor="Claude Opus 5@Claude Code（子 agent）")
+    body = f"- 需求：ruan6047　規劃：PM\n{ROUTING_MARKER}\n{line}\n\n## Log\n\n- x\n"
+    c = compare_capability_to_card(body, "主力型")
+    assert c.outcome == CAPABILITY_BASELINE_AMBIGUOUS
+    assert c.requires_reason is True
+
+
+def test_comparison_never_mutates_the_body_it_reads():
+    """既有的 deviation 記錄不得因本卡的修法失效或被追溯改寫。
+
+    ``compare_capability_to_card`` 是純讀取：它不回寫 body，也不碰 Log。已寫下的
+    「無基線／偏離」理由留在 Log 裡原樣不動——本測試釘住「讀取不改寫」這一半。
+    """
+    line = _routing_line(exec_reason=PM_REAL_REASON)
+    log = "- 2026-08-12T10:00:00+08:00 assign by wf-cli → 實際能力層級 主力型（卡面建議無法解析：…；理由：…）。"
+    body = f"- 需求：ruan6047　規劃：PM\n{ROUTING_MARKER}\n{line}\n\n## Log\n\n{log}\n"
+    before = body
+    compare_capability_to_card(body, "主力型")
+    assert body == before
+    assert log in body
+
+
+def test_format_routing_line_and_the_parser_agree_on_every_accepted_value():
+    """渲染端與解析端的最後一道對齊：``format_routing_line`` 的輸出必須解析得回。
+
+    ``_routing_line`` 是測試自備的第二份組裝器，本條則以**產品碼的渲染器**再驗一次，
+    確保上面那些往返結論不是只對測試自己的組裝器成立。
+    """
+    card = Card(
+        **_card_kwargs(
+            executor=PM_REAL_NAME,
+            reviewer="跨家族查核 (待需求方指派)",
+            executor_capability_reason=PM_REAL_REASON,
+        )
+    )
+    rendered = format_routing_line(card).splitlines()[-1]
+    match = _ROUTING_PARSE_RE.match(rendered)
+    assert match is not None
+    assert match.group("executor") == PM_REAL_NAME
+    assert match.group("exec_reason") == PM_REAL_REASON
+    assert match.group("exec_tier") == "主力型"
