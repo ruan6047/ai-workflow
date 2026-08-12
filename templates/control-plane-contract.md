@@ -18,7 +18,7 @@
 ```yaml
 event_id: <UUID/monotonic ID>
 card_id: <CARD_ID>
-type: claim | handoff | handoff-accepted | contract-baseline | preflight-failed | review | review-invalid | review-correction | escalation-epoch-change | escalation-checkpoint | status-change | correction | merge | release
+type: claim | handoff | handoff-accepted | contract-baseline | preflight-failed | review | review-invalid | review-correction | review-marker-clearance | escalation-epoch-change | escalation-checkpoint | escalation-resolution | status-change | correction | merge | release
 actor: <GitHub account / model@tool>
 occurred_at: <ISO 8601>
 state_version: <strictly increasing integer>
