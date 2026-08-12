@@ -120,6 +120,8 @@ def write_review(tmp_path, card_id: str, sha: str, fid: str, **extra) -> int:
     argv = [
         "review", *BASE_TARGET, "--repo", REPO, card_id,
         "--input", str(path), "--source-sha", sha, "--reviewer", "Codex",
+        # 會計數的裁決須具結 preflight（§3 第 1 款；WF-22-CLI4-R1-01 的處置）。
+        "--preflight-passed", "preflight: 工作區乾淨、分支已推、測試全綠",
     ]
     for flag, value in extra.items():
         argv += [f"--{flag.replace('_', '-')}", str(value)]

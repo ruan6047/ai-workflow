@@ -66,6 +66,7 @@ from ..project import (
     set_item_body,
 )
 from ..review import (
+    PreflightAttestation,
     ReviewParseError,
     attempt_id,
     derive_counts_toward_escalation,
@@ -78,10 +79,12 @@ from ..validation import (
     build_issue_event_history,
     check_attempt_not_duplicated,
     check_checkpoint_gate,
+    check_preflight_established,
     counted_attempts,
     review_invalid_reasons,
     validate_accepted_overrides,
     validate_marked_by,
+    validate_preflight_attestation,
     validate_review_report,
     validate_source_sha,
 )
@@ -148,6 +151,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="FINDING_ID=理由",
         help="把某個 finding 標為 accepted=false（預設全部 true，見 review-escalation.md §2）；"
         "理由必填，標記者身分取自 `gh api user`。可重複給。",
+    )
+    p.add_argument(
+        "--preflight-passed",
+        default=None,
+        metavar="檢查摘要",
+        help="具結 preflight 已通過並附檢查摘要（review-escalation.md §3 第 1 款／§5）。"
+        "會計數的裁決缺此依據時一律拒絕寫入；具結者身分取自 `gh api user`。",
     )
     p.add_argument(
         "--validate-only",
@@ -229,6 +239,33 @@ def run(args: argparse.Namespace) -> int:
             print(f"  - {error}", file=sys.stderr)
         return 2
 
+    try:
+        preflight_summary = validate_preflight_attestation(args.preflight_passed)
+    except ValidationError as exc:
+        print("[review] 拒收：preflight 具結不合格（未寫入任何遠端狀態）", file=sys.stderr)
+        for error in exc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 2
+
+    # §3 第 1 款的閘門是純檢查（只看報告與 accepted 覆寫），故擺在任何遠端呼叫之前。
+    # --validate-only 是查核者送審前的自檢，而查核者不掌握 preflight；那裡只警示不擋，
+    # 但必須明說實寫會被拒，否則自檢通過反而給了錯誤的安全感。
+    would_be_counting_without_preflight = not preflight_summary
+    if would_be_counting_without_preflight:
+        try:
+            check_preflight_established(
+                report, overrides.keys(), PreflightAttestation()
+            )
+        except ValidationError as exc:
+            if args.validate_only:
+                for error in exc.errors:
+                    print(f"[review] 警示（實寫會被拒）：{error}", file=sys.stderr)
+            else:
+                print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+                for error in exc.errors:
+                    print(f"  - {error}", file=sys.stderr)
+                return 2
+
     if args.validate_only:
         print(
             f"[review] 驗證通過（--validate-only，未寫入任何狀態）："
@@ -300,6 +337,14 @@ def run(args: argparse.Namespace) -> int:
             print(f"  - {error}", file=sys.stderr)
         return 2
 
+    preflight = PreflightAttestation()
+    if preflight_summary:
+        preflight = PreflightAttestation(
+            basis="writer-attested",
+            attested_by=resolve_platform_login(runner),
+            evidence=preflight_summary,
+        )
+
     marked_by = ""
     if overrides:
         marked_by = resolve_platform_login(runner)
@@ -331,6 +376,7 @@ def run(args: argparse.Namespace) -> int:
         escalation_epoch=args.escalation_epoch,
         timestamp=timestamp,
         accepted_marks=marks,
+        preflight=preflight,
         # current-state 平面的時點快照（見 review.render_escalation_facts_block 的說明）。
         # 每次 handoff 都會覆寫這一欄，故它只有在 append-only 的事件留言裡才留得住；
         # 但留住的是「寫裁決那一刻該欄長什麼樣」，不是 attempt 的固有屬性。
@@ -341,7 +387,7 @@ def run(args: argparse.Namespace) -> int:
     add_issue_comment(runner, target.repo, item.issue_number, comment)
     set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
 
-    counts = derive_counts_toward_escalation(report, marks)
+    counts = derive_counts_toward_escalation(report, marks, preflight)
     log_line = (
         f"{timestamp} review by wf-cli → {report.review_result}"
         f"（{report.delivery_status}）；查核者 {args.reviewer}；"

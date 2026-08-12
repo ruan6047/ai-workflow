@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -452,7 +452,7 @@ def render_verdict_comment(
     escalation_epoch: int,
     timestamp: str,
     accepted_marks: Mapping[str, AcceptedMark] | None = None,
-    preflight_passed: bool = True,
+    preflight: PreflightAttestation | None = None,
     owner_field_at_verdict_write: str | None = None,
 ) -> str:
     """渲染寫進 Issue timeline 的裁決留言（canonical §4.3「事件＝結構化 comment」）。
@@ -464,7 +464,8 @@ def render_verdict_comment(
     """
     review_attempt_id = attempt_id(card_id, escalation_epoch, source_sha)
     marks = dict(accepted_marks or default_accepted_marks(report.findings))
-    counts = derive_counts_toward_escalation(report, marks)
+    attestation = preflight or PREFLIGHT_NOT_ESTABLISHED
+    counts = derive_counts_toward_escalation(report, marks, attestation)
     lines = [
         (
             "<!-- wf-review-event:v1 "
@@ -507,7 +508,7 @@ def render_verdict_comment(
             report=report,
             marks=marks,
             counts_toward_escalation=counts,
-            preflight_passed=preflight_passed,
+            preflight=attestation,
             owner_field_at_verdict_write=owner_field_at_verdict_write,
         ),
         "",
@@ -518,6 +519,12 @@ def render_verdict_comment(
             "`accepted` 由本指令以 lifecycle writer 身分標記（reviewer 自填一律忽略）；"
             "`status` 新採認一律 `open`（review-escalation.md §2）；"
             "`counts_toward_escalation` 為依 §3 算出的投影，不接受手填。"
+        ),
+        (
+            "`preflight_passed` 只在 lifecycle writer 具結並附檢查摘要時為 `true`，"
+            "否則寫 `unknown`——**不預設為 true**。具結是寫入者的宣稱，不是機器驗證；"
+            "機器可驗證的形式需要 preflight 在事件流上有可讀的事件（`review-escalation.md` "
+            "§5 的 `handoff-accepted` 或等價），其 writer 不在本卡的寫入集內。"
         ),
         (
             "`owner_field_at_verdict_write` 是 Project「owner」欄在**本則裁決寫入當下**的"
@@ -581,6 +588,19 @@ _ATTEMPT_ID_RE = re.compile(r"^(?P<card>.+)-e(?P<epoch>\d+)-(?P<sha>[0-9a-f]{40}
 # 的授權 schema，本鍵應服從該 schema。
 ACCEPTED_MARKING_BINDINGS = ("substantive", "structurally-vacuous", "not-applicable")
 
+# review-escalation.md §3 第 1 款的依據強度。契約 §5 對 preflight pass event 要求的是
+# 「``preflight_passed=true`` 與檢查摘要」——那本來就是**寫入者的具結**，不是機器驗證；
+# 本列舉如實命名這件事，不假裝更強。
+#
+# ``writer-attested``：lifecycle writer 以平台身分具結 preflight 已通過，並附檢查摘要。
+# ``not-established``：沒有依據。**不等於 preflight 失敗**——失敗依 §1 要寫
+#   ``preflight-failed`` 且不得建立 review event，那是另一個事件型別。
+#
+# 機器可驗證的形式需要 preflight 在事件流上有可讀的表示（§5 的 ``handoff-accepted``
+# 或等價事件），其 writer 是 ``handoff_cmd.py`` 或一個新動詞——**兩者都不在本卡宣告的
+# 寫入集內**，故本輪不做，見交付報告。
+PREFLIGHT_BASES = ("writer-attested", "not-established")
+
 
 @dataclass(frozen=True)
 class AcceptedMark:
@@ -600,6 +620,27 @@ class AcceptedMark:
     reason: str = ""
     marked_by: str = ""
     binding: str = "not-applicable"
+
+
+@dataclass(frozen=True)
+class PreflightAttestation:
+    """§3 第 1 款的依據（review-escalation.md §1／§5）。
+
+    ``passed`` 只在 ``basis="writer-attested"`` 時為真，而那需要非空的 ``evidence``
+    （檢查摘要）與取自平台的 ``attested_by``。**具結不是機器驗證**：它把「誰在什麼
+    基礎上說 preflight 過了」寫進事件流，取代先前那個沒有來源的 ``true``。
+    """
+
+    basis: str = "not-established"
+    attested_by: str = ""
+    evidence: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return self.basis == "writer-attested"
+
+
+PREFLIGHT_NOT_ESTABLISHED = PreflightAttestation()
 
 
 @dataclass(frozen=True)
@@ -672,29 +713,45 @@ def default_accepted_marks(findings: tuple[Finding, ...]) -> dict[str, AcceptedM
     return {f.finding_id: AcceptedMark(finding_id=f.finding_id, accepted=True) for f in findings}
 
 
-def derive_counts_toward_escalation(
-    report: ReviewReport, marks: Mapping[str, AcceptedMark]
+def counting_clauses_2_to_4(
+    report: ReviewReport, not_accepted_ids: Iterable[str] = ()
 ) -> bool:
-    """§3 的四款推導；``review-escalation.md:276``：這是投影，不得由 reviewer 自填。
+    """§3 第 2～4 款：結論為 ``REQUEST_CHANGES``，且存在至少一個 ``accepted=true`` 的
+    §3 第 3～4 款 blocking finding（``status`` 依 §2 為 ``open``）。
 
-    第 1 款（preflight 已通過且 review 有效）在此**由事件型別本身承擔**：§1 明定
-    preflight 失敗寫 ``preflight-failed``、無效查核寫 ``review-invalid``，兩者都
-    「不得建立 review event」。因此「有一則 review event 存在」即蘊含第 1 款。
-    **這是約定不是強制**：本 CLI 沒有任何機械執行者去證實 preflight 真的跑過，
-    只有 ``review_invalid_reasons`` 擋掉可機械判定的那一種無效查核。
-
-    第 2～4 款則完全機械：結論為 ``REQUEST_CHANGES``，且存在至少一個
-    ``accepted=true`` 的 §3 第 3～4 款 blocking finding（``status`` 依 §2 為 ``open``）。
+    這三款完全機械，與第 1 款（preflight）分開判是刻意的：呼叫端需要在**尚未取得
+    preflight 依據時**就先知道「這一則會不會計數」，才能決定是否要求依據。
     """
     if report.review_result != "REQUEST_CHANGES":
         return False
-    for finding in report.findings:
-        if not counting_eligible(finding):
-            continue
-        mark = marks.get(finding.finding_id)
-        if mark is None or mark.accepted:
-            return True
-    return False
+    excluded = set(not_accepted_ids)
+    return any(
+        counting_eligible(f) and f.finding_id not in excluded for f in report.findings
+    )
+
+
+def derive_counts_toward_escalation(
+    report: ReviewReport,
+    marks: Mapping[str, AcceptedMark],
+    preflight: PreflightAttestation | None = None,
+) -> bool:
+    """§3 的四款推導；``review-escalation.md:276``：這是投影，不得由 reviewer 自填。
+
+    **第 1 款（preflight 已通過且 review 有效）不再由事件型別本身承擔。** 先前這裡寫
+    著「有一則 review event 存在即蘊含第 1 款」，並讓 ``preflight_passed`` 預設為
+    ``true`` 寫進帳——那是把一個**沒有任何東西證實過**的宣稱當成事實寫入事件流
+    （WF-22-CLI4-R1-01，跨家族查核於 78d4064 自跑重現）。自陳「這條沒有執行者」不等於
+    處置：規則若沒有執行者，就不該以事實的語氣寫下它的結論。
+
+    改法：第 1 款只認 ``preflight.passed``（``writer-attested``）。依據不存在時本函式
+    回 ``False``；而呼叫端另有一道閘門，在第 2～4 款成立卻無依據時**拒絕寫入**
+    （``validation.check_preflight_established``），使「本會計數卻被記成不計數」這個
+    洗白路徑不存在——事件流上因此不會出現無依據的 ``counts_toward_escalation``。
+    """
+    if preflight is None or not preflight.passed:
+        return False
+    not_accepted = {fid for fid, mark in marks.items() if not mark.accepted}
+    return counting_clauses_2_to_4(report, not_accepted)
 
 
 # --------------------------------------------------------------------------
@@ -726,7 +783,7 @@ def render_escalation_facts_block(
     report: ReviewReport,
     marks: Mapping[str, AcceptedMark],
     counts_toward_escalation: bool,
-    preflight_passed: bool = True,
+    preflight: PreflightAttestation | None = None,
     owner_field_at_verdict_write: str | None = None,
 ) -> str:
     """渲染 review event 的 escalation 帳區塊（review-escalation.md §5 的 adapter 欄位）。
@@ -745,16 +802,22 @@ def render_escalation_facts_block(
     值一律寫出、不省略：Project 欄位為空時寫 ``""``（鍵存在、值為空），與「鍵根本不在」
     在讀回時是兩個不同的狀態（見 ``EscalationFacts``）。
     """
+    attestation = preflight or PREFLIGHT_NOT_ESTABLISHED
     lines = [
         "```yaml",
         f"{FACTS_BLOCK_KEY}: {BLOCK_VERSION}",
         f"attempt_id: {_yaml_scalar(attempt)}",
         f"escalation_epoch: {escalation_epoch}",
-        f"preflight_passed: {_yaml_scalar(preflight_passed)}",
+        # 沒有依據時寫 unknown，**不寫 true**。契約 §5 的 schema 是 `preflight_passed: true`，
+        # 但那是給「依據存在」的情形；沒有依據卻照抄 true 等於偽造事實（R1-01）。
+        f"preflight_passed: {'true' if attestation.passed else 'unknown'}",
         f"review_result: {report.review_result}",
         f"core_pain_resolved: {report.core_pain_resolved}",
         f"counts_toward_escalation: {_yaml_scalar(counts_toward_escalation)}",
         f"owner_field_at_verdict_write: {_yaml_scalar(owner_field_at_verdict_write or '')}",
+        f"preflight_basis: {attestation.basis}",
+        f"preflight_attested_by: {_yaml_scalar(attestation.attested_by)}",
+        f"preflight_evidence: {_yaml_scalar(attestation.evidence)}",
     ]
     if not report.findings:
         lines.append("findings: []")
@@ -1003,6 +1066,8 @@ __all__ = [
     "FINDING_CLASSES",
     "FINDING_KEYS",
     "FINDING_STATUSES",
+    "PREFLIGHT_BASES",
+    "PREFLIGHT_NOT_ESTABLISHED",
     "REVIEW_RESULTS",
     "SEVERITIES",
     "STATUS_BY_RESULT",
@@ -1011,12 +1076,14 @@ __all__ = [
     "CheckpointFacts",
     "EscalationFacts",
     "Finding",
+    "PreflightAttestation",
     "ReviewParseError",
     "ReviewReport",
     "SelfRunEntry",
     "attempt_id",
     "body_has_contract_baseline",
     "checkpoint_facts_from_body",
+    "counting_clauses_2_to_4",
     "counting_eligible",
     "default_accepted_marks",
     "derive_counts_toward_escalation",

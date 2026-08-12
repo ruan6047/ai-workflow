@@ -31,11 +31,13 @@ from .review import (
     CheckpointFacts,
     EscalationFacts,
     Finding,
+    PreflightAttestation,
     ReviewParseError,
     ReviewReport,
     SelfRunEntry,
     body_has_contract_baseline,
     checkpoint_facts_from_body,
+    counting_clauses_2_to_4,
     escalation_facts_from_body,
     log_line_indexes,
     parse_attempt_id,
@@ -462,6 +464,74 @@ def derive_accepted_marking_binding(
     return "structurally-vacuous"
 
 
+def validate_preflight_attestation(summary: str | None) -> str:
+    """``--preflight-passed`` 的值檢查：給了就必須是非空檢查摘要。
+
+    契約 §5 對 preflight pass event 要求的正是「``preflight_passed=true`` **與檢查
+    摘要**」；只給旗標不給摘要，等於把先前那個沒有來源的 ``true`` 換一個位置再寫一次。
+    """
+    if summary is None:
+        return ""
+    if not summary.strip():
+        raise ValidationError(
+            [
+                (
+                    "--preflight-passed 需要非空的檢查摘要（review-escalation.md §5："
+                    "preflight pass event 記 preflight_passed=true **與檢查摘要**）；"
+                    "只宣告通過而不附摘要，等於把無來源的 true 換個位置再寫一次"
+                )
+            ]
+        )
+    return summary.strip()
+
+
+def check_preflight_established(
+    report: ReviewReport,
+    not_accepted_ids: Iterable[str],
+    preflight: PreflightAttestation,
+) -> None:
+    """§3 第 1 款的寫入前閘門：**會計數卻沒有 preflight 依據，一律拒絕寫入。**
+
+    這是 WF-22-CLI4-R1-01 的處置。先前 ``preflight_passed`` 預設為 ``true`` 並直接寫進
+    帳，於是「沒有任何東西證實過」的宣稱以事實的語氣進入事件流，``counts_toward_
+    escalation`` 也隨之無依據。
+
+    為什麼是**拒絕**而不是「記為不可計數」——disposition 給的兩支我選前者：
+
+    - 記為不可計數會開一條洗白路徑：本該計數的 attempt 只要宣稱「拿不到 preflight
+      依據」就能不進帳，而 escalation 額度正是用來擋連續失敗的。
+    - 契約自己已經給了答案：§1 明定 preflight 未通過要寫 ``preflight-failed``，且
+      **不得建立 review event**。因此「沒有 preflight 依據卻要下裁決」在契約上本來就
+      不是一個合法狀態，拒絕它不是新增嚴格度，是照著契約走。
+
+    為什麼不會癱瘓 escalation 帳：本閘門**只在第 2～4 款已成立時**才要求依據。
+    ``APPROVE``、以及只有 governance／coordination／environment 或非 executor 歸屬
+    finding 的 ``REQUEST_CHANGES``，其 ``counts_toward_escalation`` 因第 2～4 款自己就
+    是 ``false``，與 preflight 無關，照常寫入。真正被擋下的恰好是「這一輪要記在執行者
+    帳上」的那些——而那正是需要依據的場合，且解法只是補一個旗標。
+    """
+    if preflight.passed:
+        return
+    if not counting_clauses_2_to_4(report, not_accepted_ids):
+        return
+    raise ValidationError(
+        [
+            (
+                "本則裁決符合 review-escalation.md §3 第 2～4 款（REQUEST_CHANGES ＋ 至少一個 "
+                "accepted 的 implementation／authoritative-artifact ＋ executor 歸屬 blocking "
+                "finding），但**第 1 款的 preflight 依據不存在**，拒絕寫入。"
+                "§3 要求四款同時成立才可計數，而本 CLI 不會替沒有依據的第 1 款背書。"
+                "兩條合法出路：(1) preflight 確實通過 → 以 "
+                "`--preflight-passed \"<檢查摘要>\"` 具結，摘要會連同你的平台身分寫進事件流；"
+                "(2) preflight 未通過 → 依 §1 這不該是一則 review event，應寫 preflight-failed "
+                "並讓卡留在 🔨執行中（該 writer 不在本 CLI 的射程內）。"
+                "不提供「宣稱拿不到依據就記為不計數」這條路：那會讓本該進執行者帳的 attempt "
+                "靠一句話脫帳。"
+            )
+        ]
+    )
+
+
 def build_accepted_marks(
     findings: Iterable[Finding],
     overrides: Mapping[str, str],
@@ -773,6 +843,7 @@ __all__ = [
     "build_issue_event_history",
     "check_attempt_not_duplicated",
     "check_checkpoint_gate",
+    "check_preflight_established",
     "counted_attempts",
     "derive_accepted_marking_binding",
     "review_invalid_reasons",
@@ -782,6 +853,7 @@ __all__ = [
     "validate_evidence",
     "validate_marked_by",
     "validate_open_fields",
+    "validate_preflight_attestation",
     "validate_review_report",
     "validate_source_sha",
 ]

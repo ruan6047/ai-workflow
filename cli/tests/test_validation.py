@@ -105,9 +105,11 @@ from wf_cli.review import (
     AcceptedMark,
     CheckpointFacts,
     Finding,
+    PreflightAttestation,
     ReviewParseError,
     ReviewReport,
     SelfRunEntry,
+    counting_clauses_2_to_4,
     counting_eligible,
     default_accepted_marks,
     derive_counts_toward_escalation,
@@ -123,14 +125,21 @@ from wf_cli.validation import (
     build_issue_event_history,
     check_attempt_not_duplicated,
     check_checkpoint_gate,
+    check_preflight_established,
     counted_attempts,
     derive_accepted_marking_binding,
     validate_accepted_overrides,
     validate_checkpoint_input,
     validate_marked_by,
+    validate_preflight_attestation,
 )
 
 SHA_A, SHA_B, SHA_C = "a" * 40, "b" * 40, "c" * 40
+
+# §3 第 1 款的依據；沒有它，會計數的裁決一律拒絕寫入（WF-22-CLI4-R1-01）。
+ATTESTED = PreflightAttestation(
+    basis="writer-attested", attested_by="ruan6047", evidence="preflight: 全綠"
+)
 
 # 事件 marker 前綴刻意拆開書寫：只要有一則 GitHub 留言含它的字面，整張卡的自動裁決
 # 判定就會被永久隔離（docs/CONSUMER_CONFORMANCE.md 記錄 #15／#17／#21 三張卡的實測）。
@@ -198,12 +207,13 @@ def test_counts_is_false_for_approve_regardless_of_findings():
     """
     lenient = _report("APPROVE", [_finding(blocking=False)])
     assert (
-        derive_counts_toward_escalation(lenient, default_accepted_marks(lenient.findings)) is False
+        derive_counts_toward_escalation(lenient, default_accepted_marks(lenient.findings), ATTESTED)
+        is False
     )
     contradictory = _report("APPROVE", [_finding()])
     assert (
         derive_counts_toward_escalation(
-            contradictory, default_accepted_marks(contradictory.findings)
+            contradictory, default_accepted_marks(contradictory.findings), ATTESTED
         )
         is False
     )
@@ -211,11 +221,13 @@ def test_counts_is_false_for_approve_regardless_of_findings():
 
 def test_counts_is_true_only_with_an_eligible_accepted_blocking_finding():
     report = _report(findings=[_finding()])
-    assert derive_counts_toward_escalation(report, default_accepted_marks(report.findings)) is True
+    assert derive_counts_toward_escalation(report, default_accepted_marks(report.findings), ATTESTED) is True
 
     non_eligible = _report(findings=[_finding(finding_class="coordination")])
     assert (
-        derive_counts_toward_escalation(non_eligible, default_accepted_marks(non_eligible.findings))
+        derive_counts_toward_escalation(
+            non_eligible, default_accepted_marks(non_eligible.findings), ATTESTED
+        )
         is False
     )
 
@@ -223,7 +235,7 @@ def test_counts_is_true_only_with_an_eligible_accepted_blocking_finding():
 def test_marking_accepted_false_removes_the_finding_from_the_counting_set():
     report = _report(findings=[_finding("F-01")])
     marks = {"F-01": AcceptedMark(finding_id="F-01", accepted=False, reason="r", marked_by="u")}
-    assert derive_counts_toward_escalation(report, marks) is False
+    assert derive_counts_toward_escalation(report, marks, ATTESTED) is False
 
 
 # ---- --mark-not-accepted 的解析與身分檢查 ----
@@ -312,6 +324,7 @@ def test_accepted_true_carries_not_applicable_binding_written_explicitly():
         report=report,
         marks=marks,
         counts_toward_escalation=True,
+        preflight=ATTESTED,
     )
     assert "accepted_marking_binding: not-applicable" in block
 
@@ -344,6 +357,7 @@ def _verdict_comment(card: str, sha: str, findings=(), url: str = "u") -> dict:
         reviewer="Codex",
         escalation_epoch=0,
         timestamp="2026-08-12T10:00:00+08:00",
+        preflight=ATTESTED,
     )
     return {"body": body, "url": url}
 
@@ -583,6 +597,7 @@ def test_facts_block_survives_values_that_need_quoting():
         report=report,
         marks=default_accepted_marks(report.findings),
         counts_toward_escalation=True,
+        preflight=ATTESTED,
     )
     history = build_issue_event_history(
         [{"body": "<!-- " + _MARKER_V1 + f" card_id=CARD-A source_sha={SHA_A} "
@@ -633,6 +648,7 @@ def test_owner_snapshot_key_is_named_as_a_point_in_time_not_an_intrinsic_propert
         report=report,
         marks=default_accepted_marks(report.findings),
         counts_toward_escalation=True,
+        preflight=ATTESTED,
         owner_field_at_verdict_write="Codex",
     )
     assert "owner_field_at_verdict_write: Codex" in block
@@ -686,3 +702,81 @@ def test_missing_owner_key_does_not_make_the_attempt_unknown_to_the_gate():
     history = build_issue_event_history([{"body": body, "url": "u"}])
     assert history.unknown_reasons == ()
     assert len(history.scoped_facts) == 1
+
+
+# ---- §3 第 1 款：preflight 依據（WF-22-CLI4-R1-01 的處置） ----
+
+
+def test_preflight_defaults_to_not_established_never_to_true():
+    """R1-01 的病灶：先前 preflight_passed 預設 true 並寫進帳，無任何東西證實過。"""
+    assert PreflightAttestation().basis == "not-established"
+    assert PreflightAttestation().passed is False
+    report = _report(findings=[_finding()])
+    marks = default_accepted_marks(report.findings)
+    # 第 2～4 款成立，但沒有第 1 款的依據 → 不得算成計數。
+    assert counting_clauses_2_to_4(report, ()) is True
+    assert derive_counts_toward_escalation(report, marks) is False
+    assert derive_counts_toward_escalation(report, marks, PreflightAttestation()) is False
+    assert derive_counts_toward_escalation(report, marks, ATTESTED) is True
+
+
+def test_rendered_block_writes_unknown_when_preflight_is_not_established():
+    report = _report(findings=[_finding()])
+    block = render_escalation_facts_block(
+        attempt=f"CARD-A-e0-{SHA_A}",
+        escalation_epoch=0,
+        report=report,
+        marks=default_accepted_marks(report.findings),
+        counts_toward_escalation=False,
+    )
+    assert "preflight_passed: unknown" in block
+    assert "preflight_passed: true" not in block
+    assert "preflight_basis: not-established" in block
+
+
+def test_rendered_block_records_who_attested_and_on_what_basis():
+    report = _report(findings=[_finding()])
+    block = render_escalation_facts_block(
+        attempt=f"CARD-A-e0-{SHA_A}",
+        escalation_epoch=0,
+        report=report,
+        marks=default_accepted_marks(report.findings),
+        counts_toward_escalation=True,
+        preflight=ATTESTED,
+    )
+    assert "preflight_passed: true" in block
+    assert "preflight_basis: writer-attested" in block
+    assert "preflight_attested_by: ruan6047" in block
+    assert "preflight: 全綠" in block
+
+
+def test_counting_review_without_preflight_evidence_is_refused():
+    """會計數卻沒有依據 → 拒絕；不提供「記為不計數」那條洗白路徑。"""
+    report = _report(findings=[_finding()])
+    with pytest.raises(ValidationError) as exc_info:
+        check_preflight_established(report, (), PreflightAttestation())
+    message = "；".join(exc_info.value.errors)
+    assert "第 1 款的 preflight 依據不存在" in message
+    assert "preflight-failed" in message  # 指出契約自己的那條出路
+
+
+@pytest.mark.parametrize(
+    "report_kwargs, not_accepted",
+    [
+        ({"result": "APPROVE", "findings": [_finding(blocking=False)]}, ()),
+        ({"findings": [_finding(finding_class="governance")]}, ()),
+        ({"findings": [_finding(attribution="coordinator")]}, ()),
+        ({"findings": [_finding("F-01")]}, ("F-01",)),  # accepted=false 後不再合格
+    ],
+)
+def test_non_counting_reviews_are_not_blocked_by_the_preflight_gate(report_kwargs, not_accepted):
+    """閘門只在第 2～4 款已成立時才要求依據，否則 escalation 帳等於被整個關掉。"""
+    check_preflight_established(_report(**report_kwargs), not_accepted, PreflightAttestation())
+
+
+def test_attested_preflight_requires_a_non_empty_check_summary():
+    assert validate_preflight_attestation(None) == ""
+    assert validate_preflight_attestation("  摘要  ") == "摘要"
+    with pytest.raises(ValidationError) as exc_info:
+        validate_preflight_attestation("   ")
+    assert "檢查摘要" in "；".join(exc_info.value.errors)
