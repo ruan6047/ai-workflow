@@ -1360,17 +1360,19 @@ def test_stale_field_after_body_write_reports_exit_7_with_recovery(gov_card, mon
 # 路由行保留字元與讀寫往返（WF-CARD-FIELD-CORRECTION1，2026-08-12 追加驗收）
 # --------------------------------------------------------------------------
 #
-# **為什麼這一段長在 test_amend.py 而不是 test_card.py：** 本卡的資源宣告只圈了
-# ``card.py``／``amend_cmd.py``／``test_amend.py`` 三個檔，``test_card.py`` 不在其中。
-# 主題上這些測試更貼近 test_card.py，但寫入集是硬界線，逸出要由需求方裁定而不是由
-# 執行者自行擴張，故落在這裡並以本註解說明歸屬。
+# **為什麼這一段長在 test_amend.py 而不是 test_card.py：** 本卡的資源宣告圈的是
+# ``card.py``／``amend_cmd.py``／``test_amend.py``／``open_cmd.py``（末者由需求方
+# 2026-08-12 以 op f9df9cb6 追加），``test_card.py`` 不在其中。主題上這些測試更貼近
+# test_card.py，但寫入集是硬界線，逸出要由需求方裁定而不是由執行者自行擴張，
+# 故落在這裡並以本註解說明歸屬。
 #
 # 修的缺陷（WF-CLI-ROUTING-TIER1／#21 已 🏁完成、APPROVE 0 finding、已併入 main 之後
 # 才被發現）：``open`` 寫得出的路由行，``assign`` 讀不回。已知的兩個真實形態——
 #
 #   形態一（名字）  ``- 執行：Claude Opus 5@Claude Code（子 agent）（建議 主力型；…）``
 #   形態二（理由）  ``…（建議 主力型；…真實歸因（PM 的 checkpoint…不符），再判斷…）``
-#                   ← #38 開卡當下中招，assign 硬拒；同批的 #39 理由無全形括號則一次通過
+#                   ← #38 開卡當下中招：assign 落 ambiguous、要求偏離理由後才放行
+#                     （不是被拒絕派工）；同批的 #39 理由無全形括號，assign 直接 matched
 #
 # 兩者根因相同、修法方向相反，而方向是**實測**決定的，不是照範本第 4 行的外觀推的：
 # 名字段對四個結構字元全部失配（禁），理由段只對全形空格失配（其餘放行）。
@@ -1446,7 +1448,7 @@ def test_reserved_lists_are_pinned_to_the_measured_per_field_policy():
     assert ROUTING_NAME_RESERVED == ("（", "）", "；", "　"), "名字段四個結構字元全禁"
     assert ROUTING_REASON_RESERVED == ("　",), (
         "理由段只禁全形空格——全形括號與全形分號是中文散文的常態用法，"
-        "禁它們會重現 #38 那條被硬拒的合法理由"
+        "禁它們會重現 #38 那條合法理由被判成不可解析的結果"
     )
 
 
@@ -1612,11 +1614,12 @@ def test_card_refuses_a_name_carrying_a_line_break(axis):
 def test_open_rejects_fullwidth_space_in_reason_without_creating_the_card(
     fake_runner, capsys, axis
 ):
-    """理由段唯一的保留字元是全形空格；``open`` 這一側是完整的（退出碼 2、不建卡）。
+    """理由段唯一的保留字元是全形空格；拒絕形狀為退出碼 2、不建卡。
 
-    理由段的拒收落在 ``validate_capability_routing``，而 ``open_cmd`` 已經呼叫它，
-    所以訊息與退出碼都正常——名字段沒有這一半，差別見 ``validate_routing_names``
-    的 docstring 與本卡交付報告的逸出裁定。
+    理由段的拒收落在 ``validate_capability_routing``，名字段落在
+    ``validate_routing_names``；``open_cmd`` 兩者都呼叫，且共用同一個
+    ``except ValueError`` 出口，所以兩側的訊息前綴與退出碼**逐字相同**。
+    名字側的對應測試見 ``test_open_rejects_a_reserved_char_name_with_exit_code_2_…``。
     """
     rc = run_cli(
         [
@@ -1692,8 +1695,20 @@ def test_open_rejects_a_reserved_char_name_with_exit_code_2_and_no_traceback(
 # --- 驗證：既有 18 張永久 absent 卡的既成狀態不得被改變 -----------------------
 
 # 2026-08-12 以 ``gh issue view`` 逐張取回 ai-workflow#7–#25 的卡面第 4 行原文
-# （#14 無此行，非卡片，故 18 張）。R4-002 的需求方裁定是「既有卡永久以 absent
-# 派工、不補標記、不新增遷移入口」，本卡的修法不得動搖那個既成狀態。
+# （#14 是 PR 不是卡片，故 18 張）。
+#
+# **R4-002 是帶條件的選言，不是禁令。** 引用裁決時不得強化其約束力——這條形態出自
+# #11（WF-24-EVIDENCE-STRENGTH1）驗收 (d)，該卡 2026-08-12 仍 🚧進行中，故此處是
+# 引用其形態而非援引一條已上線的 canonical 條款。
+# 原文（2026-08-12 以 ``gh issue view 21 --comments`` 逐字核對）：
+#
+#     「需求方須明定並留痕：既有卡永久以 absent 派工，**或**提供具四項路由值、
+#      原值 Log 與審核界線的遷移路徑；先完成選擇及測試再合併。」
+#
+# 需求方選了**第一支**（既有卡永久以 absent 派工）。第二支（遷移路徑）**並未被禁止**，
+# 但要付三個條件：四項路由值、原值 Log、審核界線，且須先完成選擇及測試才可合併。
+# 本卡的修法建立在「第一支已被選中」這個既成狀態上，故不得使那 18 張改變判定——
+# 這與「遷移入口不得存在」是兩回事，本註解先前把後者寫成了裁定內容。
 #
 # **這份語料的邊界要說清楚**：釘住的是 18 條**真實路由行**放進標準舊卡 body 的判定，
 # 不是 18 份真實 body 的逐位元組重放。真實 body 另有一張（#15）因其 ``## Log``
@@ -1728,7 +1743,7 @@ def test_the_legacy_corpus_really_is_the_eighteen_cards():
     "issue,line", REAL_LEGACY_ROUTING_LINES, ids=[f"#{n}" for n, _ in REAL_LEGACY_ROUTING_LINES]
 )
 def test_legacy_cards_stay_absent_after_the_round_trip_fix(issue, line):
-    """R4-002 的既成狀態：這 18 張永久以 absent 派工，不得變成 ambiguous 或 matched。"""
+    """R4-002 被選中那一支的既成狀態：這 18 張以 absent 派工，不得變成 ambiguous 或 matched。"""
     body = f"- 需求：ruan6047　規劃：PM\n{line}\n\n## Log\n\n- x\n"
     c = compare_capability_to_card(body, "主力型")
     assert c.outcome == CAPABILITY_BASELINE_ABSENT, f"#{issue} 的既成狀態被改變了"
