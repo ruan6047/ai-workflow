@@ -499,14 +499,31 @@ def CP(deferred=None):
     return {"kind": "checkpoint", "deferred": deferred or []}
 
 
-def RES(res_id, checkpoint_trigger, *, owner=E_OWNER, basis="fresh-ruling",
+def RES(res_id, checkpoint_ref, *, owner=E_OWNER, basis="fresh-ruling",
         resolved_by=None, ruling_comment_id=None, ruling_url=None,
         carried_from=None, carried_by=None, resolution="continue-same-executor",
-        drop=(), hand_filled=None, adapter_stamps=True):
+        drop=(), hand_filled=None, adapter_stamps=True,
+        declared_trigger=None, declared_epoch=0, trigger_epoch=None):
     """`escalation-resolution` 事件（§5）。
 
-    `checkpoint_trigger` 以被解除 checkpoint 的 trigger label 指涉（本引擎以 label
-    當 checkpoint 的識別，等價於 §5 的 `checkpoint_ref` ＋ `trigger_attempt_id`）。
+    §5 的 schema 有**三個獨立欄位**，本 fixture 一一比照，不合併：
+
+      * `checkpoint_ref`：**定址鍵**——本引擎以 checkpoint 的 trigger label 當識別。
+        它決定「這則事件在講哪一則 checkpoint」，由 replay 用來取出 `cp`。
+      * `trigger_attempt_id`：**宣稱**——寫入者自己填的「該 checkpoint 的 trigger
+        attempt」。預設與定址鍵同源（合規事件本來就該一致），`declared_trigger`
+        可讓它指向**別的** attempt，即第 1 款 `trigger_matches` 的反例。
+      * `escalation_epoch`：**宣稱**——寫入者自己填的 epoch。`declared_epoch` 可讓它
+        與被定址 checkpoint 的 epoch 不符，即 `epoch_matches` 的反例。
+
+    先前這三者共用同一個 key，於是 `cp.trigger == ev["checkpoint_trigger"]` 在 `cp`
+    取得出來時**恆真**——那不是守衛擋住了錯誤事件，是定址方式讓錯誤事件無法被表達
+    （WF-ESCALATION-RESOLUTION-GAP1-R2-001）。分開之後這兩款才可以為假。
+
+    `trigger_epoch` 只在需要把兩個宣稱**拆開**時用：`escalation_epoch` 填錯、但
+    `trigger_attempt_id` 仍逐字正確，用來證明 `epoch_matches` 不是靠 attempt_id 內含
+    的 epoch 順帶被 `trigger_matches` 抓到的。
+
     `drop` 供反例：把指定欄位抹成 None，用來證明該欄是必要成分。
 
     `authorization_binding` 的**來源**在本 fixture 中被顯式建模，因為 §5 第 7 款驗的
@@ -519,7 +536,11 @@ def RES(res_id, checkpoint_trigger, *, owner=E_OWNER, basis="fresh-ruling",
       * `adapter_stamps=False`：事件讀到時根本沒有此欄（缺欄／省略）。
     """
     ev = {"kind": "resolution", "id": res_id,
-          "checkpoint_trigger": checkpoint_trigger,
+          "checkpoint_ref": checkpoint_ref,
+          "trigger_attempt_id": attempt_uid(
+              declared_epoch if trigger_epoch is None else trigger_epoch,
+              declared_trigger if declared_trigger is not None else checkpoint_ref),
+          "escalation_epoch": declared_epoch,
           "resolution": resolution, "continued_owner": owner,
           "resolution_basis": basis,
           "resolved_by": resolved_by if resolved_by is not None else CTX["requester"],
@@ -700,7 +721,7 @@ def _defer_conditions(entry, fid, carry, prev_deferred, ctx, dispatches, trigger
 
 def _resolution_conditions(ev, cp, cps, ctx, comments, verdict_urls, used_sources,
                            resolutions, owner_check, next_owner_at_write, epoch,
-                           binding_check="validated"):
+                           binding_check="validated", addressing_check="validated"):
     """§5 `escalation-resolution` 的七款，逐項具名。
 
     `next_owner_at_write` 是**初稿對照組**專用：初稿把第 3 款寫成單相的「逐字等於
@@ -713,12 +734,20 @@ def _resolution_conditions(ev, cp, cps, ctx, comments, verdict_urls, used_source
     url = (ev.get("resolution_ruling_url") or "").strip()
     c = comments.get(url) if ctx.get("comment_read_supported") else None
     src = resolutions.get(ev.get("carried_from"))
-    src_cp = cps.get(src["checkpoint_trigger"]) if src else None
+    src_cp = cps.get(src["checkpoint_ref"]) if src else None
 
     conds = {
         "checkpoint_is_escalate": bool(cp) and cp.forced,
-        "trigger_matches": bool(cp) and cp.trigger == ev.get("checkpoint_trigger"),
-        "epoch_matches": bool(cp) and cp.epoch == epoch,
+        # 比對的是事件**自己宣稱**的 trigger_attempt_id 與被定址 checkpoint 的真實
+        # trigger，兩者不同源，故此款可以為假（見 RES() 的 docstring）。
+        "trigger_matches": (bool(cp)
+                            and ev.get("trigger_attempt_id")
+                            == attempt_uid(cp.epoch, cp.trigger)),
+        # 兩個合取項：事件宣稱的 epoch 須逐字等於被定址 checkpoint 的 epoch（§5 第 1
+        # 款「escalation_epoch 亦逐字相同」），且該 checkpoint 須屬**本** epoch
+        # （同款「指向本 epoch 既存的 escalation-checkpoint」）。兩項各有反例。
+        "epoch_matches": (bool(cp) and ev.get("escalation_epoch") == cp.epoch
+                          and cp.epoch == epoch),
         "one_to_one": bool(cp) and cp.resolution is None,
         "owner_declared": bool(ev.get("continued_owner")),
         "resolution_value": ev.get("resolution") in RESOLUTION_VALUES
@@ -760,6 +789,12 @@ def _resolution_conditions(ev, cp, cps, ctx, comments, verdict_urls, used_source
         "auth_binding_matches_derived": (
             ev.get("authorization_binding") == derive_authorization_binding(ctx)),
     }
+    if addressing_check == "pre-fix-same-key":
+        # 【對照組】41a9f41／b039c0b 當時的寫法：事件只有一個 key，既當定址又當宣稱，
+        # 於是「宣稱與 checkpoint 相符」在 cp 取得出來時**恆真**。epoch 亦然——當時
+        # 只比對 checkpoint 是否屬本 epoch，事件自己宣稱的 epoch 根本不存在。
+        conds["trigger_matches"] = bool(cp) and cp.trigger == ev.get("checkpoint_ref")
+        conds["epoch_matches"] = bool(cp) and cp.epoch == epoch
     if binding_check == "pre-fix-enum-only":
         # 【對照組】41a9f41 當時的寫法：只檢查 derive_authorization_binding(ctx) 的
         # **回傳值落在枚舉內**，從不比對事件欄位。那證明的是函式不會回傳垃圾，
@@ -778,13 +813,17 @@ def _resolution_conditions(ev, cp, cps, ctx, comments, verdict_urls, used_source
 
 
 def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None,
-           owner_check="two-phase", binding_check="validated"):
+           owner_check="two-phase", binding_check="validated",
+           addressing_check="validated"):
     """走一遍事件流，回傳 {trigger_label: Checkpoint} 與結構性問題清單。
 
     `owner_check` 只影響 §5 第 3 款的求值時點：`two-phase` 為修訂後條文，
     `draft-single-phase` 重現初稿（E3 的對照組）。
     `binding_check` 只影響 §5 第 7 款：`validated` 為修訂後三款，
     `pre-fix-enum-only` 重現 41a9f41 的寫法（E8 的對照組）。
+    `addressing_check` 只影響 §5 第 1 款的 trigger／epoch 兩款：`validated` 為
+    定址與宣稱分離後的寫法，`pre-fix-same-key` 重現 b039c0b 的單一 key 寫法
+    （E9 的對照組）。
     """
     ctx = ctx or CTX
     state: dict[str, dict] = {}
@@ -926,7 +965,14 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None,
             pending_cp = max(0, pending_cp - 1)
 
         elif kind == "resolution":
-            cp = cps.get(ev.get("checkpoint_trigger"))
+            cp = cps.get(ev.get("checkpoint_ref"))
+            if cp is None:
+                # 定址不到 checkpoint 的 resolution 不會產生 audit（audit 掛在
+                # checkpoint 上），故必須在此留下結構性紀錄——否則它會靜默消失，
+                # 「沒有被解除」與「沒有這則事件」在輸出上無從分辨。
+                structural.append(
+                    f"resolution {ev['id']}: checkpoint_ref "
+                    f"{ev.get('checkpoint_ref')!r} 不對應任何既存 checkpoint")
             # §5 第 7 款：adapter 於**受理時**加蓋 authorization_binding，且只在
             # 提交面沒有自帶此鍵時才蓋。加蓋發生在校驗之前，故校驗看得到事件的
             # 實際欄位與來源——先前的寫法是校驗通過**之後**才把導出值貼上投影，
@@ -940,7 +986,8 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None,
             nxt = None
             conds = _resolution_conditions(
                 ev, cp, cps, ctx, comments, verdict_urls, used_sources,
-                resolutions, owner_check, nxt, epoch, binding_check)
+                resolutions, owner_check, nxt, epoch, binding_check,
+                addressing_check)
             resolutions[ev["id"]] = ev
             if cp is not None:
                 cp.resolution_audit[ev["id"]] = conds
@@ -1285,15 +1332,11 @@ E_RC = "claim-exceeds-evidence"
 E_RULING_ID = "9500000001"    # 需求方的裁定留言（獨立的一則）
 E_VERDICT_ID = "9500000002"   # checkpoint 本文所在的留言（§5 第 5 款禁止指向它）
 
-# E 段用不到、因而**未被任何案例打掉**的款次，明列以免「全部條件都驗過了」的
-# 過度宣稱。這些款的鑑別力在本段未被證明。
-E_NOT_EXERCISED = [
-    "trigger_matches／epoch_matches（本引擎以 trigger label 定址，兩者恆與 checkpoint 同源）",
-    "one_to_one（同一 checkpoint 的第二則 resolution —— 未涵蓋）",
-    "resolution_value（列舉外的取值 —— 未涵蓋）",
-    "carried_source_unused（同一 fresh-ruling 被兩則沿用 —— 未涵蓋）",
-    "carried_by_recorded（缺 carried_by —— 未涵蓋）",
-]
+# 未涵蓋款次不再以人工清單維護（WF-ESCALATION-RESOLUTION-GAP1-R2-001 的處置明文
+# 不接受人工清單）。改由 `resolution_clause_coverage()` 從每一則 resolution 的
+# audit 機械彙總，並以斷言要求「未涵蓋為空」。上一版的人工清單本身即不完整：
+# 它漏列了 checkpoint_is_escalate、resolved_by_is_requester、ruling_url_on_card、
+# carry_forcing_set_identical 四款——人工清單漏掉的東西，正好只有窮舉器抓得到。
 
 
 def e_ruling_body(trigger_label, *, epoch=0, bind=True):
@@ -1356,25 +1399,159 @@ _E_R4_UPDATES = {
 }
 
 
-def e_carry_stream(variant, *, extend_consecutive=False):
-    """E4／E5：沿用（carried-forward）。"""
+def e_carry_stream(variant, *, extend_consecutive=False, carried_by="pm-account",
+                   third_carry_from="RES2"):
+    """E4／E5：沿用（carried-forward）。
+
+    `carried_by=None` 產出「沒記下實際寫入者」的反例（§5 第 6 款）。
+    `third_carry_from="RES1"` 把第三則改成**再一次援用同一則 fresh-ruling**，
+    即「一次裁定至多被援用一次」的反例；預設 `"RES2"` 則是連續沿用的反例。
+    """
     updates, new = _E_R4_UPDATES[variant]
     ev = _e_prefix() + [
         RES("RES1", "R3", ruling_comment_id=E_RULING_ID),
         A("R4", new=new, updates=updates, owner=E_OWNER),
         CP(),
         RES("RES2", "R4", basis="carried-forward", carried_from="RES1",
-            carried_by="pm-account"),
+            carried_by=carried_by),
     ]
     if extend_consecutive:
         ev += [
             A("R5", updates={"F1": {"status": "open"}, "F2": {"status": "open"}},
               owner=E_OWNER),
             CP(),
-            RES("RES3", "R5", basis="carried-forward", carried_from="RES2",
+            RES("RES3", "R5", basis="carried-forward", carried_from=third_carry_from,
                 carried_by="pm-account"),
         ]
     return ev
+
+
+# --------------------------------------------------------------------------
+# E9：把「因定址方式而恆真」的款次改成可以為假，並逐款給最小反例
+# （WF-ESCALATION-RESOLUTION-GAP1-R2-001）
+# --------------------------------------------------------------------------
+
+E_RULING_ID_2 = "9500000003"    # 針對**同一則** checkpoint 的第二則裁定留言
+OTHER_ISSUE_URL = "https://github.com/ruan6047/ai-workflow/issues/9"
+E_RC_OTHER = "unrelated-root-cause"
+
+
+def e_second_resolution_stream():
+    """§5 第 2 款：一則 checkpoint 至多被一則有效 resolution 解除。
+
+    第二則刻意附**另一則獨立、合規**的裁定留言（author 為需求方、body 逐字綁定同一
+    trigger attempt、非 verdict 留言），故留痕側五款全部成立——失效的只會是 1:1。
+    """
+    return _e_prefix() + [
+        COMMENT(E_RULING_ID_2, CTX["requester"], e_ruling_body("R3")),
+        RES("RES1", "R3", ruling_comment_id=E_RULING_ID),
+        RES("RES2", "R3", ruling_comment_id=E_RULING_ID_2),
+        A("R4", owner=E_OWNER, counted=False),
+    ]
+
+
+def e_offcard_ruling_stream():
+    """§5 第 5 款 `ruling_url_on_card`：裁定留言不在本卡 issue 上。
+
+    留言本身**存在且完全合規**（author 為需求方、body 逐字綁定本輪 trigger
+    attempt、非 verdict 留言），只是掛在別的 issue 上，故 adapter 讀得到它——
+    失效的恰為「解析為本卡單一留言」這一款，不會與讀不到留言的情形混在一起。
+    """
+    return _e_prefix() + [
+        COMMENT(E_RULING_ID_2, CTX["requester"], e_ruling_body("R3"),
+                issue_url=OTHER_ISSUE_URL),
+        RES("RES1", "R3",
+            ruling_url=ruling_url(E_RULING_ID_2, OTHER_ISSUE_URL)),
+        A("R4", owner=E_OWNER, counted=False),
+    ]
+
+
+def e_stale_epoch_stream():
+    """`epoch_matches` 的第二個合取項：checkpoint 不屬**本** epoch。
+
+    epoch 已遞增之後才補發裁定去解除舊 epoch 的 checkpoint。事件宣稱的
+    `escalation_epoch` 與該 checkpoint 逐字相同（皆為 0），故第一個合取項成立，
+    失效的恰為「本 epoch」這一項。
+    """
+    return _e_prefix() + [
+        EPOCH(),
+        RES("RES1", "R3", ruling_comment_id=E_RULING_ID),
+    ]
+
+
+def e_not_forced_stream():
+    """`checkpoint_is_escalate`：checkpoint 根本沒被強制 escalate。
+
+    三個 attempt 各自不同根因（第一條件累計不到 3），且 trigger attempt 把 carry set
+    內兩筆都判 resolved（第二條件無觸發格）→ checkpoint 不強制 escalate。此時
+    `continue` 本來就合法，沒有升級狀態可解除，一則 resolution 是無主的。
+    """
+    return [
+        A("R1", new={"G1": (E_RC, {})}, owner=E_OWNER),
+        A("R2", new={"G2": (RC_PR, {})}, owner=E_OWNER),
+        A("R3", new={"G3": (RC_GEN, {})},
+          updates={"G1": {"status": "resolved"}, "G2": {"status": "resolved"}},
+          owner=E_OWNER),
+        CP(),
+        COMMENT(E_VERDICT_ID, CTX["requester"],
+                "## escalation-checkpoint\n"
+                f"trigger_attempt_id: {attempt_uid(0, 'R3')}\n"
+                "checkpoint_decision: continue", verdict=True),
+        COMMENT(E_RULING_ID, CTX["requester"], e_ruling_body("R3")),
+        RES("RES1", "R3", ruling_comment_id=E_RULING_ID),
+    ]
+
+
+def e_forcing_set_stream():
+    """§5 第 6 款 `carry_forcing_set_identical`：強制成因集合不同。
+
+    C_f（C@R3）由**兩個條件同時**成立而強制；C_c（C@R4）只由第一條件成立而強制
+    （carry set 三筆全部 resolved → 第二條件不成立），但第一條件的根因仍是同一個、
+    occurrence 累計數仍是 3（R4 沒有新增同家族 finding），第二條件的觸發集合由
+    {F1,F2} 縮成 ∅ 仍是子集。故另外兩項比對都成立，失效的恰為成因集合這一項。
+
+    第一條件在 C@R4 仍成立的方式刻意選用「**重開一筆不在 carry set 內的舊 finding**」
+    （F0 在 R2 即已 resolved，故不屬 C@R4 的 carry set）：重開不產生新的 occurrence，
+    於是 `carry_no_new_occurrence` 不會跟著一起紅，兩款確實各自獨立。
+    """
+    return [
+        A("R1", new={"F0": (E_RC, {}), "F1": (E_RC, {})}, owner=E_OWNER),
+        A("R2", new={"F2": (E_RC, {})}, updates={"F0": {"status": "resolved"}},
+          owner=E_OWNER),
+        A("R3", new={"F3": (E_RC, {})}, owner=E_OWNER),
+        CP(),
+        COMMENT(E_VERDICT_ID, CTX["requester"],
+                "## escalation-checkpoint\n"
+                f"trigger_attempt_id: {attempt_uid(0, 'R3')}\n"
+                "checkpoint_decision: escalate", verdict=True),
+        COMMENT(E_RULING_ID, CTX["requester"], e_ruling_body("R3")),
+        RES("RES1", "R3", ruling_comment_id=E_RULING_ID),
+        A("R4", updates={"F1": {"status": "resolved"}, "F2": {"status": "resolved"},
+                         "F3": {"status": "resolved"}, "F0": {"status": "open"}},
+          owner=E_OWNER),
+        CP(),
+        RES("RES2", "R4", basis="carried-forward", carried_from="RES1",
+            carried_by="pm-account"),
+    ]
+
+
+def resolution_clause_coverage(runs):
+    """把「哪些款被反例打掉過」由**人工清單**改成從 audit 機械彙總。
+
+    R2-001 的處置明文不接受人工未涵蓋清單，故這裡不再維護 `E_NOT_EXERCISED`：
+    直接掃過所有 E 段回放的 `resolution_audit`，取出曾被判為 False 的款次。
+    回傳 `(falsified, uncovered)`——`uncovered` 非空即代表該款在本段只被觀察到成立，
+    其鑑別力未被證明。
+    """
+    falsified: dict[str, list[str]] = {}
+    for name, cps in runs:
+        for cp in cps.values():
+            for rid, conds in cp.resolution_audit.items():
+                for key, ok in conds.items():
+                    if not ok:
+                        falsified.setdefault(key, []).append(f"{name}:{rid}")
+    uncovered = [c for c in RESOLUTION_CONDITIONS if c not in falsified]
+    return falsified, uncovered
 
 
 def render_resolution(title, cps, only=None):
@@ -1918,9 +2095,176 @@ def main() -> int:
                     binding_check="pre-fix-enum-only")[0]["R3"].resolution is not None),
     ]
 
-    print("\n  E 段**未**打掉的款次（其鑑別力在本段未被證明）：")
-    for item in E_NOT_EXERCISED:
-        print(f"    - {item}")
+    # ---- E9：把因定址而恆真的款次改成可以為假（R2-001）--------------------
+    print("\n===== E9. 定址與宣稱分離後的逐款反例【構造】=====")
+    # 9a. trigger_matches：事件宣稱的 trigger_attempt_id 指向別的 attempt。
+    e_wrong_trig, _ = replay(e_base_stream(declared_trigger="R2"), ctx=CTX_E)
+    # 9b. epoch_matches（第一合取項）：宣稱的 escalation_epoch 與被定址 checkpoint 不符，
+    #     但 trigger_attempt_id 仍逐字正確 → 不與 9a 混在一起。
+    e_wrong_epoch, _ = replay(
+        e_base_stream(declared_epoch=1, trigger_epoch=0), ctx=CTX_E)
+    # 9c. epoch_matches（第二合取項）：epoch 已遞增後才補發裁定解除舊 epoch 的 checkpoint。
+    e_stale_epoch, _ = replay(e_stale_epoch_stream(), ctx=CTX_E)
+    # 9d. one_to_one：同一則 checkpoint 的第二則 resolution。
+    e_two_res, _ = replay(e_second_resolution_stream(), ctx=CTX_E)
+    # 9e. resolution_value：列舉外的取值（含 basis 列舉外）。
+    e_bad_val, _ = replay(
+        e_base_stream(resolution="continue-and-skip-next-review"), ctx=CTX_E)
+    e_bad_basis, _ = replay(e_base_stream(basis="assumed-still-valid"), ctx=CTX_E)
+    # 9f. carried_source_unused：同一則 fresh-ruling 被第二次沿用。
+    e_reuse, _ = replay(
+        e_carry_stream("same", extend_consecutive=True, third_carry_from="RES1"),
+        ctx=CTX_E)
+    # 9g. carried_by_recorded：沿用時沒記下實際寫下本事件的帳號。
+    e_nocarrier, _ = replay(e_carry_stream("same", carried_by=None), ctx=CTX_E)
+    # 9h. checkpoint_is_escalate：checkpoint 根本沒被強制升級（無升級狀態可解除）。
+    e_notforced, _ = replay(e_not_forced_stream(), ctx=CTX_E)
+    # 9i. checkpoint_is_escalate（定址失敗）：checkpoint_ref 不對應任何既存 checkpoint。
+    e_orphan, st_orphan = replay(
+        _e_prefix() + [RES("RES1", "R9", ruling_comment_id=E_RULING_ID)], ctx=CTX_E)
+    # 9j. resolved_by_is_requester：裁定人非需求方，但留言 author 仍是需求方。
+    e_badwho, _ = replay(e_base_stream(resolved_by="someone-else"), ctx=CTX_E)
+    # 9k. ruling_url_on_card：合規的裁定留言掛在**別的 issue** 上。
+    e_offcard, _ = replay(e_offcard_ruling_stream(), ctx=CTX_E)
+    # 9l. carry_forcing_set_identical：強制成因集合不同，另兩項比對仍成立。
+    e_forcing, _ = replay(e_forcing_set_stream(), ctx=CTX_E)
+    for nm, cps_, key, rid in (
+            ("9a 錯誤 trigger", e_wrong_trig, "R3", "RES1"),
+            ("9b 錯誤 epoch（宣稱不符）", e_wrong_epoch, "R3", "RES1"),
+            ("9c 錯誤 epoch（跨 epoch 補發）", e_stale_epoch, "R3", "RES1"),
+            ("9d 同一 checkpoint 第二則", e_two_res, "R3", "RES2"),
+            ("9e 列舉外 resolution", e_bad_val, "R3", "RES1"),
+            ("9e 列舉外 basis", e_bad_basis, "R3", "RES1"),
+            ("9f 同一 fresh-ruling 二次沿用", e_reuse, "R5", "RES3"),
+            ("9g 缺 carried_by", e_nocarrier, "R4", "RES2"),
+            ("9h checkpoint 未被強制升級", e_notforced, "R3", "RES1"),
+            ("9j resolved_by 非需求方", e_badwho, "R3", "RES1"),
+            ("9k 裁定留言不在本卡", e_offcard, "R3", "RES1"),
+            ("9l 強制成因集合不同", e_forcing, "R4", "RES2"),
+    ):
+        print(f"  {nm} → 被打掉的款="
+              f"{cps_[key].failed_resolution_conditions(rid)}")
+    print(f"  9i 定址不到 checkpoint → structural={st_orphan}")
+    checks += [
+        ("E9a：宣稱的 trigger_attempt_id 指向別的 attempt → 無效，失效的恰為 "
+         "trigger_matches 一款（定址鍵與宣稱分離後，該款才可以為假；先前兩者同源，"
+         "cp 取得出來時它恆真）",
+         e_wrong_trig["R3"].failed_resolution_conditions("RES1") == ["trigger_matches"]),
+        ("E9b：宣稱的 escalation_epoch 與被定址 checkpoint 不符 → 無效，失效的恰為 "
+         "epoch_matches 一款（trigger_attempt_id 仍逐字正確，故不是被 trigger_matches "
+         "順帶抓到的）",
+         e_wrong_epoch["R3"].failed_resolution_conditions("RES1") == ["epoch_matches"]
+         and e_wrong_epoch["R3"].resolution_audit["RES1"]["trigger_matches"] is True),
+        ("E9c：epoch 遞增後才補發裁定去解除舊 epoch 的 checkpoint → 無效，失效的恰為 "
+         "epoch_matches（該款的第二個合取項「本 epoch 既存」）",
+         e_stale_epoch["R3"].failed_resolution_conditions("RES1") == ["epoch_matches"]),
+        ("E9d：同一則 checkpoint 的第二則 resolution → 無效，失效的恰為 one_to_one；"
+         "第二則附的是另一則完全合規的獨立裁定留言，故留痕五款皆成立",
+         e_two_res["R3"].failed_resolution_conditions("RES2") == ["one_to_one"]
+         and not e_two_res["R3"].failed_resolution_conditions("RES1")),
+        ("E9d：第一則仍有效且投影仍是它——第二則不覆寫既有解除（append-only）",
+         e_two_res["R3"].resolution is not None
+         and e_two_res["R3"].resolution["id"] == "RES1"),
+        ("E9e：列舉外的 resolution 取值 → 無效，失效的恰為 resolution_value",
+         e_bad_val["R3"].failed_resolution_conditions("RES1") == ["resolution_value"]),
+        ("E9e：列舉外的 resolution_basis → 無效。**並如實記錄一個結構性事實**："
+         "此時 is_fresh／is_carried 皆為 false，故第 5、6 兩款全部退化為恆真；"
+         "本則仍被 resolution_value 擋下（fail-closed 成立），但那是靠單一款次，"
+         "不是靠留痕款",
+         e_bad_basis["R3"].failed_resolution_conditions("RES1") == ["resolution_value"]
+         and e_bad_basis["R3"].resolution is None
+         and all(e_bad_basis["R3"].resolution_audit["RES1"][k] is True
+                 for k in ("ruling_author_is_requester", "ruling_binds_trigger",
+                           "carried_from_is_fresh", "carried_by_recorded"))),
+        ("E9f：同一則 fresh-ruling 被第二次沿用 → 無效，失效的恰為 carried_source_unused"
+         "（carried_from 指向的仍是 fresh-ruling，故不是被 carried_from_is_fresh 抓到的）",
+         e_reuse["R5"].failed_resolution_conditions("RES3") == ["carried_source_unused"]),
+        ("E9g：沿用未記 carried_by → 無效，失效的恰為 carried_by_recorded"
+         "（二手事實不得寫成一手：resolved_by 仍是原裁定者，寫入者必須另記）",
+         e_nocarrier["R4"].failed_resolution_conditions("RES2")
+         == ["carried_by_recorded"]),
+        ("E9h：checkpoint 未被強制升級（兩條件皆不成立）→ 該則 resolution 無效，"
+         "失效的恰為 checkpoint_is_escalate；沒有升級狀態可解除",
+         not e_notforced["R3"].forced
+         and e_notforced["R3"].failed_resolution_conditions("RES1")
+         == ["checkpoint_is_escalate"]),
+        ("E9i：checkpoint_ref 定址不到任何既存 checkpoint → 留下結構性紀錄，"
+         "不靜默消失（audit 掛在 checkpoint 上，無 checkpoint 即無 audit）",
+         len(st_orphan) == 1 and "不對應任何既存 checkpoint" in st_orphan[0]
+         and e_orphan["R3"].resolution is None),
+        ("E9j：resolved_by 非需求方 → 無效，失效的恰為 resolved_by_is_requester"
+         "（裁定留言的 author 仍是需求方，故該款與 ruling_author_is_requester 確實獨立）",
+         e_badwho["R3"].failed_resolution_conditions("RES1")
+         == ["resolved_by_is_requester"]),
+        ("E9k：裁定留言掛在別的 issue 上 → 無效，失效的恰為 ruling_url_on_card"
+         "（該留言存在且 author／綁定皆合規，故不是「讀不到留言」那條路）",
+         e_offcard["R3"].failed_resolution_conditions("RES1") == ["ruling_url_on_card"]),
+        ("E9l：兩則 checkpoint 的強制成因集合不同 → 沿用無效，失效的恰為 "
+         "carry_forcing_set_identical（occurrence 累計數相同、觸發集合仍為子集，"
+         "故三項比對確實各自獨立）",
+         e_forcing["R4"].failed_resolution_conditions("RES2")
+         == ["carry_forcing_set_identical"]),
+        ("E9：所有反例皆使升級狀態維持，重建不出「維持同執行者」",
+         all(c[k].forced and c[k].resolution is None for c, k in (
+             (e_wrong_trig, "R3"), (e_wrong_epoch, "R3"), (e_stale_epoch, "R3"),
+             (e_bad_val, "R3"), (e_bad_basis, "R3"), (e_badwho, "R3"),
+             (e_offcard, "R3"), (e_reuse, "R5"), (e_nocarrier, "R4"),
+             (e_forcing, "R4")))),
+    ]
+
+    # 對照組：b039c0b 的單一 key 寫法對 9a／9b 全部放行（9c 當時就擋得住，如實標註）
+    pre_trig, _ = replay(e_base_stream(declared_trigger="R2"), ctx=CTX_E,
+                         addressing_check="pre-fix-same-key")
+    pre_ep, _ = replay(e_base_stream(declared_epoch=1, trigger_epoch=0), ctx=CTX_E,
+                       addressing_check="pre-fix-same-key")
+    pre_stale, _ = replay(e_stale_epoch_stream(), ctx=CTX_E,
+                          addressing_check="pre-fix-same-key")
+    print("  對照組（b039c0b 的單一 key 寫法）→ 9a／9b／9c 的裁定是否被放行："
+          + str([c["R3"].resolution is not None
+                 for c in (pre_trig, pre_ep, pre_stale)]))
+    checks += [
+        ("E9：**對照組**——單一 key 寫法對 9a（錯誤 trigger）與 9b（錯誤 epoch 宣稱）"
+         "全部放行；這兩款是本輪把定址與宣稱分離後**新裝上**的守衛，不是既有行為的複述",
+         pre_trig["R3"].resolution is not None and pre_ep["R3"].resolution is not None),
+        ("E9：對照組——9c（跨 epoch 補發）在單一 key 寫法下**本來就擋得住**。"
+         "如實標註：epoch_matches 先前只是缺了「事件自己宣稱的 epoch」這個合取項，"
+         "不是整款恆真；不把既有行為算成本輪新增",
+         pre_stale["R3"].resolution is None),
+        ("E9：對照組——合規事件在兩種定址寫法下都通過（修正不誤傷）",
+         replay(e_base_stream(), ctx=CTX_E,
+                addressing_check="pre-fix-same-key")[0]["R3"].resolution is not None),
+    ]
+
+    # ---- E 段的必要條件覆蓋率（機械彙總，不再維護人工清單）------------------
+    # 只登記**契約本身**的回放：`draft-single-phase` 與 `pre-fix-enum-only` 是
+    # 反面對照組（刻意重現舊寫法），拿它們充覆蓋會把結論反過來。
+    e_runs = [
+        ("E1", e_ok), ("E2", e_noowner), ("E3", e_two),
+        ("E4-author", e_author), ("E4-bind", e_bind), ("E4-self", e_self),
+        ("E5-same", e_same), ("E5-occ", e_occ), ("E5-grew", e_grew),
+        ("E6", e_cons),
+        ("E8-miss", e_miss), ("E8-hf-vac", e_hf_vac), ("E8-hf-sub", e_hf_sub),
+        ("E9a", e_wrong_trig), ("E9b", e_wrong_epoch), ("E9c", e_stale_epoch),
+        ("E9d", e_two_res), ("E9e-val", e_bad_val), ("E9e-basis", e_bad_basis),
+        ("E9f", e_reuse), ("E9g", e_nocarrier), ("E9h", e_notforced),
+        ("E9j", e_badwho), ("E9k", e_offcard), ("E9l", e_forcing),
+    ]
+    falsified, uncovered = resolution_clause_coverage(e_runs)
+    print("\n===== E 段必要條件覆蓋率（由 audit 機械彙總）=====")
+    for cond in RESOLUTION_CONDITIONS:
+        hits = falsified.get(cond)
+        print(f"  [{'反例' if hits else '未涵蓋'}] {cond}"
+              + (f"  ← {', '.join(hits)}" if hits else ""))
+    print(f"  未涵蓋：{uncovered or '無'}")
+    checks += [
+        ("E 段覆蓋：§5 的**每一款**必要條件都至少有一個反例把它打掉——"
+         "此結論由 resolution_audit 機械彙總產生，不是人工維護的清單",
+         not uncovered),
+        ("E 段覆蓋：彙總器本身有鑑別力——RESOLUTION_CONDITIONS 的款次全數出現在 "
+         "audit 中，不會因為款名寫錯而虛報涵蓋",
+         set(RESOLUTION_CONDITIONS)
+         == set(e_ok["R3"].resolution_audit["RES1"])),
+    ]
 
     # ---- 結論摘要 ----------------------------------------------------------
     print("\n===== 結論摘要（供查核者對照卡面驗證條文）=====")
@@ -1966,6 +2310,22 @@ def main() -> int:
     print(" 10. E8 驗的是 `authorization_binding` 的**來源**而非只有值：手填成與 adapter")
     print("     導出值恰好相同的值時，值比對會通過，唯一擋得住它的是來源檢查。前一版")
     print("     只驗導出函式的回傳值落在枚舉內，三個反例全部放行（對照組已釘住）。")
+    print(" 11. §5 的**每一款**必要條件現在都有至少一個反例把它打掉，且該結論由")
+    print("     `resolution_clause_coverage()` 從 `resolution_audit` 機械彙總產生——")
+    print("     上一版的人工未涵蓋清單自己就漏列了四款（`checkpoint_is_escalate`、")
+    print("     `resolved_by_is_requester`、`ruling_url_on_card`、")
+    print("     `carry_forcing_set_identical`），人工清單漏掉的東西只有窮舉器抓得到。")
+    print(" 12. 本輪只有 `trigger_matches`／`epoch_matches` 需要**改寫求值方式**：先前")
+    print("     事件只有一個 key，既當定址又當宣稱，於是 checkpoint 取得出來時該比對")
+    print("     恆真——那是定址讓錯誤事件無法被表達，不是守衛擋住了它。分離為")
+    print("     `checkpoint_ref`（定址）／`trigger_attempt_id`＋`escalation_epoch`（宣稱）")
+    print("     之後兩款才可以為假，對照組確認舊寫法對 9a／9b 全部放行。其餘各款的程式碼")
+    print("     未改，本輪補的是它們**缺席的反例**——兩者不同，不混為一談。")
+    print(" 13. 誠實標註兩件事：(i) 9c（跨 epoch 補發）在舊寫法下本來就擋得住，")
+    print("     `epoch_matches` 先前只是缺了「事件自己宣稱的 epoch」這個合取項，不是整款")
+    print("     恆真；(ii) `resolution_basis` 取值落在列舉外時，第 5、6 兩款會整批退化為")
+    print("     恆真（`is_fresh`／`is_carried` 皆 false），本則仍被 `resolution_value`")
+    print("     擋下故 fail-closed 成立，但守衛只剩一層——E9e 已把這個形狀釘成斷言。")
 
     # ---- 斷言彙總 ----------------------------------------------------------
     print("\n===== 斷言 =====")
