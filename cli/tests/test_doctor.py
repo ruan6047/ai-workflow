@@ -535,7 +535,7 @@ def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
     args = argparse.Namespace(
         repo_root=str(tmp_path), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
-        owner=None, project=None,
+        owner=None, project=None, cleanup_preview=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
     )
     assert doctor_cmd.run(args) == 0
@@ -811,3 +811,118 @@ def test_repeated_identical_verdict_heading_is_also_unusable():
         [{"body": f"{m}\n## 查核裁決：APPROVE\n\n重申：\n## 查核裁決：APPROVE"}],
         _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過")
     assert finding.status == "half_written"
+
+
+# --------------------------------------------------------------------------
+# WF-CLEANUP-GUARD1：收尾清理前提的唯讀預覽
+#
+# doctor 的紅線是「只列清單、不動手」。這裡驗的不只是它印出正確結論，更重要的是
+# 跑完之後**磁碟上的東西一個都沒少**——一個會順手清理的 doctor 才是真正的風險。
+# --------------------------------------------------------------------------
+
+
+def _free_prober(_path):
+    return "free", "fake prober：無人佔用"
+
+
+_CLEANUP_BODY = """## 資源宣告
+<!-- resource-claims:begin -->
+```json
+{"db_scope": "none", "resources": ["file:x.py"]}
+```
+<!-- resource-claims:end -->
+"""
+
+
+def _merged_card_repo(sandbox_repo, tmp_path):
+    branch = "claude/MERGED-CARD1"
+    wt = tmp_path / "merged-wt"
+    git(sandbox_repo, "worktree", "add", "-q", str(wt), "-b", branch)
+    (wt / "done.txt").write_text("done\n", encoding="utf-8")
+    git(wt, "add", "done.txt")
+    git(wt, "commit", "-q", "-m", "work")
+    git(sandbox_repo, "merge", "-q", "--no-ff", "-m", "merge", branch)
+    registry = _registry([
+        RegisteredCard(card_id="MERGED-CARD1", branch=branch, worktree_path=str(wt),
+                       delivery_status="📦已合併", owner="someone@tool"),
+    ])
+    return branch, wt, registry
+
+
+def test_cleanup_preview_is_off_by_default(sandbox_repo, tmp_path):
+    _, _, registry = _merged_card_repo(sandbox_repo, tmp_path)
+    report = run_doctor(sandbox_repo, registry)
+    assert report.cleanup_previews == []
+    assert report.cleanup_preview_enabled is False
+    assert "收尾清理前提" not in report.render_text()
+
+
+def test_cleanup_preview_blocks_on_uncommitted_work_and_deletes_nothing(sandbox_repo, tmp_path):
+    branch, wt, registry = _merged_card_repo(sandbox_repo, tmp_path)
+    (wt / "draft.txt").write_text("未提交\n", encoding="utf-8")
+
+    report = run_doctor(sandbox_repo, registry, cleanup_preview=True,
+                        card_bodies={"MERGED-CARD1": _CLEANUP_BODY},
+                        occupancy_prober=_free_prober)
+
+    assert len(report.cleanup_previews) == 1
+    preview = report.cleanup_previews[0]
+    assert preview.mode == "detect_only"
+    assert any("no_uncommitted_changes" in r for r in preview.blocking_reasons)
+    # doctor 唯讀：worktree、分支、未提交內容全都必須還在
+    assert wt.exists()
+    assert (wt / "draft.txt").read_text(encoding="utf-8") == "未提交\n"
+    assert branch in git_ops_local_branches(sandbox_repo)
+    assert "收尾清理前提" in report.render_text()
+
+
+def git_ops_local_branches(repo):
+    from wf_cli import git_ops
+
+    return git_ops.local_branches(repo)
+
+
+def test_cleanup_preview_reports_obligations_as_non_blocking(sandbox_repo, tmp_path):
+    """第 5–7 步永遠列在 outstanding_obligations，且不影響 mode。"""
+    from wf_cli.cleanup import SUBSEQUENT_OBLIGATION_STEPS
+
+    _, _, registry = _merged_card_repo(sandbox_repo, tmp_path)
+    report = run_doctor(sandbox_repo, registry, cleanup_preview=True,
+                        card_bodies={"MERGED-CARD1": _CLEANUP_BODY},
+                        occupancy_prober=_free_prober)
+    preview = report.cleanup_previews[0]
+    assert preview.outstanding_obligations == SUBSEQUENT_OBLIGATION_STEPS
+    assert "不阻擋 release" in report.render_text()
+
+
+def test_cleanup_preview_only_covers_merged_cards(sandbox_repo, tmp_path):
+    """未 merge 的在途卡不是收尾候選，不得出現在預覽（也就不會被誤導去刪）。"""
+    branch = "claude/IN-FLIGHT1"
+    wt = tmp_path / "inflight-wt"
+    git(sandbox_repo, "worktree", "add", "-q", str(wt), "-b", branch)
+    registry = _registry([
+        RegisteredCard(card_id="IN-FLIGHT1", branch=branch, worktree_path=str(wt),
+                       delivery_status="🔨執行中", owner="someone@tool"),
+    ])
+    report = run_doctor(sandbox_repo, registry, cleanup_preview=True,
+                        occupancy_prober=_free_prober)
+    assert report.cleanup_previews == []
+
+
+def test_cleanup_preview_json_payload_carries_previews(sandbox_repo, tmp_path, capsys):
+    import argparse
+    import json as jsonlib
+
+    from wf_cli.commands import doctor_cmd
+
+    _merged_card_repo(sandbox_repo, tmp_path)
+    args = argparse.Namespace(
+        repo_root=str(sandbox_repo), registry="none", review_channel=False,
+        repo=None, issue_number=None, card_id=None, source_sha=None,
+        owner=None, project=None, cleanup_preview=True,
+        main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
+    )
+    assert doctor_cmd.run(args) == 0
+    payload = jsonlib.loads(capsys.readouterr().out)
+    assert payload["cleanup_preview_enabled"] is True
+    assert payload["cleanup_previews"] == []  # registry=none 時沒有卡可預覽

@@ -33,6 +33,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="另對帳指定 Issue 的外部查核收據與 wfcli review event（唯讀、fail-closed）",
     )
+    p.add_argument(
+        "--cleanup-preview",
+        action="store_true",
+        help="預覽 `📦已合併` 卡的破壞性收尾前提是否成立（唯讀；doctor 永不刪除任何東西）",
+    )
     p.add_argument("--repo", help="--review-channel 的 GitHub repo，格式 owner/repo")
     p.add_argument("--issue-number", type=int, help="--review-channel 的 Issue/PR number")
     p.add_argument("--card-id", help="--review-channel 的卡 ID")
@@ -106,6 +111,7 @@ def run(args: argparse.Namespace) -> int:
         registry,
         lease_ttl_hours=args.lease_ttl_hours,
         main_ref=args.main_ref,
+        cleanup_preview=args.cleanup_preview,
     )
     # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
     # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。
@@ -143,7 +149,9 @@ def run(args: argparse.Namespace) -> int:
         )
         review_channel_finding = finding
         out = sys.stderr if args.json else sys.stdout
-        print("\n## 5. 跨工具查核寫入通道", file=out)
+        # 編號改 6：報告本體（render_text）新增了「## 5. 收尾清理前提」，此處若仍是 5
+        # 會出現兩個同號章節。整份報告的章節編號由 render_text 的順序決定。
+        print("\n## 6. 跨工具查核寫入通道", file=out)
         print(f"- [{finding.status}] {finding.detail}", file=out)
         for url, author in zip(finding.receipt_urls, finding.receipt_authors, strict=True):
             print(f"  - receipt: {url}（GitHub author: {author}）", file=out)
