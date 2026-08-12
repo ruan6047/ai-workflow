@@ -23,7 +23,7 @@ from wf_cli.registry import RegisteredCard, TasksMdRegistry
 from wf_cli.review import render_verdict_comment
 from wf_cli.validation import validate_review_report
 
-from .conftest import git
+from .conftest import SANDBOX_COMMIT_DATE, fixed_date_env, git
 
 _APPROVED = "✅通過"
 
@@ -968,15 +968,23 @@ def _rec(**kw) -> CommitRecord:
 _FULL = ("Requested-by: ruan6047", "Planned-by: M@Tool", "Implemented-by: M@Tool")
 
 
-def _commit(repo, path: str | None, subject: str, tail: str = "\n".join(_FULL)) -> str:
-    """在 sandbox 建一筆 commit；`path=None` 代表空 commit。"""
+def _commit(
+    repo, path: str | None, subject: str, tail: str = "\n".join(_FULL),
+    when: str | None = None,
+) -> str:
+    """在 sandbox 建一筆 commit；`path=None` 代表空 commit。
+
+    `when` 把這一筆的作者／提交者日期釘死（ISO8601）。凡是**測試斷言與日期有關**
+    （界線分流是唯一一種）就必須傳，否則該 commit 採執行當下的時間，斷言就綁在
+    牆上時鐘上。不傳＝這筆的日期與斷言無關。
+    """
     args = ["commit", "-q", "-m", f"{subject}\n\n說明段落。\n\n{tail}" if tail else f"{subject}\n\n說明段落。"]
     if path is None:
         args.insert(2, "--allow-empty")
     else:
         (repo / path).write_text(path + "\n", encoding="utf-8")
         git(repo, "add", path)
-    git(repo, *args)
+    git(repo, *args, env=fixed_date_env(when) if when else None)
     return git(repo, "rev-parse", "HEAD").strip()
 
 
@@ -1185,19 +1193,41 @@ def test_mutations_of_a_green_commit_are_killed(sandbox_repo, mutant_tail, expec
     assert finding.severed == expect_severed
 
 
-def test_epoch_triage_splits_history_from_new_commits_on_real_history(sandbox_repo, monkeypatch):
-    """同一份歷史、同一個檢查器，界線兩側判定不同——這就是「分流」。"""
-    repo = sandbox_repo
-    old = _commit(repo, "old.txt", "feat: 界線前", tail="")
-    monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-08-20T10:00:00+08:00")
-    monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-08-20T10:00:00+08:00")
-    new = _commit(repo, "new.txt", "feat: 界線後", tail="")
+def test_epoch_triage_splits_history_from_new_commits_on_real_history(sandbox_repo):
+    """同一份歷史、同一個檢查器，界線兩側判定不同——這就是「分流」。
 
-    report = audit_commit_trailers(repo, "main", epoch="2026-08-13T00:00:00+08:00")
+    三筆 commit 的日期**全部**釘死（含 fixture 的初始 commit，見
+    `conftest.SANDBOX_COMMIT_DATE`），界線本身也是傳進去的常數。故本測試不讀
+    牆上時鐘：不論在哪一天執行，每筆 commit 落在界線的哪一側都是同一個答案。
+
+    舊寫法只釘界線後那筆，界線前那筆採執行當下的時間，2026-08-13T00:00 一過就
+    翻到界線後——不是 flaky，是必然到期。
+    """
+    repo = sandbox_repo
+    epoch = "2026-08-13T00:00:00+08:00"
+    old = _commit(repo, "old.txt", "feat: 界線前", tail="", when="2026-08-11T10:00:00+08:00")
+    new = _commit(repo, "new.txt", "feat: 界線後", tail="", when="2026-08-20T10:00:00+08:00")
+
+    report = audit_commit_trailers(repo, "main", epoch=epoch)
     by_sha = {f.sha: f for f in report.findings}
     assert by_sha[old].status == "pre_guard"
     assert by_sha[new].status == "violation"
-    assert len(report.violations) == 1
+    # 逐 SHA 比對而非只數個數：初始 commit 同樣沒有 trailer，它被算進界線前而非
+    # 違規，正是分流要證明的事；只斷言個數的話，它跑到哪一側都看不出來。
+    assert [f.sha for f in report.violations] == [new]
+
+
+def test_sandbox_history_carries_no_wall_clock_date(sandbox_repo):
+    """上面那個分流測試的前提，本身要被斷言，不能只靠註解。
+
+    fixture 的初始 commit 一旦改回採「現在」，分流測試會在某個未來日期無聲地
+    由綠轉紅（2026-08-13 已經發生過一次）。這條把那個前提釘成契約：契約破了，
+    紅的是這一條，訊息直接指向根因，而不是讓人去追一個「昨天還好好的」測試。
+    """
+    assert git(sandbox_repo, "log", "-1", "--format=%cI").strip() == SANDBOX_COMMIT_DATE
+    assert git(sandbox_repo, "log", "-1", "--format=%aI").strip() == SANDBOX_COMMIT_DATE
+    pinned = _commit(sandbox_repo, "p.txt", "feat: 釘死日期", when=SANDBOX_COMMIT_DATE)
+    assert git(sandbox_repo, "show", "-s", "--format=%cI", pinned).strip() == SANDBOX_COMMIT_DATE
 
 
 # ---- 根因命名的裁定 ------------------------------------------------------
