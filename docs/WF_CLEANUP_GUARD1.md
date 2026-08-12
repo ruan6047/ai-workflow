@@ -119,35 +119,87 @@ recheck_remote_branch() → RemoteDeleteDecision(verdict="delete", expected_tip=
 
 收尾轉換只有一個機械 executor：`execute_closeout_transition()`。**目前呼叫它的只有 `release` 一條路徑**（§4.1）；`reconcile --apply` 白名單第 2 條被寫出來時**必須**呼叫同一個函式、共用同一個 `evaluate_cleanup_guard()`——那是本卡對後續卡的約束，**不是已經發生的事實**。
 
-**「reconcile 側前提不得放寬」不靠紀律維持**：`evaluate_cleanup_guard()` 的簽章裡根本沒有 `trigger` 參數，也沒有任何 `force` 參數——依觸發者放寬前提這件事在型別層就寫不出來。`trigger` 只進結果紀錄。
+**「reconcile 側前提不得放寬」不靠紀律維持**：`evaluate_cleanup_guard()` 的簽章裡根本沒有 `trigger` 參數，也沒有任何 `force` 參數——依觸發者放寬前提這件事在型別層就寫不出來。真正做事的 `_execute_closeout()` 同樣收不到觸發者標籤（R4-002 的處置，§4.0）：標籤由外層的 `execute_closeout_transition()` 在它**回傳之後**才貼上。這句話買到的強度與它買不到的部分，§4.0 逐層寫明。
 
 `doctor --cleanup-preview` 是同一份守衛的**唯讀偵測面**，因此「doctor 說可以」與「executor 願意做」不可能各說各話。doctor 本身永不刪除任何東西。
 
-### 4.0 「不得分叉實作」怎麼證明（卡面驗收第 5 條）
+### 4.0 「不得分叉實作」買得到什麼強度（卡面驗收第 5 條）
 
 縮小射程的**代價上限**由卡面釘死：允許少接一條路徑，**不允許把實作切成兩份**。條文要求 `execute_closeout_transition()` 不得因只接一條路徑而內含 release 專屬邏輯，後續接 reconcile 時只該新增呼叫點。
 
-本輪逐項查過，結論是**已符合**。憑據分三層，單靠任何一層都不夠：
+#### 上一版在這裡宣稱過「不能被繞過」，而那句話是錯的
 
-**一、觸發者專屬的資訊進不到函式裡。** executor 的輸入全是純資料：`CleanupTarget`（repo root／卡號／分支／worktree 路徑）、`registry`、`card_body`、`RemoteCardFacts`、以及 `CloseoutEffectWriter` 協定。沒有一項認得 Project、Issue 或 `handoff` 的引數。release 專屬的翻譯——解析 Project item 的「分支worktree」欄、讀 Issue 開關狀態、把第 4 步的兩次寫入包成 writer——全部留在**呼叫點** `handoff_cmd._release_with_cleanup()`。reconcile 接線時要寫的就是它自己那份翻譯，executor 一行都不必動。
+R4-002（`major`，`executor-trigger-branch-regression-guard-bypass`）：查核者以
 
-**二、`trigger` 只是標籤，不是開關。** 函式體內 `trigger` 被讀取四次，四次都是四個 `return CloseoutResult(trigger=trigger, …)` 的關鍵字引數，沒有第五次。這件事由 `test_executor_body_never_branches_on_the_trigger` 解析 AST 釘住：任何一次讀取落在條件、比較或查表上就轉紅。同一條測試另外禁止函式體出現 `"release"`／`"reconcile"` 的字面常數，堵住「不讀 `trigger` 也能分叉」的寫法。
+```python
+if locals()["trig" + "ger"] == "rec" + "oncile":
+```
 
-**三、換一個 `trigger` 值，行為逐字相同。** `test_swapping_the_trigger_changes_nothing_but_the_label` 給兩個 trigger **各一個獨立沙箱 repo**（不是同一個 repo 跑兩次——第二次會跑在第一次的殘骸上，那不是同一個情境），逐字比對送進 git runner 的 argv、effect writer 的呼叫序列、以及 `CloseoutResult` 的每個可觀測欄位（路徑與 SHA 正規化後）。放行與拒絕兩條路徑都比：只比放行會漏掉「拒絕理由依觸發者不同」。放行案例另外斷言三個破壞性動作真的都跑了，否則「兩邊相同」比的可能是兩次空跑。
+在 `expected_tip` 為 `None` 的保險絲上依觸發者分叉，`test_executor_body_never_branches_on_the_trigger` 仍 1 passed；PM 獨立重現，**全套 382 passed 全綠**，兩層都沒抓到。
 
-**為什麼三層都要，是跑出來的不是想出來的。** 七個分叉突變體逐一注入，既有測試與本輪新增測試分開跑：
+錯的不是「漏列一條規則」，是**用一條「不准這樣寫」的規則去承擔「寫不出來」的宣稱**。AST 規則只認得它列舉過的形狀：`ast.Name(trigger)` 認得，`locals()[…]` 不認得；完整字面常數認得，`"rec" + "oncile"` 不認得。再多列幾條也只是把繞過成本抬高——那是軍備競賽，而軍備競賽買不到「不能」這個字。
 
-| 突變體 | 分叉位置 | 既有測試 | 新增測試 |
+#### 所以本輪換路：把值移出 scope，而不是再多列幾條規則
+
+disposition 給了兩條路（更完整的 AST／語意檢查；可驗證的資料流限制），**本輪選第二條**，理由三點：
+
+1. 第一條的產出無論做到多細，能誠實宣稱的都只有「常見寫法會被擋」，而 §4.0 要承擔的是卡面「不得分叉」——**強度對不上就只能改宣稱**，那等於把問題留著。
+2. 第二條治本：`trigger` 不在函式體的 scope 裡，動態名稱查表就查不到東西，不必逐一想像繞過寫法。
+3. 代價可控——**呼叫端零改動**（見下）。
+
+實作切法：
+
+| 函式 | 職責 | 看得到 `trigger` 嗎 |
+|---|---|---|
+| `execute_closeout_transition()`（`cleanup.py`） | 貼標籤層：呼叫下面那支，拿到結果後 `replace(result, trigger=trigger)` | 看得到（**它就是邊界**） |
+| `_execute_closeout()`（`cleanup.py`） | 真正的機械 executor：守衛、三個破壞性動作、第 4 步效果 | **看不到**——不是參數、不是自由變數、也沒有同名模組全域 |
+
+代價兩項，都寫在這裡而不是留給查核者自己發現：`CloseoutResult.trigger` 的型別成為 `Trigger | None`（`None` 只在貼標籤前的那一瞬間存在），以及多一層函式呼叫。**公開簽章一字未改**，`handoff_cmd` 與既有測試的呼叫方式完全不變。
+
+#### 買到了什麼、邊界在哪、邊界外會發生什麼
+
+四層，每層都指名執行者與作用域。前三層是形狀面（不挑路徑，但挑手法），第四層是行為面（不挑手法，但挑路徑）——**兩邊的盲區互補，這正是為什麼不能只留一邊**。
+
+| 層 | 執行者（檔案::測試） | 釘住什麼 | **邊界外會發生什麼** |
 |---|---|---|---|
-| M43 | `release` 跳過遠端刪除 | KILLED（16 例轉紅） | KILLED |
-| M44 | `reconcile` 跳過遠端刪除 | KILLED（7 例） | KILLED |
-| M45 | 第 4 步只在 `release` 發動 | KILLED（3 例） | KILLED |
-| M46 | 非法態檢查在 `reconcile` 被略過 | KILLED（1 例） | KILLED |
-| M47 | 非法態檢查在 `release` 被略過 | KILLED（1 例） | KILLED |
-| M48 | 「複驗沒帶回 tip」的保險絲在 `release` 被略過 | **SURVIVED（82 passed）** | KILLED |
-| M49 | 改查模組級政策表（函式體內無字面常數） | KILLED（24 例） | KILLED |
+| T1 名稱面 | `cli/tests/test_cleanup.py::test_the_destructive_body_cannot_name_the_trigger` | CPython 的名稱只可能來自 `co_varnames`／`co_freevars`／`co_cellvars`／`co_names` 四張表與模組全域，`locals()`／`globals()`／`getattr()` 查的是同一批表。四張表（含所有巢狀 code object）與模組層都沒有 `trigger` ⇒ **按名字拿必然落空**。附帶一條允許清單：函式體只准 `LOAD_GLOBAL` 清單內那 19 個名字 | 允許清單只管**全域名稱**。屬性存取（`LOAD_ATTR`）與 `import` 不經 `LOAD_GLOBAL`，因此 `import sys` 之後走 `sys._getframe(1)` 這層攔不到 |
+| T2 值面 | 同檔 `::test_the_destructive_body_frame_never_holds_a_trigger_value` | 換個名字夾帶也不行：在**每個步驟間隙**回頭探 `_execute_closeout` 的 frame，任何區域變數的值等於 `release`／`reconcile` 即轉紅 | 覆蓋範圍寫死為「區域變數本身 ＋ 三層以內的 tuple／list／set／dict 元素」。**藏進自訂物件屬性的夾帶不覆蓋**；取樣點只有 `step_hook` 的間隙（放行後 4 個），間隙之間讀了就用掉的值探不到 |
+| T3 呼叫端 | 同檔 `::test_the_labelling_wrapper_is_pinned_to_call_and_relabel` | 貼標籤層是唯一還看得到 `trigger` 的地方，所以把它的位元碼符號集合釘死：`co_names` 恰為 `{_execute_closeout, replace}`、`co_varnames` 恰為參數列、常數只准是 `None` 與關鍵字名稱元組。政策查表要有 dict 常數、`locals()` 要有 `locals`、屬性分派要有屬性名——三者都會讓其中一張表長出新東西 | 釘的是符號不是語意。**用既有符號做的夾帶**（例如把 `trigger` 當成別的關鍵字引數傳下去）T3 不會紅——那是 T2 的守備範圍（M56 實證） |
+| 行為面 | 同檔 `::test_a_recheck_that_reports_deletable_without_a_tip_stops_the_run`（M48 那條保險絲，兩個 trigger 各跑一次）等 | **不挑手法**：不管值是怎麼拿到的，只要分叉改變了行為，走過該路徑的測試就紅 | **只覆蓋跑過的路徑**。M48 正是死在這裡——那條保險絲一次都沒被行為測試走過，形狀面因此成了唯一防線 |
 
-**M48 是關鍵的那一個。** 它分叉在一條沒有任何行為測試走過的保險絲上（`recheck` 回報可刪卻沒帶回期望 tip），整份既有套件 82 passed 全綠。行為面的等價比對只覆蓋得到跑過的情境；形狀面的 AST 規則不挑路徑。兩者不是重複，是互補——這也是為什麼既有的 `test_decision_identical_for_release_and_reconcile`（只比對守衛的 `decision`）不足以承擔這條驗收：守衛放行**之後** executor 做了什麼，它一個字都比不到。
+補上第四層的缺口是本輪的另一半工作：`::test_every_fuse_in_the_destructive_body_has_a_registered_behavioural_cover` 解析函式體，要求每一條 `raise CleanupGuardError` 都在登記表裡對到一個確實存在的行為測試。**它不驗那個測試是否真的走到該保險絲**（逐行追蹤的成本與誤判率不划算），它驗的是「有沒有人被迫想過這件事」——讓下一條保險絲不可能默默地只靠形狀面撐著。
+
+#### 因此 §4.0 的宣稱逐字如下
+
+> **可以宣稱（有機械執行者）**：破壞性函式體 `_execute_closeout()` **無法以名稱取得觸發者標籤**（T1，窮舉 CPython 名稱表），**也無法靠改名夾帶**（T2，值面探測）；唯一還看得見標籤的貼標籤層被符號集合釘死（T3）。三者的執行者都在 `cli/tests/test_cleanup.py`，作用域是 `cleanup.py` 的這兩支函式，**不及於其他模組**。
+>
+> **不可宣稱**：「依觸發者分叉不可能」。走呼叫堆疊讀外層 frame 仍然拿得到——**這不是保留意見，是實證**（下表 M55：形狀面三層全綠）。接住它的是行為面，而行為面只覆蓋跑過的路徑。
+>
+> **是約定不是強制**：「`reconcile` 將來必須呼叫同一個函式」（§4.1）沒有任何機械手段保證，本模組攔不住有人另寫一條刪除路徑。
+
+#### 繞過嘗試的實例表：七個突變體，形狀面與行為面分開記
+
+**每一格都是跑出來的**。注入前基線 388 passed（全綠，否則 KILLED 判定無效）；每個突變體單獨注入、跑完整套件、無條件還原。
+
+| 突變體 | 手法 | T1 | T2 | T3 | 行為面 | 結果 |
+|---|---|---|---|---|---|---|
+| M50 | 查核者原句：`locals()["trig" + "ger"] == "rec" + "oncile"` | 🔴 | – | – | 🔴 ×2 | KILLED |
+| M51 | 不碰觸發者，直接把 M48 那條保險絲拆掉 | 綠 | 綠 | 綠 | 🔴 ×2 ＋登記表 🔴 | KILLED |
+| M52 | 改名夾帶（`mode_hint`），字串會被摺疊 | 🔴 | 🔴 | 綠 | 🔴 ×1 | KILLED |
+| M53 | 走呼叫堆疊，字串會被摺疊 | 🔴 | 綠 | 綠 | 🔴 ×1 | KILLED |
+| **M54** | **M50 的防摺疊版**：`locals().get("".join([...]))` | 🔴 允許清單指名 `locals` | 綠 | 綠 | 🔴 ×2 | KILLED |
+| **M55** | **走呼叫堆疊的防摺疊版**：`sys._getframe(1).f_locals.get(…)` | **綠** | **綠** | **綠** | 🔴 ×1 | KILLED（**只有行為面接住**） |
+| **M56** | **改名夾帶的防摺疊版** | 綠 | 🔴 指名 `mode_hint` | 綠 | 🔴 ×1 | KILLED |
+
+三件必須說明白的事：
+
+1. **M50／M52／M53 死在常數摺疊，那是絆線不是承重。** `"rec" + "oncile"` 會在**編譯期**被摺成 `'reconcile'`，因此落進 `co_consts` 被抓到；AST 抓不到只是因為 AST 在摺疊之前。但 `"".join(["rec", "oncile"])` 摺不掉——M54／M55／M56 就是為了拆掉這條運氣成分而做的。**承重的是 T1 的允許清單與 T2 的值面探測**，證據是 M54（T1 訊息逐字指名 `locals`）與 M56（T2 訊息逐字指名 `mode_hint`）。
+2. **M54 的行為面兩個 trigger 都紅，這比「有紅」更重要。** 資料流限制之下 `locals().get("trigger")` 回 `None`，永遠不等於 `"reconcile"`——**那個分叉根本運作不起來**，於是保險絲對兩個 trigger 都被略過、兩個參數都轉紅。這是「值不在裡面」的直接後果，不是斷言碰巧成立。
+3. **M55 是本節最誠實的一格。** 形狀面三層全部綠——資料流限制**沒有**擋住走呼叫堆疊。它之所以仍被殺，唯一原因是 M48 那條保險絲本輪有了行為覆蓋。上一輪若有這條行為測試，R4-002 當時就會被接住；反過來說，一條**沒有行為覆蓋**的新保險絲仍然可以用 M55 的手法分叉而不被任何一層抓到——登記表是為此而設，但登記表只保證有人想過，不保證覆蓋到位。
+
+#### 為什麼「同一份實作」的行為等價比對仍然留著
+
+`test_decision_identical_for_release_and_reconcile` 與 `test_swapping_the_trigger_changes_nothing_but_the_label` 沒有被上述改動取代。後者給兩個 trigger **各一個獨立沙箱 repo**，逐字比對送進 git runner 的 argv、effect writer 的呼叫序列與 `CloseoutResult` 的每個可觀測欄位（路徑與 SHA 正規化後），放行與拒絕兩條路徑都比。它們是行為面的主力：不挑手法，代價是只覆蓋跑過的情境。
 
 **一個誠實的殘留**：`CloseoutEffectWriter` 的方法名叫 `write_release_terminal()`，字面帶著 release。那是**命名**不是分叉——它是注入進來的協定方法，第 4 步的終態寫入對兩個觸發者是同一件事，reconcile 接線時提供自己的實作即可，不需要複製或分叉 executor。本輪不改名：改名要動協定、呼叫點與既有測試，換不到任何行為保證。寫在這裡是為了讓查核者不必自己去確認它到底是名字還是分支。
 
@@ -396,6 +448,8 @@ git push --dry-run origin --force-with-lease=refs/heads/<本卡分支>:<過期SH
 2. **M36 是刻意加的反向突變體。** 只驗「非法 force 被擋」的話，把 `_forbid_force` 寫成全擋也會全綠——而那會讓遠端刪除永遠發不出去，是另一種靜默失效。一道防線要同時釘住「該擋的擋住」與「該過的過得去」。
 3. **M41 兩次才殺掉，而第一次的「殺掉」是假的。** 拿掉 `worktree remove` 的失敗檢查之後，這條路徑照樣會丟 `CleanupGuardError`——只是晚一步，炸在 `branch -d`（分支還被 checkout 著）。只驗 `pytest.raises` 會因為錯誤的理由而綠，與 M30 同型。補上「停在哪一步」的斷言（沒有嘗試過 `branch -d`、沒有送出任何刪除 push）之後才真的殺掉。順帶補上了一個既有缺口：原本沒有任何案例讓 `worktree remove` **回非 0**（既有案例只覆蓋「回 0 卻沒做」）。
 
+**第五輪（R4-002）另跑 7 個突變體，7/7 被殺，逐格結果與判讀見 §4.0 的實例表。** 這一輪與前四輪有一個方法上的差別，值得單獨記：**前三個突變體（M50／M52／M53）都死在「常數摺疊」這條運氣成分上**——`"rec" + "oncile"` 在編譯期被摺成 `'reconcile'`，於是被 `co_consts` 檢查抓到。若就此收工，交出的會是一份「看起來 3/3 KILLED」但承重點站在編譯器最佳化上的報告。因此另做了三個防摺疊版（M54／M55／M56），才看得出真正扛住的是哪一層——以及 **M55 那格形狀面三層全綠**，那是本輪最重要的一筆證據，不是瑕疵記錄。
+
 ## 8. 本卡不做的事
 
 - **不執行第 5–7 步**（卡檔封存／Ledger 投影／對帳三件套）：它們不寫狀態面，也不在本卡資源宣告內。
@@ -425,3 +479,5 @@ git push --dry-run origin --force-with-lease=refs/heads/<本卡分支>:<過期SH
     > **與第 2 項同族，但不是同一件事，不要合併。** 第 2 項是「**寫了，但不知道有沒有生效**」——executor 在 writer 回傳後即認定第 4 步完成，沒回頭重讀，缺的是**結果確認**；本項是「**生效了，但事件流上認不出是誰寫的**」，缺的是**可辨識性**。兩者可同時發生，修法也落在不同人身上：第 2 項要給 executor 一個可注入的「重讀狀態面」讀取器（本卡射程內，本輪未做），本項要改的是被呼叫端的首寫載荷（本卡碰不到）。併成一條的代價是：其中一條被修掉時，另一條會被誤判為一併解決。
     >
     > 順同一條線看，這是同一形狀的**第三面**：R2-001 是「**讀一次不構成保證**」（§3.3），第 2 項是「**寫一次不構成生效確認**」，本項是「**寫一次不構成可辨識**」。三者都不是靠多做一次同樣的動作能關上的。
+11. **形狀面擋不住走呼叫堆疊的分叉**（R4-002 的殘留，§4.0）。資料流限制讓破壞性函式體拿不到觸發者標籤——按名字拿不到（T1）、換名夾帶也拿不到（T2）——但 `import sys` 之後讀外層 frame 仍然拿得到。**這不是推測，是實證**：突變體 M55 讓形狀面三層全綠。目前接住它的只有行為面，而行為面**只覆蓋跑過的路徑**：一條新加的、沒有行為測試走過的保險絲，仍可用 M55 的手法分叉而不被任何一層抓到。保險絲登記表（`test_every_fuse_in_the_destructive_body_has_a_registered_behavioural_cover`）把「新保險絲必須登記一個行為測試」變成硬性，但它**只驗登記與該測試存在，不驗那個測試真的走到那條保險絲**。要真的關上這一條，得做逐行覆蓋度閘門（本卡未做，成本與誤判率須另評）。
+12. **T2（值面探測）的取樣是離散的**（§4.0）。它只在 `step_hook` 的間隙（放行後 4 個點）回頭探 frame，且覆蓋範圍寫死為「區域變數本身 ＋ 三層以內的容器元素」。間隙之間讀了就用掉的值、以及藏進自訂物件屬性的夾帶，都探不到。M56 證明它對「多一個參數一路帶著」這種形態有效，那也正是它的形狀假設。
