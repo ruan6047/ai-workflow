@@ -39,6 +39,10 @@ COMMAND_MODULES: tuple[str, ...] = (
     "deploy_state_cmd",
     "handoff_cmd",
     "review_cmd",
+    # checkpoint_cmd 註冊 `checkpoint` 與 `contract-baseline` 兩個同源動詞；
+    # 位置緊接 review_cmd 之後是為了保住既有的 --help 動詞順序（escalation
+    # 帳的兩個事件型別排在查核裁決旁邊），不是 append 到尾端。
+    "checkpoint_cmd",
     "doctor_cmd",
     "snapshot_cmd",
 )
