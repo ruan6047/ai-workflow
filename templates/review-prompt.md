@@ -34,6 +34,21 @@ R1 之後的每一輪，報告須有本節，把上一輪每一筆 `accepted` �
 | `<卡ID>-R<n>-<序>` | `resolved`／`withdrawn`／仍 `open` | `<可重現的重現方式或來源>` |
 
 - **carry set 以 Issue 上的前輪 review event 為準，不以派審詞列的清單為準。** 派審詞裡的清單是便民摘要（＝次要來源，同 §1）；兩者不符時以 review event 為準，並把差異寫成 finding。**推導 carry set 所需的留痕都在 Issue 上**，所以派審詞漏列或錯列時你不必依賴它，也不必回頭問 Coordinator。
+- **但先驗那些 event 讀不讀得出來——回對了權威來源不代表值解得開。** 逐項閉環之前先做這個前置驗證：
+
+  **要讀的兩個平面、三個欄位**：前輪 `review` event 留言的結構化區塊取 `finding_id`；同一筆的 `accepted` 與 `status` 取自 **lifecycle writer 的標記**（`review-escalation.md` §2：由 writer 於寫入 event 前標記，**reviewer 不得自行決定是否消耗 escalation 額度**）。另對 Issue `## Log` 的同 attempt 索引行與 Project 交付狀態欄——三面不一致即該 event 不可信。
+
+  **可自己跑的檢測**：`wfcli doctor --review-channel --repo <owner/repo> --issue-number <n> --card-id <CARD_ID> --owner <owner> --project <n> --source-sha <前輪 SHA> <repo_root>`（唯讀）。它會報出 `marker_quarantined` 與 `half_written`（`cli/src/wf_cli/doctor.py` 的 `audit_review_channel`，基線 `6e6e8ab` 時在 :312，兩個判定分別在 :419／:460）。**偵測是機械的**；下面的處置是**約定**。
+
+  **三態，不是兩態**：
+
+  1. **可判定**——前輪 event 解析得開，且 `accepted`／`status` 都取得到 → 依 `accepted: true` ＋ `blocking: true` ＋ `status: open` 推出 carry set，照上表逐列。
+  2. **不可判定**——該 event 在**已宣告的 `contract-baseline` cutover 之後**，卻 `marker_quarantined`／`half_written`／缺 `accepted` 或 `status` → **明示 input 不可判定並自判 `review-invalid`**。不得當成空 carry set。
+  3. **legacy**——該 event 在 cutover 之前，或專案根本還沒發過 `contract-baseline` → 依 `review-escalation.md` §4／§5，cutover 前歷史**維持原貌、不得反向套進六格**，故**不因此判 `review-invalid`**。但**必須明示**：寫出你採用的是 legacy 路徑、逐列列出你在報告平面看到的前輪 finding，並標記其 `accepted` **未經 writer 標記**、escalation 帳無法據此推導。
+
+  **為什麼是三態**：`accepted`／`status` 的 writer 今天**不在已併入 main 的碼裡**（該通道屬 #9，未併），故現階段**每一筆** event 都缺這兩個值。若把「缺值」一律判 `review-invalid`，等於今天起所有 iteration ≥ 1 的查核全部無效——那不是 fail-closed，是死鎖，而 `review-escalation.md` §2／§4 明文要求數個 gate **不得互相鎖死**。三態把「讀不出來」與「不該讀」分開。
+
+  **一條硬禁止**：**不得以 review report 的 `blocking` 欄代替 `accepted`**。`blocking` 由 reviewer 自己填、`accepted` 由 lifecycle writer 標；拿前者當後者等於讓被判定方自己決定要不要進帳。第 3 態把前輪 finding 列出來是**揭露**，不是替代——列出供人接續可以，**計入 escalation 帳不行**。
 - **逐列是判準的一部分，不是排版偏好**：[`review-escalation.md`](review-escalation.md) §4 逐 `finding_id` 推導 checkpoint 的格位，整體式結論映射不到任何一格，與未提及等價。
 - 缺本節、或 carry set 中有 `finding_id` 未表態 → 查核者**自判** `review-invalid`，不進實質查核（處置同 §1）。
 - **仍 `open` 是合法且常常正確的表態**，不是失敗；defer 延後的是評估而非結果（`review-escalation.md` §4）。把仍未解的寫成 `resolved` 才是失分。
