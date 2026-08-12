@@ -503,8 +503,9 @@ def render_verdict_comment(
         lines.append(f"  - evidence：{_fence_safe(f.evidence)}")
         lines.append(f"  - disposition：{_fence_safe(f.disposition)}")
     # 沒有 preflight 依據時**整個帳區塊都不渲染**，而不是渲染一個較誠實的值。
-    # 產線上走不到這條路（``validation.check_preflight_event_present`` 擋在所有遠端寫入
-    # 之前），它存在只為了讓不寫 lifecycle 事件的呼叫端（例如 doctor 的測試替身）仍能
+    # 產線上走不到這條路（``validation.require_preflight_basis`` 擋在所有遠端寫入
+    # 之前，且今天無條件拒絕），它存在只為了讓不寫 lifecycle 事件的呼叫端（例如 doctor
+    # 的測試替身）仍能
     # 產生留言。省略＝不作任何宣稱；寫 unknown／unavailable 才是擴充 §5:168 的布林
     # schema，那正是 R3-01 指出的錯誤。缺帳區塊的事件會被
     # ``build_issue_event_history`` 判為未知，閘門照樣 fail-closed。
@@ -536,15 +537,15 @@ def render_verdict_comment(
         (
             "`preflight_passed` 只在事件流上有受管轄的 preflight pass event"
             "（`review-escalation.md` §5 的 `handoff-accepted` 或等價，帶 source_sha、"
-            "檢查結果與摘要）時才為 `true`；否則寫 `unknown`。**寫入者的具結不算依據**"
-            "——它沒有可比對的先行留痕，無法自 append-only 事件流重建並逐字驗證。"
+            "檢查結果與摘要）時才為 `true`；**寫入者的具結不算依據**，任何一則長得像該"
+            "事件的 Issue 留言也不算——「受管轄」是通道屬性，判定不出來就不是依據。"
         ),
         (
-            "因此當 §3 第 2～4 款成立、而第 1 款的依據不可得時，"
-            "`counts_toward_escalation` 記 **`unavailable`**，既不是 `true`（偽造）也不是 "
-            "`false`（洗白）。本 repo 今天沒有 preflight 事件 writer，故**所有本會計數的 "
-            "attempt 都是 `unavailable`**：escalation 計數在該 writer 落地前不可用，"
-            "消費者不得把「沒有計數的 attempt」讀成「執行者沒有累計」。"
+            "缺該依據時本指令**不建立 review event**（`review-escalation.md` §1），"
+            "而不是寫一個較誠實的值：§5:168 把 `preflight_passed` 釘為字面 `true`，"
+            "`unknown`／`unavailable` 都是擴充該欄位。本 repo 今天沒有該事件的 writer 與"
+            "可驗證格式，故 escalation 自動計數在承接卡落地前不可用——消費者不得把"
+            "「事件流上沒有可計數 attempt」讀成「執行者沒有累計」。"
         ),
         (
             "`owner_field_at_verdict_write` 是 Project「owner」欄在**本則裁決寫入當下**的"
@@ -623,11 +624,43 @@ ACCEPTED_MARKING_BINDINGS = ("substantive", "structurally-vacuous", "not-applica
 # 並把機械事件 writer 交由具該寫入集的卡承接，**而不是以 writer-attested 作為計數依據**」。
 PREFLIGHT_BASES = ("event-verified", "not-established")
 
-# 受管轄 preflight pass event 在留言平面的區塊鍵（review-escalation.md §5 的
-# ``handoff-accepted`` 或等價事件）。**本 CLI 只讀不寫**：產出該事件的 writer 需要
-# ``handoff`` 的寫入集，已交由承接卡。這裡定義的是**消費者接受什麼形狀**，schema 的
-# 歸屬在承接卡；形狀若不同，改的是本讀取器。
-PREFLIGHT_BLOCK_KEY = "wf_preflight_pass"
+# --------------------------------------------------------------------------
+# 為什麼這裡沒有讀取器（WF-22-CLI4-R4-01）
+# --------------------------------------------------------------------------
+#
+# 上一輪這裡有 ``PREFLIGHT_BLOCK_KEY = "wf_preflight_pass"`` 與 ``preflight_basis_from_body``：
+# 掃一則留言，四個文字欄位（區塊版本、``card_id``、``source_sha``、``preflight_passed: true``）
+# 逐字命中就回 ``event-verified``。查核者在被審 SHA 的隔離 archive 內把**任意 YAML body**
+# 直接餵進去即得 ``event-verified``（``event_url`` 缺席也照過，因為缺席時填了預設字串），
+# 閘門隨即放行。**兩者都已刪除。**
+#
+# 病灶不是「欄位驗得不夠多」。補上 ``event_id``／``type``／``actor``／``occurred_at``／
+# ``event_url`` 只會把同一個洞往後推一格：那些一樣是**留言內文**，任何人打得出來。
+# canonical §4.1 要求的「受管轄」是**通道屬性**——事件由唯一 lifecycle writer 追加到
+# append-only 平面——而通道屬性無法由內文判定。本 repo 唯一可能的通道訊號是留言
+# author，而它在此**結構上無鑑別力**：人類與每一個 AI agent 都經同一個 GitHub 帳號寫入
+# （與 ``ACCEPTED_MARKING_BINDINGS`` 的 ``structurally-vacuous`` 同一個成因）。
+#
+# 因此本輪不再造第二個「看起來像驗證」的讀取器，改用本 repo 既有的處置形態
+# （WF-ESCALATION-RESOLUTION-GAP1／ai-workflow#39 對恆真授權款的處理）：**把恆拒本身
+# 寫成明文**。§3 第 1 款的依據綁定在本 repo 恆為 ``structurally-unavailable``，
+# ``validation.require_preflight_basis`` 因此**無條件拒絕**，``wfcli review`` 今天寫不出
+# 任何裁決事件。這是 R4-01 disposition 的第二句（「在該 event writer 和其可驗證格式
+# 落地前維持拒絕寫入」）的字面實作。
+#
+# 承接卡要交付的是**兩件**，缺一則本檔仍應維持恆拒：
+#   (1) 受管轄的 preflight pass event **writer**（``handoff --next-stage review`` 或新事件
+#       型別，需 ``handoff`` 的寫入集）；
+#   (2) 該事件的**可驗證格式**——即消費者憑什麼斷定它出自該 writer 而非任何人的留言。
+#       在本 repo 的單帳號結構下，(2) 不會由「多驗幾個欄位」得到；它需要 marker 契約
+#       （``handoff-contract.md`` §3.1.7 的 ``v2`` 帶 ``event`` 與 ``event_id``，ai-workflow#35）
+#       或簽章等通道層事實。**本檔不代該卡定義格式**：定了就是本輪被打的同一件事。
+PREFLIGHT_BASIS_BINDINGS = ("event-verified", "structurally-unavailable")
+
+# 本 repo 今天的導出值。與 ``not-established`` 分開命名，因為兩者的處置不同：
+# ``not-established`` 是「這一則沒有依據」，可能下一則就有；``structurally-unavailable``
+# 是「本 repo 沒有任何路徑能產生依據」，等待的對象是承接卡而不是下一則留言。
+PREFLIGHT_BASIS_BINDING = "structurally-unavailable"
 
 
 @dataclass(frozen=True)
@@ -661,6 +694,12 @@ class PreflightBasis:
 
     刻意**不**保留「寫入者具結」這一支：具結沒有可比對的先行留痕，無法從 append-only
     事件流重建並逐字驗證（WF-22-CLI4-R2-01）。
+
+    也刻意**不**提供任何 ``from_body``／``from_comment`` 建構子（WF-22-CLI4-R4-01）：
+    留言內文判定不出「受管轄」，理由見上方 ``PREFLIGHT_BASIS_BINDING`` 的說明。今天唯一
+    能造出 ``established`` 的方式是在 Python 內直接具名建構——測試以此模擬「承接卡落地
+    後的世界」，而**產線沒有任何輸入抵達得了那裡**（見
+    ``test_validation.test_no_source_path_constructs_an_event_verified_basis`` 的窮舉）。
     """
 
     basis: str = "not-established"
@@ -788,7 +827,7 @@ def derive_counts_toward_escalation(
     review event。所以正解不是找一個誠實的第三個值，是**不要寫**。
 
     因此本函式回到布林：呼叫端保證只在 ``preflight.established`` 時才會走到這裡
-    （``validation.check_preflight_event_present`` 擋在所有遠端寫入之前，
+    （``validation.require_preflight_basis`` 擋在所有遠端寫入之前，
     ``render_escalation_facts_block`` 另有一道不變式）。第 1 款在此已成立，
     本函式只判第 2～4 款。
     """
@@ -998,41 +1037,10 @@ def checkpoint_facts_from_body(body: str) -> CheckpointFacts | None:
     )
 
 
-def preflight_basis_from_body(body: str, *, card_id: str, source_sha: str) -> PreflightBasis | None:
-    """自一則留言讀出受管轄的 preflight pass event（review-escalation.md §5）。
-
-    **只讀不寫**：產出該事件的 writer 需要 ``handoff`` 的寫入集，不在本卡宣告內，已交由
-    承接卡。本函式是 adapter 側的對應物——沒有它，「可從 append-only 事件流驗證」這句話
-    在本 CLI 內不可實作，而承接卡落地後也不會自動生效。
-
-    四項都必須逐字成立，缺一即回 ``None``（fail-closed）：
-
-    1. 區塊版本為 ``v1``；
-    2. ``preflight_passed`` 逐字為 ``true``（§5:168 對 review event 的要求即由此滿足）；
-    3. ``card_id`` 與本卡逐字相同——不接受他卡的 preflight；
-    4. ``source_sha`` 與被審的 SHA 逐字相同。這給出**免時鐘的新鮮性**（同 §4 (b′-2) 的
-       手法）：任何早於該 commit 的 preflight 事件都不可能帶著它，故上一輪的 preflight
-       無法被搬來掩護本輪。
-
-    ``summary`` 只作留痕，不參與判定——它是人讀脈絡，不是依據；把它列入判準就會退回
-    R2-01 的「打字即依據」。
-    """
-    data = find_block_by_key(body, PREFLIGHT_BLOCK_KEY)
-    if data is None:
-        return None
-    if str(data.get(PREFLIGHT_BLOCK_KEY)).strip() != BLOCK_VERSION:
-        return None
-    if str(data.get("preflight_passed") or "").strip() != "true":
-        return None
-    if str(data.get("card_id") or "").strip() != card_id:
-        return None
-    if str(data.get("source_sha") or "").strip() != source_sha:
-        return None
-    return PreflightBasis(
-        basis="event-verified",
-        source_event=str(data.get("event_url") or "").strip() or "(URL 未提供)",
-        summary=str(data.get("summary") or "").strip(),
-    )
+# ``preflight_basis_from_body`` 曾在此（讀一則留言 → ``event-verified``）。**已刪除**，
+# 理由見上方 ``PREFLIGHT_BASIS_BINDING`` 區塊（WF-22-CLI4-R4-01）：留言內文判定不出
+# canonical §4.1 的「受管轄」，補欄位只是把同一個洞往後推一格。取代它的不是另一個讀取器，
+# 而是 ``validation.require_preflight_basis`` 的無條件拒絕。
 
 
 def body_has_contract_baseline(body: str) -> bool:
@@ -1150,7 +1158,8 @@ __all__ = [
     "FINDING_KEYS",
     "FINDING_STATUSES",
     "PREFLIGHT_BASES",
-    "PREFLIGHT_BLOCK_KEY",
+    "PREFLIGHT_BASIS_BINDING",
+    "PREFLIGHT_BASIS_BINDINGS",
     "PREFLIGHT_NOT_ESTABLISHED",
     "REVIEW_RESULTS",
     "SEVERITIES",
@@ -1177,7 +1186,6 @@ __all__ = [
     "log_line_indexes",
     "parse_attempt_id",
     "parse_structured_block",
-    "preflight_basis_from_body",
     "render_checkpoint_comment",
     "render_contract_baseline_comment",
     "render_escalation_facts_block",

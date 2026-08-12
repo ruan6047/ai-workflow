@@ -37,8 +37,15 @@
 （§2：新採認的 blocking finding 以 open 開始），並依 §3 推導 ``counts_toward_escalation``
 寫進留言的結構化區塊與 Log 索引行。reviewer 自填的這三個鍵仍一律警示並忽略。
 
-寫入前另有三道 fail-closed 閘門（全部走 exit 2，未寫入任何遠端狀態）：
+寫入前另有四道 fail-closed 閘門（全部走 exit 2，未寫入任何遠端狀態）：
 
+0. **§3 第 1 款的 preflight 依據**（``validation.require_preflight_basis``）。
+   ⚠️ **今天無條件拒絕**：本 repo 沒有受管轄的 preflight pass event writer，也沒有該事件
+   的可驗證格式，故 ``wfcli review`` **寫不進任何裁決事件**（不只是可計數的那些）。
+   這是 WF-22-CLI4-R4-01 的處置：上一輪改成「缺依據就不寫」，卻把「有沒有依據」交給一個
+   讀留言內文的讀取器，於是任意四欄 YAML 就能解鎖。留言內文判定不出 canonical §4.1 的
+   「受管轄」（那是通道屬性），所以本輪刪掉讀取器、把恆拒寫成明文。替代路徑：查核證據走
+   ``handoff-contract.md`` §3.1.2 的收據與報告全文；格式自檢走 ``--validate-only``。
 1. **``attempt_id`` 去重**：同一 attempt 已存在即拒。必須擋在寫入前——``doctor.py``
    對重複 attempt 判 ``marker_quarantined``，而該隔離的解除表示法未定義（#30）。
 2. **帳可重建**：cutover（``contract-baseline``）之後的留痕若有讀不懂的 marker，或
@@ -78,9 +85,8 @@ from ..validation import (
     build_issue_event_history,
     check_attempt_not_duplicated,
     check_checkpoint_gate,
-    check_preflight_event_present,
     counted_attempts,
-    find_preflight_basis,
+    require_preflight_basis,
     review_invalid_reasons,
     validate_accepted_overrides,
     validate_marked_by,
@@ -238,9 +244,11 @@ def run(args: argparse.Namespace) -> int:
             f"self_run {len(report.self_run)} 項／findings {len(report.findings)} 項"
         )
         print(
-            "[review] 注意：--validate-only 不連 GitHub，因此 preflight event、去重與 "
-            "checkpoint 三道閘門都未執行；實寫時才會檢查。查核輸出的格式與契約檢查"
-            "在此已完整跑過，不受那三道閘門影響。",
+            "[review] 注意：--validate-only 不連 GitHub，因此 preflight 依據、去重與 "
+            "checkpoint 三道閘門都未執行；實寫時才會檢查。⚠️ 第一道今天**無條件拒絕**"
+            "（本 repo 沒有受管轄的 preflight pass event writer 與可驗證格式，"
+            "WF-22-CLI4-R4-01），故本次驗證通過**不代表實寫會成功**。查核輸出的格式與"
+            "契約檢查在此已完整跑過，不受那三道閘門影響。",
             file=sys.stderr,
         )
         return 0
@@ -290,13 +298,14 @@ def run(args: argparse.Namespace) -> int:
     target_attempt = attempt_id(args.card_id, args.escalation_epoch, args.source_sha)
     comments = fetch_issue_comments(runner, target.repo, item.issue_number)
     history = build_issue_event_history(comments)
-    preflight = find_preflight_basis(
-        comments, card_id=args.card_id, source_sha=args.source_sha
-    )
     try:
-        # §3 第 1 款先判：沒有受管轄的 preflight event 就**不建立 review event**
-        # （§1），而不是寫一個較誠實的值進去（R3-01）。
-        check_preflight_event_present(preflight, source_sha=args.source_sha)
+        # §3 第 1 款先判：沒有受管轄的 preflight event 就**不建立 review event**（§1），
+        # 而不是寫一個較誠實的值進去（R3-01）。本 repo 今天沒有該事件的 writer 與可驗證
+        # 格式，故此呼叫**恆拋**——**刻意不掃留言**：留言內文判定不出 canonical §4.1 的
+        # 「受管轄」，上一輪就是在這裡放了一個讀取器而讓任意四欄 YAML 解鎖（R4-01）。
+        preflight = require_preflight_basis(
+            card_id=args.card_id, source_sha=args.source_sha
+        )
         check_attempt_not_duplicated(history, target_attempt)
         check_checkpoint_gate(
             history, escalation_epoch=args.escalation_epoch, card_body=item.body

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import os
 import pathlib
 import shutil
@@ -107,11 +108,11 @@ def test_validate_chain_depth_rejects_over_hard_cap(depth):
 # --------------------------------------------------------------------------
 
 from wf_cli.review import (
-    BLOCK_VERSION,
     CHECKPOINT_BLOCK_KEY,
     CHECKPOINT_LOG_TAG,
     PREFLIGHT_BASES,
-    PREFLIGHT_BLOCK_KEY,
+    PREFLIGHT_BASIS_BINDING,
+    PREFLIGHT_BASIS_BINDINGS,
     AcceptedMark,
     CheckpointFacts,
     Finding,
@@ -124,7 +125,6 @@ from wf_cli.review import (
     derive_counts_toward_escalation,
     find_block_by_key,
     log_line_indexes,
-    preflight_basis_from_body,
     render_checkpoint_comment,
     render_contract_baseline_comment,
     render_escalation_facts_block,
@@ -135,10 +135,9 @@ from wf_cli.validation import (
     build_issue_event_history,
     check_attempt_not_duplicated,
     check_checkpoint_gate,
-    check_preflight_event_present,
     counted_attempts,
     derive_accepted_marking_binding,
-    find_preflight_basis,
+    require_preflight_basis,
     validate_accepted_overrides,
     validate_checkpoint_input,
     validate_marked_by,
@@ -147,24 +146,14 @@ from wf_cli.validation import (
 SHA_A, SHA_B, SHA_C = "a" * 40, "b" * 40, "c" * 40
 
 # §3 第 1 款唯一合法的依據形狀：事件流上受管轄的 preflight pass event。
-# **本 CLI 沒有任何路徑能產出它**（R2-01 的處置：移除「寫入者具結」那一支）；這裡直接
-# 建構，是為了測「一旦承接卡讓它存在，整條鏈就會計數」。
-def _preflight_body(card_id: str, sha: str) -> str:
-    return "\n".join(
-        [
-            "```yaml",
-            f"{PREFLIGHT_BLOCK_KEY}: {BLOCK_VERSION}",
-            f"card_id: {card_id}",
-            f"source_sha: {sha}",
-            "preflight_passed: true",
-            'summary: "全綠"',
-            "```",
-        ]
-    )
-
-
-EVENT_VERIFIED = preflight_basis_from_body(
-    _preflight_body("CARD-A", SHA_A), card_id="CARD-A", source_sha=SHA_A
+# **本 CLI 沒有任何路徑能產出它**——R2-01 移除了「寫入者具結」那一支，R4-01 移除了
+# 「讀一則留言」那一支（留言內文判定不出 canonical §4.1 的「受管轄」）。這裡直接具名
+# 建構，是為了測「一旦承接卡讓依據存在，整條鏈就會計數」；產線沒有任何輸入抵達得了
+# 這一行（窮舉見本檔 test_no_source_path_constructs_an_event_verified_basis）。
+EVENT_VERIFIED = PreflightBasis(
+    basis="event-verified",
+    source_event="https://github.com/acme/demo/issues/1#issuecomment-1",
+    summary="（模擬承接卡）全綠",
 )
 
 # 事件 marker 前綴刻意拆開書寫：只要有一則 GitHub 留言含它的字面，整張卡的自動裁決
@@ -740,7 +729,13 @@ def test_missing_owner_key_does_not_make_the_attempt_unknown_to_the_gate():
     assert len(history.scoped_facts) == 1
 
 
-# ---- §3 第 1 款：preflight event（R1／R2／R3 同一根因的第三次修正） ----
+# ---- §3 第 1 款：preflight 依據（R1／R2／R3／R4 同一根因的第四次修正） ----
+#
+# 四輪的線，寫在這裡讓後來的人一眼看見出口在哪裡被堵上：
+#   R1 預設 true → R2 具結 true → R3 三值 unknown／unavailable → R4 讀留言內文。
+# 前三輪都在換「寫什麼值」，R3 才動「要不要寫」，R4 打的是「憑什麼判定可以寫」。
+# 本輪的處置不是把讀取器驗得更嚴，是**移除讀取器**：canonical §4.1 的「受管轄」是通道
+# 屬性，留言內文任何人都寫得出來，補欄位只是把同一個洞往後推一格。
 
 
 def test_preflight_basis_has_no_writer_attested_option_any_more():
@@ -749,55 +744,147 @@ def test_preflight_basis_has_no_writer_attested_option_any_more():
     assert PreflightBasis(basis="event-verified").established is False
 
 
-def test_preflight_reader_requires_all_four_facts_verbatim():
-    """四項缺一即 None：版本、preflight_passed=true、同卡、同 SHA。"""
-    ok = preflight_basis_from_body(
-        _preflight_body("CARD-A", SHA_A), card_id="CARD-A", source_sha=SHA_A
-    )
-    assert ok is not None and ok.established
-
-    # 他卡的 preflight 不算。
-    assert (
-        preflight_basis_from_body(
-            _preflight_body("OTHER", SHA_A), card_id="CARD-A", source_sha=SHA_A
-        )
-        is None
-    )
-    # 別輪的 preflight 不算——source_sha 逐字比對即免時鐘的新鮮性（同 §4 (b′-2)）。
-    assert (
-        preflight_basis_from_body(
-            _preflight_body("CARD-A", SHA_B), card_id="CARD-A", source_sha=SHA_A
-        )
-        is None
-    )
-    # preflight_passed 不是 true 就不算。
-    failed = _preflight_body("CARD-A", SHA_A).replace(
-        "preflight_passed: true", "preflight_passed: false"
-    )
-    assert preflight_basis_from_body(failed, card_id="CARD-A", source_sha=SHA_A) is None
-    # 沒有區塊的留言不算。
-    assert preflight_basis_from_body("一般留言", card_id="CARD-A", source_sha=SHA_A) is None
+def test_the_binding_is_named_structurally_unavailable_not_merely_absent():
+    """恆拒的成因必須有名字：等承接卡，不是等下一則留言（形狀同 #39 的 structurally-vacuous）。"""
+    assert PREFLIGHT_BASIS_BINDING == "structurally-unavailable"
+    assert PREFLIGHT_BASIS_BINDINGS == ("event-verified", "structurally-unavailable")
 
 
-def test_missing_preflight_event_refuses_to_create_a_review_event():
-    """R3-01：缺依據時**不建立 review event**，不是寫一個較誠實的值進去。"""
+def test_require_preflight_basis_refuses_unconditionally():
+    """R4-01 的處置：本 repo 拿不到依據，故**恆拒**——沒有「有依據就放行」這條分支可測。"""
     with pytest.raises(ValidationError) as exc_info:
-        check_preflight_event_present(PreflightBasis(), source_sha=SHA_A)
+        require_preflight_basis(card_id="CARD-A", source_sha=SHA_A)
     message = "；".join(exc_info.value.errors)
     assert "不建立 review event" in message
+    assert PREFLIGHT_BASIS_BINDING in message  # 成因寫在明面上
     assert "不得以 unknown／unavailable 之類的新值擴充該布林欄位" in message
     assert "--validate-only" in message  # 指出仍可用的自檢路徑
-    check_preflight_event_present(EVENT_VERIFIED, source_sha=SHA_A)  # 有依據就放行
+    assert "CARD-A" in message and SHA_A in message  # 逐字帶出被拒的那一輪
 
 
-def test_find_preflight_basis_scans_the_timeline():
-    comments = [
-        {"body": "無關留言", "url": "u0"},
-        {"body": _preflight_body("CARD-A", SHA_A), "url": "u1"},
+def test_no_reader_from_comment_content_exists_any_more():
+    """R4-01 的重現對象已不存在：沒有任何 `body → PreflightBasis` 的公開路徑。"""
+    import inspect
+
+    import wf_cli.review as review_mod
+    import wf_cli.validation as validation_mod
+
+    for name in ("preflight_basis_from_body", "PREFLIGHT_BLOCK_KEY"):
+        assert not hasattr(review_mod, name), f"review.{name} 應已移除"
+    for name in ("find_preflight_basis", "check_preflight_event_present"):
+        assert not hasattr(validation_mod, name), f"validation.{name} 應已移除"
+
+    # 唯一與 preflight 有關的函式是那道閘門，且它不吃任何留言內容。
+    producers = {
+        f"{mod.__name__}.{name}"
+        for mod in (review_mod, validation_mod)
+        for name in dir(mod)
+        if "preflight" in name.lower() and inspect.isfunction(getattr(mod, name, None))
+    }
+    assert producers == {"wf_cli.validation.require_preflight_basis"}, producers
+    assert list(inspect.signature(require_preflight_basis).parameters) == [
+        "card_id",
+        "source_sha",
     ]
-    basis = find_preflight_basis(comments, card_id="CARD-A", source_sha=SHA_A)
-    assert basis.established and basis.source_event == "u1"
-    assert not find_preflight_basis(comments, card_id="CARD-A", source_sha=SHA_B).established
+
+
+@pytest.mark.parametrize(
+    "body, label",
+    [
+        ("一般留言，沒有任何區塊。", "任意一般 Issue 留言"),
+        (
+            "\n".join(
+                ["```yaml", "wf_preflight_pass: v1", "card_id: CARD-A",
+                 f"source_sha: {SHA_A}", "preflight_passed: true", "```"]
+            ),
+            "查核者的原始重現：四欄、缺 event_url",
+        ),
+        (
+            "\n".join(
+                ["```yaml", "wf_preflight_pass: v1", "card_id: CARD-A",
+                 f"source_sha: {SHA_A}", "preflight_passed: true",
+                 "event_url: https://example.invalid/#issuecomment-1", "```"]
+            ),
+            "四欄＋event_url",
+        ),
+        (
+            "\n".join(
+                ["```yaml", "wf_preflight_pass: v1", "card_id: CARD-A",
+                 f"source_sha: {SHA_A}", "preflight_passed: true",
+                 "event_id: 018f-dead-beef", "type: handoff-accepted",
+                 "actor: ruan6047", "occurred_at: 2026-08-12T21:00:00+08:00",
+                 "state_version: 7", "iteration: 4", "evidence: pytest 全綠",
+                 "event_url: https://example.invalid/#issuecomment-1", "```"]
+            ),
+            "補齊 canonical §4.1 的整組 lifecycle envelope",
+        ),
+    ],
+)
+def test_no_issue_comment_of_any_shape_can_establish_a_preflight_basis(body, label):
+    """留言內文是資料不是通道證明：補到 envelope 齊全一樣不成立依據。
+
+    做法是**窮舉** `wf_cli.review` 裡每一個吃 `body` 的公開函式，把這則留言餵進去，斷言
+    沒有任何一個回傳 `PreflightBasis`。這比「檢查某個函式已刪除」強：它擋的是「換個名字
+    重新長出來」。掃到的函式清單列在失敗訊息裡，避免「掃到零個所以零命中」的假通過。
+    """
+    import inspect
+
+    import wf_cli.review as review_mod
+
+    probed: list[str] = []
+    for name in sorted(review_mod.__all__):
+        fn = getattr(review_mod, name)
+        if not inspect.isfunction(fn):
+            continue
+        params = list(inspect.signature(fn).parameters)
+        if not params or params[0] != "body":
+            continue
+        probed.append(name)
+        try:
+            result = fn(body)
+        except (ReviewParseError, TypeError, ValueError):
+            continue
+        assert not isinstance(result, PreflightBasis), (
+            f"{label}：{name}() 由留言內文產出了 preflight 依據（R4-01 的形狀）"
+        )
+    assert probed, "沒有掃到任何吃 body 的公開函式，證據無效"
+    # 依據仍取不到，閘門照樣拒絕。
+    with pytest.raises(ValidationError):
+        require_preflight_basis(card_id="CARD-A", source_sha=SHA_A)
+
+
+def test_no_source_path_constructs_an_event_verified_basis():
+    """窮舉 `src/wf_cli` 全部模組：沒有任何一處建構 `basis="event-verified"`。
+
+    「可計數在今天結構上不可達」是本卡從 R2 起反覆宣稱的事實。前幾輪它靠散文與旗標盤點
+    支撐，而 R4-01 證明那不夠——讀取器就是一條沒被盤到的建構路徑。這裡改由 AST 窮舉產生
+    證據（canonical §6.2：完整性宣稱必須由指令輸出產生），掃到的檔案清單一併列在失敗訊息
+    裡，避免「掃了零個檔案所以零命中」這種假通過。
+    """
+    scanned: list[str] = []
+    offenders: list[str] = []
+    for path in sorted(_SRC_ROOT.rglob("*.py")):
+        scanned.append(str(path.relative_to(_SRC_ROOT)))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = getattr(func, "id", None) or getattr(func, "attr", None)
+            if name not in {"PreflightBasis", "replace"}:
+                continue
+            for kw in node.keywords:
+                if (
+                    kw.arg == "basis"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value == "event-verified"
+                ):
+                    offenders.append(f"{path.relative_to(_SRC_ROOT)}:{node.lineno}")
+    assert len(scanned) >= 10, f"掃到的檔案太少，證據無效：{scanned}"
+    assert offenders == [], (
+        f"src 內出現建構 event-verified 依據的路徑：{offenders}"
+        f"（已掃 {len(scanned)} 檔：{scanned}）"
+    )
 
 
 def test_counts_derivation_refuses_to_run_without_an_established_basis():
@@ -870,26 +957,16 @@ assert wf_cli.__file__.startswith(os.environ["EXPECT_ROOT"]), (
     "載到的不是複本：" + wf_cli.__file__
 )
 from wf_cli.review import (
-    BLOCK_VERSION, PREFLIGHT_BASES, PREFLIGHT_BLOCK_KEY, AcceptedMark, Finding,
+    PREFLIGHT_BASES, PREFLIGHT_BASIS_BINDING, AcceptedMark, Finding,
     PreflightBasis, ReviewReport, SelfRunEntry, derive_counts_toward_escalation,
-    preflight_basis_from_body, render_escalation_facts_block,
+    render_escalation_facts_block,
 )
 from wf_cli.validation import (
-    ValidationError, build_issue_event_history, check_preflight_event_present,
+    ValidationError, build_issue_event_history, require_preflight_basis,
 )
 
 SHA = "a" * 40
 OTHER = "b" * 40
-
-def pf_body(card="C", sha=SHA, passed="true"):
-    return chr(10).join([
-        "```yaml",
-        PREFLIGHT_BLOCK_KEY + ": " + BLOCK_VERSION,
-        "card_id: " + card,
-        "source_sha: " + sha,
-        "preflight_passed: " + passed,
-        "```",
-    ])
 
 def finding(**kw):
     base = dict(finding_id="F-01", severity="major", blocking=True,
@@ -942,13 +1019,36 @@ def _run_probe(probe_body: str, mutation: tuple[str, str, str] | None) -> subpro
 # 等於自陳；那個缺口本身就是本卡族被打的同一種病。
 _MUTANTS = [
     (
-        "寫入前的閘門變成 no-op（缺依據仍建立 review event）",
+        "寫入前的閘門不再恆拒，改回傳一個依據（R4-01 的形狀：解鎖了寫入）",
         "wf_cli/validation.py",
-        "    if basis.established:\n        return",
-        "    return",
+        "    raise ValidationError(\n        [\n            (\n                f\"§3 第 1 款的 preflight 依據在本 repo 恆不可得",
+        "    return PreflightBasis(basis=\"event-verified\", source_event=\"x\")\n    raise ValidationError(\n        [\n            (\n                f\"§3 第 1 款的 preflight 依據在本 repo 恆不可得",
         (
-            "raises(ValidationError, lambda: check_preflight_event_present(\n"
-            "    PreflightBasis(), source_sha=SHA))\n"
+            "raises(ValidationError, lambda: require_preflight_basis(\n"
+            "    card_id='C', source_sha=SHA))\n"
+        ),
+    ),
+    (
+        "依據綁定被改寫成「只是這一則沒有」（恆拒的成因從訊息裡消失）",
+        "wf_cli/review.py",
+        'PREFLIGHT_BASIS_BINDING = "structurally-unavailable"',
+        'PREFLIGHT_BASIS_BINDING = "not-established"',
+        (
+            "assert PREFLIGHT_BASIS_BINDING == 'structurally-unavailable'\n"
+            "try:\n"
+            "    require_preflight_basis(card_id='C', source_sha=SHA)\n"
+            "except ValidationError as exc:\n"
+            "    assert 'structurally-unavailable' in '；'.join(exc.errors)\n"
+        ),
+    ),
+    (
+        "not-established 的 sentinel 被換成已成立的依據（繞過閘門的另一條路）",
+        "wf_cli/review.py",
+        "PREFLIGHT_NOT_ESTABLISHED = PreflightBasis()",
+        'PREFLIGHT_NOT_ESTABLISHED = PreflightBasis(basis="event-verified", source_event="x")',
+        (
+            "from wf_cli.review import PREFLIGHT_NOT_ESTABLISHED\n"
+            "assert PREFLIGHT_NOT_ESTABLISHED.established is False\n"
         ),
     ),
     (
@@ -987,37 +1087,12 @@ _MUTANTS = [
         'PREFLIGHT_BASES = ("event-verified", "writer-attested", "not-established")',
         'assert "writer-attested" not in PREFLIGHT_BASES\n',
     ),
-    (
-        "preflight 讀取器不比對 source_sha（上一輪的 preflight 可掩護本輪）",
-        "wf_cli/review.py",
-        '    if str(data.get("source_sha") or "").strip() != source_sha:\n        return None',
-        "    pass",
-        (
-            "assert preflight_basis_from_body(pf_body(sha=OTHER),\n"
-            "    card_id='C', source_sha=SHA) is None\n"
-        ),
-    ),
-    (
-        "preflight 讀取器不比對 card_id（他卡的 preflight 可借用）",
-        "wf_cli/review.py",
-        '    if str(data.get("card_id") or "").strip() != card_id:\n        return None',
-        "    pass",
-        (
-            "assert preflight_basis_from_body(pf_body(card='OTHER'),\n"
-            "    card_id='C', source_sha=SHA) is None\n"
-        ),
-    ),
-    (
-        "preflight 讀取器接受 preflight_passed: false",
-        "wf_cli/review.py",
-        '    if str(data.get("preflight_passed") or "").strip() != "true":\n        return None',
-        "    pass",
-        (
-            "assert preflight_basis_from_body(pf_body(passed='false'),\n"
-            "    card_id='C', source_sha=SHA) is None\n"
-        ),
-    ),
 ]
+# ⚠️ 移除了三條錨定在 `preflight_basis_from_body` 的突變（不比對 source_sha／card_id／
+# preflight_passed）。**該讀取器本輪已刪除**，錨點不存在的突變會被 harness 判 SKIP，而
+# 「錨點失效的突變等於沒測」（R2 那輪的 M04 已踩過一次）。取代它們的是上方三條錨在
+# 「恆拒」與「依據 sentinel」上的突變，加上 `test_no_source_path_constructs_an_event_verified_basis`
+# 的 AST 窮舉——後者擋的正是「讀取器換個名字重新長出來」。
 
 
 @pytest.mark.parametrize("name, rel, old, new, probe", _MUTANTS, ids=[m[0] for m in _MUTANTS])

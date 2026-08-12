@@ -14,10 +14,8 @@ from wf_cli.commands import checkpoint_cmd, handoff_cmd, open_cmd, review_cmd
 from wf_cli.project import find_item_by_card_id, list_items, resolve_project
 from wf_cli.review import (
     BASELINE_LOG_TAG,
-    BLOCK_VERSION,
     CHECKPOINT_LOG_TAG,
-    PREFLIGHT_BLOCK_KEY,
-    preflight_basis_from_body,
+    PreflightBasis,
     render_verdict_comment,
 )
 from wf_cli.validation import validate_review_report
@@ -66,6 +64,61 @@ class EventGhRunner(FakeGhRunner):
             return comment_url + "\n"
 
         return super().execute(args, input)
+
+
+# --------------------------------------------------------------------------
+# 模擬「承接卡落地後的世界」（WF-22-CLI4-R4-01）
+# --------------------------------------------------------------------------
+#
+# 本 repo 今天沒有受管轄的 preflight pass event writer，也沒有該事件的可驗證格式，
+# 故 `validation.require_preflight_basis` **無條件拋出**，`wfcli review` 寫不進任何裁決。
+# 端對端測「承接卡落地後」的行為，唯一的辦法是**把那個閘門換掉**——這件事本身就是本輪的
+# 核心事實：沒有任何 Issue 留言、旗標或輸入能解鎖它（窮舉見 test_validation 的
+# `test_no_issue_comment_of_any_shape_can_establish_a_preflight_basis`），只有改碼可以。
+#
+# 上一輪這裡是 `arm_preflight()` 往 timeline 貼一則四欄 YAML 留言——那正是查核者用來
+# 重現 R4-01 的同一件事。它現在改成純測試側的登記表，src 不再有對應的讀取器。
+_SIMULATED_PREFLIGHT: set[tuple[str, str]] = set()
+
+
+def event_verified(card_id: str, sha: str) -> PreflightBasis:
+    """承接卡落地後、該卡該 SHA 的合格依據。**本 CLI 今天產不出它**（見上方說明）。"""
+    return PreflightBasis(
+        basis="event-verified",
+        source_event=f"https://github.com/{REPO}/issues/1#issuecomment-999",
+        summary="（模擬）分支已推、工作區乾淨、pytest 全綠、trailer 已檢查",
+    )
+
+
+def arm_preflight(card_id: str, sha: str) -> None:
+    """登記「承接卡已為該卡該 SHA 寫出 preflight event」。只影響被換掉的閘門。"""
+    _SIMULATED_PREFLIGHT.add((card_id, sha))
+
+
+def _simulated_require_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
+    if (card_id, source_sha) in _SIMULATED_PREFLIGHT:
+        return event_verified(card_id, source_sha)
+    # 未登記時的行為必須與 src 的真實閘門一致：拒絕，而不是回一個 not-established
+    # 讓下游自己判——真實閘門今天就是恆拋。
+    return _real_require_preflight_basis(card_id=card_id, source_sha=source_sha)
+
+
+_real_require_preflight_basis = review_cmd.require_preflight_basis
+
+
+@pytest.fixture(autouse=True)
+def simulated_preflight_writer(monkeypatch):
+    """把 review_cmd 的 preflight 閘門換成「承接卡落地後」的版本（預設登記表為空）。
+
+    autouse 是刻意的：本模組每個端對端寫入測試都需要它，而**沒有登記的卡仍會被真實閘門
+    擋下**（見 `_simulated_require_preflight_basis`），所以它不會把 fail-closed 洗掉。
+    """
+    _SIMULATED_PREFLIGHT.clear()
+    monkeypatch.setattr(
+        review_cmd, "require_preflight_basis", _simulated_require_preflight_basis
+    )
+    yield
+    _SIMULATED_PREFLIGHT.clear()
 
 
 @pytest.fixture
@@ -123,9 +176,9 @@ findings:
 
 
 def write_review(tmp_path, card_id: str, sha: str, fid: str, runner=None, **extra) -> int:
-    """跑一次 `wfcli review`；`runner` 有給時先佈署該 SHA 的 preflight event。"""
+    """跑一次 `wfcli review`；`runner` 有給時先登記該 SHA 的 preflight 依據。"""
     if runner is not None:
-        arm_preflight(runner, card_id, sha)
+        arm_preflight(card_id, sha)
     path = tmp_path / f"{fid}.md"
     path.write_text(COUNTING_REPORT.format(fid=fid), encoding="utf-8")
     argv = [
@@ -148,50 +201,6 @@ def checkpoint_argv(card_id: str, trigger: str, **overrides) -> list[str]:
     for flag, value in overrides.items():
         argv += [f"--{flag.replace('_', '-')}", str(value)]
     return argv
-
-
-def preflight_event_body(card_id: str, sha: str) -> str:
-    """一則受管轄的 preflight pass event（review-escalation.md §5 的 handoff-accepted 等價）。
-
-    **本 CLI 只讀不寫**：產出它的 writer 需要 `handoff` 的寫入集，不在本卡射程內，已交由
-    承接卡。測試自行構造，是為了驗證讀取器與閘門——以及承接卡落地後整條鏈會自動生效。
-    """
-    return "\n".join(
-        [
-            "## Preflight pass",
-            "",
-            "```yaml",
-            f"{PREFLIGHT_BLOCK_KEY}: {BLOCK_VERSION}",
-            f"card_id: {card_id}",
-            f"source_sha: {sha}",
-            "preflight_passed: true",
-            'summary: "分支已推、工作區乾淨、pytest 全綠、trailer 已檢查"',
-            "```",
-        ]
-    )
-
-
-def arm_preflight(runner: EventGhRunner, card_id: str, sha: str) -> None:
-    """把該卡、該 SHA 的 preflight event 放進 timeline，讓 `wfcli review` 得以寫入。"""
-    item = card_item(runner, card_id)
-    runner.execute(
-        [
-            "issue", "comment", str(item.issue_number), "--repo", REPO,
-            "--body", preflight_event_body(card_id, sha),
-        ]
-    )
-
-
-# §3 第 1 款唯一合法的依據形狀。**`wfcli review` 今天產不出它**——本 repo 沒有 preflight
-# 事件 writer（WF-22-CLI4-R2-01；該 writer 不在本卡寫入集，已交由承接卡）。因此凡是需要
-# `counts_toward_escalation: true` 的端對端測試，都必須自行構造「承接卡落地後」的狀態，
-# 而不能經由 CLI 產生——這件事本身就是本輪的核心事實，故用註解與函式名寫明。
-def event_verified(card_id: str, sha: str):
-    basis = preflight_basis_from_body(
-        preflight_event_body(card_id, sha), card_id=card_id, source_sha=sha
-    )
-    assert basis is not None and basis.established
-    return basis
 
 
 def inject_counted_attempt(runner: EventGhRunner, card_id: str, sha: str, fid: str) -> str:

@@ -19,13 +19,12 @@ from .doctor import inspect_event_marker
 from .resources import DB_SCOPES, ResourceDeclaration
 from .review import (
     ATTRIBUTIONS,
-    BLOCK_VERSION,
     CHECKPOINT_DECISIONS,
     CHECKPOINT_LOG_TAG,
     CORE_PAIN_VALUES,
     FINDING_CLASSES,
     FINDING_KEYS,
-    PREFLIGHT_BLOCK_KEY,
+    PREFLIGHT_BASIS_BINDING,
     REVIEW_RESULTS,
     SEVERITIES,
     WRITER_ONLY_KEYS,
@@ -42,7 +41,6 @@ from .review import (
     escalation_facts_from_body,
     log_line_indexes,
     parse_attempt_id,
-    preflight_basis_from_body,
 )
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -581,58 +579,51 @@ def counted_attempts(history: IssueEventHistory, escalation_epoch: int) -> list[
     return out
 
 
-def find_preflight_basis(
-    comments: Sequence[Mapping[str, Any]], *, card_id: str, source_sha: str
-) -> PreflightBasis:
-    """掃 Issue 留言找受管轄的 preflight pass event；找不到回 ``not-established``。"""
-    for comment in comments:
-        try:
-            basis = preflight_basis_from_body(
-                str(comment.get("body") or ""), card_id=card_id, source_sha=source_sha
-            )
-        except ReviewParseError:
-            continue
-        if basis is not None:
-            url = str(comment.get("url") or comment.get("html_url") or "").strip()
-            return basis if not url else PreflightBasis(
-                basis=basis.basis, source_event=url, summary=basis.summary
-            )
-    return PreflightBasis()
+def require_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
+    """**所有遠端寫入之前**的閘門：取得 §3 第 1 款的依據，取不到就不建立 review event。
 
+    **本函式今天恆拋 ``ValidationError``**，因為本 repo 的依據綁定恆為
+    ``review.PREFLIGHT_BASIS_BINDING``（``structurally-unavailable``）。回傳型別是給承接卡
+    落地後用的，不是給今天用的——簽章保留 ``card_id``／``source_sha`` 因為它們正是承接卡
+    的實作必須逐字比對的兩件事，今天則逐字寫進拒絕訊息。
 
-def check_preflight_event_present(basis: PreflightBasis, *, source_sha: str) -> None:
-    """**所有遠端寫入之前**的閘門：沒有受管轄的 preflight event 就不建立 review event。
+    四輪的線（同一 ``root_cause_id: unproven-preflight-counting``）：
 
-    這是 WF-22-CLI4-R3-01 的處置，也是本卡族第一次動「要不要寫」而不是「寫什麼值」。
-    前三輪分別把 ``preflight_passed`` 寫成無來源的 ``true``、任意字串具結的 ``true``、
-    以及擴充 schema 的 ``unknown``／``unavailable``——三次都在找一個誠實的值，卻沒問
-    「這一則到底該不該存在」。
+    * R1-01：``preflight_passed`` 預設 ``true``——無依據卻以事實的語氣寫進事件流。
+    * R2-01：改成「寫入者具結 ``true``」，而具結只驗非空字串——打字即依據。
+    * R3-01：改成三值 ``unknown``／``unavailable``——擴充了 §5:168 釘死為字面 ``true``
+      的欄位；前三輪都在換一個值，沒有動「要不要寫」。
+    * R4-01：改成「缺依據就不寫」，但把「有沒有依據」交給一個**讀留言內文**的讀取器
+      （``review.preflight_basis_from_body``），於是任意四欄 YAML 即可解鎖，``event_url``
+      缺席也照過。
 
-    契約的答案是不該：§1 明定 preflight 缺口「不得建立 review event 或派 reviewer」；
-    §5:168 的 review event schema 把 ``preflight_passed`` 釘為**字面 ``true``**（對照
-    同區塊的 ``escalation_epoch: <integer>``、``counts_toward_escalation: <boolean
-    derived from §3>`` 即知那不是型別佔位）。斷不出 ``true`` 的事件不是合格的 review
-    event，寫下去只是製造一則不合 schema 的留痕。
+    第四輪的教訓不是「欄位驗得不夠多」。canonical §4.1 的「受管轄」＝該事件由唯一
+    lifecycle writer 追加於 append-only 平面，那是**通道屬性**；留言內文是任何人都寫得出
+    的資料，補 ``event_id``／``type``／``actor``／``occurred_at`` 只是把同一個洞往後推一格。
+    本 repo 唯一可能的通道訊號（留言 author）在此結構上無鑑別力——人與每個 AI agent 共用
+    同一個 GitHub 帳號，同 ``accepted_marking_binding: structurally-vacuous`` 的成因。
 
-    我先前反對這條的理由是「拒絕等於把真實發生的查核從狀態面抹掉」。**該理由不成立**：
-    查核仍可留在 Issue 的收據（``handoff-contract.md`` §3.1.2 的 ``wf-review-receipt``）
-    與報告全文裡，那正是為「查核者無法執行 wfcli」設計的證據面；被拒絕的只有**狀態面
-    的裁決事件**，而狀態面本來就要求 preflight 已通過。用 ``--validate-only`` 仍可完整
-    驗證查核輸出格式，不受本閘門影響。
+    故採本 repo 既有的處置形態（ai-workflow#39 面對恆真授權款時的作法）：**不寫出一條看似
+    有檢查的條文，改把恆拒本身寫成明文**。代價明說：``wfcli review`` 在承接卡落地前
+    **寫不進任何裁決事件**，不只是可計數的那些。替代路徑不變——查核證據走
+    ``handoff-contract.md`` §3.1.2 的收據與報告全文（那正是為「查核者無法執行 wfcli」設計
+    的證據面），格式自檢走 ``--validate-only``（不連 GitHub、不受本閘門影響）。
     """
-    if basis.established:
-        return
     raise ValidationError(
         [
             (
-                "找不到本卡、本 source_sha 的受管轄 preflight pass event，"
-                "依 review-escalation.md §1 不建立 review event（未寫入任何遠端狀態）。"
-                f"需要 timeline 上有一則 `{PREFLIGHT_BLOCK_KEY}: {BLOCK_VERSION}` 區塊，"
-                f"逐字帶 preflight_passed: true、card_id、source_sha: {source_sha}。"
-                "§5:168 把 review event 的 preflight_passed 釘為字面 true，"
-                "斷不出 true 的事件不是合格的 review event；"
-                "**不得以 unknown／unavailable 之類的新值擴充該布林欄位**。"
-                "產出該事件的 writer 需要 handoff 的寫入集，不在本卡射程內，已交由承接卡；"
+                f"§3 第 1 款的 preflight 依據在本 repo 恆不可得（依據綁定："
+                f"{PREFLIGHT_BASIS_BINDING}），依 review-escalation.md §1 不建立 "
+                f"review event（未寫入任何遠端狀態）。卡 {card_id}／source_sha {source_sha}。"
+                "§5:168 把 review event 的 preflight_passed 釘為字面 true，斷不出 true 的"
+                "事件不是合格的 review event；**不得以 unknown／unavailable 之類的新值擴充"
+                "該布林欄位**，也**不得以一則長得像 preflight event 的 Issue 留言充當依據**"
+                "——canonical §4.1 的「受管轄」是通道屬性，判定不出通道就沒有依據"
+                "（WF-22-CLI4-R4-01）。"
+                "解除條件有兩件，缺一則本閘門維持拒絕：(1) 受管轄的 preflight pass event "
+                "writer（需 handoff 的寫入集，不在本卡射程內，已交由承接卡）；(2) 該事件的"
+                "可驗證格式，即消費者憑什麼斷定它出自該 writer——在單帳號結構下這不會由"
+                "多驗幾個欄位得到。"
                 "在它落地前，查核證據請走 handoff-contract.md §3.1.2 的收據，"
                 "格式自檢請用 `wfcli review --validate-only`（不寫任何狀態，不受本閘門影響）。"
             )
@@ -836,10 +827,9 @@ __all__ = [
     "build_issue_event_history",
     "check_attempt_not_duplicated",
     "check_checkpoint_gate",
-    "check_preflight_event_present",
     "counted_attempts",
     "derive_accepted_marking_binding",
-    "find_preflight_basis",
+    "require_preflight_basis",
     "review_invalid_reasons",
     "validate_accepted_overrides",
     "validate_chain_depth",

@@ -24,11 +24,17 @@ from wf_cli.project import (
 from wf_cli.review import ReviewParseError, parse_structured_block
 from wf_cli.validation import (
     ValidationError,
+    require_preflight_basis,
     review_invalid_reasons,
     validate_review_report,
 )
 
-from .test_checkpoint import EventGhRunner, arm_preflight, inject_counted_attempt
+from .test_checkpoint import (  # noqa: F401  （simulated_preflight_writer 以 fixture 形式使用）
+    EventGhRunner,
+    arm_preflight,
+    inject_counted_attempt,
+    simulated_preflight_writer,
+)
 
 BASE_TARGET = ["--owner", "acme", "--project", "1"]
 REPO = "acme/demo"
@@ -55,16 +61,18 @@ def run_cli(argv: list[str]) -> int:
 def open_card(
     card_id: str, *, repo: str | None = REPO, runner=None, preflight_shas=(SHA,)
 ) -> int:
-    """開卡；``runner`` 有給時順便為 ``preflight_shas`` 佈署受管轄的 preflight event。
+    """開卡；``runner`` 有給時順便為 ``preflight_shas`` 登記「承接卡已寫出的」preflight 依據。
 
-    自 R3-01 起 `wfcli review` 沒有 preflight event 就不建立 review event，故絕大多數
-    測試都要先佈署。**刻意做成顯式參數而不是自動**：驗證閘門本身的測試傳 ``runner=None``
-    （或空 tuple），一眼看得出它是故意不佈署的。
+    自 R3-01 起 `wfcli review` 沒有 preflight 依據就不建立 review event，而自 R4-01 起
+    **本 repo 拿不到依據**（閘門無條件拒絕），故登記只作用在被換掉的閘門上
+    （見 test_checkpoint 的 ``simulated_preflight_writer``），不是往 timeline 貼留言。
+    **刻意做成顯式參數而不是自動**：驗證閘門本身的測試傳 ``runner=None``（或空 tuple），
+    一眼看得出它是故意不登記的。
     """
     rc = _open_card(card_id, repo=repo)
     if runner is not None:
         for sha in preflight_shas:
-            arm_preflight(runner, card_id, sha)
+            arm_preflight(card_id, sha)
     return rc
 
 
@@ -987,12 +995,12 @@ def test_duplicate_attempt_id_is_refused_before_writing(fake_runner, tmp_path, c
     after = verdict_comments(fake_runner, "DUP-CARD1")
     assert len(after) == 1  # 沒有寫出第二則
 def test_review_without_a_preflight_event_writes_nothing_at_all(fake_runner, tmp_path, capsys):
-    """R3-01 的核心回歸：缺受管轄的 preflight event → **不建立 review event**。
+    """R3-01 的核心回歸：缺受管轄的 preflight 依據 → **不建立 review event**。
 
-    前三輪都在調整寫進去的值；本輪動的是「要不要寫」。這裡驗證的是一則裁決留言都沒有、
+    前三輪都在調整寫進去的值；R3 那輪動的是「要不要寫」。這裡驗證的是一則裁決留言都沒有、
     交付狀態沒被翻動、Log 沒有新行。
     """
-    open_card("PF-CARD1", runner=None)  # 刻意不佈署 preflight
+    open_card("PF-CARD1", runner=None)  # 刻意不登記 preflight
     before = card_item(fake_runner, "PF-CARD1")
     assert _counting_review(tmp_path, "PF-CARD1", SHA, "PF-CARD1-R1-01") == 2
     err = capsys.readouterr().err
@@ -1017,7 +1025,81 @@ def test_validate_only_still_works_without_any_preflight_event(fake_runner, tmp_
     open_card("PF-CARD3", runner=None)
     path = write_input(tmp_path, COUNTING_REPORT.format(fid="PF-CARD3-R1-01"), name="pf3.md")
     assert run_cli(review_argv("PF-CARD3", path) + ["--validate-only"]) == 0
-    assert "驗證通過" in capsys.readouterr().out
+    out, err = capsys.readouterr()
+    assert "驗證通過" in out
+    # 通過格式檢查 ≠ 實寫會成功；訊息必須自己講清楚，否則就是另一種宣稱大於證據。
+    assert "不代表實寫會成功" in err
+
+
+# ---- R4-01：查核者的重現在 CLI 層的端對端回歸 ----
+#
+# R4-01 的重現是「把任意四欄 YAML 餵給 `preflight_basis_from_body` 就得 event-verified，
+# 缺 event_url 也照過」。那個讀取器已刪除；這裡從 CLI 這一端釘死同一件事：**無論 timeline
+# 上有什麼留言**，裁決都寫不出來。用真實閘門（不套 `simulated_preflight_writer` 的登記表，
+# 登記表預設為空即走真實閘門）。
+
+
+def _preflight_lookalike(card_id: str, sha: str, *, extra_lines: tuple[str, ...] = ()) -> str:
+    """一則「長得像受管轄 preflight pass event」的留言。任何人都打得出來——這正是重點。"""
+    return "\n".join(
+        [
+            "## Preflight pass",
+            "",
+            "```yaml",
+            "wf_preflight_pass: v1",
+            f"card_id: {card_id}",
+            f"source_sha: {sha}",
+            "preflight_passed: true",
+            *extra_lines,
+            "```",
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_lines, label",
+    [
+        ((), "查核者的原始重現：四欄，連 event_url 都沒有"),
+        (('event_url: "https://github.com/acme/demo/issues/1#issuecomment-1"',), "補上 event_url"),
+        (
+            (
+                "event_id: 018f-dead-beef",
+                "type: handoff-accepted",
+                "actor: ruan6047",
+                "occurred_at: 2026-08-12T21:00:00+08:00",
+                "state_version: 7",
+                "iteration: 4",
+                'evidence: "pytest 全綠"',
+                'event_url: "https://github.com/acme/demo/issues/1#issuecomment-1"',
+            ),
+            "補齊 canonical §4.1 的整組 lifecycle envelope",
+        ),
+    ],
+)
+def test_no_lookalike_comment_unlocks_the_write(
+    fake_runner, tmp_path, capsys, monkeypatch, extra_lines, label
+):
+    """補欄位不會讓留言變成受管轄事件——「受管轄」是通道屬性，不是內文屬性。"""
+    # 「宣告成功前先核執行身分」：明確把閘門還原成 src 的真身，不倚賴模擬版的 fallthrough。
+    monkeypatch.setattr(review_cmd, "require_preflight_basis", require_preflight_basis)
+    open_card("R4-CARD1", runner=None)
+    item = card_item(fake_runner, "R4-CARD1")
+    fake_runner.execute(
+        [
+            "issue", "comment", str(item.issue_number), "--repo", REPO,
+            "--body", _preflight_lookalike("R4-CARD1", SHA, extra_lines=extra_lines),
+        ]
+    )
+    before = card_item(fake_runner, "R4-CARD1")
+
+    assert _counting_review(tmp_path, "R4-CARD1", SHA, "R4-CARD1-R1-01") == 2, label
+    err = capsys.readouterr().err
+    assert "不建立 review event" in err
+    assert "structurally-unavailable" in err  # 恆拒的成因寫在明面上
+    assert verdict_comments(fake_runner, "R4-CARD1") == []
+    after = card_item(fake_runner, "R4-CARD1")
+    assert after.fields.get("交付狀態") == before.fields.get("交付狀態")
+    assert after.body == before.body
 
 
 
