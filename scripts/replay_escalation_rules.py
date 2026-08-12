@@ -25,8 +25,8 @@
      標示為構造。
   E. `escalation-resolution`（§4「`escalate` 之後的第三種結果」／§5 七款）：escalate
      之後需求方裁定維持同執行者的表示法。含重建命題的正例、`continued_owner` 缺項
-     對照、owner 雙相檢查的**初稿對照組**、沿用的三項事實比對、連續沿用被拒，以及
-     `authorization_binding` 三態。全部明確標示為構造。
+     對照、owner 雙相檢查的**初稿對照組**、沿用的三項事實比對、連續沿用被拒、
+     `authorization_binding` 三態，以及該欄的**來源檢查**（E8）。全部標示為構造。
 
 --------------------------------------------------------------------------
 E 的宣稱界線
@@ -36,11 +36,19 @@ E 段證明的是**規則對結構化欄位有鑑別力**，與 D2／D3 同一�
 
 它**不**證明：某一則真實 GitHub 留言的現行原文已被讀取核對。
 
-它也**不**能證明授權款有實質保證——恰恰相反，E6 是用來**證明它今天沒有**：
+它也**不**能證明授權款有實質保證——恰恰相反，E7 是用來**證明它今天沒有**：
 `derive_authorization_binding()` 在本 repo 的參數下恆回 `structurally-vacuous`
 （需求方帳號同屬被授權 writer 集合，且執行者／查核者不是平台帳號）。該三態測試
 的用途是把「這個檢查今天分不開任何兩方」變成一個會 FAIL 的斷言，而不是讓恆真
-偽裝成通過。轉為 `substantive` 的條件同樣以斷言釘住（E6 第一例）。
+偽裝成通過。轉為 `substantive` 的條件同樣以斷言釘住。
+
+E8 補上前一版漏掉的那一半（`WF-ESCALATION-RESOLUTION-GAP1-R1-001`）：前一版只檢查
+`derive_authorization_binding(ctx)` 的**回傳值落在枚舉內**，從不比對事件欄位——
+那證明的是函式不會回傳垃圾，不是事件流不接受手填，且 `RES()` 根本不產出該欄。
+修訂後把該欄的**來源**顯式建模（adapter 加蓋 vs 提交面自帶），三款分開驗。其中
+「手填成與導出值恰好相同的值」是分水嶺案例：值比對會通過，唯一擋得住它的是來源
+檢查——E8 對此逐條斷言，並附 `binding_check="pre-fix-enum-only"` 對照組證明三個
+反例在前一版寫法下全部被放行。
 
 E3 是**對照組驅動**的：同一條事件流分別以 `owner_check="two-phase"`（修訂後）與
 `owner_check="draft-single-phase"`（初稿）跑。初稿把「`continued_owner` 逐字等於
@@ -259,7 +267,15 @@ RESOLUTION_CONDITIONS = (
     "carry_forcing_set_identical",  # 6. 兩則 checkpoint 的強制成因集合相同
     "carry_no_new_occurrence",      # 6. 第一條件根因的 occurrence 累計數相同
     "carry_cond2_subset",           # 6. 第二條件觸發集合為子集
-    "auth_binding_derived",         # 7. authorization_binding 由 adapter 導出，不得手填
+    # 7 = authorization_binding：adapter 加蓋的欄位，不屬提交面。三款各自獨立——
+    #   present        擋缺欄／省略；
+    #   not_hand_filled 擋提交面自帶此鍵（**驗來源**）；
+    #   matches_derived 擋值與導出結果不符（驗值）。
+    # 只有值檢查是不夠的：手填成恰好正確的值時 matches_derived 會通過，唯一擋得住
+    # 它的是來源檢查。兩者故意分開，不合併為一款。
+    "auth_binding_present",
+    "auth_binding_not_hand_filled",
+    "auth_binding_matches_derived",
 )
 
 # GitHub login 的形狀。用來判定一個身分是不是**可逐字比對的平台帳號**——
@@ -486,12 +502,21 @@ def CP(deferred=None):
 def RES(res_id, checkpoint_trigger, *, owner=E_OWNER, basis="fresh-ruling",
         resolved_by=None, ruling_comment_id=None, ruling_url=None,
         carried_from=None, carried_by=None, resolution="continue-same-executor",
-        drop=()):
+        drop=(), hand_filled=None, adapter_stamps=True):
     """`escalation-resolution` 事件（§5）。
 
     `checkpoint_trigger` 以被解除 checkpoint 的 trigger label 指涉（本引擎以 label
     當 checkpoint 的識別，等價於 §5 的 `checkpoint_ref` ＋ `trigger_attempt_id`）。
     `drop` 供反例：把指定欄位抹成 None，用來證明該欄是必要成分。
+
+    `authorization_binding` 的**來源**在本 fixture 中被顯式建模，因為 §5 第 7 款驗的
+    是來源而非值：
+
+      * 預設（`hand_filled=None`、`adapter_stamps=True`）：提交面不含此鍵，adapter
+        於受理時加蓋導出值 → `_binding_source="adapter"`，合規。
+      * `hand_filled=<值>`：**提交面自帶此鍵**（寫入者手填）→ `_binding_source="writer"`。
+        不論該值是否恰好等於導出值都不合規——這是本款與純值比對的分水嶺。
+      * `adapter_stamps=False`：事件讀到時根本沒有此欄（缺欄／省略）。
     """
     ev = {"kind": "resolution", "id": res_id,
           "checkpoint_trigger": checkpoint_trigger,
@@ -501,7 +526,11 @@ def RES(res_id, checkpoint_trigger, *, owner=E_OWNER, basis="fresh-ruling",
           "resolution_ruling_url": (
               ruling_url if ruling_url is not None
               else (ruling_comment_id and ruling_url_of(ruling_comment_id))),
-          "carried_from": carried_from, "carried_by": carried_by}
+          "carried_from": carried_from, "carried_by": carried_by,
+          "_adapter_stamps": adapter_stamps}
+    if hand_filled is not None:
+        ev["authorization_binding"] = hand_filled
+        ev["_binding_source"] = "writer"
     for k in drop:
         ev[k] = None
     return ev
@@ -670,7 +699,8 @@ def _defer_conditions(entry, fid, carry, prev_deferred, ctx, dispatches, trigger
 
 
 def _resolution_conditions(ev, cp, cps, ctx, comments, verdict_urls, used_sources,
-                           resolutions, owner_check, next_owner_at_write, epoch):
+                           resolutions, owner_check, next_owner_at_write, epoch,
+                           binding_check="validated"):
     """§5 `escalation-resolution` 的七款，逐項具名。
 
     `next_owner_at_write` 是**初稿對照組**專用：初稿把第 3 款寫成單相的「逐字等於
@@ -723,9 +753,22 @@ def _resolution_conditions(ev, cp, cps, ctx, comments, verdict_urls, used_source
         "carry_cond2_subset": (
             bool(src_cp) and bool(cp) and cp.triggering <= src_cp.triggering
             if is_carried else True),
-        "auth_binding_derived": derive_authorization_binding(ctx) in (
-            "substantive", "structurally-vacuous"),
+        # 7：三款分開驗。present／matches_derived 看事件**欄位**，
+        # not_hand_filled 看事件的**來源**——後者是唯一擋得住「手填成正確值」的一款。
+        "auth_binding_present": "authorization_binding" in ev,
+        "auth_binding_not_hand_filled": ev.get("_binding_source") != "writer",
+        "auth_binding_matches_derived": (
+            ev.get("authorization_binding") == derive_authorization_binding(ctx)),
     }
+    if binding_check == "pre-fix-enum-only":
+        # 【對照組】41a9f41 當時的寫法：只檢查 derive_authorization_binding(ctx) 的
+        # **回傳值落在枚舉內**，從不比對事件欄位。那證明的是函式不會回傳垃圾，
+        # 不是事件流不接受手填——故缺欄與兩種手填在此模式下全部放行。
+        legacy = derive_authorization_binding(ctx) in (
+            "substantive", "structurally-vacuous")
+        for k in ("auth_binding_present", "auth_binding_not_hand_filled",
+                  "auth_binding_matches_derived"):
+            conds[k] = legacy
     if owner_check == "draft-single-phase":
         # 初稿：把第 3 款寫成「逐字等於下一個 attempt 的 owner」，於寫入當下求值。
         conds["owner_declared"] = (
@@ -735,11 +778,13 @@ def _resolution_conditions(ev, cp, cps, ctx, comments, verdict_urls, used_source
 
 
 def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None,
-           owner_check="two-phase"):
+           owner_check="two-phase", binding_check="validated"):
     """走一遍事件流，回傳 {trigger_label: Checkpoint} 與結構性問題清單。
 
     `owner_check` 只影響 §5 第 3 款的求值時點：`two-phase` 為修訂後條文，
     `draft-single-phase` 重現初稿（E3 的對照組）。
+    `binding_check` 只影響 §5 第 7 款：`validated` 為修訂後三款，
+    `pre-fix-enum-only` 重現 41a9f41 的寫法（E8 的對照組）。
     """
     ctx = ctx or CTX
     state: dict[str, dict] = {}
@@ -882,18 +927,27 @@ def replay(events, *, defeasible_cond1=True, allow_defer=True, ctx=None,
 
         elif kind == "resolution":
             cp = cps.get(ev.get("checkpoint_trigger"))
+            # §5 第 7 款：adapter 於**受理時**加蓋 authorization_binding，且只在
+            # 提交面沒有自帶此鍵時才蓋。加蓋發生在校驗之前，故校驗看得到事件的
+            # 實際欄位與來源——先前的寫法是校驗通過**之後**才把導出值貼上投影，
+            # 於是這一款從來沒有被驗過（R1-001）。
+            ev = dict(ev)
+            if "authorization_binding" not in ev and ev.get("_adapter_stamps", True):
+                ev["authorization_binding"] = derive_authorization_binding(ctx)
+                ev["_binding_source"] = "adapter"
             # 初稿對照組：第 3 款於寫入當下對「下一個 attempt」求值。裁定寫入時它
             # 尚不存在，故 next_owner_at_write 為 None，該款恆真——這正是要證明的。
             nxt = None
             conds = _resolution_conditions(
                 ev, cp, cps, ctx, comments, verdict_urls, used_sources,
-                resolutions, owner_check, nxt, epoch)
+                resolutions, owner_check, nxt, epoch, binding_check)
             resolutions[ev["id"]] = ev
             if cp is not None:
                 cp.resolution_audit[ev["id"]] = conds
             if all(conds.values()):
-                cp.resolution = dict(
-                    ev, authorization_binding=derive_authorization_binding(ctx))
+                # 投影**就是**已加蓋的事件本身，不再另行貼值——否則消費者讀到的
+                # 值與被校驗的值可以不同源。
+                cp.resolution = ev
                 declared_owner = ev["continued_owner"]
                 if ev.get("resolution_basis") == "carried-forward":
                     used_sources.add(ev["carried_from"])
@@ -1239,7 +1293,6 @@ E_NOT_EXERCISED = [
     "resolution_value（列舉外的取值 —— 未涵蓋）",
     "carried_source_unused（同一 fresh-ruling 被兩則沿用 —— 未涵蓋）",
     "carried_by_recorded（缺 carried_by —— 未涵蓋）",
-    "auth_binding_derived（導出值恆在列舉內，本段以 E6 直接驗導出函式）",
 ]
 
 
@@ -1277,11 +1330,15 @@ def _e_prefix(*, ruling_author=None, bind=True):
 
 
 def e_base_stream(*, ruling_author=None, bind=True, next_owner=E_OWNER,
-                  ruling_comment_id=E_RULING_ID, drop=(), resolved_by=None):
-    """E1–E3：條件成立 → escalate → 需求方 continue → 下一輪。"""
+                  ruling_comment_id=E_RULING_ID, drop=(), resolved_by=None,
+                  **res_kwargs):
+    """E1–E4／E8：條件成立 → escalate → 需求方 continue → 下一輪。
+
+    多餘的 kwargs 原樣轉給 `RES()`（E8 用它注入 `hand_filled`／`adapter_stamps`）。
+    """
     return _e_prefix(ruling_author=ruling_author, bind=bind) + [
         RES("RES1", "R3", ruling_comment_id=ruling_comment_id, drop=drop,
-            resolved_by=resolved_by),
+            resolved_by=resolved_by, **res_kwargs),
         A("R4", owner=next_owner, counted=False),
     ]
 
@@ -1696,9 +1753,11 @@ def main() -> int:
          bool(r1) and r1["continued_owner"] == E_OWNER),
         ("E1：僅憑事件流可重建『是誰決定的』",
          bool(r1) and r1["resolved_by"] == CTX_E["requester"]),
-        ("E1：authorization_binding 由 adapter 導出，且在本 repo 參數下如實記為 "
-         "structurally-vacuous（不讓恆真偽裝成通過）",
-         bool(r1) and r1["authorization_binding"] == "structurally-vacuous"),
+        ("E1：authorization_binding 由 adapter 加蓋於**事件本身**（來源為 adapter、"
+         "非提交面自帶），且在本 repo 參數下如實記為 structurally-vacuous"
+         "（不讓恆真偽裝成通過）",
+         bool(r1) and r1["authorization_binding"] == "structurally-vacuous"
+         and r1["_binding_source"] == "adapter"),
     ]
 
     # E2：continued_owner 是表示法的必要成分
@@ -1803,6 +1862,62 @@ def main() -> int:
              ctx_with(requester="requester-acct", writer_accounts=("pm-bot",),
                       owner=E_OWNER, reviewers=(E_REVIEWER,))) == "structurally-vacuous"),
     ]
+    # E8：authorization_binding 是 adapter 加蓋的欄位——驗來源，不只驗值
+    # （WF-ESCALATION-RESOLUTION-GAP1-R1-001）
+    print("\n===== E8. authorization_binding 的來源檢查【構造】=====")
+    e_miss, _ = replay(e_base_stream(adapter_stamps=False), ctx=CTX_E)
+    e_hf_vac, _ = replay(
+        e_base_stream(hand_filled="structurally-vacuous"), ctx=CTX_E)
+    e_hf_sub, _ = replay(e_base_stream(hand_filled="substantive"), ctx=CTX_E)
+    derived_e = derive_authorization_binding(CTX_E)
+    print(f"  adapter 導出值：{derived_e}")
+    for nm, cps_ in (("缺欄／省略", e_miss),
+                     ("手填 structurally-vacuous（與導出值相同）", e_hf_vac),
+                     ("手填 substantive（與導出值不同）", e_hf_sub)):
+        print(f"  {nm} → 被打掉的款={cps_['R3'].failed_resolution_conditions('RES1')}")
+    checks += [
+        # 缺欄時 matches_derived 一併失效（None ≠ 導出值），這是正確行為，不做隔離：
+        # 若為了讓失效款次只剩一款而把 matches_derived 在缺欄時判為 True，那就是
+        # 「該物不存在時條件恆真」——正是本卡通篇在反對的形狀。故如實斷言兩款。
+        ("E8：缺欄／省略 → 無效；present 與 matches_derived 兩款同時失效"
+         "（不為了漂亮的隔離而讓 matches_derived 在欄位不存在時恆真）",
+         e_miss["R3"].failed_resolution_conditions("RES1")
+         == ["auth_binding_present", "auth_binding_matches_derived"]),
+        ("E8：手填 substantive（值與導出不符）→ 無效，來源與值兩款同時失效",
+         e_hf_sub["R3"].failed_resolution_conditions("RES1")
+         == ["auth_binding_not_hand_filled", "auth_binding_matches_derived"]),
+        ("E8：**手填 structurally-vacuous → 無效，且失效的恰為來源一款**。"
+         "該值與 adapter 導出值逐字相同，故值比對通過——只驗值的實作會放行它，"
+         "唯一擋得住的是來源檢查",
+         e_hf_vac["R3"].failed_resolution_conditions("RES1")
+         == ["auth_binding_not_hand_filled"]),
+        ("E8：上一條的前提為真——手填值確與導出值相同，且值比對這一款確實通過"
+         "（否則「只驗值抓不到」就沒被證明，只是碰巧一起紅）",
+         e_hf_vac["R3"].resolution_audit["RES1"]["auth_binding_matches_derived"] is True
+         and derived_e == "structurally-vacuous"),
+        ("E8：三個反例皆使升級狀態維持，重建不出「維持同執行者」",
+         all(c["R3"].forced and c["R3"].resolution is None
+             for c in (e_miss, e_hf_vac, e_hf_sub))),
+    ]
+    # 對照組：41a9f41 的寫法對這三個反例全部放行
+    pre_miss, _ = replay(e_base_stream(adapter_stamps=False), ctx=CTX_E,
+                         binding_check="pre-fix-enum-only")
+    pre_vac, _ = replay(e_base_stream(hand_filled="structurally-vacuous"), ctx=CTX_E,
+                        binding_check="pre-fix-enum-only")
+    pre_sub, _ = replay(e_base_stream(hand_filled="substantive"), ctx=CTX_E,
+                        binding_check="pre-fix-enum-only")
+    print("  對照組（41a9f41 的 enum-only 寫法）→ 三個反例的裁定是否被放行："
+          + str([c["R3"].resolution is not None for c in (pre_miss, pre_vac, pre_sub)]))
+    checks += [
+        ("E8：**對照組**——41a9f41 只檢查導出函式的回傳值落在枚舉內，從不比對事件欄位，"
+         "故三個反例在該寫法下全部被放行；這證明本輪三款是新裝上的守衛，不是既有行為的複述",
+         all(c["R3"].resolution is not None for c in (pre_miss, pre_vac, pre_sub))),
+        ("E8：對照組——合規事件在兩種寫法下都通過（修正不誤傷）",
+         replay(e_base_stream(), ctx=CTX_E)[0]["R3"].resolution is not None
+         and replay(e_base_stream(), ctx=CTX_E,
+                    binding_check="pre-fix-enum-only")[0]["R3"].resolution is not None),
+    ]
+
     print("\n  E 段**未**打掉的款次（其鑑別力在本段未被證明）：")
     for item in E_NOT_EXERCISED:
         print(f"    - {item}")
@@ -1848,6 +1963,9 @@ def main() -> int:
     print("  9. E 段仍是**規則層**的證明：`escalation-resolution` 今天沒有任何寫入端")
     print("     實作（`wfcli` 的 checkpoint writer 即 ai-workflow#9 未完成），故本段證明")
     print("     的是「規則對結構化欄位有鑑別力」，不是「系統已經照它運作」。")
+    print(" 10. E8 驗的是 `authorization_binding` 的**來源**而非只有值：手填成與 adapter")
+    print("     導出值恰好相同的值時，值比對會通過，唯一擋得住它的是來源檢查。前一版")
+    print("     只驗導出函式的回傳值落在枚舉內，三個反例全部放行（對照組已釘住）。")
 
     # ---- 斷言彙總 ----------------------------------------------------------
     print("\n===== 斷言 =====")

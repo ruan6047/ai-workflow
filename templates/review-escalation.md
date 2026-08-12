@@ -194,7 +194,7 @@ carry set 中每個 finding 在 trigger attempt N 只能落在下列**六格之�
 
 **cutover 前的既有留痕：標為 legacy，不改寫、不追溯補建。** 本 repo 在本節生效前，曾以未定義鍵（`escalation_resolution`／`decided_by`／`counts_toward_escalation`／`attempts_so_far`）在 checkpoint 留言上記錄本情形。依 §5 末段的 `contract-baseline` cutover，那些事件**維持原貌**：不編輯留言（編輯會湮滅原文，見 §5「修復方式有優先序」）、不重發、**尤其不追溯補建任何當時未建立的 checkpoint 或裁定**——事後補一則自稱當時作出的裁定，是本專案明令禁止的形態，本節不為它開任何出口。新條文**只約束 cutover 之後的寫入**，既有留痕不因本節而被追溯判定為合規，也不得被本節用來事後正當化。此後不得再寫那四個鍵；其中 `counts_toward_escalation` 尤其不得出現在 checkpoint 上——§1 表列 checkpoint 不消耗 escalation 額度，§5 把該鍵定義為 review event 依 §3 導出的投影，寫在 checkpoint 上是分類錯誤，且與寫入端既有的 writer-only 鍵同名不同義。
 
-**對 checkpoint writer 實作卡的介面。** 在本節落地前，checkpoint writer 遇到「條件成立、需求方裁定維持同執行者」應 **fail-closed 並指名等待本節**，不得靜默沿用未定義鍵。本節落地後，該實作須據此更新三件事：(1) `escalation-checkpoint` 的 `checkpoint_decision` 維持機械導出，**不因裁定而改寫**——裁定改的是升級狀態，不是 checkpoint 的判定；(2) 新增 `escalation-resolution` 的寫入與校驗（§5 的必填欄與必要條件，含 `carried-forward` 的三項事實未變比對與沿用上限）；(3) `authorization_binding` 由 adapter 導出、**不得手填**，且在 `structurally-vacuous` 時仍須寫出該值而非省略。新增 event type 屬契約變更，其在 `control-plane-contract.md` §2 type 列舉中的登記由該檔管轄，本檔不代為修改。
+**對 checkpoint writer 實作卡的介面。** 在本節落地前，checkpoint writer 遇到「條件成立、需求方裁定維持同執行者」應 **fail-closed 並指名等待本節**，不得靜默沿用未定義鍵。本節落地後，該實作須據此更新三件事：(1) `escalation-checkpoint` 的 `checkpoint_decision` 維持機械導出，**不因裁定而改寫**——裁定改的是升級狀態，不是 checkpoint 的判定；(2) 新增 `escalation-resolution` 的寫入與校驗（§5 的必填欄與必要條件，含 `carried-forward` 的三項事實未變比對與沿用上限）；(3) `authorization_binding` 由 adapter 加蓋、**提交面不得含此鍵**（含即拒收，不論值是否恰好等於導出值），且在 `structurally-vacuous` 時仍須蓋出該值而非省略 —— 校驗須驗來源，只比對值不足以擋下手填成正確值的事件。新增 event type 屬契約變更，其在 `control-plane-contract.md` §2 type 列舉中的登記由該檔管轄，本檔不代為修改。
 
 ## 5. Adapter 必填欄位
 
@@ -260,7 +260,7 @@ resolved_by: <裁定者帳號；fresh-ruling 為卡面「需求：」欄帳號�
 resolution_ruling_url: <fresh-ruling 必填：本卡 issue 的單一留言 URL，且非任何 checkpoint／review event 所在的留言>
 carried_from: <carried-forward 必填：本 epoch 既存且 resolution_basis=fresh-ruling 的 escalation-resolution 事件識別>
 carried_by: <carried-forward 必填：實際寫下本事件的帳號>
-authorization_binding: substantive | structurally-vacuous   # adapter 導出，不得手填
+authorization_binding: substantive | structurally-vacuous   # adapter 加蓋；提交面不得含此鍵
 resolution_rationale: <非空>
 ```
 
@@ -272,7 +272,7 @@ resolution_rationale: <非空>
 4. `resolution` 只有 `continue-same-executor` 一個合法值；本型別不承載 `replan`／`change-executor`，也不得與 `escalation-epoch-change` 附在同一則事件上。
 5. `resolution_basis=fresh-ruling` 另需：`resolved_by` 逐字等於卡面 `需求：` 欄帳號；`resolution_ruling_url` 解析為**本卡 issue 的單一留言 URL**（`…/issues/<本卡 issue 編號>#issuecomment-<數字 id>`）；該留言的 **GitHub comment author** 逐字等於 `resolved_by`；其**現行** body 逐字含 `trigger_attempt_id`；且該留言不是本則 checkpoint 或任何 review event 所在的留言。adapter 取不到 author 或 body 時本 basis 不可用，一律 fail-closed，不得以自述成立。
 6. `resolution_basis=carried-forward` 另需：`carried_from` 指向本 epoch 既存且 `resolution_basis=fresh-ruling` 的事件（不得指向另一則 `carried-forward`）；該事件尚未被援用過；且 §4 的三項事實未變比對（強制成因集合相同、第一條件的根因集合與 occurrence 累計數相同、第二條件的觸發 finding 集合為子集且無新增逾期／連續 defer 成因）全部成立。
-7. `authorization_binding` 由 adapter 依 §4 的兩款定義導出並寫入；手填、缺欄或省略即本則無效。取值 `structurally-vacuous` **不使本則無效**，但消費者不得據以宣稱該裁定經第二方獨立核可。
+7. `authorization_binding` 是 **adapter 加蓋的欄位，不屬提交面**：寫入者提交的 payload **不得含此鍵**，adapter 於受理時依 §4 的兩款定義導出並蓋上；消費者讀到的事件必須帶該欄，且其值逐字等於以該事件當下的宣告重新導出的結果。**提交面含此鍵即本則無效，即使其值恰好等於導出值**——「值恰好對」不是「由 adapter 導出」，本款驗的是**來源**，不是值；只比對值的實作會放行手填成正確值的事件，而那正是本欄要防的東西（同一形狀的既有先例：`counts_toward_escalation` 是 adapter 依 §3 算出的投影，reviewer 不得自行宣告，寫入端已將它列為 writer-only 鍵）。缺欄或省略同樣無效。取值 `structurally-vacuous` **不使本則無效**，但消費者不得據以宣稱該裁定經第二方獨立核可。
 
 有效解除後卡片離開 `🚨已升級`、回到採用專案宣告的執行態（預設 `🔨執行中`）；該狀態轉移須登記於 `control-plane-contract.md` §2，本檔不代為宣告。本 type 不建立 attempt、不計 iteration、不消耗 escalation 額度，也不得用來變更 finding、attempt、epoch 或 `checkpoint_decision`——checkpoint 的判定依 §3／§4 機械導出，**不因本事件而改寫**。新增此 type 屬契約變更，適用範圍依本節末段的 `contract-baseline` cutover 機制；cutover 前的歷史事件維持原貌，不追溯要求補發，也不得被本 type 追溯正當化。
 
