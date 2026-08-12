@@ -19,21 +19,27 @@
 是因為系統只有 ``doctor`` 的**事後對帳**，沒有建立當下的預防。本模組提供該預防的
 **判定**部分。
 
-.. danger::
+**機械執行者**：``commands/assign_cmd.py`` 的 ``run()``。它在**任何**
+``set_field_value``／``set_item_body`` 之前呼叫 ``check_assign_repo_ownership``，
+``blocked`` 時印 ``refusal_message()`` 並 return 5（零寫入）。``assign`` 寫
+``--worktree`` 註冊欄那一刻是 wfcli 全域唯一會讓「某卡的 worktree 屬於某 repo」成為
+事實的地方（全域無任何 ``git worktree add``），所以那裡就是預防的唯一有效位置。
 
-   **本模組是純判定引擎，核心痛點尚未解除。**
+.. warning::
 
-   卡 #57 的原始目標逐字是「讓 worktree 建在錯的 repo 這件事**在建立當下被擋**」。
-   本模組只回傳 ``RepoOwnershipVerdict``，**它不會讓任何指令失敗**。真正的攔截點是
-   ``commands/assign_cmd.py`` 的 ``run()``——``--worktree`` 進入
-   ``format_branch_worktree``／``set_field_value`` 之前必須先呼叫
-   ``check_assign_repo_ownership`` 並在 ``decision == "block"`` 時 return 非 0。
-   該檔**不在 #57 的資源宣告內**，本卡**未接線**。
+   **接線之後，下列三件仍然不成立，寫報告與卡面時不得含混：**
 
-   因此：**在攔截點接上之前，本模組的 ``block`` 判定攔不下任何一次真實派工，
-   任何「已預防／會擋下」的宣稱都是假的。** 唯一為真的宣稱是「判定引擎已可用且
-   已對現況全量實跑」（見 ``enumerate_ownership``／``main``）。凡讀到「會擋下」
-   而想確認機械執行者的人：執行者目前**不存在**。
+   1. **``inferred`` 的判定不是事實。** 目標尚未建立時 slug 由最近存在的祖先推得
+      （``ProbeSource`` 的 ``ancestor_dir``）。2026-08-12 對 Project #4 全量實跑：
+      45 筆 allow 裡有 28 筆是這種推測。它們**不構成**「守衛不誤擋合法配置」的證據，
+      只構成「守衛在慣例配置下不吵」。要事實就得給 ``source_repo``。
+   2. **閘門只管新寫入，不回溯。** 既有註冊（實測 14 筆相對路徑）不會被重新檢查，
+      磁碟上已經存在的跨 repo worktree 也不會因此消失——那兩件事屬對帳與清理，
+      不屬本閘門。要看現況請跑 ``python -m wf_cli.registry``。
+   3. **``origin`` 不是 GitHub 形狀的 repo 一律過不了。** 卡的 repo 來自 Issue URL，
+      worktree 的 repo 來自 origin，兩者要能比對就要求 origin 導得出 ``owner/repo``。
+      origin 是本機路徑（測試沙盒、bare 鏡像）時判不出來 → fail-closed 拒絕。
+      這是刻意的，但它是一條真實的使用限制，不是可忽略的邊角。
 
 **與 ``TasksMdRegistry`` 的隔離**：守衛的輸入（Issue URL、git commondir、來源 repo）
 都是即時事實，**都不經過 ``TASKS.md`` 投影**。這是刻意的——2026-08-12 實測 ``doctor``
@@ -654,8 +660,8 @@ def check_assign_repo_ownership(
 ) -> RepoOwnershipVerdict:
     """``assign`` 用的端到端判定：卡的 Issue URL ＋ ``--worktree`` 路徑 → 判定。
 
-    這是 ``commands/assign_cmd.py`` 應該呼叫的那一個函式（見本檔頂端 danger：
-    呼叫點不在 #57 的資源宣告內，**本卡未接線**）。簽章刻意只吃事實輸入，沒有
+    這是 ``commands/assign_cmd.py::run`` 實際呼叫的那一個函式（已接線；接線後仍不
+    成立的三件事見本檔頂端 warning）。簽章刻意只吃事實輸入，沒有
     ``TasksMdRegistry``／``--repo``／設定檔——投影過時或呼叫端環境設錯都影響不到
     判定。``source_repo`` 是唯一由呼叫端提供的輸入，但它被 git 驗證過（必須是既存
     且有 origin 的 repo）才算數，不是一句宣告。

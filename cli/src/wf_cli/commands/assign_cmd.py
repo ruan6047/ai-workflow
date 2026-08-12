@@ -13,6 +13,17 @@ db:* 資源雙方 db_scope 皆為 read 時可共用。
 寫入通道的「新」入口，遷移期間舊卡尚未補宣告不該讓新卡整個卡死；但目標卡「自己」
 的宣告解析失敗則直接拒絕（fail closed on self）。
 
+**跨 repo 歸屬閘門**（WF-WORKTREE-REPO-OWNERSHIP1 / #57）：``assign`` 寫 ``--worktree``
+註冊欄的那一刻，是 wfcli 全域**唯一**會讓「某張卡的 worktree 落在某個 repo」成為事實
+的地方（實測全域沒有任何 ``git worktree add``）。因此預防只能掛在這裡，而且必須排在
+**所有寫入之前**——拒絕時零寫入，不留「owner 已改、worktree 沒改」的半套狀態。
+
+判定引擎在 ``registry.check_assign_repo_ownership``：卡的 repo 只認 Issue URL，
+worktree 的 repo 由 ``git worktree add`` 的**來源 repo** 導出（見 ``registry`` 的
+``ProbeSource``）。**慣例（需求方 2026-08-12 裁定）**：新的 assign 一律給**絕對**
+``--worktree``；若確實從別的 repo 執行 ``git worktree add``，以
+``--worktree-source-repo`` 明示。既有的相對路徑註冊**不回溯檢查**（本閘門只管新寫入）。
+
 **規劃期路由的派工端**（WF-CLI-ROUTING-TIER1 R1-001）：``MODEL_ROUTING.md`` 第 14 行
 後半要求「派工時可依可用性偏離建議，但實際模型與偏離理由記入 claim 事件」。因此
 ``--actual-capability`` 必填（實際模型以能力層級表述，語彙同開卡端；``--assignee``
@@ -44,6 +55,7 @@ from ..project import (
     set_field_value,
     set_item_body,
 )
+from ..registry import check_assign_repo_ownership
 from ..resources import (
     ResourceDeclarationError,
     find_conflicts,
@@ -62,7 +74,20 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("card_id")
     p.add_argument("--assignee", required=True, help="新 owner（帳號／模型@工具）")
     p.add_argument("--branch", required=True)
-    p.add_argument("--worktree", required=True)
+    p.add_argument(
+        "--worktree",
+        required=True,
+        help="worktree 路徑。**請給絕對路徑**（需求方 2026-08-12 裁定）：相對路徑在任何 "
+        "repo 底下都是同一串字、不帶所屬 repo 資訊，跨 repo 歸屬閘門無從判定而會拒絕。",
+    )
+    p.add_argument(
+        "--worktree-source-repo",
+        default=None,
+        metavar="DIR",
+        help="實際會執行 git worktree add 的**來源 repo** 目錄。worktree 建在該 repo 之外"
+        "（canonical §4.5 允許）時必填，否則閘門只能由路徑推測而可能誤擋。它不是 --force："
+        "給了之後仍要通過同一組跨 repo 比對，指錯 repo 照樣被拒。",
+    )
     p.add_argument(
         "--status", default="🚧進行中", help="assign 後的交付狀態；預設 🚧進行中"
     )
@@ -110,6 +135,19 @@ def run(args: argparse.Namespace) -> int:
     if comparison.requires_reason and not deviation_reason:
         print(f"[assign] 拒絕：{comparison.refusal_message()}", file=sys.stderr)
         return 2
+
+    # 跨 repo 歸屬閘門（#57）。與能力閘門同理排在所有 set_field_value／set_item_body
+    # 之前：拒絕時必須零寫入。它也刻意排在資源交集檢查之前——歸屬是「這張卡該不該在
+    # 這個 repo 有 worktree」，比「這個 worktree 跟誰搶資源」更根本，而且它只讀本機
+    # git，不多打一次 API。
+    ownership = check_assign_repo_ownership(
+        issue_url=item.issue_url,
+        worktree_path=args.worktree,
+        source_repo=args.worktree_source_repo,
+    )
+    if ownership.blocked:
+        print(f"[assign] 拒絕：{ownership.refusal_message()}", file=sys.stderr)
+        return 5
 
     conflicts: list[tuple[str, list[str]]] = []
     skipped_unparseable: list[str] = []
