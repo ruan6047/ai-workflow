@@ -14,12 +14,18 @@ db:* 資源雙方 db_scope 皆為 read 時可共用。
 的宣告解析失敗則直接拒絕（fail closed on self）。
 
 **跨 repo 歸屬閘門**（WF-WORKTREE-REPO-OWNERSHIP1 / #57）：``assign`` 寫 ``--worktree``
-註冊欄的那一刻，是 wfcli 全域**唯一**會讓「某張卡的 worktree 落在某個 repo」成為事實
-的地方（實測全域沒有任何 ``git worktree add``）。因此預防只能掛在這裡，而且必須排在
-**所有寫入之前**——拒絕時零寫入，不留「owner 已改、worktree 沒改」的半套狀態。
+註冊欄的那一刻，是 wfcli 全域**唯一**會讓「某張卡的 worktree **登記**屬於某個 repo」
+成為事實的地方（實測全域沒有任何 ``git worktree add``）。因此**登記面**的攔截只能掛在
+這裡，而且必須排在**所有寫入之前**——拒絕時零寫入，不留「owner 已改、worktree 沒改」
+的半套狀態。
+
+⚠️ **射程：本閘門攔的是登記，不是建立**（需求方 2026-08-12 裁定，#57
+issuecomment-5268265532）。人在 shell 直接跑 ``git worktree add`` 不經過 ``wfcli``，
+本閘門看不到也擋不住；先建立再登記時被擋下的是登記那一步，錯置的目錄已經在磁碟上。
+建立面的預防**今天沒有任何卡承接**，逐字條款與現況見 ``registry`` 模組頂端的 danger。
 
 判定引擎在 ``registry.check_assign_repo_ownership``：卡的 repo 只認 Issue URL，
-worktree 的 repo 由 ``git worktree add`` 的**來源 repo** 導出（見 ``registry`` 的
+worktree 的 repo 由這筆登記主張的**來源 repo** 導出並經 git 驗證（見 ``registry`` 的
 ``ProbeSource``）。**慣例（需求方 2026-08-12 裁定）**：新的 assign 一律給**絕對**
 ``--worktree``；若確實從別的 repo 執行 ``git worktree add``，以
 ``--worktree-source-repo`` 明示。既有的相對路徑註冊**不回溯檢查**（本閘門只管新寫入）。
@@ -84,9 +90,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "--worktree-source-repo",
         default=None,
         metavar="DIR",
-        help="實際會執行 git worktree add 的**來源 repo** 目錄。worktree 建在該 repo 之外"
-        "（canonical §4.5 允許）時必填，否則閘門只能由路徑推測而可能誤擋。它不是 --force："
-        "給了之後仍要通過同一組跨 repo 比對，指錯 repo 照樣被拒。",
+        help="這筆登記主張的**來源 repo** 目錄（即 git worktree add 會從哪裡執行）。"
+        "worktree 建在該 repo 之外（canonical §4.5 允許）時必填，否則閘門只能由路徑推測"
+        "而可能誤擋。它不是 --force：給了之後仍要通過同一組跨 repo 比對，指錯 repo 照樣被拒。"
+        "閘門會用 git 驗證這個目錄確實是有 GitHub 形狀 origin 的 repo，但**不觀測、也不綁定"
+        "後續真正的 git worktree add**——擋的是登記，不是建立。",
     )
     p.add_argument(
         "--status", default="🚧進行中", help="assign 後的交付狀態；預設 🚧進行中"
@@ -140,6 +148,11 @@ def run(args: argparse.Namespace) -> int:
     # 之前：拒絕時必須零寫入。它也刻意排在資源交集檢查之前——歸屬是「這張卡該不該在
     # 這個 repo 有 worktree」，比「這個 worktree 跟誰搶資源」更根本，而且它只讀本機
     # git，不多打一次 API。
+    #
+    # 射程：擋的是這一筆歸屬**登記**。磁碟上的 git worktree add 不經過這裡，本閘門
+    # 既不觀測也不阻止（模組頂端 danger）。
+    #
+    # blocked 時的 return 5 是「登記被拒」，不是「建立已被阻止」。
     ownership = check_assign_repo_ownership(
         issue_url=item.issue_url,
         worktree_path=args.worktree,

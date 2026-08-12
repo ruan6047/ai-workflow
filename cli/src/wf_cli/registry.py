@@ -13,17 +13,44 @@
 §7「repo 歸屬純導出」的**判定引擎**：
 
     卡的 repo ← Issue URL；worktree 的 repo ← git commondir 的 origin remote；
-    兩者不合 → 跨 repo 建立。
+    兩者不合 → 跨 repo 錯置。
+
+**射程（需求方 2026-08-12 裁定，#57 issuecomment-5268265532）**：本守衛在
+``assign``「**登記** worktree 歸屬」的當下攔截跨 repo 錯置。**它不是建立面的預防，
+本檔任何一句都不得被讀成「``git worktree add`` 建到錯的 repo 會被擋下」。**
 
 §8.3 的真實漂移（cpbl 卡的 worktree 建在 ai-workflow repo 內）之所以能存在數週，
-是因為系統只有 ``doctor`` 的**事後對帳**，沒有建立當下的預防。本模組提供該預防的
-**判定**部分。
+是因為系統只有 ``doctor`` 的**事後對帳**——而該對帳看不見這種形狀（兩個 repo 的頂層
+``git worktree list`` 皆 0 命中）。本模組把「登記一筆跨 repo 歸屬」從沉默變成當場拒絕；
+**「建立一個跨 repo worktree」不在射程內**，見下方 danger。
 
 **機械執行者**：``commands/assign_cmd.py`` 的 ``run()``。它在**任何**
 ``set_field_value``／``set_item_body`` 之前呼叫 ``check_assign_repo_ownership``，
 ``blocked`` 時印 ``refusal_message()`` 並 return 5（零寫入）。``assign`` 寫
-``--worktree`` 註冊欄那一刻是 wfcli 全域唯一會讓「某卡的 worktree 屬於某 repo」成為
-事實的地方（全域無任何 ``git worktree add``），所以那裡就是預防的唯一有效位置。
+``--worktree`` 註冊欄那一刻是 wfcli 全域唯一會讓「某卡的 worktree **登記**屬於某
+repo」成為事實的地方（全域無任何 ``git worktree add``，實測零命中），所以那裡就是
+**登記面**攔截的唯一有效位置。
+
+.. danger::
+
+   **本守衛擋的是登記，不是建立。**
+
+   ``wfcli`` 全域沒有任何 ``git worktree add``（實測零命中），因此人在 shell 裡
+   直接建立 worktree **完全不經過本閘門**：先建立再登記時，被擋下的是登記那一步，
+   磁碟上那個建錯 repo 的目錄已經存在且不會被本閘門移除；建立後**不登記**，本閘門
+   連看都看不到。需求方 2026-08-12 裁定把本卡射程縮為登記面，並將建立面另開承接卡。
+   該裁定明文要求下面這句**逐字保留、不得因射程縮小而軟化**：
+
+       該卡未落地前，本 repo 對「人直接在 shell 建到錯的 repo」沒有任何預防
+
+   同一句在派審詞裡的等義寫法，一併逐字留存：
+
+       該卡未落地前，本 repo 對「人直接在 shell 跑 git worktree add 建到錯的 repo」沒有任何預防
+
+   **承接者的現況（2026-08-13）**：該承接卡**尚未開卡，今天沒有任何卡、任何碼、
+   任何人承接建立面**。是否開卡與何時排程是需求方依 ``docs/ROADMAP.md`` §5 的
+   判斷，不是本卡的交付物，本檔也不得假設它已被排程。在它落地之前，上面那句
+   就是本 repo 在建立面的真實狀態。
 
 .. warning::
 
@@ -33,13 +60,17 @@
       （``ProbeSource`` 的 ``ancestor_dir``）。2026-08-12 對 Project #4 全量實跑：
       45 筆 allow 裡有 28 筆是這種推測。它們**不構成**「守衛不誤擋合法配置」的證據，
       只構成「守衛在慣例配置下不吵」。要事實就得給 ``source_repo``。
-   2. **閘門只管新寫入，不回溯。** 既有註冊（實測 14 筆相對路徑）不會被重新檢查，
-      磁碟上已經存在的跨 repo worktree 也不會因此消失——那兩件事屬對帳與清理，
+   2. **閘門只管新寫入的登記，不回溯。** 既有註冊（實測 14 筆相對路徑）不會被重新
+      檢查，磁碟上已經存在的跨 repo worktree 也不會因此消失——那兩件事屬對帳與清理，
       不屬本閘門。要看現況請跑 ``python -m wf_cli.registry``。
    3. **``origin`` 不是 GitHub 形狀的 repo 一律過不了。** 卡的 repo 來自 Issue URL，
       worktree 的 repo 來自 origin，兩者要能比對就要求 origin 導得出 ``owner/repo``。
       origin 是本機路徑（測試沙盒、bare 鏡像）時判不出來 → fail-closed 拒絕。
       這是刻意的，但它是一條真實的使用限制，不是可忽略的邊角。
+
+   ⚠️ 第 2 條與 danger 的差別要分清楚：第 2 條是**射程內**的已知限制（登記面本身
+   還有沒被覆蓋的登記——既有列不重掃）；danger 講的是**射程外**（建立面整條路徑
+   本閘門碰不到）。前者本卡可以做而選擇不做，後者本卡做不到。
 
 **與 ``TasksMdRegistry`` 的隔離**：守衛的輸入（Issue URL、git commondir、來源 repo）
 都是即時事實，**都不經過 ``TASKS.md`` 投影**。這是刻意的——2026-08-12 實測 ``doctor``
@@ -325,9 +356,16 @@ def run_git_readonly(cwd: Path, args: list[str]) -> str | None:
 
 #: worktree 所屬 repo 的三種取得方式，**權威性由高到低**：
 #:
-#: - ``source_repo``：呼叫端明示「實際會執行 ``git worktree add`` 的來源 repo」。
-#:   這是 git 的真語意——``git -C <src> worktree add <任意路徑>`` 產生的 worktree
-#:   永遠屬於 ``<src>``，**與目標路徑落在磁碟哪裡無關**。
+#: - ``source_repo``：呼叫端明示「這筆登記所主張的來源 repo」。它對應 git 的真語意
+#:   ——``git -C <src> worktree add <任意路徑>`` 產生的 worktree 永遠屬於 ``<src>``，
+#:   **與目標路徑落在磁碟哪裡無關**。
+#:
+#:   ⚠️ **它是被 git 驗證過的宣告，不是被觀測到的建立行為。** 本模組驗的是「這個
+#:   目錄確實是個有 GitHub 形狀 origin 的 repo」，**沒有執行也沒有觀測任何
+#:   ``git worktree add``，更沒有把後續的建立動作綁到它**。因此給了與卡相符的
+#:   ``source_repo`` 取得 allow 之後，仍然可以從別的 repo 直接建立——**那條路徑
+#:   在本卡射程外**（見本檔頂端 danger）。這是登記面守衛的定義，不是漏洞掩飾：
+#:   登記面能保證的上限就是「這筆登記的主張自洽且與卡相符」。
 #: - ``target_dir``：目標路徑**已存在**且本身在某個 git repo 內。worktree 就在那裡，
 #:   這是事實不是推測。
 #: - ``ancestor_dir``：目標尚未建立，改問最近存在的祖先目錄。**這是推測**
@@ -556,13 +594,17 @@ class RepoOwnershipVerdict:
         連結卡表達（來源 repo 的卡在 spec 基線宣告實作卡 Issue URL，反之亦然）。
 
         另有一條**判定層**的出路（R1-02）：判定不成立時補 ``source_repo``。它不是
-        ``--force``——補的是**更權威的事實**，補完照樣要通過同一組比對；``--force``
-        則是繞過比對。這個差別是本守衛刻意沒有 ``--force`` 的理由仍然成立的原因。
+        ``--force``——補的是**更權威的宣告且會被 git 驗證**，補完照樣要通過同一組
+        比對；``--force`` 則是繞過比對。這個差別是本守衛刻意沒有 ``--force`` 的理由
+        仍然成立的原因。
+
+        訊息刻意說「拒絕登記」而不是「已阻止建立」：被擋下的是**這一筆歸屬登記**，
+        磁碟上的 worktree 本閘門既不建立也不移除（射程見本檔頂端 danger）。
         """
         head = {
             "repo_mismatch": (
-                f"worktree 會落在 {self.worktree_repo}，但卡屬於 {self.card_repo}——"
-                "跨 repo 建立 worktree"
+                f"這筆登記會把 worktree 歸給 {self.worktree_repo}，但卡屬於 "
+                f"{self.card_repo}——跨 repo 錯置，拒絕登記"
             ),
             "card_repo_undeterminable": "判不出卡所屬 repo",
             "worktree_repo_undeterminable": "判不出 worktree 目標 repo",
@@ -599,12 +641,16 @@ def check_worktree_repo_ownership(
        誤放的代價是 §8.3 那種**沉默**的錯置——worktree 建在錯的 repo 照樣能寫程式、
        能 commit，數週後才在對帳裡浮出來，而那份對帳自己還會誤報。可偵測的即時
        痛感 vs 不可偵測的長期漂移，只有前者能被修。
-    2. **判不出來的每一種輸入都不是合法穩態，且都可在一分鐘內修好。**
+    2. **判不出來的每一種輸入都可在一分鐘內補齊，補法寫在拒絕訊息裡。**
+       （上一輪這裡寫的是「每一種輸入都不是合法穩態」，**那句是錯的**，R1-02 舉出
+       反例：repo 外的絕對路徑是 canonical §4.5 允許的合法配置。修法是加
+       ``source_repo`` 這條補齊管道，不是繼續宣稱它不合法。）
        ``card_repo_undeterminable`` 只發生在 DraftIssue（卡不在任何 repo 裡——但
        ``assign`` 本來就要把 Log 寫回卡面，正式流程要求真 Issue）；
-       ``worktree_repo_undeterminable`` 只發生在路徑打錯、目標不在任何 git repo 內、
-       或 repo 沒有 origin remote。三者都是「輸入本身有問題」，放行等於用一個
-       壞掉的輸入換一次寫入。
+       ``worktree_repo_undeterminable`` 發生在路徑打錯、目標不在任何 git repo 內、
+       或 repo 沒有 origin remote；``worktree_path_unanchored`` 發生在相對路徑未綁
+       ``base_dir``。三者的補法分別是「改用真 Issue」「修路徑或補 ``source_repo``」
+       「改絕對路徑或補 ``base_dir``／``source_repo``」，都不需要放行一次壞輸入。
     3. **fail-closed 不會被無關的故障觸發。** 卡 repo 來自 ``ItemSnapshot.issue_url``，
        那是 ``assign`` 早已為了別的理由抓下來的同一份資料；GitHub 掛掉時 ``assign``
        在到達本守衛之前就已經失敗。守衛**不新增任何網路相依**——這是 fail-closed
@@ -612,8 +658,11 @@ def check_worktree_repo_ownership(
 
     刻意**沒有** ``--force``／``--allow-cross-repo`` 逃生口：漂移案例的成因不是
     有人想跨 repo，是沒人注意到自己跨了。給逃生口等於把「沒注意到」變成「按一下」。
-    ``source_repo``（R1-02）**不是**逃生口：它補的是更權威的事實，補完仍要通過同一
-    組比對，補錯照樣被擋；``--force`` 則是把比對整個跳過。
+    ``source_repo``（R1-02）**不是**逃生口：它補的是更權威且經 git 驗證的宣告，補完
+    仍要通過同一組比對，補錯照樣被擋；``--force`` 則是把比對整個跳過。
+
+    ⚠️ 本函式判的是**一筆登記**該不該寫下去。它不觀測、也擋不住磁碟上的建立動作
+    （見本檔頂端 danger）。
     """
     if card_repo is None:
         return RepoOwnershipVerdict(
@@ -661,10 +710,12 @@ def check_assign_repo_ownership(
     """``assign`` 用的端到端判定：卡的 Issue URL ＋ ``--worktree`` 路徑 → 判定。
 
     這是 ``commands/assign_cmd.py::run`` 實際呼叫的那一個函式（已接線；接線後仍不
-    成立的三件事見本檔頂端 warning）。簽章刻意只吃事實輸入，沒有
+    成立的三件事見本檔頂端 warning，射程邊界見 danger）。簽章刻意只吃事實輸入，沒有
     ``TasksMdRegistry``／``--repo``／設定檔——投影過時或呼叫端環境設錯都影響不到
-    判定。``source_repo`` 是唯一由呼叫端提供的輸入，但它被 git 驗證過（必須是既存
-    且有 origin 的 repo）才算數，不是一句宣告。
+    判定。``source_repo`` 是唯一由呼叫端提供的輸入，它必須通過 git 驗證（既存且有
+    GitHub 形狀 origin 的 repo）才算數；但**驗證的是那個目錄的身分，不是後續真的
+    從那裡建立**——本函式回 ``allow`` 的意思是「這筆登記可以寫下去」，不是「建立
+    行為已被綁定」。
     """
     return check_worktree_repo_ownership(
         card_repo=card_repo_from_issue_url(issue_url),

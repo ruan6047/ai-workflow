@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import wf_cli.registry
 from wf_cli.registry import (
     OWNERSHIP_DECISIONS,
     RepoOwnershipVerdict,
@@ -117,6 +118,52 @@ def test_registered_card_repo_defaults_to_none_from_tasks_md(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # 跨 repo 歸屬守衛（#57）
 # ---------------------------------------------------------------------------
+
+#: 需求方 2026-08-12 裁定（#57 issuecomment-5268265532）明文要求逐字保留在
+#: ``registry`` 模組頂端 danger 區塊的句子。射程從「建立面預防」縮為「登記面攔截」
+#: 之後，這句是唯一還在描述建立面現況的條款，**不得因縮射程而軟化或刪除**。
+#: 卡面版與派審詞版字面不同（後者多了 ``git worktree add``），兩者都要在。
+REQUIRED_DANGER_SENTENCES = (
+    "該卡未落地前，本 repo 對「人直接在 shell 建到錯的 repo」沒有任何預防",
+    "該卡未落地前，本 repo 對「人直接在 shell 跑 git worktree add 建到錯的 repo」沒有任何預防",
+)
+
+
+@pytest.mark.parametrize("sentence", REQUIRED_DANGER_SENTENCES)
+def test_module_danger_block_keeps_the_mandated_sentence_verbatim(sentence):
+    """裁定要求的句子必須逐字在模組 docstring 裡。
+
+    這條是**該裁定唯一的機械執行者**：句子沒有執行者就只是句子，下一個人重寫
+    docstring 時不會有任何東西響。子字串比對刻意不做正規化（不 strip、不換行折疊、
+    不去標點），因為「逐字」的判準就是逐字。
+    """
+    doc = wf_cli.registry.__doc__ or ""
+    assert sentence in doc
+
+
+def test_module_docstring_does_not_claim_creation_time_prevention():
+    """射程縮小後的反向釘死：不得再出現「建立當下的預防」這類宣稱。
+
+    本卡 R2-01 的處置是縮射程 ＋ 同步修正宣稱。宣稱回流是最容易發生的退化——
+    有人補一段說明時順手寫回舊框架——所以這裡把被禁的字面列出來擋住。
+    """
+    doc = wf_cli.registry.__doc__ or ""
+    for banned in ("建立當下的預防", "建立當下被擋", "預防的唯一有效位置"):
+        assert banned not in doc, f"射程外的宣稱回流：{banned}"
+
+
+def test_refusal_message_says_registration_rejected_not_creation_prevented():
+    """拒絕訊息講的是「拒絕登記」，不得讓讀的人以為建立已被阻止。"""
+    verdict = RepoOwnershipVerdict(
+        reason_code="repo_mismatch",
+        card_repo="ruan6047/cpbl-analytics",
+        worktree_repo="ruan6047/ai-workflow",
+        detail="commondir 的 origin → ruan6047/ai-workflow",
+    )
+    msg = verdict.refusal_message()
+    assert "拒絕登記" in msg
+    assert "阻止" not in msg and "已預防" not in msg
+
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
@@ -273,7 +320,12 @@ def test_real_cross_repo_existing_worktree_is_blocked(two_repos):
 
 
 def test_real_cross_repo_blocked_before_worktree_exists(two_repos):
-    """assign 早於 ``git worktree add``：路徑還不存在時就要能擋（否則預防太晚）。"""
+    """登記早於 ``git worktree add``：路徑還不存在時就要能擋下這筆登記。
+
+    生產慣例是先 ``assign`` 登記、再由人去建立，所以「目標尚未存在」是常態而非邊角；
+    此時仍判不出來就等於閘門在最常見的情形下失效。**它擋下的是登記，不是建立**
+    （射程見 ``registry`` 模組頂端 danger）。
+    """
     aiwf, _cpbl = two_repos
     not_created = aiwf / ".claude" / "worktrees" / "not-created-yet"
     assert not not_created.exists()

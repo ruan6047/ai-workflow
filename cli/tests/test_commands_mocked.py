@@ -630,7 +630,11 @@ def test_assign_allowed_when_conflicting_card_is_terminal(fake_runner, source_re
 
 
 # ---------------------------------------------------------------------------
-# 跨 repo 歸屬閘門（WF-WORKTREE-REPO-OWNERSHIP1 / #57）——攔截點在 assign
+# 跨 repo 歸屬閘門（WF-WORKTREE-REPO-OWNERSHIP1 / #57）
+#
+# 攔截點在 assign 寫**登記**欄那一刻。以下每一條驗的都是「這筆登記寫不寫得下去」，
+# 沒有任何一條驗「磁碟上的 git worktree add 有沒有被阻止」——那在本卡射程外
+# （需求方 2026-08-12 裁定，射程與逐字條款見 registry 模組頂端 danger）。
 # ---------------------------------------------------------------------------
 
 
@@ -645,11 +649,15 @@ def _other_repo(tmp_path: Path) -> Path:
 def test_assign_blocks_cross_repo_worktree_before_any_mutation(
     fake_runner, tmp_path, capsys, monkeypatch
 ):
-    """核心痛點的直接回放：卡屬 acme/workflow，worktree 卻要建在 acme/other-project。
+    """核心痛點（縮射程後）的直接回放：卡屬 acme/workflow，這筆登記卻主張 worktree
+    屬於 acme/other-project → 登記被拒。
 
     只驗回傳碼不算數——這裡同時用 ``_RecordingRunner`` 證明**整條拒絕路徑一次
     mutation 都沒有**，以及卡面欄位與 body 一字未動。閘門若排在任何 set_field_value
     之後，這條會紅。
+
+    ⚠️ 它證明的是「錯的歸屬登記寫不進看板」。它**不**證明磁碟上不會出現跨 repo
+    worktree——本測試從頭到尾沒有跑過 ``git worktree add``。
     """
     run_cli(_open_for_assign("CROSS-REPO1"))
     project = resolve_project(fake_runner, "acme", 1)
