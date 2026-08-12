@@ -15,62 +15,91 @@
     卡的 repo ← Issue URL；worktree 的 repo ← git commondir 的 origin remote；
     兩者不合 → 跨 repo 錯置。
 
-**射程（需求方 2026-08-12 裁定，#57 issuecomment-5268265532）**：本守衛在
-``assign``「**登記** worktree 歸屬」的當下攔截跨 repo 錯置。**它不是建立面的預防，
-本檔任何一句都不得被讀成「``git worktree add`` 建到錯的 repo 會被擋下」。**
+**承諾範圍（需求方 2026-08-13 二次裁定，#57 issuecomment-5273953073）**：本守衛承諾的是
+``wfcli assign`` **這一條路徑**上的跨 repo 歸屬檢查，**不是「登記面已被保護」**。
+本檔任何一句都不得被讀成「``git worktree add`` 建到錯的 repo 會被擋下」，
+也不得被讀成「``分支worktree`` 欄不可能被寫成跨 repo 的值」。
 
 §8.3 的真實漂移（cpbl 卡的 worktree 建在 ai-workflow repo 內）之所以能存在數週，
 是因為系統只有 ``doctor`` 的**事後對帳**——而該對帳看不見這種形狀（兩個 repo 的頂層
-``git worktree list`` 皆 0 命中）。本模組把「登記一筆跨 repo 歸屬」從沉默變成當場拒絕；
-**「建立一個跨 repo worktree」不在射程內**，見下方 danger。
+``git worktree list`` 皆 0 命中）。本模組把「**經 assign** 登記一筆跨 repo 歸屬」從沉默
+變成當場拒絕；射程外的三條路徑列在下方 danger，**它們是已知限制，不是待辦**。
 
 **機械執行者**：``commands/assign_cmd.py`` 的 ``run()``。它在**任何**
 ``set_field_value``／``set_item_body`` 之前呼叫 ``check_assign_repo_ownership``，
-``blocked`` 時印 ``refusal_message()`` 並 return 5（零寫入）。``assign`` 寫
-``--worktree`` 註冊欄那一刻是 wfcli 全域唯一會讓「某卡的 worktree **登記**屬於某
-repo」成為事實的地方（全域無任何 ``git worktree add``，實測零命中），所以那裡就是
-**登記面**攔截的唯一有效位置。
+``blocked`` 時印 ``refusal_message()`` 並 return 5（零寫入）。``assign`` 是 wfcli 全域
+唯一會寫 ``分支worktree`` 欄的指令（全域無任何 ``git worktree add``，實測零命中），
+所以那裡就是 ``wfcli`` **這條路徑上**唯一有效的攔截位置——**「wfcli 這條路徑」不等於
+「所有寫入路徑」**，見 danger 第 2 條。
 
 .. danger::
 
-   **本守衛擋的是登記，不是建立。**
+   **本守衛擋的是 ``wfcli assign`` 這一條路徑上的登記；不是登記面整體，更不是建立。**
 
-   ``wfcli`` 全域沒有任何 ``git worktree add``（實測零命中），因此人在 shell 裡
-   直接建立 worktree **完全不經過本閘門**：先建立再登記時，被擋下的是登記那一步，
-   磁碟上那個建錯 repo 的目錄已經存在且不會被本閘門移除；建立後**不登記**，本閘門
-   連看都看不到。需求方 2026-08-12 裁定把本卡射程縮為登記面，並將建立面另開承接卡。
-   該裁定明文要求下面這句**逐字保留、不得因射程縮小而軟化**：
+   需求方 2026-08-13 二次裁定明列**三條射程外的路徑，皆為已知限制而非待辦**：
 
-       該卡未落地前，本 repo 對「人直接在 shell 建到錯的 repo」沒有任何預防
+   1. **``git worktree add`` 直接建立。** ``wfcli`` 全域沒有任何 ``git worktree add``
+      （實測零命中），因此人在 shell 裡直接建立 worktree **完全不經過本閘門**：
+      先建立再登記時，被擋下的是登記那一步，磁碟上那個建錯 repo 的目錄已經存在且
+      不會被本閘門移除；建立後**不登記**，本閘門連看都看不到。該裁定明文要求下面
+      這句**逐字保留、不得因射程縮小而軟化**：
 
-   同一句在派審詞裡的等義寫法，一併逐字留存：
+          該卡未落地前，本 repo 對「人直接在 shell 建到錯的 repo」沒有任何預防
 
-       該卡未落地前，本 repo 對「人直接在 shell 跑 git worktree add 建到錯的 repo」沒有任何預防
+      同一句在派審詞裡的等義寫法，一併逐字留存：
 
-   **承接者的現況（2026-08-13）**：該承接卡**尚未開卡，今天沒有任何卡、任何碼、
-   任何人承接建立面**。是否開卡與何時排程是需求方依 ``docs/ROADMAP.md`` §5 的
-   判斷，不是本卡的交付物，本檔也不得假設它已被排程。在它落地之前，上面那句
-   就是本 repo 在建立面的真實狀態。
+          該卡未落地前，本 repo 對「人直接在 shell 跑 git worktree add 建到錯的 repo」沒有任何預防
+
+   2. **Project 欄位直接寫入。** ``分支worktree`` 是 GitHub Project 的 **TEXT 欄**，
+      web UI、``gh project item-edit``、GraphQL 三條路都能直接改寫它，一次都不會經過
+      本閘門。「唯一寫入通道＝wfcli」是**治理慣例，不是機制**；而 Project 的欄位權限
+      是 **setting、不是檔案、不在資源模型的值域裡**（``docs/ROADMAP.md`` §2），
+      本卡不可能為它宣告寫入集、也就不可能為它加執行者。需求方 2026-08-13 要求這一條
+      以與上面**同等的強度**寫下：
+
+          本 repo 對「有人繞過 wfcli 直接改寫 Project 的分支worktree 欄」沒有任何預防
+
+   3. **既有登記不重掃。** 本閘門只在新的 assign 寫入時生效；Project 上已經存在的
+      註冊列（本輪實測 64 筆）不會因為本卡落地而被重新檢查，磁碟上已經存在的跨 repo
+      worktree 也不會因此消失。要看現況只能自己跑 ``python -m wf_cli.registry``——
+      **那是枚舉器，不是執行者**（``docs/ROADMAP.md`` §0：沒有執行者的偵測器不算
+      達成目標 1）。
+
+   ⚠️ **兩次縮射程的形狀完全相同：``wfcli`` 是慣例不是機制。** 第 1 條與第 2 條不是
+   兩個不同的問題，是同一句話在建立面與登記面各講一次。讀本檔的人若想加第三個閘門，
+   先問它守的是不是又一條「只有守規矩的人會走」的路。
+
+   **承接者的現況（2026-08-13）**：建立面的承接卡**尚未開卡，今天沒有任何卡、任何碼、
+   任何人承接建立面**；Project 欄位直接寫入依裁定**不開卡**（結構上拿不到執行者）。
+   是否開卡與何時排程是需求方依 ``docs/ROADMAP.md`` §5 的判斷，不是本卡的交付物，
+   本檔也不得假設它已被排程。在它落地之前，上面那些句子就是本 repo 的真實狀態。
 
 .. warning::
 
    **接線之後，下列三件仍然不成立，寫報告與卡面時不得含混：**
 
-   1. **``inferred`` 的判定不是事實。** 目標尚未建立時 slug 由最近存在的祖先推得
-      （``ProbeSource`` 的 ``ancestor_dir``）。2026-08-12 對 Project #4 全量實跑：
-      45 筆 allow 裡有 28 筆是這種推測。它們**不構成**「守衛不誤擋合法配置」的證據，
-      只構成「守衛在慣例配置下不吵」。要事實就得給 ``source_repo``。
-   2. **閘門只管新寫入的登記，不回溯。** 既有註冊（實測 14 筆相對路徑）不會被重新
-      檢查，磁碟上已經存在的跨 repo worktree 也不會因此消失——那兩件事屬對帳與清理，
-      不屬本閘門。要看現況請跑 ``python -m wf_cli.registry``。
+   1. **``allow`` 不是「歸屬已被驗證」，只是「這筆登記的主張自洽且與卡相符」。**
+      R3-02 之後 ``ancestor_dir`` 的**推測一律不放行**（新 reason code
+      ``worktree_repo_inferred``），所以放行只剩兩種來源：``target_dir``（目標已存在，
+      commondir 是事實）與 ``source_repo``（呼叫端的宣告，經 git 驗證那個目錄確實是
+      具 GitHub 形狀 origin 的 repo）。
+      ⚠️ **後者仍是宣告，不是觀測**：本模組沒有執行也沒有觀測任何 ``git worktree add``，
+      給了與卡相符的 ``source_repo`` 取得 allow 之後，人照樣可以從別的 repo 建立同一
+      路徑（``test_registry.py::test_source_repo_allow_does_not_bind_the_actual_creation``
+      用真的 ``git worktree add`` 把這個殘留缺口釘成測試，不讓它被忘記）。
+      **這是 danger 第 1 條在判定層的倒影，不是新問題。** assign 發生在建立之前，
+      而「歸屬」這個事實在建立之後才存在——單點檢查拿不到它。
+   2. **閘門只管新寫入的登記，不回溯。** 既有註冊（本輪實測 64 筆中有 14 筆是未錨定的
+      相對路徑）不會被重新檢查，磁碟上已經存在的跨 repo worktree 也不會因此消失——
+      那兩件事屬對帳與清理，不屬本閘門。要看現況請跑 ``python -m wf_cli.registry``。
    3. **``origin`` 不是 GitHub 形狀的 repo 一律過不了。** 卡的 repo 來自 Issue URL，
       worktree 的 repo 來自 origin，兩者要能比對就要求 origin 導得出 ``owner/repo``。
       origin 是本機路徑（測試沙盒、bare 鏡像）時判不出來 → fail-closed 拒絕。
       這是刻意的，但它是一條真實的使用限制，不是可忽略的邊角。
 
-   ⚠️ 第 2 條與 danger 的差別要分清楚：第 2 條是**射程內**的已知限制（登記面本身
-   還有沒被覆蓋的登記——既有列不重掃）；danger 講的是**射程外**（建立面整條路徑
-   本閘門碰不到）。前者本卡可以做而選擇不做，後者本卡做不到。
+   ⚠️ 第 2 條與 danger 的差別要分清楚：第 2 條是**射程內**的已知限制（``wfcli assign``
+   這條路徑本身還有沒被覆蓋的登記——既有列不重掃）；danger 講的是**射程外**（另外兩條
+   寫入／建立路徑本閘門碰不到）。前者本卡可以做而選擇不做，後者本卡做不到。
 
 **與 ``TasksMdRegistry`` 的隔離**：守衛的輸入（Issue URL、git commondir、來源 repo）
 都是即時事實，**都不經過 ``TASKS.md`` 投影**。這是刻意的——2026-08-12 實測 ``doctor``
@@ -364,13 +393,21 @@ def run_git_readonly(cwd: Path, args: list[str]) -> str | None:
 #:   目錄確實是個有 GitHub 形狀 origin 的 repo」，**沒有執行也沒有觀測任何
 #:   ``git worktree add``，更沒有把後續的建立動作綁到它**。因此給了與卡相符的
 #:   ``source_repo`` 取得 allow 之後，仍然可以從別的 repo 直接建立——**那條路徑
-#:   在本卡射程外**（見本檔頂端 danger）。這是登記面守衛的定義，不是漏洞掩飾：
-#:   登記面能保證的上限就是「這筆登記的主張自洽且與卡相符」。
+#:   在本卡射程外**（見本檔頂端 danger）。這是 ``wfcli assign`` 這條路徑上的守衛的
+#:   定義，不是漏洞掩飾：它能保證的上限就是「這筆登記的主張自洽且與卡相符」。
 #: - ``target_dir``：目標路徑**已存在**且本身在某個 git repo 內。worktree 就在那裡，
-#:   這是事實不是推測。
+#:   這是事實不是推測。**三者裡唯一在檢查當下為真的那一個**（但它也只在檢查當下為真：
+#:   worktree 可以被 remove 後由別的 repo 重新 add 到同一路徑）。
 #: - ``ancestor_dir``：目標尚未建立，改問最近存在的祖先目錄。**這是推測**
 #:   （``inferred=True``）：路徑巢狀於某 repo 內只是本專案的慣例，canonical §4.5
 #:   明文「worktree 路徑與分支名由實際建立者決定」，並未要求巢狀。
+#:
+#:   ⚠️ **它永遠不會放行**（R3-02，2026-08-13）。理由不是「推測比較不準」，是
+#:   **它用的比對軸正是本模組宣告為錯的那一個**：``_slug_of_dir`` 的註解寫「比對軸是
+#:   origin slug 不是路徑」，而祖先推測的全部證據就只有「這條路徑座落在誰底下」。
+#:   放行它等於在最常見的情形下（登記早於建立）把路徑巢狀偷偷當成歸屬證據，而那正是
+#:   §8.3 漂移得以隱形的同一個軸。推測仍然照算、照標記、照進枚舉器產物——它可以說
+#:   「這裡看起來不對」（``repo_mismatch`` 照樣擋），但不可以說「這裡沒問題」。
 ProbeSource = Literal["source_repo", "target_dir", "ancestor_dir"]
 
 
@@ -552,6 +589,7 @@ OwnershipReason = Literal[
     "card_repo_undeterminable",
     "worktree_repo_undeterminable",
     "worktree_path_unanchored",
+    "worktree_repo_inferred",
 ]
 
 #: reason_code → decision 的**全表**。``check_worktree_repo_ownership`` 一律從這裡
@@ -566,6 +604,8 @@ OWNERSHIP_DECISIONS: dict[OwnershipReason, OwnershipDecision] = {
     "card_repo_undeterminable": "block",
     "worktree_repo_undeterminable": "block",
     "worktree_path_unanchored": "block",
+    # R3-02：祖先推測相符**也不放行**。它的證據只有路徑巢狀，而路徑巢狀不是歸屬。
+    "worktree_repo_inferred": "block",
 }
 
 
@@ -578,6 +618,10 @@ class RepoOwnershipVerdict:
     #: worktree repo 由祖先目錄推測而來（``ProbeSource.ancestor_dir``）。被這種判定
     #: 擋下的人必須看到「若推測不成立該怎麼補」，否則就是無出路的誤擋。
     inferred: bool = False
+    #: slug 由哪一種來源導出（``ProbeSource``）。**放行時必須留痕**：allow 沒有記下
+    #: 來源，事後就沒有任何東西分得出「目標已存在、commondir 實測」與「呼叫端宣告」
+    #: 這兩種強度差很多的放行（R3-02）。判不出來時為 None。
+    probe_source: ProbeSource | None = None
 
     @property
     def decision(self) -> OwnershipDecision:
@@ -609,12 +653,24 @@ class RepoOwnershipVerdict:
             "card_repo_undeterminable": "判不出卡所屬 repo",
             "worktree_repo_undeterminable": "判不出 worktree 目標 repo",
             "worktree_path_unanchored": "worktree 路徑是相對路徑，未綁定明確 base_dir",
+            "worktree_repo_inferred": (
+                f"目標尚未建立，只能從路徑巢狀推測它屬於 {self.worktree_repo}；"
+                f"推測與卡的 {self.card_repo} 看起來相符，但路徑座落在哪裡不是歸屬證據，"
+                "拒絕以推測登記歸屬"
+            ),
             "match": "（未被擋）",
         }[self.reason_code]
         if self.reason_code == "match":
             return head
         extra = ""
-        if self.inferred:
+        if self.reason_code == "worktree_repo_inferred":
+            extra = (
+                "（補法：以 source_repo 明示實際會執行 git worktree add 的來源 repo——"
+                "看起來相符時它多半就是卡自己的 repo 根目錄，但那句話必須由你說、"
+                "不能由路徑猜。⚠️ 補了之後取得的 allow 仍然只是**經 git 驗證的宣告**，"
+                "本閘門不觀測也不綁定後續真正的建立行為）"
+            )
+        elif self.inferred:
             extra = (
                 "（此判定由尚未建立之目標的最近存在祖先**推測**而得；"
                 "若你實際是從別的 repo 執行 git worktree add，請以 source_repo 明示後重試）"
@@ -649,8 +705,22 @@ def check_worktree_repo_ownership(
        ``assign`` 本來就要把 Log 寫回卡面，正式流程要求真 Issue）；
        ``worktree_repo_undeterminable`` 發生在路徑打錯、目標不在任何 git repo 內、
        或 repo 沒有 origin remote；``worktree_path_unanchored`` 發生在相對路徑未綁
-       ``base_dir``。三者的補法分別是「改用真 Issue」「修路徑或補 ``source_repo``」
-       「改絕對路徑或補 ``base_dir``／``source_repo``」，都不需要放行一次壞輸入。
+       ``base_dir``；``worktree_repo_inferred`` 發生在目標尚未建立、只有路徑巢狀可推。
+       四者的補法分別是「改用真 Issue」「修路徑或補 ``source_repo``」
+       「改絕對路徑或補 ``base_dir``／``source_repo``」「補 ``source_repo``」，
+       都不需要放行一次壞輸入。
+
+    ⚠️ **``worktree_repo_inferred`` 推翻了 2026-08-12 路徑慣例的一半**（R3-02）。
+    那次裁定寫的是「新的 assign 一律絕對路徑，**或**以 ``--worktree-source-repo``
+    明示來源」——本次改動後，目標尚未建立時**絕對路徑本身不再足夠**，兩者都要。
+    代價已量測、不掩飾：對 Project #4 全量枚舉，改動前 47 allow／17 block，改動後
+    16 allow／48 block，翻面的 31 筆全部是 ``ancestor_dir``。
+    ⚠️ **那 31 筆不是「本次新增的誤擋」**：閘門不回溯（見頂端 warning 第 2 條），
+    這些既有登記一次都不會被重跑。真正的代價落在**未來每一次 assign**——生產慣例是
+    登記早於建立，所以常態就會落在這一格，PM 從此每次都要多打一個
+    ``--worktree-source-repo``。判斷是這個代價值得付：一個旗標換掉「31/47 的放行
+    建立在本模組自己宣告為錯的比對軸上」。**這個取捨若需求方不同意，一行裁定即可
+    翻回**（把本函式這一段與 ``OWNERSHIP_DECISIONS`` 的該列刪掉即恢復舊行為）。
     3. **fail-closed 不會被無關的故障觸發。** 卡 repo 來自 ``ItemSnapshot.issue_url``，
        那是 ``assign`` 早已為了別的理由抓下來的同一份資料；GitHub 掛掉時 ``assign``
        在到達本守衛之前就已經失敗。守衛**不新增任何網路相依**——這是 fail-closed
@@ -671,6 +741,7 @@ def check_worktree_repo_ownership(
             worktree_repo=worktree_probe.slug,
             detail="卡沒有可解析的 Issue URL（DraftIssue 或 URL 形式不合），"
                    "而卡所屬 repo 只認 Issue URL 一個來源",
+            probe_source=worktree_probe.source,
         )
     if worktree_probe.slug is None:
         return RepoOwnershipVerdict(
@@ -681,14 +752,28 @@ def check_worktree_repo_ownership(
             card_repo=card_repo,
             worktree_repo=None,
             detail=worktree_probe.detail,
+            probe_source=worktree_probe.source,
         )
     if worktree_probe.slug != card_repo:
+        # 不相符的推測照樣擋，且刻意留在 ``repo_mismatch``：它的訊息資訊量更大
+        # （指名兩邊的 slug），而且「推測說不一樣」本身就是值得看的訊號。
         return RepoOwnershipVerdict(
             reason_code="repo_mismatch",
             card_repo=card_repo,
             worktree_repo=worktree_probe.slug,
             detail=worktree_probe.detail,
             inferred=worktree_probe.inferred,
+            probe_source=worktree_probe.source,
+        )
+    if worktree_probe.inferred:
+        # R3-02：**相符的推測不放行**。理由見 ``ProbeSource`` 的 ancestor_dir 條。
+        return RepoOwnershipVerdict(
+            reason_code="worktree_repo_inferred",
+            card_repo=card_repo,
+            worktree_repo=worktree_probe.slug,
+            detail=worktree_probe.detail,
+            inferred=True,
+            probe_source=worktree_probe.source,
         )
     return RepoOwnershipVerdict(
         reason_code="match",
@@ -696,6 +781,7 @@ def check_worktree_repo_ownership(
         worktree_repo=worktree_probe.slug,
         detail=worktree_probe.detail,
         inferred=worktree_probe.inferred,
+        probe_source=worktree_probe.source,
     )
 
 
@@ -716,6 +802,10 @@ def check_assign_repo_ownership(
     GitHub 形狀 origin 的 repo）才算數；但**驗證的是那個目錄的身分，不是後續真的
     從那裡建立**——本函式回 ``allow`` 的意思是「這筆登記可以寫下去」，不是「建立
     行為已被綁定」。
+
+    R3-02 之後，``allow`` 只會來自兩種 ``ProbeSource``：``target_dir``（檢查當下的
+    事實）與 ``source_repo``（經 git 驗證的宣告）。``ancestor_dir`` 的推測**永遠不
+    放行**，所以生產慣例（登記早於建立）現在必須帶 ``--worktree-source-repo``。
     """
     return check_worktree_repo_ownership(
         card_repo=card_repo_from_issue_url(issue_url),

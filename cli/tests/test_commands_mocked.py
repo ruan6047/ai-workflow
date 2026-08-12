@@ -683,19 +683,53 @@ def test_assign_blocks_cross_repo_worktree_before_any_mutation(
     assert after.body == before.body
 
 
-def test_assign_allows_absolute_worktree_under_the_card_repo(fake_runner, source_repo):
-    """生產慣例的那條路：絕對路徑、尚未建立、巢狀在卡自己的 repo 底下 → 放行。
+def test_assign_refuses_nested_absolute_path_until_the_source_repo_is_declared(
+    fake_runner, source_repo, capsys
+):
+    """生產慣例的那條路（絕對路徑、尚未建立、巢狀在卡自己的 repo 底下）**現在要多一個旗標**。
 
-    不給 ``--worktree-source-repo``，走祖先推測。這是需求方 2026-08-12 裁定的預設用法，
-    必須不被誤擋。
+    ⚠️ **這條測試上一輪斷言的是相反的結果**（走祖先推測即放行，並註明那是需求方
+    2026-08-12 裁定的預設用法）。R3-02 之後推測一律不放行，因此
+    **「絕對路徑**或**明示來源」的二擇一被取代成兩者都要**——這不是實作細節，是對
+    那條慣例的實質修改，刻意寫在測試名字與這段說明裡，不讓它只活在 commit message。
+
+    代價（Project #4 全量枚舉）：47 allow／17 block → 16 allow／48 block。翻面的 31 筆
+    全是既有登記，而閘門不回溯、不會重跑它們；真正的代價是**未來每一次 assign 多一個
+    旗標**。
     """
     run_cli(_open_for_assign("NESTED-OK1"))
     wt = source_repo / ".claude" / "worktrees" / "nested-ok1"
     assert not wt.exists()
-    assert run_cli(_assign_argv("NESTED-OK1", "某模型@某工具", "b", str(wt))) == 0
+
+    assert run_cli(_assign_argv("NESTED-OK1", "某模型@某工具", "b", str(wt))) == 5
+    err = capsys.readouterr().err
+    assert "推測" in err and "source_repo" in err  # 訊息要指名補法，否則就是無出路的誤擋
+
+    assert run_cli(
+        _assign_argv("NESTED-OK1", "某模型@某工具", "b", str(wt), source_repo=source_repo)
+    ) == 0
     project = resolve_project(fake_runner, "acme", 1)
     item = find_item_by_card_id(list_items(fake_runner, project), "NESTED-OK1")
     assert item.fields["分支worktree"] == f"b @ {wt}"
+
+
+def test_assign_log_records_what_the_allow_was_based_on(fake_runner, source_repo):
+    """放行也要留痕：Log 必須說得出這筆歸屬是宣告來的還是實測來的（R3-02）。
+
+    看板欄位對兩種 allow 一模一樣，所以「憑什麼放行」只能靠 Log 保存。這裡連宣告的
+    目錄字串一起釘住——宣告的內容本身就是被稽核的對象——並要求那句「不綁定建立行為」
+    跟著放行一起寫下去，免得讀 Log 的人把它讀成歸屬已被驗證。
+    """
+    run_cli(_open_for_assign("PROV-CARD1"))
+    wt = source_repo / ".claude" / "worktrees" / "prov-card1"
+    assert run_cli(
+        _assign_argv("PROV-CARD1", "某模型@某工具", "b", str(wt), source_repo=source_repo)
+    ) == 0
+
+    log = _assign_log_line(fake_runner, "PROV-CARD1")
+    assert f"跨 repo 歸屬 {ASSIGN_REPO}" in log
+    assert "--worktree-source-repo" in log and str(source_repo) in log
+    assert "不觀測也不綁定後續的 git worktree add" in log
 
 
 def test_assign_blocks_relative_worktree_path_with_actionable_message(fake_runner, capsys):

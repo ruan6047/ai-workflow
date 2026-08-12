@@ -13,22 +13,26 @@ db:* 資源雙方 db_scope 皆為 read 時可共用。
 寫入通道的「新」入口，遷移期間舊卡尚未補宣告不該讓新卡整個卡死；但目標卡「自己」
 的宣告解析失敗則直接拒絕（fail closed on self）。
 
-**跨 repo 歸屬閘門**（WF-WORKTREE-REPO-OWNERSHIP1 / #57）：``assign`` 寫 ``--worktree``
-註冊欄的那一刻，是 wfcli 全域**唯一**會讓「某張卡的 worktree **登記**屬於某個 repo」
-成為事實的地方（實測全域沒有任何 ``git worktree add``）。因此**登記面**的攔截只能掛在
-這裡，而且必須排在**所有寫入之前**——拒絕時零寫入，不留「owner 已改、worktree 沒改」
-的半套狀態。
+**跨 repo 歸屬閘門**（WF-WORKTREE-REPO-OWNERSHIP1 / #57）：``assign`` 是 ``wfcli`` 全域
+**唯一**會寫 ``分支worktree`` 註冊欄的指令（實測全域沒有任何 ``git worktree add``）。
+因此 ``wfcli`` **這條路徑上**的攔截只能掛在這裡，而且必須排在**所有寫入之前**——
+拒絕時零寫入，不留「owner 已改、worktree 沒改」的半套狀態。
 
-⚠️ **射程：本閘門攔的是登記，不是建立**（需求方 2026-08-12 裁定，#57
-issuecomment-5268265532）。人在 shell 直接跑 ``git worktree add`` 不經過 ``wfcli``，
-本閘門看不到也擋不住；先建立再登記時被擋下的是登記那一步，錯置的目錄已經在磁碟上。
-建立面的預防**今天沒有任何卡承接**，逐字條款與現況見 ``registry`` 模組頂端的 danger。
+⚠️ **承諾範圍：本閘門承諾的是 ``wfcli assign`` 這一條路徑，不是「登記面已被保護」**
+（需求方 2026-08-13 二次裁定，#57 issuecomment-5273953073）。射程外三條：人在 shell
+直接跑 ``git worktree add``；有人繞過 ``wfcli`` 直接以 web UI／``gh project item-edit``／
+GraphQL 改寫 ``分支worktree`` TEXT 欄；既有登記不重掃。三條皆為**已知限制而非待辦**，
+逐字條款與現況見 ``registry`` 模組頂端的 danger。
 
 判定引擎在 ``registry.check_assign_repo_ownership``：卡的 repo 只認 Issue URL，
 worktree 的 repo 由這筆登記主張的**來源 repo** 導出並經 git 驗證（見 ``registry`` 的
-``ProbeSource``）。**慣例（需求方 2026-08-12 裁定）**：新的 assign 一律給**絕對**
-``--worktree``；若確實從別的 repo 執行 ``git worktree add``，以
-``--worktree-source-repo`` 明示。既有的相對路徑註冊**不回溯檢查**（本閘門只管新寫入）。
+``ProbeSource``）。**慣例**：新的 assign 一律給**絕對** ``--worktree``；且**目標尚未
+建立時必須加 ``--worktree-source-repo``**——R3-02 之後路徑巢狀的推測一律不放行
+（``worktree_repo_inferred``），這一條**取代了 2026-08-12 裁定裡「絕對路徑**或**明示
+來源」的二擇一**，兩者現在都要。既有的相對路徑註冊**不回溯檢查**（本閘門只管新寫入）。
+
+判定結果會寫進 Log（``_ownership_log_fragment``）：allow 也要留痕，否則事後沒有任何
+東西說得出這筆登記的歸屬是「目標已存在、commondir 實測」還是「呼叫端宣告」。
 
 **規劃期路由的派工端**（WF-CLI-ROUTING-TIER1 R1-001）：``MODEL_ROUTING.md`` 第 14 行
 後半要求「派工時可依可用性偏離建議，但實際模型與偏離理由記入 claim 事件」。因此
@@ -61,7 +65,7 @@ from ..project import (
     set_field_value,
     set_item_body,
 )
-from ..registry import check_assign_repo_ownership
+from ..registry import RepoOwnershipVerdict, check_assign_repo_ownership
 from ..resources import (
     ResourceDeclarationError,
     find_conflicts,
@@ -91,10 +95,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         metavar="DIR",
         help="這筆登記主張的**來源 repo** 目錄（即 git worktree add 會從哪裡執行）。"
-        "worktree 建在該 repo 之外（canonical §4.5 允許）時必填，否則閘門只能由路徑推測"
-        "而可能誤擋。它不是 --force：給了之後仍要通過同一組跨 repo 比對，指錯 repo 照樣被拒。"
-        "閘門會用 git 驗證這個目錄確實是有 GitHub 形狀 origin 的 repo，但**不觀測、也不綁定"
-        "後續真正的 git worktree add**——擋的是登記，不是建立。",
+        "**目標路徑尚未建立時必填**（生產慣例是先 assign 再建立，所以這是常態）：閘門"
+        "不接受由路徑巢狀推測出來的歸屬，推測相符也一樣拒絕。它不是 --force：給了之後"
+        "仍要通過同一組跨 repo 比對，指錯 repo 照樣被拒。閘門會用 git 驗證這個目錄確實"
+        "是有 GitHub 形狀 origin 的 repo，但**不觀測、也不綁定後續真正的 "
+        "git worktree add**——擋的是登記，不是建立。",
     )
     p.add_argument(
         "--status", default="🚧進行中", help="assign 後的交付狀態；預設 🚧進行中"
@@ -114,6 +119,29 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "必填（無基線不得以沉默宣稱一致）。相符時可省略，若仍提供則以備註寫入 Log。",
     )
     p.set_defaults(func=run)
+
+
+def _ownership_log_fragment(
+    verdict: RepoOwnershipVerdict, source_repo: str | None
+) -> str:
+    """放行時要寫進 Log 的歸屬留痕。
+
+    **為什麼 allow 也要留痕**：``allow`` 有兩種強度差很多的來源——``target_dir``
+    是「目標已存在，commondir 實測」（檢查當下的事實），``source_repo`` 是「呼叫端
+    宣告，git 只驗證了那個目錄的身分」。兩者寫進看板的結果一模一樣，事後沒有任何
+    東西分得出來。R3-02 的核心正是「登記本身不是已驗證的歸屬事實」；既然驗不到，
+    至少要**記下這一筆是憑什麼放行的**（``docs/ROADMAP.md`` §0 目標 2）。
+
+    ``source_repo`` 那一格刻意連目錄字串一起記：宣告的內容本身就是被稽核的對象。
+    """
+    basis = {
+        "target_dir": "目標已存在，commondir 實測",
+        "source_repo": f"呼叫端以 --worktree-source-repo 宣告 {source_repo}，經 git 驗證",
+    }.get(verdict.probe_source or "", f"判定來源 {verdict.probe_source}")
+    return (
+        f"跨 repo 歸屬 {verdict.worktree_repo}（{basis}；"
+        "本閘門不觀測也不綁定後續的 git worktree add）"
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -200,7 +228,8 @@ def run(args: argparse.Namespace) -> int:
     log_line = (
         f"{now_iso8601()} assign by wf-cli → owner {args.assignee}；"
         f"分支worktree {branch_worktree}；交付狀態 {args.status}；"
-        f"{comparison.log_fragment(deviation_reason)}。"
+        f"{comparison.log_fragment(deviation_reason)}；"
+        f"{_ownership_log_fragment(ownership, args.worktree_source_repo)}。"
     )
     new_body = append_log_line(item.body, log_line)
     set_item_body(runner, item.content_type, item.content_id, project, target.repo, item.issue_number, new_body)

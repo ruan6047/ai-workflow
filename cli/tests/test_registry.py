@@ -119,13 +119,21 @@ def test_registered_card_repo_defaults_to_none_from_tasks_md(tmp_path: Path):
 # 跨 repo 歸屬守衛（#57）
 # ---------------------------------------------------------------------------
 
-#: 需求方 2026-08-12 裁定（#57 issuecomment-5268265532）明文要求逐字保留在
-#: ``registry`` 模組頂端 danger 區塊的句子。射程從「建立面預防」縮為「登記面攔截」
-#: 之後，這句是唯一還在描述建立面現況的條款，**不得因縮射程而軟化或刪除**。
-#: 卡面版與派審詞版字面不同（後者多了 ``git worktree add``），兩者都要在。
+#: 需求方裁定明文要求逐字保留在 ``registry`` 模組頂端 danger 區塊的句子。
+#:
+#: 前兩句（2026-08-12 裁定，#57 issuecomment-5268265532）描述**建立面**現況；射程從
+#: 「建立面預防」縮為「登記面攔截」之後，它們是唯一還在描述建立面的條款，**不得因
+#: 縮射程而軟化或刪除**。卡面版與派審詞版字面不同（後者多了 ``git worktree add``），
+#: 兩者都要在。
+#:
+#: 第三句（2026-08-13 二次裁定，#57 issuecomment-5273953073）描述**登記面本身**的
+#: 另一條射程外路徑：Project 的 TEXT 欄可被直接改寫。需求方要求它以與前兩句**同等的
+#: 強度**寫下——兩次縮射程的形狀相同（``wfcli`` 是慣例不是機制），所以兩個限制都必須
+#: 讀得到，不得靠人記得。
 REQUIRED_DANGER_SENTENCES = (
     "該卡未落地前，本 repo 對「人直接在 shell 建到錯的 repo」沒有任何預防",
     "該卡未落地前，本 repo 對「人直接在 shell 跑 git worktree add 建到錯的 repo」沒有任何預防",
+    "本 repo 對「有人繞過 wfcli 直接改寫 Project 的分支worktree 欄」沒有任何預防",
 )
 
 
@@ -142,13 +150,29 @@ def test_module_danger_block_keeps_the_mandated_sentence_verbatim(sentence):
 
 
 def test_module_docstring_does_not_claim_creation_time_prevention():
-    """射程縮小後的反向釘死：不得再出現「建立當下的預防」這類宣稱。
+    """兩次縮射程的反向釘死：被降級掉的宣稱不得回流。
 
-    本卡 R2-01 的處置是縮射程 ＋ 同步修正宣稱。宣稱回流是最容易發生的退化——
-    有人補一段說明時順手寫回舊框架——所以這裡把被禁的字面列出來擋住。
+    宣稱回流是最容易發生的退化——有人補一段說明時順手寫回舊框架——所以這裡把被禁的
+    字面列出來擋住。前三個屬 R2-01（建立面移出射程），後兩個屬 R3-01（承諾降為
+    「``wfcli assign`` 這一條路徑」，**不是**「登記面已被保護」）。
     """
     doc = wf_cli.registry.__doc__ or ""
-    for banned in ("建立當下的預防", "建立當下被擋", "預防的唯一有效位置"):
+
+    # 唯一被允許的例外：裁定原句的**否定式引用**。承諾降級的那句話用需求方的原詞
+    # 寫下來比改寫成同義詞誠實，所以這裡只挖掉這一個逐字的否定形，其餘位置一律禁。
+    # 挖掉的是**完整的否定片語**——把 "不是" 去掉就會被下面抓到。
+    for allowed_negation in ('**不是「登記面已被保護」**',):
+        assert allowed_negation in doc, "否定式引用被改寫了，這條例外就該一起撤掉"
+        doc = doc.replace(allowed_negation, "")
+
+    banned_claims = (
+        "建立當下的預防",
+        "建立當下被擋",
+        "預防的唯一有效位置",
+        "登記面已被保護",
+        "登記面攔截的唯一有效位置",
+    )
+    for banned in banned_claims:
         assert banned not in doc, f"射程外的宣稱回流：{banned}"
 
 
@@ -354,17 +378,36 @@ def test_real_cpbl_card_in_cpbl_repo_is_allowed(two_repos):
 
 
 def test_real_relative_worktree_path_resolved_against_base_dir(two_repos):
-    """Ledger 存相對路徑；base_dir 決定它落在哪個 repo，兩邊都要判對。"""
+    """Ledger 存相對路徑；``base_dir`` 決定它落在哪個 repo，兩邊都要**導對 slug**。
+
+    ⚠️ R3-02 之後兩邊都是 block（目標尚未建立 → ``ancestor_dir`` 推測 → 一律不放行），
+    所以這條改成驗**導出的 repo** 與**被擋的理由**，而不是驗放行——放行與否已不是
+    base_dir 語意的鑑別點，reason code 才是：同一個相對路徑錨在自己的 repo 是
+    ``worktree_repo_inferred``（看起來相符但只有推測），錨在另一個 repo 是
+    ``repo_mismatch``（推測就已經說不對）。
+    """
     aiwf, cpbl = two_repos
     (aiwf / ".claude" / "worktrees").mkdir(parents=True)
     (cpbl / ".claude" / "worktrees").mkdir(parents=True)
     rel = ".claude/worktrees/card-x"
+
+    own = check_assign_repo_ownership(issue_url=CPBL_ISSUE, worktree_path=rel, base_dir=cpbl)
+    assert own.worktree_repo == "ruan6047/cpbl-analytics"
+    assert own.reason_code == "worktree_repo_inferred"
+    assert own.decision == "block"
+
+    other = check_assign_repo_ownership(issue_url=CPBL_ISSUE, worktree_path=rel, base_dir=aiwf)
+    assert other.worktree_repo == "ruan6047/ai-workflow"
+    assert other.reason_code == "repo_mismatch"
+    assert other.decision == "block"
+
+    # base_dir 真的是鑑別點：兩次導出的 slug 不同。
+    assert own.worktree_repo != other.worktree_repo
+
+    # 兩邊都補上來源 repo 就都判得出來（且判對）——推測不放行不等於這條路走不通。
     assert check_assign_repo_ownership(
-        issue_url=CPBL_ISSUE, worktree_path=rel, base_dir=cpbl
+        issue_url=CPBL_ISSUE, worktree_path=rel, base_dir=cpbl, source_repo=cpbl
     ).decision == "allow"
-    assert check_assign_repo_ownership(
-        issue_url=CPBL_ISSUE, worktree_path=rel, base_dir=aiwf
-    ).decision == "block"
 
 
 def test_real_path_outside_any_git_repo_is_blocked(tmp_path: Path):
@@ -536,6 +579,115 @@ def test_existing_worktree_outside_its_repo_is_determinable_without_source_repo(
     assert probe.source == "target_dir"
     assert probe.inferred is False
     assert check_assign_repo_ownership(issue_url=CPBL_ISSUE, worktree_path=wt).decision == "allow"
+
+
+# --- R3-02：推測不得放行，以及補了 source_repo 之後**還是**剩下什麼 -----------
+#
+# 查核者的論點：``ancestor_dir`` 被標成 ``inferred`` 且模組明說它不是事實，
+# 判定卻仍對它回 allow。以下四條把新規則與**它到不了的地方**一起釘住——後者刻意
+# 用真的 ``git worktree add`` 寫成測試，免得日後有人把「補了 source_repo」讀成
+# 「歸屬已被驗證」。
+
+
+def test_ancestor_inference_never_allows_even_when_it_matches(two_repos):
+    """R3-02 的核心：推測**相符**也不放行。
+
+    這是生產最常見的那一格（登記早於建立、路徑巢狀在卡自己的 repo 底下），舊行為
+    在此回 ``match``／allow。新行為回 ``worktree_repo_inferred``／block，且訊息要
+    指名補法。
+    """
+    aiwf, _cpbl = two_repos
+    (aiwf / ".claude" / "worktrees").mkdir(parents=True)
+    target = aiwf / ".claude" / "worktrees" / "wf-card-not-created"
+    assert not target.exists()
+
+    v = check_assign_repo_ownership(issue_url=AIWF_ISSUE, worktree_path=target)
+    assert v.worktree_repo == "ruan6047/ai-workflow" == v.card_repo  # 推測「看起來相符」
+    assert v.reason_code == "worktree_repo_inferred"
+    assert v.decision == "block"
+    assert v.inferred is True
+    assert "source_repo" in v.refusal_message()
+
+    # 補上來源 repo 就過——被拒的是推測，不是這個配置本身。
+    fixed = check_assign_repo_ownership(
+        issue_url=AIWF_ISSUE, worktree_path=target, source_repo=aiwf
+    )
+    assert fixed.decision == "allow" and fixed.probe_source == "source_repo"
+
+
+def test_ancestor_inference_cannot_be_used_to_register_a_cross_repo_creation(two_repos):
+    """端到端：**無法**以祖先推測取得 allow，然後把同一路徑建成另一個 repo 的 worktree。
+
+    這條走完查核者指定的完整劇本，全程真 git：
+
+    1. 卡屬 ai-workflow，登記一個尚未建立、巢狀在 ai-workflow 底下的路徑
+       → 推測說「相符」，但判定 **block**（取不到 allow，劇本第一步就斷）。
+    2. 接著真的從 **cpbl** 執行 ``git worktree add`` 到同一路徑——**它成功了**。
+       這證明本閘門確實沒有綁定建立行為（射程外，模組頂端 danger 第 1 條）。
+    3. 建立後重新探測同一路徑：``target_dir`` 說它屬於 cpbl。**推測當初是錯的**，
+       而錯的推測若被放行，看板上就會多一筆與事實相反的歸屬登記。
+
+    第 3 步是這條測試的重點：它不是「推測不夠嚴謹」的美學問題，是推測會**指向與
+    事實相反的 repo**，而它唯一的證據只有「這條路徑座落在誰底下」。
+    """
+    aiwf, cpbl = two_repos
+    (aiwf / ".claude" / "worktrees").mkdir(parents=True)
+    target = aiwf / ".claude" / "worktrees" / "looks-like-aiwf"
+
+    before = check_assign_repo_ownership(issue_url=AIWF_ISSUE, worktree_path=target)
+    assert before.decision == "block"
+    assert before.reason_code == "worktree_repo_inferred"
+
+    git(cpbl, "worktree", "add", "-q", "-b", "claude/SNEAKY1", str(target))
+    assert target.is_dir()
+
+    after = probe_worktree_repo(target)
+    assert after.source == "target_dir"
+    assert after.inferred is False
+    assert after.slug == "ruan6047/cpbl-analytics"          # 事實
+    assert before.worktree_repo == "ruan6047/ai-workflow"   # 推測，與事實相反
+    assert check_assign_repo_ownership(
+        issue_url=AIWF_ISSUE, worktree_path=target
+    ).reason_code == "repo_mismatch"
+
+
+def test_source_repo_allow_does_not_bind_the_actual_creation(two_repos):
+    """**證明不了的那一半，寫成測試**：``source_repo`` 的 allow 不綁定建立行為。
+
+    模組頂端 warning 第 1 條引用的就是這一條。取得 allow 之後照樣可以從別的 repo
+    把同一路徑建起來——本測試真的做了一次，並確認它**成功**。
+
+    它不是漏洞報告，是射程的機械化陳述：``assign`` 發生在建立之前，「歸屬」這個事實
+    在建立之後才存在，單點檢查拿不到它。任何人日後想把「登記已通過閘門」讀成
+    「這個 worktree 一定屬於這張卡的 repo」，這條會擋在他面前。
+    """
+    aiwf, cpbl = two_repos
+    (aiwf / ".claude" / "worktrees").mkdir(parents=True)
+    target = aiwf / ".claude" / "worktrees" / "declared-aiwf"
+
+    allowed = check_assign_repo_ownership(
+        issue_url=AIWF_ISSUE, worktree_path=target, source_repo=aiwf
+    )
+    assert allowed.decision == "allow" and allowed.probe_source == "source_repo"
+
+    # 宣告說會從 aiwf 建立；實際從 cpbl 建立。閘門不觀測，所以它成功。
+    git(cpbl, "worktree", "add", "-q", "-b", "claude/DECLARED1", str(target))
+    assert probe_worktree_repo(target).slug == "ruan6047/cpbl-analytics"
+
+
+def test_allow_records_which_probe_source_it_came_from(two_repos):
+    """放行必須留下「憑什麼放行」——兩種 allow 的強度差很多，事後要分得出來。"""
+    _aiwf, cpbl = two_repos
+    wt = cpbl / ".claude" / "worktrees" / "existing"
+    git(cpbl, "worktree", "add", "-q", "-b", "claude/EXISTING1", str(wt))
+
+    fact = check_assign_repo_ownership(issue_url=CPBL_ISSUE, worktree_path=wt)
+    assert fact.decision == "allow" and fact.probe_source == "target_dir"
+
+    declared = check_assign_repo_ownership(
+        issue_url=CPBL_ISSUE, worktree_path=cpbl / "not-created", source_repo=cpbl
+    )
+    assert declared.decision == "allow" and declared.probe_source == "source_repo"
 
 
 # --- R1-03：唯讀枚舉器 --------------------------------------------------------
