@@ -170,6 +170,42 @@ LC_CTYPE="POSIX"    （其餘 LC_* 全為 POSIX）
 **#42／#58 特別說明**：它們解決「兩份事件型別語彙互不知情」，而該分歧**今天 0 寫入端 0 讀取端、
 不可能造成錯誤裁決**（#58 執行者自己的論證）。這是「有最好」的典型。
 
+## 3.5 合併方式：一律 squash（2026-08-13 裁定）
+
+### 問題
+
+`AI_WORKFLOW.md §6:222` 要求 merge commit 帶 `Reviewed-by`，而 **GitHub 的 merge 按鈕
+結構上產不出這一行**。`TRAILER_GUARD_EPOCH`（`2026-08-13T00:00:00+08:00`）跨過之後，
+**每一次以 merge 按鈕合併的 PR 都會是一筆違規**——實測 `0ea7aba` 與 `dbf18d7` 的
+`git interpret-trailers --parse` 解析出**零個** trailer。
+
+`required_status_checks` 的 `strict` 政策使這件事無法迴避：落後的分支必須先更新，
+而更新會產生 merge commit。
+
+### 裁定
+
+**卡片一律以 squash 合併。** 依據是實測而非偏好：
+
+- `d0397e0`（#63 的 squash commit）**自己帶齊五行 trailer 含 `Reviewed-by`**——
+  是第一筆會通過它剛落地的檢查器的 main commit
+- **`gh pr update-branch` 產生的 merge commit 只存在於 PR 分支上，squash 會把它壓掉**，
+  不落 main。既滿足 strict 政策，又不製造違規
+- 不需要改 `TRAILER_GUARD_EPOCH`，也不需要動已通過查核的碼或 canonical
+
+### 代價，不掩飾
+
+**被審 SHA 不會出現在 main 的歷史上**，查核留痕與 main 的 commit 對不起來。
+這對目標 2（可稽核的內容）是實質損失。
+
+**緩解**：squash 訊息**必須逐字記下被審 SHA**，以及該輪查核的結論。今天 `d0397e0`
+即為範例。**這是約定，沒有機械執行者。**
+
+### 明確不涵蓋
+
+- `§6:222` 的文字**不改**。squash 之後沒有 merge commit 落 main，該條的觸發條件消失，
+  改文字是解一個已經不會發生的問題。**若日後恢復 merge 合併，該條重新生效。**
+- 本裁定只約束**卡片合併**。分支內部的整合行為不受限。
+
 ## 4. 驗收政策（2026-08-12 裁定）
 
 > 已做完的項目如果大項目沒問題先驗收，後續細節轉成卡片之後進行。
