@@ -34,6 +34,7 @@ import pytest
 from wf_cli import cleanup, git_ops
 from wf_cli.cleanup import (
     CHECK_IDS,
+    GuardCheck,
     CHECK_STEP_REF,
     DESTRUCTIVE_ORDER,
     EFFECT_STEP,
@@ -561,6 +562,11 @@ _BODY_ALLOWED_GLOBALS = frozenset({
     "SUBSEQUENT_OBLIGATION_STEPS", "_run", "bool", "classify_state",
     "conditional_delete_args", "default_git_runner", "evaluate_cleanup_guard",
     "observe", "recheck_remote_branch", "remaining_status_face_steps", "str", "tuple",
+    # WF-CLEANUP-SQUASH-AWARE1 R2（授權分流）新增，經此處複核：
+    # - `_read_remote_heads`：授權不足時只探遠端分支在不在，用來分辨「刻意留著」與
+    #   「本來就沒有」，**不跑刪除前複驗**（不刪就沒有那個時刻）。
+    # - `frozenset`：守衛擋下時把觀測範圍退回全集，讓 detect_only 的分類與本卡之前逐字相同。
+    "_read_remote_heads", "frozenset",
 })
 
 _TRIGGER_VALUES = frozenset({"release", "reconcile"})
@@ -1967,17 +1973,28 @@ def test_content_proof_agrees_with_merge_tree_oracle(
     )
 
 
-def test_the_proof_is_the_only_thing_stopping_an_unmerged_branch_from_being_deleted(
-    env_unmerged: Env, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "mutated_kind,branches_should_survive",
+    [("content_absorbed", True), ("ancestor", False)],
+    ids=["突變成 content_absorbed", "突變成 ancestor"],
+)
+def test_what_a_compromised_proof_can_and_cannot_destroy(
+    env_unmerged: Env, monkeypatch: pytest.MonkeyPatch,
+    mutated_kind: str, branches_should_survive: bool,
 ) -> None:
-    """⚠️ 突變注入：把判準換成恆真，未合併分支就真的被刪光。
+    """⚠️ 突變注入，兩格——**這一對就是授權分流的行為證據**。
 
-    這一條驗的不是正常行為，而是**鑑別力**：若把判準拿掉什麼都不會改變，那它根本沒在
-    保護任何東西，前面那些「它擋下了」的測試也就證明不了東西。這裡讓突變在沙箱裡真的
-    執行到底——worktree 被移除、本地與遠端分支被刪、`WORK_CONTENT` 消失。
+    情境固定：一條**確實未合併**的分支。把判準換成恆真，看突變成不同強度的證明各能
+    毀掉什麼：
 
-    正常判準下的同一個 `env_unmerged` 由 `test_refuses_when_branch_not_merged` 覆蓋，
-    兩條合起來才是雙向的。
+    - 突變成 `content_absorbed` → worktree 被移除，但**本地與遠端分支都還在**。
+      分支上的每一筆 commit（含只存在於中間 commit 的內容）都還原得回來。
+      這正是需求方裁定要買到的東西：**判準被完全攻破，仍然沒有不可逆的遺失。**
+    - 突變成 `ancestor` → 分支真的被刪光。**授權分流不是裝飾**：同一個突變，只因為
+      它宣稱的證明強度不同，後果就差在「可逆」與「不可逆」之間。
+
+    第一格同時說明鑑別力的界線：`content_absorbed` 這條路上，判準本身不再是「阻止
+    不可逆遺失」的最後一道防線——`AUTHORITY_BY_PROOF` 才是。
     """
     真判準 = cleanup.prove_content_in_main(
         cleanup.default_git_runner, env_unmerged.repo, BRANCH, "main"
@@ -1986,7 +2003,7 @@ def test_the_proof_is_the_only_thing_stopping_an_unmerged_branch_from_being_dele
 
     monkeypatch.setattr(
         cleanup, "prove_content_in_main",
-        lambda *a, **k: cleanup.MergeProof("content_absorbed", "突變：恆真"),
+        lambda *a, **k: cleanup.MergeProof(mutated_kind, f"突變：恆回 {mutated_kind}"),
     )
     remote = FakeRemoteState()
     result = execute_closeout_transition(
@@ -1994,16 +2011,37 @@ def test_the_proof_is_the_only_thing_stopping_an_unmerged_branch_from_being_dele
         card_body=CARD_BODY, remote_facts=remote.facts(),
         effect_writer=FakeEffectWriter(remote), occupancy_prober=free_prober,
     )
-    assert result.mode == "applied", "突變沒有生效，這條測試就證明不了鑑別力"
-    assert not env_unmerged.wt.exists()
-    assert not _local_branch_exists(env_unmerged.repo, BRANCH)
-    assert not _remote_branch_exists(env_unmerged.repo, "origin", BRANCH)
+    assert result.mode == "applied", "突變沒有生效，這條測試就證明不了東西"
+    assert not env_unmerged.wt.exists(), "worktree 兩格都會被移除（可逆）"
+
+    survived = (
+        _local_branch_exists(env_unmerged.repo, BRANCH),
+        _remote_branch_exists(env_unmerged.repo, "origin", BRANCH),
+    )
+    assert survived == (branches_should_survive, branches_should_survive)
+    if branches_should_survive:
+        assert set(result.actions_withheld_unauthorized) == {
+            "delete_local_branch", "delete_remote_branch"
+        }
+        # 分支還在 = 未合併的每一筆 commit 都還原得回來。
+        assert git(
+            env_unmerged.repo, "cat-file", "-e", f"{BRANCH}^{{commit}}"
+        ) == ""
 
 
-def test_a_squash_merged_branch_reaches_a_completed_closeout(env_squash: Env) -> None:
-    """squash 合併的卡跑完整收尾：mode=applied、worktree／本地／遠端分支全部清掉。
+def test_a_squash_merged_card_removes_the_worktree_and_keeps_the_branches(
+    env_squash: Env,
+) -> None:
+    """squash 合併的卡：worktree 移除、**分支刻意留著**、卡仍然進得了終態。
 
-    §3.5 生效之後這是**每一張卡**的形狀；在本卡之前它是恆拒的。
+    §3.5 生效之後這是每一張卡的形狀。三件事一起成立才算解決了核心痛點：
+
+    1. worktree 真的被移除（痛點是 worktree 無限累積）；
+    2. 本地與遠端分支**都還在**（裁定：不做不可逆的那一步）；
+    3. `state_after == "completed"`、第 4 步發動——卡不再卡在 ✅通過 進不了終態。
+
+    第 3 點是 `CloseoutObservation.authorized_actions` 買到的：分支仍在但不在授權範圍
+    內，因此不算「清理未完成」。少了那一層，這張卡會永遠停在 `cleanup_in_progress`。
     """
     remote = FakeRemoteState()
     result = execute_closeout_transition(
@@ -2012,19 +2050,97 @@ def test_a_squash_merged_branch_reaches_a_completed_closeout(env_squash: Env) ->
         effect_writer=FakeEffectWriter(remote), occupancy_prober=free_prober,
     )
     assert result.mode == "applied", result.blocking_reasons
-    assert result.state_after == "completed"
-    assert set(result.actions_performed) == set(DESTRUCTIVE_ORDER)
-    assert not env_squash.wt.exists()
-    assert not _local_branch_exists(env_squash.repo, BRANCH)
-    assert not _remote_branch_exists(env_squash.repo, "origin", BRANCH)
-    # 放行的是哪一條 disjunct 必須看得出來，不能只知道「通過了」。
+    assert result.authorized_actions == frozenset({"remove_worktree"})
+    assert result.actions_performed == ("remove_worktree",)
+    assert set(result.actions_withheld_unauthorized) == {
+        "delete_local_branch", "delete_remote_branch"
+    }
+    assert not env_squash.wt.exists(), "worktree 沒被移除，核心痛點沒解決"
+    assert _local_branch_exists(env_squash.repo, BRANCH), "本地分支不該被刪"
+    assert _remote_branch_exists(env_squash.repo, "origin", BRANCH), "遠端分支不該被刪"
+
+    assert result.state_after == "completed", "卡進不了終態就等於痛點沒解決"
+    assert result.remaining_status_face_steps == ()
+    assert remote.terminal_written and not remote.issue_open
+
+    # 放行的是哪一條 disjunct、授權到哪，都必須看得出來。
     merged_checks = [
         c for c in result.decision.checks if c.check_id.startswith("merge_verified")
     ]
     assert len(merged_checks) == 2
     for c in merged_checks:
         assert c.outcome == "pass"
-        assert "content_absorbed" in c.detail, c.detail
+        assert c.proof_kind == "content_absorbed"
+        assert "授權：remove_worktree" in c.detail, c.detail
+
+
+def test_the_authority_table_is_the_only_place_that_grants_branch_deletion() -> None:
+    """⚠️ 授權分流的**唯一落點**：刪分支的授權只有 `ancestor` 給得起。
+
+    這一條釘的是表本身，不是某次執行的結果——任何人日後把 `content_absorbed` 那一列
+    加上刪分支，這裡立刻轉紅。
+    """
+    irreversible = {"delete_local_branch", "delete_remote_branch"}
+    for kind, granted in cleanup.AUTHORITY_BY_PROOF.items():
+        if kind == "ancestor":
+            assert granted == set(DESTRUCTIVE_ORDER), "ancestor 應授權全部三個動作"
+        else:
+            assert not (granted & irreversible), (
+                f"{kind} 授權了不可逆動作 {granted & irreversible}——"
+                "只有 ancestor 保得住中間 commit 的內容"
+            )
+    assert cleanup.AUTHORITY_BY_PROOF["content_absorbed"] == {"remove_worktree"}
+    assert cleanup.AUTHORITY_BY_PROOF["diverged"] == cleanup.NO_AUTHORITY
+    assert cleanup.AUTHORITY_BY_PROOF["unobservable"] == cleanup.NO_AUTHORITY
+    # 表必須覆蓋 MergeProofKind 的每一個值，不得有「其餘」。
+    assert set(cleanup.AUTHORITY_BY_PROOF) == set(
+        cleanup.MergeProofKind.__args__  # type: ignore[attr-defined]
+    )
+
+
+def test_a_mixed_strength_pair_of_proofs_takes_the_weaker_authority() -> None:
+    """本地與遠端證明強度不同時取交集——以最弱的那一份為準。"""
+    strong = GuardCheck("merge_verified_local", "pass", "", 1, proof_kind="ancestor")
+    weak = GuardCheck("merge_verified_remote", "pass", "", 1, proof_kind="content_absorbed")
+    assert cleanup.GuardDecision("proceed", (strong, weak)).authorized_actions == {
+        "remove_worktree"
+    }
+    assert cleanup.GuardDecision("proceed", (strong, strong)).authorized_actions == set(
+        DESTRUCTIVE_ORDER
+    )
+    # 守衛擋下 → 一個動作都不授權，不看證明。
+    assert cleanup.GuardDecision("detect_only", (strong, strong)).authorized_actions == (
+        cleanup.NO_AUTHORITY
+    )
+    # 完全讀不到證明 → fail-closed，不是「全部授權」。
+    assert cleanup.GuardDecision("proceed", ()).authorized_actions == cleanup.NO_AUTHORITY
+
+
+def test_classification_is_total_over_every_authorization_scope() -> None:
+    """縮小授權之後分類仍是全函數：8 種授權範圍 × 32 種觀測，每一格都落在列舉內。
+
+    另外釘住「授權只會讓 `cleanup_done` 變寬鬆、不會變嚴格」——縮小範圍不可能把一個
+    本來完成的收尾變回未完成。
+    """
+    full = frozenset(DESTRUCTIVE_ORDER)
+    scopes = [
+        frozenset(s)
+        for r in range(len(DESTRUCTIVE_ORDER) + 1)
+        for s in itertools.combinations(DESTRUCTIVE_ORDER, r)
+    ]
+    assert len(scopes) == 8
+    for scope in scopes:
+        for combo in itertools.product([False, True], repeat=5):
+            scoped = CloseoutObservation(*combo, authorized_actions=scope)
+            unscoped = CloseoutObservation(*combo, authorized_actions=full)
+            assert classify_state(scoped) in LEGAL_STATES | {
+                "illegal_terminal_before_cleanup"
+            }
+            assert (
+                classify_state(scoped) == "illegal_terminal_before_cleanup"
+            ) == (not scoped.cleanup_done and scoped.effect_started)
+            if unscoped.cleanup_done:
+                assert scoped.cleanup_done, "縮小授權竟讓已完成的收尾變回未完成"
 
 
 def test_a_branch_pushed_to_after_the_squash_is_still_refused(env_squash: Env) -> None:
