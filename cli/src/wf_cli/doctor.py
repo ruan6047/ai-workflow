@@ -25,6 +25,7 @@ from typing import Any, Literal
 from . import git_ops
 from .card import now_iso8601
 from .cleanup import (
+    DESTRUCTIVE_ORDER,
     SUBSEQUENT_OBLIGATION_STEPS,
     CleanupTarget,
     GuardMode,
@@ -118,6 +119,10 @@ class CleanupPreviewFinding:
     blocking_reasons: tuple[str, ...]
     #: 第 5–7 步永遠列在這裡：它們是其後義務，不寫狀態面，**不阻擋 release**。
     outstanding_obligations: tuple[int, ...] = SUBSEQUENT_OBLIGATION_STEPS
+    #: 前提成立時**實際會被授權執行**的動作（`cleanup.AUTHORITY_BY_PROOF`）。
+    #: 前提全部成立 ≠ 三個刪除動作都會做：squash 合併的卡只授權移除 worktree。
+    #: 少了這一欄，預覽會讓人以為分支也會被刪。
+    authorized_actions: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -182,8 +187,16 @@ class DoctorReport:
             if not self.cleanup_previews:
                 lines.append("（無 `📦已合併` 待收尾的卡）")
             for prev in self.cleanup_previews:
-                verdict = "前提全部成立（仍須由 release／reconcile 發動）" if prev.mode == "proceed" \
-                    else "前提未全部成立 → 純偵測，不得刪除"
+                if prev.mode == "proceed":
+                    granted = "、".join(
+                        a for a in DESTRUCTIVE_ORDER if a in prev.authorized_actions
+                    ) or "（無）"
+                    verdict = (
+                        f"前提全部成立；授權範圍＝{granted}"
+                        "（仍須由 release／reconcile 發動）"
+                    )
+                else:
+                    verdict = "前提未全部成立 → 純偵測，不得刪除"
                 lines.append(f"- [{prev.mode}] {prev.card_id}（分支={prev.branch or '—'}）{verdict}")
                 for reason in prev.blocking_reasons:
                     lines.append(f"  - 阻擋：{reason}")
@@ -1122,6 +1135,7 @@ def run_doctor(
                     card_id=rc.card_id, branch=rc.branch,
                     worktree_path=str(wt) if wt else None,
                     mode=decision.mode, blocking_reasons=decision.reasons,
+                    authorized_actions=decision.authorized_actions,
                 )
             )
 
