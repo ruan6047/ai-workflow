@@ -32,6 +32,12 @@ implementation`` 承載「查核退回」語意（review → 退回 implementati
 （把 main_ref 指向待刪分支自己，``merge-base --is-ancestor`` 必然通過）。doctor 的
 同名旗標無妨，因為 doctor 唯讀；破壞性路徑上不開這個口。
 
+**``--cleanup`` 做哪幾件事不是固定的**（WF-CLEANUP-SQUASH-AWARE1）：授權範圍由合併
+方式決定——merge 合併走 ``ancestor``，三個動作全做；squash 合併走 ``content_absorbed``，
+**只移除 worktree、分支保留**（`cleanup.AUTHORITY_BY_PROOF`）。因此本指令的輸出與
+寫回卡片的終態留痕**都由實際執行的動作集合產生**（`cleanup.describe_cleanup`），
+不是固定字串——上一版就是寫死字串，於是授權分流上線後留痕開始宣稱一件沒發生的事。
+
 **不帶 ``--cleanup`` 的代價也必須講明**：那條路徑會在清理完成前寫入終態，依
 `cleanup.classify_state` 的分類即 ``illegal_terminal_before_cleanup``；守衛不自動
 修復非法態，所以事後再補 ``--cleanup`` 會被擋。因此該路徑會印出警示，而不是靜靜
@@ -50,8 +56,10 @@ from ..card import append_log_line, now_iso8601, parse_branch_worktree
 from ..cleanup import (
     SUBSEQUENT_OBLIGATION_STEPS,
     CleanupTarget,
+    CleanupOutcome,
     CloseoutResult,
     RemoteCardFacts,
+    describe_cleanup,
     execute_closeout_transition,
 )
 from ..config import add_target_args, resolve_target
@@ -92,7 +100,11 @@ class _CallbackEffectWriter:
     呼叫端自律。
     """
 
-    def __init__(self, close_issue: Callable[[], None], write_terminal: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        close_issue: Callable[[], None],
+        write_terminal: Callable[[CleanupOutcome], None],
+    ) -> None:
         self._close_issue = close_issue
         self._write_terminal = write_terminal
         self.calls: list[str] = []
@@ -101,9 +113,13 @@ class _CallbackEffectWriter:
         self.calls.append("close_issue")
         self._close_issue()
 
-    def write_release_terminal(self, target: CleanupTarget) -> None:
+    def write_release_terminal(
+        self, target: CleanupTarget, outcome: CleanupOutcome
+    ) -> None:
+        # `outcome` 原樣轉交，本類別**不加工也不加註**：留痕的措辭只有
+        # `cleanup.describe_cleanup()` 一個產生點。
         self.calls.append("write_release_terminal")
-        self._write_terminal()
+        self._write_terminal(outcome)
 
 
 def registry_from_items(items: list[ItemSnapshot]) -> TasksMdRegistry:
@@ -150,14 +166,28 @@ def _issue_open(runner: GhRunner, repo: str, issue_number: int) -> bool | None:
 
 
 def _print_closeout(result: CloseoutResult, card_id: str) -> None:
+    """stderr／stdout 的逐項回報。**與終態留痕同源**：兩者都由動作集合產生。
+
+    `mode=applied` 不代表三個動作都做了——squash 路徑只做 worktree。因此這裡逐格
+    印出，並在最後印一行與終態留痕**逐字相同**的摘要，讓「畫面上看到的」與「寫進
+    卡片的」不可能各說各話。
+    """
+    outcome = result.cleanup_outcome
     print(f"[handoff] 收尾轉換（{card_id}）：mode={result.mode}／"
           f"狀態={result.state_after}（合法={result.legal_state}）")
-    if result.actions_performed:
-        print(f"  - 已執行：{', '.join(result.actions_performed)}")
-    if result.actions_skipped_absent:
-        print(f"  - 跳過（本來就不存在）：{', '.join(result.actions_skipped_absent)}")
-    if result.actions_aborted:
-        print(f"  - 中止（刪除前複驗不通過）：{', '.join(result.actions_aborted)}")
+    if result.authorized_actions:
+        print(f"  - 本次授權：{', '.join(sorted(result.authorized_actions))}")
+    if outcome.performed:
+        print(f"  - 已執行：{', '.join(outcome.performed)}")
+    if outcome.skipped_absent:
+        print(f"  - 跳過（本來就不存在）：{', '.join(outcome.skipped_absent)}")
+    if outcome.withheld_unauthorized:
+        print(f"  - 保留（授權不足，刻意不刪）：{', '.join(outcome.withheld_unauthorized)}")
+    if outcome.aborted:
+        print(f"  - 中止（刪除前複驗不通過）：{', '.join(outcome.aborted)}")
+    if outcome.unaccounted:
+        print(f"  - 未走到：{', '.join(outcome.unaccounted)}")
+    print(f"  - 留痕敘述：{describe_cleanup(outcome)}")
     for reason in result.blocking_reasons:
         print(f"  - 阻擋：{reason}", file=sys.stderr)
     print(f"  - 其後義務（不寫狀態面、不阻擋 release）：第 "
@@ -183,9 +213,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--cleanup",
         action="store_true",
-        help="僅 --next-stage release：連同執行守衛化的收尾清理（移除 worktree、"
-        "刪本地與遠端分支，全部前提成立才動手）。**預設不清理**——刪除不可逆，"
-        "預設值取代價可回復的那一邊；需搭配 --repo-path",
+        help="僅 --next-stage release：連同執行守衛化的收尾清理，全部前提成立才動手。"
+        "**實際做哪幾個動作視合併方式而定**：merge 合併（分支是 main 的祖先）會移除 "
+        "worktree 並刪本地與遠端分支；squash 合併只移除 worktree，分支刻意保留"
+        "（cleanup.AUTHORITY_BY_PROOF）。做了什麼以本次輸出與寫回卡片的留痕為準。"
+        "**預設不清理**——刪除不可逆，預設值取代價可回復的那一邊；需搭配 --repo-path",
     )
     p.add_argument(
         "--iteration",
@@ -349,10 +381,15 @@ def _release_with_cleanup(
         if item.issue_number is not None and repo:
             runner.execute(["issue", "close", str(item.issue_number), "--repo", repo])
 
-    def write_terminal() -> None:
-        # 這句敘述在被呼叫的當下是**已驗證**的，不是宣稱：executor 只在重新觀測到
-        # 清理確實完成（worktree／本地分支／遠端分支皆不存在）後才會呼叫本函式。
-        write_status_face("；收尾清理已完成（worktree 與本地／遠端分支皆已不存在）")
+    def write_terminal(outcome: CleanupOutcome) -> None:
+        # ⚠️ 這句話**必須由 executor 實際做過的動作產生**，不得是固定字串。
+        #
+        # R2 之前它寫死成「worktree 與本地／遠端分支皆已不存在」，理由是「executor
+        # 只在清理確實完成後才呼叫本函式」——那個理由在 squash 授權分流上線的當下就
+        # 失效了：squash 路徑刻意保留分支，而這句話仍宣稱分支不存在。
+        # **行為改了、敘述沒改，因為兩者不同源。** 現在同源：唯一的產生點是
+        # `cleanup.describe_cleanup()`，輸入是這一輪的 `CleanupOutcome`。
+        write_status_face("；" + describe_cleanup(outcome))
 
     writer = _CallbackEffectWriter(close_issue, write_terminal)
     target_spec = CleanupTarget(

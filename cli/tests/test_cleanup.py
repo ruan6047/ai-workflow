@@ -455,14 +455,19 @@ class FakeEffectWriter:
     def __init__(self, remote: FakeRemoteState) -> None:
         self.remote = remote
         self.calls: list[str] = []
+        self.outcome = None
+        self.terminal_note = ""
 
     def close_issue(self, target: CleanupTarget) -> None:
         self.calls.append("close_issue")
         self.remote.issue_open = False
 
-    def write_release_terminal(self, target: CleanupTarget) -> None:
+    def write_release_terminal(self, target: CleanupTarget, outcome) -> None:
         self.calls.append("write_release_terminal")
         self.remote.terminal_written = True
+        #: executor 交來的「實際做了什麼」，測試據此驗留痕（R2-01）。
+        self.outcome = outcome
+        self.terminal_note = cleanup.describe_cleanup(outcome)
 
 
 def recording_runner(log: list[list[str]]):
@@ -567,6 +572,10 @@ _BODY_ALLOWED_GLOBALS = frozenset({
     #   「本來就沒有」，**不跑刪除前複驗**（不刪就沒有那個時刻）。
     # - `frozenset`：守衛擋下時把觀測範圍退回全集，讓 detect_only 的分類與本卡之前逐字相同。
     "_read_remote_heads", "frozenset",
+    # WF-CLEANUP-SQUASH-AWARE1 R3（留痕同源）新增，經此處複核：
+    # - `CleanupOutcome`：executor 把「這一輪實際做過什麼」收成一個值交給 effect
+    #   writer，讓終態留痕由動作集合產生而非固定字串。純資料建構，不含判定。
+    "CleanupOutcome",
 })
 
 _TRIGGER_VALUES = frozenset({"release", "reconcile"})
@@ -2199,3 +2208,150 @@ def test_the_squash_merged_path_passes_via_content_absorption(env_squash: Env) -
     for cid in ("merge_verified_local", "merge_verified_remote"):
         check = next(c for c in decision.checks if c.check_id == cid)
         assert "證明=content_absorbed" in check.detail, check.detail
+
+
+# ---------------------------------------------------------------------------
+# 12. R2-01：留痕須據「實際執行的動作集合」產生，而非固定字串
+#
+# 病灶不是那一句話寫錯，是**行為與敘述不同源**：R2 把行為改成「squash 只移除
+# worktree」，而終態留痕照著「三個都刪了」的舊假設寫死。因此這一節釘的不是某一句
+# 措辭，是**同源性**與**全覆蓋**：
+#
+#   - `describe_cleanup` 對 DESTRUCTIVE_ORDER 是全函數（窮舉每一種分割）
+#   - 終態留痕、stderr 摘要、doctor 預覽三處都由同一組動作產生
+# ---------------------------------------------------------------------------
+
+
+def test_the_cleanup_description_accounts_for_every_action_in_every_partition() -> None:
+    """⚠️ 窮舉：三個動作分到五個桶（含「沒走到」）的每一種組合，敘述都要各提一次。
+
+    這一條是「不會描述沒發生的動作、也不會漏掉發生了的動作」的機械保證——不是靠
+    措辭寫得小心，是靠分割覆蓋。共 4**3 = 64 種指派。
+    """
+    buckets = ("performed", "skipped_absent", "withheld_unauthorized", "aborted")
+    for assignment in itertools.product(range(len(buckets)), repeat=len(DESTRUCTIVE_ORDER)):
+        kwargs: dict[str, tuple[str, ...]] = {b: () for b in buckets}
+        for action, idx in zip(DESTRUCTIVE_ORDER, assignment):
+            kwargs[buckets[idx]] += (action,)
+        outcome = cleanup.CleanupOutcome(**kwargs)
+        assert outcome.unaccounted == (), "全部指派完畢時不該有未交代的動作"
+        sentence = cleanup.describe_cleanup(outcome)
+        for action in DESTRUCTIVE_ORDER:
+            label = cleanup.ACTION_LABELS[action]
+            assert sentence.count(label) == 1, (
+                f"{label} 在敘述中出現 {sentence.count(label)} 次，應恰好 1 次：{sentence}"
+            )
+
+
+def test_actions_never_walked_are_reported_as_such_not_silently_dropped() -> None:
+    """中止之後沒走到的動作不得從敘述裡消失——「沒走到」與「沒事發生」不是同一件事。"""
+    outcome = cleanup.CleanupOutcome(
+        performed=("remove_worktree",), aborted=("delete_local_branch",)
+    )
+    assert outcome.unaccounted == ("delete_remote_branch",)
+    sentence = cleanup.describe_cleanup(outcome)
+    assert "遠端分支 未走到" in sentence, sentence
+    assert cleanup.describe_cleanup(cleanup.CleanupOutcome()) != "收尾清理：無任何對象" or True
+    # 全空 = 一個動作都沒交代 → 三個都列為未走到，不得回一句空話。
+    empty = cleanup.describe_cleanup(cleanup.CleanupOutcome())
+    for action in DESTRUCTIVE_ORDER:
+        assert cleanup.ACTION_LABELS[action] in empty, empty
+
+
+def _emittable_string_literals(tree: ast.AST) -> list[str]:
+    """所有**可能被輸出**的字串常數——排除 docstring。
+
+    刻意只排 docstring、不排註解（註解本來就不在 AST 裡）：說明歷史病灶的散文可以
+    逐字引用那句舊字串，**能被印出來的字面不行**。這個分界才是判準的實質。
+    """
+    docstrings = {
+        node.body[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node not in docstrings
+    ]
+
+
+def test_no_fixed_deletion_claim_survives_as_an_emittable_literal() -> None:
+    """⚠️ 回歸釘：R2 那句寫死的留痕不得以任何形式復活成可輸出的字面。
+
+    判準是「凡宣稱『已刪除』之處」都必須由動作集合產生。這裡掃整個套件的字串常數
+    （排除 docstring），禁止再出現把對象直接宣告為已清除／不存在的固定字面。
+    """
+    banned = ("皆已不存在", "與本地／遠端分支皆已", "收尾清理已完成（")
+    src_root = Path(cleanup.__file__).parent
+    checked = 0
+    for path in sorted(src_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        checked += 1
+        for literal in _emittable_string_literals(tree):
+            for phrase in banned:
+                assert phrase not in literal, (
+                    f"{path.name} 又出現固定的刪除宣稱字面：{phrase!r}（在 {literal[:60]!r}）"
+                )
+    assert checked > 5, f"只掃到 {checked} 個檔案，掃描範圍可能壞了"
+
+
+def test_the_terminal_note_matches_what_was_actually_done_on_the_squash_path(
+    env_squash: Env,
+) -> None:
+    """⚠️ R2-01 的直接取證（squash 路徑）：留痕不得宣稱分支已不存在。"""
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    result = execute_closeout_transition(
+        env_squash.target, trigger="release", registry=env_squash.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(),
+        effect_writer=writer, occupancy_prober=free_prober,
+    )
+    assert result.mode == "applied"
+    note = writer.terminal_note
+    assert note == "收尾清理：已清除 worktree；本地分支、遠端分支 依授權保留（未刪除）", note
+    # 留痕與實際狀態必須一致：分支確實還在。
+    assert _local_branch_exists(env_squash.repo, BRANCH)
+    assert _remote_branch_exists(env_squash.repo, "origin", BRANCH)
+    assert "不存在" not in note, "留痕仍在宣稱分支不存在"
+    # 留痕與 executor 交來的動作集合同源。
+    assert writer.outcome == result.cleanup_outcome
+    assert cleanup.describe_cleanup(result.cleanup_outcome) == note
+
+
+def test_the_terminal_note_matches_what_was_actually_done_on_the_merge_path(
+    env: Env,
+) -> None:
+    """merge 路徑的對照：三個都刪了，留痕就該說三個都清除了。"""
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    result = execute_closeout_transition(
+        env.target, trigger="release", registry=env.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(),
+        effect_writer=writer, occupancy_prober=free_prober,
+    )
+    assert result.mode == "applied"
+    assert writer.terminal_note == "收尾清理：已清除 worktree、本地分支、遠端分支"
+    assert not _local_branch_exists(env.repo, BRANCH)
+    assert not _remote_branch_exists(env.repo, "origin", BRANCH)
+
+
+def test_the_effect_writer_cannot_write_a_terminal_note_without_the_outcome() -> None:
+    """留痕同源的結構保證：寫終態的介面**必須**收下動作集合，收不到就叫不動。
+
+    這比「記得從 outcome 產生字串」強一級——一個忘了改的實作會 TypeError，而不是
+    安靜地繼續印舊句子。
+    """
+    params = inspect.signature(
+        cleanup.CloseoutEffectWriter.write_release_terminal
+    ).parameters
+    assert "outcome" in params, "寫終態的介面沒有收下實際動作，留痕又會與行為脫鉤"
+    assert params["outcome"].default is inspect.Parameter.empty, (
+        "outcome 有預設值就等於允許呼叫端不傳，同源性就不是結構性的了"
+    )

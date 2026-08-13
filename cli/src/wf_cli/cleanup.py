@@ -153,6 +153,14 @@ DESTRUCTIVE_ORDER: tuple[str, ...] = (
     "delete_remote_branch",
 )
 
+#: 破壞性動作的人話標籤。**留痕敘述唯一的字詞來源**——不在各消費端各寫一份，
+#: 否則行為變了以後又會有人只改其中一份。
+ACTION_LABELS: Mapping[str, str] = {
+    "remove_worktree": "worktree",
+    "delete_local_branch": "本地分支",
+    "delete_remote_branch": "遠端分支",
+}
+
 Trigger = Literal["release", "reconcile"]
 
 
@@ -1167,12 +1175,78 @@ def observe(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class CleanupOutcome:
+    """**實際發生了什麼**——留痕敘述的唯一資料來源。
+
+    四個欄位對 `DESTRUCTIVE_ORDER` 構成一個分割：每個動作最多落在一格。沒落在任何
+    一格的（中止之後就沒再走到的後續動作）由 `unaccounted` 補齊，**因此三個動作合起來
+    一定被完整交代**——這正是 R2 的病灶所在：當時的留痕是固定字串，行為改成「保留分支」
+    之後它仍宣稱分支已不存在。
+
+    ⚠️ 不要從 `CloseoutMode` 推論做了什麼。`applied` 只代表「授權範圍內完成」，
+    squash 卡的 `applied` 帶著非空的 `withheld_unauthorized`。
+    """
+
+    performed: tuple[str, ...] = ()
+    skipped_absent: tuple[str, ...] = ()
+    withheld_unauthorized: tuple[str, ...] = ()
+    aborted: tuple[str, ...] = ()
+
+    @property
+    def accounted(self) -> frozenset[str]:
+        return frozenset(
+            self.performed + self.skipped_absent + self.withheld_unauthorized + self.aborted
+        )
+
+    @property
+    def unaccounted(self) -> tuple[str, ...]:
+        """一格都沒落到的動作——中止後未再走到的那些。**不是「沒事發生」，是「沒走到」。**"""
+        return tuple(a for a in DESTRUCTIVE_ORDER if a not in self.accounted)
+
+
+def _labels(actions: Sequence[str]) -> str:
+    """依 `DESTRUCTIVE_ORDER` 的固定次序輸出標籤，讓同一組動作永遠印成同一句話。"""
+    ordered = [a for a in DESTRUCTIVE_ORDER if a in set(actions)]
+    return "、".join(ACTION_LABELS.get(a, a) for a in ordered)
+
+
+def describe_cleanup(outcome: CleanupOutcome) -> str:
+    """把**實際做過的動作**翻成一句留痕。**產生留痕敘述的唯一一行碼在這裡。**
+
+    R2 之前這句話是寫死的字串（「worktree 與本地／遠端分支皆已不存在」），於是本卡
+    把行為改成「squash 只移除 worktree、分支保留」之後，敘述仍在宣稱分支不存在——
+    行為與敘述**不同源**，直接違反 `ROADMAP §0` 目標 2（事後能從留痕重建做了什麼）。
+
+    本函式對 `DESTRUCTIVE_ORDER` 是**全函數**：三個動作各自落在 performed／
+    skipped_absent／withheld_unauthorized／aborted／unaccounted 其中一格，且**每一格
+    都會被說出來**。因此「描述了一個沒發生的動作」與「漏掉一個發生了的動作」兩種錯誤
+    在這裡都寫不出來——不是靠字串寫得夠小心，是靠分割本身。
+    """
+    parts: list[str] = []
+    if outcome.performed:
+        parts.append(f"已清除 {_labels(outcome.performed)}")
+    if outcome.skipped_absent:
+        parts.append(f"{_labels(outcome.skipped_absent)} 本來就不存在")
+    if outcome.withheld_unauthorized:
+        parts.append(f"{_labels(outcome.withheld_unauthorized)} 依授權保留（未刪除）")
+    if outcome.aborted:
+        parts.append(f"{_labels(outcome.aborted)} 已中止（刪除前複驗不通過）")
+    if outcome.unaccounted:
+        parts.append(f"{_labels(outcome.unaccounted)} 未走到")
+    if not parts:
+        return "收尾清理：無任何對象"
+    return "收尾清理：" + "；".join(parts)
+
+
 class CloseoutEffectWriter(Protocol):
     """第 4 步的兩次狀態面寫入。順序沿用權威清單：先關 Issue，終態最後落地。"""
 
     def close_issue(self, target: CleanupTarget) -> None: ...
 
-    def write_release_terminal(self, target: CleanupTarget) -> None: ...
+    def write_release_terminal(
+        self, target: CleanupTarget, outcome: CleanupOutcome
+    ) -> None: ...
 
 
 def _noop_hook(_: str) -> None:
@@ -1227,6 +1301,16 @@ class CloseoutResult:
     @property
     def legal_state(self) -> bool:
         return self.state_after in LEGAL_STATES
+
+    @property
+    def cleanup_outcome(self) -> CleanupOutcome:
+        """把四個動作欄位收成一個值。**所有留痕消費端都該從這裡取，不要各自拼字串。**"""
+        return CleanupOutcome(
+            performed=self.actions_performed,
+            skipped_absent=self.actions_skipped_absent,
+            withheld_unauthorized=self.actions_withheld_unauthorized,
+            aborted=self.actions_aborted,
+        )
 
 
 def execute_closeout_transition(
@@ -1456,12 +1540,20 @@ def _execute_closeout(
         )
 
     mid = observe(target, remote_facts, runner, authorized=authorized)
+    # 留痕的資料來源：**這一輪實際做過什麼**，不是任何預設假設。effect writer 拿到
+    # 它才能把終態那一句話生出來，而不是寫死「分支皆已不存在」（R2 的病灶）。
+    outcome = CleanupOutcome(
+        performed=tuple(performed),
+        skipped_absent=tuple(skipped),
+        withheld_unauthorized=tuple(withheld),
+        aborted=tuple(aborted),
+    )
     if effect_writer is not None and mid.cleanup_done:
         if mid.issue_open:
             effect_writer.close_issue(target)
             step_hook("after_close_issue")
         if not mid.terminal_status_written:
-            effect_writer.write_release_terminal(target)
+            effect_writer.write_release_terminal(target, outcome)
             step_hook("after_write_terminal")
         remote_facts = RemoteCardFacts(terminal_status_written=True, issue_open=False)
 
@@ -1486,6 +1578,7 @@ __all__ = [
     "CHECK_STEP_REF",
     "DESTRUCTIVE_ORDER",
     "EFFECT_STEP",
+    "ACTION_LABELS",
     "AUTHORITY_BY_PROOF",
     "LEGAL_STATES",
     "NO_AUTHORITY",
@@ -1495,6 +1588,7 @@ __all__ = [
     "STEP_ROLES",
     "SUBSEQUENT_OBLIGATION_STEPS",
     "CleanupGuardError",
+    "CleanupOutcome",
     "CleanupTarget",
     "CloseoutEffectWriter",
     "CloseoutMode",
@@ -1512,6 +1606,7 @@ __all__ = [
     "classify_state",
     "conditional_delete_args",
     "default_git_runner",
+    "describe_cleanup",
     "evaluate_cleanup_guard",
     "execute_closeout_transition",
     "is_conditional_delete_lease",
