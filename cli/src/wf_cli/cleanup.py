@@ -67,6 +67,23 @@ compare-and-swap，窗只是變窄，沒有被關上。
 **送出任何更新指令之前**就以 ``(stale info)`` 拒絕（見下方 `_LEASE_RE` 的註解）。
 拒絕即 `mode="aborted"`，效果（第 4 步）一併扣住——與守衛其餘拒絕路徑同型，
 不靜默略過、不重試、不降級為無條件刪除。
+
+## 「內容已在 main」為何不能只用祖先關係（WF-CLEANUP-SQUASH-AWARE1）
+
+`ROADMAP.md §3.5`（2026-08-13）裁定**卡片一律以 squash 合併**——因為 GitHub 的 merge
+按鈕產不出 `Reviewed-by`，界線跨過後每次按鈕合併都是 `DEV-COMMIT-TRAILER-GUARD1`
+檢查器的違規。而 squash 產生的是一筆**全新 commit**，分支 tip 永遠不會是 main 的
+祖先，於是 `merge-base --is-ancestor` **對之後每一張卡都恆拒**（實測：#9、#63、#73
+三張已 APPROVE 並合併的卡全被擋，唯一通過的 #48 是當日唯一用 merge 合併的）。
+
+**守衛沒有擋錯。** 它問的是「這個分支的內容真的在 main 上嗎」，而 squash 之後那個
+答案在 git 拓撲上確實是「不知道」。修法不是放寬它，是**補一條在 squash 之後仍能回答
+同一個問題的證明**——見 `prove_content_in_main()`，該函式的 docstring 逐條寫明它證明
+了什麼、比祖先關係弱在哪、以及**在什麼情況下會誤放行**。
+
+兩條判準是 **OR**：先試祖先（強），不成立才試內容吸收（弱一級）。守衛其餘九項前提
+與它們之間的 AND 關係**完全不動**——放寬的風險全部集中在這一條 disjunct 上，且它
+落在 `MergeProof.kind` 這個具名欄位裡，報告看得出是哪一條放行的。
 """
 
 from __future__ import annotations
@@ -386,6 +403,161 @@ _STASH_BRANCH_RE = re.compile(r"^(?:WIP on|On) (?P<branch>[^:]+):")
 # ---------------------------------------------------------------------------
 
 
+#: 「內容已在 main」的證明種類。**這是本模組唯一被放寬的那條軸**，因此它是具名
+#: 欄位而不是一個布林：任何一次放行都必須說得出是哪一種證明放的行。
+#:
+#: - ``ancestor``：分支 tip 是 main 的祖先。**最強**：分支上每一筆 commit（含中間
+#:   狀態）都在 main 的歷史裡，刪掉分支之後全都還原得回來。
+#: - ``content_absorbed``：tip 不在 main 歷史裡，但**分支改動過的每一個路徑，main 上
+#:   的內容都已與 tip 逐位元相同**。squash 之後成立的就是這一條。
+#: - ``diverged``：分支上有 main 沒有的內容。**這是「別刪」。**
+#: - ``unobservable``：判不出來。與 `diverged` 同樣阻擋（`aggregate_mode` 三值語意）。
+MergeProofKind = Literal["ancestor", "content_absorbed", "diverged", "unobservable"]
+
+#: `MergeProofKind` → `CheckOutcome`。兩種證明都放行，其餘一律擋。
+_PROOF_OUTCOME: Mapping[MergeProofKind, CheckOutcome] = {
+    "ancestor": "pass",
+    "content_absorbed": "pass",
+    "diverged": "fail",
+    "unobservable": "unobservable",
+}
+
+
+@dataclass(frozen=True)
+class MergeProof:
+    kind: MergeProofKind
+    detail: str
+
+    @property
+    def outcome(self) -> CheckOutcome:
+        return _PROOF_OUTCOME[self.kind]
+
+
+def _changed_paths(
+    runner: GitRunner, repo_root: Path, a: str, b: str
+) -> frozenset[str] | None:
+    """``a`` 與 ``b`` 之間有差異的路徑集合；讀不到回 ``None``（呼叫端一律降 unobservable）。
+
+    ``--no-renames`` **是正確性所需**，不是風格。開啟改名偵測時，一次改名只回報新路徑，
+    舊路徑（＝被刪掉的那個）不會進入 A，而**刪除正是最不能漏的那種分歧**。實測（分支把
+    ``keep.txt`` 改名為 ``moved.txt``；main 另外加了同內容的 ``moved.txt`` 但 ``keep.txt``
+    仍在）：
+
+        --find-renames → A={moved.txt}            B={keep.txt}  交集=∅   → 誤放行
+        --no-renames   → A={keep.txt, moved.txt}  B={keep.txt}  交集={keep.txt} → 擋下
+
+    ``-z`` 則是防禦性的，**不是**這裡的正確性關鍵：兩次 diff 跑在同一個 repo、同一份
+    ``core.quotePath`` 設定下，就算被轉義也會是兩邊一致地轉義，交集不受影響。用 ``-z``
+    的理由是拿到的是原始路徑位元組、不必依賴「兩邊轉義方式必然相同」這個前提，順帶
+    免除以換行切分的疑慮。
+    """
+    res = _run(runner, repo_root, ["diff", "--name-only", "--no-renames", "-z", a, b])
+    if not res.ok:
+        return None
+    return frozenset(p for p in res.stdout.split("\0") if p)
+
+
+def prove_content_in_main(
+    runner: GitRunner, repo_root: Path, tip: str, main_ref: str
+) -> MergeProof:
+    """裁定「``tip`` 的內容是否已經在 ``main_ref`` 上」，並**具名回報是哪一種證明**。
+
+    ## 判準本身
+
+    1. **祖先關係**（`merge-base --is-ancestor`）——沿用 WF-CLEANUP-GUARD1 原判準，
+       先試，成立即回 ``ancestor``。這條沒有被動過。
+    2. **內容吸收**——令 ``base = merge-base(tip, main)``：
+
+           A = 分支改動過的路徑 = paths(diff base tip)
+           B = 與 main 仍有差異的路徑 = paths(diff main tip)
+           內容已吸收  ⟺  A ∩ B = ∅
+
+       白話：**分支動過的每一個路徑，main 上的內容都已經與分支 tip 逐位元相同。**
+       不在 A 的路徑無關緊要——分支沒碰過它們，分支上是 base 的舊內容，main 之後怎麼
+       改都不是分支的貢獻。
+
+    ## 它證明了什麼（以及沒證明什麼）
+
+    **證明**：分支 tip 這個快照所帶的檔案內容，main 上一份不缺。以「刪掉分支會不會
+    毀掉已提交的檔案內容」而論，答案是不會。
+
+    **沒證明**：分支的 commit 物件本身在 main 上。squash 之後它們**確實不在**——那正
+    是 `ROADMAP §3.5` 已經承認並接受的代價（「被審 SHA 不會出現在 main 的歷史上」）。
+
+    ## ⚠️ 它比祖先關係弱在哪（不掩飾）
+
+    弱在**只看 tip 這一個快照**。`ancestor` 保住分支上每一個中間 commit；
+    ``content_absorbed`` 只保住 tip。因此：
+
+    - **中間 commit 才有的內容會永久消失**：某檔案在分支第 1 個 commit 新增、第 3 個
+      commit 又刪掉，tip 沒有它、main 也沒有它（squash 只帶 tip 的樹），刪掉分支之後
+      就再也拿不回來。⚠️ 這個損失**是 squash 本身造成的、不是本判準造成的**——main
+      無論如何都收不到那份內容；本判準的責任在於它讓「刪除」這個不可逆動作得以發生。
+    - **commit 訊息、作者、分支上的 SHA 一併消失**。同上，squash 已經放棄它們。
+
+    ## ⚠️ 它會在什麼情況下誤放行
+
+    1. **淨零分支**：分支有 commit，但相對 base 淨改動為零（做完又自己 revert 回去）。
+       此時 A = ∅，交集空，回 ``content_absorbed`` 放行——**而祖先關係會拒絕它**。
+       這是本判準相對舊判準最清楚的一次放寬，且與 squash 無關。損失是「那次嘗試的
+       commit 紀錄」；檔案內容零損失。
+    2. **內容撞號**：另一張卡（或另一條路徑）把一模一樣的內容送上 main，本分支其實
+       從未被合併，但 A ∩ B = ∅ 成立。此時檔案內容仍然一份不缺在 main 上，損失同 1。
+    3. **繼承自舊判準的邊界**：本函式與 `merge-base --is-ancestor` 一樣，把 ``main_ref``
+       指到的東西**當成真的 main**。main 被改寫過（force push、base 被重寫）時，兩條
+       判準會一起失去意義——這不是新增的破口，是原本就在的那一個。
+
+    **不會誤放行的**（沙箱矩陣逐一取證，見 `test_cleanup.py` 的判準矩陣）：完全未合併、
+    squash 之後分支又推了新提交、squash 之後 main 又 revert 掉、分支刪檔而 main 未刪、
+    同檔衝突。這五種全部落在 ``diverged``。
+    """
+    if _run(runner, repo_root, ["merge-base", "--is-ancestor", tip, main_ref]).ok:
+        return MergeProof(
+            "ancestor", f"{tip} 已是 {main_ref} 的祖先（分支上每一筆 commit 都在 main 歷史內）"
+        )
+
+    base_res = _run(runner, repo_root, ["merge-base", tip, main_ref])
+    if not base_res.ok or not base_res.stdout.strip():
+        return MergeProof(
+            "unobservable",
+            f"{tip} 與 {main_ref} 找不到共同祖先（{base_res.stderr.strip() or '無錯誤訊息'}）；"
+            "無共同基準即無法判斷內容是否已吸收，不放行",
+        )
+    base = base_res.stdout.split()[0]
+
+    touched = _changed_paths(runner, repo_root, base, tip)
+    if touched is None:
+        return MergeProof("unobservable", f"讀不到 {base[:12]}..{tip} 的改動路徑，無法判斷")
+    if not touched:
+        return MergeProof(
+            "content_absorbed",
+            f"{tip} 相對共同祖先 {base[:12]} 淨改動為零（分支上的 commit 互相抵銷）；"
+            "無任何檔案內容可毀。⚠️ 祖先關係會拒絕這種分支，本判準放行——"
+            "損失的是那次嘗試的 commit 紀錄，不是檔案內容",
+        )
+
+    differing = _changed_paths(runner, repo_root, main_ref, tip)
+    if differing is None:
+        return MergeProof("unobservable", f"讀不到 {main_ref} 與 {tip} 的差異路徑，無法判斷")
+
+    unmatched = sorted(touched & differing)
+    if unmatched:
+        shown = ", ".join(unmatched[:5])
+        return MergeProof(
+            "diverged",
+            f"{tip} 改動過的 {len(touched)} 個路徑中，有 {len(unmatched)} 個在 {main_ref} 上"
+            f"的內容與分支不同：{shown}"
+            f"{' …' if len(unmatched) > 5 else ''}；"
+            "這些內容不在 main 上，刪掉分支就沒了",
+        )
+    return MergeProof(
+        "content_absorbed",
+        f"{tip} 相對共同祖先 {base[:12]} 改動的 {len(touched)} 個路徑，"
+        f"在 {main_ref} 上的內容已與分支 tip 逐位元相同（squash 合併後的形狀）；"
+        "⚠️ 分支的 commit 物件本身不在 main 歷史內——squash 已放棄它們（ROADMAP §3.5）",
+    )
+
+
 def _check_merge_local(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
     tip = _run(runner, target.repo_root, ["rev-parse", "--verify", "--quiet", target.branch])
     if not tip.ok or not tip.stdout.strip():
@@ -393,15 +565,11 @@ def _check_merge_local(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
             "merge_verified_local", "pass",
             f"本地分支 {target.branch!r} 不存在（已刪或從未建立），無可刪對象", 1,
         )
-    res = _run(
-        runner, target.repo_root,
-        ["merge-base", "--is-ancestor", target.branch, target.main_ref],
+    proof = prove_content_in_main(runner, target.repo_root, target.branch, target.main_ref)
+    return GuardCheck(
+        "merge_verified_local", proof.outcome,
+        f"本地 {target.branch}／證明={proof.kind}：{proof.detail}", 1,
     )
-    if res.ok:
-        return GuardCheck("merge_verified_local", "pass",
-                          f"本地 {target.branch} 已是 {target.main_ref} 祖先", 1)
-    return GuardCheck("merge_verified_local", "fail",
-                      f"本地 {target.branch} 尚未併入 {target.main_ref}", 1)
 
 
 def _read_remote_heads(
@@ -451,12 +619,11 @@ def _check_merge_remote(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
             return GuardCheck("merge_verified_remote", "unobservable",
                               f"遠端 commit {sha[:12]} 不在本地物件庫，"
                               "未 fetch 前無法驗證祖先關係（本守衛不代為 fetch）", 1)
-    res = _run(runner, target.repo_root, ["merge-base", "--is-ancestor", branch_sha, main_sha])
-    if res.ok:
-        return GuardCheck("merge_verified_remote", "pass",
-                          f"遠端 {target.branch} 已是遠端 {target.main_ref} 祖先", 1)
-    return GuardCheck("merge_verified_remote", "fail",
-                      f"遠端 {target.branch} 尚未併入遠端 {target.main_ref}", 1)
+    proof = prove_content_in_main(runner, target.repo_root, branch_sha, main_sha)
+    return GuardCheck(
+        "merge_verified_remote", proof.outcome,
+        f"遠端 {target.branch}／證明={proof.kind}：{proof.detail}", 1,
+    )
 
 
 def _check_uncommitted(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
@@ -713,7 +880,9 @@ def recheck_remote_branch(target: CleanupTarget, runner: GitRunner) -> RemoteDel
     1. 遠端 branch 與 main 的**當下** SHA（同一次 ls-remote，兩端同一次觀測）；
     2. branch tip 的 commit object 在**本地物件庫可觀測**（觀測不到＝本機沒見過的
        新提交，守衛不代為 fetch，也不對看不見的東西做祖先判斷）；
-    3. `merge-base --is-ancestor <tip> <遠端 main tip>` 仍成立。
+    3. `prove_content_in_main(<tip>, <遠端 main tip>)` 仍給得出證明。**這裡與前提檢查
+       用的是同一個函式**——複驗不得比前提寬，也不得比前提嚴，否則會出現「前提放行、
+       複驗恆拒」（squash 之後原本就是這個形狀）或反過來的破口。
 
     回傳的 `GuardCheck` 走與前提檢查同一套三值語意，因此
     ``aggregate_mode([check.outcome])`` 在拒絕時就是 ``detect_only``——「驗不過或
@@ -755,19 +924,20 @@ def recheck_remote_branch(target: CleanupTarget, runner: GitRunner) -> RemoteDel
             f"遠端 {target.main_ref} 的 tip {main_sha[:12]} 不在本地物件庫，"
             "無法驗證祖先關係，不刪", 2,
         ))
-    if not _run(runner, target.repo_root,
-                ["merge-base", "--is-ancestor", branch_sha, main_sha]).ok:
+    proof = prove_content_in_main(runner, target.repo_root, branch_sha, main_sha)
+    if proof.outcome != "pass":
         return RemoteDeleteDecision("refuse", GuardCheck(
-            RECHECK_REMOTE_ID, "fail",
-            f"遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
-            f"不是遠端 {target.main_ref}（{main_sha[:12]}）的祖先；"
+            RECHECK_REMOTE_ID, proof.outcome,
+            f"刪除前複驗：遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
+            f"對遠端 {target.main_ref}（{main_sha[:12]}）證不出內容已在 main"
+            f"（{proof.kind}：{proof.detail}）；"
             "在 executor 內走到這一步代表前提檢查當時是通過的，"
             "也就是窗內有新提交進來——刪掉它會毀掉那份工作", 2,
         ))
     return RemoteDeleteDecision("delete", GuardCheck(
         RECHECK_REMOTE_ID, "pass",
-        f"刪除前複驗：遠端 {target.branch} tip {branch_sha[:12]} 仍是 "
-        f"{target.main_ref}（{main_sha[:12]}）的祖先；"
+        f"刪除前複驗：遠端 {target.branch} tip {branch_sha[:12]} 的內容仍證明在遠端 "
+        f"{target.main_ref}（{main_sha[:12]}）上（證明={proof.kind}）；"
         f"該 tip 將原樣作為刪除租約的期望值", 2,
     ), expected_tip=branch_sha)
 
@@ -1164,6 +1334,8 @@ __all__ = [
     "GuardCheck",
     "GuardDecision",
     "GitResult",
+    "MergeProof",
+    "MergeProofKind",
     "RemoteCardFacts",
     "RemoteDeleteDecision",
     "WorktreeRecord",
@@ -1177,6 +1349,7 @@ __all__ = [
     "lsof_cwd_prober",
     "observe",
     "parse_worktree_records",
+    "prove_content_in_main",
     "recheck_remote_branch",
     "remaining_status_face_steps",
 ]
