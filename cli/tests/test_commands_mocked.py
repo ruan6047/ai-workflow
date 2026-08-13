@@ -37,12 +37,12 @@ ASSIGN_REPO = "acme/workflow"
 
 
 @pytest.fixture
-def source_repo(tmp_path: Path) -> Path:
-    """一個 origin 指向 GitHub 形狀 URL 的真 git repo。
+def card_repo_dir(tmp_path: Path) -> Path:
+    """一個 origin 指向 ``ASSIGN_REPO`` 的真 git repo，**只給軸 B（本機觀測）用**。
 
-    閘門讀的是**真的** git（commondir ＋ origin remote），簽章裡沒有注入點——這是刻意
-    的（守衛的輸入必須是事實，不能由呼叫端宣稱）。代價就是這些原本純 mock 的 assign
-    測試需要一個真 repo 才走得到閘門後面。不需要任何 commit：``rev-parse
+    ⚠️ 它**不再是歸屬判定的輸入**（需求方 2026-08-13 裁定：歸屬由 slug 表達，不由
+    路徑反推）。上一版每一個 assign 測試都得帶著它才走得到閘門後面；現在只有真的要
+    檢查「這台機器上路徑是什麼」的那幾條需要它。不需要任何 commit：``rev-parse
     --git-common-dir`` 與 ``remote get-url`` 在空 repo 上就已經回答得出來。
     """
     repo = tmp_path / "workflow"
@@ -348,7 +348,7 @@ def _assign_argv(
     *,
     actual_capability: str = "主力型",  # 與 _open_argv 的建議執行層級相同＝相符路徑
     deviation_reason: str | None = None,
-    source_repo: Path | str | None = None,
+    source_repo: str | None = None,
 ) -> list[str]:
     argv = [
         "assign", *BASE_TARGET, "--repo", ASSIGN_REPO, card_id,
@@ -358,9 +358,9 @@ def _assign_argv(
     if deviation_reason is not None:
         argv += ["--capability-deviation-reason", deviation_reason]
     if source_repo is not None:
-        # 本檔的 worktree 路徑是虛構的（``/w``、``.claude/worktrees/a``），路徑本身導不出
-        # repo。明示來源 repo 才是誠實的做法——而不是把路徑改成剛好座落在某個 repo 底下，
-        # 那會讓這些測試偷偷依賴磁碟佈局。
+        # 收的是 **slug**（``owner/repo``），不是目錄。本檔多數 assign 測試已不需要它——
+        # 省略即宣告「屬於卡自己的 repo」，那是生產常態。留著這個參數是為了測**明示**
+        # 那一格（相符與不相符各一）與「給目錄要響」。
         argv += ["--worktree-source-repo", str(source_repo)]
     return argv
 
@@ -377,12 +377,11 @@ def _assign_log_line(runner, card_id: str) -> str:
     return lines[0]
 
 
-def test_assign_matched_capability_needs_no_reason_and_proceeds(fake_runner, source_repo):
+def test_assign_matched_capability_needs_no_reason_and_proceeds(fake_runner):
     # 情形 1：實際層級＝卡面建議 → 不要求理由，照常派工。
     run_cli(_open_for_assign("DEV-MATCH1", **{"--exec-capability": "主力型"}))
     rc = run_cli(
-        _assign_argv("DEV-MATCH1", "某模型@某工具", "b", "/w", actual_capability="主力型",
-                     source_repo=source_repo)
+        _assign_argv("DEV-MATCH1", "某模型@某工具", "b", "/w", actual_capability="主力型")
     )
     assert rc == 0
     log = _assign_log_line(fake_runner, "DEV-MATCH1")
@@ -470,19 +469,19 @@ def test_assign_deviation_without_reason_is_refused_before_any_mutation(
     assert after.body == before.body
 
 
-def test_recording_runner_actually_detects_mutations(fake_runner, monkeypatch, source_repo):
+def test_recording_runner_actually_detects_mutations(fake_runner, monkeypatch):
     # 防「探針本身壞掉」：成功派工必須被同一支代理看見 mutation。
     # 沒有這條，上面的 mutations()==[] 可能只是代理沒接上。
     run_cli(_open_for_assign("DEV-SPY1", **{"--exec-capability": "主力型"}))
     spy = _RecordingRunner(fake_runner)
     monkeypatch.setattr(assign_cmd, "default_runner", spy)
     assert run_cli(
-        _assign_argv("DEV-SPY1", "某模型@某工具", "b", "/w", source_repo=source_repo)
+        _assign_argv("DEV-SPY1", "某模型@某工具", "b", "/w")
     ) == 0
     assert spy.mutations() != []
 
 
-def test_assign_deviation_with_reason_records_both_and_reads_back(fake_runner, source_repo):
+def test_assign_deviation_with_reason_records_both_and_reads_back(fake_runner):
     # 情形 3：給了理由 → 實際層級與偏離理由皆入 Log，且可被讀回。
     run_cli(_open_for_assign("DEV-OK1", **{"--exec-capability": "主力型"}))
     rc = run_cli(
@@ -493,7 +492,6 @@ def test_assign_deviation_with_reason_records_both_and_reads_back(fake_runner, s
             "/w",
             actual_capability="高階型",
             deviation_reason="主力型當下額度不足，改派高階型",
-            source_repo=source_repo,
         )
     )
     assert rc == 0
@@ -504,7 +502,7 @@ def test_assign_deviation_with_reason_records_both_and_reads_back(fake_runner, s
 
 
 def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviation(
-    fake_runner, capsys, source_repo
+    fake_runner, capsys
 ):
     # 無基線格（#17／#19／#20 那批舊卡）：同樣 fail-closed，但留痕不得寫成「偏離」。
     run_cli(_open_for_assign("DEV-LEGACY1"))
@@ -519,7 +517,7 @@ def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviati
                   ASSIGN_REPO, item.issue_number, legacy_body)
 
     assert run_cli(
-        _assign_argv("DEV-LEGACY1", "某模型@某工具", "b", "/w", source_repo=source_repo)
+        _assign_argv("DEV-LEGACY1", "某模型@某工具", "b", "/w")
     ) == 2
     assert "沒有可比對的建議層級" in capsys.readouterr().err
 
@@ -527,7 +525,6 @@ def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviati
         _assign_argv(
             "DEV-LEGACY1", "某模型@某工具", "b", "/w",
             deviation_reason="本卡開立於規劃期路由必填之前，無建議可比對",
-            source_repo=source_repo,
         )
     )
     assert rc == 0
@@ -538,7 +535,7 @@ def test_assign_on_pre_routing_card_requires_reason_and_does_not_call_it_deviati
 
 
 def test_assign_on_declared_card_with_broken_line_logs_unparseable_not_absent(
-    fake_runner, source_repo
+    fake_runner
 ):
     # R3-001 的第二個方向，走完整 CLI 路徑：卡面**宣告**了新制但路由行被破壞
     # （這裡用零寬字元打斷前綴），Log 必須寫「無法解析」而非「卡面無建議層級」。
@@ -551,13 +548,12 @@ def test_assign_on_declared_card_with_broken_line_logs_unparseable_not_absent(
                   ASSIGN_REPO, item.issue_number, broken)
 
     assert run_cli(
-        _assign_argv("DEV-BROKEN1", "某模型@某工具", "b", "/w", source_repo=source_repo)
+        _assign_argv("DEV-BROKEN1", "某模型@某工具", "b", "/w")
     ) == 2
     rc = run_cli(
         _assign_argv(
             "DEV-BROKEN1", "某模型@某工具", "b", "/w",
             deviation_reason="卡面路由行疑遭編輯破壞，先以主力型派工並待修卡",
-            source_repo=source_repo,
         )
     )
     assert rc == 0
@@ -584,9 +580,9 @@ def test_assign_rejects_risk_tier_value_in_actual_capability(fake_runner):
         )
 
 
-def test_assign_writes_owner_and_branch_worktree(fake_runner, source_repo):
+def test_assign_writes_owner_and_branch_worktree(fake_runner):
     run_cli(_open_for_assign("ASSIGN-CARD1"))
-    rc = run_cli(_assign_argv("ASSIGN-CARD1", "Claude Sonnet 5@Claude Code", "ai/agent/ASSIGN-CARD1", ".claude/worktrees/assign-card1", source_repo=source_repo))
+    rc = run_cli(_assign_argv("ASSIGN-CARD1", "Claude Sonnet 5@Claude Code", "ai/agent/ASSIGN-CARD1", ".claude/worktrees/assign-card1"))
     assert rc == 0
     project = resolve_project(fake_runner, "acme", 1)
     item = list_items(fake_runner, project)[0]
@@ -597,27 +593,27 @@ def test_assign_writes_owner_and_branch_worktree(fake_runner, source_repo):
 
 
 def test_assign_does_not_block_on_unassigned_backlog_sibling_with_same_resource(
-    fake_runner, source_repo
+    fake_runner
 ):
     # 兩張卡都宣告同一檔案，但都還沒被 assign 過（單純躺在 Backlog）——
     # 此時沒有任何「執行中」的卡在爭這個資源，assign 第一張不該被擋。
     run_cli(_open_for_assign("CONFLICT-A", **{"--resources": "file:shared.py", "--db-scope": "write"}))
     run_cli(_open_for_assign("CONFLICT-B", **{"--resources": "file:shared.py", "--db-scope": "write"}))
-    rc = run_cli(_assign_argv("CONFLICT-A", "someone", "ai/agent/CONFLICT-A", ".claude/worktrees/a", source_repo=source_repo))
+    rc = run_cli(_assign_argv("CONFLICT-A", "someone", "ai/agent/CONFLICT-A", ".claude/worktrees/a"))
     assert rc == 0
 
 
-def test_assign_rejects_on_resource_conflict_with_already_assigned_card(fake_runner, source_repo):
+def test_assign_rejects_on_resource_conflict_with_already_assigned_card(fake_runner):
     # CONFLICT-A 先被指派（進入「執行中」），CONFLICT-B 才嘗試指派到同一資源 → 應拒絕。
     run_cli(_open_for_assign("CONFLICT-A", **{"--resources": "file:shared.py", "--db-scope": "write"}))
     run_cli(_open_for_assign("CONFLICT-B", **{"--resources": "file:shared.py", "--db-scope": "write"}))
-    rc1 = run_cli(_assign_argv("CONFLICT-A", "someone", "ai/agent/CONFLICT-A", ".claude/worktrees/a", source_repo=source_repo))
+    rc1 = run_cli(_assign_argv("CONFLICT-A", "someone", "ai/agent/CONFLICT-A", ".claude/worktrees/a"))
     assert rc1 == 0
-    rc2 = run_cli(_assign_argv("CONFLICT-B", "someone-else", "ai/agent/CONFLICT-B", ".claude/worktrees/b", source_repo=source_repo))
+    rc2 = run_cli(_assign_argv("CONFLICT-B", "someone-else", "ai/agent/CONFLICT-B", ".claude/worktrees/b"))
     assert rc2 == 4  # 撞卡拒絕
 
 
-def test_assign_allowed_when_conflicting_card_is_terminal(fake_runner, source_repo):
+def test_assign_allowed_when_conflicting_card_is_terminal(fake_runner):
     run_cli(_open_for_assign("TERMINAL-A", **{"--resources": "file:shared.py", "--db-scope": "write"}))
     run_cli(_open_for_assign("TERMINAL-B", **{"--resources": "file:shared.py", "--db-scope": "write"}))
     project = resolve_project(fake_runner, "acme", 1)
@@ -625,7 +621,7 @@ def test_assign_allowed_when_conflicting_card_is_terminal(fake_runner, source_re
     item_a = next(i for i in list_items(fake_runner, project) if i.fields.get("卡ID") == "TERMINAL-A")
     set_field_value(fake_runner, project, item_a.item_id, fields["交付狀態"], "🏁完成")
 
-    rc = run_cli(_assign_argv("TERMINAL-B", "someone", "ai/agent/TERMINAL-B", ".claude/worktrees/b", source_repo=source_repo))
+    rc = run_cli(_assign_argv("TERMINAL-B", "someone", "ai/agent/TERMINAL-B", ".claude/worktrees/b"))
     assert rc == 0  # TERMINAL-A 已完成，資源釋放，不再視為衝突
 
 
@@ -638,26 +634,32 @@ def test_assign_allowed_when_conflicting_card_is_terminal(fake_runner, source_re
 # ---------------------------------------------------------------------------
 
 
+OTHER_REPO = "acme/other-project"
+
+
 def _other_repo(tmp_path: Path) -> Path:
     other = tmp_path / "other-project"
     other.mkdir()
     git(other, "init", "-q", "-b", "main")
-    git(other, "remote", "add", "origin", "git@github.com:acme/other-project.git")
+    git(other, "remote", "add", "origin", f"git@github.com:{OTHER_REPO}.git")
     return other
 
 
-def test_assign_blocks_cross_repo_worktree_before_any_mutation(
-    fake_runner, tmp_path, capsys, monkeypatch
+def test_assign_blocks_declared_cross_repo_before_any_mutation(
+    fake_runner, capsys, monkeypatch
 ):
-    """核心痛點（縮射程後）的直接回放：卡屬 acme/workflow，這筆登記卻主張 worktree
-    屬於 acme/other-project → 登記被拒。
+    """軸 A 的核心路徑：卡屬 acme/workflow，這筆登記卻**明示宣告** worktree 屬於
+    acme/other-project → 登記被拒（return 5）。
 
     只驗回傳碼不算數——這裡同時用 ``_RecordingRunner`` 證明**整條拒絕路徑一次
     mutation 都沒有**，以及卡面欄位與 body 一字未動。閘門若排在任何 set_field_value
     之後，這條會紅。
 
-    ⚠️ 它證明的是「錯的歸屬登記寫不進看板」。它**不**證明磁碟上不會出現跨 repo
-    worktree——本測試從頭到尾沒有跑過 ``git worktree add``。
+    ⚠️ 兩件事不要混淆：
+    1. 它證明的是「錯的歸屬登記寫不進看板」。它**不**證明磁碟上不會出現跨 repo
+       worktree——本測試從頭到尾沒有跑過 ``git worktree add``。
+    2. 被擋的是**明示的**宣告。沒帶旗標的跨 repo 登記軸 A 抓不到（``registry`` 模組
+       頂端 warning 第 2 條），那一格由軸 B 在路徑已存在時才看得見。
     """
     run_cli(_open_for_assign("CROSS-REPO1"))
     project = resolve_project(fake_runner, "acme", 1)
@@ -666,12 +668,11 @@ def test_assign_blocks_cross_repo_worktree_before_any_mutation(
     spy = _RecordingRunner(fake_runner)
     monkeypatch.setattr(assign_cmd, "default_runner", spy)
     rc = run_cli(
-        _assign_argv("CROSS-REPO1", "某模型@某工具", "b", "/w",
-                     source_repo=_other_repo(tmp_path))
+        _assign_argv("CROSS-REPO1", "某模型@某工具", "b", "/w", source_repo=OTHER_REPO)
     )
     assert rc == 5
     err = capsys.readouterr().err
-    assert "acme/other-project" in err and "acme/workflow" in err
+    assert OTHER_REPO in err and ASSIGN_REPO in err
     assert "卡就開在哪個 repo" in err  # 拒絕訊息必附合法出路（#16 §7.1）
 
     assert spy.mutations() == []
@@ -683,87 +684,164 @@ def test_assign_blocks_cross_repo_worktree_before_any_mutation(
     assert after.body == before.body
 
 
-def test_assign_refuses_nested_absolute_path_until_the_source_repo_is_declared(
-    fake_runner, source_repo, capsys
-):
-    """生產慣例的那條路（絕對路徑、尚未建立、巢狀在卡自己的 repo 底下）**現在要多一個旗標**。
+def test_assign_refuses_a_directory_given_as_the_declared_repo(fake_runner, tmp_path, capsys):
+    """把**目錄**餵給 ``--worktree-source-repo`` 要響，而且不得被反推回 slug。
 
-    ⚠️ **這條測試上一輪斷言的是相反的結果**（走祖先推測即放行，並註明那是需求方
-    2026-08-12 裁定的預設用法）。R3-02 之後推測一律不放行，因此
-    **「絕對路徑**或**明示來源」的二擇一被取代成兩者都要**——這不是實作細節，是對
-    那條慣例的實質修改，刻意寫在測試名字與這段說明裡，不讓它只活在 commit message。
+    上一版這個參數收的正是目錄，並從它的 ``origin`` 反推 repo——需求方 2026-08-13
+    查證後推翻該前提（目錄只在單一台機器成立）。所以這裡刻意餵一個**確實存在、
+    origin 也確實正確**的目錄：它仍然必須被拒絕。「剛好在這台機器上讀得出正確答案」
+    不是接受它的理由。
+    """
+    run_cli(_open_for_assign("DIRARG1"))
+    good_dir = _other_repo(tmp_path)
+    rc = run_cli(
+        _assign_argv("DIRARG1", "某模型@某工具", "b", "/w", source_repo=str(good_dir))
+    )
+    assert rc == 5
+    err = capsys.readouterr().err
+    assert "slug" in err and "不是目錄" in err
 
-    代價（Project #4 全量枚舉）：47 allow／17 block → 16 allow／48 block。翻面的 31 筆
-    全是既有登記，而閘門不回溯、不會重跑它們；真正的代價是**未來每一次 assign 多一個
-    旗標**。
+
+def test_assign_needs_no_flag_for_the_production_shape(fake_runner, card_repo_dir):
+    """生產慣例（絕對路徑、巢狀在卡自己的 repo 底下、目標尚未建立）→ **零旗標放行**。
+
+    ⚠️ **這條上一輪斷言的是相反的結果**：R3-02 曾要求這一格必須補
+    ``--worktree-source-repo``，代價是「未來每一次 assign 多打一個旗標」。需求方
+    2026-08-13 推翻了它所依賴的前提（歸屬不該由路徑推），連帶作廢那則裁定，
+    所以旗標回到「只有真的要宣告跨 repo 時才打」。
     """
     run_cli(_open_for_assign("NESTED-OK1"))
-    wt = source_repo / ".claude" / "worktrees" / "nested-ok1"
+    wt = card_repo_dir / ".claude" / "worktrees" / "nested-ok1"
     assert not wt.exists()
 
-    assert run_cli(_assign_argv("NESTED-OK1", "某模型@某工具", "b", str(wt))) == 5
-    err = capsys.readouterr().err
-    assert "推測" in err and "source_repo" in err  # 訊息要指名補法，否則就是無出路的誤擋
-
-    assert run_cli(
-        _assign_argv("NESTED-OK1", "某模型@某工具", "b", str(wt), source_repo=source_repo)
-    ) == 0
+    assert run_cli(_assign_argv("NESTED-OK1", "某模型@某工具", "b", str(wt))) == 0
     project = resolve_project(fake_runner, "acme", 1)
     item = find_item_by_card_id(list_items(fake_runner, project), "NESTED-OK1")
     assert item.fields["分支worktree"] == f"b @ {wt}"
 
 
-def test_assign_log_records_what_the_allow_was_based_on(fake_runner, source_repo):
-    """放行也要留痕：Log 必須說得出這筆歸屬是宣告來的還是實測來的（R3-02）。
+def test_assign_accepts_a_relative_worktree_path(fake_runner):
+    """相對路徑不再被擋。
 
-    看板欄位對兩種 allow 一模一樣，所以「憑什麼放行」只能靠 Log 保存。這裡連宣告的
-    目錄字串一起釘住——宣告的內容本身就是被稽核的對象——並要求那句「不綁定建立行為」
-    跟著放行一起寫下去，免得讀 Log 的人把它讀成歸屬已被驗證。
+    Project #4 上實存 18 筆相對路徑（cpbl 那半的慣例）。需求方 2026-08-13 的查證指出
+    ``.claude/worktrees/xxx`` 在任何 clone 上指向同一相對位置，**比絕對路徑更可攜**；
+    上一版把它判 ``worktree_path_unanchored``／block，收緊的正是比較可攜的那一種。
     """
-    run_cli(_open_for_assign("PROV-CARD1"))
-    wt = source_repo / ".claude" / "worktrees" / "prov-card1"
-    assert run_cli(
-        _assign_argv("PROV-CARD1", "某模型@某工具", "b", str(wt), source_repo=source_repo)
-    ) == 0
-
-    log = _assign_log_line(fake_runner, "PROV-CARD1")
-    assert f"跨 repo 歸屬 {ASSIGN_REPO}" in log
-    assert "--worktree-source-repo" in log and str(source_repo) in log
-    assert "不觀測也不綁定後續的 git worktree add" in log
-
-
-def test_assign_blocks_relative_worktree_path_with_actionable_message(fake_runner, capsys):
-    """相對路徑不帶 repo 資訊 → 拒絕，且訊息要講得出補法（需求方裁定的新慣例）。"""
     run_cli(_open_for_assign("REL-PATH1"))
     rc = run_cli(_assign_argv("REL-PATH1", "某模型@某工具", "b", ".claude/worktrees/x"))
-    assert rc == 5
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "REL-PATH1")
+    assert item.fields["分支worktree"] == "b @ .claude/worktrees/x"
+
+
+def test_assign_refuses_when_this_machine_contradicts_the_card(
+    fake_runner, tmp_path, capsys, monkeypatch
+):
+    """軸 B：路徑此刻**確實**是別的 repo 的 worktree → 拒絕（return 6），零寫入。
+
+    這是 §8.3 真實漂移的形狀，也是本版唯一還抓得到「沒被注意到的跨 repo」的一格。
+    ⚠️ 它是**機器局部**的：換一台沒有這個目錄的機器，這條檢查不會響——訊息必須自己
+    講出這件事，否則下一個人會把它讀成歸屬已被驗證。回傳碼刻意與軸 A 分開（6 vs 5）。
+    """
+    run_cli(_open_for_assign("LOCAL-CONTRA1"))
+    other = _other_repo(tmp_path)
+    git(other, "-c", "user.email=t@e.com", "-c", "user.name=t", "commit",
+        "-q", "--allow-empty", "-m", "init")
+    wt = tmp_path / "drifted-wt"
+    git(other, "worktree", "add", "-q", "-b", "claude/DRIFT1", str(wt))
+    assert wt.is_dir()
+
+    project = resolve_project(fake_runner, "acme", 1)
+    before = find_item_by_card_id(list_items(fake_runner, project), "LOCAL-CONTRA1")
+    spy = _RecordingRunner(fake_runner)
+    monkeypatch.setattr(assign_cmd, "default_runner", spy)
+
+    rc = run_cli(_assign_argv("LOCAL-CONTRA1", "某模型@某工具", "b", str(wt)))
+    assert rc == 6
     err = capsys.readouterr().err
-    assert "相對路徑" in err
-    assert "base_dir" in err or "source_repo" in err
+    assert OTHER_REPO in err and ASSIGN_REPO in err
+    assert "這台機器" in err and "沉默不是判定" in err
+
+    assert spy.mutations() == []
+    after = find_item_by_card_id(list_items(fake_runner, project), "LOCAL-CONTRA1")
+    assert after.body == before.body
 
 
-def test_assign_blocks_draft_issue_card(fake_runner, source_repo, capsys):
+def test_assign_warns_but_proceeds_on_path_nesting_conflict(fake_runner, tmp_path, capsys):
+    """路徑座落在別的 repo 目錄樹底下、但目標尚未建立 → **只警告，照樣派工**。
+
+    ⚠️ 這是本版相對上一版**已量測的偵測落差**：同樣的形狀上一版判 block。降級的理由
+    不是它沒價值，是它的證據只有「路徑座落在誰底下」，換一台機器就消失。
+    **警告沒有執行者**（``docs/ROADMAP.md`` §0），這條測試把那件事寫成可讀的事實。
+    """
+    run_cli(_open_for_assign("NESTING1"))
+    other = _other_repo(tmp_path)
+    wt = other / ".claude" / "worktrees" / "not-created"
+
+    rc = run_cli(_assign_argv("NESTING1", "某模型@某工具", "b", str(wt)))
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "不擋" in err and OTHER_REPO in err
+
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "NESTING1")
+    assert item.fields["分支worktree"] == f"b @ {wt}"
+
+
+def test_assign_log_records_what_the_allow_was_based_on(fake_runner):
+    """放行也要留痕：Log 必須說得出這筆歸屬是**有人明示宣告**還是**沒人說**。
+
+    看板欄位對兩種 allow 一模一樣，所以「憑什麼放行」只能靠 Log 保存。軸 B 的觀測碼
+    一併記下並標明機器局部——Log 會被跨機器讀，不寫清楚這一句，下一個人就會把「這台
+    機器沒看到問題」讀成「沒問題」。
+    """
+    run_cli(_open_for_assign("PROV-DEFAULT1"))
+    assert run_cli(_assign_argv("PROV-DEFAULT1", "某模型@某工具", "b", "/w")) == 0
+    log = _assign_log_line(fake_runner, "PROV-DEFAULT1")
+    assert f"跨 repo 歸屬 {ASSIGN_REPO}" in log
+    assert "未明示，依預設取自卡自己的 repo" in log
+    assert "不觀測也不綁定後續的 git worktree add" in log
+    assert "本機觀測" in log and "機器局部" in log
+
+    run_cli(_open_for_assign("PROV-EXPLICIT1"))
+    assert run_cli(
+        _assign_argv("PROV-EXPLICIT1", "某模型@某工具", "b", "/w", source_repo=ASSIGN_REPO)
+    ) == 0
+    explicit = _assign_log_line(fake_runner, "PROV-EXPLICIT1")
+    assert "--worktree-source-repo" in explicit and ASSIGN_REPO in explicit
+    # 兩種 allow 在 Log 上必須分得出來，否則留痕等於沒留。
+    assert "未明示" not in explicit
+
+
+def test_assign_blocks_draft_issue_card(fake_runner, capsys):
     """DraftIssue 沒有 Issue URL → 卡的 repo 判不出來 → fail-closed。
 
     這正是本檔其餘 assign 測試全部得改成真 Issue 的原因，明寫成一條測試而不是
     藏在 fixture 的沉默行為裡。
     """
     run_cli(_open_argv("DRAFT-CARD1"))  # 沒有 --repo ＝ DraftIssue
-    rc = run_cli(_assign_argv("DRAFT-CARD1", "某模型@某工具", "b", "/w",
-                              source_repo=source_repo))
+    rc = run_cli(_assign_argv("DRAFT-CARD1", "某模型@某工具", "b", "/w"))
     assert rc == 5
     assert "判不出卡所屬 repo" in capsys.readouterr().err
 
 
 def test_assign_registers_the_worktree_source_repo_flag():
-    """旗標必須真的註冊在 CLI 上——原型階段漏掉它，等於閘門的出路只存在於文件裡。"""
+    """旗標必須真的註冊在 CLI 上，且**收的是 slug**——型別寫在 metavar 上，不只寫在
+    說明文字裡，因為 ``--help`` 的第一眼就是 metavar。"""
     parser = build_parser()
     args = parser.parse_args(
-        _assign_argv("FLAG-CARD1", "a", "b", "/w", source_repo="/some/repo")
+        _assign_argv("FLAG-CARD1", "a", "b", "/w", source_repo="acme/workflow")
     )
-    assert args.worktree_source_repo == "/some/repo"
-    # 省略時為 None（走路徑推測），不是空字串。
+    assert args.worktree_source_repo == "acme/workflow"
+    # 省略時為 None（＝宣告「屬於卡自己的 repo」），不是空字串。
     assert parser.parse_args(_assign_argv("FLAG-CARD1", "a", "b", "/w")).worktree_source_repo is None
+
+    action = next(
+        a for a in parser._subparsers._group_actions[0].choices["assign"]._actions
+        if a.dest == "worktree_source_repo"
+    )
+    assert action.metavar == "OWNER/REPO"
 
 
 def _handoff_argv(card_id: str, sha: str, **overrides) -> list[str]:

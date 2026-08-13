@@ -10,10 +10,34 @@
 =====================================================
 
 本檔後半段（``normalize_repo_slug`` 起）是 ``WF-ORCHESTRATION-RECONCILE1``（#16）
-§7「repo 歸屬純導出」的**判定引擎**：
+§7「repo 歸屬純導出」的**判定引擎**。它由**兩條互不相通的軸**組成，這個分軸本身就是
+``docs/ROADMAP.md`` §1.5（需求方 2026-08-13 裁定）的實作：
 
-    卡的 repo ← Issue URL；worktree 的 repo ← git commondir 的 origin remote；
-    兩者不合 → 跨 repo 錯置。
+    **欄位若同時承載可攜的宣告與機器局部的操作細節，判定必須建立在可攜的那一半上。**
+
++----------------------+--------------------------------------------------------+
+| 軸 A **歸屬判定**    | 卡的 repo ← Issue URL；worktree 的 repo ← **這筆登記    |
+| （可攜）             | 宣告的 repo slug**。兩個都是字串，比對是純字串比對——    |
+|                      | ``check_assign_repo_ownership`` 的簽章裡**沒有任何路徑、|
+|                      | 沒有任何目錄、不讀檔案系統、不呼叫 git**。因此它在任何   |
+|                      | 一台機器上對同一張卡＋同一個宣告得到**同一個結果**。    |
++----------------------+--------------------------------------------------------+
+| 軸 B **本機觀測**    | 登記的路徑在**這台機器**上解析得到什麼。它只回答「這台   |
+| （機器局部）         | 機器現在看到什麼」，**不回答 repo 的事實**，也**不參與   |
+|                      | 軸 A 的判定**。換一台機器它多半什麼都看不到，而**看不到 |
+|                      | 不是判定**。                                            |
++----------------------+--------------------------------------------------------+
+
+⚠️ **上一版把這兩者混在同一條軸上，並且判定建在錯的那一半。** 舊的
+``probe_worktree_repo`` 從路徑讀 ``commondir`` 反推 repo；``/Users/ruanruan/Dev/…``
+只在單一台機器成立，換一台機器該探測必然失敗。需求方 2026-08-13 的查證同時指出
+``.claude/worktrees/xxx`` 這種**相對**路徑其實比絕對路徑更可攜（在任何 clone 上指向
+同一相對位置），也就是說先前收緊的方向**收緊的是比較不可攜的那一種**。所以本版：
+歸屬由 slug 表達，路徑退回它該待的位置。
+
+⚠️ **路徑不可移除，也沒有被移除。** ``cleanup.py`` 用它做破壞性收尾
+（``status --porcelain`` 檢查乾淨、``resolve()`` 後刪除），``doctor``／``snapshot``／
+``handoff`` 亦讀它。本模組拿掉的只有一件事：**路徑不再是歸屬的證據**。
 
 **承諾範圍（需求方 2026-08-13 二次裁定，#57 issuecomment-5273953073）**：本守衛承諾的是
 ``wfcli assign`` **這一條路徑**上的跨 repo 歸屬檢查，**不是「登記面已被保護」**。
@@ -26,11 +50,12 @@
 變成當場拒絕；射程外的三條路徑列在下方 danger，**它們是已知限制，不是待辦**。
 
 **機械執行者**：``commands/assign_cmd.py`` 的 ``run()``。它在**任何**
-``set_field_value``／``set_item_body`` 之前呼叫 ``check_assign_repo_ownership``，
-``blocked`` 時印 ``refusal_message()`` 並 return 5（零寫入）。``assign`` 是 wfcli 全域
-唯一會寫 ``分支worktree`` 欄的指令（全域無任何 ``git worktree add``，實測零命中），
-所以那裡就是 ``wfcli`` **這條路徑上**唯一有效的攔截位置——**「wfcli 這條路徑」不等於
-「所有寫入路徑」**，見 danger 第 2 條。
+``set_field_value``／``set_item_body`` 之前依序呼叫 ``check_assign_repo_ownership``
+（軸 A，``blocked`` → return 5）與 ``observe_local_worktree``（軸 B，``refuses`` →
+return 6），兩者都是零寫入拒絕。``assign`` 是 wfcli 全域唯一會寫 ``分支worktree`` 欄的
+指令（全域無任何 ``git worktree add``，實測零命中），所以那裡就是 ``wfcli``
+**這條路徑上**唯一有效的攔截位置——**「wfcli 這條路徑」不等於「所有寫入路徑」**，
+見 danger 第 2 條。
 
 .. danger::
 
@@ -76,35 +101,46 @@
 
 .. warning::
 
-   **接線之後，下列三件仍然不成立，寫報告與卡面時不得含混：**
+   **接線之後，下列四件仍然不成立，寫報告與卡面時不得含混：**
 
-   1. **``allow`` 不是「歸屬已被驗證」，只是「這筆登記的主張自洽且與卡相符」。**
-      R3-02 之後 ``ancestor_dir`` 的**推測一律不放行**（新 reason code
-      ``worktree_repo_inferred``），所以放行只剩兩種來源：``target_dir``（目標已存在，
-      commondir 是事實）與 ``source_repo``（呼叫端的宣告，經 git 驗證那個目錄確實是
-      具 GitHub 形狀 origin 的 repo）。
-      ⚠️ **後者仍是宣告，不是觀測**：本模組沒有執行也沒有觀測任何 ``git worktree add``，
-      給了與卡相符的 ``source_repo`` 取得 allow 之後，人照樣可以從別的 repo 建立同一
-      路徑（``test_registry.py::test_source_repo_allow_does_not_bind_the_actual_creation``
-      用真的 ``git worktree add`` 把這個殘留缺口釘成測試，不讓它被忘記）。
+   1. **``allow`` 不是「歸屬已被驗證」，只是「這筆登記的宣告與卡相符」。**
+      軸 A 比的是兩個字串：卡的 Issue URL 導出的 slug，與這筆登記宣告的 slug。
+      **宣告不是觀測**——本模組沒有執行也沒有觀測任何 ``git worktree add``，取得 allow
+      之後人照樣可以從別的 repo 建立同一路徑
+      （``test_registry.py::test_ownership_allow_does_not_bind_the_actual_creation``
+      用真的 ``git worktree add`` 把這個殘留缺口釘成測試）。
       **這是 danger 第 1 條在判定層的倒影，不是新問題。** assign 發生在建立之前，
       而「歸屬」這個事實在建立之後才存在——單點檢查拿不到它。
-   2. **閘門只管新寫入的登記，不回溯。** 既有註冊（本輪實測 64 筆中有 14 筆是未錨定的
-      相對路徑）不會被重新檢查，磁碟上已經存在的跨 repo worktree 也不會因此消失——
-      那兩件事屬對帳與清理，不屬本閘門。要看現況請跑 ``python -m wf_cli.registry``。
-   3. **``origin`` 不是 GitHub 形狀的 repo 一律過不了。** 卡的 repo 來自 Issue URL，
-      worktree 的 repo 來自 origin，兩者要能比對就要求 origin 導得出 ``owner/repo``。
-      origin 是本機路徑（測試沙盒、bare 鏡像）時判不出來 → fail-closed 拒絕。
-      這是刻意的，但它是一條真實的使用限制，不是可忽略的邊角。
+   2. ⚠️ **不宣告即視為宣告「卡自己的 repo」，所以沒帶旗標的 assign 在軸 A 上必然通過。**
+      這是刻意的、也是必須寫明的：``--worktree-source-repo`` 唯一合理的預設值就是卡自己
+      的 repo，強迫每次手打一個工具已經知道的值，是 ``docs/ROADMAP.md`` §1 點名的
+      「看起來在檢查、實際恆真」那種條文的社會層版本。因此軸 A 真正擋得住的只有
+      **明示的**跨 repo 宣告——而那正是「人已經知道自己在跨 repo」的情形。
+      **沒被注意到的漂移，軸 A 抓不到。** 抓得到的是軸 B，而軸 B 是機器局部的。
+   3. **閘門只管新寫入的登記，不回溯。** 既有註冊（本輪實測 64 筆）不會被重新檢查，
+      磁碟上已經存在的跨 repo worktree 也不會因此消失——那兩件事屬對帳與清理，不屬
+      本閘門。要看現況請跑 ``python -m wf_cli.registry``。
+   4. **軸 B 的沉默不是判定。** 它只在「登記的路徑在這台機器上解析得到、而且本身就是
+      某個 repo 的 worktree」時才說得出話；目標尚未建立（生產常態）、相對路徑未錨定、
+      或換一台機器，它一律沉默。**沉默＝這台機器沒有資訊**，不是「沒問題」。
+      因此軸 B 拒絕的那一格（``contradiction``）在別台機器上不會重現——這是它與軸 A
+      最重要的差別，也是它為什麼不准影響軸 A 的原因。
 
-   ⚠️ 第 2 條與 danger 的差別要分清楚：第 2 條是**射程內**的已知限制（``wfcli assign``
+   ⚠️ 第 3 條與 danger 的差別要分清楚：第 3 條是**射程內**的已知限制（``wfcli assign``
    這條路徑本身還有沒被覆蓋的登記——既有列不重掃）；danger 講的是**射程外**（另外兩條
    寫入／建立路徑本閘門碰不到）。前者本卡可以做而選擇不做，後者本卡做不到。
 
-**與 ``TasksMdRegistry`` 的隔離**：守衛的輸入（Issue URL、git commondir、來源 repo）
-都是即時事實，**都不經過 ``TASKS.md`` 投影**。這是刻意的——2026-08-12 實測 ``doctor``
-把六個 WF 卡的 worktree 全報為孤兒，正是因為它讀已封存的 ``TASKS.md``。守衛函式的
-簽章裡沒有任何 registry 參數，投影再怎麼過時都影響不到它
+   ⚠️ **本版相對於上一版的偵測落差，量測後誠實記錄**：Project #4 全量枚舉裡有一筆
+   （``WF-25-REVIEW-WRITE-CHANNEL1``：ai-workflow 的卡、路徑指向 cpbl 目錄樹、目標
+   尚未建立）上一版靠**祖先目錄推測**判成 ``repo_mismatch``／block，本版軸 A 看不到它
+   （沒有明示宣告）、軸 B 也看不到它（目標不存在）。它降級為枚舉器的
+   ``nesting_conflict`` **警示**——看得到、但沒有執行者。**這是本裁定的代價，不是疏漏**：
+   那個 block 的全部證據就是「這條路徑座落在誰底下」，而該證據換一台機器即消失。
+
+**與 ``TasksMdRegistry`` 的隔離**：守衛的輸入（Issue URL、登記宣告的 slug、軸 B 才用得到
+的路徑）都是即時事實，**都不經過 ``TASKS.md`` 投影**。這是刻意的——2026-08-12 實測
+``doctor`` 把六個 WF 卡的 worktree 全報為孤兒，正是因為它讀已封存的 ``TASKS.md``。
+守衛函式的簽章裡沒有任何 registry 參數，投影再怎麼過時都影響不到它
 （``test_registry.py::test_guard_verdict_unaffected_by_stale_tasks_md_projection``
 以「刻意寫一份錯誤的 TASKS.md」實測這條隔離）。
 
@@ -112,6 +148,11 @@
 (卡, worktree) 配對逐筆判定」變成可重跑的指令輸出，取代 commit message 裡不可重跑
 的數字。它可從 GitHub Project 現拉輸入（``--from-project``），也可重播先前產物
 （``--input``）；產物內含它用的全部輸入列，因此重播是不動點（§6.2）。
+
+⚠️ **枚舉器的兩欄要分開讀**：``ownership_*`` 欄是軸 A，換機器不變；``local_*`` 欄是
+軸 B，**是「這台機器現在看到什麼」的快照，不是 repo 的事實**。需求方 2026-08-13 指出
+先前那 64 筆一直被當成對帳視圖使用，而它對帳的是本機磁碟——本版把這件事寫進欄名，
+不再靠讀的人自己記得。
 """
 
 from __future__ import annotations
@@ -330,6 +371,10 @@ def normalize_repo_slug(value: str | None) -> str | None:
     repo = repo.removesuffix(".git")
     if not _GH_NAME_RE.fullmatch(owner) or not _GH_NAME_RE.fullmatch(repo):
         return None
+    # 純點段（``.``／``..``）是路徑語法，不是 GitHub 名稱。不排掉它，``../ai-workflow``
+    # 這種**相對目錄**會偽裝成合法 slug 進到歸屬判定裡——而拒絕目錄正是本版的重點。
+    if owner.strip(".") == "" or repo.strip(".") == "":
+        return None
     return f"{owner.lower()}/{repo.lower()}"
 
 
@@ -383,58 +428,6 @@ def run_git_readonly(cwd: Path, args: list[str]) -> str | None:
     return out or None
 
 
-#: worktree 所屬 repo 的三種取得方式，**權威性由高到低**：
-#:
-#: - ``source_repo``：呼叫端明示「這筆登記所主張的來源 repo」。它對應 git 的真語意
-#:   ——``git -C <src> worktree add <任意路徑>`` 產生的 worktree 永遠屬於 ``<src>``，
-#:   **與目標路徑落在磁碟哪裡無關**。
-#:
-#:   ⚠️ **它是被 git 驗證過的宣告，不是被觀測到的建立行為。** 本模組驗的是「這個
-#:   目錄確實是個有 GitHub 形狀 origin 的 repo」，**沒有執行也沒有觀測任何
-#:   ``git worktree add``，更沒有把後續的建立動作綁到它**。因此給了與卡相符的
-#:   ``source_repo`` 取得 allow 之後，仍然可以從別的 repo 直接建立——**那條路徑
-#:   在本卡射程外**（見本檔頂端 danger）。這是 ``wfcli assign`` 這條路徑上的守衛的
-#:   定義，不是漏洞掩飾：它能保證的上限就是「這筆登記的主張自洽且與卡相符」。
-#: - ``target_dir``：目標路徑**已存在**且本身在某個 git repo 內。worktree 就在那裡，
-#:   這是事實不是推測。**三者裡唯一在檢查當下為真的那一個**（但它也只在檢查當下為真：
-#:   worktree 可以被 remove 後由別的 repo 重新 add 到同一路徑）。
-#: - ``ancestor_dir``：目標尚未建立，改問最近存在的祖先目錄。**這是推測**
-#:   （``inferred=True``）：路徑巢狀於某 repo 內只是本專案的慣例，canonical §4.5
-#:   明文「worktree 路徑與分支名由實際建立者決定」，並未要求巢狀。
-#:
-#:   ⚠️ **它永遠不會放行**（R3-02，2026-08-13）。理由不是「推測比較不準」，是
-#:   **它用的比對軸正是本模組宣告為錯的那一個**：``_slug_of_dir`` 的註解寫「比對軸是
-#:   origin slug 不是路徑」，而祖先推測的全部證據就只有「這條路徑座落在誰底下」。
-#:   放行它等於在最常見的情形下（登記早於建立）把路徑巢狀偷偷當成歸屬證據，而那正是
-#:   §8.3 漂移得以隱形的同一個軸。推測仍然照算、照標記、照進枚舉器產物——它可以說
-#:   「這裡看起來不對」（``repo_mismatch`` 照樣擋），但不可以說「這裡沒問題」。
-ProbeSource = Literal["source_repo", "target_dir", "ancestor_dir"]
-
-
-@dataclass(frozen=True)
-class WorktreeRepoProbe:
-    """「worktree 目標 repo」的探測結果。"""
-
-    slug: str | None
-    #: slug 由哪一種來源導出；判不出來時為 None。
-    source: ProbeSource | None = None
-    #: 解析後的絕對目標路徑；相對路徑且未綁定 base_dir 時為 None。
-    resolved_target: str | None = None
-    #: 實際被問到的目錄。
-    probed_dir: str | None = None
-    common_dir: str | None = None
-    remote_url: str | None = None
-    detail: str = ""
-    #: slug 由 ``ancestor_dir`` 推測而來（非事實）。誤擋風險集中在這一格。
-    inferred: bool = False
-    #: 相對路徑且既沒有 ``base_dir`` 也沒有 ``source_repo``——路徑本身不帶任何
-    #: repo 資訊（``.claude/worktrees/x`` 在兩個 repo 底下是同一串字），故不可判定。
-    unanchored: bool = False
-    #: 目標路徑**座落**在哪個 repo 的工作樹內（可與 ``slug`` 不同：submodule 的
-    #: worktree 掛在父 repo 路徑底下正是 §8.3 漂移得以隱形的形狀）。純資訊，不參與判定。
-    nested_repo: str | None = None
-
-
 def _nearest_existing_dir(path: Path) -> Path | None:
     current = path
     while True:
@@ -467,161 +460,59 @@ def _slug_of_dir(probe_dir: Path, git: GitProbe) -> tuple[str | None, str | None
     return slug, common_dir, remote_url, f"commondir {common_dir} 的 origin → {slug}"
 
 
-_SOURCE_REPO_REMEDY = (
-    "worktree 可以合法地建在 repo 之外（canonical §4.5：路徑由實際建立者決定，"
-    "未限定巢狀於 repo），因此路徑本身不足以導出所屬 repo——"
-    "請以 source_repo 明示實際執行 git worktree add 的來源 repo 後重試"
-)
-
-
 def _nested_repo_slug(resolved: Path, git: GitProbe) -> str | None:
-    """目標路徑座落在哪個 repo 的工作樹內（問它的父目錄）。純資訊、不參與判定。"""
+    """目標路徑座落在哪個 repo 的工作樹內（問它的父目錄）。**純資訊、不參與判定。**"""
     anchor = _nearest_existing_dir(resolved.parent)
     if anchor is None:
         return None
     return _slug_of_dir(anchor, git)[0]
 
 
-def probe_worktree_repo(
-    worktree_path: str | Path,
-    *,
-    source_repo: str | Path | None = None,
-    base_dir: str | Path | None = None,
-    git: GitProbe = run_git_readonly,
-) -> WorktreeRepoProbe:
-    """導出這個 worktree 會屬於哪個 repo（#16 §7：worktree 的 repo ← commondir）。
-
-    **目標 repo 的語意**（R1-02）：worktree 的所屬 repo 由 ``git worktree add`` 的
-    **來源 repo** 決定，**不是**由目標路徑座落在磁碟哪裡決定。三種取得方式的權威性
-    見 ``ProbeSource``。優先序：``source_repo`` → 既存的目標目錄 → 祖先目錄（推測）。
-
-    因此：
-
-    - **repo 外的絕對路徑是合法配置**，給了 ``source_repo`` 就判得出來，不再落到
-      「祖先是 ``/tmp`` 之類非 git 目錄 → block」。這是舊版被打穿的那條。
-    - **相對路徑必須綁定明確 ``base_dir``**（或改給 ``source_repo``）。
-      **本函式不再讀 ``Path.cwd()``**：``.claude/worktrees/x`` 在兩個 repo 底下是
-      完全相同的字串，路徑本身零資訊，用 cwd 補等於讓判定隨「在哪執行」而變。
-      兩者都沒有時回 ``unanchored=True``，交由 ``check_worktree_repo_ownership``
-      fail-closed，訊息指名補法。
-    - **祖先推測仍保留**（``inferred=True``），因為 ``assign`` 早於 ``git worktree add``
-      時它是唯一能在寫入前生效的線索；但它被明確標成推測，被它擋下的訊息一律附上
-      「若非如此請以 source_repo 明示」的出路。
-    """
-    target = Path(worktree_path).expanduser()
-    resolved: Path | None
-    unanchored = False
-    if target.is_absolute():
-        resolved = target
-    elif base_dir is not None:
-        # 只做接合、不做 resolve()：產物要留住登記的原樣，resolve 會改寫 symlink
-        # （macOS 的 /tmp → /private/tmp）而讓對帳的人對不上自己登記的字串。
-        resolved = Path(base_dir).expanduser() / target
-    else:
-        resolved = None
-        unanchored = True
-
-    resolved_str = str(resolved) if resolved is not None else None
-
-    # (1) 權威來源：實際會執行 git worktree add 的 repo。目標路徑落在哪裡都不影響。
-    if source_repo is not None:
-        src = Path(source_repo).expanduser()
-        if not src.is_dir():
-            return WorktreeRepoProbe(
-                slug=None, resolved_target=resolved_str, unanchored=unanchored,
-                detail=f"source_repo {src} 不是既存目錄，無法作為來源 repo",
-            )
-        slug, common_dir, remote_url, detail = _slug_of_dir(src, git)
-        return WorktreeRepoProbe(
-            slug=slug, source="source_repo" if slug else None, resolved_target=resolved_str,
-            probed_dir=str(src), common_dir=common_dir, remote_url=remote_url,
-            detail=f"source_repo {src}：{detail}", unanchored=unanchored,
-            nested_repo=_nested_repo_slug(resolved, git) if resolved is not None else None,
-        )
-
-    # (2) 相對路徑 ＋ 無 base_dir ＋ 無 source_repo → 路徑不帶 repo 資訊，不可判定。
-    if resolved is None:
-        return WorktreeRepoProbe(
-            slug=None, resolved_target=None, unanchored=True,
-            detail=(
-                f"worktree 路徑 {worktree_path!r} 是相對路徑，但未綁定 base_dir 也未給 "
-                "source_repo；相對路徑在任何 repo 底下都是同一串字，不帶所屬 repo 資訊"
-            ),
-        )
-
-    # (3) 目標已存在 → 它就在某個 repo 裡，這是事實。
-    if resolved.is_dir():
-        slug, common_dir, remote_url, detail = _slug_of_dir(resolved, git)
-        if slug is None:
-            detail = f"{detail}；{_SOURCE_REPO_REMEDY}"
-        return WorktreeRepoProbe(
-            slug=slug, source="target_dir" if slug else None, resolved_target=resolved_str,
-            probed_dir=resolved_str, common_dir=common_dir, remote_url=remote_url,
-            detail=detail, nested_repo=_nested_repo_slug(resolved, git),
-        )
-
-    # (4) 目標尚未建立 → 問最近存在的祖先，但標記為推測。
-    anchor = _nearest_existing_dir(resolved)
-    if anchor is None:
-        return WorktreeRepoProbe(
-            slug=None, resolved_target=resolved_str,
-            detail=f"路徑 {resolved} 與其所有祖先皆不存在；{_SOURCE_REPO_REMEDY}",
-        )
-    slug, common_dir, remote_url, detail = _slug_of_dir(anchor, git)
-    if slug is None:
-        detail = (
-            f"目標 {resolved} 尚未建立，最近存在的祖先 {anchor} 導不出 repo（{detail}）；"
-            f"{_SOURCE_REPO_REMEDY}"
-        )
-    else:
-        detail = f"目標 {resolved} 尚未建立，改問最近存在的祖先 {anchor}：{detail}（推測）"
-    return WorktreeRepoProbe(
-        slug=slug, source="ancestor_dir" if slug else None, resolved_target=resolved_str,
-        probed_dir=str(anchor), common_dir=common_dir, remote_url=remote_url,
-        detail=detail, inferred=slug is not None, nested_repo=slug,
-    )
-
+# ---------------------------------------------------------------------------
+# 軸 A：歸屬判定（可攜。純字串比對，不讀檔案系統）
+# ---------------------------------------------------------------------------
 
 OwnershipDecision = Literal["allow", "block"]
 OwnershipReason = Literal[
     "match",
     "repo_mismatch",
     "card_repo_undeterminable",
-    "worktree_repo_undeterminable",
-    "worktree_path_unanchored",
-    "worktree_repo_inferred",
+    "declared_repo_unparseable",
 ]
 
 #: reason_code → decision 的**全表**。``check_worktree_repo_ownership`` 一律從這裡
 #: 導出 decision，不另外寫 if。表是封閉的：新增 reason 就必須在此明示它放不放行，
 #: 不會有「忘了處理所以預設 allow」的縫。
 #:
-#: ``test_registry.py::test_only_match_produces_allow`` 對本表**窮舉**，證明
-#: ``match`` 是唯一放行碼——不是抽樣。
+#: ``test_registry.py::test_only_match_produces_allow_exhaustively`` 對本表**窮舉**，
+#: 證明 ``match`` 是唯一放行碼——不是抽樣。
 OWNERSHIP_DECISIONS: dict[OwnershipReason, OwnershipDecision] = {
     "match": "allow",
     "repo_mismatch": "block",
     "card_repo_undeterminable": "block",
-    "worktree_repo_undeterminable": "block",
-    "worktree_path_unanchored": "block",
-    # R3-02：祖先推測相符**也不放行**。它的證據只有路徑巢狀，而路徑巢狀不是歸屬。
-    "worktree_repo_inferred": "block",
+    "declared_repo_unparseable": "block",
 }
+
+#: 這筆登記所宣告的 repo 是**明示的**還是**取自卡自己的 repo**。
+#:
+#: ⚠️ ``card_repo_default`` 這一格在軸 A 上必然 ``match``——這不是被藏起來的縫，是
+#: 刻意的設計，理由與代價寫在本檔頂端 warning 第 2 條，並由
+#: ``test_registry.py::test_default_declaration_is_a_no_op_on_the_ownership_axis``
+#: 逐字釘住。放行留痕必須帶上這個欄位，否則事後分不出「有人說了」與「沒人說」。
+DeclarationBasis = Literal["explicit", "card_repo_default"]
 
 
 @dataclass(frozen=True)
 class RepoOwnershipVerdict:
+    """軸 A 的判定。**它的每一個輸入都是可攜的字串**，所以它跨機器同值。"""
+
     reason_code: OwnershipReason
     card_repo: str | None
+    #: 這筆登記主張 worktree 屬於哪個 repo（正規化後的 slug）。
     worktree_repo: str | None
     detail: str
-    #: worktree repo 由祖先目錄推測而來（``ProbeSource.ancestor_dir``）。被這種判定
-    #: 擋下的人必須看到「若推測不成立該怎麼補」，否則就是無出路的誤擋。
-    inferred: bool = False
-    #: slug 由哪一種來源導出（``ProbeSource``）。**放行時必須留痕**：allow 沒有記下
-    #: 來源，事後就沒有任何東西分得出「目標已存在、commondir 實測」與「呼叫端宣告」
-    #: 這兩種強度差很多的放行（R3-02）。判不出來時為 None。
-    probe_source: ProbeSource | None = None
+    #: 上面那個 slug 是明示的，還是預設取自卡自己的 repo。
+    basis: DeclarationBasis | None = None
 
     @property
     def decision(self) -> OwnershipDecision:
@@ -637,46 +528,28 @@ class RepoOwnershipVerdict:
         出路取自 #16 §7.1：工作落在哪個 repo，卡就開在哪個 repo；跨 repo 需求以
         連結卡表達（來源 repo 的卡在 spec 基線宣告實作卡 Issue URL，反之亦然）。
 
-        另有一條**判定層**的出路（R1-02）：判定不成立時補 ``source_repo``。它不是
-        ``--force``——補的是**更權威的宣告且會被 git 驗證**，補完照樣要通過同一組
-        比對；``--force`` 則是繞過比對。這個差別是本守衛刻意沒有 ``--force`` 的理由
-        仍然成立的原因。
-
         訊息刻意說「拒絕登記」而不是「已阻止建立」：被擋下的是**這一筆歸屬登記**，
         磁碟上的 worktree 本閘門既不建立也不移除（射程見本檔頂端 danger）。
         """
         head = {
             "repo_mismatch": (
-                f"這筆登記會把 worktree 歸給 {self.worktree_repo}，但卡屬於 "
+                f"這筆登記主張 worktree 屬於 {self.worktree_repo}，但卡屬於 "
                 f"{self.card_repo}——跨 repo 錯置，拒絕登記"
             ),
             "card_repo_undeterminable": "判不出卡所屬 repo",
-            "worktree_repo_undeterminable": "判不出 worktree 目標 repo",
-            "worktree_path_unanchored": "worktree 路徑是相對路徑，未綁定明確 base_dir",
-            "worktree_repo_inferred": (
-                f"目標尚未建立，只能從路徑巢狀推測它屬於 {self.worktree_repo}；"
-                f"推測與卡的 {self.card_repo} 看起來相符，但路徑座落在哪裡不是歸屬證據，"
-                "拒絕以推測登記歸屬"
-            ),
+            "declared_repo_unparseable": "宣告的來源 repo 解析不出 owner/repo",
             "match": "（未被擋）",
         }[self.reason_code]
         if self.reason_code == "match":
             return head
         extra = ""
-        if self.reason_code == "worktree_repo_inferred":
+        if self.reason_code == "declared_repo_unparseable":
             extra = (
-                "（補法：以 source_repo 明示實際會執行 git worktree add 的來源 repo——"
-                "看起來相符時它多半就是卡自己的 repo 根目錄，但那句話必須由你說、"
-                "不能由路徑猜。⚠️ 補了之後取得的 allow 仍然只是**經 git 驗證的宣告**，"
-                "本閘門不觀測也不綁定後續真正的建立行為）"
+                "（補法：--worktree-source-repo 收的是 **repo slug**（``owner/repo``，"
+                "也接受 GitHub remote／Issue URL），**不是目錄**。改收 slug 是因為目錄"
+                "只在單一台機器成立，而歸屬必須跨機器可稽核——本機路徑仍然要給，但它給的"
+                "是 --worktree，供 cleanup／doctor 使用，不參與歸屬判定）"
             )
-        elif self.inferred:
-            extra = (
-                "（此判定由尚未建立之目標的最近存在祖先**推測**而得；"
-                "若你實際是從別的 repo 執行 git worktree add，請以 source_repo 明示後重試）"
-            )
-        elif self.reason_code == "worktree_path_unanchored":
-            extra = "（補法：改給絕對路徑，或指定 base_dir／source_repo）"
         return (
             f"{head}；{self.detail}。{extra}"
             "合法路徑（#16 §7.1）：工作落在哪個 repo，卡就開在哪個 repo；"
@@ -687,9 +560,15 @@ class RepoOwnershipVerdict:
 def check_worktree_repo_ownership(
     *,
     card_repo: str | None,
-    worktree_probe: WorktreeRepoProbe,
+    declared_repo: str | None = None,
 ) -> RepoOwnershipVerdict:
-    """比對卡 repo 與 worktree repo，回傳判定。
+    """比對卡 repo 與**這筆登記宣告的** repo，回傳判定。
+
+    **本函式不接受路徑、不接受目錄、不呼叫 git、不碰檔案系統。** 這不是實作細節，
+    是 ``docs/ROADMAP.md`` §1.5 的裁定在簽章層的形狀：判定必須建立在可攜的那一半上，
+    所以能進來的東西只有可攜的東西。
+    ``test_registry.py::test_ownership_axis_never_touches_the_filesystem`` 把
+    ``subprocess`` 整支換成會爆炸的替身來釘死這條。
 
     **判不出來時 fail-closed（擋下），不放行。** 二擇一的論證：
 
@@ -697,121 +576,277 @@ def check_worktree_repo_ownership(
        誤放的代價是 §8.3 那種**沉默**的錯置——worktree 建在錯的 repo 照樣能寫程式、
        能 commit，數週後才在對帳裡浮出來，而那份對帳自己還會誤報。可偵測的即時
        痛感 vs 不可偵測的長期漂移，只有前者能被修。
-    2. **判不出來的每一種輸入都可在一分鐘內補齊，補法寫在拒絕訊息裡。**
-       （上一輪這裡寫的是「每一種輸入都不是合法穩態」，**那句是錯的**，R1-02 舉出
-       反例：repo 外的絕對路徑是 canonical §4.5 允許的合法配置。修法是加
-       ``source_repo`` 這條補齊管道，不是繼續宣稱它不合法。）
+    2. **兩種判不出來都可在一分鐘內補齊，補法寫在拒絕訊息裡。**
        ``card_repo_undeterminable`` 只發生在 DraftIssue（卡不在任何 repo 裡——但
        ``assign`` 本來就要把 Log 寫回卡面，正式流程要求真 Issue）；
-       ``worktree_repo_undeterminable`` 發生在路徑打錯、目標不在任何 git repo 內、
-       或 repo 沒有 origin remote；``worktree_path_unanchored`` 發生在相對路徑未綁
-       ``base_dir``；``worktree_repo_inferred`` 發生在目標尚未建立、只有路徑巢狀可推。
-       四者的補法分別是「改用真 Issue」「修路徑或補 ``source_repo``」
-       「改絕對路徑或補 ``base_dir``／``source_repo``」「補 ``source_repo``」，
-       都不需要放行一次壞輸入。
-
-    ⚠️ **``worktree_repo_inferred`` 推翻了 2026-08-12 路徑慣例的一半**（R3-02）。
-    那次裁定寫的是「新的 assign 一律絕對路徑，**或**以 ``--worktree-source-repo``
-    明示來源」——本次改動後，目標尚未建立時**絕對路徑本身不再足夠**，兩者都要。
-    代價已量測、不掩飾：對 Project #4 全量枚舉，改動前 47 allow／17 block，改動後
-    16 allow／48 block，翻面的 31 筆全部是 ``ancestor_dir``。
-    ⚠️ **那 31 筆不是「本次新增的誤擋」**：閘門不回溯（見頂端 warning 第 2 條），
-    這些既有登記一次都不會被重跑。真正的代價落在**未來每一次 assign**——生產慣例是
-    登記早於建立，所以常態就會落在這一格，PM 從此每次都要多打一個
-    ``--worktree-source-repo``。判斷是這個代價值得付：一個旗標換掉「31/47 的放行
-    建立在本模組自己宣告為錯的比對軸上」。**這個取捨若需求方不同意，一行裁定即可
-    翻回**（把本函式這一段與 ``OWNERSHIP_DECISIONS`` 的該列刪掉即恢復舊行為）。
+       ``declared_repo_unparseable`` 發生在有人把目錄餵給 ``--worktree-source-repo``。
+       ⚠️ 後者刻意**不**退化成「那就自己去讀那個目錄的 origin」——那正是本版拆掉的
+       那條軸。給錯型別要響，不能靠猜補回來。
     3. **fail-closed 不會被無關的故障觸發。** 卡 repo 來自 ``ItemSnapshot.issue_url``，
        那是 ``assign`` 早已為了別的理由抓下來的同一份資料；GitHub 掛掉時 ``assign``
-       在到達本守衛之前就已經失敗。守衛**不新增任何網路相依**——這是 fail-closed
-       站得住的前提，否則它會變成「別人的服務抖一下，全隊都不能派工」。
+       在到達本守衛之前就已經失敗。守衛**不新增任何網路相依**，也不新增任何檔案系統
+       相依——這是 fail-closed 站得住的前提，否則它會變成「別人的服務抖一下，全隊都
+       不能派工」。
+
+    **``declared_repo=None`` 的語意是「這筆登記宣告它屬於卡自己的 repo」**，不是
+    「判不出來」。理由與它的代價寫在本檔頂端 warning 第 2 條：唯一合理的預設值就是
+    卡自己的 repo，強迫每次手打一個工具已經知道的值不會多抓到任何東西，只會多一個
+    儀式。**必須同時承認的是**：因此軸 A 擋得住的只有**明示的**跨 repo 宣告。
 
     刻意**沒有** ``--force``／``--allow-cross-repo`` 逃生口：漂移案例的成因不是
     有人想跨 repo，是沒人注意到自己跨了。給逃生口等於把「沒注意到」變成「按一下」。
-    ``source_repo``（R1-02）**不是**逃生口：它補的是更權威且經 git 驗證的宣告，補完
-    仍要通過同一組比對，補錯照樣被擋；``--force`` 則是把比對整個跳過。
 
     ⚠️ 本函式判的是**一筆登記**該不該寫下去。它不觀測、也擋不住磁碟上的建立動作
     （見本檔頂端 danger）。
     """
+    basis: DeclarationBasis | None = None
+    declared_slug: str | None = None
+    if declared_repo is not None and str(declared_repo).strip():
+        basis = "explicit"
+        declared_slug = normalize_repo_slug(str(declared_repo))
+        if declared_slug is None:
+            return RepoOwnershipVerdict(
+                reason_code="declared_repo_unparseable",
+                card_repo=card_repo,
+                worktree_repo=None,
+                detail=(
+                    f"宣告的來源 repo {str(declared_repo)!r} 不是 owner/repo slug（也不是"
+                    "可解析的 GitHub remote／Issue URL）"
+                ),
+                basis=basis,
+            )
+
     if card_repo is None:
         return RepoOwnershipVerdict(
             reason_code="card_repo_undeterminable",
             card_repo=None,
-            worktree_repo=worktree_probe.slug,
+            worktree_repo=declared_slug,
             detail="卡沒有可解析的 Issue URL（DraftIssue 或 URL 形式不合），"
                    "而卡所屬 repo 只認 Issue URL 一個來源",
-            probe_source=worktree_probe.source,
+            basis=basis,
         )
-    if worktree_probe.slug is None:
+
+    if declared_slug is None:
+        # 沒有明示 ＝ 宣告「屬於卡自己的 repo」。見本函式 docstring 與頂端 warning 2。
         return RepoOwnershipVerdict(
-            reason_code=(
-                "worktree_path_unanchored" if worktree_probe.unanchored
-                else "worktree_repo_undeterminable"
-            ),
+            reason_code="match",
             card_repo=card_repo,
-            worktree_repo=None,
-            detail=worktree_probe.detail,
-            probe_source=worktree_probe.source,
+            worktree_repo=card_repo,
+            detail=(
+                f"這筆登記未明示來源 repo，依預設視為宣告它屬於卡自己的 {card_repo}"
+                "（軸 A 在這一格必然相符——它擋得住的只有明示的跨 repo 宣告）"
+            ),
+            basis="card_repo_default",
         )
-    if worktree_probe.slug != card_repo:
-        # 不相符的推測照樣擋，且刻意留在 ``repo_mismatch``：它的訊息資訊量更大
-        # （指名兩邊的 slug），而且「推測說不一樣」本身就是值得看的訊號。
+
+    if declared_slug != card_repo:
         return RepoOwnershipVerdict(
             reason_code="repo_mismatch",
             card_repo=card_repo,
-            worktree_repo=worktree_probe.slug,
-            detail=worktree_probe.detail,
-            inferred=worktree_probe.inferred,
-            probe_source=worktree_probe.source,
+            worktree_repo=declared_slug,
+            detail=f"登記明示來源 repo 為 {declared_slug}，卡的 Issue URL 導出 {card_repo}",
+            basis=basis,
         )
-    if worktree_probe.inferred:
-        # R3-02：**相符的推測不放行**。理由見 ``ProbeSource`` 的 ancestor_dir 條。
-        return RepoOwnershipVerdict(
-            reason_code="worktree_repo_inferred",
-            card_repo=card_repo,
-            worktree_repo=worktree_probe.slug,
-            detail=worktree_probe.detail,
-            inferred=True,
-            probe_source=worktree_probe.source,
-        )
+
     return RepoOwnershipVerdict(
         reason_code="match",
         card_repo=card_repo,
-        worktree_repo=worktree_probe.slug,
-        detail=worktree_probe.detail,
-        inferred=worktree_probe.inferred,
-        probe_source=worktree_probe.source,
+        worktree_repo=declared_slug,
+        detail=f"登記明示來源 repo 為 {declared_slug}，與卡的 repo 相符",
+        basis=basis,
     )
 
 
 def check_assign_repo_ownership(
     *,
     issue_url: str | None,
-    worktree_path: str | Path,
-    source_repo: str | Path | None = None,
-    base_dir: str | Path | None = None,
-    git: GitProbe = run_git_readonly,
+    worktree_source_repo: str | None = None,
 ) -> RepoOwnershipVerdict:
-    """``assign`` 用的端到端判定：卡的 Issue URL ＋ ``--worktree`` 路徑 → 判定。
+    """``assign`` 用的軸 A 端到端判定：卡的 Issue URL ＋ 登記宣告的 slug → 判定。
 
-    這是 ``commands/assign_cmd.py::run`` 實際呼叫的那一個函式（已接線；接線後仍不
-    成立的三件事見本檔頂端 warning，射程邊界見 danger）。簽章刻意只吃事實輸入，沒有
-    ``TasksMdRegistry``／``--repo``／設定檔——投影過時或呼叫端環境設錯都影響不到
-    判定。``source_repo`` 是唯一由呼叫端提供的輸入，它必須通過 git 驗證（既存且有
-    GitHub 形狀 origin 的 repo）才算數；但**驗證的是那個目錄的身分，不是後續真的
-    從那裡建立**——本函式回 ``allow`` 的意思是「這筆登記可以寫下去」，不是「建立
-    行為已被綁定」。
+    ⚠️ **請注意這個簽章少了什麼**：沒有 ``worktree_path``、沒有 ``base_dir``、沒有
+    ``git``。歸屬判定不需要知道 worktree 在磁碟哪裡，也**不准**知道——那正是
+    ``docs/ROADMAP.md`` §1.5 的裁定。本機路徑仍然是 ``assign`` 的必填參數，但它流向
+    的是軸 B 與看板欄位（供 ``cleanup``／``doctor`` 使用），不流進這裡。
 
-    R3-02 之後，``allow`` 只會來自兩種 ``ProbeSource``：``target_dir``（檢查當下的
-    事實）與 ``source_repo``（經 git 驗證的宣告）。``ancestor_dir`` 的推測**永遠不
-    放行**，所以生產慣例（登記早於建立）現在必須帶 ``--worktree-source-repo``。
+    這是 ``commands/assign_cmd.py::run`` 實際呼叫的第一支閘門（接線後仍不成立的四件
+    事見本檔頂端 warning，射程邊界見 danger）。
     """
     return check_worktree_repo_ownership(
         card_repo=card_repo_from_issue_url(issue_url),
-        worktree_probe=probe_worktree_repo(
-            worktree_path, source_repo=source_repo, base_dir=base_dir, git=git
-        ),
+        declared_repo=worktree_source_repo,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 軸 B：本機觀測（機器局部。只說「這台機器現在看到什麼」）
+# ---------------------------------------------------------------------------
+
+LocalObservationAction = Literal["pass", "warn", "refuse"]
+LocalObservationCode = Literal[
+    "consistent",
+    "contradiction",
+    "expected_repo_unknown",
+    "nesting_conflict",
+    "target_absent",
+    "target_not_in_repo",
+    "observed_repo_unidentifiable",
+    "path_unanchored",
+]
+
+#: code → 動作的**全表**。只有一格 ``refuse``，而它要求的是**實際觀測到的矛盾**：
+#: 登記的路徑此刻存在、而且它自己就是另一個 repo 的 worktree。
+#:
+#: ``nesting_conflict`` 刻意只 ``warn``：它的全部證據是「這條路徑座落在誰底下」，
+#: 而 canonical §4.5 明文 worktree 路徑由實際建立者決定、未要求巢狀。上一版讓這種
+#: 推測擋人，被需求方 2026-08-13 推翻——推測可以說「這裡看起來不對」，不可以當判定。
+#: **降級的代價已量測**：見本檔頂端 warning 最後一段那筆具名的落差。
+LOCAL_OBSERVATION_ACTIONS: dict[LocalObservationCode, LocalObservationAction] = {
+    "consistent": "pass",
+    "contradiction": "refuse",
+    # 軸 A 沒給出歸屬（例如 DraftIssue）→ 沒有可比的基準，不是「一致」。
+    "expected_repo_unknown": "pass",
+    "nesting_conflict": "warn",
+    "target_absent": "pass",
+    "target_not_in_repo": "pass",
+    "observed_repo_unidentifiable": "pass",
+    "path_unanchored": "pass",
+}
+
+
+@dataclass(frozen=True)
+class LocalWorktreeObservation:
+    """軸 B 的觀測結果。**每一個欄位都是這台機器的快照，不是 repo 的事實。**"""
+
+    code: LocalObservationCode
+    #: 軸 A 認定的歸屬（拿來比對用），觀測本身不決定它。
+    expected_repo: str | None
+    #: 路徑此刻**實際**所屬的 repo（``commondir`` 的 origin）；看不到時 None。
+    observed_repo: str | None = None
+    #: 路徑**座落**在哪個 repo 的工作樹底下。與 ``observed_repo`` 不同：submodule 的
+    #: worktree 掛在父 repo 路徑底下正是 §8.3 漂移得以隱形的形狀。**純資訊。**
+    nested_repo: str | None = None
+    resolved_target: str | None = None
+    probed_dir: str | None = None
+    common_dir: str | None = None
+    remote_url: str | None = None
+    detail: str = ""
+    #: 這個結果只在這台機器上成立。留成欄位而不是註解，是為了讓消費端沒有藉口
+    #: 把它當成 repo 的事實——它會一路寫進枚舉器產物與 Log。
+    machine_local: bool = True
+
+    @property
+    def action(self) -> LocalObservationAction:
+        return LOCAL_OBSERVATION_ACTIONS[self.code]
+
+    @property
+    def refuses(self) -> bool:
+        return self.action == "refuse"
+
+    def message(self) -> str:
+        if self.code == "contradiction":
+            return (
+                f"這筆登記的路徑在**這台機器**上是 {self.observed_repo} 的 worktree，"
+                f"與這張卡的 {self.expected_repo} 矛盾——拒絕寫入自相矛盾的登記；"
+                f"{self.detail}。"
+                "⚠️ 這是**機器局部**的觀測，不是歸屬判定：換一台機器沒有這個目錄時本檢查"
+                "不會響，而**它的沉默不是判定**。歸屬判定（軸 A）與這台機器無關。"
+                "合法路徑（#16 §7.1）：工作落在哪個 repo，卡就開在哪個 repo；"
+                "跨 repo 需求請在目標 repo 另開實作卡，兩張卡以 spec 基線的 Issue URL 互相連結。"
+            )
+        if self.code == "nesting_conflict":
+            return (
+                f"提醒（不擋）：登記的路徑座落在 {self.nested_repo} 的目錄樹底下，"
+                f"而這張卡屬於 {self.expected_repo}；{self.detail}。"
+                "⚠️ 路徑座落在哪裡**不是**歸屬證據（canonical §4.5：路徑由實際建立者決定），"
+                "所以這只是提醒，沒有執行者。"
+            )
+        return self.detail
+
+
+def observe_local_worktree(
+    worktree_path: str | Path,
+    *,
+    expected_repo: str | None,
+    base_dir: str | Path | None = None,
+    git: GitProbe = run_git_readonly,
+) -> LocalWorktreeObservation:
+    """看一眼這條登記路徑在**這台機器**上是什麼，與 ``expected_repo`` 比對。
+
+    它**不導出歸屬**，只回答「此刻在這裡看到什麼」。三種說得出話的情形：
+
+    - 目標存在且本身是某 repo 的 worktree → ``consistent`` 或 ``contradiction``。
+      這是唯一有 ``refuse`` 資格的一格，因為它是**觀測**不是推測。
+    - 目標尚未建立、最近存在的祖先屬於別的 repo → ``nesting_conflict``（只 ``warn``）。
+    - 其餘（路徑未錨定、祖先也導不出 repo、origin 不是 GitHub 形狀）→ 沉默。
+
+    **不讀 ``Path.cwd()``**（R1-02 的機械封堵保留）：``.claude/worktrees/x`` 在兩個
+    repo 底下是完全相同的字串，用 cwd 補等於讓觀測隨「在哪執行」而變。相對路徑沒有
+    ``base_dir`` 時直接回 ``path_unanchored``——**而那在本版不再擋人**：路徑既然不是
+    歸屬證據，它未錨定就只是這台機器少一則資訊。
+    """
+    target = Path(worktree_path).expanduser()
+    if target.is_absolute():
+        resolved: Path | None = target
+    elif base_dir is not None:
+        # 只做接合、不做 resolve()：產物要留住登記的原樣，resolve 會改寫 symlink
+        # （macOS 的 /tmp → /private/tmp）而讓對帳的人對不上自己登記的字串。
+        resolved = Path(base_dir).expanduser() / target
+    else:
+        return LocalWorktreeObservation(
+            code="path_unanchored",
+            expected_repo=expected_repo,
+            detail=(
+                f"worktree 路徑 {worktree_path!r} 是相對路徑且未綁定 base_dir，"
+                "這台機器解析不到它；相對路徑不帶所屬 repo 資訊，但那不影響歸屬判定"
+                "（歸屬由登記宣告的 slug 決定）"
+            ),
+        )
+
+    resolved_str = str(resolved)
+
+    if resolved.is_dir():
+        slug, common_dir, remote_url, detail = _slug_of_dir(resolved, git)
+        if slug is None:
+            return LocalWorktreeObservation(
+                code=("target_not_in_repo" if common_dir is None
+                      else "observed_repo_unidentifiable"),
+                expected_repo=expected_repo, resolved_target=resolved_str,
+                probed_dir=resolved_str, common_dir=common_dir, remote_url=remote_url,
+                detail=detail,
+            )
+        nested = _nested_repo_slug(resolved, git)
+        if expected_repo is None:
+            code: LocalObservationCode = "expected_repo_unknown"
+        else:
+            code = "consistent" if slug == expected_repo else "contradiction"
+        return LocalWorktreeObservation(
+            code=code,
+            expected_repo=expected_repo, observed_repo=slug, nested_repo=nested,
+            resolved_target=resolved_str, probed_dir=resolved_str,
+            common_dir=common_dir, remote_url=remote_url, detail=detail,
+        )
+
+    anchor = _nearest_existing_dir(resolved)
+    if anchor is None:
+        return LocalWorktreeObservation(
+            code="target_absent", expected_repo=expected_repo,
+            resolved_target=resolved_str,
+            detail=f"路徑 {resolved} 與其所有祖先在這台機器上皆不存在",
+        )
+    nested, common_dir, remote_url, detail = _slug_of_dir(anchor, git)
+    if nested is not None and expected_repo is not None and nested != expected_repo:
+        return LocalWorktreeObservation(
+            code="nesting_conflict", expected_repo=expected_repo, nested_repo=nested,
+            resolved_target=resolved_str, probed_dir=str(anchor),
+            common_dir=common_dir, remote_url=remote_url,
+            detail=f"目標 {resolved} 尚未建立；最近存在的祖先 {anchor}：{detail}",
+        )
+    return LocalWorktreeObservation(
+        code="target_absent", expected_repo=expected_repo, nested_repo=nested,
+        resolved_target=resolved_str, probed_dir=str(anchor),
+        common_dir=common_dir, remote_url=remote_url,
+        detail=f"目標 {resolved} 尚未建立；最近存在的祖先 {anchor}：{detail}",
     )
 
 
@@ -838,22 +873,34 @@ OwnershipInputRow = dict[str, "str | None"]
 
 @dataclass(frozen=True)
 class OwnershipRow:
-    """一筆 (卡, worktree) 配對的判定結果。欄位即產物欄位。"""
+    """一筆 (卡, worktree) 配對的結果。欄位即產物欄位。
+
+    ⚠️ **``ownership_*`` 與 ``local_*`` 是兩件不同的事，不要合著讀**：前者換機器不變，
+    後者是這台機器的快照。``local_machine_local`` 恆為 true，留在產物裡是為了讓任何
+    下游消費者都得先看到這一欄才讀得到 ``local_code``。
+    """
 
     card_id: str | None
     issue_url: str | None
     branch: str | None
     worktree_raw: str | None
+    # --- 軸 A：可攜 ---
     card_repo: str | None
+    declared_repo: str | None
+    worktree_repo: str | None
+    declaration_basis: str | None
+    ownership_reason: str
+    ownership_decision: str
+    ownership_detail: str
+    # --- 軸 B：機器局部 ---
     resolved_target: str | None
     target_exists: bool
-    probe_source: str | None
-    inferred: bool
-    worktree_repo: str | None
+    observed_repo: str | None
     nested_repo: str | None
-    reason_code: str
-    decision: str
-    detail: str
+    local_code: str
+    local_action: str
+    local_machine_local: bool
+    local_detail: str
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -862,22 +909,28 @@ class OwnershipRow:
             "branch": self.branch,
             "worktree_raw": self.worktree_raw,
             "card_repo": self.card_repo,
+            "declared_repo": self.declared_repo,
+            "worktree_repo": self.worktree_repo,
+            "declaration_basis": self.declaration_basis,
+            "ownership_reason": self.ownership_reason,
+            "ownership_decision": self.ownership_decision,
+            "ownership_detail": self.ownership_detail,
             "resolved_target": self.resolved_target,
             "target_exists": self.target_exists,
-            "probe_source": self.probe_source,
-            "inferred": self.inferred,
-            "worktree_repo": self.worktree_repo,
+            "observed_repo": self.observed_repo,
             "nested_repo": self.nested_repo,
-            "reason_code": self.reason_code,
-            "decision": self.decision,
-            "detail": self.detail,
+            "local_code": self.local_code,
+            "local_action": self.local_action,
+            "local_machine_local": self.local_machine_local,
+            "local_detail": self.local_detail,
         }
 
 
 TSV_COLUMNS = [
-    "card_id", "card_repo", "worktree_raw", "resolved_target", "target_exists",
-    "probe_source", "inferred", "worktree_repo", "nested_repo", "reason_code",
-    "decision", "issue_url",
+    "card_id", "card_repo", "declared_repo", "worktree_repo", "declaration_basis",
+    "ownership_reason", "ownership_decision",
+    "worktree_raw", "resolved_target", "target_exists", "observed_repo", "nested_repo",
+    "local_code", "local_action", "local_machine_local", "issue_url",
 ]
 
 
@@ -890,7 +943,13 @@ def enumerate_ownership(
     """對每一筆輸入跑同一組判定函式（**不是**另一套邏輯）。
 
     輸入列可給 ``worktree_path``，或給 Ledger 慣例的複合字串 ``branch_worktree``
-    （``branch @ path``）。沒有 worktree 註冊的列不在此函式的職責內——呼叫端先濾。
+    （``branch @ path``）；``worktree_source_repo`` 可選，給了就是這筆登記明示的
+    repo slug。沒有 worktree 註冊的列不在此函式的職責內——呼叫端先濾。
+
+    ⚠️ **現況的 Project 欄位裡沒有 slug**（``分支worktree`` 只存 ``branch @ path``），
+    所以現拉出來的每一列 ``declared_repo`` 都是 None，軸 A 一律走
+    ``card_repo_default``。**那使得軸 A 在既有資料上近乎恆真**——這正是為什麼本枚舉器
+    的價值改由軸 B 承擔，也正是為什麼軸 B 的每一欄都標著「機器局部」。
     """
     out: list[OwnershipRow] = []
     for raw in rows:
@@ -902,9 +961,12 @@ def enumerate_ownership(
             # 不剝的話尾端反引號會留在路徑裡，讓存在的目錄被判成不存在。
             branch, worktree = parse_branch_worktree((raw["branch_worktree"] or "").strip("` "))
         issue_url = raw.get("issue_url")
-        probe = probe_worktree_repo(worktree or "", base_dir=base_dir, git=git)
+        declared = raw.get("worktree_source_repo")
         verdict = check_worktree_repo_ownership(
-            card_repo=card_repo_from_issue_url(issue_url), worktree_probe=probe
+            card_repo=card_repo_from_issue_url(issue_url), declared_repo=declared
+        )
+        observation = observe_local_worktree(
+            worktree or "", expected_repo=verdict.worktree_repo, base_dir=base_dir, git=git
         )
         out.append(
             OwnershipRow(
@@ -913,38 +975,54 @@ def enumerate_ownership(
                 branch=branch,
                 worktree_raw=worktree,
                 card_repo=verdict.card_repo,
-                resolved_target=probe.resolved_target,
+                declared_repo=declared,
+                worktree_repo=verdict.worktree_repo,
+                declaration_basis=verdict.basis,
+                ownership_reason=verdict.reason_code,
+                ownership_decision=verdict.decision,
+                ownership_detail=verdict.detail,
+                resolved_target=observation.resolved_target,
                 target_exists=bool(
-                    probe.resolved_target and Path(probe.resolved_target).is_dir()
+                    observation.resolved_target and Path(observation.resolved_target).is_dir()
                 ),
-                probe_source=probe.source,
-                inferred=probe.inferred,
-                worktree_repo=probe.slug,
-                nested_repo=probe.nested_repo,
-                reason_code=verdict.reason_code,
-                decision=verdict.decision,
-                detail=probe.detail,
+                observed_repo=observation.observed_repo,
+                nested_repo=observation.nested_repo,
+                local_code=observation.code,
+                local_action=observation.action,
+                local_machine_local=observation.machine_local,
+                local_detail=observation.detail,
             )
         )
     return out
 
 
 def summarize_ownership(rows: list[OwnershipRow]) -> dict[str, object]:
-    """摘要與逐列產物**同一次執行**產生（§6.2：宣稱的數字與 artifact 同源）。"""
+    """摘要與逐列產物**同一次執行**產生（§6.2：宣稱的數字與 artifact 同源）。
+
+    ``allow``／``block`` 只數軸 A（可攜）；軸 B 的數字全部關在 ``local`` 底下，
+    並帶一句 ``note`` ——摘要被貼進報告時最容易掉的就是那句限定詞。
+    """
     by_reason: dict[str, int] = {}
-    by_source: dict[str, int] = {}
+    by_local: dict[str, int] = {}
+    by_basis: dict[str, int] = {}
     for r in rows:
-        by_reason[r.reason_code] = by_reason.get(r.reason_code, 0) + 1
-        key = r.probe_source or "undeterminable"
-        by_source[key] = by_source.get(key, 0) + 1
+        by_reason[r.ownership_reason] = by_reason.get(r.ownership_reason, 0) + 1
+        by_local[r.local_code] = by_local.get(r.local_code, 0) + 1
+        key = r.declaration_basis or "none"
+        by_basis[key] = by_basis.get(key, 0) + 1
     return {
         "total": len(rows),
-        "allow": sum(1 for r in rows if r.decision == "allow"),
-        "block": sum(1 for r in rows if r.decision == "block"),
-        "target_exists": sum(1 for r in rows if r.target_exists),
-        "inferred": sum(1 for r in rows if r.inferred),
+        "allow": sum(1 for r in rows if r.ownership_decision == "allow"),
+        "block": sum(1 for r in rows if r.ownership_decision == "block"),
         "by_reason_code": dict(sorted(by_reason.items())),
-        "by_probe_source": dict(sorted(by_source.items())),
+        "by_declaration_basis": dict(sorted(by_basis.items())),
+        "local": {
+            "note": "以下全部是「這台機器現在看到什麼」，不是 repo 的事實；換一台機器不會重現",
+            "target_exists": sum(1 for r in rows if r.target_exists),
+            "refuse": sum(1 for r in rows if r.local_action == "refuse"),
+            "warn": sum(1 for r in rows if r.local_action == "warn"),
+            "by_code": dict(sorted(by_local.items())),
+        },
     }
 
 
@@ -1030,7 +1108,10 @@ def main(argv: list[str] | None = None) -> int:
     """``python -m wf_cli.registry``：唯讀枚舉器。**不寫任何遠端狀態、不改磁碟。**"""
     parser = argparse.ArgumentParser(
         prog="python -m wf_cli.registry",
-        description="唯讀枚舉：對現況每一筆 (卡, worktree) 配對跑跨 repo 歸屬判定",
+        description=(
+            "唯讀枚舉：對現況每一筆 (卡, worktree) 配對跑軸 A（可攜的歸屬判定）"
+            "與軸 B（這台機器的觀測）。⚠️ local_* 欄不是 repo 的事實"
+        ),
     )
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument("--from-project", metavar="OWNER/NUMBER", help="現拉 GitHub Project（唯讀）")
@@ -1042,8 +1123,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", metavar="FILE", help="輸出檔；省略則印到 stdout")
     parser.add_argument(
         "--base-dir", metavar="DIR", default=None,
-        help="相對 worktree 路徑的錨點。**不給就是不給**——本工具不會拿 cwd 當預設，"
-             "沒有錨點的相對路徑一律判 worktree_path_unanchored（見 probe 的說明）。",
+        help="相對 worktree 路徑的錨點，**只影響軸 B（本機觀測）**。**不給就是不給**"
+             "——本工具不會拿 cwd 當預設，沒有錨點的相對路徑一律 local_code="
+             "path_unanchored，也就是這台機器沒有資訊；歸屬判定不受影響。",
     )
     args = parser.parse_args(argv)
 
@@ -1080,18 +1162,21 @@ def main(argv: list[str] | None = None) -> int:
 
 
 __all__ = [
+    "LOCAL_OBSERVATION_ACTIONS",
     "OWNERSHIP_DECISIONS",
     "TSV_COLUMNS",
+    "DeclarationBasis",
     "GitProbe",
+    "LocalObservationAction",
+    "LocalObservationCode",
+    "LocalWorktreeObservation",
     "OwnershipDecision",
     "OwnershipInputRow",
     "OwnershipReason",
     "OwnershipRow",
-    "ProbeSource",
     "RegisteredCard",
     "RepoOwnershipVerdict",
     "TasksMdRegistry",
-    "WorktreeRepoProbe",
     "card_repo_from_issue_url",
     "check_assign_repo_ownership",
     "check_worktree_repo_ownership",
@@ -1100,10 +1185,10 @@ __all__ = [
     "load_tasks_md_registry",
     "main",
     "normalize_repo_slug",
+    "observe_local_worktree",
     "parse_active_ledger",
     "parse_archived_card_ids",
     "parse_markdown_tables",
-    "probe_worktree_repo",
     "run_git_readonly",
     "summarize_ownership",
 ]

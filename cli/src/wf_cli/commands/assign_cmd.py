@@ -24,15 +24,23 @@ db:* 資源雙方 db_scope 皆為 read 時可共用。
 GraphQL 改寫 ``分支worktree`` TEXT 欄；既有登記不重掃。三條皆為**已知限制而非待辦**，
 逐字條款與現況見 ``registry`` 模組頂端的 danger。
 
-判定引擎在 ``registry.check_assign_repo_ownership``：卡的 repo 只認 Issue URL，
-worktree 的 repo 由這筆登記主張的**來源 repo** 導出並經 git 驗證（見 ``registry`` 的
-``ProbeSource``）。**慣例**：新的 assign 一律給**絕對** ``--worktree``；且**目標尚未
-建立時必須加 ``--worktree-source-repo``**——R3-02 之後路徑巢狀的推測一律不放行
-（``worktree_repo_inferred``），這一條**取代了 2026-08-12 裁定裡「絕對路徑**或**明示
-來源」的二擇一**，兩者現在都要。既有的相對路徑註冊**不回溯檢查**（本閘門只管新寫入）。
+**兩條軸，兩個回傳碼**（``docs/ROADMAP.md`` §1.5，需求方 2026-08-13 裁定）：
+
+- **軸 A ``registry.check_assign_repo_ownership``（歸屬，可攜）**→ 拒絕時 ``return 5``。
+  卡的 repo 只認 Issue URL；worktree 的 repo 來自 ``--worktree-source-repo`` 宣告的
+  **repo slug**。兩邊都是字串，**不讀檔案系統**，所以它在任何一台機器上同值。
+- **軸 B ``registry.observe_local_worktree``（本機觀測，機器局部）**→ 觀測到矛盾時
+  ``return 6``。它只在「登記的路徑此刻存在、而且本身就是另一個 repo 的 worktree」時
+  說得出話，其餘一律沉默或只警告。**它的沉默不是判定。**
+
+⚠️ **``--worktree-source-repo`` 收的是 slug 不是目錄**（本輪改動）。上一版收目錄並從
+它反推 repo，而目錄只在單一台機器成立——需求方 2026-08-13 查證後推翻該前提，連帶作廢
+2026-08-13 那則「絕對路徑**且**明示來源」的裁定（``issuecomment-5274150740``）。
+現在 ``--worktree`` 給什麼形式的路徑都不影響歸屬：**絕對與相對都不再是歸屬的證據**，
+路徑的用途回到 ``cleanup``／``doctor``／看板欄位。既有登記**不回溯檢查**。
 
 判定結果會寫進 Log（``_ownership_log_fragment``）：allow 也要留痕，否則事後沒有任何
-東西說得出這筆登記的歸屬是「目標已存在、commondir 實測」還是「呼叫端宣告」。
+東西說得出這筆登記的歸屬是**有人明示宣告**還是**沒人說、依預設取自卡**。
 
 **規劃期路由的派工端**（WF-CLI-ROUTING-TIER1 R1-001）：``MODEL_ROUTING.md`` 第 14 行
 後半要求「派工時可依可用性偏離建議，但實際模型與偏離理由記入 claim 事件」。因此
@@ -65,7 +73,12 @@ from ..project import (
     set_field_value,
     set_item_body,
 )
-from ..registry import RepoOwnershipVerdict, check_assign_repo_ownership
+from ..registry import (
+    LocalWorktreeObservation,
+    RepoOwnershipVerdict,
+    check_assign_repo_ownership,
+    observe_local_worktree,
+)
 from ..resources import (
     ResourceDeclarationError,
     find_conflicts,
@@ -87,19 +100,21 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--worktree",
         required=True,
-        help="worktree 路徑。**請給絕對路徑**（需求方 2026-08-12 裁定）：相對路徑在任何 "
-        "repo 底下都是同一串字、不帶所屬 repo 資訊，跨 repo 歸屬閘門無從判定而會拒絕。",
+        help="worktree 的**本機路徑**，供 cleanup／doctor 與看板欄位使用。"
+        "⚠️ 它**不參與跨 repo 歸屬判定**（歸屬看 --worktree-source-repo 的 slug）："
+        "絕對路徑只在單一台機器成立、相對路徑不帶 repo 資訊，兩種都不是歸屬證據。"
+        "因此 2026-08-12「一律絕對路徑」那條慣例對本閘門已無作用（需求方 2026-08-13 裁定）。",
     )
     p.add_argument(
         "--worktree-source-repo",
         default=None,
-        metavar="DIR",
-        help="這筆登記主張的**來源 repo** 目錄（即 git worktree add 會從哪裡執行）。"
-        "**目標路徑尚未建立時必填**（生產慣例是先 assign 再建立，所以這是常態）：閘門"
-        "不接受由路徑巢狀推測出來的歸屬，推測相符也一樣拒絕。它不是 --force：給了之後"
-        "仍要通過同一組跨 repo 比對，指錯 repo 照樣被拒。閘門會用 git 驗證這個目錄確實"
-        "是有 GitHub 形狀 origin 的 repo，但**不觀測、也不綁定後續真正的 "
-        "git worktree add**——擋的是登記，不是建立。",
+        metavar="OWNER/REPO",
+        help="這筆登記宣告 worktree 屬於哪個 repo，收 **slug**（``owner/repo``，也接受"
+        "GitHub remote／Issue URL）。**不是目錄**——給目錄會被拒絕，不會被反推。"
+        "省略＝宣告「屬於卡自己的 repo」，那是絕大多數情形，所以它**不是必填**；"
+        "只有真的要登記跨 repo 時才需要打，而那時它會被擋下並指向 #16 §7.1 的連結卡做法。"
+        "它不是 --force：給了之後仍要通過同一組比對，指錯 repo 照樣被拒。"
+        "⚠️ 它是**宣告**：本閘門不觀測、也不綁定後續真正的 git worktree add。",
     )
     p.add_argument(
         "--status", default="🚧進行中", help="assign 後的交付狀態；預設 🚧進行中"
@@ -122,25 +137,27 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _ownership_log_fragment(
-    verdict: RepoOwnershipVerdict, source_repo: str | None
+    verdict: RepoOwnershipVerdict, observation: LocalWorktreeObservation
 ) -> str:
     """放行時要寫進 Log 的歸屬留痕。
 
-    **為什麼 allow 也要留痕**：``allow`` 有兩種強度差很多的來源——``target_dir``
-    是「目標已存在，commondir 實測」（檢查當下的事實），``source_repo`` 是「呼叫端
-    宣告，git 只驗證了那個目錄的身分」。兩者寫進看板的結果一模一樣，事後沒有任何
-    東西分得出來。R3-02 的核心正是「登記本身不是已驗證的歸屬事實」；既然驗不到，
-    至少要**記下這一筆是憑什麼放行的**（``docs/ROADMAP.md`` §0 目標 2）。
+    **為什麼 allow 也要留痕**：``allow`` 有兩種強度差很多的來源——``explicit`` 是
+    「有人明示宣告了這個 repo」，``card_repo_default`` 是「沒人說，工具依預設取自卡」。
+    兩者寫進看板的結果一模一樣，事後沒有任何東西分得出來。本卡的核心正是「登記本身
+    不是已驗證的歸屬事實」；既然驗不到，至少要**記下這一筆是憑什麼放行的**
+    （``docs/ROADMAP.md`` §0 目標 2）。
 
-    ``source_repo`` 那一格刻意連目錄字串一起記：宣告的內容本身就是被稽核的對象。
+    軸 B 的觀測碼一併記下，且**標明它是機器局部的**——Log 會被跨機器讀，不寫清楚
+    這一句，下一個人就會把「這台機器沒看到問題」讀成「沒問題」。
     """
     basis = {
-        "target_dir": "目標已存在，commondir 實測",
-        "source_repo": f"呼叫端以 --worktree-source-repo 宣告 {source_repo}，經 git 驗證",
-    }.get(verdict.probe_source or "", f"判定來源 {verdict.probe_source}")
+        "explicit": f"呼叫端以 --worktree-source-repo 明示 {verdict.worktree_repo}",
+        "card_repo_default": "未明示，依預設取自卡自己的 repo",
+    }.get(verdict.basis or "", f"判定來源 {verdict.basis}")
     return (
         f"跨 repo 歸屬 {verdict.worktree_repo}（{basis}；"
-        "本閘門不觀測也不綁定後續的 git worktree add）"
+        "本閘門不觀測也不綁定後續的 git worktree add）；"
+        f"本機觀測 {observation.code}（機器局部，沉默不代表無誤）"
     )
 
 
@@ -174,21 +191,33 @@ def run(args: argparse.Namespace) -> int:
 
     # 跨 repo 歸屬閘門（#57）。與能力閘門同理排在所有 set_field_value／set_item_body
     # 之前：拒絕時必須零寫入。它也刻意排在資源交集檢查之前——歸屬是「這張卡該不該在
-    # 這個 repo 有 worktree」，比「這個 worktree 跟誰搶資源」更根本，而且它只讀本機
-    # git，不多打一次 API。
+    # 這個 repo 有 worktree」，比「這個 worktree 跟誰搶資源」更根本，而且它不打 API。
     #
     # 射程：擋的是這一筆歸屬**登記**。磁碟上的 git worktree add 不經過這裡，本閘門
     # 既不觀測也不阻止（模組頂端 danger）。
     #
-    # blocked 時的 return 5 是「登記被拒」，不是「建立已被阻止」。
+    # 軸 A（可攜）：純字串比對，不讀檔案系統。blocked 時的 return 5 是「登記被拒」，
+    # 不是「建立已被阻止」。
     ownership = check_assign_repo_ownership(
         issue_url=item.issue_url,
-        worktree_path=args.worktree,
-        source_repo=args.worktree_source_repo,
+        worktree_source_repo=args.worktree_source_repo,
     )
     if ownership.blocked:
         print(f"[assign] 拒絕：{ownership.refusal_message()}", file=sys.stderr)
         return 5
+
+    # 軸 B（機器局部）：路徑在這台機器上是什麼。它**不參與歸屬判定**，回傳碼刻意與
+    # 軸 A 分開（6 vs 5），這樣事後從回傳碼就分得出「這筆登記的宣告錯了」與「這台
+    # 機器上的路徑與宣告矛盾」。只有觀測到真實矛盾才拒絕；祖先巢狀只警告——它的證據
+    # 只有「路徑座落在誰底下」，而 canonical §4.5 明文路徑由實際建立者決定。
+    observation = observe_local_worktree(
+        args.worktree, expected_repo=ownership.worktree_repo
+    )
+    if observation.refuses:
+        print(f"[assign] 拒絕：{observation.message()}", file=sys.stderr)
+        return 6
+    if observation.action == "warn":
+        print(f"[assign] {observation.message()}", file=sys.stderr)
 
     conflicts: list[tuple[str, list[str]]] = []
     skipped_unparseable: list[str] = []
@@ -229,7 +258,7 @@ def run(args: argparse.Namespace) -> int:
         f"{now_iso8601()} assign by wf-cli → owner {args.assignee}；"
         f"分支worktree {branch_worktree}；交付狀態 {args.status}；"
         f"{comparison.log_fragment(deviation_reason)}；"
-        f"{_ownership_log_fragment(ownership, args.worktree_source_repo)}。"
+        f"{_ownership_log_fragment(ownership, observation)}。"
     )
     new_body = append_log_line(item.body, log_line)
     set_item_body(runner, item.content_type, item.content_id, project, target.repo, item.issue_number, new_body)

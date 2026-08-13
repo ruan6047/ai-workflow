@@ -192,24 +192,27 @@ def env(tmp_path: Path, sandbox_repo: Path, monkeypatch: pytest.MonkeyPatch) -> 
     item = find_item_by_card_id(list_items(runner, project), CARD_ID)
     assert item is not None and item.issue_number is not None
 
-    # 註冊欄**直接寫**，不走 `wfcli assign`（#57 的跨 repo 歸屬閘門接上之後的必然結果）。
+    # 註冊欄走**真的** `wfcli assign`。
     #
-    # 本檔的沙箱 repo 必須 push 得出去，所以它的 origin 是 tmp_path 底下的 bare
-    # 路徑。閘門要比對「卡的 repo（來自 Issue URL）」與「worktree 的 repo（來自
-    # origin）」，而本機路徑導不出 owner/repo，於是它**正確地** fail-closed 拒絕這組
-    # 輸入。給 --worktree-source-repo 也救不了：來源 repo 就是同一個沙箱，origin 同樣
-    # 是本機路徑。
+    # ⚠️ 上一輪這裡是直接 `set_field_value` 繞過 assign，理由是「沙箱 repo 的 origin
+    # 是 tmp_path 底下的 bare 路徑，導不出 owner/repo，閘門 fail-closed 拒絕」——那條
+    # 限制**來自把歸屬建立在 origin 反推上**，而需求方 2026-08-13 裁定歸屬改由 slug
+    # 宣告表達（`docs/ROADMAP.md` §1.5）。origin 是什麼形狀已不再參與歸屬判定，於是
+    # 這條繞道跟著消失，`assign` 這條指令路徑的覆蓋**被還回來**。
     #
-    # 這裡刻意不去偽造一個 GitHub 形狀的 origin：那會讓 cleanup 的 ls-remote／
-    # push --delete 打向真實網路。本檔的主題是 release／cleanup，assign 只是前置條件；
-    # assign 自己的閘門行為在 test_commands_mocked.py 與 test_registry.py 有專測。
-    # 代價誠實記錄：**本檔不再覆蓋 assign 這條指令路徑**。
-    set_field_value(runner, project, item.item_id, fields["owner"], "Claude@Claude Code")
-    set_field_value(
-        runner, project, item.item_id, fields["分支worktree"],
-        format_branch_worktree(BRANCH, str(wt)),  # 與 assign 共用同一支格式化函式，避免格式漂移
-    )
+    # 沙箱的 origin 仍然刻意留成本機 bare 路徑（偽造 GitHub 形狀會讓 cleanup 的
+    # ls-remote／push --delete 打向真實網路）；它現在只會讓軸 B 判
+    # `observed_repo_unidentifiable`——也就是「這台機器說不出這個 worktree 屬於誰」，
+    # 而那不擋人。
+    assert run_cli([
+        "assign", *BASE_TARGET, CARD_ID,
+        "--assignee", "Claude@Claude Code",
+        "--branch", BRANCH,
+        "--worktree", str(wt),
+        "--actual-capability", "高階型",
+    ]) == 0
     set_field_value(runner, project, item.item_id, fields["交付狀態"], "📦已合併")
+    assert card_fields(runner)["分支worktree"] == format_branch_worktree(BRANCH, str(wt))
 
     return Env(repo=sandbox_repo, remote=remote, wt=wt, runner=runner,
                issue_number=item.issue_number)
