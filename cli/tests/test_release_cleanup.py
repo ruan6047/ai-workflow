@@ -161,6 +161,26 @@ def card_fields(runner: ReleaseGhRunner) -> dict:
     return item.fields
 
 
+def card_body(runner: ReleaseGhRunner) -> str:
+    project = resolve_project(runner, "acme", 1)
+    item = find_item_by_card_id(list_items(runner, project), CARD_ID)
+    assert item is not None
+    return item.body
+
+
+def cleanup_log_lines(runner: ReleaseGhRunner) -> list[str]:
+    """卡片 Log 裡由收尾留痕（非終態）寫下的行。
+
+    刻意與 ``handoff by wf-cli`` 的交接行分開取：R3-01 要的正是「有一筆做過什麼的紀錄，
+    但它不是交接、不是終態」，兩者混在一起數就分不出來了。
+    """
+    return [ln for ln in card_body(runner).splitlines() if "cleanup by wf-cli" in ln]
+
+
+def handoff_log_lines(runner: ReleaseGhRunner) -> list[str]:
+    return [ln for ln in card_body(runner).splitlines() if "handoff by wf-cli" in ln]
+
+
 @pytest.fixture
 def env(tmp_path: Path, sandbox_repo: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
     """已 merge、乾淨、狀態面停在 📦已合併 的收尾情境（真 git ＋ 假 GitHub）。"""
@@ -499,6 +519,162 @@ def test_status_face_stays_put_when_the_tip_moves_between_recheck_and_push(
     assert after_fields["交付狀態"] == "📦已合併"
     assert after_fields.get("最後交接") == before_fields.get("最後交接")
     assert env.runner.closed_issues == []
+
+
+# ---------------------------------------------------------------------------
+# 4.5 R3-01：動作發生了、終態沒寫時，Log 必須留得下那筆事實
+# ---------------------------------------------------------------------------
+#
+# 上面第 4 節證明的是「狀態面停在原處」。那是安全規則，本節不動它——本節證明的是
+# **另外半件事**：卡片上要有一筆看得出「做了什麼、被什麼擋住」的紀錄，而且那筆紀錄
+# 明確不是終態。stdout／stderr 不是 Issue Log。
+
+
+def _abort_the_remote_delete(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """在複驗前一刻讓另一個 clone 推新提交，逼出 ``mode=aborted``。
+
+    與 `test_status_face_stays_put_when_the_remote_delete_is_aborted` 是同一個注入
+    手法（monkeypatch 只控制時機，複驗跑的是真函式）。抽成函式是為了讓本節的斷言
+    與第 4 節的斷言看的是**同一條路徑**，而不是各自造一個近似情境。
+    """
+    other = tmp_path / "abort-clone"
+    subprocess.run(["git", "clone", "-q", str(env.remote), str(other)], check=True)
+    git(other, "config", "user.email", "other@example.com")
+    git(other, "config", "user.name", "another clone")
+
+    real_recheck = cleanup.recheck_remote_branch
+
+    def push_then_recheck(target, runner):
+        git(other, "checkout", "-q", "-B", BRANCH, f"origin/{BRANCH}")
+        (other / "rescue.txt").write_text("別人的新工作\n", encoding="utf-8")
+        git(other, "add", "rescue.txt")
+        git(other, "commit", "-q", "-m", "work pushed during the window")
+        git(other, "push", "-q", "origin", BRANCH)
+        return real_recheck(target, runner)
+
+    monkeypatch.setattr(cleanup, "recheck_remote_branch", push_then_recheck)
+
+
+def test_an_aborted_closeout_leaves_a_non_terminal_record_of_what_it_did(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R3-01：worktree 已經被移除了，卡片不能一個字都沒有。
+
+    這條同時釘住**雙面性質**，兩面缺一都算沒修好：
+
+    1. **有紀錄**——Log 多出一行，內容能重建出「worktree 與本地分支已清除、遠端分支
+       中止」與具名的阻擋原因；
+    2. **不是終態**——交付狀態、owner、最後交接、iteration 全部原封不動，Issue 沒關，
+       而且那一行不是 ``handoff by wf-cli`` 的交接行。
+
+    第 2 面是本輪最容易寫壞的地方：把紀錄寫成「順便也寫個狀態」就等於推翻了第 4 節
+    的安全規則。
+    """
+    _abort_the_remote_delete(env, tmp_path, monkeypatch)
+
+    before_fields = dict(card_fields(env.runner))
+    before_handoff_lines = handoff_log_lines(env.runner)
+    assert cleanup_log_lines(env.runner) == [], "前提設定失敗：本次之前不該有收尾紀錄"
+
+    rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
+                              **{"--repo-path": str(env.repo), "--cleanup": True}))
+    assert rc == 5
+
+    # 前提：本機側真的被動過了，所以這筆紀錄不是可有可無的
+    assert not env.wt.exists(), "前提設定失敗：worktree 應該已被移除"
+    assert not local_branch_exists(env.repo), "前提設定失敗：本地分支應該已被刪除"
+    assert remote_branch_exists(env.repo)
+
+    # 1. 有紀錄，且內容由實際動作產生
+    lines = cleanup_log_lines(env.runner)
+    assert len(lines) == 1, f"收尾紀錄不是剛好一行：{lines}"
+    line = lines[0]
+    assert "mode=aborted" in line
+    assert "已清除 worktree、本地分支" in line, line
+    assert "遠端分支 已中止（刪除前複驗不通過）" in line, line
+    assert "阻擋：" in line and "remote" in line, line
+
+    # 2. 但它不是終態、不是交接
+    after_fields = card_fields(env.runner)
+    assert after_fields["交付狀態"] == "📦已合併"
+    assert after_fields.get("owner") == before_fields.get("owner")
+    assert after_fields.get("最後交接") == before_fields.get("最後交接")
+    assert after_fields.get("iteration") == before_fields.get("iteration")
+    assert env.runner.closed_issues == []
+    assert handoff_log_lines(env.runner) == before_handoff_lines, (
+        "收尾紀錄被寫成了交接行——那等於宣告了一次沒發生的交接"
+    )
+    assert "非終態紀錄" in line and "本次第 4 步寫入：無" in line, line
+
+
+def test_actions_are_recorded_even_when_an_applied_run_had_its_effect_withheld(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`mode=applied` 也可能「做了事卻沒寫終態」——照 mode 分流會漏掉這一格。
+
+    情境同 `test_release_fails_when_cleanup_reported_success_but_did_not_complete`：
+    遠端刪除回報成功、分支卻還在，executor 因此扣住第 4 步。此時 worktree 與本地分支
+    **已經不在了**，病灶與 aborted 完全相同，所以留痕的觸發條件讀的是動作集合而不是
+    `result.mode`。
+    """
+    real_runner = cleanup.default_git_runner
+    intercepted: list[list[str]] = []
+
+    def lying_runner(cwd: Path, args):
+        argv = list(args)
+        if _is_remote_branch_delete(argv):
+            intercepted.append(argv)
+            return cleanup.GitResult(0, "", "")
+        return real_runner(cwd, argv)
+
+    monkeypatch.setattr(cleanup, "default_git_runner", lying_runner)
+
+    rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
+                              **{"--repo-path": str(env.repo), "--cleanup": True}))
+    assert intercepted, "假成功 runner 一條刪除指令都沒攔到，本案例形同不存在"
+    assert rc == 5
+    assert not env.wt.exists(), "前提設定失敗：worktree 應該已被移除"
+
+    lines = cleanup_log_lines(env.runner)
+    assert len(lines) == 1, f"applied 但效果扣住時沒有留下紀錄：{lines}"
+    assert "mode=applied" in lines[0] and "效果落地=否" in lines[0], lines[0]
+    assert "已清除 worktree、本地分支、遠端分支" in lines[0], lines[0]
+    # 仍然不是終態
+    assert card_fields(env.runner)["交付狀態"] == "📦已合併"
+    assert env.runner.closed_issues == []
+
+
+def test_a_guard_block_that_touched_nothing_writes_no_record(env: Env) -> None:
+    """守衛擋下、一個動作都沒走時**不寫**——否則每次被擋的重跑都在卡上疊一行噪音。
+
+    判準不是「想不想少寫字」，是這條路徑什麼都沒動過：重跑會重新觀測、重新得到同一份
+    判定，**沒有任何東西只存在於這一次 run 裡**。這與 aborted 的差別正是「不可逆動作
+    已經發生」。
+    """
+    (env.wt / "draft.txt").write_text("尚未提交的草稿\n", encoding="utf-8")
+
+    rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
+                              **{"--repo-path": str(env.repo), "--cleanup": True}))
+    assert rc == 5
+    assert env.wt.exists()
+    assert cleanup_log_lines(env.runner) == []
+    assert card_fields(env.runner)["交付狀態"] == "📦已合併"
+
+
+def test_a_completed_closeout_records_the_actions_exactly_once(env: Env) -> None:
+    """收尾走完時，動作敘述只出現在終態那一行——不要再補一行非終態紀錄。
+
+    否則同一件事會在 Log 裡出現兩行，而第二行還自稱非終態，直接製造出敘述打架。
+    """
+    rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
+                              **{"--repo-path": str(env.repo), "--cleanup": True}))
+    assert rc == 0
+    assert cleanup_log_lines(env.runner) == []
+    handoff_lines = handoff_log_lines(env.runner)
+    assert len(handoff_lines) == 1
+    assert "收尾清理：已清除 worktree、本地分支、遠端分支" in handoff_lines[0]
 
 
 # ---------------------------------------------------------------------------

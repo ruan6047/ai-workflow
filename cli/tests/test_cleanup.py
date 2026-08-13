@@ -34,6 +34,7 @@ import pytest
 from wf_cli import cleanup, git_ops
 from wf_cli.cleanup import (
     CHECK_IDS,
+    GuardCheck,
     CHECK_STEP_REF,
     DESTRUCTIVE_ORDER,
     EFFECT_STEP,
@@ -55,7 +56,7 @@ from wf_cli.cleanup import (
 )
 from wf_cli.registry import RegisteredCard, TasksMdRegistry
 
-from .conftest import git
+from .conftest import SANDBOX_COMMIT_DATE, fixed_date_env, git
 
 CARD_ID = "WF-SANDBOX-CARD1"
 BRANCH = "claude/WF-SANDBOX-CARD1"
@@ -135,6 +136,63 @@ def env(tmp_path: Path, sandbox_repo: Path) -> Env:
 @pytest.fixture
 def env_unmerged(tmp_path: Path, sandbox_repo: Path) -> Env:
     return _build_env(tmp_path, sandbox_repo, merged=False)
+
+
+def _build_squash_env(tmp_path: Path, sandbox_repo: Path) -> Env:
+    """`ROADMAP §3.5` 生效之後**每一張卡**的形狀，逐步重現 #9／#63／#73 的真實情形。
+
+    四件事缺一不可，少任何一件就不是那三張卡當天被擋下的那個形狀：
+
+    1. 卡分支推上遠端之後，**別張卡先進了 main**（strict 政策因此要求本卡先更新）；
+    2. `gh pr update-branch` 把 main 併進 PR 分支——**這是 GitHub 在伺服器端做的**；
+    3. main 以 **squash** 收下整條分支：長出一筆全新 commit，分支 tip 不是它的祖先；
+    4. 本機那條 branch ref **從來沒被第 2 步更新過**，因此本地 tip 比遠端 tip 舊。
+
+    第 4 點是「比對 tree hash」這個候選判準在真實資料上失敗的地方：本地 tip 的整棵樹
+    與 main 上任何一筆 commit 都不相同（它少了別張卡的內容）。
+    """
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    git(sandbox_repo, "remote", "add", "origin", str(remote))
+    git(sandbox_repo, "push", "-q", "-u", "origin", "main")
+
+    wt = tmp_path / "card-worktree"
+    git(sandbox_repo, "worktree", "add", "-q", str(wt), "-b", BRANCH)
+    (wt / "work.txt").write_text(WORK_CONTENT, encoding="utf-8")
+    _c(wt, "card work")
+    git(wt, "push", "-q", "-u", "origin", BRANCH)
+    stale_local_tip = git(wt, "rev-parse", "HEAD").strip()
+
+    (sandbox_repo / "other-card.txt").write_text("別張卡先進 main\n", encoding="utf-8")
+    _c(sandbox_repo, "別張卡")
+    git(sandbox_repo, "push", "-q", "origin", "main")
+
+    git(wt, "merge", "-q", "--no-edit", "main")  # = gh pr update-branch（伺服器端）
+    git(wt, "push", "-q", "origin", BRANCH)
+    remote_tip = git(wt, "rev-parse", "HEAD").strip()
+
+    git(sandbox_repo, "merge", "-q", "--squash", BRANCH)
+    _c(sandbox_repo, "squash: card（被審 SHA 記在訊息裡）")
+    git(sandbox_repo, "push", "-q", "origin", "main")
+
+    git(wt, "reset", "-q", "--hard", stale_local_tip)  # 本機 ref 從沒被更新過
+
+    return Env(
+        repo=sandbox_repo,
+        remote=remote,
+        wt=wt,
+        target=CleanupTarget(
+            repo_root=sandbox_repo, card_id=CARD_ID, branch=BRANCH, worktree_path=wt
+        ),
+        registry=_empty_registry(),
+        tip_before_cleanup=remote_tip,
+    )
+
+
+@pytest.fixture
+def env_squash(tmp_path: Path, sandbox_repo: Path) -> Env:
+    """squash 合併、乾淨、應當可安全收尾的情境（本卡之前它是恆拒的）。"""
+    return _build_squash_env(tmp_path, sandbox_repo)
 
 
 def guard(env: Env, *, prober=free_prober, body: str | None = CARD_BODY, registry=None):
@@ -397,14 +455,19 @@ class FakeEffectWriter:
     def __init__(self, remote: FakeRemoteState) -> None:
         self.remote = remote
         self.calls: list[str] = []
+        self.outcome = None
+        self.terminal_note = ""
 
     def close_issue(self, target: CleanupTarget) -> None:
         self.calls.append("close_issue")
         self.remote.issue_open = False
 
-    def write_release_terminal(self, target: CleanupTarget) -> None:
+    def write_release_terminal(self, target: CleanupTarget, outcome) -> None:
         self.calls.append("write_release_terminal")
         self.remote.terminal_written = True
+        #: executor 交來的「實際做了什麼」，測試據此驗留痕（R2-01）。
+        self.outcome = outcome
+        self.terminal_note = cleanup.describe_cleanup(outcome)
 
 
 def recording_runner(log: list[list[str]]):
@@ -504,6 +567,15 @@ _BODY_ALLOWED_GLOBALS = frozenset({
     "SUBSEQUENT_OBLIGATION_STEPS", "_run", "bool", "classify_state",
     "conditional_delete_args", "default_git_runner", "evaluate_cleanup_guard",
     "observe", "recheck_remote_branch", "remaining_status_face_steps", "str", "tuple",
+    # WF-CLEANUP-SQUASH-AWARE1 R2（授權分流）新增，經此處複核：
+    # - `_read_remote_heads`：授權不足時只探遠端分支在不在，用來分辨「刻意留著」與
+    #   「本來就沒有」，**不跑刪除前複驗**（不刪就沒有那個時刻）。
+    # - `frozenset`：守衛擋下時把觀測範圍退回全集，讓 detect_only 的分類與本卡之前逐字相同。
+    "_read_remote_heads", "frozenset",
+    # WF-CLEANUP-SQUASH-AWARE1 R3（留痕同源）新增，經此處複核：
+    # - `CleanupOutcome`：executor 把「這一輪實際做過什麼」收成一個值交給 effect
+    #   writer，讓終態留痕由動作集合產生而非固定字串。純資料建構，不含判定。
+    "CleanupOutcome",
 })
 
 _TRIGGER_VALUES = frozenset({"release", "reconcile"})
@@ -1694,3 +1766,592 @@ def test_worktree_parsers_agree() -> None:
     assert [(r.path, r.branch) for r in mine] == [(e.path, e.branch) for e in theirs]
     assert [r.locked for r in mine] == [False, True, False]
     assert [r.is_primary for r in mine] == [True, False, False]
+
+
+# ---------------------------------------------------------------------------
+# 11. WF-CLEANUP-SQUASH-AWARE1：squash 之後「內容已在 main」的證明
+#
+# 卡面驗收第 2 條：**只證明它接受 squash 的情形不算**。因此本節的骨幹是一張矩陣，
+# 每一種「內容不在 main」的形狀都必須落在 `diverged`，而且是拿真的 git 建出來的
+# 真的 repo 跑，不是餵假 runner。
+#
+# 矩陣另外拿 `git merge-tree --write-tree` 當**獨立神諭**交叉比對：那是 git 自己對
+# 「把這條分支併進 main 會不會改變任何東西」的答案，與本模組的路徑交集判準是兩套
+# 完全不同的實作。兩者對每一格都必須同意——同意不證明兩者都對，但**不同意一定有
+# 一個錯**，而那正是這裡要抓的東西。
+# ---------------------------------------------------------------------------
+
+def _c(repo: Path, msg: str) -> None:
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", msg, env=fixed_date_env(SANDBOX_COMMIT_DATE))
+
+
+def _squash_into_main(repo: Path, branch: str) -> None:
+    """重現 GitHub squash 合併：main 上長出一筆帶著分支全部內容的**全新 commit**。"""
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", branch)
+    _c(repo, f"squash: {branch}")
+
+
+def _s_merged_no_ff(repo: Path, b: str) -> None:
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", "--no-edit", b)
+
+
+def _s_squash_updated(repo: Path, b: str) -> None:
+    """strict 政策下的真實形狀：分支先 update-branch 跟上 main，再被 squash。"""
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    git(repo, "checkout", "-q", "main")
+    (repo / "o.txt").write_text("O\n", encoding="utf-8")
+    _c(repo, "別張卡")
+    git(repo, "checkout", "-q", b)
+    git(repo, "merge", "-q", "--no-edit", "main")
+    _squash_into_main(repo, b)
+
+
+def _s_squash_stale_local(repo: Path, b: str) -> None:
+    """#9／#63／#73 的真實形狀：本地 ref 停在 update-branch 之前，遠端才是完整的。
+
+    update-branch 的 merge commit 是 GitHub 在伺服器端做的，本機那條 ref 從來沒被
+    更新過——所以本地 tip 的**整棵樹**跟 main 上任何一筆 commit 都不相同。這正是
+    「比對 tree hash」這個候選判準在真實資料上失敗的地方。
+    """
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    stale = git(repo, "rev-parse", b).strip()
+    git(repo, "checkout", "-q", "main")
+    (repo / "o.txt").write_text("O\n", encoding="utf-8")
+    _c(repo, "別張卡")
+    git(repo, "checkout", "-q", b)
+    git(repo, "merge", "-q", "--no-edit", "main")
+    _squash_into_main(repo, b)
+    git(repo, "branch", "-f", b, stale)
+
+
+def _s_squash_then_main_advances(repo: Path, b: str) -> None:
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    _squash_into_main(repo, b)
+    for i in range(3):
+        (repo / f"x{i}.txt").write_text(f"x{i}\n", encoding="utf-8")
+        _c(repo, f"後續 {i}")
+
+
+def _s_never_merged(repo: Path, b: str) -> None:
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    git(repo, "checkout", "-q", "main")
+    (repo / "o.txt").write_text("O\n", encoding="utf-8")
+    _c(repo, "別張卡")
+
+
+def _s_new_commit_after_squash(repo: Path, b: str) -> None:
+    """⚠️ 最危險的真實情境：卡合併之後有人又往同一條分支推了東西。"""
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    _squash_into_main(repo, b)
+    git(repo, "checkout", "-q", b)
+    (repo / "f.txt").write_text("F\n合併之後才寫的新工作\n", encoding="utf-8")
+    _c(repo, "squash 之後的新工作")
+
+
+def _s_reverted_on_main(repo: Path, b: str) -> None:
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    _squash_into_main(repo, b)
+    git(repo, "rm", "-q", "f.txt")
+    _c(repo, "main 又 revert 掉")
+
+
+def _s_deletion_not_on_main(repo: Path, b: str) -> None:
+    git(repo, "checkout", "-qb", b)
+    git(repo, "rm", "-q", "README.md")
+    _c(repo, "分支刪掉 README")
+    git(repo, "checkout", "-q", "main")
+    (repo / "o.txt").write_text("O\n", encoding="utf-8")
+    _c(repo, "別張卡")
+
+
+def _s_rename_hides_a_deletion(repo: Path, b: str) -> None:
+    """⚠️ 釘住 ``--no-renames``：開著改名偵測時這一格會誤放行。
+
+    分支把 README.md 改名為 DOCS.md（＝刪掉 README.md）；main 另外加了同內容的
+    DOCS.md，但 README.md 仍在。改名偵測會把分支那一刪一增併成單一路徑 DOCS.md，
+    於是「分支刪掉了 main 還留著的檔案」這件事整個從集合 A 裡消失。
+    """
+    git(repo, "checkout", "-qb", b)
+    git(repo, "mv", "README.md", "DOCS.md")
+    _c(repo, "分支改名 README -> DOCS")
+    git(repo, "checkout", "-q", "main")
+    (repo / "DOCS.md").write_text("sandbox\n", encoding="utf-8")
+    _c(repo, "main 另外加了同內容的 DOCS.md，README.md 沒動")
+
+
+def _s_conflicting_edit(repo: Path, b: str) -> None:
+    git(repo, "checkout", "-qb", b)
+    (repo / "README.md").write_text("分支版本\n", encoding="utf-8")
+    _c(repo, "分支改 README")
+    git(repo, "checkout", "-q", "main")
+    (repo / "README.md").write_text("main 版本\n", encoding="utf-8")
+    _c(repo, "main 改 README")
+
+
+def _s_net_zero_never_merged(repo: Path, b: str) -> None:
+    """⚠️ 這一格是**已知的誤放行**，刻意釘住讓它不能悄悄改變。
+
+    分支有 commit、從未被合併，但相對共同祖先淨改動為零（做完又自己 revert）。
+    祖先關係會拒絕它，本判準放行。損失的是那次嘗試的 commit 紀錄，檔案內容零損失。
+    """
+    git(repo, "checkout", "-qb", b)
+    (repo / "f.txt").write_text("F\n", encoding="utf-8")
+    _c(repo, "card work")
+    git(repo, "rm", "-q", "f.txt")
+    _c(repo, "分支自己 revert 回去")
+    git(repo, "checkout", "-q", "main")
+    (repo / "o.txt").write_text("O\n", encoding="utf-8")
+    _c(repo, "別張卡")
+
+
+#: (情境 id, 建構函式, 期望的 MergeProofKind)
+PROOF_MATRIX = [
+    ("merge 合併（--no-ff）", _s_merged_no_ff, "ancestor"),
+    ("squash：分支已 update-branch 跟上", _s_squash_updated, "content_absorbed"),
+    ("squash：本地 ref 停在 update-branch 前", _s_squash_stale_local, "content_absorbed"),
+    ("squash 後 main 又前進 3 個 commit", _s_squash_then_main_advances, "content_absorbed"),
+    ("完全未合併", _s_never_merged, "diverged"),
+    ("squash 後分支又推了新提交", _s_new_commit_after_squash, "diverged"),
+    ("squash 後 main 又 revert 掉", _s_reverted_on_main, "diverged"),
+    ("分支刪檔、main 未刪", _s_deletion_not_on_main, "diverged"),
+    ("改名掩蓋刪除（釘 --no-renames）", _s_rename_hides_a_deletion, "diverged"),
+    ("同檔衝突、未合併", _s_conflicting_edit, "diverged"),
+    ("淨零分支、從未合併（已知誤放行）", _s_net_zero_never_merged, "content_absorbed"),
+]
+
+
+@pytest.mark.parametrize(
+    "label,build,expected", PROOF_MATRIX, ids=[m[0] for m in PROOF_MATRIX]
+)
+def test_content_proof_matrix(sandbox_repo: Path, label, build, expected) -> None:
+    build(sandbox_repo, BRANCH)
+    proof = cleanup.prove_content_in_main(
+        cleanup.default_git_runner, sandbox_repo, BRANCH, "main"
+    )
+    assert proof.kind == expected, f"{label}：期望 {expected}，實得 {proof.kind}（{proof.detail}）"
+    # 放行與否必須與三值語意一致：只有兩種證明放行。
+    assert proof.outcome == ("pass" if expected in {"ancestor", "content_absorbed"} else "fail")
+
+
+@pytest.mark.parametrize(
+    "label,build,expected", PROOF_MATRIX, ids=[m[0] for m in PROOF_MATRIX]
+)
+def test_content_proof_agrees_with_merge_tree_oracle(
+    sandbox_repo: Path, label, build, expected
+) -> None:
+    """獨立神諭：``git merge-tree --write-tree`` 說「併進去不改變任何東西」嗎。
+
+    這是 git 自己算的三方合併結果，與本模組的路徑交集判準毫無共用實作。兩者對同一
+    格不同意的話，至少有一個是錯的。
+    """
+    build(sandbox_repo, BRANCH)
+    probe = subprocess.run(
+        ["git", "-C", str(sandbox_repo), "merge-tree", "--write-tree", "main", BRANCH],
+        capture_output=True, text=True, check=False,
+    )
+    if "unknown option" in probe.stderr or "usage:" in probe.stderr.lower():
+        pytest.skip("這個 git 版本沒有 merge-tree --write-tree（需 2.38+）")
+    main_tree = git(sandbox_repo, "rev-parse", "main^{tree}").strip()
+    oracle_says_absorbed = (
+        probe.returncode == 0 and probe.stdout.splitlines()[0].strip() == main_tree
+    )
+    proof = cleanup.prove_content_in_main(
+        cleanup.default_git_runner, sandbox_repo, BRANCH, "main"
+    )
+    assert oracle_says_absorbed == (proof.outcome == "pass"), (
+        f"{label}：神諭說 absorbed={oracle_says_absorbed}，"
+        f"本判準說 {proof.kind}——兩者不同意，至少一個是錯的"
+    )
+
+
+@pytest.mark.parametrize(
+    "mutated_kind,branches_should_survive",
+    [("content_absorbed", True), ("ancestor", False)],
+    ids=["突變成 content_absorbed", "突變成 ancestor"],
+)
+def test_what_a_compromised_proof_can_and_cannot_destroy(
+    env_unmerged: Env, monkeypatch: pytest.MonkeyPatch,
+    mutated_kind: str, branches_should_survive: bool,
+) -> None:
+    """⚠️ 突變注入，兩格——**這一對就是授權分流的行為證據**。
+
+    情境固定：一條**確實未合併**的分支。把判準換成恆真，看突變成不同強度的證明各能
+    毀掉什麼：
+
+    - 突變成 `content_absorbed` → worktree 被移除，但**本地與遠端分支都還在**。
+      分支上的每一筆 commit（含只存在於中間 commit 的內容）都還原得回來。
+      這正是需求方裁定要買到的東西：**判準被完全攻破，仍然沒有不可逆的遺失。**
+    - 突變成 `ancestor` → 分支真的被刪光。**授權分流不是裝飾**：同一個突變，只因為
+      它宣稱的證明強度不同，後果就差在「可逆」與「不可逆」之間。
+
+    第一格同時說明鑑別力的界線：`content_absorbed` 這條路上，判準本身不再是「阻止
+    不可逆遺失」的最後一道防線——`AUTHORITY_BY_PROOF` 才是。
+    """
+    真判準 = cleanup.prove_content_in_main(
+        cleanup.default_git_runner, env_unmerged.repo, BRANCH, "main"
+    )
+    assert 真判準.kind == "diverged", "前提：這條分支確實沒被合併"
+
+    monkeypatch.setattr(
+        cleanup, "prove_content_in_main",
+        lambda *a, **k: cleanup.MergeProof(mutated_kind, f"突變：恆回 {mutated_kind}"),
+    )
+    remote = FakeRemoteState()
+    result = execute_closeout_transition(
+        env_unmerged.target, trigger="release", registry=env_unmerged.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(),
+        effect_writer=FakeEffectWriter(remote), occupancy_prober=free_prober,
+    )
+    assert result.mode == "applied", "突變沒有生效，這條測試就證明不了東西"
+    assert not env_unmerged.wt.exists(), "worktree 兩格都會被移除（可逆）"
+
+    survived = (
+        _local_branch_exists(env_unmerged.repo, BRANCH),
+        _remote_branch_exists(env_unmerged.repo, "origin", BRANCH),
+    )
+    assert survived == (branches_should_survive, branches_should_survive)
+    if branches_should_survive:
+        assert set(result.actions_withheld_unauthorized) == {
+            "delete_local_branch", "delete_remote_branch"
+        }
+        # 分支還在 = 未合併的每一筆 commit 都還原得回來。
+        assert git(
+            env_unmerged.repo, "cat-file", "-e", f"{BRANCH}^{{commit}}"
+        ) == ""
+
+
+def test_a_squash_merged_card_removes_the_worktree_and_keeps_the_branches(
+    env_squash: Env,
+) -> None:
+    """squash 合併的卡：worktree 移除、**分支刻意留著**、卡仍然進得了終態。
+
+    §3.5 生效之後這是每一張卡的形狀。三件事一起成立才算解決了核心痛點：
+
+    1. worktree 真的被移除（痛點是 worktree 無限累積）；
+    2. 本地與遠端分支**都還在**（裁定：不做不可逆的那一步）；
+    3. `state_after == "completed"`、第 4 步發動——卡不再卡在 ✅通過 進不了終態。
+
+    第 3 點是 `CloseoutObservation.authorized_actions` 買到的：分支仍在但不在授權範圍
+    內，因此不算「清理未完成」。少了那一層，這張卡會永遠停在 `cleanup_in_progress`。
+    """
+    remote = FakeRemoteState()
+    result = execute_closeout_transition(
+        env_squash.target, trigger="release", registry=env_squash.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(),
+        effect_writer=FakeEffectWriter(remote), occupancy_prober=free_prober,
+    )
+    assert result.mode == "applied", result.blocking_reasons
+    assert result.authorized_actions == frozenset({"remove_worktree"})
+    assert result.actions_performed == ("remove_worktree",)
+    assert set(result.actions_withheld_unauthorized) == {
+        "delete_local_branch", "delete_remote_branch"
+    }
+    assert not env_squash.wt.exists(), "worktree 沒被移除，核心痛點沒解決"
+    assert _local_branch_exists(env_squash.repo, BRANCH), "本地分支不該被刪"
+    assert _remote_branch_exists(env_squash.repo, "origin", BRANCH), "遠端分支不該被刪"
+
+    assert result.state_after == "completed", "卡進不了終態就等於痛點沒解決"
+    assert result.remaining_status_face_steps == ()
+    assert remote.terminal_written and not remote.issue_open
+
+    # 放行的是哪一條 disjunct、授權到哪，都必須看得出來。
+    merged_checks = [
+        c for c in result.decision.checks if c.check_id.startswith("merge_verified")
+    ]
+    assert len(merged_checks) == 2
+    for c in merged_checks:
+        assert c.outcome == "pass"
+        assert c.proof_kind == "content_absorbed"
+        assert "授權：remove_worktree" in c.detail, c.detail
+
+
+def test_the_authority_table_is_the_only_place_that_grants_branch_deletion() -> None:
+    """⚠️ 授權分流的**唯一落點**：刪分支的授權只有 `ancestor` 給得起。
+
+    這一條釘的是表本身，不是某次執行的結果——任何人日後把 `content_absorbed` 那一列
+    加上刪分支，這裡立刻轉紅。
+    """
+    irreversible = {"delete_local_branch", "delete_remote_branch"}
+    for kind, granted in cleanup.AUTHORITY_BY_PROOF.items():
+        if kind == "ancestor":
+            assert granted == set(DESTRUCTIVE_ORDER), "ancestor 應授權全部三個動作"
+        else:
+            assert not (granted & irreversible), (
+                f"{kind} 授權了不可逆動作 {granted & irreversible}——"
+                "只有 ancestor 保得住中間 commit 的內容"
+            )
+    assert cleanup.AUTHORITY_BY_PROOF["content_absorbed"] == {"remove_worktree"}
+    assert cleanup.AUTHORITY_BY_PROOF["diverged"] == cleanup.NO_AUTHORITY
+    assert cleanup.AUTHORITY_BY_PROOF["unobservable"] == cleanup.NO_AUTHORITY
+    # 表必須覆蓋 MergeProofKind 的每一個值，不得有「其餘」。
+    assert set(cleanup.AUTHORITY_BY_PROOF) == set(
+        cleanup.MergeProofKind.__args__  # type: ignore[attr-defined]
+    )
+
+
+def test_a_mixed_strength_pair_of_proofs_takes_the_weaker_authority() -> None:
+    """本地與遠端證明強度不同時取交集——以最弱的那一份為準。"""
+    strong = GuardCheck("merge_verified_local", "pass", "", 1, proof_kind="ancestor")
+    weak = GuardCheck("merge_verified_remote", "pass", "", 1, proof_kind="content_absorbed")
+    assert cleanup.GuardDecision("proceed", (strong, weak)).authorized_actions == {
+        "remove_worktree"
+    }
+    assert cleanup.GuardDecision("proceed", (strong, strong)).authorized_actions == set(
+        DESTRUCTIVE_ORDER
+    )
+    # 守衛擋下 → 一個動作都不授權，不看證明。
+    assert cleanup.GuardDecision("detect_only", (strong, strong)).authorized_actions == (
+        cleanup.NO_AUTHORITY
+    )
+    # 完全讀不到證明 → fail-closed，不是「全部授權」。
+    assert cleanup.GuardDecision("proceed", ()).authorized_actions == cleanup.NO_AUTHORITY
+
+
+def test_classification_is_total_over_every_authorization_scope() -> None:
+    """縮小授權之後分類仍是全函數：8 種授權範圍 × 32 種觀測，每一格都落在列舉內。
+
+    另外釘住「授權只會讓 `cleanup_done` 變寬鬆、不會變嚴格」——縮小範圍不可能把一個
+    本來完成的收尾變回未完成。
+    """
+    full = frozenset(DESTRUCTIVE_ORDER)
+    scopes = [
+        frozenset(s)
+        for r in range(len(DESTRUCTIVE_ORDER) + 1)
+        for s in itertools.combinations(DESTRUCTIVE_ORDER, r)
+    ]
+    assert len(scopes) == 8
+    for scope in scopes:
+        for combo in itertools.product([False, True], repeat=5):
+            scoped = CloseoutObservation(*combo, authorized_actions=scope)
+            unscoped = CloseoutObservation(*combo, authorized_actions=full)
+            assert classify_state(scoped) in LEGAL_STATES | {
+                "illegal_terminal_before_cleanup"
+            }
+            assert (
+                classify_state(scoped) == "illegal_terminal_before_cleanup"
+            ) == (not scoped.cleanup_done and scoped.effect_started)
+            if unscoped.cleanup_done:
+                assert scoped.cleanup_done, "縮小授權竟讓已完成的收尾變回未完成"
+
+
+def test_a_branch_pushed_to_after_the_squash_is_still_refused(env_squash: Env) -> None:
+    """⚠️ 卡面驗收第 2 條的正面取證：squash 合併之後又有人推東西上去，必須擋下。
+
+    這是新判準最該擋、而舊判準在 squash 世界裡根本走不到的那一格：分支確實被合併過，
+    但它現在**不只**是被合併的那份內容。
+    """
+    git(env_squash.wt, "reset", "-q", "--hard", env_squash.tip_before_cleanup)
+    (env_squash.wt / "work.txt").write_text(
+        WORK_CONTENT + "合併之後才寫的新工作\n", encoding="utf-8"
+    )
+    _c(env_squash.wt, "squash 之後的新工作")
+    git(env_squash.wt, "push", "-q", "origin", BRANCH)
+
+    remote = FakeRemoteState()
+    result = execute_closeout_transition(
+        env_squash.target, trigger="release", registry=env_squash.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(),
+        effect_writer=FakeEffectWriter(remote), occupancy_prober=free_prober,
+    )
+    assert result.mode == "detect_only", result.actions_performed
+    assert result.actions_performed == ()
+    assert env_squash.wt.exists()
+    assert _local_branch_exists(env_squash.repo, BRANCH)
+    assert _remote_branch_exists(env_squash.repo, "origin", BRANCH)
+    assert any("diverged" in r for r in result.blocking_reasons), result.blocking_reasons
+
+
+def test_the_recheck_uses_the_same_proof_as_the_precondition(env_squash: Env) -> None:
+    """複驗與前提必須走同一個函式：任一邊單獨改寬或改嚴都會產生破口。"""
+    src = inspect.getsource(cleanup.recheck_remote_branch)
+    assert "prove_content_in_main" in src
+    assert "--is-ancestor" not in src, "複驗仍自己寫了一條祖先判斷，會與前提漂移"
+    decision = cleanup.recheck_remote_branch(env_squash.target, cleanup.default_git_runner)
+    assert decision.verdict == "delete"
+    assert decision.expected_tip == env_squash.tip_before_cleanup
+
+
+def test_the_merge_merged_path_still_passes_via_ancestry(env: Env) -> None:
+    """merge 合併的路徑仍然可用（#48 就是這樣收尾的），且走的是**祖先**那一條。
+
+    新舊判準的關係是 OR：舊判準沒有被換掉，只是在它答不出來的時候多了第二條路。
+    """
+    decision = guard(env)
+    assert decision.mode == "proceed"
+    for cid in ("merge_verified_local", "merge_verified_remote"):
+        check = next(c for c in decision.checks if c.check_id == cid)
+        assert "證明=ancestor" in check.detail, check.detail
+
+
+def test_the_squash_merged_path_passes_via_content_absorption(env_squash: Env) -> None:
+    """OR 的另一邊：squash 之後放行的是 `content_absorbed`，而且報告寫得出來是哪一條。"""
+    decision = guard(env_squash)
+    assert decision.mode == "proceed"
+    for cid in ("merge_verified_local", "merge_verified_remote"):
+        check = next(c for c in decision.checks if c.check_id == cid)
+        assert "證明=content_absorbed" in check.detail, check.detail
+
+
+# ---------------------------------------------------------------------------
+# 12. R2-01：留痕須據「實際執行的動作集合」產生，而非固定字串
+#
+# 病灶不是那一句話寫錯，是**行為與敘述不同源**：R2 把行為改成「squash 只移除
+# worktree」，而終態留痕照著「三個都刪了」的舊假設寫死。因此這一節釘的不是某一句
+# 措辭，是**同源性**與**全覆蓋**：
+#
+#   - `describe_cleanup` 對 DESTRUCTIVE_ORDER 是全函數（窮舉每一種分割）
+#   - 終態留痕、stderr 摘要、doctor 預覽三處都由同一組動作產生
+# ---------------------------------------------------------------------------
+
+
+def test_the_cleanup_description_accounts_for_every_action_in_every_partition() -> None:
+    """⚠️ 窮舉：三個動作分到五個桶（含「沒走到」）的每一種組合，敘述都要各提一次。
+
+    這一條是「不會描述沒發生的動作、也不會漏掉發生了的動作」的機械保證——不是靠
+    措辭寫得小心，是靠分割覆蓋。共 4**3 = 64 種指派。
+    """
+    buckets = ("performed", "skipped_absent", "withheld_unauthorized", "aborted")
+    for assignment in itertools.product(range(len(buckets)), repeat=len(DESTRUCTIVE_ORDER)):
+        kwargs: dict[str, tuple[str, ...]] = {b: () for b in buckets}
+        for action, idx in zip(DESTRUCTIVE_ORDER, assignment):
+            kwargs[buckets[idx]] += (action,)
+        outcome = cleanup.CleanupOutcome(**kwargs)
+        assert outcome.unaccounted == (), "全部指派完畢時不該有未交代的動作"
+        sentence = cleanup.describe_cleanup(outcome)
+        for action in DESTRUCTIVE_ORDER:
+            label = cleanup.ACTION_LABELS[action]
+            assert sentence.count(label) == 1, (
+                f"{label} 在敘述中出現 {sentence.count(label)} 次，應恰好 1 次：{sentence}"
+            )
+
+
+def test_actions_never_walked_are_reported_as_such_not_silently_dropped() -> None:
+    """中止之後沒走到的動作不得從敘述裡消失——「沒走到」與「沒事發生」不是同一件事。"""
+    outcome = cleanup.CleanupOutcome(
+        performed=("remove_worktree",), aborted=("delete_local_branch",)
+    )
+    assert outcome.unaccounted == ("delete_remote_branch",)
+    sentence = cleanup.describe_cleanup(outcome)
+    assert "遠端分支 未走到" in sentence, sentence
+    assert cleanup.describe_cleanup(cleanup.CleanupOutcome()) != "收尾清理：無任何對象" or True
+    # 全空 = 一個動作都沒交代 → 三個都列為未走到，不得回一句空話。
+    empty = cleanup.describe_cleanup(cleanup.CleanupOutcome())
+    for action in DESTRUCTIVE_ORDER:
+        assert cleanup.ACTION_LABELS[action] in empty, empty
+
+
+def _emittable_string_literals(tree: ast.AST) -> list[str]:
+    """所有**可能被輸出**的字串常數——排除 docstring。
+
+    刻意只排 docstring、不排註解（註解本來就不在 AST 裡）：說明歷史病灶的散文可以
+    逐字引用那句舊字串，**能被印出來的字面不行**。這個分界才是判準的實質。
+    """
+    docstrings = {
+        node.body[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node not in docstrings
+    ]
+
+
+def test_no_fixed_deletion_claim_survives_as_an_emittable_literal() -> None:
+    """⚠️ 回歸釘：R2 那句寫死的留痕不得以任何形式復活成可輸出的字面。
+
+    判準是「凡宣稱『已刪除』之處」都必須由動作集合產生。這裡掃整個套件的字串常數
+    （排除 docstring），禁止再出現把對象直接宣告為已清除／不存在的固定字面。
+    """
+    banned = ("皆已不存在", "與本地／遠端分支皆已", "收尾清理已完成（")
+    src_root = Path(cleanup.__file__).parent
+    checked = 0
+    for path in sorted(src_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        checked += 1
+        for literal in _emittable_string_literals(tree):
+            for phrase in banned:
+                assert phrase not in literal, (
+                    f"{path.name} 又出現固定的刪除宣稱字面：{phrase!r}（在 {literal[:60]!r}）"
+                )
+    assert checked > 5, f"只掃到 {checked} 個檔案，掃描範圍可能壞了"
+
+
+def test_the_terminal_note_matches_what_was_actually_done_on_the_squash_path(
+    env_squash: Env,
+) -> None:
+    """⚠️ R2-01 的直接取證（squash 路徑）：留痕不得宣稱分支已不存在。"""
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    result = execute_closeout_transition(
+        env_squash.target, trigger="release", registry=env_squash.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(),
+        effect_writer=writer, occupancy_prober=free_prober,
+    )
+    assert result.mode == "applied"
+    note = writer.terminal_note
+    assert note == "收尾清理：已清除 worktree；本地分支、遠端分支 依授權保留（未刪除）", note
+    # 留痕與實際狀態必須一致：分支確實還在。
+    assert _local_branch_exists(env_squash.repo, BRANCH)
+    assert _remote_branch_exists(env_squash.repo, "origin", BRANCH)
+    assert "不存在" not in note, "留痕仍在宣稱分支不存在"
+    # 留痕與 executor 交來的動作集合同源。
+    assert writer.outcome == result.cleanup_outcome
+    assert cleanup.describe_cleanup(result.cleanup_outcome) == note
+
+
+def test_the_terminal_note_matches_what_was_actually_done_on_the_merge_path(
+    env: Env,
+) -> None:
+    """merge 路徑的對照：三個都刪了，留痕就該說三個都清除了。"""
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    result = execute_closeout_transition(
+        env.target, trigger="release", registry=env.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(),
+        effect_writer=writer, occupancy_prober=free_prober,
+    )
+    assert result.mode == "applied"
+    assert writer.terminal_note == "收尾清理：已清除 worktree、本地分支、遠端分支"
+    assert not _local_branch_exists(env.repo, BRANCH)
+    assert not _remote_branch_exists(env.repo, "origin", BRANCH)
+
+
+def test_the_effect_writer_cannot_write_a_terminal_note_without_the_outcome() -> None:
+    """留痕同源的結構保證：寫終態的介面**必須**收下動作集合，收不到就叫不動。
+
+    這比「記得從 outcome 產生字串」強一級——一個忘了改的實作會 TypeError，而不是
+    安靜地繼續印舊句子。
+    """
+    params = inspect.signature(
+        cleanup.CloseoutEffectWriter.write_release_terminal
+    ).parameters
+    assert "outcome" in params, "寫終態的介面沒有收下實際動作，留痕又會與行為脫鉤"
+    assert params["outcome"].default is inspect.Parameter.empty, (
+        "outcome 有預設值就等於允許呼叫端不傳，同源性就不是結構性的了"
+    )

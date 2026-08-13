@@ -67,6 +67,46 @@ compare-and-swap，窗只是變窄，沒有被關上。
 **送出任何更新指令之前**就以 ``(stale info)`` 拒絕（見下方 `_LEASE_RE` 的註解）。
 拒絕即 `mode="aborted"`，效果（第 4 步）一併扣住——與守衛其餘拒絕路徑同型，
 不靜默略過、不重試、不降級為無條件刪除。
+
+## 「內容已在 main」為何不能只用祖先關係（WF-CLEANUP-SQUASH-AWARE1）
+
+`ROADMAP.md §3.5`（2026-08-13）裁定**卡片一律以 squash 合併**——因為 GitHub 的 merge
+按鈕產不出 `Reviewed-by`，界線跨過後每次按鈕合併都是 `DEV-COMMIT-TRAILER-GUARD1`
+檢查器的違規。而 squash 產生的是一筆**全新 commit**，分支 tip 永遠不會是 main 的
+祖先，於是 `merge-base --is-ancestor` **對之後每一張卡都恆拒**（實測：#9、#63、#73
+三張已 APPROVE 並合併的卡全被擋，唯一通過的 #48 是當日唯一用 merge 合併的）。
+
+**守衛沒有擋錯。** 它問的是「這個分支的內容真的在 main 上嗎」，而 squash 之後那個
+答案在 git 拓撲上確實是「不知道」。修法不是放寬它，是**補一條在 squash 之後仍能回答
+同一個問題的證明**——見 `prove_content_in_main()`，該函式的 docstring 逐條寫明它證明
+了什麼、比祖先關係弱在哪、以及**在什麼情況下會誤放行**。
+
+兩條判準是 **OR**：先試祖先（強），不成立才試內容吸收（弱一級）。守衛其餘九項前提
+與它們之間的 AND 關係**完全不動**。
+
+## 為什麼弱一級的證明不足以刪分支（2026-08-13 需求方裁定）
+
+第一輪查核判 `REQUEST_CHANGES`，打中的是本模組自陳的第三種誤放行：**中間 commit 曾有
+但 tip 已刪除的內容，squash 之後 main 上永遠不會有，放行即不可逆遺失。**
+
+需求方裁定該條驗收本身不可能成立：squash 本質上就丟掉中間 commit 的內容，因此**任何**
+基於「內容是否在 main 上」的判準對那一格必然比祖先關係弱，而祖先關係在 squash 之後
+又永遠不成立。**兩個要求互斥。**
+
+裁定的解法是**不做不可逆的那一步**，而不是放寬證明：
+
+    證明 = ancestor          → 授權移除 worktree ＋ 刪本地分支 ＋ 刪遠端分支
+    證明 = content_absorbed  → **只授權移除 worktree**
+    其餘                     → 什麼都不授權（守衛擋下）
+
+授權分流的**唯一**落點是 `AUTHORITY_BY_PROOF`（一個 proof kind 一列），經
+`GuardDecision.authorized_actions` 取兩份證明的交集後交給 `_execute_closeout()`。
+移除 worktree 是**可逆**的（內容都還在分支上，worktree 隨時重建），刪分支不是——
+於是「中間 commit 的內容」不再有失去的可能。代價是 squash 卡的分支會累積，那是噪音；
+**噪音比不可逆的資料遺失便宜**（裁定原文）。
+
+⚠️ 三種誤放行（見 `prove_content_in_main()`）**依然是誤放行**，只是後果從「不可逆
+刪除」降為「worktree 被移除而分支仍在」。它們一字未刪，仍該被讀到。
 """
 
 from __future__ import annotations
@@ -112,6 +152,14 @@ DESTRUCTIVE_ORDER: tuple[str, ...] = (
     "delete_local_branch",
     "delete_remote_branch",
 )
+
+#: 破壞性動作的人話標籤。**留痕敘述唯一的字詞來源**——不在各消費端各寫一份，
+#: 否則行為變了以後又會有人只改其中一份。
+ACTION_LABELS: Mapping[str, str] = {
+    "remove_worktree": "worktree",
+    "delete_local_branch": "本地分支",
+    "delete_remote_branch": "遠端分支",
+}
 
 Trigger = Literal["release", "reconcile"]
 
@@ -266,6 +314,10 @@ class GuardCheck:
     outcome: CheckOutcome
     detail: str
     step_ref: int  # 對應權威清單第幾步
+    #: 僅 merge 驗證類的檢查會填。**授權分流讀的就是這個欄位**——它不是給人看的
+    #: 說明字串，是機械判定的輸入（`GuardDecision.authorized_actions`）。
+    #: `None` 代表「這一項不涉及內容證明」（例如遠端根本沒有這條分支）。
+    proof_kind: "MergeProofKind | None" = None
 
     @property
     def blocking(self) -> bool:
@@ -300,6 +352,29 @@ CHECK_STEP_REF: Mapping[str, int] = {
 }
 
 
+#: ⚠️ **授權分流的唯一落點**（2026-08-13 需求方裁定，見模組 docstring）。
+#:
+#: 一個 proof kind 一列，**沒有第二處可以放寬授權**：`_execute_closeout()` 對每一個
+#: 破壞性動作都要先問這張表，問不到就不做。刪分支的授權**只有 `ancestor` 給得起**。
+#:
+#: 分界不是「強證明／弱證明」，是**可逆／不可逆**：
+#:
+#: - `remove_worktree` 可逆——內容都還在分支上，worktree 隨時 `git worktree add` 回來。
+#:   弱一級的 `content_absorbed` 授權到這裡為止。
+#: - `delete_local_branch`／`delete_remote_branch` 不可逆——分支一刪，只存在於中間
+#:   commit 的內容就再也拿不回來，而 squash 保證 main 上沒有那份內容。因此它們要求
+#:   `ancestor`：那條證明保住分支上**每一筆** commit，不只 tip。
+AUTHORITY_BY_PROOF: Mapping["MergeProofKind", frozenset[str]] = {
+    "ancestor": frozenset({"remove_worktree", "delete_local_branch", "delete_remote_branch"}),
+    "content_absorbed": frozenset({"remove_worktree"}),
+    "diverged": frozenset(),
+    "unobservable": frozenset(),
+}
+
+#: 沒有任何證明可讀時的授權。**空集合＝fail-closed**：證不出來就不動手。
+NO_AUTHORITY: frozenset[str] = frozenset()
+
+
 def aggregate_mode(outcomes: Sequence[CheckOutcome]) -> GuardMode:
     """全函數：只有全部 ``pass`` 才 proceed；``fail`` 與 ``unobservable`` 同等阻擋。
 
@@ -320,6 +395,30 @@ class GuardDecision:
     @property
     def reasons(self) -> tuple[str, ...]:
         return tuple(f"[{c.check_id}] {c.detail}" for c in self.blocking)
+
+    @property
+    def authorized_actions(self) -> frozenset[str]:
+        """本次放行**到什麼程度**——不是布林，是一組具名動作。
+
+        兩件事讓它 fail-closed：
+
+        1. 守衛沒放行（`detect_only`）→ 空集合，一個動作都不授權；
+        2. 有證明的檢查取**交集**。本地與遠端各有一份證明，強度可能不同（例如本地
+           ref 落後而遠端已 squash）；取交集＝**以最弱的那一份為準**。少一項證明就
+           少一分授權，不會因為其中一邊夠強就把另一邊也放行。
+
+        完全讀不到任何證明時回 `NO_AUTHORITY`（空集合）而不是「全部授權」——證不出來
+        就不動手，與 `aggregate_mode` 把 `unobservable` 當阻擋是同一條規則。
+        """
+        if self.mode != "proceed":
+            return NO_AUTHORITY
+        kinds = [c.proof_kind for c in self.checks if c.proof_kind is not None]
+        if not kinds:
+            return NO_AUTHORITY
+        granted = AUTHORITY_BY_PROOF[kinds[0]]
+        for kind in kinds[1:]:
+            granted &= AUTHORITY_BY_PROOF[kind]
+        return granted
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +485,182 @@ _STASH_BRANCH_RE = re.compile(r"^(?:WIP on|On) (?P<branch>[^:]+):")
 # ---------------------------------------------------------------------------
 
 
+#: 「內容已在 main」的證明種類。**這是本模組唯一被放寬的那條軸**，因此它是具名
+#: 欄位而不是一個布林：任何一次放行都必須說得出是哪一種證明放的行。
+#:
+#: - ``ancestor``：分支 tip 是 main 的祖先。**最強**：分支上每一筆 commit（含中間
+#:   狀態）都在 main 的歷史裡，刪掉分支之後全都還原得回來。
+#: - ``content_absorbed``：tip 不在 main 歷史裡，但**分支改動過的每一個路徑，main 上
+#:   的內容都已與 tip 逐位元相同**。squash 之後成立的就是這一條。
+#: - ``diverged``：分支上有 main 沒有的內容。**這是「別刪」。**
+#: - ``unobservable``：判不出來。與 `diverged` 同樣阻擋（`aggregate_mode` 三值語意）。
+MergeProofKind = Literal["ancestor", "content_absorbed", "diverged", "unobservable"]
+
+#: `MergeProofKind` → `CheckOutcome`。兩種證明都放行，其餘一律擋。
+_PROOF_OUTCOME: Mapping[MergeProofKind, CheckOutcome] = {
+    "ancestor": "pass",
+    "content_absorbed": "pass",
+    "diverged": "fail",
+    "unobservable": "unobservable",
+}
+
+
+@dataclass(frozen=True)
+class MergeProof:
+    kind: MergeProofKind
+    detail: str
+
+    @property
+    def outcome(self) -> CheckOutcome:
+        return _PROOF_OUTCOME[self.kind]
+
+
+def _changed_paths(
+    runner: GitRunner, repo_root: Path, a: str, b: str
+) -> frozenset[str] | None:
+    """``a`` 與 ``b`` 之間有差異的路徑集合；讀不到回 ``None``（呼叫端一律降 unobservable）。
+
+    ``--no-renames`` **是正確性所需**，不是風格。開啟改名偵測時，一次改名只回報新路徑，
+    舊路徑（＝被刪掉的那個）不會進入 A，而**刪除正是最不能漏的那種分歧**。實測（分支把
+    ``keep.txt`` 改名為 ``moved.txt``；main 另外加了同內容的 ``moved.txt`` 但 ``keep.txt``
+    仍在）：
+
+        --find-renames → A={moved.txt}            B={keep.txt}  交集=∅   → 誤放行
+        --no-renames   → A={keep.txt, moved.txt}  B={keep.txt}  交集={keep.txt} → 擋下
+
+    ``-z`` 則是防禦性的，**不是**這裡的正確性關鍵：兩次 diff 跑在同一個 repo、同一份
+    ``core.quotePath`` 設定下，就算被轉義也會是兩邊一致地轉義，交集不受影響。用 ``-z``
+    的理由是拿到的是原始路徑位元組、不必依賴「兩邊轉義方式必然相同」這個前提，順帶
+    免除以換行切分的疑慮。
+    """
+    res = _run(runner, repo_root, ["diff", "--name-only", "--no-renames", "-z", a, b])
+    if not res.ok:
+        return None
+    return frozenset(p for p in res.stdout.split("\0") if p)
+
+
+def prove_content_in_main(
+    runner: GitRunner, repo_root: Path, tip: str, main_ref: str
+) -> MergeProof:
+    """裁定「``tip`` 的內容是否已經在 ``main_ref`` 上」，並**具名回報是哪一種證明**。
+
+    ## 判準本身
+
+    1. **祖先關係**（`merge-base --is-ancestor`）——沿用 WF-CLEANUP-GUARD1 原判準，
+       先試，成立即回 ``ancestor``。這條沒有被動過。
+    2. **內容吸收**——令 ``base = merge-base(tip, main)``：
+
+           A = 分支改動過的路徑 = paths(diff base tip)
+           B = 與 main 仍有差異的路徑 = paths(diff main tip)
+           內容已吸收  ⟺  A ∩ B = ∅
+
+       白話：**分支動過的每一個路徑，main 上的內容都已經與分支 tip 逐位元相同。**
+       不在 A 的路徑無關緊要——分支沒碰過它們，分支上是 base 的舊內容，main 之後怎麼
+       改都不是分支的貢獻。
+
+    ## 它證明了什麼（以及沒證明什麼）
+
+    **證明**：分支 tip 這個快照所帶的檔案內容，main 上一份不缺。以「刪掉分支會不會
+    毀掉已提交的檔案內容」而論，答案是不會。
+
+    **沒證明**：分支的 commit 物件本身在 main 上。squash 之後它們**確實不在**——那正
+    是 `ROADMAP §3.5` 已經承認並接受的代價（「被審 SHA 不會出現在 main 的歷史上」）。
+
+    ## ⚠️ 它比祖先關係弱在哪（不掩飾）
+
+    弱在**只看 tip 這一個快照**。`ancestor` 保住分支上每一個中間 commit；
+    ``content_absorbed`` 只保住 tip。因此：
+
+    - **中間 commit 才有的內容不在 main 上**：某檔案在分支第 1 個 commit 新增、第 3 個
+      commit 又刪掉，tip 沒有它、main 也沒有它（squash 只帶 tip 的樹）。⚠️ 這個損失
+      **是 squash 本身造成的、不是本判準造成的**——main 無論如何都收不到那份內容。
+    - **commit 訊息、作者、分支上的 SHA 都不在 main 上**。同上，squash 已經放棄它們。
+
+    **第一輪查核正是打在這裡**，而它打對了：當時 ``content_absorbed`` 授權刪分支，於是
+    上面兩項就從「不在 main 上」變成「哪裡都不在了」。需求方 2026-08-13 的裁定不是放寬
+    這條證明，是**把刪分支的授權收回去**——見 `AUTHORITY_BY_PROOF`。分支留著，那兩項
+    就仍然拿得回來，只是要去分支上拿，不是去 main 上拿。
+
+    ## ⚠️ 它會在什麼情況下誤放行
+
+    **三項一字未改。** 它們仍然是誤放行——判準確實在這些情形下說了「內容已在 main」而
+    其實未必；改變的只是**後果**，從「不可逆刪除」降為「worktree 被移除而分支仍在」。
+    worktree 可以 `git worktree add` 重建，因此三項的實際代價都是**噪音**，不是遺失。
+
+    1. **淨零分支**：分支有 commit，但相對 base 淨改動為零（做完又自己 revert 回去）。
+       此時 A = ∅，交集空，回 ``content_absorbed`` 放行——**而祖先關係會拒絕它**。
+       這是本判準相對舊判準最清楚的一次放寬，且與 squash 無關。損失是「那次嘗試的
+       commit 紀錄」；檔案內容零損失。
+       **新授權下的後果**：worktree 被移除；分支（含那些 commit）仍在。
+    2. **內容撞號**：另一張卡（或另一條路徑）把一模一樣的內容送上 main，本分支其實
+       從未被合併，但 A ∩ B = ∅ 成立。此時檔案內容仍然一份不缺在 main 上，損失同 1。
+       **新授權下的後果**：同上——一條沒被合併的分支的 worktree 被收掉，分支本身還在。
+    3. **繼承自舊判準的邊界**：本函式與 `merge-base --is-ancestor` 一樣，把 ``main_ref``
+       指到的東西**當成真的 main**。main 被改寫過（force push、base 被重寫）時，兩條
+       判準會一起失去意義——這不是新增的破口，是原本就在的那一個。
+       ⚠️ **這一項在新授權下仍然可以造成不可逆遺失**：被改寫的 main 可能讓一條分支
+       誤判為 ``ancestor``，而 ``ancestor`` 授權刪分支。但那條路徑是舊判準本來就有的，
+       本卡沒有加寬它，也沒有收窄它。
+
+    **不會誤放行的**（沙箱矩陣逐一取證，見 `test_cleanup.py` 的判準矩陣）：完全未合併、
+    squash 之後分支又推了新提交、squash 之後 main 又 revert 掉、分支刪檔而 main 未刪、
+    同檔衝突。這五種全部落在 ``diverged``。
+    """
+    if _run(runner, repo_root, ["merge-base", "--is-ancestor", tip, main_ref]).ok:
+        return MergeProof(
+            "ancestor", f"{tip} 已是 {main_ref} 的祖先（分支上每一筆 commit 都在 main 歷史內）"
+        )
+
+    base_res = _run(runner, repo_root, ["merge-base", tip, main_ref])
+    if not base_res.ok or not base_res.stdout.strip():
+        return MergeProof(
+            "unobservable",
+            f"{tip} 與 {main_ref} 找不到共同祖先（{base_res.stderr.strip() or '無錯誤訊息'}）；"
+            "無共同基準即無法判斷內容是否已吸收，不放行",
+        )
+    base = base_res.stdout.split()[0]
+
+    touched = _changed_paths(runner, repo_root, base, tip)
+    if touched is None:
+        return MergeProof("unobservable", f"讀不到 {base[:12]}..{tip} 的改動路徑，無法判斷")
+    if not touched:
+        return MergeProof(
+            "content_absorbed",
+            f"{tip} 相對共同祖先 {base[:12]} 淨改動為零（分支上的 commit 互相抵銷）；"
+            "無任何檔案內容可毀。⚠️ 祖先關係會拒絕這種分支，本判準放行——"
+            "損失的是那次嘗試的 commit 紀錄，不是檔案內容",
+        )
+
+    differing = _changed_paths(runner, repo_root, main_ref, tip)
+    if differing is None:
+        return MergeProof("unobservable", f"讀不到 {main_ref} 與 {tip} 的差異路徑，無法判斷")
+
+    unmatched = sorted(touched & differing)
+    if unmatched:
+        shown = ", ".join(unmatched[:5])
+        return MergeProof(
+            "diverged",
+            f"{tip} 改動過的 {len(touched)} 個路徑中，有 {len(unmatched)} 個在 {main_ref} 上"
+            f"的內容與分支不同：{shown}"
+            f"{' …' if len(unmatched) > 5 else ''}；"
+            "這些內容不在 main 上，刪掉分支就沒了",
+        )
+    return MergeProof(
+        "content_absorbed",
+        f"{tip} 相對共同祖先 {base[:12]} 改動的 {len(touched)} 個路徑，"
+        f"在 {main_ref} 上的內容已與分支 tip 逐位元相同（squash 合併後的形狀）；"
+        "⚠️ 分支的 commit 物件本身不在 main 歷史內——squash 已放棄它們（ROADMAP §3.5）",
+    )
+
+
+def _authority_summary(kind: MergeProofKind) -> str:
+    """把授權表翻成人看得懂的一句話。**讀的是同一張表**，不另寫一份對照。"""
+    granted = AUTHORITY_BY_PROOF[kind]
+    if not granted:
+        return "無"
+    return "、".join(a for a in DESTRUCTIVE_ORDER if a in granted)
+
+
 def _check_merge_local(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
     tip = _run(runner, target.repo_root, ["rev-parse", "--verify", "--quiet", target.branch])
     if not tip.ok or not tip.stdout.strip():
@@ -393,15 +668,13 @@ def _check_merge_local(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
             "merge_verified_local", "pass",
             f"本地分支 {target.branch!r} 不存在（已刪或從未建立），無可刪對象", 1,
         )
-    res = _run(
-        runner, target.repo_root,
-        ["merge-base", "--is-ancestor", target.branch, target.main_ref],
+    proof = prove_content_in_main(runner, target.repo_root, target.branch, target.main_ref)
+    return GuardCheck(
+        "merge_verified_local", proof.outcome,
+        f"本地 {target.branch}／證明={proof.kind}"
+        f"（授權：{_authority_summary(proof.kind)}）：{proof.detail}", 1,
+        proof_kind=proof.kind,
     )
-    if res.ok:
-        return GuardCheck("merge_verified_local", "pass",
-                          f"本地 {target.branch} 已是 {target.main_ref} 祖先", 1)
-    return GuardCheck("merge_verified_local", "fail",
-                      f"本地 {target.branch} 尚未併入 {target.main_ref}", 1)
 
 
 def _read_remote_heads(
@@ -451,12 +724,13 @@ def _check_merge_remote(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
             return GuardCheck("merge_verified_remote", "unobservable",
                               f"遠端 commit {sha[:12]} 不在本地物件庫，"
                               "未 fetch 前無法驗證祖先關係（本守衛不代為 fetch）", 1)
-    res = _run(runner, target.repo_root, ["merge-base", "--is-ancestor", branch_sha, main_sha])
-    if res.ok:
-        return GuardCheck("merge_verified_remote", "pass",
-                          f"遠端 {target.branch} 已是遠端 {target.main_ref} 祖先", 1)
-    return GuardCheck("merge_verified_remote", "fail",
-                      f"遠端 {target.branch} 尚未併入遠端 {target.main_ref}", 1)
+    proof = prove_content_in_main(runner, target.repo_root, branch_sha, main_sha)
+    return GuardCheck(
+        "merge_verified_remote", proof.outcome,
+        f"遠端 {target.branch}／證明={proof.kind}"
+        f"（授權：{_authority_summary(proof.kind)}）：{proof.detail}", 1,
+        proof_kind=proof.kind,
+    )
 
 
 def _check_uncommitted(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
@@ -713,7 +987,9 @@ def recheck_remote_branch(target: CleanupTarget, runner: GitRunner) -> RemoteDel
     1. 遠端 branch 與 main 的**當下** SHA（同一次 ls-remote，兩端同一次觀測）；
     2. branch tip 的 commit object 在**本地物件庫可觀測**（觀測不到＝本機沒見過的
        新提交，守衛不代為 fetch，也不對看不見的東西做祖先判斷）；
-    3. `merge-base --is-ancestor <tip> <遠端 main tip>` 仍成立。
+    3. `prove_content_in_main(<tip>, <遠端 main tip>)` 仍給得出證明。**這裡與前提檢查
+       用的是同一個函式**——複驗不得比前提寬，也不得比前提嚴，否則會出現「前提放行、
+       複驗恆拒」（squash 之後原本就是這個形狀）或反過來的破口。
 
     回傳的 `GuardCheck` 走與前提檢查同一套三值語意，因此
     ``aggregate_mode([check.outcome])`` 在拒絕時就是 ``detect_only``——「驗不過或
@@ -755,19 +1031,20 @@ def recheck_remote_branch(target: CleanupTarget, runner: GitRunner) -> RemoteDel
             f"遠端 {target.main_ref} 的 tip {main_sha[:12]} 不在本地物件庫，"
             "無法驗證祖先關係，不刪", 2,
         ))
-    if not _run(runner, target.repo_root,
-                ["merge-base", "--is-ancestor", branch_sha, main_sha]).ok:
+    proof = prove_content_in_main(runner, target.repo_root, branch_sha, main_sha)
+    if proof.outcome != "pass":
         return RemoteDeleteDecision("refuse", GuardCheck(
-            RECHECK_REMOTE_ID, "fail",
-            f"遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
-            f"不是遠端 {target.main_ref}（{main_sha[:12]}）的祖先；"
+            RECHECK_REMOTE_ID, proof.outcome,
+            f"刪除前複驗：遠端 {target.branch} 的 tip 現在是 {branch_sha[:12]}，"
+            f"對遠端 {target.main_ref}（{main_sha[:12]}）證不出內容已在 main"
+            f"（{proof.kind}：{proof.detail}）；"
             "在 executor 內走到這一步代表前提檢查當時是通過的，"
             "也就是窗內有新提交進來——刪掉它會毀掉那份工作", 2,
         ))
     return RemoteDeleteDecision("delete", GuardCheck(
         RECHECK_REMOTE_ID, "pass",
-        f"刪除前複驗：遠端 {target.branch} tip {branch_sha[:12]} 仍是 "
-        f"{target.main_ref}（{main_sha[:12]}）的祖先；"
+        f"刪除前複驗：遠端 {target.branch} tip {branch_sha[:12]} 的內容仍證明在遠端 "
+        f"{target.main_ref}（{main_sha[:12]}）上（證明={proof.kind}）；"
         f"該 tip 將原樣作為刪除租約的期望值", 2,
     ), expected_tip=branch_sha)
 
@@ -792,11 +1069,29 @@ class CloseoutObservation:
     remote_branch_present: bool
     terminal_status_written: bool
     issue_open: bool
+    #: 本次收尾**被授權處理**的動作集合。三個 ``*_present`` 欄位一律是原始事實，
+    #: 不因授權而改寫；授權只影響「還剩什麼沒做完」的判定。
+    #:
+    #: 預設是全集，因此**不帶這個參數的既有行為完全不變**。squash 卡把它縮成
+    #: ``{"remove_worktree"}`` 之後，仍在的分支不再算「清理未完成」——那是刻意留著
+    #: 的，不是漏做的（裁定：不做不可逆的那一步）。少了這一層，squash 卡會永遠卡在
+    #: `cleanup_in_progress`、第 4 步永遠不發動、卡永遠進不了終態，重跑還會被判
+    #: `illegal_terminal_before_cleanup`。
+    authorized_actions: frozenset[str] = frozenset(DESTRUCTIVE_ORDER)
 
     @property
     def cleanup_done(self) -> bool:
-        return not (
-            self.worktree_present or self.local_branch_present or self.remote_branch_present
+        """**授權範圍內**的清理是否都做完了。
+
+        沒被授權的資源仍在，不算未完成——本次收尾本來就不該碰它。
+        """
+        return not any(
+            present and action in self.authorized_actions
+            for present, action in (
+                (self.worktree_present, "remove_worktree"),
+                (self.local_branch_present, "delete_local_branch"),
+                (self.remote_branch_present, "delete_remote_branch"),
+            )
         )
 
     @property
@@ -852,8 +1147,13 @@ def observe(
     target: CleanupTarget,
     remote_facts: RemoteCardFacts,
     runner: GitRunner | None = None,
+    authorized: frozenset[str] | None = None,
 ) -> CloseoutObservation:
-    """純讀當下事實。不讀任何「上次做到哪」的本機紀錄——那種紀錄不存在。"""
+    """純讀當下事實。不讀任何「上次做到哪」的本機紀錄——那種紀錄不存在。
+
+    `authorized` 不影響**讀到什麼**，只隨著觀測一起帶下去，供 `cleanup_done` 判定
+    「還剩什麼該做而沒做」。省略即全集（＝本卡之前的行為）。
+    """
     runner = runner or default_git_runner
     local = _run(runner, target.repo_root, ["rev-parse", "--verify", "--quiet", target.branch])
     ls = _run(runner, target.repo_root, ["ls-remote", "--heads", target.remote, target.branch])
@@ -864,6 +1164,9 @@ def observe(
         remote_branch_present=remote_present,
         terminal_status_written=remote_facts.terminal_status_written,
         issue_open=remote_facts.issue_open,
+        authorized_actions=(
+            frozenset(DESTRUCTIVE_ORDER) if authorized is None else authorized
+        ),
     )
 
 
@@ -872,12 +1175,78 @@ def observe(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class CleanupOutcome:
+    """**實際發生了什麼**——留痕敘述的唯一資料來源。
+
+    四個欄位對 `DESTRUCTIVE_ORDER` 構成一個分割：每個動作最多落在一格。沒落在任何
+    一格的（中止之後就沒再走到的後續動作）由 `unaccounted` 補齊，**因此三個動作合起來
+    一定被完整交代**——這正是 R2 的病灶所在：當時的留痕是固定字串，行為改成「保留分支」
+    之後它仍宣稱分支已不存在。
+
+    ⚠️ 不要從 `CloseoutMode` 推論做了什麼。`applied` 只代表「授權範圍內完成」，
+    squash 卡的 `applied` 帶著非空的 `withheld_unauthorized`。
+    """
+
+    performed: tuple[str, ...] = ()
+    skipped_absent: tuple[str, ...] = ()
+    withheld_unauthorized: tuple[str, ...] = ()
+    aborted: tuple[str, ...] = ()
+
+    @property
+    def accounted(self) -> frozenset[str]:
+        return frozenset(
+            self.performed + self.skipped_absent + self.withheld_unauthorized + self.aborted
+        )
+
+    @property
+    def unaccounted(self) -> tuple[str, ...]:
+        """一格都沒落到的動作——中止後未再走到的那些。**不是「沒事發生」，是「沒走到」。**"""
+        return tuple(a for a in DESTRUCTIVE_ORDER if a not in self.accounted)
+
+
+def _labels(actions: Sequence[str]) -> str:
+    """依 `DESTRUCTIVE_ORDER` 的固定次序輸出標籤，讓同一組動作永遠印成同一句話。"""
+    ordered = [a for a in DESTRUCTIVE_ORDER if a in set(actions)]
+    return "、".join(ACTION_LABELS.get(a, a) for a in ordered)
+
+
+def describe_cleanup(outcome: CleanupOutcome) -> str:
+    """把**實際做過的動作**翻成一句留痕。**產生留痕敘述的唯一一行碼在這裡。**
+
+    R2 之前這句話是寫死的字串（「worktree 與本地／遠端分支皆已不存在」），於是本卡
+    把行為改成「squash 只移除 worktree、分支保留」之後，敘述仍在宣稱分支不存在——
+    行為與敘述**不同源**，直接違反 `ROADMAP §0` 目標 2（事後能從留痕重建做了什麼）。
+
+    本函式對 `DESTRUCTIVE_ORDER` 是**全函數**：三個動作各自落在 performed／
+    skipped_absent／withheld_unauthorized／aborted／unaccounted 其中一格，且**每一格
+    都會被說出來**。因此「描述了一個沒發生的動作」與「漏掉一個發生了的動作」兩種錯誤
+    在這裡都寫不出來——不是靠字串寫得夠小心，是靠分割本身。
+    """
+    parts: list[str] = []
+    if outcome.performed:
+        parts.append(f"已清除 {_labels(outcome.performed)}")
+    if outcome.skipped_absent:
+        parts.append(f"{_labels(outcome.skipped_absent)} 本來就不存在")
+    if outcome.withheld_unauthorized:
+        parts.append(f"{_labels(outcome.withheld_unauthorized)} 依授權保留（未刪除）")
+    if outcome.aborted:
+        parts.append(f"{_labels(outcome.aborted)} 已中止（刪除前複驗不通過）")
+    if outcome.unaccounted:
+        parts.append(f"{_labels(outcome.unaccounted)} 未走到")
+    if not parts:
+        return "收尾清理：無任何對象"
+    return "收尾清理：" + "；".join(parts)
+
+
 class CloseoutEffectWriter(Protocol):
     """第 4 步的兩次狀態面寫入。順序沿用權威清單：先關 Issue，終態最後落地。"""
 
     def close_issue(self, target: CleanupTarget) -> None: ...
 
-    def write_release_terminal(self, target: CleanupTarget) -> None: ...
+    def write_release_terminal(
+        self, target: CleanupTarget, outcome: CleanupOutcome
+    ) -> None: ...
 
 
 def _noop_hook(_: str) -> None:
@@ -891,6 +1260,10 @@ def _noop_hook(_: str) -> None:
 #:
 #: ``aborted`` 不併入 ``detect_only``：一個已經移除了 worktree 的 run 自稱「純偵測」
 #: 是不誠實的。呼叫端只需記住「只有 applied 代表轉換完成」。
+#:
+#: ⚠️ ``applied`` 是「**本次授權範圍內**的轉換完成」，不是「七步清單全做完」。squash
+#: 卡的 `applied` 會帶著非空的 `actions_withheld_unauthorized`（分支刻意留著）。要判
+#: 「分支還在嗎」請讀 `observation_after`，不要從 mode 推。
 CloseoutMode = Literal["applied", "detect_only", "aborted"]
 
 
@@ -908,6 +1281,14 @@ class CloseoutResult:
     blocking_reasons: tuple[str, ...]
     #: 刪除前二次確認拒絕、因而未執行的動作。
     actions_aborted: tuple[str, ...] = ()
+    #: **授權不足而刻意沒做**的動作（資源仍在，且本來就該仍在）。
+    #:
+    #: 與 `actions_skipped_absent` 分開命名：後者是「本來就沒有這個東西」，前者是
+    #: 「東西在，但這次的證明不足以動它」。混成一欄，報告就看不出 squash 卡的分支
+    #: 是**刻意留著**還是**根本沒建過**。
+    actions_withheld_unauthorized: tuple[str, ...] = ()
+    #: 本次放行的授權範圍（`GuardDecision.authorized_actions` 的原樣快照）。
+    authorized_actions: frozenset[str] = frozenset()
     #: 二次確認的逐項結果（供報告與對帳；正常放行時也會有一筆 pass）。
     recheck_checks: tuple[GuardCheck, ...] = ()
     #: 觸發者標籤。**破壞性函式體 `_execute_closeout()` 造不出這個欄位的值**——它
@@ -920,6 +1301,16 @@ class CloseoutResult:
     @property
     def legal_state(self) -> bool:
         return self.state_after in LEGAL_STATES
+
+    @property
+    def cleanup_outcome(self) -> CleanupOutcome:
+        """把四個動作欄位收成一個值。**所有留痕消費端都該從這裡取，不要各自拼字串。**"""
+        return CleanupOutcome(
+            performed=self.actions_performed,
+            skipped_absent=self.actions_skipped_absent,
+            withheld_unauthorized=self.actions_withheld_unauthorized,
+            aborted=self.actions_aborted,
+        )
 
 
 def execute_closeout_transition(
@@ -996,7 +1387,23 @@ def _execute_closeout(
     狀態停在合法的 `cleanup_in_progress`——重跑會重新觀測，人也還有機會介入。
     """
     runner = runner or default_git_runner
-    before = observe(target, remote_facts, runner)
+
+    # 守衛（唯讀）必須先跑：它算出來的 `authorized_actions` 是後面每一次觀測的
+    # 判定範圍。**順序在本卡之前是相反的**（先觀測再守衛），但那時授權是隱含的
+    # 全集，所以觀測不需要知道守衛的結論。現在需要了。
+    #
+    # 守衛擋下時退回全集，理由是那條路徑什麼都不會做，用原本的（未縮小的）語意
+    # 回報狀態最誠實——也因此 detect_only 的分類結果與本卡之前逐字相同。
+    decision = evaluate_cleanup_guard(
+        target, registry=registry, card_body=card_body,
+        runner=runner, occupancy_prober=occupancy_prober,
+    )
+    authorized = (
+        decision.authorized_actions
+        if decision.mode == "proceed"
+        else frozenset(DESTRUCTIVE_ORDER)
+    )
+    before = observe(target, remote_facts, runner, authorized=authorized)
 
     if classify_state(before) == "illegal_terminal_before_cleanup":
         return CloseoutResult(
@@ -1013,10 +1420,6 @@ def _execute_closeout(
             ),
         )
 
-    decision = evaluate_cleanup_guard(
-        target, registry=registry, card_body=card_body,
-        runner=runner, occupancy_prober=occupancy_prober,
-    )
     if decision.mode == "detect_only":
         return CloseoutResult(
             mode="detect_only", decision=decision,
@@ -1031,6 +1434,7 @@ def _execute_closeout(
     performed: list[str] = []
     skipped: list[str] = []
     aborted: list[str] = []
+    withheld: list[str] = []
     rechecks: list[GuardCheck] = []
     step_hook("guard_passed")
 
@@ -1039,6 +1443,8 @@ def _execute_closeout(
             present = bool(target.worktree_path and target.worktree_path.exists())
             if not present:
                 skipped.append(action)
+            elif action not in authorized:
+                withheld.append(action)
             else:
                 res = _run(runner, target.repo_root,
                            ["worktree", "remove", str(target.worktree_path)])
@@ -1052,6 +1458,8 @@ def _execute_closeout(
                          ["rev-parse", "--verify", "--quiet", target.branch])
             if not (probe.ok and probe.stdout.strip()):
                 skipped.append(action)
+            elif action not in authorized:
+                withheld.append(action)
             else:
                 # -d（安全刪除）而非 -D：未合併時 git 自己也會拒絕，形成第二道防線。
                 res = _run(runner, target.repo_root, ["branch", "-d", target.branch])
@@ -1068,6 +1476,17 @@ def _execute_closeout(
             # R2-001：但「重讀」到「送出」之間還有一段窗，而且它被隔離實測打穿過。
             # 因此複驗讀到的 tip 不是印出來就算，它會**原樣**成為刪除指令的租約
             # 期望值——檢查與刪除自此是同一個原子操作，不是先後兩件事。
+            #
+            # 授權不足時**連複驗都不跑**：複驗是「刪除前的最後一次確認」，不刪就
+            # 沒有那個時刻。跑了反而會在報告裡留下一筆看起來像「準備要刪」的紀錄。
+            if action not in authorized:
+                heads, _err = _read_remote_heads(target, runner)
+                if heads is not None and target.branch not in heads:
+                    skipped.append(action)
+                else:
+                    withheld.append(action)
+                step_hook(f"after_{action}")
+                continue
             recheck = recheck_remote_branch(target, runner)
             rechecks.append(recheck.check)
             if recheck.verdict == "absent":
@@ -1105,13 +1524,14 @@ def _execute_closeout(
     if aborted:
         # 已執行的動作不回頭（也回不了頭），但**效果一律扣住**：狀態面不寫，
         # Issue 不關。停在合法的暫時態，交給下一次觀測式續作或人判斷。
-        halted = observe(target, remote_facts, runner)
+        halted = observe(target, remote_facts, runner, authorized=authorized)
         return CloseoutResult(
             mode="aborted", decision=decision,
             observation_before=before, observation_after=halted,
             state_after=classify_state(halted),
             actions_performed=tuple(performed), actions_skipped_absent=tuple(skipped),
             actions_aborted=tuple(aborted), recheck_checks=tuple(rechecks),
+            actions_withheld_unauthorized=tuple(withheld), authorized_actions=authorized,
             remaining_status_face_steps=remaining_status_face_steps(halted),
             outstanding_obligations=SUBSEQUENT_OBLIGATION_STEPS,
             blocking_reasons=tuple(
@@ -1119,22 +1539,31 @@ def _execute_closeout(
             ),
         )
 
-    mid = observe(target, remote_facts, runner)
+    mid = observe(target, remote_facts, runner, authorized=authorized)
+    # 留痕的資料來源：**這一輪實際做過什麼**，不是任何預設假設。effect writer 拿到
+    # 它才能把終態那一句話生出來，而不是寫死「分支皆已不存在」（R2 的病灶）。
+    outcome = CleanupOutcome(
+        performed=tuple(performed),
+        skipped_absent=tuple(skipped),
+        withheld_unauthorized=tuple(withheld),
+        aborted=tuple(aborted),
+    )
     if effect_writer is not None and mid.cleanup_done:
         if mid.issue_open:
             effect_writer.close_issue(target)
             step_hook("after_close_issue")
         if not mid.terminal_status_written:
-            effect_writer.write_release_terminal(target)
+            effect_writer.write_release_terminal(target, outcome)
             step_hook("after_write_terminal")
         remote_facts = RemoteCardFacts(terminal_status_written=True, issue_open=False)
 
-    after = observe(target, remote_facts, runner)
+    after = observe(target, remote_facts, runner, authorized=authorized)
     return CloseoutResult(
         mode="applied", decision=decision,
         observation_before=before, observation_after=after,
         state_after=classify_state(after),
         actions_performed=tuple(performed), actions_skipped_absent=tuple(skipped),
+        actions_withheld_unauthorized=tuple(withheld), authorized_actions=authorized,
         remaining_status_face_steps=remaining_status_face_steps(after),
         outstanding_obligations=SUBSEQUENT_OBLIGATION_STEPS,
         blocking_reasons=(),
@@ -1149,13 +1578,17 @@ __all__ = [
     "CHECK_STEP_REF",
     "DESTRUCTIVE_ORDER",
     "EFFECT_STEP",
+    "ACTION_LABELS",
+    "AUTHORITY_BY_PROOF",
     "LEGAL_STATES",
+    "NO_AUTHORITY",
     "PRECONDITION_STEPS",
     "RECHECK_REMOTE_ID",
     "REMOTE_DELETE_CAS_ID",
     "STEP_ROLES",
     "SUBSEQUENT_OBLIGATION_STEPS",
     "CleanupGuardError",
+    "CleanupOutcome",
     "CleanupTarget",
     "CloseoutEffectWriter",
     "CloseoutMode",
@@ -1164,6 +1597,8 @@ __all__ = [
     "GuardCheck",
     "GuardDecision",
     "GitResult",
+    "MergeProof",
+    "MergeProofKind",
     "RemoteCardFacts",
     "RemoteDeleteDecision",
     "WorktreeRecord",
@@ -1171,12 +1606,14 @@ __all__ = [
     "classify_state",
     "conditional_delete_args",
     "default_git_runner",
+    "describe_cleanup",
     "evaluate_cleanup_guard",
     "execute_closeout_transition",
     "is_conditional_delete_lease",
     "lsof_cwd_prober",
     "observe",
     "parse_worktree_records",
+    "prove_content_in_main",
     "recheck_remote_branch",
     "remaining_status_face_steps",
 ]
