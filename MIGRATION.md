@@ -22,7 +22,7 @@
 ## 1. 安裝新文件，不搬移歷史
 
 1. 將新 canonical stub、`TASKS.md`、`tasks-card.md`、`bug-card.md`、`discovery-brief.md`、`design-brief.md`、`research-plan.md`、`control-plane-contract.md` 與 `handoff-contract.md` 放入專案文件目錄。
-2. 保留舊卡片與 `BUGS.md` 原文；不要為了新格式補寫舊事件。
+2. 保留舊卡片與既有 `BUGS.md` 原文；不要為了新格式補寫舊事件。該檔自 2026-08-15 起**封存唯讀**（canonical §3 已廢止快線滾動 log），保留歷史但不再追加。
 3. 對每張活卡建立一次 `migration-baseline` lifecycle event：記錄舊狀態、owner、branch、worktree、已知 iteration、source SHA 與建立時間；此 event 成為 `state_version: 1`。
 4. 從 baseline event 產生新的 Ledger。若新／舊 Ledger 不一致，停止 claim，先由 Coordinator 對帳。
 

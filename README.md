@@ -12,7 +12,6 @@ ai-workflow/           # 依檔名排序，與 `ls` 實況一致
 ├── ADOPTION.md      # 新專案如何採用（3 步）
 ├── AGENTS.md        # 本 repo 的 AI 運行準則（工具中立版）
 ├── AI_WORKFLOW.md   # ★ CANONICAL 規則（唯一權威）
-├── BUGS.md          # 本 repo 的 T2 快線 bug 滾動 log
 ├── CLAUDE.md        # 本 repo 的 AI 運行準則（Claude Code）
 ├── MIGRATION.md     # 舊版工作流專案的升級指南
 ├── MODEL_ROUTING.md # 模型路由範本（可替換操作知識，非流程鐵律）

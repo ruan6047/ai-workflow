@@ -10,7 +10,7 @@
 複製 [`templates/TASKS.md`](templates/TASKS.md) → `<專案>/docs/TASKS.md`（Ledger 索引 only），把 `<專案名>` 換掉；
 每張卡由 [`templates/tasks-card.md`](templates/tasks-card.md) 建 `<專案>/docs/tasks/<卡ID>.md`（結案卡 `git mv` 進 `docs/archive/tasks/`）。T3/T4 另由 [`templates/discovery-brief.md`](templates/discovery-brief.md) 建 Discovery brief；使用者可見的 T3/T4 再建 [`templates/design-brief.md`](templates/design-brief.md)，純技術卡則記錄 Design Gate `N/A` 的理由；研究不確定性時使用 [`templates/research-plan.md`](templates/research-plan.md)。大型工作由 [`templates/initiative-card.md`](templates/initiative-card.md) 建 Initiative 父卡，先定 spec 基線與依賴圖再開子卡。
 此後該專案所有任務卡／log 都住這裡（**不集中到本 repo**）。event log 保存狀態歷史，Ledger 是 current-state projection（見 canonical §6）。
-另起一份 `<專案>/docs/BUGS.md`（快線 bug 滾動 log，見 canonical §3；bug 卡範本 [`templates/bug-card.md`](templates/bug-card.md)）。
+慢線 bug 走 bug 卡範本 [`templates/bug-card.md`](templates/bug-card.md)。**不必另起 `docs/BUGS.md`**——T2 快線的獨立滾動 log 已於 2026-08-15 廢止，留痕改掛 commit trailer（canonical §3）。
 
 ## 3. CLAUDE.md 加指引
 在 `<專案>/CLAUDE.md` 頂部加一行：
