@@ -1034,7 +1034,62 @@ def test_core_pain_succeeds_with_requester_ruling_and_records_authority(gov_card
     assert "→ 核心痛點：原值「原始痛點」→ 新值「收窄後的痛點」" in body
     # 授權必須逐字留在 Log：稽核者要能區分「開卡就這樣寫」與「事後經誰裁定改的」
     assert f"授權 依需求方 {REQUESTER} 於" in body
-    assert "GitHub comment author 已逐字核對" in body
+    # 註記的措辭本身由 test_authority_note_* 兩條釘住（見下）。
+
+
+# 授權註記的**措辭**：字面為真還不夠，語意不得誇大（WF-AMEND-AUTHZ-BINDING1）
+#
+# 本卡治的病：舊註記「GitHub comment author 已逐字核對，非留言內文自述」字面為真
+# （確實比對過），語意卻誤導——後半句把本檢查描述成「排除了自述」，讀者因此以為
+# 它有區辨力。而 amend 這條路徑從不讀取操作者身分，且本 repo 只有一個人類帳號
+# （PM 的 gh 與需求方同為 ruan6047），那道比對對代貼者恆真，從未區辨過任何東西。
+# 已實現後果：13 筆事件／9 張卡（2026-08-16 對 Project #4 全部 148 個 item 逐張掃描）。
+#
+# 下面兩條是一組：一條釘「該說的有說」，一條釘「不該說的沒說」。任一單獨存在都
+# 不夠——只釘正面，可以在保留誇大句的同時加上免責句而仍然全綠。
+
+#: 已退役的措辭。**不是**通用黑名單，而是逐字釘住本卡淘汰掉的那一句：
+#: 它宣稱本比對排除了「留言內文自述」，即宣稱了它沒有的區辨力。
+_RETIRED_DISCRIMINATION_CLAIM = "非留言內文自述"
+
+
+def test_authority_note_discloses_what_the_comparison_cannot_distinguish(gov_card):
+    """授權註記須寫明「比對過什麼」＋「這比對不能分辨什麼」。
+
+    **突變檢驗**：刪掉回傳字面裡的「不區分…代擬代貼」一句（或整句改回舊值），
+    本測試轉紅——因為稽核者從結構化欄位讀到的就只有這一句話。
+    """
+    rc = run_cli(
+        ["amend", *GOV_TARGET, "GOV-DEMO1", "--reason", "需求方縮小射程",
+         "--core-pain", "收窄後的痛點", "--ruling-url", _ruling()]
+    )
+    assert rc == 0
+    body = _gov_item(gov_card).body
+    # 註記確實被寫成「授權」欄，而不是混在 --reason 的自由文字裡
+    assert "；授權 " in body
+    # (a) 做過什麼比對——據實陳述被比對的兩個欄位，不評價其效力
+    assert "其 GitHub author 欄逐字等於卡面「需求：」欄" in body
+    # (b) 這比對不能分辨什麼——以及為什麼不能（本指令根本不讀操作者身分）
+    assert "本指令不讀取操作者身分" in body
+    assert "不區分「需求方本人張貼」與「他人代擬代貼」" in body
+
+
+def test_authority_note_does_not_claim_discriminating_power(gov_card):
+    """授權註記不得宣稱本比對排除了什麼。
+
+    **突變檢驗**：把 ``amend_cmd._authorize_by_requester_ruling`` 的回傳字面改回
+    「（GitHub comment author 已逐字核對，非留言內文自述）」，本測試轉紅。
+    """
+    rc = run_cli(
+        ["amend", *GOV_TARGET, "GOV-DEMO1", "--reason", "需求方縮小射程",
+         "--core-pain", "收窄後的痛點", "--ruling-url", _ruling()]
+    )
+    assert rc == 0
+    body = _gov_item(gov_card).body
+    assert _RETIRED_DISCRIMINATION_CLAIM not in body
+    # 刻意**只**斷言寫進 Log 的內容，不掃原始碼：註記的字面就是組進 body 的那一份，
+    # 這條斷言已足以在還原舊值時轉紅。加掃原始碼只會把「模組 docstring 逐字引用
+    # 舊值以說明它為何被淘汰」也一起判紅——那份說明必須留著。
 
 
 def test_core_pain_rejected_when_ruling_author_is_not_the_requester(gov_card):

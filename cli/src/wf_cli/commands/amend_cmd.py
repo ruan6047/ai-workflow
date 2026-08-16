@@ -60,6 +60,19 @@ critical blocking，逐字指出「amend 僅改驗收條件，不能更改 canon
 結構化事件承載授權（``review-escalation.md`` §4 (b′-1)），那屬 checkpoint writer
 的射程，不在本指令。
 
+**第二個上限——author 比對對代貼者恆真（WF-AMEND-AUTHZ-BINDING1）**：本指令
+從不讀取操作者身分（全 ``cli/src`` 只有 ``review_cmd`` 為了 ``marked_by`` 讀
+``gh api user``，amend 這條路徑沒有）。因此 author 比對能分辨的只有「留言是不是
+需求方這個平台身分發的」，**分辨不了「是需求方本人張貼」還是「他人以該身分代擬
+代貼」**。而本 repo 只有一個人類帳號——PM 的 ``gh`` 與需求方同為 ``ruan6047``
+——所以這道比對對 PM 恆真，一次也沒有區辨過任何東西。
+
+處置**不是**補上身分驗證（``docs/ROADMAP.md`` §1 已裁定三張授權款卡都不再追求
+驗證），也**不是**把恆真性導出成 ``structurally-vacuous`` 之類的值再當檢查用
+（同節逐字禁止）。處置是讓寫進 Log 的那句話**不宣稱它沒有的區辨力**：據實寫
+「比對過什麼」與「這比對不能分辨什麼」，把判斷留給讀者。此上限的正解與上一段
+同源——結構化事件承載授權，屬 checkpoint writer 的射程。
+
 **本指令關不掉的洞（指名記下，因為它是唯一出路）**：``review.py`` 的裁決留言
 只寫 ``core_pain_resolved：yes|no``，**不寫它所判斷的痛點原文**。裁決事件是
 append-only 且不可改，它所依據的前提卻可變——痛點一經更正，**歷史上每一筆
@@ -475,13 +488,25 @@ def _resolve_ruling_author(runner, target, item, ruling_url: str) -> tuple[str, 
 
 
 def _authorize_by_requester_ruling(runner, target, item, args, what: str) -> str:
-    """核對「這次更正確經需求方以其平台身分裁定」，回傳寫進 Log 的授權註記。
+    """檢查授權宣告的**完整性**，回傳寫進 Log 的授權註記。
 
     三道檢查，缺一即拒（對齊 ``review-escalation.md`` §4 (a′) 與第 2、3 款）：
 
     1. 卡面「需求：」欄可解析（``parse_requested_by``，fail-closed）；
     2. 裁定留言的 GitHub comment author **逐字等於**該帳號；
     3. 該 author **不等於本卡當前 owner**——裁定者不得是被該裁定嘉惠的人。
+
+    **這是完整性檢查，不是身分驗證**（``docs/ROADMAP.md`` §1 裁定：本卡所屬的
+    三張卡都不再追求驗證，改為確認宣告欄位存在且必填）。三道檢查的區辨力並不
+    相同，混為一談會高估整體強度：
+
+    - 第 1、3 道與 ``_resolve_ruling_author`` 的形狀／卡號／留言存在各檢查**可以
+      為假**，實測會拒（見 ``test_amend.py`` 對應各條；2026-08-16 一次把 ``#31``
+      的 ``--ruling-url`` 誤指向 ``#88``，即由卡號檢查當場拒收）。
+    - 第 2 道在**單一人類帳號**的 repo 裡對代貼者恆真：PM 的 ``gh`` 與需求方是
+      同一個平台身分，故它從未區辨過任何東西。**恆真本身不導出成任何值**——
+      ``ROADMAP.md`` §1 逐字禁止「把恆真性導出成 ``structurally-vacuous`` 再繼續
+      假裝那是檢查」——只在回傳的註記裡據實寫明本比對不能分辨什麼。
     """
     if not args.ruling_url:
         raise RulingError(
@@ -502,9 +527,16 @@ def _authorize_by_requester_ruling(runner, target, item, args, what: str) -> str
             f"裁定留言 author {author!r} 逐字等於本卡當前 owner；"
             "裁定者不得是被該裁定嘉惠的人（review-escalation.md §4 第 3 款同向）"
         )
+    # 這句話會永久留在 Log，且結構化欄位的消費者只讀它——所以它只陳述**做過什麼
+    # 比對**與**該比對不能分辨什麼**，不評價比對的效力。舊值「GitHub comment
+    # author 已逐字核對，非留言內文自述」字面為真卻誤導：後半句把本檢查描述成
+    # 排除了「自述」，讀者因此以為它有區辨力；而在單一人類帳號的 repo 裡，代貼者
+    # 與需求方是同一個平台身分，那道比對從未區辨過任何東西（WF-AMEND-AUTHZ-BINDING1）。
     return (
         f"依需求方 {author} 於 {args.ruling_url} 的裁定"
-        f"（GitHub comment author 已逐字核對，非留言內文自述）"
+        f"（宣告完整性已檢查：該留言存在於本卡 issue，其 GitHub author 欄逐字等於"
+        f"卡面「需求：」欄。本指令不讀取操作者身分，"
+        f"故此比對不區分「需求方本人張貼」與「他人代擬代貼」）"
     )
 
 
