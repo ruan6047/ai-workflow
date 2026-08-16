@@ -1,11 +1,21 @@
 """doctor：對帳（git worktree list vs 卡註冊、submodule 未初始化、殘留 lease、
-孤兒分支、prunable worktree）。全程唯讀——本卡刻意不實作任何回收／清理動作
-（見卡面紅線 3：破壞性操作必須先列清單再執行；本 CLI v1 只做「列清單」那一半，
-清理是另一個未來、需要明確人工核可的獨立指令，不混進 doctor）。
+孤兒分支、prunable worktree、commit trailer 完整性）。全程唯讀——本卡刻意不實作
+任何回收／清理動作（見卡面紅線 3：破壞性操作必須先列清單再執行；本 CLI v1 只做
+「列清單」那一半，清理是另一個未來、需要明確人工核可的獨立指令，不混進 doctor）。
+
+**doctor 不阻擋任何操作。** 它是唯讀顧問：把缺失變成可枚舉的清單，讓人（或 CI）
+拿去用。commit trailer 這一段尤其要講清楚——它偵測得到 `git push` 之後的缺漏，
+但它不在 push 路徑上，也不在 merge 路徑上，因此**擋不住任何一次違規的落地**。
+最接近執行面的是 CI（`DEV-AIWF-MINIMAL-CI1`，#48，持有 `.github/workflows/`），
+但依 `docs/ROADMAP.md` §2，**#48 本身也擋不了人**：CI 產生的是紅叉，紅叉要變成
+閘門需要 repo 的 `required_status_checks` ruleset，而 repo setting 不是檔案、
+不在任何寫入集的值域裡。**牙齒長出來的時點是 ruleset 套用那一刻**，不是 #48 合併
+那一刻。在那之前，本模組的全部效果就是「跑了才看得到」。
 """
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +25,7 @@ from typing import Any, Literal
 from . import git_ops
 from .card import now_iso8601
 from .cleanup import (
+    DESTRUCTIVE_ORDER,
     SUBSEQUENT_OBLIGATION_STEPS,
     CleanupTarget,
     GuardMode,
@@ -108,6 +119,10 @@ class CleanupPreviewFinding:
     blocking_reasons: tuple[str, ...]
     #: 第 5–7 步永遠列在這裡：它們是其後義務，不寫狀態面，**不阻擋 release**。
     outstanding_obligations: tuple[int, ...] = SUBSEQUENT_OBLIGATION_STEPS
+    #: 前提成立時**實際會被授權執行**的動作（`cleanup.AUTHORITY_BY_PROOF`）。
+    #: 前提全部成立 ≠ 三個刪除動作都會做：squash 合併的卡只授權移除 worktree。
+    #: 少了這一欄，預覽會讓人以為分支也會被刪。
+    authorized_actions: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -172,8 +187,16 @@ class DoctorReport:
             if not self.cleanup_previews:
                 lines.append("（無 `📦已合併` 待收尾的卡）")
             for prev in self.cleanup_previews:
-                verdict = "前提全部成立（仍須由 release／reconcile 發動）" if prev.mode == "proceed" \
-                    else "前提未全部成立 → 純偵測，不得刪除"
+                if prev.mode == "proceed":
+                    granted = "、".join(
+                        a for a in DESTRUCTIVE_ORDER if a in prev.authorized_actions
+                    ) or "（無）"
+                    verdict = (
+                        f"前提全部成立；授權範圍＝{granted}"
+                        "（仍須由 release／reconcile 發動）"
+                    )
+                else:
+                    verdict = "前提未全部成立 → 純偵測，不得刪除"
                 lines.append(f"- [{prev.mode}] {prev.card_id}（分支={prev.branch or '—'}）{verdict}")
                 for reason in prev.blocking_reasons:
                     lines.append(f"  - 阻擋：{reason}")
@@ -553,6 +576,411 @@ def _parse_iso(value: str | None) -> datetime | None:
         return None
 
 
+# --------------------------------------------------------------------------
+# commit trailer 完整性檢查（AI_WORKFLOW.md §6:210-226、AGENTS.md:10）
+# --------------------------------------------------------------------------
+#
+# 規則早就成文，守衛一直不存在：`AI_WORKFLOW.md:220` 白紙黑字寫「守衛必紅」，
+# 而 2026-08-12 之前全 repo 非 docs 路徑 grep `Implemented-by`／`interpret-trailers`
+# 零命中。後果同日實現——當日落 main 的 31 筆非 merge commit，`Implemented-by`
+# 解析得出者 0 筆。本節就是那個從缺的守衛的**偵測面**。
+#
+# 判定一律以 **git 自己的 trailer parser** 為準，不自行重寫：讀取層用
+# `%(trailers:only=true,unfold=true)`，它與 `git interpret-trailers --parse` 同一份
+# 實作。這一點是本檢查器有沒有鑑別力的關鍵——`AI_WORKFLOW.md:220` 的規則正是
+# 「trailer 與 `Co-Authored-By` 之間插一個空行就切斷解析」，而肉眼看訊息尾端
+# 「明明寫了 Implemented-by」。自行寫 regex 掃訊息會把那種 commit 判綠，等於
+# 守衛在最常發生的失敗形態上失效。
+#
+# **身分**：依 `docs/ROADMAP.md` §1，系統需要的身分只有「角色」與「模型」兩個
+# 維度，且執行面是**完整性檢查**——欄位有沒有填、能不能被解析出來。本檢查器
+# 不驗證、也刻意不提供任何手段去驗證「他真的是他」：trailer 的值一律當成**宣稱**
+# 收下，只檢查該宣稱在不在。任何比對 GitHub 帳號、模型名單或簽章的機制都不屬
+# 本模組射程（本 repo 的人類、PM、執行者、查核者共用同一個帳號，那種檢查恆真）。
+
+#: 每個級別都要求的下限。`AI_WORKFLOW.md:211`（T0／T1）與 `:216`（T2 以上）的交集
+#: ——因此判定它**不需要知道卡的級別**，而級別不在 commit 裡。
+FLOOR_TRAILERS: tuple[str, ...] = ("Requested-by", "Implemented-by")
+
+#: 只有 T2 以上要求（`AI_WORKFLOW.md:216`）。級別是卡面欄位、不在 commit 裡，故
+#: **預設不判為違規**，只如實回報有無；要把它升成違規須由呼叫端明示（見
+#: `require_planned_by`），那是呼叫端提供的級別知識，不是本檢查器導出的。
+TIER2_TRAILER = "Planned-by"
+
+#: merge commit／PR 結案紀錄／B2 權威文件核可 commit 另必加（`AI_WORKFLOW.md:222`）。
+MERGE_TRAILER = "Reviewed-by"
+
+#: 「寫了但被空行切斷」的偵測範圍。只看治理 trailer，不含 `Co-Authored-By`。
+_DECLARED_TRAILERS: tuple[str, ...] = (*FLOOR_TRAILERS, TIER2_TRAILER, MERGE_TRAILER)
+_TRAILER_LINE_RE = re.compile(r"^(?P<key>[A-Za-z0-9-]+)[ \t]*:")
+_PARAGRAPH_SPLIT_RE = re.compile(r"\n[ \t]*\n")
+
+
+def severed_declared_keys(message: str, present: set[str]) -> tuple[str, ...]:
+    """訊息尾端**寫成 trailer 樣子、卻沒被 git 解析成 trailer** 的治理欄位。
+
+    這是 `AI_WORKFLOW.md:220` 那條規則的直接偵測面：`Implemented-by` 明明寫在
+    訊息末端，只因為與 `Co-Authored-By` 之間多一個空行，`interpret-trailers`
+    就在那裡切斷，整段變成內文。肉眼看是「有寫」，機器看是「沒有」——不把兩者
+    分開講，操作者會以為守衛壞了。
+
+    判準是**自末端往回走連續的 trailer 形狀段落**，遇到第一個散文段落就停。
+    不是全文 regex：全文掃描會把「在 commit 訊息裡討論 trailer 規則」的句子
+    誤判成被切斷的 trailer——本卡自己的 commit 就會是那種訊息。
+
+    已知的漏（往少報的方向）：trailer 區塊後面又接了散文段落時，往回走第一步就
+    停，因此不會回報。此時 `missing` 仍照常成立，只是說明少了一句「你寫了但被
+    切斷」。誤判方向是少說，不是錯判。
+    """
+    found: list[str] = []
+    for para in reversed(_PARAGRAPH_SPLIT_RE.split(message.strip("\n"))):
+        lines = [ln for ln in para.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        keys: list[str] = []
+        for line in lines:
+            match = _TRAILER_LINE_RE.match(line)
+            if match is None:
+                # 續行（以空白開頭）只在段落已有 trailer 行時算數；其餘一律散文。
+                if keys and line[:1] in (" ", "\t"):
+                    continue
+                keys = []
+                break
+            keys.append(match.group("key").lower())
+        if not keys:
+            break  # 散文段落：再往前都是內文，停。
+        found.extend(keys)
+    return tuple(k for k in _DECLARED_TRAILERS if k.lower() in found and k.lower() not in present)
+
+#: 分流界線（committer date）。**不是任選**：
+#:
+#: 1. 補 trailer 只能改寫已推送歷史，本專案明令禁止 → 界線之前的 commit 產出的是
+#:    沒有人被允許修的 finding，那是噪音不是 finding。故界線不得早於「機械執行者
+#:    存在的時點」。
+#: 2. 執行者存在的時點＝本卡落 main 的時點，而那個 SHA 在寫這行時還不存在
+#:    （雞生蛋）。**日期**寫得出來、手算得出來，SHA 不行。
+#: 3. 本 repo 的 main 會被 `pull --rebase` 線性化，SHA 界線會被壓平成孤兒而失效；
+#:    committer date 在 rebase 後仍指向「它進入這條歷史的時點」，界線不會失效。
+#:
+#: 界線是**分流輔助**，不是安全邊界：`GIT_COMMITTER_DATE` 可任意設定，想繞的人
+#: 一行環境變數就繞過去了。它的作用是讓「不可補正的歷史」與「新 commit」分開列，
+#: 不是防禦。
+TRAILER_GUARD_EPOCH = "2026-08-13T00:00:00+08:00"
+
+#: 本缺陷家族的 canonical `root_cause_id`（裁定見 `AGENTS.md`「commit trailer」節）。
+#: 只約束未來；既有事件不追溯改寫。
+COMMIT_TRAILER_ROOT_CAUSE_ID = "commit-trailer-required-but-missing"
+
+#: 同一缺陷在本卡開卡前用過的其他名字。**這是唯讀的對照紀錄**，不回寫任何已寫入
+#: 的事件——留在這裡是為了讓後來的人看得出它們是同一族，而不是三件事。
+SUPERSEDED_ROOT_CAUSE_IDS: tuple[str, ...] = (
+    "governance-provenance-trailer-omission",
+    "unknown-DEV-AIWF-MINIMAL-CI1-R2-002",
+)
+
+CommitShape = Literal["implementation", "empty", "merge_clean", "merge_with_content"]
+CommitTrailerStatus = Literal["compliant", "violation", "pre_guard", "not_applicable"]
+
+
+@dataclass(frozen=True)
+class CommitRecord:
+    """一筆 commit 的原始事實。**判定層只吃這個**，不碰 git。
+
+    `trailers` 已經是 git 自己解析出來的結果（key, value），不是本模組掃出來的。
+    """
+
+    sha: str
+    parents: tuple[str, ...]
+    committed_at: str
+    authored_at: str
+    subject: str
+    message: str
+    trailers: tuple[tuple[str, str], ...]
+    #: 本 commit 相對其第一個 parent 改動的路徑（root commit 相對空樹）。
+    changed_paths: tuple[str, ...] = ()
+    #: 只對 merge commit 有意義：combined diff（`git diff-tree --cc`）列出的路徑，
+    #: 即**與所有 parent 都不同**的內容——衝突解法或 evil merge 夾帶的改動。
+    merge_content_paths: tuple[str, ...] = ()
+
+    def trailer_keys(self) -> set[str]:
+        return {k.lower() for k, _ in self.trailers}
+
+
+@dataclass(frozen=True)
+class CommitTrailerFinding:
+    sha: str
+    subject: str
+    committed_at: str
+    shape: CommitShape
+    status: CommitTrailerStatus
+    #: 該形狀所要求、而 git 解析不出來的 trailer。
+    missing: tuple[str, ...] = ()
+    #: 訊息裡**寫了**但沒被 git 解析成 trailer 的治理欄位——`AI_WORKFLOW.md:220`
+    #: 的空行切斷即為此形態。與「根本沒寫」是兩種不同的病，處置也不同。
+    severed: tuple[str, ...] = ()
+    #: 只回報、不判違規的欄位（級別不在 commit 裡時的 `Planned-by`）。
+    undecidable: tuple[str, ...] = ()
+    detail: str = ""
+
+
+@dataclass
+class CommitTrailerReport:
+    rev_range: str
+    epoch: str | None
+    require_planned_by: bool
+    findings: list[CommitTrailerFinding] = field(default_factory=list)
+
+    def by_status(self, status: CommitTrailerStatus) -> list[CommitTrailerFinding]:
+        return [f for f in self.findings if f.status == status]
+
+    @property
+    def violations(self) -> list[CommitTrailerFinding]:
+        return self.by_status("violation")
+
+    def render_text(self) -> str:
+        lines = [
+            f"## commit trailer 完整性（範圍 {self.rev_range}；AI_WORKFLOW.md §6）",
+            f"- 分流界線（committer date）：{self.epoch or '（無；全範圍一律判定）'}",
+            f"- Planned-by：{'計入違規（呼叫端宣告本範圍為 T2 以上）' if self.require_planned_by else '只回報不判違規（級別不在 commit 裡）'}",
+            f"- canonical root_cause_id：`{COMMIT_TRAILER_ROOT_CAUSE_ID}`",
+            "- **doctor 唯讀，不阻擋任何 push／merge**。最接近執行面的是 CI"
+            "（DEV-AIWF-MINIMAL-CI1，#48），但依 ROADMAP §2 連 #48 也只產生紅叉；"
+            "紅叉要變成閘門須套 repo 的 required_status_checks ruleset。",
+        ]
+        counts = {
+            s: len(self.by_status(s))  # type: ignore[arg-type]
+            for s in ("violation", "pre_guard", "compliant", "not_applicable")
+        }
+        lines.append(
+            f"- 統計：違規 {counts['violation']}／界線前（不判違規）{counts['pre_guard']}"
+            f"／合規 {counts['compliant']}／無所要求 {counts['not_applicable']}"
+            f"（共 {len(self.findings)} 筆）"
+        )
+        for f in self.findings:
+            if f.status in ("compliant", "not_applicable"):
+                continue
+            flag = "違規" if f.status == "violation" else "界線前"
+            lines.append(f"- [{flag}／{f.shape}] {f.sha[:12]} {f.committed_at} {f.subject}")
+            lines.append(f"  - {f.detail}")
+        return "\n".join(lines)
+
+
+def classify_commit_shape(record: CommitRecord) -> CommitShape:
+    """判定 commit 形狀。**判準全部從 commit 自身導出**，不看卡面、不看人工標註。
+
+    四種被明確裁定的形狀（卡面驗收第 2 條）：
+
+    - **merge commit**（`parents >= 2`）：分兩種。combined diff（`--cc`）為空的是
+      `merge_clean`——它的 tree 完全由 parent 解釋得出，**沒有自己著作的內容**，
+      故不是實作 commit。combined diff 非空的是 `merge_with_content`：那些行與
+      **每一個** parent 都不同，是在 merge 當下寫下的（衝突解法／evil merge），
+      屬著作內容，故照實作 commit 辦。這也順手堵掉「把改動塞進 merge commit」
+      這條規避路徑。
+    - **基線更新 merge**：也是 merge commit，同一格處理。本模組**刻意不區分**
+      它與整合 merge——兩者都只是 `parents >= 2`，誰是 main 取決於你站在哪個
+      ref 上看，那是脈絡不是 commit 自身的性質。既然導不出來就不假裝導得出來；
+      何況兩者要求相同（`AI_WORKFLOW.md:222` 對 merge commit 一視同仁），區分了
+      也不改變判定。
+    - **cherry-pick**：不設特例，一律當普通實作 commit。理由是它**認不出來**：
+      `-x` 才會留 `(cherry picked from commit …)`，而 `-x` 是選配，沒帶就與原生
+      commit 完全無法區分。認不出來就 fail-closed。代價為零——cherry-pick 連
+      訊息一起複製，來源合規則結果也合規；`-x` 那一行不是 `key: value`，
+      `only=true` 會濾掉它，不影響同區塊其他 trailer 的解析。
+    - **空 commit**（單 parent 且無任何路徑改動）：不是實作 commit。它沒有著作
+      任何內容，也就沒有內容的來歷需要宣告——與 `merge_clean` 同一條原則
+      （**要求 trailer 的是內容，不是 commit 這個容器**），不是兩條臨時規則。
+      推論一：空 commit 藏不了東西，豁免它不開洞。推論二：本檢查器**逐 commit
+      獨立判定、不繼承**——一筆帶齊 trailer 的空 commit 不會使它前面那筆裸的
+      commit 變綠（git metadata 本來就不由 descendant 繼承）。至於治理層要不要
+      **採認**那種補記，是規則層裁定，**不在本卡射程**（見卡面射程說明）；本模組
+      只提供分流能力，不代替需求方裁定。
+
+    root commit（`parents` 為空）走 `implementation`：它相對空樹的差異就是它的內容。
+    """
+    if len(record.parents) >= 2:
+        return "merge_with_content" if record.merge_content_paths else "merge_clean"
+    if not record.changed_paths:
+        return "empty"
+    return "implementation"
+
+
+def required_trailers(shape: CommitShape, *, require_planned_by: bool = False) -> tuple[str, ...]:
+    """該形狀在 `AI_WORKFLOW.md` §6 下必須帶的 trailer。"""
+    if shape == "empty":
+        return ()
+    if shape == "merge_clean":
+        return (MERGE_TRAILER,)
+    required = list(FLOOR_TRAILERS)
+    if require_planned_by:
+        required.append(TIER2_TRAILER)
+    if shape == "merge_with_content":
+        required.append(MERGE_TRAILER)
+    return tuple(required)
+
+
+def evaluate_commit_trailers(
+    record: CommitRecord,
+    *,
+    epoch: str | None = TRAILER_GUARD_EPOCH,
+    require_planned_by: bool = False,
+) -> CommitTrailerFinding:
+    """對單一 commit 下判定。純函式，不碰 git，可用建構出來的 record 直接測。"""
+    shape = classify_commit_shape(record)
+    required = required_trailers(shape, require_planned_by=require_planned_by)
+    present = record.trailer_keys()
+    missing = tuple(k for k in required if k.lower() not in present)
+
+    severed = severed_declared_keys(record.message, present)
+
+    undecidable: tuple[str, ...] = ()
+    if (
+        not require_planned_by
+        and shape in ("implementation", "merge_with_content")
+        and TIER2_TRAILER.lower() not in present
+    ):
+        undecidable = (TIER2_TRAILER,)
+
+    committed = _parse_iso(record.committed_at)
+    epoch_dt = _parse_iso(epoch)
+    before_epoch = (
+        epoch_dt is not None and committed is not None and committed < epoch_dt
+    )
+
+    if not required:
+        detail = (
+            "空 commit：無任何路徑改動，沒有著作內容，故 §6 的來歷 trailer 無所加諸。"
+            "注意本檢查器逐 commit 獨立判定、不繼承——它不會使任何其他 commit 變綠。"
+        )
+        return CommitTrailerFinding(
+            sha=record.sha, subject=record.subject, committed_at=record.committed_at,
+            shape=shape, status="not_applicable", severed=severed, detail=detail,
+        )
+
+    if not missing:
+        detail = f"已帶齊 {'／'.join(required)}（由 git trailer parser 解析得出）。"
+        if severed:
+            detail += f" 但另有寫了卻被空行切斷的欄位：{'／'.join(severed)}。"
+        return CommitTrailerFinding(
+            sha=record.sha, subject=record.subject, committed_at=record.committed_at,
+            shape=shape, status="compliant", severed=severed, undecidable=undecidable,
+            detail=detail,
+        )
+
+    parts = [f"缺 {'／'.join(missing)}"]
+    if severed:
+        parts.append(
+            f"訊息末端**寫了** {'／'.join(severed)} 但 git 解析不到——"
+            "`AI_WORKFLOW.md:220`：trailer 與 `Co-Authored-By` 等之間插入空行即切斷解析，"
+            "被切掉的行不算 trailer"
+        )
+    if before_epoch:
+        parts.append(
+            f"committer date 早於分流界線 {epoch}，補它只能改寫已推送歷史（本專案禁止）；"
+            "故列為界線前，不計違規。是否採認屬規則層裁定，本檢查器不裁定"
+        )
+    return CommitTrailerFinding(
+        sha=record.sha, subject=record.subject, committed_at=record.committed_at,
+        shape=shape, status="pre_guard" if before_epoch else "violation",
+        missing=missing, severed=severed, undecidable=undecidable,
+        detail="；".join(parts) + "。",
+    )
+
+
+def _git_read(repo_root: Path, args: list[str]) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), *args], capture_output=True, text=True, check=False
+    )
+    if proc.returncode != 0:
+        raise git_ops.GitError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+_REC = "\x00"
+_FLD = "\x1f"
+_END = "\x1e"
+_LOG_FORMAT = (
+    f"%x00%H{_FLD}%P{_FLD}%cI{_FLD}%aI{_FLD}%s{_FLD}"
+    "%(trailers:only=true,unfold=true)" + _END
+)
+
+
+def _parse_trailer_block(text: str) -> tuple[tuple[str, str], ...]:
+    out: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        key, sep, value = line.partition(":")
+        if not sep:
+            continue
+        out.append((key.strip(), value.strip()))
+    return tuple(out)
+
+
+def read_commit_records(repo_root: Path, rev_range: str) -> list[CommitRecord]:
+    """讀出 rev_range 內每筆 commit 的事實。唯讀（`log`／`diff-tree`）。
+
+    刻意用 `%(trailers:…)` 而非自行解析：那個 placeholder 與
+    `git interpret-trailers --parse` 是同一份實作，`AI_WORKFLOW.md:220` 指名的
+    就是它的行為。自己寫 regex 會在「空行切斷」這個最常見的失敗形態上判錯。
+    """
+    log = _git_read(repo_root, ["log", rev_range, f"--format={_LOG_FORMAT}", "--name-only"])
+    bodies_raw = _git_read(repo_root, ["log", rev_range, f"--format=%x00%H{_FLD}%B"])
+
+    bodies: dict[str, str] = {}
+    for chunk in bodies_raw.split(_REC):
+        if not chunk.strip():
+            continue
+        sha, _, body = chunk.partition(_FLD)
+        bodies[sha.strip()] = body
+
+    records: list[CommitRecord] = []
+    for chunk in log.split(_REC):
+        if not chunk.strip():
+            continue
+        head, _, files = chunk.partition(_END)
+        fields = head.split(_FLD)
+        if len(fields) < 6:
+            continue
+        sha, parents, cdate, adate, subject, trailers = fields[:6]
+        parent_shas = tuple(p for p in parents.split() if p)
+        changed = tuple(ln for ln in (l.strip() for l in files.splitlines()) if ln)
+        merge_paths: tuple[str, ...] = ()
+        if len(parent_shas) >= 2:
+            cc = _git_read(
+                repo_root,
+                ["diff-tree", "--cc", "--no-commit-id", "-r", "--name-only", sha],
+            )
+            merge_paths = tuple(ln for ln in (l.strip() for l in cc.splitlines()) if ln)
+        records.append(
+            CommitRecord(
+                sha=sha, parents=parent_shas, committed_at=cdate, authored_at=adate,
+                subject=subject, message=bodies.get(sha, ""),
+                trailers=_parse_trailer_block(trailers),
+                changed_paths=changed, merge_content_paths=merge_paths,
+            )
+        )
+    return records
+
+
+def audit_commit_trailers(
+    repo_root: Path,
+    rev_range: str,
+    *,
+    epoch: str | None = TRAILER_GUARD_EPOCH,
+    require_planned_by: bool = False,
+) -> CommitTrailerReport:
+    report = CommitTrailerReport(
+        rev_range=rev_range, epoch=epoch, require_planned_by=require_planned_by
+    )
+    for record in read_commit_records(repo_root, rev_range):
+        report.findings.append(
+            evaluate_commit_trailers(
+                record, epoch=epoch, require_planned_by=require_planned_by
+            )
+        )
+    return report
+
+
 def run_doctor(
     repo_root: Path,
     registry: TasksMdRegistry | None = None,
@@ -707,6 +1135,7 @@ def run_doctor(
                     card_id=rc.card_id, branch=rc.branch,
                     worktree_path=str(wt) if wt else None,
                     mode=decision.mode, blocking_reasons=decision.reasons,
+                    authorized_actions=decision.authorized_actions,
                 )
             )
 
@@ -714,13 +1143,28 @@ def run_doctor(
 
 
 __all__ = [
+    "COMMIT_TRAILER_ROOT_CAUSE_ID",
+    "FLOOR_TRAILERS",
+    "MERGE_TRAILER",
+    "SUPERSEDED_ROOT_CAUSE_IDS",
+    "TIER2_TRAILER",
+    "TRAILER_GUARD_EPOCH",
     "BranchFinding",
     "CleanupPreviewFinding",
+    "CommitRecord",
+    "CommitTrailerFinding",
+    "CommitTrailerReport",
     "DoctorReport",
     "LeaseFinding",
     "ReviewChannelFinding",
     "SubmoduleFinding",
     "WorktreeFinding",
+    "audit_commit_trailers",
     "audit_review_channel",
+    "classify_commit_shape",
+    "evaluate_commit_trailers",
+    "read_commit_records",
+    "required_trailers",
     "run_doctor",
+    "severed_declared_keys",
 ]
