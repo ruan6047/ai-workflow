@@ -7,14 +7,18 @@ from pathlib import Path
 
 from wf_cli.doctor import (
     COMMIT_TRAILER_ROOT_CAUSE_ID,
+    LEGACY_AUTHORITY_NOTE_EXPLANATION,
+    LEGACY_AUTHORITY_NOTE_MARKER,
     SUPERSEDED_ROOT_CAUSE_IDS,
     TRAILER_GUARD_EPOCH,
     CommitRecord,
     DoctorReport,
     audit_commit_trailers,
+    audit_legacy_authority_notes,
     audit_review_channel,
     classify_commit_shape,
     evaluate_commit_trailers,
+    find_legacy_authority_notes,
     required_trailers,
     run_doctor,
     severed_declared_keys,
@@ -1317,3 +1321,161 @@ def test_rendered_report_refuses_to_claim_it_blocks_anything(sandbox_repo):
     text = audit_commit_trailers(sandbox_repo, "main", epoch=None).render_text()
     assert "唯讀" in text and "不阻擋" in text
     assert "DEV-AIWF-MINIMAL-CI1" in text, "必須指名強制面的承接者"
+
+
+# --------------------------------------------------------------------------
+# `#62` 之前的 amend 授權措辭：既存留痕的強度標記（WF-AMEND-AUTHZ-BINDING1）
+# --------------------------------------------------------------------------
+#
+# 既存事件不得追溯改寫，所以處置是讓它們可被機械認出。判準是舊字面本身，且
+# **必須落在授權欄內**——下面的假陰／假陽兩組測試就是在釘這條界線。
+#
+# 下面的夾具形狀取自 2026-08-16 全庫掃描實見的四行**沒有授權欄卻帶著舊措辭**的
+# Log／正文（`#62` 的痛點正文、`#62` 的 `--acceptance` 與 `--resources` 兩筆 amend
+# 原值／理由引用、`#22` 的 handoff 證據敘述）。報它們＝說一行「授權留痕不足」，
+# 而它壓根沒有授權留痕。
+#
+# ⚠️ 誠實界線：真實那四行裡只有兩行帶完整的 `LEGACY_AUTHORITY_NOTE_MARKER`，另兩行
+# 只引到前半句「已逐字核對」。夾具一律用完整 marker，是**刻意取較嚴的情形**——
+# 那才真正考驗位置錨；但因此夾具是照形狀重建的，不是那四行的逐字複本。
+
+_OLD_NOTE = f"（GitHub comment author 已逐字核對，{LEGACY_AUTHORITY_NOTE_MARKER}）"
+_NEW_NOTE = (
+    "（已核對：該 URL 指向本卡 issue 的既存留言，且其 GitHub author 欄逐字等於"
+    "卡面「需求：」欄。本指令不讀取留言內文或操作者身分，故不判定留言內容是否"
+    "構成裁定——上句「裁定」是操作者的宣告，不是本指令查得的事實——"
+    "亦不區分「需求方本人張貼」與「他人代擬代貼」）"
+)
+
+
+def _amend_line(op: str, note: str, *, old_value: str = "舊痛點", ts: str = "2026-08-12T12:27:51+08:00") -> str:
+    return (
+        f"- {ts} amend by wf-cli（op {op}）→ 核心痛點："
+        f"原值「{old_value}」→ 新值「新痛點」；理由 需求方裁定；"
+        f"授權 依需求方 ruan6047 於 https://github.com/o/r/issues/1#issuecomment-5 的裁定{note}。"
+    )
+
+
+def test_legacy_authority_note_is_detected_with_locator():
+    findings = find_legacy_authority_notes("CARD1", _amend_line("166322be", _OLD_NOTE))
+    assert len(findings) == 1
+    f = findings[0]
+    assert (f.card_id, f.op_id, f.field_name) == ("CARD1", "166322be", "核心痛點")
+    assert f.timestamp == "2026-08-12T12:27:51+08:00"
+
+
+def test_new_wording_authority_note_is_not_reported():
+    """`#62` 之後的措辭不得被報成舊留痕，否則修好的卡會永遠掛在報告上。"""
+    assert find_legacy_authority_notes("CARD1", _amend_line("aaaaaaaa", _NEW_NOTE)) == []
+
+
+@pytest.mark.parametrize(
+    "shape, line",
+    [
+        (
+            "卡的痛點正文（#62 本人）",
+            f"- **痛點**：amend_cmd.py:507 無條件輸出常數字面「GitHub comment author "
+            f"已逐字核對，{LEGACY_AUTHORITY_NOTE_MARKER}」到授權欄。",
+        ),
+        (
+            "--acceptance amend 的原值引用（#62）",
+            "- 2026-08-16T10:40:37+08:00 amend by wf-cli（op 05cf6174）→ 驗收條件："
+            f"原值「[ ] 移除 amend_cmd.py:507 那句「…{LEGACY_AUTHORITY_NOTE_MARKER}」」"
+            "→ 新值「[ ] 改寫措辭」；理由 需求方裁定。",
+        ),
+        (
+            "handoff 的證據敘述（#22）",
+            "- 2026-08-11T23:50:49+08:00 handoff by wf-cli → owner 跨家族查核；"
+            f"證據 R3：三項 blocking 全處置，含「{LEGACY_AUTHORITY_NOTE_MARKER}」一節。",
+        ),
+    ],
+)
+def test_marker_outside_the_authority_field_is_not_reported(shape, line):
+    """只是**引述**舊措辭的行沒有授權欄，報它就是新的過度宣稱。
+
+    這三種形狀都是實見的（2026-08-16 掃描，見上方註解含誠實界線）。排除是
+    **構造性**的——靠「授權欄」這個位置錨，不是把某張卡特判掉——所以將來任何
+    新的引述同樣不會誤報。實測：對真實 149 張卡面，粗判準 16 行、錨定後 14 行。
+    """
+    assert find_legacy_authority_notes("CARD1", line) == [], f"誤報了：{shape}"
+
+
+def test_old_literal_quoted_in_old_value_does_not_taint_a_new_authority_note():
+    """同一行可以「原值引用舊字面」＋「授權欄已是新措辭」——不得誤報。
+
+    這不是假想：`#62` 自己的痛點正文就引用著舊字面，日後用新版 CLI 再修訂它一次，
+    產生的就正是這種行。用整行比對會判它是舊留痕。
+    """
+    line = _amend_line(
+        "bbbbbbbb", _NEW_NOTE, old_value=f"…常數字面「{LEGACY_AUTHORITY_NOTE_MARKER}」…"
+    )
+    assert LEGACY_AUTHORITY_NOTE_MARKER in line  # 夾具確實含舊字面
+    assert find_legacy_authority_notes("CARD1", line) == []
+
+
+@pytest.mark.parametrize("n", [0, 1, 3, 7])
+def test_finding_count_follows_the_input_and_is_never_hardcoded(n):
+    """母體會隨新事件增減，所以檢查不得寫死任何計數。
+
+    本卡在途期間該缺陷仍在生產新實例（13 → 14），釘死數字的檢查隔天就是錯的。
+    """
+    body = "\n".join(_amend_line(f"{i:08x}", _OLD_NOTE) for i in range(n))
+    assert len(find_legacy_authority_notes("CARD1", body)) == n
+
+
+def test_not_scanned_is_distinguished_from_scanned_and_clean():
+    """沒掃 ≠ 沒有。兩者都回空清單，若報告不分就成了永不會響的偵測器。"""
+    not_scanned = audit_legacy_authority_notes(None)
+    assert (not_scanned.status, not_scanned.findings) == ("not_scanned", [])
+    assert audit_legacy_authority_notes({}).status == "not_scanned"
+
+    clean = audit_legacy_authority_notes({"CARD1": _amend_line("cccccccc", _NEW_NOTE)})
+    assert (clean.status, clean.scanned_cards, clean.findings) == ("scanned", 1, [])
+
+    dirty = audit_legacy_authority_notes(
+        {"CARD1": _amend_line("dddddddd", _OLD_NOTE), "CARD2": _amend_line("eeeeeeee", _OLD_NOTE)}
+    )
+    assert dirty.status == "scanned" and len(dirty.findings) == 2
+    assert dirty.affected_card_ids == ("CARD1", "CARD2")
+
+
+def test_rendered_report_separates_not_scanned_from_clean(sandbox_repo):
+    """render_text 也要分得開，否則人類讀者拿到的還是「一切乾淨」。"""
+    unscanned = run_doctor(sandbox_repo).render_text()
+    assert "未掃描" in unscanned and "這不等於沒有" in unscanned
+
+    report = run_doctor(sandbox_repo)
+    report.legacy_authority_notes = audit_legacy_authority_notes(
+        {"CARD1": _amend_line("ffffffff", _OLD_NOTE)}
+    )
+    text = report.render_text()
+    assert "CARD1" in text and "ffffffff" in text
+    assert LEGACY_AUTHORITY_NOTE_EXPLANATION in text
+
+
+def test_explanation_reports_evidence_strength_not_authorization_validity():
+    """⚠️ 這個檢查本身不得變成新的過度宣稱。
+
+    它必須說清楚三件事，且**第 3 件是關鍵**：報的是留痕強度不足，不是授權無效。
+    doctor 讀不到那則留言的內文，沒有立場評價個別授權的真假。
+
+    **突變檢驗**：把說明改成「該授權無效」之類的斷言，本測試轉紅。
+    """
+    text = LEGACY_AUTHORITY_NOTE_EXPLANATION
+    # (1) 這是 #62 之前的措辭
+    assert "#62 之前的措辭" in text
+    # (2) 區辨力構造上不成立，且說明為什麼（同一個帳號 → 比對恆真）
+    assert "構造上不成立" in text
+    assert "恆真" in text and "同一個平台身分" in text
+    # (3) 底下的授權可能仍然真實——這是強度陳述，不是效力裁定
+    assert "不表示那些授權是假的" in text
+    assert "不是「那次授權無效」" in text
+    # 反向：不得出現把它讀成效力裁定的字樣
+    for overclaim in ("授權無效", "授權不成立", "該次授權為假", "撤銷"):
+        assert overclaim not in text.replace("不是「那次授權無效」", "")
+
+
+def test_finding_carries_no_verdict_field_about_the_authorization():
+    """finding 只帶定位資訊。加一個「這次授權有效嗎」的欄位就是越權。"""
+    f = find_legacy_authority_notes("CARD1", _amend_line("11111111", _OLD_NOTE))[0]
+    assert set(vars(f)) == {"card_id", "timestamp", "op_id", "field_name"}

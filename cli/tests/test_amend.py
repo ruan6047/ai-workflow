@@ -1034,7 +1034,7 @@ def test_core_pain_succeeds_with_requester_ruling_and_records_authority(gov_card
     assert "→ 核心痛點：原值「原始痛點」→ 新值「收窄後的痛點」" in body
     # 授權必須逐字留在 Log：稽核者要能區分「開卡就這樣寫」與「事後經誰裁定改的」
     assert f"授權 依需求方 {REQUESTER} 於" in body
-    # 註記的措辭本身由 test_authority_note_* 兩條釘住（見下）。
+    # 註記的措辭本身由 test_authority_note_* 三條釘住（見下）。
 
 
 # 授權註記的**措辭**：字面為真還不夠，語意不得誇大（WF-AMEND-AUTHZ-BINDING1）
@@ -1045,51 +1045,89 @@ def test_core_pain_succeeds_with_requester_ruling_and_records_authority(gov_card
 # （PM 的 gh 與需求方同為 ruan6047），那道比對對代貼者恆真，從未區辨過任何東西。
 # 已實現後果：13 筆事件／9 張卡（2026-08-16 對 Project #4 全部 148 個 item 逐張掃描）。
 #
-# 下面兩條是一組：一條釘「該說的有說」，一條釘「不該說的沒說」。任一單獨存在都
-# 不夠——只釘正面，可以在保留誇大句的同時加上免責句而仍然全綠。
+# 下面三條是一組，缺一都不夠：
+#
+#   (a) 該說的有說   —— 免責句在不在
+#   (b) 不該說的沒說 —— 已退役的誇大句在不在
+#   (c) 沒有總結標籤 —— 括號內第一個字起就是事實列舉，中間沒插入任何評價
+#
+# 為什麼 (c) 非有不可：(a)+(b) 只擋得住「刪掉免責句」與「還原已知舊句」。R1 那次
+# 退回正是兩者都綠——免責句在、舊句不在，卻在前面新加了一個總結標籤。標籤是一個
+# **開放集合**，列不完，所以不能用黑名單擋；改用結構斷言，讓「（」與第一個事實
+# 之間不容任何字元存在。任何新標籤都必然插在那個位置，因此必然被抓到。
 
-#: 已退役的措辭。**不是**通用黑名單，而是逐字釘住本卡淘汰掉的那一句：
-#: 它宣稱本比對排除了「留言內文自述」，即宣稱了它沒有的區辨力。
-_RETIRED_DISCRIMINATION_CLAIM = "非留言內文自述"
+#: 已退役的措辭。**不是**通用黑名單，而是逐字釘住本卡兩輪各自淘汰掉的那一句。
+#: R0：宣稱本比對排除了「留言內文自述」，即宣稱了它沒有的區辨力。
+#: R1：把兩個欄位相等總結成一個名為「完整性」、斷言「已檢查」的結論（R1-001）。
+_RETIRED_CLAIMS = ("非留言內文自述", "宣告完整性已檢查")
+
+#: 註記括號內的開頭。**逐字**釘住「『（』之後立刻是第一個事實」，中間不容任何
+#: 引導語。這是 (c) 的實作：標籤擋不完，但插入點只有一個。
+_NOTE_OPENS_ON_FACTS = "的裁定（已核對：該 URL 指向本卡 issue 的既存留言"
+
+
+def _amend_core_pain(gov_card) -> str:
+    """跑一次成功的核心痛點更正，回傳卡面 body。"""
+    rc = run_cli(
+        ["amend", *GOV_TARGET, "GOV-DEMO1", "--reason", "需求方縮小射程",
+         "--core-pain", "收窄後的痛點", "--ruling-url", _ruling()]
+    )
+    assert rc == 0
+    return _gov_item(gov_card).body
 
 
 def test_authority_note_discloses_what_the_comparison_cannot_distinguish(gov_card):
-    """授權註記須寫明「比對過什麼」＋「這比對不能分辨什麼」。
+    """授權註記須寫明「比對過什麼」＋「這比對分辨不了什麼」。
 
-    **突變檢驗**：刪掉回傳字面裡的「不區分…代擬代貼」一句（或整句改回舊值），
-    本測試轉紅——因為稽核者從結構化欄位讀到的就只有這一句話。
+    三項免責缺一不可，因為本函式**沒看**的東西有三類：留言內文、操作者身分，
+    以及由前兩者衍生的「這則留言到底算不算裁定」。
+
+    **突變檢驗**：刪掉任一免責句，本測試轉紅。
     """
-    rc = run_cli(
-        ["amend", *GOV_TARGET, "GOV-DEMO1", "--reason", "需求方縮小射程",
-         "--core-pain", "收窄後的痛點", "--ruling-url", _ruling()]
-    )
-    assert rc == 0
-    body = _gov_item(gov_card).body
+    body = _amend_core_pain(gov_card)
     # 註記確實被寫成「授權」欄，而不是混在 --reason 的自由文字裡
     assert "；授權 " in body
-    # (a) 做過什麼比對——據實陳述被比對的兩個欄位，不評價其效力
+    # (a) 做過什麼比對——據實陳述被比對的兩件事，不評價其效力
+    assert "該 URL 指向本卡 issue 的既存留言" in body
     assert "其 GitHub author 欄逐字等於卡面「需求：」欄" in body
-    # (b) 這比對不能分辨什麼——以及為什麼不能（本指令根本不讀操作者身分）
-    assert "本指令不讀取操作者身分" in body
+    # (b) 分辨不了什麼——以及為什麼（本函式只取 payload 的 user.login）
+    assert "本指令不讀取留言內文或操作者身分" in body
+    assert "不判定留言內容是否構成裁定" in body
     assert "不區分「需求方本人張貼」與「他人代擬代貼」" in body
+    # (c) 外層那個「裁定」自己也要降級：本函式讀不到內文，無從得知它是不是裁定
+    assert "上句「裁定」是操作者的宣告，不是本指令查得的事實" in body
 
 
-def test_authority_note_does_not_claim_discriminating_power(gov_card):
-    """授權註記不得宣稱本比對排除了什麼。
+def test_authority_note_does_not_claim_more_than_it_checked(gov_card):
+    """授權註記不得出現任何已退役的誇大句。
 
-    **突變檢驗**：把 ``amend_cmd._authorize_by_requester_ruling`` 的回傳字面改回
-    「（GitHub comment author 已逐字核對，非留言內文自述）」，本測試轉紅。
+    **突變檢驗**：把回傳字面改回 R0 的「…已逐字核對，非留言內文自述」或 R1 的
+    「宣告完整性已檢查：…」，本測試轉紅。
     """
-    rc = run_cli(
-        ["amend", *GOV_TARGET, "GOV-DEMO1", "--reason", "需求方縮小射程",
-         "--core-pain", "收窄後的痛點", "--ruling-url", _ruling()]
-    )
-    assert rc == 0
-    body = _gov_item(gov_card).body
-    assert _RETIRED_DISCRIMINATION_CLAIM not in body
+    body = _amend_core_pain(gov_card)
+    for claim in _RETIRED_CLAIMS:
+        assert claim not in body, f"已退役的誇大措辭又出現在授權欄：{claim!r}"
     # 刻意**只**斷言寫進 Log 的內容，不掃原始碼：註記的字面就是組進 body 的那一份，
     # 這條斷言已足以在還原舊值時轉紅。加掃原始碼只會把「模組 docstring 逐字引用
     # 舊值以說明它為何被淘汰」也一起判紅——那份說明必須留著。
+
+
+def test_authority_note_has_no_summary_label_before_the_facts(gov_card):
+    """括號內不得有總結標籤：「（」之後**立刻**是第一個事實。
+
+    這條擋的是 R1-001 那個形狀——不是某個特定字串，而是「在事實前面加一句話替
+    它們命名」這個動作。標籤是開放集合（「宣告完整性已檢查」「授權綁定成立」
+    「基本檢查通過」…列不完），黑名單擋不住；但它們**只能插在同一個位置**，
+    所以改釘那個位置。
+
+    **突變檢驗**：在「（」與「已核對：」之間插入任何字（含較弱的形容詞，例如
+    「初步核對：」），本測試轉紅。
+    """
+    body = _amend_core_pain(gov_card)
+    assert _NOTE_OPENS_ON_FACTS in body, (
+        "註記括號內開頭被改動：「（」之後應立刻是第一個事實，"
+        "中間不得插入任何替這些事實命名的引導語"
+    )
 
 
 def test_core_pain_rejected_when_ruling_author_is_not_the_requester(gov_card):
@@ -1218,6 +1256,14 @@ def test_tier_downgrade_from_redline_succeeds_with_ruling(gov_card):
     # 降級必須逐字標記，稽核者不必自己比 T 值大小
     assert "→ 級別（降級）：原值「T4」→ 新值「T2」" in item.body
     assert f"授權 依需求方 {REQUESTER} 於" in item.body
+    # 降級與核心痛點共用同一個 ruling_note，故**同一套措辭紅線也適用這條路徑**。
+    # 這裡逐字釘住，是為了讓「日後把兩條路徑拆成各自的註記」不能靜默退化——
+    # 只斷言有「；授權 …」的話，拆開後其中一條改回誇大措辭仍會全綠
+    # （跨家族查核 R1 的非阻擋建議）。
+    assert _NOTE_OPENS_ON_FACTS in item.body
+    assert "不判定留言內容是否構成裁定" in item.body
+    for claim in _RETIRED_CLAIMS:
+        assert claim not in item.body
 
 
 def test_tier_upgrade_needs_no_ruling(gov_card):

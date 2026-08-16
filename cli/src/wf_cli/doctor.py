@@ -136,6 +136,11 @@ class DoctorReport:
     stale_leases: list[LeaseFinding] = field(default_factory=list)
     cleanup_previews: list[CleanupPreviewFinding] = field(default_factory=list)
     cleanup_preview_enabled: bool = False
+    #: `#62` 之前措辭的既存授權留痕。預設 `not_scanned`——呼叫端沒給卡面時，
+    #: 報告要說「沒掃」，不能讓空清單被讀成「都乾淨」。
+    legacy_authority_notes: "LegacyAuthorityNoteReport" = field(
+        default_factory=lambda: LegacyAuthorityNoteReport()
+    )
 
     def orphan_worktrees(self) -> list[WorktreeFinding]:
         return [w for w in self.worktrees if w.is_orphan]
@@ -206,6 +211,28 @@ class DoctorReport:
                     + " 步）不寫狀態面，未完成不阻擋 release"
                 )
             lines.append("")
+        legacy = self.legacy_authority_notes
+        lines.append("## 6. 既存授權留痕的措辭（#62 之前；唯讀，doctor 不改任何卡面）")
+        if legacy.status == "not_scanned":
+            lines.append(
+                "（未掃描：本次呼叫未提供卡面。**這不等於沒有**——"
+                "要掃描請以 card_bodies 傳入卡面。）"
+            )
+        elif not legacy.findings:
+            lines.append(f"（已掃描 {legacy.scanned_cards} 張卡，無舊措辭授權留痕）")
+        else:
+            lines.append(
+                f"已掃描 {legacy.scanned_cards} 張卡，"
+                f"發現 {len(legacy.findings)} 行、"
+                f"涉及 {len(legacy.affected_card_ids)} 張卡："
+            )
+            for f_ in legacy.findings:
+                where = f_.timestamp or "（時間戳無法解析）"
+                op_s = f"op {f_.op_id}" if f_.op_id else "op 未知"
+                field_s = f_.field_name or "欄位未知"
+                lines.append(f"- {f_.card_id}　{where}　{op_s}　→ {field_s}")
+            lines.append(f"  {LEGACY_AUTHORITY_NOTE_EXPLANATION}")
+        lines.append("")
         n_orphan = len(self.orphan_worktrees())
         lines.append(
             f"摘要：{len(self.worktrees)} 個額外 worktree，{n_orphan} 個孤兒；"
@@ -981,6 +1008,128 @@ def audit_commit_trailers(
     return report
 
 
+# --------------------------------------------------------------------------
+# `#62` 之前的 amend 授權措辭：既存留痕的**強度**標記
+# --------------------------------------------------------------------------
+#
+# `WF-AMEND-AUTHZ-BINDING1`（#62）之前，`amend` 在 author 檢查通過時無條件寫入
+# 一句宣稱區辨力的常數。既存事件**不得追溯改寫**（唯一寫入通道的留痕不可改），
+# 所以處置不是修那些行，而是讓它們**可被機械認出**。
+#
+# 判準就是舊字面本身——它是乾淨的 marker，不需要另建索引：
+#
+#   - 2026-08-16 全庫掃描（Project #4 全部 item、兩個 repo）顯示帶此字面的授權
+#     註記前綴 100% 一致；
+#   - `#62` 之後的新措辭**刻意不含**這個片語（見 `amend_cmd` 的回傳字面與
+#     `test_amend.py` 的反向斷言），所以新舊分得開；
+#   - 因此本檢查**不寫死任何計數**：母體會隨新舊事件增減，數字由掃描當下決定。
+
+#: 舊措辭裡宣稱區辨力的那半句。`#62` 之後的措辭不含它。
+LEGACY_AUTHORITY_NOTE_MARKER = "非留言內文自述"
+
+#: 授權註記在 Log 行內的位置錨（`amend_cmd` 以 `；授權 {note}` 附加）。
+#:
+#: ⚠️ **必須同時要求這個錨**，不能只找上面的字面。該字面也會出現在
+#: **只是引述它**的行裡——實測三處：`#62` 自己的核心痛點正文與一筆 `--acceptance`
+#: amend 的「原值」引用、`#22` 一筆 handoff 的證據敘述。那些行根本沒有授權欄，
+#: 報它們就是本卡要消滅的那種**超出證據的宣稱**（說一行「授權留痕不足」，
+#: 而它壓根沒有授權留痕）。錨定位置讓三者一律被排除，且是**構造性**排除
+#: ——不是把 `#62` 特判掉，所以將來任何新的引述也同樣不會誤報。
+_AUTHORITY_FIELD_ANCHOR = "；授權 "
+
+#: 報告裡只印一次的說明。三件事缺一不可，第 3 件尤其不能省。
+LEGACY_AUTHORITY_NOTE_EXPLANATION = (
+    "這些行的授權欄使用 #62 之前的措辭（「…已逐字核對，非留言內文自述」）。"
+    "該句宣稱的區辨力在本 repo 構造上不成立：它比對裁定留言的 GitHub comment "
+    "author 與卡面「需求：」欄，而本 repo 只有一個人類帳號，兩者是同一個平台"
+    "身分，故該比對恆真、從未區辨過任何東西。"
+    "⚠️ 這**不表示那些授權是假的**：底下的裁定可能完全真實。本檢查說的是"
+    "「這一行不構成證據」，不是「那次授權無效」——要判斷個別授權的真假，"
+    "須另行查閱該行 --ruling-url 指向的留言本身。"
+)
+
+_LOG_LINE_RE = re.compile(
+    r"(?P<ts>\d{4}-\d{2}-\d{2}T[\d:]{8}[+\-][\d:]+)\s+amend by wf-cli"
+    r"（op (?P<op>[0-9a-f]+)）→\s*(?P<field>[^：]+)："
+)
+
+
+@dataclass(frozen=True)
+class LegacyAuthorityNoteFinding:
+    """一行帶 `#62` 之前措辭的 amend 授權註記。
+
+    **本 finding 陳述的是留痕強度，不是授權真假**——見
+    `LEGACY_AUTHORITY_NOTE_EXPLANATION`。欄位刻意只有定位資訊，不含任何對該次
+    授權的評價：doctor 讀不到那則留言的內文，沒有立場評價它。
+    """
+
+    card_id: str
+    #: Log 行的時間戳／op 識別碼／被修訂的欄位；解析不到時為 None（不猜）。
+    timestamp: str | None = None
+    op_id: str | None = None
+    field_name: str | None = None
+
+
+@dataclass
+class LegacyAuthorityNoteReport:
+    """既存授權留痕的措辭掃描結果。
+
+    `status` 區分「掃過、沒有」與「根本沒掃」。這不是形式主義：呼叫端不提供卡面
+    時，findings 一樣是空的，若兩者都印「無」，就成了一個永遠不會響的偵測器
+    （`ci.yml` 對 locale 那段講的是同一件事）。
+    """
+
+    status: Literal["scanned", "not_scanned"] = "not_scanned"
+    scanned_cards: int = 0
+    findings: list[LegacyAuthorityNoteFinding] = field(default_factory=list)
+
+    @property
+    def affected_card_ids(self) -> tuple[str, ...]:
+        return tuple(sorted({f.card_id for f in self.findings}))
+
+
+def find_legacy_authority_notes(card_id: str, body: str) -> list[LegacyAuthorityNoteFinding]:
+    """單張卡面裡帶舊措辭的**授權註記**行（純函式，不碰網路）。
+
+    判準是「舊字面出現在**授權欄之內**」，不是「出現在這一行的任何位置」。兩者
+    不等價，而且差別會實際發生：`amend` 的 Log 行同時帶「原值」「理由」「授權」
+    三段，一張卡的舊痛點正文若引用過該字面，日後用**新版** CLI 再修訂一次，
+    這行就會既有新措辭的授權欄、又在原值裡帶著舊字面。用整行比對會把它報成
+    舊留痕——那是假陽性，也是本卡要消滅的「宣稱超出證據」。
+    """
+    out: list[LegacyAuthorityNoteFinding] = []
+    for line in (body or "").splitlines():
+        # 授權註記由 amend 附加在行尾（`；授權 {note}。`），故取**最後**一個錨之後
+        # 的片段；錨之前的原值／理由即使引用了舊字面也與授權留痕無關。
+        head, anchor, note = line.rpartition(_AUTHORITY_FIELD_ANCHOR)
+        if not anchor:
+            continue  # 沒有授權欄的行，談不上授權留痕強度
+        if LEGACY_AUTHORITY_NOTE_MARKER not in note:
+            continue  # 授權欄已是 #62 之後的措辭
+        match = _LOG_LINE_RE.search(line)
+        out.append(
+            LegacyAuthorityNoteFinding(
+                card_id=card_id,
+                timestamp=match.group("ts") if match else None,
+                op_id=match.group("op") if match else None,
+                field_name=match.group("field").strip() if match else None,
+            )
+        )
+    return out
+
+
+def audit_legacy_authority_notes(
+    card_bodies: dict[str, str] | None,
+) -> LegacyAuthorityNoteReport:
+    """掃描一批卡面。`card_bodies` 為 None／空時回報 `not_scanned`，不謊報乾淨。"""
+    if not card_bodies:
+        return LegacyAuthorityNoteReport(status="not_scanned")
+    report = LegacyAuthorityNoteReport(status="scanned", scanned_cards=len(card_bodies))
+    for card_id in sorted(card_bodies):
+        report.findings.extend(find_legacy_authority_notes(card_id, card_bodies[card_id]))
+    return report
+
+
 def run_doctor(
     repo_root: Path,
     registry: TasksMdRegistry | None = None,
@@ -1139,12 +1288,18 @@ def run_doctor(
                 )
             )
 
+    # 6) 既存授權留痕的措辭（#62 之前）。唯讀，且**不受 cleanup_preview 旗標影響**
+    #    ——它與收尾無關。沒給卡面時回 `not_scanned`，不謊報乾淨。
+    report.legacy_authority_notes = audit_legacy_authority_notes(card_bodies)
+
     return report
 
 
 __all__ = [
     "COMMIT_TRAILER_ROOT_CAUSE_ID",
     "FLOOR_TRAILERS",
+    "LEGACY_AUTHORITY_NOTE_EXPLANATION",
+    "LEGACY_AUTHORITY_NOTE_MARKER",
     "MERGE_TRAILER",
     "SUPERSEDED_ROOT_CAUSE_IDS",
     "TIER2_TRAILER",
@@ -1156,10 +1311,14 @@ __all__ = [
     "CommitTrailerReport",
     "DoctorReport",
     "LeaseFinding",
+    "LegacyAuthorityNoteFinding",
+    "LegacyAuthorityNoteReport",
     "ReviewChannelFinding",
     "SubmoduleFinding",
     "WorktreeFinding",
     "audit_commit_trailers",
+    "audit_legacy_authority_notes",
+    "find_legacy_authority_notes",
     "audit_review_channel",
     "classify_commit_shape",
     "evaluate_commit_trailers",
