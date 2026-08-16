@@ -49,6 +49,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help="檢查 --commit-range 內每筆 commit 的 §6 來歷 trailer 完整性（唯讀；不阻擋任何 push）",
     )
     p.add_argument(
+        "--legacy-authority-notes",
+        action="store_true",
+        help="掃描 Project 全部卡面，列出使用 #62 之前措辭的 amend 授權留痕（唯讀，"
+        "需 --owner／--project）。報的是留痕強度不足，不是授權無效；既存事件不得改寫",
+    )
+    p.add_argument(
         "--commit-range",
         help="--commit-trailers 的 git rev range，例如 origin/main..HEAD。刻意不給預設："
         "`HEAD` 在 git log 語意下是整段歷史，猜錯範圍比要求明講糟得多",
@@ -112,6 +118,17 @@ def run(args: argparse.Namespace) -> int:
     if args.commit_trailers and not args.commit_range:
         print("[doctor] --commit-trailers 缺必要旗標：--commit-range", file=sys.stderr)
         return 2
+    if args.legacy_authority_notes:
+        missing = [
+            flag for flag, value in (("--owner", args.owner), ("--project", args.project))
+            if not value
+        ]
+        if missing:
+            print(
+                f"[doctor] --legacy-authority-notes 缺必要旗標：{', '.join(missing)}",
+                file=sys.stderr,
+            )
+            return 2
     if args.review_channel:
         missing = [
             flag for flag, value in (
@@ -140,6 +157,27 @@ def run(args: argparse.Namespace) -> int:
                 print(f"[doctor] {error}", file=sys.stderr)
             return 2
 
+    # 卡面抓取：**先於** run_doctor，因為結果要當參數傳進去。
+    #
+    # 抓不到時刻意**不中止**、也不當成「掃過且乾淨」——留在 `not_scanned`，由報告
+    # 明說「未掃描，這不等於沒有」。這條路在接線後仍然是對的行為（網路失敗、權限
+    # 不足、Project 讀不到），只是不再是**唯一**會走到的路。
+    legacy_bodies: dict[str, str] | None = None
+    if args.legacy_authority_notes:
+        try:
+            proj = resolve_project(default_runner, args.owner, args.project)
+            legacy_bodies = {
+                item.card_id: item.body
+                for item in list_items(default_runner, proj)
+                if item.card_id and item.body
+            }
+        except Exception as exc:  # noqa: BLE001 - 任何讀取失敗都退回「未掃描」
+            print(
+                f"[doctor] 取不到 Project 卡面（{type(exc).__name__}: {exc}）；"
+                "舊措辭授權留痕一節維持「未掃描」——這不等於沒有",
+                file=sys.stderr,
+            )
+
     registry = load_tasks_md_registry(repo_root) if args.registry == "tasks-md" else None
     report = run_doctor(
         repo_root,
@@ -147,6 +185,7 @@ def run(args: argparse.Namespace) -> int:
         lease_ttl_hours=args.lease_ttl_hours,
         main_ref=args.main_ref,
         cleanup_preview=args.cleanup_preview,
+        legacy_authority_card_bodies=legacy_bodies,
     )
     # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
     # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。
@@ -215,6 +254,10 @@ def run(args: argparse.Namespace) -> int:
         print(json.dumps(build_json_payload(report, review_channel_finding, commit_trailer_report),
                          ensure_ascii=False, indent=2, default=str))
 
+    # ⚠️ 舊措辭授權留痕**刻意不列入 --strict**。那些事件是 append-only 且明令
+    # 不得追溯改寫，所以它們永遠不會消失——把它們算進 exit code，等於讓 CI 從此
+    # 恆紅且無人能修好。那是「偵測器調成永遠會響」，與「永遠不會響」同樣沒用。
+    # 它的用途是讓讀者知道那些授權欄該怎麼讀，不是閘門。
     if args.strict and (
         report.orphan_worktrees()
         or report.orphan_branches

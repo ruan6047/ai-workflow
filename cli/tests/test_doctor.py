@@ -488,6 +488,7 @@ def test_doctor_rejects_invalid_source_sha_instead_of_reporting_unobservable(bad
         repo_root=str(tmp_path), registry="none", review_channel=True,
         repo="acme/x", issue_number=1, card_id="CARD-A", source_sha=bad_sha,
         owner="acme", project=1,
+        legacy_authority_notes=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=False, strict=False,
@@ -555,6 +556,7 @@ def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
         repo_root=str(tmp_path), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=False,
+        legacy_authority_notes=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
@@ -941,6 +943,7 @@ def test_cleanup_preview_json_payload_carries_previews(sandbox_repo, tmp_path, c
         repo_root=str(sandbox_repo), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=True,
+        legacy_authority_notes=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
@@ -1266,6 +1269,7 @@ def _trailer_args(repo, **overrides):
         "repo_root": str(repo), "registry": "none", "review_channel": False,
         "repo": None, "issue_number": None, "card_id": None, "source_sha": None,
         "owner": None, "project": None, "cleanup_preview": False,
+        "legacy_authority_notes": False,
         "commit_trailers": True, "commit_range": "main",
         "trailer_epoch": "none", "require_planned_by": False,
         "main_ref": "main", "lease_ttl_hours": 48.0, "json": False, "strict": False,
@@ -1479,3 +1483,161 @@ def test_finding_carries_no_verdict_field_about_the_authorization():
     """finding 只帶定位資訊。加一個「這次授權有效嗎」的欄位就是越權。"""
     f = find_legacy_authority_notes("CARD1", _amend_line("11111111", _OLD_NOTE))[0]
     assert set(vars(f)) == {"card_id", "timestamp", "op_id", "field_name"}
+
+
+# ---- CLI 接線（R3）------------------------------------------------------
+#
+# 上一輪的缺口：`doctor_cmd` 從不提供卡面，所以這一節從 CLI 跑必定印「未掃描」
+# ——一個構造上不可能執行的檢查不構成「機械標記」。本組釘住接線本身。
+
+
+class _FakeProjectRunner:
+    """`resolve_project` / `list_items` 用的最小替身；不連網。"""
+
+    def __init__(self, bodies: dict[str, str]):
+        self.bodies = bodies
+        self.calls: list[list[str]] = []
+
+    def run_json(self, args):
+        self.calls.append(list(args))
+        raise AssertionError("本替身只支援 project 讀取路徑")
+
+
+def _doctor_args(repo, **overrides):
+    import argparse
+
+    defaults = {
+        "repo_root": str(repo), "registry": "none", "review_channel": False,
+        "repo": None, "issue_number": None, "card_id": None, "source_sha": None,
+        "owner": None, "project": None, "cleanup_preview": False,
+        "legacy_authority_notes": False,
+        "commit_trailers": False, "commit_range": None,
+        "trailer_epoch": "none", "require_planned_by": False,
+        "main_ref": "main", "lease_ttl_hours": 48.0, "json": False, "strict": False,
+    }
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def _patch_project(monkeypatch, bodies):
+    """把 doctor_cmd 的 Project 讀取換掉，回傳給定卡面。"""
+    from wf_cli.commands import doctor_cmd
+
+    class _Item:
+        def __init__(self, card_id, body):
+            self.card_id, self.body = card_id, body
+
+    monkeypatch.setattr(doctor_cmd, "resolve_project", lambda *a, **k: {"id": "P"})
+    monkeypatch.setattr(
+        doctor_cmd, "list_items",
+        lambda *a, **k: [_Item(cid, b) for cid, b in bodies.items()],
+    )
+    return doctor_cmd
+
+
+def test_cli_flag_actually_scans_and_reports(sandbox_repo, monkeypatch, capsys):
+    """⚠️ 本組要擋的就是「測試綠但 CLI 跑不到」。
+
+    **突變檢驗**：把 `doctor_cmd` 傳給 `run_doctor` 的
+    `legacy_authority_card_bodies=legacy_bodies` 改回不傳（或傳 None），本測試轉紅。
+    """
+    doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    rc = doctor_cmd.run(
+        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "已掃描 1 張卡" in out
+    assert "CARD1" in out and "166322be" in out
+    assert LEGACY_AUTHORITY_NOTE_EXPLANATION in out
+    assert "未掃描" not in out
+
+
+def test_cli_without_the_flag_stays_not_scanned(sandbox_repo, capsys):
+    """不加旗標時仍是 `not_scanned`——不得謊報乾淨，也不得偷偷連網。"""
+    from wf_cli.commands import doctor_cmd
+
+    assert doctor_cmd.run(_doctor_args(sandbox_repo)) == 0
+    out = capsys.readouterr().out
+    assert "未掃描" in out and "這不等於沒有" in out
+    # 指路必須指向**CLI 可用的**旗標，不能只講程式參數
+    assert "--legacy-authority-notes" in out
+
+
+def test_cli_flag_requires_owner_and_project(sandbox_repo, capsys):
+    from wf_cli.commands import doctor_cmd
+
+    assert doctor_cmd.run(_doctor_args(sandbox_repo, legacy_authority_notes=True)) == 2
+    err = capsys.readouterr().err
+    assert "--owner" in err and "--project" in err
+
+
+def test_cli_keeps_not_scanned_when_card_fetch_fails(sandbox_repo, monkeypatch, capsys):
+    """抓取失敗 → 維持 `not_scanned`，不中止、也不當成掃過且乾淨。"""
+    from wf_cli.commands import doctor_cmd
+
+    def _boom(*a, **k):
+        raise RuntimeError("gh 掛了")
+
+    monkeypatch.setattr(doctor_cmd, "resolve_project", _boom)
+    rc = doctor_cmd.run(
+        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+    )
+    assert rc == 0, "抓取失敗不該讓整個 doctor 中止"
+    captured = capsys.readouterr()
+    assert "取不到 Project 卡面" in captured.err and "這不等於沒有" in captured.err
+    assert "未掃描" in captured.out
+
+
+def test_legacy_notes_never_affect_strict_exit_code(sandbox_repo, monkeypatch, capsys):
+    """既存事件不可改寫，把它們算進 --strict 會讓 CI 恆紅且無人能修好。"""
+    doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    rc = doctor_cmd.run(
+        _doctor_args(
+            sandbox_repo, legacy_authority_notes=True, owner="acme", project=4,
+            registry="none", strict=True,
+        )
+    )
+    assert "已掃描 1 張卡" in capsys.readouterr().out, "夾具必須真的有 finding"
+    assert rc == 0, "--strict 不得因舊措辭留痕而失敗"
+
+
+def test_cli_does_not_feed_cleanup_guard_when_scanning_legacy_notes(sandbox_repo, monkeypatch):
+    """接線**不得**順手改變 `--cleanup-preview` 的判定。
+
+    `run_doctor(card_bodies=...)` 餵的是 cleanup guard 第 3 步（資源宣告釋放），
+    今天 `doctor_cmd` 從不提供它。本檢查若共用該參數，會沉默地讓原本跳過的
+    資源釋放檢查開始生效——那是另一張卡的射程。
+    """
+    from wf_cli.commands import doctor_cmd
+
+    seen = {}
+
+    def _spy(repo_root, registry=None, **kw):
+        seen.update(kw)
+        return run_doctor(repo_root, registry, **kw)
+
+    _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    monkeypatch.setattr(doctor_cmd, "run_doctor", _spy)
+    doctor_cmd.run(
+        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+    )
+    assert seen.get("card_bodies") is None, "cleanup guard 的 card_bodies 不得被順手填上"
+    assert seen.get("legacy_authority_card_bodies") == {
+        "CARD1": _amend_line("166322be", _OLD_NOTE)
+    }
+
+
+def test_cli_json_payload_carries_legacy_authority_notes(sandbox_repo, monkeypatch, capsys):
+    """機器消費端要讀得到；只有人類可讀那份等於沒有對外提供。"""
+    import json as jsonlib
+
+    doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    assert doctor_cmd.run(
+        _doctor_args(
+            sandbox_repo, legacy_authority_notes=True, owner="acme", project=4, json=True
+        )
+    ) == 0
+    payload = jsonlib.loads(capsys.readouterr().out)["legacy_authority_notes"]
+    assert payload["status"] == "scanned" and payload["scanned_cards"] == 1
+    assert [f["op_id"] for f in payload["findings"]] == ["166322be"]

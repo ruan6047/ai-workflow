@@ -215,8 +215,9 @@ class DoctorReport:
         lines.append("## 6. 既存授權留痕的措辭（#62 之前；唯讀，doctor 不改任何卡面）")
         if legacy.status == "not_scanned":
             lines.append(
-                "（未掃描：本次呼叫未提供卡面。**這不等於沒有**——"
-                "要掃描請以 card_bodies 傳入卡面。）"
+                "（未掃描：本次未取得卡面。**這不等於沒有**——要掃描請加"
+                " `--legacy-authority-notes --owner <o> --project <n>`；"
+                "程式呼叫則傳 run_doctor(legacy_authority_card_bodies=...)。）"
             )
         elif not legacy.findings:
             lines.append(f"（已掃描 {legacy.scanned_cards} 張卡，無舊措辭授權留痕）")
@@ -1138,6 +1139,7 @@ def run_doctor(
     cleanup_preview: bool = False,
     card_bodies: dict[str, str] | None = None,
     occupancy_prober: OccupancyProber | None = None,
+    legacy_authority_card_bodies: dict[str, str] | None = None,
 ) -> DoctorReport:
     repo_root = repo_root.resolve()
     active: list[RegisteredCard] = registry.active if registry else []
@@ -1290,7 +1292,14 @@ def run_doctor(
 
     # 6) 既存授權留痕的措辭（#62 之前）。唯讀，且**不受 cleanup_preview 旗標影響**
     #    ——它與收尾無關。沒給卡面時回 `not_scanned`，不謊報乾淨。
-    report.legacy_authority_notes = audit_legacy_authority_notes(card_bodies)
+    #
+    #    ⚠️ 刻意**不共用** `card_bodies`：那個參數餵給 `evaluate_cleanup_guard` 的
+    #    第 3 步（資源宣告釋放），今天 `doctor_cmd` 從不提供它，故該步一律走
+    #    `card_body is None` 的分支。若本檢查為了取得卡面而順手把 `card_bodies`
+    #    一起填上，就會**沉默地改變 `--cleanup-preview` 的判定**（原本跳過的資源
+    #    釋放檢查開始生效，proceed 可能變 blocked）——那是另一張卡的射程。
+    #    兩個用途各自帶參數，誰都不會因為對方被接線而改變行為。
+    report.legacy_authority_notes = audit_legacy_authority_notes(legacy_authority_card_bodies)
 
     return report
 
