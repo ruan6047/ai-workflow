@@ -226,6 +226,48 @@ from ..project import (
 )
 from ..resources import ResourceDeclaration, ResourceDeclarationError, parse_block, render_block
 
+#: 授權註記的**唯一**模板。寫進 Log 的授權欄永遠是它代入 author／url 的結果。
+#:
+#: 措辭本身為什麼長這樣（沒有總結標籤、外層「裁定」被降級為操作者宣告），見模組
+#: docstring「第二／第三個上限」。這裡講的是**為什麼它是一個具名常數**。
+#:
+#: 本卡的守衛被打了四次，前三次打措辭、第四次打守衛的量化範圍：
+#:
+#:   R0 「…已逐字核對，非留言內文自述」 → 那是區辨力宣稱
+#:   R1 「宣告完整性已檢查：…」          → 總結標籤，涵蓋範圍大於列出的內容
+#:   R2 拿掉標籤＋釘住「（」後的插入位置 → 標籤改插在第一個事實**之後**即繞過
+#:   R3 逐字比對函式的回傳值            → 只在 fixture 那組 (author, url) 上封閉；
+#:                                        依輸入分支（如 `'' if url.endswith('-555')
+#:                                        else '授權綁定成立；'`）可讓測試全綠而
+#:                                        真實輸出帶標籤（R3-001 blocking）
+#:
+#: 前三代的教訓是「措辭與位置都是開放集合，補集守不住」；第四代的教訓是**輸入也是
+#: 開放集合**——對輸出取樣，取幾組都只是取樣。
+#:
+#: 所以守衛的對象改成「產生輸出的那個東西」而不是輸出：
+#:
+#:   1. 模板**唯一**且逐字被釘（`test_authority_note_template_is_verbatim_golden`）；
+#:   2. 函式恆為「該模板 ＋ 代入」——以 AST 斷言 `_authorize_by_requester_ruling`
+#:      只有一個 return，且它逐節點等於 `AUTHORITY_NOTE_TEMPLATE.format(
+#:      author=author, url=args.ruling_url)`（`test_authority_note_is_template_
+#:      substitution_by_construction`）。
+#:
+#: 兩條合起來對**所有**輸入成立：模板只有一個、函式只會回它的代入，因此不存在任何
+#: (author, url) 能得到不同的字串。這不是多測幾組，是把量詞從「對這些輸入」換成
+#: 「由構造」。
+#:
+#: ⚠️ 因此**不要**把這裡改回 f-string、也不要在 return 之前依任何條件改寫它：那會
+#: 讓 AST 斷言當場紅。要改措辭是合法的，但必須連同測試的黃金常數一起改——那一行
+#: diff 就是要給查核者看的東西。
+AUTHORITY_NOTE_TEMPLATE = (
+    "依需求方 {author} 於 {url} 的裁定"
+    "（已核對：該 URL 指向本卡 issue 的既存留言，"
+    "且其 GitHub author 欄逐字等於卡面「需求：」欄。"
+    "本指令不讀取留言內文或操作者身分，故不判定留言內容是否構成裁定"
+    "——上句「裁定」是操作者的宣告，不是本指令查得的事實——"
+    "亦不區分「需求方本人張貼」與「他人代擬代貼」）"
+)
+
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
@@ -553,36 +595,10 @@ def _authorize_by_requester_ruling(runner, target, item, args, what: str) -> str
             f"裁定留言 author {author!r} 逐字等於本卡當前 owner；"
             "裁定者不得是被該裁定嘉惠的人（review-escalation.md §4 第 3 款同向）"
         )
-    # 這句話會永久留在 Log，且結構化欄位的消費者只讀它。**括號內不得出現總結標籤**
-    # ——只窮舉做過的比對，再說明它分辨不了什麼。標籤是評價，會把「兩個欄位相等」
-    # 總結成一個結論，讀者拿到的強度就高於證據。本卡三輪都栽在這件事上：
-    #
-    #   R0 舊值「GitHub comment author 已逐字核對，非留言內文自述」——後半句宣稱
-    #      本檢查排除了「自述」，即宣稱了區辨力；而在單一人類帳號的 repo 裡，代貼者
-    #      與需求方是同一個平台身分，那道比對從未區辨過任何東西。
-    #   R1 修訂「宣告完整性已檢查：…」——換掉了區辨力宣稱，卻在前面加了一個總結
-    #      標籤：它名為「完整性」、斷言「已檢查」，涵蓋範圍大於冒號後真正列出的兩件事
-    #      （跨家族查核 R1-001 blocking）。同一個病換個劑量。
-    #   R2 拿掉標籤，並以結構斷言釘住「（」與第一個事實之間不得插字。**該守衛的
-    #      射程被高估了**：查核者把同一個標籤插在第一個事實**之後**，三條測試全綠
-    #      （R2-001 blocking）。位置和措辭一樣是開放集合，釘一個位置只擋一個位置。
-    #
-    # 因此下面刻意**沒有引導性的名詞**，「已核對：」之後直接是事實列舉。
-    # 而守衛不再描述「不可以是什麼」（開放集合，永遠有下一代），改為釘住整串字面：
-    # `test_amend.py::test_authority_note_is_verbatim_equal_to_the_golden_value`
-    # 斷言本函式回傳值**逐字元等於**黃金常數。改這句話是合法的，但必須連同該常數
-    # 一起改——那一行 diff 就是要給查核者看的東西。
-    #
-    # 外層「裁定」一併降級：本函式只讀 payload 的 user.login，**從不讀留言內文**，
-    # 故它無從得知該留言是否構成裁定——那是操作者的宣告，必須在句內講明（同 R1-001）。
-    return (
-        f"依需求方 {author} 於 {args.ruling_url} 的裁定"
-        f"（已核對：該 URL 指向本卡 issue 的既存留言，"
-        f"且其 GitHub author 欄逐字等於卡面「需求：」欄。"
-        f"本指令不讀取留言內文或操作者身分，故不判定留言內容是否構成裁定"
-        f"——上句「裁定」是操作者的宣告，不是本指令查得的事實——"
-        f"亦不區分「需求方本人張貼」與「他人代擬代貼」）"
-    )
+    # 這一行是本函式**唯一**的 return，且必須恰好是「模板 ＋ 兩個資料插值」。
+    # 不得改成 f-string、不得依 author／url／環境分支、不得在此拼接任何其他字串——
+    # 理由與守衛形狀見 `AUTHORITY_NOTE_TEMPLATE` 的說明。
+    return AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)
 
 
 def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢查本就是平鋪的

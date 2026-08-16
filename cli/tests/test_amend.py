@@ -6,8 +6,12 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import re
+import string
+import textwrap
 
 import pytest
 
@@ -1045,41 +1049,51 @@ def test_core_pain_succeeds_with_requester_ruling_and_records_authority(gov_card
 # （PM 的 gh 與需求方同為 ruan6047），那道比對對代貼者恆真，從未區辨過任何東西。
 # 已實現後果：13 筆事件／9 張卡（2026-08-16 對 Project #4 全部 148 個 item 逐張掃描）。
 #
-# ---- 守衛的形狀：為什麼是逐字黃金值，不是「具有某些性質」-------------------
+# ---- 守衛的形狀：四代演進，以及為什麼這一代不是第五代的前身 -----------------
 #
-# 這句話被打了三次，每次都是同一個結構：我釘一個**性質**，下一輪有人找到一個不
-# 違反該性質卻仍然誇大的寫法。
+# 前三代打的是「這串字說了什麼」，我每次釘一個**性質**，下一輪就有人找到不違反該
+# 性質卻仍然誇大的寫法：
 #
-#   R0 「…已逐字核對，非留言內文自述」   → 查核：那是區辨力宣稱
-#   R1 「宣告完整性已檢查：…」            → 查核：仍高於證據強度（換個劑量而已）
-#   R2 拿掉標籤 ＋ 釘住「（」後的插入位置 → 查核：把標籤插到**第一個事實之後**
-#                                            即可繞過（R2-001，實測 3 passed）
+#   R0 「…已逐字核對，非留言內文自述」   → 那是區辨力宣稱
+#   R1 「宣告完整性已檢查：…」            → 總結標籤，涵蓋範圍大於列出的內容
+#   R2 拿掉標籤 ＋ 釘住「（」後的插入位置 → 標籤改插在第一個事實**之後**即繞過
+#                                            （R2-001，實測 3 passed）
 #
-# 我上一輪的結論「標籤是開放集合，只能釘插入位置」前半對、後半錯：位置同樣是開放
-# 集合。再找第四個性質只會有第四代。
+# R3 用逐字比對把那一族關掉了：措辭與位置都是開放集合，而「必須恰好等於這串字」
+# 是封閉的。**那個判斷沒有被推翻。**
 #
-# 因此改成**封閉集合**：斷言 note 逐字元等於下面這個黃金值。任何標籤、插在任何
-# 位置、用任何措辭，都會讓它不相等。這是唯一能結束這個系列的形狀，因為它不再
-# 描述「不可以是什麼」（開放），而是規定「必須恰好是什麼」（封閉）。
+# 第四代打的是另一件事——**守衛涵蓋哪些輸入**：
 #
-# **代價，明說**：任何合法改寫也會轉紅。這是刻意的——這句話是整張卡在修的東西，
-# 它的每一次改動都應該被人看過。要改就同時改黃金值，而那一行 diff 正是給查核者
-# 看的東西。
+#   R3 逐字比對函式的**回傳值** → 只以 fixture 的固定 (author, url) 呼叫一次。
+#      M20：`'' if url.endswith('-555') else '授權綁定成立；'`，fixture 那組維持
+#      黃金值、其他合法輸入帶標籤，970 tests 全綠（R3-001 blocking）。
 #
-# **為什麼不受空白 reflow 影響**（#57 R5 同型陷阱）：斷言的對象是**執行期字串**，
-# 不是原始碼文字。實作用的是相鄰字串常值併接（implicit concatenation），原始碼
-# 換行／縮排怎麼排版都不會改變併接結果，所以 formatter reflow 不可能讓它假紅；
-# 反過來，任何真的改到內容的編輯都會讓它真紅。下面 `test_..._is_reflow_stable`
-# 把「正規化規則」本身也釘住：這裡的正規化就是**不做正規化**，而黃金值不含任何
-# 連續空白或換行，故 `_fold`（Log 寫入時的摺行）對它是恆等函式。
+# 對輸出取樣，取幾組都還是取樣——**輸入也是開放集合**。所以這一輪不是「再多測幾組
+# comment id」（那才是第五代），而是把斷言的對象從「一次呼叫的輸出」搬到「產生輸出
+# 的那個東西」：
+#
+#   (1) 模板唯一且逐字被釘        —— test_authority_note_template_is_verbatim_golden
+#   (2) 函式恆為「模板 ＋ 代入」    —— test_authority_note_is_template_substitution_
+#                                     by_construction（AST，非取樣）
+#
+# 模板只有一個 ∧ 函式只會回它的代入 ⇒ 不存在任何 (author, url) 能得到不同的字串。
+# 量詞從「對這些輸入」變成「由構造」，這是與前四代不同層的東西。
+#
+# **這條的縫在哪**（明說，不假裝封閉到底）：(2) 約束的是那一個函式的原始碼形狀，
+# 它擋不住 import 期改寫模板、執行期 monkeypatch、或呼叫端事後加工回傳值。前者由
+# (3) 模組內只有一處指派 該常數 補上；呼叫端加工由 `_fold` 恆等那條與 Log 逐字那條
+# 覆蓋。真正剩下的縫見 test docstring 與交付說明。
+#
+# **為什麼不受空白 reflow 影響**（#57 R5 同型陷阱）：斷言對象是**執行期字串**與
+# **AST**，都不是原始碼文字。實作用相鄰字串常值併接，換行／縮排怎麼排都不改變兩者。
 
-#: 已退役的措辭。**不是**守衛（守衛是黃金值那條），只是讓歷史上被打掉的兩句
-#: 各留一個具名的回歸點，失敗訊息才看得出「又退回哪一代」。
+#: 已退役的措辭。**不是**守衛，只是讓歷史上被打掉的兩句各留一個具名的回歸點，
+#: 失敗訊息才看得出「又退回哪一代」。
 #: R0：宣稱本比對排除了「留言內文自述」，即宣稱了它沒有的區辨力。
 #: R1：把兩個欄位相等總結成一個名為「完整性」、斷言「已檢查」的結論（R1-001）。
 _RETIRED_CLAIMS = ("非留言內文自述", "宣告完整性已檢查")
 
-#: 授權註記的**逐字**黃金值。`{author}` 與 `{url}` 是實作裡僅有的兩個插值點，
+#: 授權註記模板的**逐字**黃金值。`{author}` 與 `{url}` 是僅有的兩個插值點，
 #: 其餘每一個字元都被釘死。改這個常數＝改治理留痕的措辭，請連同 amend_cmd 一起改。
 _GOLDEN_AUTHORITY_NOTE = (
     "依需求方 {author} 於 {url} 的裁定"
@@ -1125,15 +1139,131 @@ def _authority_note_of(gov_card, url: str | None = None) -> str:
     )
 
 
-def test_authority_note_is_verbatim_equal_to_the_golden_value(gov_card):
-    """**本組唯一的守衛**：授權註記逐字元等於黃金值。
+def test_authority_note_template_is_verbatim_golden():
+    """守衛 (1)：模板本身逐字元等於黃金值，且**只有一個**模板。
 
-    封閉集合斷言。任何標籤、插在任何位置（含 R2-001 打穿舊守衛的「插在第一個
-    事實之後」）、任何措辭調整，都會讓它不相等。
-
-    改這句話是合法的，但必須同時改黃金值——那一行 diff 就是要給查核者看的東西。
+    對輸出取樣永遠只是取樣（R3-001）；對模板取值不是——模板不吃輸入，它是常數。
+    這一條因此對所有 (author, url) 一次成立。
     """
-    assert _authority_note_of(gov_card) == _golden_note()
+    assert amend_cmd.AUTHORITY_NOTE_TEMPLATE == _GOLDEN_AUTHORITY_NOTE
+    # 插值點恰為兩個資料欄位。多一個 `{label}` 之類的插值會讓上面那行先紅，
+    # 這裡再把「可用的欄位名只有這兩個」講成機械事實。
+    assert sorted(
+        f[1] for f in string.Formatter().parse(amend_cmd.AUTHORITY_NOTE_TEMPLATE) if f[1] is not None
+    ) == ["author", "url"]
+
+
+def _authorize_source_tree():
+    """`_authorize_by_requester_ruling` 的 AST（去掉縮排後 parse）。"""
+    src = textwrap.dedent(inspect.getsource(amend_cmd._authorize_by_requester_ruling))
+    return ast.parse(src).body[0]
+
+
+def test_authority_note_is_template_substitution_by_construction():
+    """守衛 (2)：函式**恆為**「模板 ＋ 代入」——由構造，不是由取樣。
+
+    這一條是 R3-001 的直接處置。M20 的形狀是「依 url 分支，fixture 那組回黃金值、
+    其他輸入回帶標籤的字串」；只要斷言是對輸出做的，多測幾組也只是把取樣點加密，
+    仍然擋不住一個針對測試輸入特化的實作。
+
+    所以改成約束**原始碼形狀**：函式只有一個 return，且該 return 的運算式逐節點
+    等於 ``AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)``。
+    在此形狀下輸出恆等於模板代入，因此**不存在**任何輸入能得到別的字串——任何
+    條件式、f-string、字串拼接、額外 kwarg 都會讓 AST 不相等。
+
+    比對方式刻意是「兩邊都用同一個 ``ast.dump``」而非寫死 dump 字串：後者會隨
+    Python 版本的 dump 格式改變而假紅。
+    """
+    fn = _authorize_source_tree()
+    returns = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
+    assert len(returns) == 1, f"預期恰好一個 return，實際 {len(returns)} 個"
+    # 沒有巢狀函式／lambda：否則 return 可能藏在別的作用域裡
+    nested = [
+        n for n in ast.walk(fn)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) and n is not fn
+    ]
+    assert nested == [], "本函式內不得有巢狀函式或 lambda"
+
+    expected = ast.parse(
+        "AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)", mode="eval"
+    ).body
+    assert ast.dump(returns[0].value) == ast.dump(expected)
+
+    # 模板名在函式內只能被讀取，不得被重新指派／遮蔽
+    stores = [
+        n for n in ast.walk(fn)
+        if isinstance(n, ast.Name)
+        and n.id == "AUTHORITY_NOTE_TEMPLATE"
+        and not isinstance(n.ctx, ast.Load)
+    ]
+    assert stores == [], "AUTHORITY_NOTE_TEMPLATE 不得在函式內被重新指派"
+
+
+def test_authority_note_template_is_assigned_exactly_once_in_the_module():
+    """守衛 (3)：模組內只有一處指派該常數。
+
+    補的是 (2) 的縫：AST 只約束那一個函式，擋不住「模組別處把常數換掉」。這一條
+    讓 import 期改寫也要改到一個看得見的地方。
+
+    ⚠️ 仍擋不住執行期 monkeypatch——那不是原始碼層面攔得住的，見交付說明。
+    """
+    module_ast = ast.parse(inspect.getsource(amend_cmd))
+    targets = [
+        t
+        for node in ast.walk(module_ast)
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign))
+        for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(t, ast.Name) and t.id == "AUTHORITY_NOTE_TEMPLATE"
+    ]
+    assert len(targets) == 1, f"預期恰好一處指派，實際 {len(targets)} 處"
+
+
+@pytest.mark.parametrize(
+    "author, comment_id",
+    [
+        ("ruan6047", "555"),
+        ("ruan6047", "999"),
+        ("some-other-requester", "555"),
+        ("some-other-requester", "424242"),
+    ],
+)
+def test_runtime_output_matches_the_template_for_varied_inputs(gov_runner, author, comment_id):
+    """交叉檢查：實際執行的輸出確實等於模板代入。
+
+    ⚠️ **這一條不是封閉性的來源**——它是取樣，四組擋不住第五組。封閉性來自 (1)+(2)。
+    它的作用是證明「我對 AST 的解讀」與「執行期真的發生的事」沒有脫節：AST 斷言
+    讀的是原始碼，這條讀的是實際回傳值，兩者對上才排除「我把 AST 讀錯了」。
+
+    仍刻意換掉 author 與 comment id 兩個維度，讓 R3-001 的 M20（依 url 分支）在
+    這一條上也會紅，而不是只在 AST 那條紅。
+    """
+    import argparse
+
+    from wf_cli.config import resolve_target
+
+    rc = run_cli(
+        ["open", *GOV_TARGET, "GOV-VARY1",
+         "--feature", "示範", "--tier", "T4", "--db-scope", "none",
+         "--core-pain", "原始痛點", "--service-goal", "目標",
+         "--requested-by", author, "--planned-by", "PM",
+         "--resources", "file:vary.py", "--spec-baseline", "原基線",
+         "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
+         "--review-capability", "高階型", "--review-capability-reason", "紅線跨家族"]
+    )
+    assert rc == 0
+    gov_runner.comment_authors[comment_id] = author
+    project = resolve_project(gov_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(gov_runner, project), "GOV-VARY1")
+    url = _ruling(comment_id, issue=item.issue_number)
+
+    note = amend_cmd._authorize_by_requester_ruling(
+        gov_runner,
+        resolve_target(owner="acme", project=1, repo="acme/wf"),
+        item,
+        argparse.Namespace(ruling_url=url),
+        "核心痛點更正",
+    )
+    assert note == _GOLDEN_AUTHORITY_NOTE.format(author=author, url=url)
 
 
 def test_golden_note_also_reaches_the_log_verbatim(gov_card):
