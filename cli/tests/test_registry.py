@@ -200,6 +200,35 @@ def test_module_docstring_does_not_claim_the_local_axis_is_portable():
         assert banned not in doc, f"軸 B 被寫成可攜：{banned}"
 
 
+def test_module_docstring_does_not_state_the_assign_before_create_order_as_structural():
+    """釘死「登記早於建立」是**操作慣例**而非結構必然。
+
+    這是本卡四輪未收斂的成因在文件層的殘留。前四輪每一輪都把「``assign`` 發生在建立
+    之前」當成不可動的前提，於是每次都去縮**承諾**，沒有人去問那個**順序**能不能動——
+    而 ``templates/worktree-lifecycle.md`` 第 1 點規定的順序其實是相反的（claim 成功後
+    先建立 worktree，再把實際路徑寫回卡面）。順序一旦倒過來，「歸屬」這個事實在登記
+    那一刻就已經存在，軸 B 便有東西可查（見
+    ``test_local_observation_catches_the_real_cross_repo_worktree``）。
+
+    ⚠️ 本測試**不**主張該順序應該被改——那是需求方的取捨，代價是 assign 只能在
+    worktree 所在的機器上跑。它只擋一件事：**把一個可改的操作順序重新寫成定律**，
+    因為那正是讓四輪把力氣全花在縮承諾上的那句話。
+    """
+    doc = " ".join((wf_cli.registry.__doc__ or "").split())
+
+    for required in (
+        "操作慣例，不是結構必然",
+        "worktree-lifecycle.md",
+        "本卡未做",
+    ):
+        assert required in doc, f"順序的限定詞消失了：{required}"
+
+    # 前一版的原句（未加限定詞）。它與現行句子的差別就是「今天的」與「所以這一刻的」
+    # 兩個限定詞，所以這個字面只會在限定詞被拿掉時重新出現。
+    banned = "assign 發生在建立之前，而「歸屬」這個事實在建立之後才存在——單點檢查拿不到它"
+    assert banned not in doc, "順序又被寫成結構必然（限定詞被移除）"
+
+
 def test_refusal_message_says_registration_rejected_not_creation_prevented():
     """拒絕訊息講的是「拒絕登記」，不得讓讀的人以為建立已被阻止。"""
     verdict = RepoOwnershipVerdict(
@@ -459,8 +488,13 @@ def test_ownership_allow_does_not_bind_the_actual_creation(two_repos):
     模組頂端 warning 第 1 條引用的就是這一條。取得 allow 之後照樣可以從別的 repo
     把同一路徑建起來——本測試真的做了一次，並確認它**成功**。
 
-    它不是漏洞報告，是射程的機械化陳述：``assign`` 發生在建立之前，「歸屬」這個事實
-    在建立之後才存在，單點檢查拿不到它。
+    它不是漏洞報告，是射程的機械化陳述：**今天的** ``assign`` 發生在建立之前，
+    「歸屬」這個事實在建立之後才存在，所以那一刻的單點檢查拿不到它。
+
+    ⚠️ 這裡釘的是**「登記早於建立時會怎樣」**，不是「登記必然早於建立」。那個先後是
+    操作慣例（``templates/worktree-lifecycle.md`` 第 1 點規定的順序其實相反），
+    ``test_local_observation_catches_the_real_cross_repo_worktree`` 釘的就是順序倒過來
+    以後軸 B 抓得到。兩條一起讀才是完整的射程。
     """
     aiwf, cpbl = two_repos
     (aiwf / ".claude" / "worktrees").mkdir(parents=True)
