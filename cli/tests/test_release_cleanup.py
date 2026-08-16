@@ -25,7 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+
 from wf_cli import cleanup
+from wf_cli.card import format_branch_worktree
 from wf_cli.cli import build_parser
 from wf_cli.commands import assign_cmd, handoff_cmd, open_cmd
 from wf_cli.project import (
@@ -205,9 +207,23 @@ def env(tmp_path: Path, sandbox_repo: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(cleanup, "lsof_cwd_prober", lambda _p: ("free", "測試探針"))
 
     assert run_cli(_open_argv(CARD_ID)) == 0
-    # --actual-capability 取與卡面建議執行層級相同的值：這張 fixture 要的是「順利派工」，
-    # 不是偏離情境，取相同值才不會多要一個 --capability-deviation-reason 而把無關的
-    # 偏離路徑拉進本檔的前置條件裡。
+    project = resolve_project(runner, "acme", 1)
+    fields = ensure_fields(runner, "acme", 1)
+    item = find_item_by_card_id(list_items(runner, project), CARD_ID)
+    assert item is not None and item.issue_number is not None
+
+    # 註冊欄走**真的** `wfcli assign`。
+    #
+    # ⚠️ 上一輪這裡是直接 `set_field_value` 繞過 assign，理由是「沙箱 repo 的 origin
+    # 是 tmp_path 底下的 bare 路徑，導不出 owner/repo，閘門 fail-closed 拒絕」——那條
+    # 限制**來自把歸屬建立在 origin 反推上**，而需求方 2026-08-13 裁定歸屬改由 slug
+    # 宣告表達（`docs/ROADMAP.md` §1.5）。origin 是什麼形狀已不再參與歸屬判定，於是
+    # 這條繞道跟著消失，`assign` 這條指令路徑的覆蓋**被還回來**。
+    #
+    # 沙箱的 origin 仍然刻意留成本機 bare 路徑（偽造 GitHub 形狀會讓 cleanup 的
+    # ls-remote／push --delete 打向真實網路）；它現在只會讓軸 B 判
+    # `observed_repo_unidentifiable`——也就是「這台機器說不出這個 worktree 屬於誰」，
+    # 而那不擋人。
     assert run_cli([
         "assign", *BASE_TARGET, CARD_ID,
         "--assignee", "Claude@Claude Code",
@@ -215,11 +231,8 @@ def env(tmp_path: Path, sandbox_repo: Path, monkeypatch: pytest.MonkeyPatch) -> 
         "--worktree", str(wt),
         "--actual-capability", "高階型",
     ]) == 0
-    project = resolve_project(runner, "acme", 1)
-    fields = ensure_fields(runner, "acme", 1)
-    item = find_item_by_card_id(list_items(runner, project), CARD_ID)
-    assert item is not None and item.issue_number is not None
     set_field_value(runner, project, item.item_id, fields["交付狀態"], "📦已合併")
+    assert card_fields(runner)["分支worktree"] == format_branch_worktree(BRANCH, str(wt))
 
     return Env(repo=sandbox_repo, remote=remote, wt=wt, runner=runner,
                issue_number=item.issue_number)
