@@ -1045,25 +1045,54 @@ def test_core_pain_succeeds_with_requester_ruling_and_records_authority(gov_card
 # （PM 的 gh 與需求方同為 ruan6047），那道比對對代貼者恆真，從未區辨過任何東西。
 # 已實現後果：13 筆事件／9 張卡（2026-08-16 對 Project #4 全部 148 個 item 逐張掃描）。
 #
-# 下面三條是一組，缺一都不夠：
+# ---- 守衛的形狀：為什麼是逐字黃金值，不是「具有某些性質」-------------------
 #
-#   (a) 該說的有說   —— 免責句在不在
-#   (b) 不該說的沒說 —— 已退役的誇大句在不在
-#   (c) 沒有總結標籤 —— 括號內第一個字起就是事實列舉，中間沒插入任何評價
+# 這句話被打了三次，每次都是同一個結構：我釘一個**性質**，下一輪有人找到一個不
+# 違反該性質卻仍然誇大的寫法。
 #
-# 為什麼 (c) 非有不可：(a)+(b) 只擋得住「刪掉免責句」與「還原已知舊句」。R1 那次
-# 退回正是兩者都綠——免責句在、舊句不在，卻在前面新加了一個總結標籤。標籤是一個
-# **開放集合**，列不完，所以不能用黑名單擋；改用結構斷言，讓「（」與第一個事實
-# 之間不容任何字元存在。任何新標籤都必然插在那個位置，因此必然被抓到。
+#   R0 「…已逐字核對，非留言內文自述」   → 查核：那是區辨力宣稱
+#   R1 「宣告完整性已檢查：…」            → 查核：仍高於證據強度（換個劑量而已）
+#   R2 拿掉標籤 ＋ 釘住「（」後的插入位置 → 查核：把標籤插到**第一個事實之後**
+#                                            即可繞過（R2-001，實測 3 passed）
+#
+# 我上一輪的結論「標籤是開放集合，只能釘插入位置」前半對、後半錯：位置同樣是開放
+# 集合。再找第四個性質只會有第四代。
+#
+# 因此改成**封閉集合**：斷言 note 逐字元等於下面這個黃金值。任何標籤、插在任何
+# 位置、用任何措辭，都會讓它不相等。這是唯一能結束這個系列的形狀，因為它不再
+# 描述「不可以是什麼」（開放），而是規定「必須恰好是什麼」（封閉）。
+#
+# **代價，明說**：任何合法改寫也會轉紅。這是刻意的——這句話是整張卡在修的東西，
+# 它的每一次改動都應該被人看過。要改就同時改黃金值，而那一行 diff 正是給查核者
+# 看的東西。
+#
+# **為什麼不受空白 reflow 影響**（#57 R5 同型陷阱）：斷言的對象是**執行期字串**，
+# 不是原始碼文字。實作用的是相鄰字串常值併接（implicit concatenation），原始碼
+# 換行／縮排怎麼排版都不會改變併接結果，所以 formatter reflow 不可能讓它假紅；
+# 反過來，任何真的改到內容的編輯都會讓它真紅。下面 `test_..._is_reflow_stable`
+# 把「正規化規則」本身也釘住：這裡的正規化就是**不做正規化**，而黃金值不含任何
+# 連續空白或換行，故 `_fold`（Log 寫入時的摺行）對它是恆等函式。
 
-#: 已退役的措辭。**不是**通用黑名單，而是逐字釘住本卡兩輪各自淘汰掉的那一句。
+#: 已退役的措辭。**不是**守衛（守衛是黃金值那條），只是讓歷史上被打掉的兩句
+#: 各留一個具名的回歸點，失敗訊息才看得出「又退回哪一代」。
 #: R0：宣稱本比對排除了「留言內文自述」，即宣稱了它沒有的區辨力。
 #: R1：把兩個欄位相等總結成一個名為「完整性」、斷言「已檢查」的結論（R1-001）。
 _RETIRED_CLAIMS = ("非留言內文自述", "宣告完整性已檢查")
 
-#: 註記括號內的開頭。**逐字**釘住「『（』之後立刻是第一個事實」，中間不容任何
-#: 引導語。這是 (c) 的實作：標籤擋不完，但插入點只有一個。
-_NOTE_OPENS_ON_FACTS = "的裁定（已核對：該 URL 指向本卡 issue 的既存留言"
+#: 授權註記的**逐字**黃金值。`{author}` 與 `{url}` 是實作裡僅有的兩個插值點，
+#: 其餘每一個字元都被釘死。改這個常數＝改治理留痕的措辭，請連同 amend_cmd 一起改。
+_GOLDEN_AUTHORITY_NOTE = (
+    "依需求方 {author} 於 {url} 的裁定"
+    "（已核對：該 URL 指向本卡 issue 的既存留言，"
+    "且其 GitHub author 欄逐字等於卡面「需求：」欄。"
+    "本指令不讀取留言內文或操作者身分，故不判定留言內容是否構成裁定"
+    "——上句「裁定」是操作者的宣告，不是本指令查得的事實——"
+    "亦不區分「需求方本人張貼」與「他人代擬代貼」）"
+)
+
+
+def _golden_note(url: str | None = None) -> str:
+    return _GOLDEN_AUTHORITY_NOTE.format(author=REQUESTER, url=url or _ruling())
 
 
 def _amend_core_pain(gov_card) -> str:
@@ -1076,58 +1105,88 @@ def _amend_core_pain(gov_card) -> str:
     return _gov_item(gov_card).body
 
 
-def test_authority_note_discloses_what_the_comparison_cannot_distinguish(gov_card):
-    """授權註記須寫明「比對過什麼」＋「這比對分辨不了什麼」。
+def _authority_note_of(gov_card, url: str | None = None) -> str:
+    """直接取 `_authorize_by_requester_ruling` 的**原始回傳值**（未經 `_fold`）。
 
-    三項免責缺一不可，因為本函式**沒看**的東西有三類：留言內文、操作者身分，
-    以及由前兩者衍生的「這則留言到底算不算裁定」。
-
-    **突變檢驗**：刪掉任一免責句，本測試轉紅。
+    不透過卡面 body 取，是為了讓斷言看到的就是實作產出的那一份字串：body 那條
+    路徑會先經過 `_fold`（摺行），而摺行有可能把「多打了一個換行」這種改動吃掉。
+    直接取回傳值就沒有這層轉換，逐字比對才真的是逐字。
     """
-    body = _amend_core_pain(gov_card)
-    # 註記確實被寫成「授權」欄，而不是混在 --reason 的自由文字裡
-    assert "；授權 " in body
-    # (a) 做過什麼比對——據實陳述被比對的兩件事，不評價其效力
-    assert "該 URL 指向本卡 issue 的既存留言" in body
-    assert "其 GitHub author 欄逐字等於卡面「需求：」欄" in body
-    # (b) 分辨不了什麼——以及為什麼（本函式只取 payload 的 user.login）
-    assert "本指令不讀取留言內文或操作者身分" in body
-    assert "不判定留言內容是否構成裁定" in body
-    assert "不區分「需求方本人張貼」與「他人代擬代貼」" in body
-    # (c) 外層那個「裁定」自己也要降級：本函式讀不到內文，無從得知它是不是裁定
-    assert "上句「裁定」是操作者的宣告，不是本指令查得的事實" in body
+    import argparse
 
+    from wf_cli.config import resolve_target
 
-def test_authority_note_does_not_claim_more_than_it_checked(gov_card):
-    """授權註記不得出現任何已退役的誇大句。
-
-    **突變檢驗**：把回傳字面改回 R0 的「…已逐字核對，非留言內文自述」或 R1 的
-    「宣告完整性已檢查：…」，本測試轉紅。
-    """
-    body = _amend_core_pain(gov_card)
-    for claim in _RETIRED_CLAIMS:
-        assert claim not in body, f"已退役的誇大措辭又出現在授權欄：{claim!r}"
-    # 刻意**只**斷言寫進 Log 的內容，不掃原始碼：註記的字面就是組進 body 的那一份，
-    # 這條斷言已足以在還原舊值時轉紅。加掃原始碼只會把「模組 docstring 逐字引用
-    # 舊值以說明它為何被淘汰」也一起判紅——那份說明必須留著。
-
-
-def test_authority_note_has_no_summary_label_before_the_facts(gov_card):
-    """括號內不得有總結標籤：「（」之後**立刻**是第一個事實。
-
-    這條擋的是 R1-001 那個形狀——不是某個特定字串，而是「在事實前面加一句話替
-    它們命名」這個動作。標籤是開放集合（「宣告完整性已檢查」「授權綁定成立」
-    「基本檢查通過」…列不完），黑名單擋不住；但它們**只能插在同一個位置**，
-    所以改釘那個位置。
-
-    **突變檢驗**：在「（」與「已核對：」之間插入任何字（含較弱的形容詞，例如
-    「初步核對：」），本測試轉紅。
-    """
-    body = _amend_core_pain(gov_card)
-    assert _NOTE_OPENS_ON_FACTS in body, (
-        "註記括號內開頭被改動：「（」之後應立刻是第一個事實，"
-        "中間不得插入任何替這些事實命名的引導語"
+    return amend_cmd._authorize_by_requester_ruling(
+        gov_card,
+        resolve_target(owner="acme", project=1, repo="acme/wf"),
+        _gov_item(gov_card),
+        argparse.Namespace(ruling_url=url or _ruling()),
+        "核心痛點更正",
     )
+
+
+def test_authority_note_is_verbatim_equal_to_the_golden_value(gov_card):
+    """**本組唯一的守衛**：授權註記逐字元等於黃金值。
+
+    封閉集合斷言。任何標籤、插在任何位置（含 R2-001 打穿舊守衛的「插在第一個
+    事實之後」）、任何措辭調整，都會讓它不相等。
+
+    改這句話是合法的，但必須同時改黃金值——那一行 diff 就是要給查核者看的東西。
+    """
+    assert _authority_note_of(gov_card) == _golden_note()
+
+
+def test_golden_note_also_reaches_the_log_verbatim(gov_card):
+    """黃金值不只要從函式出來，還要原封不動落進 Log 的授權欄。
+
+    分成兩條的理由：上一條證明**產出**正確，這一條證明**寫入路徑**沒有加工它
+    （例如被 `_fold` 摺掉、被截斷、或混進 `--reason` 的自由文字）。前後各釘一個
+    界線字元，讓比對在 Log 行內是封閉的而不是鬆散的子字串。
+    """
+    body = _amend_core_pain(gov_card)
+    assert f"；授權 {_golden_note()}。" in body
+
+
+def test_golden_note_is_reflow_stable(gov_card):
+    """把「正規化規則」本身釘住：這裡的規則是**不做正規化**。
+
+    #57 R5 抓到過同型陷阱——banned 字串因排版 reflow 的空白而沒命中。本組不受
+    該類影響，理由是斷言對象為執行期字串，而實作用相鄰字串常值併接，原始碼怎麼
+    換行都不改變結果。本測試把「黃金值不含任何連續空白或換行」變成機械事實，
+    從而保證 Log 寫入時的 `_fold`（`" ".join(text.split())`）對它是恆等函式；
+    否則 body 那條斷言就會在「多一個換行」時被摺行悄悄救回來。
+    """
+    note = _authority_note_of(gov_card)
+    assert "\n" not in note and "\t" not in note
+    assert "  " not in note
+    assert " ".join(note.split()) == note, "note 經 _fold 後應完全不變"
+
+
+def test_authority_note_still_discloses_the_three_limits(gov_card):
+    """⚠️ 本條**不是守衛**（守衛是上面的黃金值那條）。
+
+    它記錄的是：若有人**刻意**更新黃金值，哪些內容必須存活下來。黃金值那條會逼
+    改動被看見，這條說明看見之後該檢查什麼——本函式沒看的東西有三類：留言內文、
+    操作者身分，以及由前兩者衍生的「這則留言到底算不算裁定」。
+    """
+    note = _authority_note_of(gov_card)
+    assert "該 URL 指向本卡 issue 的既存留言" in note
+    assert "其 GitHub author 欄逐字等於卡面「需求：」欄" in note
+    assert "本指令不讀取留言內文或操作者身分" in note
+    assert "不判定留言內容是否構成裁定" in note
+    assert "不區分「需求方本人張貼」與「他人代擬代貼」" in note
+    assert "上句「裁定」是操作者的宣告，不是本指令查得的事實" in note
+
+
+def test_retired_claims_never_come_back(gov_card):
+    """⚠️ 同上，**不是守衛**，是具名的回歸點。
+
+    黃金值那條已經涵蓋這兩句；分開留著只為了讓失敗訊息直接說出「退回了哪一代」，
+    而不是丟一坨字串 diff 給讀的人自己比對。
+    """
+    note = _authority_note_of(gov_card)
+    for claim in _RETIRED_CLAIMS:
+        assert claim not in note, f"已退役的誇大措辭又出現在授權欄：{claim!r}"
 
 
 def test_core_pain_rejected_when_ruling_author_is_not_the_requester(gov_card):
@@ -1256,14 +1315,10 @@ def test_tier_downgrade_from_redline_succeeds_with_ruling(gov_card):
     # 降級必須逐字標記，稽核者不必自己比 T 值大小
     assert "→ 級別（降級）：原值「T4」→ 新值「T2」" in item.body
     assert f"授權 依需求方 {REQUESTER} 於" in item.body
-    # 降級與核心痛點共用同一個 ruling_note，故**同一套措辭紅線也適用這條路徑**。
-    # 這裡逐字釘住，是為了讓「日後把兩條路徑拆成各自的註記」不能靜默退化——
-    # 只斷言有「；授權 …」的話，拆開後其中一條改回誇大措辭仍會全綠
-    # （跨家族查核 R1 的非阻擋建議）。
-    assert _NOTE_OPENS_ON_FACTS in item.body
-    assert "不判定留言內容是否構成裁定" in item.body
-    for claim in _RETIRED_CLAIMS:
-        assert claim not in item.body
+    # 降級與核心痛點共用同一個 ruling_note，故**同一個黃金值也適用這條路徑**。
+    # 用完整黃金值而非片段：日後若把兩條路徑拆成各自的註記，其中一條改了措辭
+    # 就會在這裡當場紅，不會靜默退化（跨家族查核 R1 的非阻擋建議）。
+    assert f"；授權 {_golden_note()}。" in item.body
 
 
 def test_tier_upgrade_needs_no_ruling(gov_card):
