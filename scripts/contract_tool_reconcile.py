@@ -41,9 +41,13 @@
 
 ## 已知限制（誠實列出，不假裝機械判定是全知的）
 
-- 呼叫圖以「模組.函式」為節點，跨模組呼叫先查本模組定義、再查 import 來源，都查不到
-  才退回同名全集。最後那條退路會**高估**可達性，方向是把缺口藏起來——因此本腳本報出
-  的缺口是**下界**，不是上界。
+- 呼叫圖以「模組.函式」為節點，跨模組呼叫先查本模組定義、再查 import 來源；**都查不到
+  就不連邊**（不退回同名全集——那條退路曾讓 ``gh.execute`` 裡的 ``subprocess.run`` 連到
+  ``assign_cmd.run``，把已知缺口 #4 整個藏起來）。少連邊會**低估**「有實作」，方向是多報
+  缺口而不是少報，因此少數 ``absent``／``mention-only`` 可能是解析不到造成的，逐項處置時
+  仍須人讀一次碼。
+- **「沒有專責動詞」不等於「轉不進去」。** ``assign --status`` 是自由文字旗標，任何已宣告
+  的 Project 選項都寫得進去。這類逃生口由 ``ungated_status_flags`` 機械列出，印在報告開頭。
 - 「哪些 ``gh`` 子命令算寫入」是本檔唯一的外部種子（``MUTATING_GH_SUBCOMMANDS``）。它是
   ``gh`` CLI 的通用語彙、不是本 repo 的清單，且擴充它只會讓更多東西被判成 writer
   （同樣偏寬鬆）。GhRunner 的方法名則從 ``gh.py`` 的 AST 導出，不寫死。
@@ -803,6 +807,45 @@ def cli_verbs(root: Path) -> set[str]:
     return out
 
 
+def ungated_status_flags(root: Path, status_options: set[str]) -> list[str]:
+    """找出「預設值是某個交付狀態、卻沒有 ``choices=`` 的 CLI 旗標」。
+
+    ⚠️ 這一支是修正一次**過度宣稱**加上去的。原本 ``轉得進去=否`` 的備註寫成「沒有任何
+    動詞轉得進去」，那是錯的：``assign --status`` 是自由文字（只有 ``default``／``help``，
+    沒有 ``choices``），而 ``project.set_field_value`` 只檢查該值是不是 Project 上既有的
+    選項。所以 ``wfcli assign --status ⏸阻塞`` **寫得進去**。
+
+    正確的說法是「沒有**專責**動詞」——沒有任何命令以該狀態為自己的語意結果——而自由文字
+    旗標是一個繞過所有契約前提的逃生口。把逃生口本身機械列出來，比在備註裡多寫一句話
+    可靠：旗標哪天加上 ``choices`` 就會自動從這份清單消失。
+    """
+    out: list[str] = []
+    cmd_dir = root / TOOL_ROOT / "commands"
+    if not cmd_dir.exists():
+        return out
+    for path in sorted(cmd_dir.glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and _call_name(node) == "add_argument"):
+                continue
+            flag = None
+            if node.args and isinstance(node.args[0], ast.Constant):
+                flag = node.args[0].value
+            if not isinstance(flag, str) or not flag.startswith("--"):
+                continue
+            kwargs = {kw.arg for kw in node.keywords}
+            if "choices" in kwargs:
+                continue
+            for kw in node.keywords:
+                if kw.arg == "default" and isinstance(kw.value, ast.Constant):
+                    if kw.value.value in status_options:
+                        out.append(f"{path.name} {flag}（預設 {kw.value.value}，無 choices）")
+    return out
+
+
 def related_verbs(symbol: str, verbs: set[str]) -> list[str]:
     """事件名與 CLI 動詞的 token 交集。
 
@@ -978,7 +1021,11 @@ _STATUS_VOCAB_MODULE = "project.py"
 
 
 def _transition_sites(occs: list[Occurrence]) -> list[Occurrence]:
-    """狀態值出現在「值的位置」而且不在 ``project.py`` 的詞彙表裡 → 有動詞轉得進去。
+    """狀態值出現在「值的位置」而且不在 ``project.py`` 的詞彙表裡 → 有**專責動詞**。
+
+    ⚠️ 「沒有專責動詞」**不等於**「轉不進去」：``assign --status`` 是自由文字旗標，
+    任何已宣告的選項都寫得進去（見 ``ungated_status_flags``）。措辭一度寫成「沒有任何
+    動詞轉得進去」，那是過度宣稱。
 
     ``project.py`` 的 ``FIELD_SPECS`` 只宣告「這個 SINGLE_SELECT 欄位有哪些選項」，
     它被寫進遠端的是**欄位定義**，不是任何一張卡的狀態轉換。把它排掉之後，剩下的命中
@@ -997,6 +1044,7 @@ def _transition_sites(occs: list[Occurrence]) -> list[Occurrence]:
 class Reconciliation:
     rows: list[Row]
     guard_gaps: list[GuardGap]
+    ungated_status_flags: list[str] = field(default_factory=list)
 
     @property
     def gaps(self) -> list[Row]:
@@ -1073,11 +1121,11 @@ def reconcile(root: Path) -> Reconciliation:
             in_options = sym.name in status_options
             transition = _transition_sites(occs)
             notes.append(f"Project 選項={'是' if in_options else '否'}")
-            notes.append(f"轉得進去={'是' if transition else '否'}")
+            notes.append(f"專責動詞={'是' if transition else '否'}")
             if in_options:
                 verdict = VERDICT_OK if transition else VERDICT_READ_ONLY
                 if not transition:
-                    notes.append("⚠️ 狀態表列了這個選項，但沒有任何動詞轉得進去")
+                    notes.append("⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」）")
             if transition:
                 writers = transition
 
@@ -1094,7 +1142,11 @@ def reconcile(root: Path) -> Reconciliation:
             )
         )
 
-    return Reconciliation(rows=rows, guard_gaps=guard_coverage(modules, graph))
+    return Reconciliation(
+        rows=rows,
+        guard_gaps=guard_coverage(modules, graph),
+        ungated_status_flags=ungated_status_flags(root, status_options),
+    )
 
 
 # ==========================================================================
@@ -1161,6 +1213,11 @@ def render_markdown(rec: Reconciliation, shown: list[Row]) -> str:
     out.append(f"- 契約側符號總數：**{len(rec.rows)}**（由掃描文件導出，非人工登記）")
     out.append(f"- 判定為缺口：**{len(rec.gaps)}**")
     out.append(f"- 守衛覆蓋缺口：**{len(rec.guard_gaps)}**")
+    if rec.ungated_status_flags:
+        out.append(
+            "- ⚠️ 自由文字狀態旗標（可繞過所有契約前提直接設定任一已宣告狀態）："
+            + "、".join(f"`{f}`" for f in rec.ungated_status_flags)
+        )
     out.append("")
     for kind, label in (
         (KIND_EVENT, "事件型別"),
@@ -1249,6 +1306,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "symbol_count": len(rec.rows),
                     "gap_count": len(rec.gaps),
+                    "ungated_status_flags": rec.ungated_status_flags,
                     "rows": [r.to_json() for r in shown],
                     "guard_gaps": [
                         {

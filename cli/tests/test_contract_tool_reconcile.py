@@ -381,7 +381,7 @@ def test_adding_an_amend_function_flips_amendability(synthetic_repo: Path):
 
 
 # ==========================================================================
-# 變異檢驗：狀態的「轉得進去」軸
+# 變異檢驗：狀態的「專責動詞」軸
 # ==========================================================================
 
 
@@ -390,7 +390,7 @@ def test_status_declared_as_option_but_with_no_verb_is_a_gap(synthetic_repo: Pat
     row = _row(ctr.reconcile(synthetic_repo), "delivery_status", "⏸阻塞")
     assert row.verdict == ctr.VERDICT_READ_ONLY
     assert "Project 選項=是" in row.notes
-    assert "轉得進去=否" in row.notes
+    assert "專責動詞=否" in row.notes
 
 
 def test_status_with_a_verb_is_not_a_gap(synthetic_repo: Path):
@@ -405,7 +405,7 @@ def test_status_with_a_verb_is_not_a_gap(synthetic_repo: Path):
         encoding="utf-8",
     )
     row = _row(ctr.reconcile(synthetic_repo), "delivery_status", "⏸阻塞")
-    assert "轉得進去=是" in row.notes
+    assert "專責動詞=是" in row.notes
     assert row.verdict == ctr.VERDICT_OK
 
 
@@ -618,7 +618,7 @@ def test_control_3_blocked_status_has_no_verb(live):
     row = _row(live, "delivery_status", "⏸阻塞")
     assert row.verdict == ctr.VERDICT_READ_ONLY
     assert "Project 選項=是" in row.notes
-    assert "轉得進去=否" in row.notes
+    assert "專責動詞=否" in row.notes
     # 契約 §1 另有 status-change → ⏸阻塞 這個事件名，工具側連字面都沒有。
     assert _row(live, "event", "status-change").verdict == ctr.VERDICT_ABSENT
 

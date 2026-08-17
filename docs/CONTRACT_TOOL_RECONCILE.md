@@ -58,7 +58,7 @@ CI runner）這類非事件符號也會進表。多抽一列的代價是表上�
 | universe 由文件導出 | 在契約文件新增一個 kebab 符號後重跑，它沒有進表 | `test_new_symbol_in_canonical_appears_without_touching_the_tool`（含反方向：刪掉就該消失） |
 | writer 判定量的是位置不是字串存在 | 把符號從 `print()` 搬到寫入路徑上，判定沒有翻面（或搬回去仍判成 writer） | `test_symbol_only_inside_print_is_not_a_writer` ＋ `test_same_symbol_becomes_a_writer_when_it_reaches_the_state_plane` |
 | amend 可改性讀的是碼 | 新增一個 `amend_*` 函式並 import 之後，欄位仍判成「改不動」 | `test_adding_an_amend_function_flips_amendability` |
-| 狀態的「轉得進去」軸有鑑別力 | 某狀態加上動詞之後判定沒有翻面 | `test_status_with_a_verb_is_not_a_gap` |
+| 狀態的「專責動詞」軸有鑑別力 | 某狀態加上動詞之後判定沒有翻面 | `test_status_with_a_verb_is_not_a_gap` |
 | 守衛覆蓋有鑑別力 | 接上守衛之後缺口沒有消失 | `test_calling_the_guard_clears_the_gap` |
 | `--check` 不讀時鐘 | 不動任何碼與文件，兩次重跑一次綠一次紅 | `test_check_does_not_read_the_clock` ＋ `test_reconciler_source_contains_no_clock_calls` |
 | 守衛覆蓋缺口也在 ratchet 內 | 接上守衛使缺口消失後 `--check` 仍是綠的 | `test_guard_gaps_are_covered_by_check` |
@@ -104,7 +104,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
    （`validation.review_invalid_reasons`），偵測完只印 stderr 然後 `return 4`。**
 2. **`preflight-failed`** → `mention-only`、writer 0、`相關動詞=無`。整個 `cli/src` 只有
    `review.py:627` 的一行 `#` 註解。連偵測都沒有。
-3. **`⏸阻塞`** → `read-only`、`Project 選項=是`、`轉得進去=否`。字面只在
+3. **`⏸阻塞`** → `read-only`、`Project 選項=是`、`專責動詞=否`。字面只在
    `project.py:41` 的 `FIELD_SPECS` 列舉裡；`amend_cmd.py:463` 的 docstring 與
    `review_cmd.py:296` 的註解都只是提及。契約 §1 另有 `status-change → ⏸阻塞` 這個事件名，
    工具側**連字面都沒有**（判定 `absent`）。
@@ -122,20 +122,32 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 
 驗收條 3 要求對帳結果須含先前未踩到的條目。以下全部是本次掃出來、不在那五個已知實例裡的。
 
-### 4.1 交付狀態：狀態表列了選項，卻沒有任何動詞轉得進去（5 項新增）
+### 4.1 交付狀態：狀態表列了選項，卻沒有**專責動詞**（5 項新增）
 
 已知的只有 `⏸阻塞`。實際同形狀的還有 **`⏳待執行`、`💡需求`、`🔨執行中`、`🚨已升級`、
-`📦已合併`**——五個都只出現在 `project.FIELD_SPECS` 的列舉裡，沒有任何命令拿它們當值。
+`📦已合併`**——六個都只出現在 `project.FIELD_SPECS` 的列舉裡，沒有任何命令以它為自己的
+語意結果。
 
-其中兩個特別要緊：
+> ⚠️ **措辭更正（本卡自己犯的一次過度宣稱）。** 本節初稿寫的是「沒有任何動詞轉得進去」，
+> 那是**錯的**。`assign_cmd.py` 的 `--status` 是自由文字旗標（只有 `default` 與 `help`，
+> **沒有 `choices`**），而 `project.set_field_value` 只檢查該值是不是 Project 上既有的
+> 選項。因此 `wfcli assign --status ⏸阻塞` **寫得進去**。正確的說法是「沒有**專責**動詞」。
+> 對帳器現在把這類逃生口用 `ungated_status_flags` 機械列在報告開頭，不靠散文記得。
+
+`--status` 自由文字本身就是一個新發現的治理缺口：**`assign` 可以把卡直接推到
+`🚨已升級` 或 `📦已合併`，而不經過契約規定的任何前提**（escalation checkpoint、merge 收尾）。
+契約把大量條件寫在 `review-escalation.md` §4，而寫入面完全不驗。
+
+兩個特別要緊的狀態：
 
 - **`🚨已升級`**：canonical §5 與 `review-escalation.md` §4 花了大量篇幅規定「何時轉
-  `🚨已升級`」，而**沒有任何 writer 轉得進去**。`checkpoint_cmd` 有 `escalate` 決定值
-  （`CHECKPOINT_DECISIONS`），但它寫的是 checkpoint 留言，不改交付狀態。
+  `🚨已升級`」，卻**沒有任何命令以它為語意結果**。`checkpoint_cmd` 有 `escalate` 決定值
+  （`CHECKPOINT_DECISIONS`），但它寫的是 checkpoint 留言，不改交付狀態——所以「該不該升級」
+  的判斷與「卡真的變成已升級」之間沒有機械連線，中間靠人打 `assign --status`。
 - **`📦已合併`**：canonical §4.4 明訂「現役的定義含 `📦已合併`」「停在 `📦已合併` 不收尾
-  ＝假活卡」。工具**讀**它（`doctor.py:1269` 的比對）卻**寫不出**它。若實務上這個狀態是有人
-  在看板 UI 直接改的，那違反 §4.3「唯一寫入通道」紅線；若沒人改，那 doctor 的收尾檢查在
-  構造上永遠不會有輸入。**兩種可能都需要需求方裁定**，工具帳上分不出來。
+  ＝假活卡」。工具**讀**它（`doctor.py:1269` 的比對）卻沒有專責寫入動詞。實務上這個狀態
+  是怎麼被設定的（`assign --status`？看板 UI？），**工具帳上分不出來**；若是後者即違反
+  §4.3「唯一寫入通道」紅線。**需求方裁定。**
 
 ### 4.2 卡面欄位：開卡寫得進、開卡後改不動（4 項新增）
 
@@ -231,7 +243,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | 族 | 成員 | 建議處置 |
 |---|---|---|
 | §3 五個已知實例 | `review-invalid`、`preflight-failed`、`status-change`、amend 繞過 `find_conflicts`、`需求` 欄 | `補寫入者`（`review-invalid` 工程量最小：偵測已在，只差留痕）。`amend` 那項是**閘門繞過**，風險高於留痕缺失，建議單獨開卡 |
-| §4.1 狀態無動詞 | `⏳待執行`、`💡需求`、`🔨執行中`、`🚨已升級`、`📦已合併` | `🚨已升級` `補寫入者`；`📦已合併` `待需求方裁定`（先釐清現況是否有人繞過 CLI 改看板）；其餘三個 `待需求方裁定`（補動詞或從狀態表移除） |
+| §4.1 狀態無專責動詞 | `⏸阻塞`、`⏳待執行`、`💡需求`、`🔨執行中`、`🚨已升級`、`📦已合併`，以及 `assign --status` 自由文字逃生口 | `🚨已升級` `補寫入者`；`📦已合併` `待需求方裁定`（先釐清現況是怎麼設定的）；其餘 `待需求方裁定`（補動詞或從狀態表移除）。**`--status` 該不該收斂成 `choices` 是獨立一問**——它現在讓所有前提都可繞過 |
 | §4.2 開卡後改不動 | `規劃`、`執行`、`查核`、`DB`、`服務的原始目標` | `補寫入者`（`規劃` 優先：它與 `需求` 同樣被讀作授權判準） |
 | §4.3 完全不渲染 | tasks-card 7 項＋initiative-card 6 項＋bug-card 6 項 | `待需求方裁定`：`從契約移除`（承認這些是手填欄位）或補 `wfcli open --kind initiative/bug`。**不建議逐欄補**——19 個欄位逐欄開卡正是本卡要消滅的「修實例不修形狀」 |
 | §4.4 事件無 writer | `escalation-epoch-change`、`handoff-accepted`、`review-correction`、`review-marker-clearance`、`baseline-change-request`、四個 clearance 分類 | `補寫入者`。`handoff-accepted` 優先——`event-verified` preflight 依據的不可達性以它為根因 |
@@ -313,6 +325,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 - 契約側符號總數：**79**（由掃描文件導出，非人工登記）
 - 判定為缺口：**52**
 - 守衛覆蓋缺口：**3**
+- ⚠️ 自由文字狀態旗標（可繞過所有契約前提直接設定任一已宣告狀態）：`assign_cmd.py --status（預設 🚧進行中，無 choices）`
 
 ### 事件型別（22）
 
@@ -345,29 +358,29 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 
 | 符號 | 判定 | 契約出處 | 寫入者 | 讀取者 | 備註 |
 |---|---|---|---|---|---|
-| `→merge` | absent | `AI_WORKFLOW.md:56` | — | — | Project 選項=否；轉得進去=否 |
-| `→查核前` | absent | `AI_WORKFLOW.md:56` | — | — | Project 選項=否；轉得進去=否 |
-| `↔執行者` | absent | `AI_WORKFLOW.md:49` | — | — | Project 選項=否；轉得進去=否 |
-| `⏳待執行` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；轉得進去=否；⚠️ 狀態表列了這個選項，但沒有任何動詞轉得進去 |
-| `⏸阻塞` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:103`<br>`AI_WORKFLOW.md:191`<br>…共 11 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；轉得進去=否；⚠️ 狀態表列了這個選項，但沒有任何動詞轉得進去 |
-| `⚪一般` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；轉得進去=否 |
-| `💡需求` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；轉得進去=否；⚠️ 狀態表列了這個選項，但沒有任何動詞轉得進去 |
-| `📦已合併` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:171`<br>`templates/TASKS.md:6`<br>…共 7 | — | `cli/src/wf_cli/doctor.py:1269`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；轉得進去=否；⚠️ 狀態表列了這個選項，但沒有任何動詞轉得進去 |
-| `🔨執行中` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:9`<br>…共 4 | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；轉得進去=否；⚠️ 狀態表列了這個選項，但沒有任何動詞轉得進去 |
-| `🔴紅線` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；轉得進去=否 |
-| `🚨已升級` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:104`<br>`AI_WORKFLOW.md:191`<br>…共 9 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；轉得進去=否；⚠️ 狀態表列了這個選項，但沒有任何動詞轉得進去 |
-| `↩退回` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/project.py:41`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；轉得進去=是 |
-| `⏳部署中` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:39` | `cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:39`<br>…共 4 | Project 選項=是；轉得進去=是 |
-| `⏸未部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_declare_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_declare_cmd.py:35`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>…共 5 | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:37`<br>`cli/src/wf_cli/project.py:46` | Project 選項=是；轉得進去=是 |
-| `✅已部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40`<br>…共 4 | Project 選項=是；轉得進去=是 |
-| `✅已驗證` | ok | `AI_WORKFLOW.md:18`<br>`templates/worktree-lifecycle.md:15` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:349` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:349`<br>…共 4 | Project 選項=是；轉得進去=是 |
-| `✅通過` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/project.py:40`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；轉得進去=是 |
-| `🏁完成` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/project-stub.md:25`<br>…共 5 | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/commands/handoff_cmd.py:356` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；轉得進去=是 |
-| `📥Backlog` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:113`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/card.py:295` | `cli/src/wf_cli/project.py:39` | Project 選項=是；轉得進去=是 |
-| `🔍待查核` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/handoff-contract.md:154`<br>…共 6 | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/commands/review_cmd.py:104` | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；轉得進去=是 |
-| `🚀待部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38`<br>…共 4 | Project 選項=是；轉得進去=是 |
-| `🛑已停止` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/baseline-cascade.md:20` | `cli/src/wf_cli/commands/assign_cmd.py:89` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:41` | Project 選項=是；轉得進去=是 |
-| `🧪驗證中` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:41` | `cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:41`<br>…共 4 | Project 選項=是；轉得進去=是 |
+| `→merge` | absent | `AI_WORKFLOW.md:56` | — | — | Project 選項=否；專責動詞=否 |
+| `→查核前` | absent | `AI_WORKFLOW.md:56` | — | — | Project 選項=否；專責動詞=否 |
+| `↔執行者` | absent | `AI_WORKFLOW.md:49` | — | — | Project 選項=否；專責動詞=否 |
+| `⏳待執行` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `⏸阻塞` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:103`<br>`AI_WORKFLOW.md:191`<br>…共 11 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `⚪一般` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；專責動詞=否 |
+| `💡需求` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `📦已合併` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:171`<br>`templates/TASKS.md:6`<br>…共 7 | — | `cli/src/wf_cli/doctor.py:1269`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `🔨執行中` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:9`<br>…共 4 | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `🔴紅線` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；專責動詞=否 |
+| `🚨已升級` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:104`<br>`AI_WORKFLOW.md:191`<br>…共 9 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `↩退回` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/project.py:41`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
+| `⏳部署中` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:39` | `cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:39`<br>…共 4 | Project 選項=是；專責動詞=是 |
+| `⏸未部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_declare_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_declare_cmd.py:35`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>…共 5 | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:37`<br>`cli/src/wf_cli/project.py:46` | Project 選項=是；專責動詞=是 |
+| `✅已部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40`<br>…共 4 | Project 選項=是；專責動詞=是 |
+| `✅已驗證` | ok | `AI_WORKFLOW.md:18`<br>`templates/worktree-lifecycle.md:15` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:349` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:349`<br>…共 4 | Project 選項=是；專責動詞=是 |
+| `✅通過` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/project.py:40`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
+| `🏁完成` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/project-stub.md:25`<br>…共 5 | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/commands/handoff_cmd.py:356` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
+| `📥Backlog` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:113`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/card.py:295` | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `🔍待查核` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/handoff-contract.md:154`<br>…共 6 | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/commands/review_cmd.py:104` | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
+| `🚀待部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38`<br>…共 4 | Project 選項=是；專責動詞=是 |
+| `🛑已停止` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/baseline-cascade.md:20` | `cli/src/wf_cli/commands/assign_cmd.py:89` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=是 |
+| `🧪驗證中` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:41` | `cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:41`<br>…共 4 | Project 選項=是；專責動詞=是 |
 
 ### 卡面欄位（34）
 
