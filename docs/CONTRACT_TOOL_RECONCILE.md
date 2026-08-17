@@ -61,6 +61,7 @@ CI runner）這類非事件符號也會進表。多抽一列的代價是表上�
 | 狀態的「轉得進去」軸有鑑別力 | 某狀態加上動詞之後判定沒有翻面 | `test_status_with_a_verb_is_not_a_gap` |
 | 守衛覆蓋有鑑別力 | 接上守衛之後缺口沒有消失 | `test_calling_the_guard_clears_the_gap` |
 | `--check` 不讀時鐘 | 不動任何碼與文件，兩次重跑一次綠一次紅 | `test_check_does_not_read_the_clock` ＋ `test_reconciler_source_contains_no_clock_calls` |
+| 守衛覆蓋缺口也在 ratchet 內 | 接上守衛使缺口消失後 `--check` 仍是綠的 | `test_guard_gaps_are_covered_by_check` |
 | 表不是空的／不是全紅 | 三個 kind 有任一個沒有任何 `ok` 或沒有任何缺口 | `test_live_table_is_not_vacuous` |
 
 ### 2.3 為什麼 §6 的處置表不是第二份人維護清單
@@ -73,6 +74,24 @@ CI runner）這類非事件符號也會進表。多抽一列的代價是表上�
 
 所以**刪掉一列不會讓檢查變綠**——刪掉即變成第 1 種。universe 本身仍完全由 §2 的掃描決定，
 本檔碰不到它。
+
+### 2.4 變異檢驗（實跑，非宣稱）
+
+以下四個變異各自套用在乾淨樹上、跑 `cd cli && uv run pytest
+tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 passed。
+
+| 變異 | 改法 | 結果 |
+|---|---|---|
+| **M1** universe 改成人登記的清單 | `build_universe` 直接回傳一個寫死的四元素列表 | **15 failed**，含驗收條 5 的主檢 `test_new_symbol_in_canonical_appears_without_touching_the_tool`，以及正控組 3 與 5 |
+| **M2** `print()` 引數也算 writer（＝退回 grep 語意） | `_syntactic_role` 對 `DIAGNOSTIC_CALLS` 回 `ROLE_OTHER` | **3 failed**：`test_symbol_only_inside_print_is_not_a_writer`、正控組 1、`--check` |
+| **M3** 呼叫圖恢復「同名全集」退路 | `resolve` 末行改回 `by_name.get(name, set())` | **2 failed**：`test_unresolvable_calls_do_not_create_call_graph_edges`、**正控組 4** |
+| **M4** 從 §6 處置表刪掉一列 | 刪 `event/review-invalid` 那一行 | `--check` 退出碼 1，訊息「缺口未登記處置：event/review-invalid」；**1 failed** |
+
+⚠️ **M3 順帶抓到一個真的洞。** 它讓正控組 4（`amend` 繞過 `find_conflicts`）整個消失，
+而當時的 `--check` **仍然是綠的**——因為第一版只把符號列納入 ratchet，守衛覆蓋缺口完全
+不在比對範圍內。**沒被 ratchet 蓋住的檢查等於沒有檢查。** 已修：守衛缺口以
+`guard/<寫入入口>→<資料模組>` 為鍵一併登記，並補 `test_guard_gaps_are_covered_by_check`。
+這一項是變異檢驗自己找出來的，不是設計時想到的。
 
 ## 3. 五個已知實例（正控組）
 
@@ -198,6 +217,9 @@ CI runner）這類非事件符號也會進表。多抽一列的代價是表上�
   排掉了，兩者靜默不進表。已修（欄位名容許內含空白）。⚠️ 這正是驗收條 5 警告的那個失敗
   形狀，而它是在寫本檔、逐列核對「契約明列的必填欄怎麼不在表上」時才發現的——**機械窮舉
   不保證規則本身是對的**。
+- **第一版的 ratchet 漏了守衛覆蓋缺口**：`--check` 只比對符號列，於是 M3 變異讓正控組 4
+  整個消失時它仍是綠的。已修（§2.4）。同一個教訓的第二次：**規則與檢查本身都要被變異
+  檢驗打一次，不能只驗被檢查的對象**。
 
 ## 6. 缺口登記與處置
 
@@ -274,7 +296,10 @@ CI runner）這類非事件符號也會進表。多抽一列的代價是表上�
     "event/spec-narrowed": "mention-only",
     "event/status-change": "absent",
     "event/ubuntu-latest": "absent",
-    "event/update-branch": "absent"
+    "event/update-branch": "absent",
+    "guard/cli/src/wf_cli/card.py→resources": "find_conflicts",
+    "guard/cli/src/wf_cli/commands/amend_cmd.py→resources": "find_conflicts",
+    "guard/cli/src/wf_cli/commands/assign_cmd.py→card": "validate_capability_routing／validate_routing_field／validate_routing_names"
   }
 }
 ```

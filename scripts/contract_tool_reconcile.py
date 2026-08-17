@@ -1130,6 +1130,23 @@ def gap_key(row: Row) -> str:
     return f"{row.kind}/{row.name}"
 
 
+def guard_gap_key(gap: GuardGap) -> str:
+    """守衛覆蓋缺口的登記鍵。
+
+    ⚠️ 這一支是補上去的：第一版的 ``--check`` 只比對符號列，守衛覆蓋缺口完全不在
+    ratchet 內。變異檢驗 M3（把呼叫圖退回同名全集）當場證明了這個洞——已知缺口 #4
+    整個消失，而 ``--check`` 仍然是綠的。**沒被 ratchet 蓋住的檢查等於沒有檢查。**
+    """
+    return f"guard/{gap.writer}→{gap.module}"
+
+
+def all_gap_entries(rec: "Reconciliation") -> dict[str, str]:
+    entries = {gap_key(r): r.verdict for r in rec.gaps}
+    for g in rec.guard_gaps:
+        entries[guard_gap_key(g)] = g.guard
+    return entries
+
+
 def _cells(items: list[str], limit: int = 3) -> str:
     if not items:
         return "—"
@@ -1186,7 +1203,7 @@ def run_check(root: Path, rec: Reconciliation, stream=None) -> int:
     """把機械缺口集合與登記處置逐項比對。三個方向都會紅。"""
     err = stream or sys.stderr
     registered = parse_dispositions(root)
-    actual = {gap_key(r): r.verdict for r in rec.gaps}
+    actual = all_gap_entries(rec)
 
     missing = sorted(set(actual) - set(registered))
     stale = sorted(set(registered) - set(actual))

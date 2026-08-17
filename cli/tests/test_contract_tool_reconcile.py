@@ -483,7 +483,7 @@ def test_check_is_red_when_dispositions_are_missing_entirely(synthetic_repo: Pat
 
 def test_check_is_green_when_every_gap_is_registered(synthetic_repo: Path):
     rec = ctr.reconcile(synthetic_repo)
-    _write_dispositions(synthetic_repo, {ctr.gap_key(r): r.verdict for r in rec.gaps})
+    _write_dispositions(synthetic_repo, ctr.all_gap_entries(rec))
     code, text = _run_check(synthetic_repo)
     assert code == 0, text
 
@@ -495,7 +495,7 @@ def test_deleting_a_registered_gap_does_not_turn_check_green(synthetic_repo: Pat
     而檢查轉紅。三個方向（漏登記／登記了不存在的／判定變了）都紅，見以下三個測試。
     """
     rec = ctr.reconcile(synthetic_repo)
-    mapping = {ctr.gap_key(r): r.verdict for r in rec.gaps}
+    mapping = ctr.all_gap_entries(rec)
     victim = sorted(mapping)[0]
     del mapping[victim]
     _write_dispositions(synthetic_repo, mapping)
@@ -506,7 +506,7 @@ def test_deleting_a_registered_gap_does_not_turn_check_green(synthetic_repo: Pat
 
 def test_check_is_red_for_a_registered_gap_that_no_longer_exists(synthetic_repo: Path):
     rec = ctr.reconcile(synthetic_repo)
-    mapping = {ctr.gap_key(r): r.verdict for r in rec.gaps}
+    mapping = ctr.all_gap_entries(rec)
     mapping["event/a-gap-that-was-fixed"] = ctr.VERDICT_ABSENT
     _write_dispositions(synthetic_repo, mapping)
     code, text = _run_check(synthetic_repo)
@@ -516,7 +516,7 @@ def test_check_is_red_for_a_registered_gap_that_no_longer_exists(synthetic_repo:
 
 def test_check_is_red_when_a_verdict_changes(synthetic_repo: Path):
     rec = ctr.reconcile(synthetic_repo)
-    mapping = {ctr.gap_key(r): r.verdict for r in rec.gaps}
+    mapping = ctr.all_gap_entries(rec)
     victim = sorted(mapping)[0]
     mapping[victim] = "some-other-verdict"
     _write_dispositions(synthetic_repo, mapping)
@@ -525,10 +525,44 @@ def test_check_is_red_when_a_verdict_changes(synthetic_repo: Path):
     assert "判定變了" in text
 
 
+def test_guard_gaps_are_covered_by_check(synthetic_repo: Path):
+    """守衛覆蓋缺口也必須進 ratchet。
+
+    ⚠️ 這條是變異檢驗 M3 抓出來的洞：第一版 ``--check`` 只比對符號列，於是把呼叫圖退回
+    「同名全集」讓已知缺口 #4 整個消失時，``--check`` **仍然是綠的**。沒被 ratchet 蓋住
+    的檢查等於沒有檢查。
+
+    什麼結果會讓這個檢查不成立：接上守衛使缺口消失後 ``--check`` 仍是綠的——那表示守衛
+    覆蓋沒有被登記面觀測到。
+    """
+    rec = ctr.reconcile(synthetic_repo)
+    assert any(k.startswith("guard/") for k in ctr.all_gap_entries(rec))
+    _write_dispositions(synthetic_repo, ctr.all_gap_entries(rec))
+    assert _run_check(synthetic_repo)[0] == 0
+
+    cmd = synthetic_repo / "cli" / "src" / "wf_cli" / "commands" / "amend_cmd.py"
+    cmd.write_text(
+        cmd.read_text(encoding="utf-8")
+        .replace(
+            "from ..resources import render_block",
+            "from ..resources import find_conflicts, render_block",
+        )
+        .replace(
+            "    parse_requested_by(body)",
+            "    parse_requested_by(body)\n    find_conflicts([], '', None)",
+        ),
+        encoding="utf-8",
+    )
+    code, text = _run_check(synthetic_repo)
+    assert code == 1
+    assert "登記了已不存在的缺口" in text
+    assert "amend_cmd.py" in text
+
+
 def test_check_is_red_when_a_new_contract_symbol_appears_unregistered(synthetic_repo: Path):
     """契約長出新東西而沒人處置 → 可見失敗。這正是「漏掃不得靜默通過」的操作面。"""
     rec = ctr.reconcile(synthetic_repo)
-    _write_dispositions(synthetic_repo, {ctr.gap_key(r): r.verdict for r in rec.gaps})
+    _write_dispositions(synthetic_repo, ctr.all_gap_entries(rec))
     assert _run_check(synthetic_repo)[0] == 0
     doc = synthetic_repo / "AI_WORKFLOW.md"
     doc.write_text(doc.read_text(encoding="utf-8") + "\n`unregistered-newcomer` 上線了。\n", "utf-8")
@@ -545,7 +579,7 @@ def test_check_does_not_read_the_clock(synthetic_repo: Path):
     時鐘呼叫，由下一個測試釘住。
     """
     rec = ctr.reconcile(synthetic_repo)
-    _write_dispositions(synthetic_repo, {ctr.gap_key(r): r.verdict for r in rec.gaps})
+    _write_dispositions(synthetic_repo, ctr.all_gap_entries(rec))
     assert _run_check(synthetic_repo) == _run_check(synthetic_repo)
 
 
