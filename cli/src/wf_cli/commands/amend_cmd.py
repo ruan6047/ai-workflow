@@ -263,7 +263,7 @@ from ..project import (
 )
 from ..resources import ResourceDeclaration, ResourceDeclarationError, parse_block, render_block
 
-#: 授權註記的**唯一**模板。寫進 Log 的授權欄永遠是它代入 author／url 的結果。
+#: 授權註記的**唯一**模板。寫進 Log 的授權欄由它代入 author／url 產生。
 #:
 #: 措辭本身為什麼長這樣（沒有總結標籤、外層「裁定」被降級為操作者宣告），見模組
 #: docstring「第二／第三個上限」。這裡講的是**為什麼它是一個具名常數**。
@@ -289,12 +289,18 @@ from ..resources import ResourceDeclaration, ResourceDeclarationError, parse_blo
 #:      author=author, url=args.ruling_url)`（`test_authority_note_is_template_
 #:      substitution_by_construction`）。
 #:
-#: 兩條合起來，對**所有**輸入都得到同一個模板的代入：模板只有一個、函式只會回它的
-#: 代入。這不是多測幾組，是把量詞從「對這些輸入」換成「由構造」。
+#: 兩條合起來，對**所有**輸入都是「同一個模板 ＋ 代入」——模板只有一個、函式只會回
+#: 它的代入。這不是多測幾組，是把量詞從「對這些輸入」換成「由構造」。
 #:
-#: ⚠️ 因此**不要**把這裡改回 f-string、也不要在 return 之前依任何條件改寫它：那會
-#: 讓 AST 斷言當場紅。要改措辭是合法的，但必須連同測試的黃金常數一起改——那一行
-#: diff 就是要給查核者看的東西。
+#: ⚠️ 但它界定的是**組裝方式**，不是**最終字串**：被代入的那兩個值本身不在約束範圍
+#: 內，所以「同一個模板的代入」**不等於**「輸出必定是黃金值」——M27 正是從那裡進來的。
+#:
+#: ⚠️ 因此**不要**把這裡改回 f-string，也不要改動 return 那一行運算式的形狀——AST
+#: 斷言釘的就是該運算式的語法形狀，改了會紅。要改措辭是合法的，但必須連同測試的
+#: 黃金常數一起改——那一行 diff 就是要給查核者看的東西。
+#:
+#: ⚠️ 但**不要**把上一句讀成「return 之前做什麼都會被抓」：在 return 之前改寫
+#: ``author``／``url`` 這兩個**值**，AST 看不見、測試不會紅（M27，見下方威脅模型）。
 #:
 #: ⚠️ **威脅模型（守到哪為止）**：本守衛防的是**無意的後續編輯**，**不防蓄意繞過
 #: 的提交者**。上面那個「由構造」只約束 ``return`` 的**語法**，不約束 ``author``

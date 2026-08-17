@@ -1195,8 +1195,14 @@ def test_authority_note_is_template_substitution_by_construction():
 
     所以改成約束**原始碼形狀**：函式只有一個 return，且該 return 的運算式逐節點
     等於 ``AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)``。
-    在此形狀下輸出恆等於模板代入，因此**不存在**任何輸入能得到別的字串——任何
-    條件式、f-string、字串拼接、額外 kwarg 都會讓 AST 不相等。
+    在此形狀下，輸出是模板代入 ``author``／``url`` **當下持有的值**。
+
+    ⚠️ 這**不**等於「不存在任何輸入能得到別的字串」。本斷言釘的是 return 運算式的
+    **語法形狀**，不約束那兩個值怎麼來——在 return 之前改寫 ``author`` 就繞得過，
+    AST 完全看不見（M27／R4-001，已知不涵蓋且不修，見本區塊上方的威脅模型）。
+
+    會讓本斷言不相等的是**改動 return 運算式本身**：改成 f-string、加字串拼接、
+    多一個 kwarg、或把該運算式包進條件式。
 
     比對方式刻意是「兩邊都用同一個 ``ast.dump``」而非寫死 dump 字串：後者會隨
     Python 版本的 dump 格式改變而假紅。
