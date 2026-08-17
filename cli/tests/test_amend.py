@@ -1041,78 +1041,83 @@ def test_core_pain_succeeds_with_requester_ruling_and_records_authority(gov_card
     # 註記的措辭本身由 test_authority_note_* 三條釘住（見下）。
 
 
-# 授權註記的**措辭**：字面為真還不夠，語意不得誇大（WF-AMEND-AUTHZ-BINDING1）
+# 授權註記的措辭守衛（WF-AMEND-AUTHZ-BINDING1）
+#
+# ⚠️ 本區塊刻意**不寫綜述**：不出現「因此…／所以…／故保證…」形式的句子。
+#
+# 理由是實測出來的。本卡四輪查核抓到的四句過度宣稱**全部**出自綜述類——
+# R2-001、R5-001、R6-001，加上一句我自查補上的；每一句都是從下面的事實「推出」
+# 一個保證，而那個保證每次都比事實大。我自己掃過四次，四次都漏。所以這裡不再
+# 寫綜述，只寫三類：做了什麼、跑過什麼結果如何、已知不涵蓋什麼。
+#
+# **結論由讀者自己從 1、2、3 得出。** 這份文件沒有立場替讀者下那個結論。
 #
 # 本卡治的病：舊註記「GitHub comment author 已逐字核對，非留言內文自述」字面為真
-# （確實比對過），語意卻誤導——後半句把本檢查描述成「排除了自述」，讀者因此以為
-# 它有區辨力。而 amend 這條路徑從不讀取操作者身分，且本 repo 只有一個人類帳號
-# （PM 的 gh 與需求方同為 ruan6047），那道比對對代貼者恆真，從未區辨過任何東西。
-# 已實現後果：13 筆事件／9 張卡（2026-08-16 對 Project #4 全部 148 個 item 逐張掃描）。
+# （確實比對過），語意卻誤導——後半句把本檢查描述成「排除了自述」。而 amend 這條
+# 路徑從不讀取操作者身分，且本 repo 只有一個人類帳號（PM 的 gh 與需求方同為
+# ruan6047），那道比對對代貼者恆真。既存受影響事件不追溯改寫，改以
+# `wfcli doctor --legacy-authority-notes` 機械列出（數量隨事件增減，不寫死）。
 #
-# ---- 守衛的形狀：四代演進，以及為什麼這一代不是第五代的前身 -----------------
+# ── 1. 做了什麼 ──────────────────────────────────────────────
 #
-# 前三代打的是「這串字說了什麼」，我每次釘一個**性質**，下一輪就有人找到不違反該
-# 性質卻仍然誇大的寫法：
+# (1) 模板是 `amend_cmd.AUTHORITY_NOTE_TEMPLATE`，一個模組層常數。
+#     `test_authority_note_template_is_verbatim_golden` 逐字元比對它，並檢查它的
+#     插值欄位名恰為 author 與 url。
+# (2) `test_authority_note_is_template_substitution_by_construction` 以 AST 斷言
+#     `_authorize_by_requester_ruling` 只有一個 return、無巢狀函式，且該 return 的
+#     運算式逐節點等於 `AUTHORITY_NOTE_TEMPLATE.format(author=author,
+#     url=args.ruling_url)`。
+# (3) `test_authority_note_template_is_assigned_exactly_once_in_the_module` 以 AST
+#     數模組內對該常數的指派次數。
+# (4) `test_runtime_output_matches_the_template_for_varied_inputs` 以四組
+#     (author, comment id) 實際呼叫，比對回傳值與模板代入。
+# (5) `test_golden_note_also_reaches_the_log_verbatim` 比對 Log 行內前後界線字元
+#     之間的內容；`test_golden_note_is_reflow_stable` 檢查該字串不含連續空白或
+#     換行，且 `" ".join(s.split())` 後與自身相同。
 #
-#   R0 「…已逐字核對，非留言內文自述」   → 那是區辨力宣稱
-#   R1 「宣告完整性已檢查：…」            → 總結標籤，涵蓋範圍大於列出的內容
-#   R2 拿掉標籤 ＋ 釘住「（」後的插入位置 → 標籤改插在第一個事實**之後**即繞過
-#                                            （R2-001，實測 3 passed）
+# ── 2. 跑過什麼、結果是什麼 ──────────────────────────────────
 #
-# R3 用逐字比對把那一族關掉了：措辭與位置都是開放集合，而「必須恰好等於這串字」
-# 是封閉的。**那個判斷沒有被推翻。**
+# 歷代用來打這組守衛的變異與實測結果。⚠️ 數字是**當次執行的範圍**：M14–M26b 跑的
+# 是 tests/test_amend.py + tests/test_doctor.py，M20（舊守衛）與 M27 是全套。
 #
-# 第四代打的是另一件事——**守衛涵蓋哪些輸入**：
+#   R0   「…已逐字核對，非留言內文自述」      查核判定：區辨力宣稱
+#   R1   「宣告完整性已檢查：…」               查核判定：總結標籤（R1-001）
+#   R2   標籤插在第一個事實之後（舊守衛）      3 passed（R2-001）
+#   M14  同上，對現行守衛                      3 failed
+#   M15  標籤插在括號開頭                      3 failed
+#   M16  「初步核對：」                        3 failed
+#   M17  標籤插在句末                          3 failed
+#   M18  純原始碼 reflow（併接結果相同）       293 passed
+#   M19  換行放進字串內容                      4 failed
+#   M20  依 comment id 分支（舊守衛）          970 passed（R3-001）
+#   M20  依 comment id 分支（現行守衛）        3 failed
+#   M21  依 author 分支                        3 failed
+#   M22  模板加 `{label}` 插值、預設空         12 failed
+#   M23  改回 f-string（輸出完全相同）         1 failed
+#   M24  純模板 reflow                         299 passed
+#   M25  改模板措辭                            7 failed
+#   M26  globals() 指派**相同**值              299 passed（等價突變）
+#   M26b globals() 換成帶標籤的模板            7 failed
+#   M27  在 return 前改寫 `author`             976 passed（R4-001）
 #
-#   R3 逐字比對函式的**回傳值** → 只以 fixture 的固定 (author, url) 呼叫一次。
-#      M20：`'' if url.endswith('-555') else '授權綁定成立；'`，fixture 那組維持
-#      黃金值、其他合法輸入帶標籤，970 tests 全綠（R3-001 blocking）。
+# ── 3. 已知不涵蓋什麼 ────────────────────────────────────────
 #
-# 對輸出取樣，取幾組都還是取樣——**輸入也是開放集合**。所以這一輪不是「再多測幾組
-# comment id」（那才是第五代），而是把斷言的對象從「一次呼叫的輸出」搬到「產生輸出
-# 的那個東西」：
+# 威脅模型（需求方 2026-08-16 裁定）：防的是**無意的後續編輯**，不防**蓄意繞過的
+# 提交者**。
 #
-#   (1) 模板唯一且逐字被釘        —— test_authority_note_template_is_verbatim_golden
-#   (2) 函式恆為「模板 ＋ 代入」    —— test_authority_note_is_template_substitution_
-#                                     by_construction（AST，非取樣）
-#
-# 模板只有一個 ∧ 函式只會回它的代入 ⇒ 對所有 (author, url) 都是同一個模板的代入。
-# 量詞從「對這些輸入」變成「由構造」，這是與前四代不同層的東西。
-#
-# **為什麼不受空白 reflow 影響**（#57 R5 同型陷阱）：斷言對象是**執行期字串**與
-# **AST**，都不是原始碼文字。實作用相鄰字串常值併接，換行／縮排怎麼排都不改變兩者。
-#
-# ---- 威脅模型：這組守衛防誰，以及防不到誰 ---------------------------------
-#
-# **防的是無意的後續編輯，不防蓄意繞過的提交者。**（需求方 2026-08-16 裁定）
-#
-# 無意的那一類，下列四個實例已實測會紅：
-#
-#   M20 依 comment id 分支，讓 fixture 那組維持黃金值
-#   M22 模板加一個 `{label}` 插值、預設空字串
-#   M25 直接改模板措辭
-#   M26b 執行期以 globals() 把模板換成帶標籤的版本
-#
-# ⚠️ **這是四個實例，不是對「所有無意編輯」的保證**——那一類同樣是開放集合，而本卡
-# 四輪的教訓就是不要再對開放集合下全稱宣稱。這裡只說這四個跑過、都紅。
-#
-# 蓄意的那一類**已知不涵蓋且不修**：M27（在 return 前改寫 `author`）繞得過上面的
-# AST，因為 AST 釘的是 return 的語法、不是 `author` 這個值的來源。要關掉就得約束
-# 資料流，而其後還有裝飾器、`_resolve_ruling_author` 內部、以及 monkeypatch。
-# **對擁有這份碼的人，任何測試與任何執行期檢查都無效。**
+#   - **M27 已知不涵蓋且不修。** AST 釘的是 return 運算式的語法形狀，不約束
+#     `author` 這個值怎麼來。要關掉需約束資料流，其後還有裝飾器、
+#     `_resolve_ruling_author` 內部、以及 monkeypatch。對擁有這份碼的人，任何
+#     測試與任何執行期檢查都無效。
+#   - **執行期 monkeypatch**：原始碼層面攔不住，沒有辦法。
+#   - **模組別處以 `globals()[...] = ...` 動態指派改常數**：(3) 的 AST 看不見。
+#   - **模板與測試黃金值兩邊同時改錯**：測試會綠。
+#   - 上面第 2 節是一份實測清單，不是對「所有無意編輯」的涵蓋範圍描述。
 #
 # ⚠️ 這是比例判斷不是證明。需求方 2026-08-16 裁定原句，**逐字保留、不得軟化**，
 # 刻意不折行以免日後 reflow 把它拆散（#57 R5 同型陷阱）：
 #
 #     需求方不能證明 M27 不會發生，只能說它不是這個守衛被開出來要擋的東西
-#
-# **已知不涵蓋的縫**（四條，不宣稱其中任何一條已被處理）：
-#
-#   1. AST 只約束 `_authorize_by_requester_ruling` 一個函式；模組別處用
-#      `globals()[...] = ...` 這種動態寫法改常數，AST 看不見。
-#   2. **執行期 monkeypatch 無解**：原始碼層面攔不住，沒有辦法。
-#   3. 呼叫端事後加工（`run()` 的 `_fold`）只由固定輸入的測試覆蓋，仍是取樣。
-#   4. 模板與測試黃金值兩邊同時改錯仍會綠：保證「被看見」，不保證「被看對」。
 
 #: 已退役的措辭。**不是**守衛，只是讓歷史上被打掉的兩句各留一個具名的回歸點，
 #: 失敗訊息才看得出「又退回哪一代」。
@@ -1167,10 +1172,10 @@ def _authority_note_of(gov_card, url: str | None = None) -> str:
 
 
 def test_authority_note_template_is_verbatim_golden():
-    """守衛 (1)：模板本身逐字元等於黃金值，且**只有一個**模板。
+    """比對 `AUTHORITY_NOTE_TEMPLATE` 與黃金值，逐字元。
 
-    對輸出取樣永遠只是取樣（R3-001）；對模板取值不是——模板不吃輸入，它是常數。
-    這一條因此對所有 (author, url) 一次成立。
+    另檢查它的插值欄位名恰為 author 與 url（多一個 `{label}` 之類的插值，上面
+    那行會先紅）。涵蓋範圍見本區塊「3. 已知不涵蓋什麼」。
     """
     assert amend_cmd.AUTHORITY_NOTE_TEMPLATE == _GOLDEN_AUTHORITY_NOTE
     # 插值點恰為兩個資料欄位。多一個 `{label}` 之類的插值會讓上面那行先紅，
@@ -1187,25 +1192,20 @@ def _authorize_source_tree():
 
 
 def test_authority_note_is_template_substitution_by_construction():
-    """守衛 (2)：函式**恆為**「模板 ＋ 代入」——由構造，不是由取樣。
+    """以 AST 斷言 `_authorize_by_requester_ruling` 的 return 運算式形狀。
 
-    這一條是 R3-001 的直接處置。M20 的形狀是「依 url 分支，fixture 那組回黃金值、
-    其他輸入回帶標籤的字串」；只要斷言是對輸出做的，多測幾組也只是把取樣點加密，
-    仍然擋不住一個針對測試輸入特化的實作。
+    釘住三件事：函式只有一個 return；無巢狀函式或 lambda；該 return 的運算式逐
+    節點等於 ``AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)``。
+    另檢查該常數名在函式內只被讀取。
 
-    所以改成約束**原始碼形狀**：函式只有一個 return，且該 return 的運算式逐節點
-    等於 ``AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)``。
-    在此形狀下，輸出是模板代入 ``author``／``url`` **當下持有的值**。
+    比對兩邊都用同一個 ``ast.dump``，而非寫死 dump 字串。
 
-    ⚠️ 這**不**等於「不存在任何輸入能得到別的字串」。本斷言釘的是 return 運算式的
-    **語法形狀**，不約束那兩個值怎麼來——在 return 之前改寫 ``author`` 就繞得過，
-    AST 完全看不見（M27／R4-001，已知不涵蓋且不修，見本區塊上方的威脅模型）。
+    ⚠️ 本斷言釘的是 return 運算式的**語法形狀**，不約束 ``author``／``url`` 這兩個
+    值怎麼來。在 return 之前改寫 ``author`` 不會讓本條紅——M27／R4-001，已知不涵蓋
+    且不修，見本區塊「3. 已知不涵蓋什麼」。
 
-    會讓本斷言不相等的是**改動 return 運算式本身**：改成 f-string、加字串拼接、
-    多一個 kwarg、或把該運算式包進條件式。
-
-    比對方式刻意是「兩邊都用同一個 ``ast.dump``」而非寫死 dump 字串：後者會隨
-    Python 版本的 dump 格式改變而假紅。
+    實測會讓本條紅的：M20（依 comment id 分支）、M21（依 author 分支）、
+    M23（改回 f-string，輸出完全相同）。
     """
     fn = _authorize_source_tree()
     returns = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
@@ -1233,12 +1233,11 @@ def test_authority_note_is_template_substitution_by_construction():
 
 
 def test_authority_note_template_is_assigned_exactly_once_in_the_module():
-    """守衛 (3)：模組內只有一處指派該常數。
+    """以 AST 數模組內對 `AUTHORITY_NOTE_TEMPLATE` 的指派次數，須恰為一次。
 
-    補的是 (2) 的縫：AST 只約束那一個函式，擋不住「模組別處把常數換掉」。這一條
-    讓 import 期改寫也要改到一個看得見的地方。
-
-    ⚠️ 仍擋不住執行期 monkeypatch——那不是原始碼層面攔得住的，見交付說明。
+    ⚠️ 只看得到語法上的指派敘述。`globals()["AUTHORITY_NOTE_TEMPLATE"] = ...`
+    這種動態寫法本條看不見（實測 M26 與 M26b 都不讓本條紅）；執行期 monkeypatch
+    同樣不在原始碼層面。見本區塊「3. 已知不涵蓋什麼」。
     """
     module_ast = ast.parse(inspect.getsource(amend_cmd))
     targets = [
@@ -1261,14 +1260,13 @@ def test_authority_note_template_is_assigned_exactly_once_in_the_module():
     ],
 )
 def test_runtime_output_matches_the_template_for_varied_inputs(gov_runner, author, comment_id):
-    """交叉檢查：實際執行的輸出確實等於模板代入。
+    """以四組 (author, comment id) 實際呼叫，比對回傳值與模板代入。
 
-    ⚠️ **這一條不是封閉性的來源**——它是取樣，四組擋不住第五組。封閉性來自 (1)+(2)。
-    它的作用是證明「我對 AST 的解讀」與「執行期真的發生的事」沒有脫節：AST 斷言
-    讀的是原始碼，這條讀的是實際回傳值，兩者對上才排除「我把 AST 讀錯了」。
+    ⚠️ 四組是**取樣**，不是輸入空間的涵蓋。這一條讀的是實際回傳值，AST 那條讀的
+    是原始碼；兩者分別跑，一邊讀錯時另一邊仍會紅。
 
-    仍刻意換掉 author 與 comment id 兩個維度，讓 R3-001 的 M20（依 url 分支）在
-    這一條上也會紅，而不是只在 AST 那條紅。
+    實測：M20（依 comment id 分支）與 M21（依 author 分支）在這一條與 AST 那條
+    都紅；M26b（執行期換模板）只在這一條紅。
     """
     import argparse
 
@@ -1311,13 +1309,13 @@ def test_golden_note_also_reaches_the_log_verbatim(gov_card):
 
 
 def test_golden_note_is_reflow_stable(gov_card):
-    """把「正規化規則」本身釘住：這裡的規則是**不做正規化**。
+    """檢查 note 不含換行、tab 或連續空白，且 `" ".join(s.split())` 後與自身相同。
 
-    #57 R5 抓到過同型陷阱——banned 字串因排版 reflow 的空白而沒命中。本組不受
-    該類影響，理由是斷言對象為執行期字串，而實作用相鄰字串常值併接，原始碼怎麼
-    換行都不改變結果。本測試把「黃金值不含任何連續空白或換行」變成機械事實，
-    從而保證 Log 寫入時的 `_fold`（`" ".join(text.split())`）對它是恆等函式；
-    否則 body 那條斷言就會在「多一個換行」時被摺行悄悄救回來。
+    `_fold`（Log 寫入時的摺行）就是 `" ".join(text.split())`。#57 R5 抓到過同型
+    陷阱：banned 字串因排版 reflow 的空白而沒命中。
+
+    實測：M18（純原始碼 reflow）293 passed；M19（換行放進字串內容）4 failed，
+    含本條。
     """
     note = _authority_note_of(gov_card)
     assert "\n" not in note and "\t" not in note
@@ -1478,9 +1476,8 @@ def test_tier_downgrade_from_redline_succeeds_with_ruling(gov_card):
     # 降級必須逐字標記，稽核者不必自己比 T 值大小
     assert "→ 級別（降級）：原值「T4」→ 新值「T2」" in item.body
     assert f"授權 依需求方 {REQUESTER} 於" in item.body
-    # 降級與核心痛點共用同一個 ruling_note，故**同一個黃金值也適用這條路徑**。
-    # 用完整黃金值而非片段：日後若把兩條路徑拆成各自的註記，其中一條改了措辭
-    # 就會在這裡當場紅，不會靜默退化（跨家族查核 R1 的非阻擋建議）。
+    # 降級與核心痛點呼叫同一個 `_authorize_by_requester_ruling`。這裡比對完整黃金值
+    # 而非片段（跨家族查核 R1 的非阻擋建議）：實測把模板措辭改掉（M25）時本條會紅。
     assert f"；授權 {_golden_note()}。" in item.body
 
 
