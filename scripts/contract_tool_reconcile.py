@@ -146,8 +146,12 @@ _STATUS_TOKEN = re.compile(rf"([{_EMOJI_CLASS}]️?[0-9A-Za-z㐀-䶿一-鿿]+)")
 
 # 卡面欄位候選：卡面標頭條列的 ``- <名稱>：``／全形空白分隔的 ``　<名稱>：``，以及
 # ``## <名稱>`` 標準章節名。兩者都是範本的**結構**，不是內容。
-_CARD_FIELD_BULLET = re.compile(r"^-\s*([^\s：<>*`\[\]]{1,20})：")
-_CARD_FIELD_INLINE = re.compile(r"　([^\s：<>*`\[\]]{1,20})：")
+#
+# ⚠️ 欄位名**容許內含空白**：``spec 基線`` 與 ``Merge SHA`` 都是契約明列的欄位，而第一版
+# 的字元類把 ``\s`` 排掉，於是這兩個欄位靜默不進表——那正是本卡要消滅的「漏掃」。容許空白
+# 會多抓一些標頭條列的雜訊，方向是對的：多一列看得見，少一列看不見。
+_CARD_FIELD_BULLET = re.compile(r"^-\s*([^：<>*`\[\]\n]{1,20}?)\s*：")
+_CARD_FIELD_INLINE = re.compile(r"　\s*([^：<>*`\[\]\n]{1,20}?)\s*：")
 _CARD_SECTION = re.compile(r"^##\s+(.+?)\s*$")
 _FIRST_SECTION = re.compile(r"^##\s", re.MULTILINE)
 
@@ -635,7 +639,10 @@ def _labels_in(value: str) -> set[str]:
         m = _CARD_FIELD_BULLET.match(stripped)
         if m:
             labels.add(m.group(1))
-        for inline in _CARD_FIELD_INLINE.finditer(stripped):
+        # ⚠️ 行內欄位要在**未 strip** 的原行上找：分隔符是全形空白 U+3000，而
+        # ``str.strip()`` 會把它當空白吃掉，於是 ``　spec 基線：`` 永遠匹配不到，
+        # 該欄位就被判成「open 沒有渲染」——那是假的。
+        for inline in _CARD_FIELD_INLINE.finditer(line):
             labels.add(inline.group(1))
         sec = _CARD_SECTION.match(stripped)
         if sec:
@@ -778,6 +785,34 @@ def amend_read_fields(root: Path) -> set[str]:
             if isinstance(node, ast.Name) and node.id in const_labels:
                 out |= const_labels[node.id]
     return out
+
+
+def cli_verbs(root: Path) -> set[str]:
+    """從各 ``commands/*_cmd.py`` 的 ``subparsers.add_parser("<verb>")`` 導出動詞集合。"""
+    out: set[str] = set()
+    for path in (root / TOOL_ROOT / "commands").glob("*.py"):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _call_name(node) == "add_parser" and node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    out.add(first.value)
+    return out
+
+
+def related_verbs(symbol: str, verbs: set[str]) -> list[str]:
+    """事件名與 CLI 動詞的 token 交集。
+
+    為什麼需要它：``escalation-checkpoint`` 在符號層是 mention-only（``wfcli checkpoint``
+    寫出的留言標題是 ``## Escalation checkpoint：…``，從不吐出契約那串字面），但
+    **動詞是存在的**。若不區分，這張表會把「連動詞都沒有」（``preflight-failed``）與
+    「動詞有、只是沒吐出契約名」（``escalation-checkpoint``）混為一談——那是過度宣稱。
+    """
+    tokens = set(symbol.split("-"))
+    return sorted(v for v in verbs if v in tokens)
 
 
 def project_field_options(root: Path) -> dict[str, set[str]]:
@@ -985,6 +1020,7 @@ def reconcile(root: Path) -> Reconciliation:
     open_fields = open_written_fields(root, graph)
     amendable = amendable_fields(root)
     amend_reads = amend_read_fields(root)
+    verbs = cli_verbs(root)
     field_options = project_field_options(root)
     status_options: set[str] = set()
     for name, opts in field_options.items():
@@ -1006,6 +1042,9 @@ def reconcile(root: Path) -> Reconciliation:
         mentions = [o for o in occs if o.role in MENTION_ROLES]
 
         notes: list[str] = []
+        if sym.kind == KIND_EVENT:
+            related = related_verbs(sym.name, verbs)
+            notes.append(f"相關動詞={'／'.join(related) if related else '無'}")
         if sym.kind == KIND_FIELD:
             in_open = sym.name in open_fields
             can_amend = sym.name in amendable
