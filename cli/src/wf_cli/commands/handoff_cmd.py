@@ -85,6 +85,21 @@ from ..validation import ValidationError, validate_evidence, validate_source_sha
 from .assign_cmd import TERMINAL_STATUSES
 
 STAGE_STATUS = {
+    # 授權執行之前的兩個階段（2026-08-18）。它們存在的理由是**派工**——需求方要能
+    # 把 Discovery 或 Design＋Plan 交給另一個家族或子代理處理，而在此之前唯一的
+    # 做法是自由文字 ``--status``，那正是 ``#94`` 跨家族裁定「比一般表列缺口更重」
+    # 的繞過形狀。給它們具名轉換，等於把派工從繞過口移回動詞。
+    #
+    # ⚠️ 兩者都**不遞增 iteration**：iteration 計的是查核輪次（:373 只有
+    # ``implementation`` 遞增），而研究與規劃不是查核的一輪。
+    # ``requirement`` 是**回頭**的方向：追加需求或前提改變時把卡退回起點。
+    # 它治的是一個實際發生過的事故形態——``#88`` 的卡面數字量在一棵從未合併的
+    # 分支上，複驗時 16 項宣稱有 7 項已失效或本來就錯，而沒有任何機制要求重做
+    # Discovery，於是後續每一輪都沿用那批數字。退回 ``💡需求`` 讓「前提變了」
+    # 這件事在狀態面看得見，理由記在必填的 ``--evidence``。
+    "requirement": "💡需求",
+    "research": "🔬研究中",
+    "planning": "🧭規劃中",
     "implementation": "🚧進行中",
     "review": "🔍待查核",
 }
@@ -274,7 +289,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("card_id")
     p.add_argument("--to", required=True, help="下一位 owner（角色／帳號／模型@工具）")
     p.add_argument(
-        "--next-stage", required=True, choices=["implementation", "review", "release"]
+        "--next-stage",
+        required=True,
+        choices=[
+            "requirement", "research", "planning",
+            "implementation", "review", "release",
+        ],
     )
     p.add_argument("--source-sha", required=True, help="完整 40 字元 hex SHA")
     p.add_argument("--evidence", required=True, help="測試／CI／審核／決策連結或摘要")

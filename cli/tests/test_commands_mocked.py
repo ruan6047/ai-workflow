@@ -925,6 +925,49 @@ def test_handoff_next_stage_release_does_not_increment_iteration(fake_runner):
     assert item.fields["iteration"] == 0
 
 
+@pytest.mark.parametrize(
+    "stage,expected_status",
+    [
+        ("requirement", "💡需求"),
+        ("research", "🔬研究中"),
+        ("planning", "🧭規劃中"),
+    ],
+)
+def test_handoff_pre_authorization_stages_write_their_status(
+    fake_runner, stage, expected_status
+):
+    """三個授權前階段各自寫進自己的狀態。
+
+    它們存在的理由是**派工**——規劃期的工作要能交給另一個家族或子代理，而在此
+    之前唯一的做法是自由文字 ``--status``（``assign_cmd.py:120`` 無 ``choices``），
+    那是 ``#94`` 跨家族裁定「比一般表列缺口更重」的繞過形狀。
+    """
+    card = f"PRE-AUTH-{stage.upper()}"
+    run_cli(_open_argv(card))
+    rc = run_cli(_handoff_argv(card, "6" * 40, **{"--next-stage": stage}))
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == expected_status
+
+
+@pytest.mark.parametrize("stage", ["requirement", "research", "planning"])
+def test_handoff_pre_authorization_stages_do_not_increment_iteration(fake_runner, stage):
+    """iteration 計的是查核輪次，研究與規劃不是查核的一輪。
+
+    ⚠️ 已知限度：查核退回後走 ``research``／``planning`` 回到原階段時，這一輪
+    **不會**被計入 iteration。那是 2026-08-05 需求方「只有 implementation 遞增」
+    裁定的直接後果，本測試把現況釘住而不是背書它；要改須由需求方重裁。
+    """
+    card = f"PRE-AUTH-ITER-{stage.upper()}"
+    run_cli(_open_argv(card))
+    rc = run_cli(_handoff_argv(card, "7" * 40, **{"--next-stage": stage}))
+    assert rc == 0
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["iteration"] == 0
+
+
 def test_handoff_iteration_override_sets_exact_value_and_warns(fake_runner, capsys):
     run_cli(_open_argv("ITER-CARD4"))
     rc = run_cli(_handoff_argv("ITER-CARD4", "5" * 40, **{"--iteration": "7"}))

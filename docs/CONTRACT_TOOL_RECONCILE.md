@@ -258,8 +258,8 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 ```json
 {
   "gaps": {
-    "card_field/Design": "absent",
-    "card_field/Discovery": "absent",
+    "card_field/Design": "mention-only",
+    "card_field/Discovery": "mention-only",
     "card_field/Log": "write-only",
     "card_field/Merge SHA": "absent",
     "card_field/PR": "mention-only",
@@ -284,12 +284,9 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "delivery_status/⏳待執行": "read-only",
     "delivery_status/⏸阻塞": "read-only",
     "delivery_status/⚪一般": "absent",
-    "delivery_status/💡需求": "read-only",
     "delivery_status/📦已合併": "read-only",
     "delivery_status/🔨執行中": "read-only",
-    "delivery_status/🔬研究中": "read-only",
     "delivery_status/🔴紅線": "absent",
-    "delivery_status/🧭規劃中": "read-only",
     "delivery_status/🚨已升級": "read-only",
     "event/authoritative-artifact": "read-only",
     "event/baseline-change-request": "absent",
