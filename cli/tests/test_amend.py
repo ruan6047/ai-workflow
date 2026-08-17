@@ -6,8 +6,12 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import re
+import string
+import textwrap
 
 import pytest
 
@@ -1034,7 +1038,316 @@ def test_core_pain_succeeds_with_requester_ruling_and_records_authority(gov_card
     assert "→ 核心痛點：原值「原始痛點」→ 新值「收窄後的痛點」" in body
     # 授權必須逐字留在 Log：稽核者要能區分「開卡就這樣寫」與「事後經誰裁定改的」
     assert f"授權 依需求方 {REQUESTER} 於" in body
-    assert "GitHub comment author 已逐字核對" in body
+    # 註記的措辭本身由 test_authority_note_* 三條釘住（見下）。
+
+
+# 授權註記的措辭守衛（WF-AMEND-AUTHZ-BINDING1）
+#
+# ⚠️ 本區塊刻意**不寫綜述**：不出現「因此…／所以…／故保證…」形式的句子。
+#
+# 理由是實測出來的。本卡四輪查核抓到的四句過度宣稱**全部**出自綜述類——
+# R2-001、R5-001、R6-001，加上一句我自查補上的；每一句都是從下面的事實「推出」
+# 一個保證，而那個保證每次都比事實大。我自己掃過四次，四次都漏。所以這裡不再
+# 寫綜述，只寫三類：做了什麼、跑過什麼結果如何、已知不涵蓋什麼。
+#
+# **結論由讀者自己從 1、2、3 得出。** 這份文件沒有立場替讀者下那個結論。
+#
+# 本卡治的病：舊註記「GitHub comment author 已逐字核對，非留言內文自述」字面為真
+# （確實比對過），語意卻誤導——後半句把本檢查描述成「排除了自述」。而 amend 這條
+# 路徑從不讀取操作者身分，且本 repo 只有一個人類帳號（PM 的 gh 與需求方同為
+# ruan6047），那道比對對代貼者恆真。既存受影響事件不追溯改寫，改以
+# `wfcli doctor --legacy-authority-notes` 機械列出（數量隨事件增減，不寫死）。
+#
+# ── 1. 做了什麼 ──────────────────────────────────────────────
+#
+# (1) 模板是 `amend_cmd.AUTHORITY_NOTE_TEMPLATE`，一個模組層常數。
+#     `test_authority_note_template_is_verbatim_golden` 逐字元比對它，並檢查它的
+#     插值欄位名恰為 author 與 url。
+# (2) `test_authority_note_is_template_substitution_by_construction` 以 AST 斷言
+#     `_authorize_by_requester_ruling` 只有一個 return、無巢狀函式，且該 return 的
+#     運算式逐節點等於 `AUTHORITY_NOTE_TEMPLATE.format(author=author,
+#     url=args.ruling_url)`。
+# (3) `test_authority_note_template_is_assigned_exactly_once_in_the_module` 以 AST
+#     數模組內對該常數的指派次數。
+# (4) `test_runtime_output_matches_the_template_for_varied_inputs` 以四組
+#     (author, comment id) 實際呼叫，比對回傳值與模板代入。
+# (5) `test_golden_note_also_reaches_the_log_verbatim` 比對 Log 行內前後界線字元
+#     之間的內容；`test_golden_note_is_reflow_stable` 檢查該字串不含連續空白或
+#     換行，且 `" ".join(s.split())` 後與自身相同。
+#
+# ── 2. 跑過什麼、結果是什麼 ──────────────────────────────────
+#
+# 歷代用來打這組守衛的變異與實測結果。⚠️ 數字是**當次執行的範圍**：M14–M26b 跑的
+# 是 tests/test_amend.py + tests/test_doctor.py，M20（舊守衛）與 M27 是全套。
+#
+#   R0   「…已逐字核對，非留言內文自述」      查核判定：區辨力宣稱
+#   R1   「宣告完整性已檢查：…」               查核判定：總結標籤（R1-001）
+#   R2   標籤插在第一個事實之後（舊守衛）      3 passed（R2-001）
+#   M14  同上，對現行守衛                      3 failed
+#   M15  標籤插在括號開頭                      3 failed
+#   M16  「初步核對：」                        3 failed
+#   M17  標籤插在句末                          3 failed
+#   M18  純原始碼 reflow（併接結果相同）       293 passed
+#   M19  換行放進字串內容                      4 failed
+#   M20  依 comment id 分支（舊守衛）          970 passed（R3-001）
+#   M20  依 comment id 分支（現行守衛）        3 failed
+#   M21  依 author 分支                        3 failed
+#   M22  模板加 `{label}` 插值、預設空         12 failed
+#   M23  改回 f-string（輸出完全相同）         1 failed
+#   M24  純模板 reflow                         299 passed
+#   M25  改模板措辭                            7 failed
+#   M26  globals() 指派**相同**值              299 passed（等價突變）
+#   M26b globals() 換成帶標籤的模板            7 failed
+#   M27  在 return 前改寫 `author`             976 passed（R4-001）
+#
+# ── 3. 已知不涵蓋什麼 ────────────────────────────────────────
+#
+# 威脅模型（需求方 2026-08-16 裁定）：防的是**無意的後續編輯**，不防**蓄意繞過的
+# 提交者**。
+#
+#   - **M27 已知不涵蓋且不修。** AST 釘的是 return 運算式的語法形狀，不約束
+#     `author` 這個值怎麼來。要關掉需約束資料流，其後還有裝飾器、
+#     `_resolve_ruling_author` 內部、以及 monkeypatch。對擁有這份碼的人，任何
+#     測試與任何執行期檢查都無效。
+#   - **執行期 monkeypatch**：原始碼層面攔不住，沒有辦法。
+#   - **模組別處以 `globals()[...] = ...` 動態指派改常數**：(3) 的 AST 看不見。
+#   - **模板與測試黃金值兩邊同時改錯**：測試會綠。
+#   - 上面第 2 節是一份實測清單，不是對「所有無意編輯」的涵蓋範圍描述。
+#
+# ⚠️ 這是比例判斷不是證明。需求方 2026-08-16 裁定原句，**逐字保留、不得軟化**，
+# 刻意不折行以免日後 reflow 把它拆散（#57 R5 同型陷阱）：
+#
+#     需求方不能證明 M27 不會發生，只能說它不是這個守衛被開出來要擋的東西
+
+#: 已退役的措辭。**不是**守衛，只是讓歷史上被打掉的兩句各留一個具名的回歸點，
+#: 失敗訊息才看得出「又退回哪一代」。
+#: R0：宣稱本比對排除了「留言內文自述」，即宣稱了它沒有的區辨力。
+#: R1：把兩個欄位相等總結成一個名為「完整性」、斷言「已檢查」的結論（R1-001）。
+_RETIRED_CLAIMS = ("非留言內文自述", "宣告完整性已檢查")
+
+#: 授權註記模板的**逐字**黃金值。`{author}` 與 `{url}` 是僅有的兩個插值點，
+#: 其餘每一個字元都被釘死。改這個常數＝改治理留痕的措辭，請連同 amend_cmd 一起改。
+_GOLDEN_AUTHORITY_NOTE = (
+    "依需求方 {author} 於 {url} 的裁定"
+    "（已核對：該 URL 指向本卡 issue 的既存留言，"
+    "且其 GitHub author 欄逐字等於卡面「需求：」欄。"
+    "本指令不讀取留言內文或操作者身分，故不判定留言內容是否構成裁定"
+    "——上句「裁定」是操作者的宣告，不是本指令查得的事實——"
+    "亦不區分「需求方本人張貼」與「他人代擬代貼」）"
+)
+
+
+def _golden_note(url: str | None = None) -> str:
+    return _GOLDEN_AUTHORITY_NOTE.format(author=REQUESTER, url=url or _ruling())
+
+
+def _amend_core_pain(gov_card) -> str:
+    """跑一次成功的核心痛點更正，回傳卡面 body。"""
+    rc = run_cli(
+        ["amend", *GOV_TARGET, "GOV-DEMO1", "--reason", "需求方縮小射程",
+         "--core-pain", "收窄後的痛點", "--ruling-url", _ruling()]
+    )
+    assert rc == 0
+    return _gov_item(gov_card).body
+
+
+def _authority_note_of(gov_card, url: str | None = None) -> str:
+    """直接取 `_authorize_by_requester_ruling` 的**原始回傳值**（未經 `_fold`）。
+
+    不透過卡面 body 取，是為了讓斷言看到的就是實作產出的那一份字串：body 那條
+    路徑會先經過 `_fold`（摺行），而摺行有可能把「多打了一個換行」這種改動吃掉。
+    直接取回傳值就沒有這層轉換，逐字比對才真的是逐字。
+    """
+    import argparse
+
+    from wf_cli.config import resolve_target
+
+    return amend_cmd._authorize_by_requester_ruling(
+        gov_card,
+        resolve_target(owner="acme", project=1, repo="acme/wf"),
+        _gov_item(gov_card),
+        argparse.Namespace(ruling_url=url or _ruling()),
+        "核心痛點更正",
+    )
+
+
+def test_authority_note_template_is_verbatim_golden():
+    """比對 `AUTHORITY_NOTE_TEMPLATE` 與黃金值，逐字元。
+
+    另檢查它的插值欄位名恰為 author 與 url（多一個 `{label}` 之類的插值，上面
+    那行會先紅）。涵蓋範圍見本區塊「3. 已知不涵蓋什麼」。
+    """
+    assert amend_cmd.AUTHORITY_NOTE_TEMPLATE == _GOLDEN_AUTHORITY_NOTE
+    # 插值點恰為兩個資料欄位。多一個 `{label}` 之類的插值會讓上面那行先紅，
+    # 這裡再把「可用的欄位名只有這兩個」講成機械事實。
+    assert sorted(
+        f[1] for f in string.Formatter().parse(amend_cmd.AUTHORITY_NOTE_TEMPLATE) if f[1] is not None
+    ) == ["author", "url"]
+
+
+def _authorize_source_tree():
+    """`_authorize_by_requester_ruling` 的 AST（去掉縮排後 parse）。"""
+    src = textwrap.dedent(inspect.getsource(amend_cmd._authorize_by_requester_ruling))
+    return ast.parse(src).body[0]
+
+
+def test_authority_note_is_template_substitution_by_construction():
+    """以 AST 斷言 `_authorize_by_requester_ruling` 的 return 運算式形狀。
+
+    釘住三件事：函式只有一個 return；無巢狀函式或 lambda；該 return 的運算式逐
+    節點等於 ``AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)``。
+    另檢查該常數名在函式內只被讀取。
+
+    比對兩邊都用同一個 ``ast.dump``，而非寫死 dump 字串。
+
+    ⚠️ 本斷言釘的是 return 運算式的**語法形狀**，不約束 ``author``／``url`` 這兩個
+    值怎麼來。在 return 之前改寫 ``author`` 不會讓本條紅——M27／R4-001，已知不涵蓋
+    且不修，見本區塊「3. 已知不涵蓋什麼」。
+
+    實測會讓本條紅的：M20（依 comment id 分支）、M21（依 author 分支）、
+    M23（改回 f-string，輸出完全相同）。
+    """
+    fn = _authorize_source_tree()
+    returns = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
+    assert len(returns) == 1, f"預期恰好一個 return，實際 {len(returns)} 個"
+    # 沒有巢狀函式／lambda：否則 return 可能藏在別的作用域裡
+    nested = [
+        n for n in ast.walk(fn)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) and n is not fn
+    ]
+    assert nested == [], "本函式內不得有巢狀函式或 lambda"
+
+    expected = ast.parse(
+        "AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)", mode="eval"
+    ).body
+    assert ast.dump(returns[0].value) == ast.dump(expected)
+
+    # 模板名在函式內只能被讀取，不得被重新指派／遮蔽
+    stores = [
+        n for n in ast.walk(fn)
+        if isinstance(n, ast.Name)
+        and n.id == "AUTHORITY_NOTE_TEMPLATE"
+        and not isinstance(n.ctx, ast.Load)
+    ]
+    assert stores == [], "AUTHORITY_NOTE_TEMPLATE 不得在函式內被重新指派"
+
+
+def test_authority_note_template_is_assigned_exactly_once_in_the_module():
+    """以 AST 數模組內對 `AUTHORITY_NOTE_TEMPLATE` 的指派次數，須恰為一次。
+
+    ⚠️ 只看得到語法上的指派敘述。`globals()["AUTHORITY_NOTE_TEMPLATE"] = ...`
+    這種動態寫法本條看不見（實測 M26 與 M26b 都不讓本條紅）；執行期 monkeypatch
+    同樣不在原始碼層面。見本區塊「3. 已知不涵蓋什麼」。
+    """
+    module_ast = ast.parse(inspect.getsource(amend_cmd))
+    targets = [
+        t
+        for node in ast.walk(module_ast)
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign))
+        for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(t, ast.Name) and t.id == "AUTHORITY_NOTE_TEMPLATE"
+    ]
+    assert len(targets) == 1, f"預期恰好一處指派，實際 {len(targets)} 處"
+
+
+@pytest.mark.parametrize(
+    "author, comment_id",
+    [
+        ("ruan6047", "555"),
+        ("ruan6047", "999"),
+        ("some-other-requester", "555"),
+        ("some-other-requester", "424242"),
+    ],
+)
+def test_runtime_output_matches_the_template_for_varied_inputs(gov_runner, author, comment_id):
+    """以四組 (author, comment id) 實際呼叫，比對回傳值與模板代入。
+
+    ⚠️ 四組是**取樣**，不是輸入空間的涵蓋。這一條讀的是實際回傳值，AST 那條讀的
+    是原始碼；兩者分別跑，一邊讀錯時另一邊仍會紅。
+
+    實測：M20（依 comment id 分支）與 M21（依 author 分支）在這一條與 AST 那條
+    都紅；M26b（執行期換模板）只在這一條紅。
+    """
+    import argparse
+
+    from wf_cli.config import resolve_target
+
+    rc = run_cli(
+        ["open", *GOV_TARGET, "GOV-VARY1",
+         "--feature", "示範", "--tier", "T4", "--db-scope", "none",
+         "--core-pain", "原始痛點", "--service-goal", "目標",
+         "--requested-by", author, "--planned-by", "PM",
+         "--resources", "file:vary.py", "--spec-baseline", "原基線",
+         "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
+         "--review-capability", "高階型", "--review-capability-reason", "紅線跨家族"]
+    )
+    assert rc == 0
+    gov_runner.comment_authors[comment_id] = author
+    project = resolve_project(gov_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(gov_runner, project), "GOV-VARY1")
+    url = _ruling(comment_id, issue=item.issue_number)
+
+    note = amend_cmd._authorize_by_requester_ruling(
+        gov_runner,
+        resolve_target(owner="acme", project=1, repo="acme/wf"),
+        item,
+        argparse.Namespace(ruling_url=url),
+        "核心痛點更正",
+    )
+    assert note == _GOLDEN_AUTHORITY_NOTE.format(author=author, url=url)
+
+
+def test_golden_note_also_reaches_the_log_verbatim(gov_card):
+    """黃金值不只要從函式出來，還要原封不動落進 Log 的授權欄。
+
+    分成兩條的理由：上一條證明**產出**正確，這一條證明**寫入路徑**沒有加工它
+    （例如被 `_fold` 摺掉、被截斷、或混進 `--reason` 的自由文字）。前後各釘一個
+    界線字元，讓比對在 Log 行內是封閉的而不是鬆散的子字串。
+    """
+    body = _amend_core_pain(gov_card)
+    assert f"；授權 {_golden_note()}。" in body
+
+
+def test_golden_note_is_reflow_stable(gov_card):
+    """檢查 note 不含換行、tab 或連續空白，且 `" ".join(s.split())` 後與自身相同。
+
+    `_fold`（Log 寫入時的摺行）就是 `" ".join(text.split())`。#57 R5 抓到過同型
+    陷阱：banned 字串因排版 reflow 的空白而沒命中。
+
+    實測：M18（純原始碼 reflow）293 passed；M19（換行放進字串內容）4 failed，
+    含本條。
+    """
+    note = _authority_note_of(gov_card)
+    assert "\n" not in note and "\t" not in note
+    assert "  " not in note
+    assert " ".join(note.split()) == note, "note 經 _fold 後應完全不變"
+
+
+def test_authority_note_still_discloses_the_three_limits(gov_card):
+    """⚠️ 本條**不是守衛**（守衛是上面的黃金值那條）。
+
+    它記錄的是：若有人**刻意**更新黃金值，哪些內容必須存活下來。黃金值那條會逼
+    改動被看見，這條說明看見之後該檢查什麼——本函式沒看的東西有三類：留言內文、
+    操作者身分，以及由前兩者衍生的「這則留言到底算不算裁定」。
+    """
+    note = _authority_note_of(gov_card)
+    assert "該 URL 指向本卡 issue 的既存留言" in note
+    assert "其 GitHub author 欄逐字等於卡面「需求：」欄" in note
+    assert "本指令不讀取留言內文或操作者身分" in note
+    assert "不判定留言內容是否構成裁定" in note
+    assert "不區分「需求方本人張貼」與「他人代擬代貼」" in note
+    assert "上句「裁定」是操作者的宣告，不是本指令查得的事實" in note
+
+
+def test_retired_claims_never_come_back(gov_card):
+    """⚠️ 同上，**不是守衛**，是具名的回歸點。
+
+    黃金值那條已經涵蓋這兩句；分開留著只為了讓失敗訊息直接說出「退回了哪一代」，
+    而不是丟一坨字串 diff 給讀的人自己比對。
+    """
+    note = _authority_note_of(gov_card)
+    for claim in _RETIRED_CLAIMS:
+        assert claim not in note, f"已退役的誇大措辭又出現在授權欄：{claim!r}"
 
 
 def test_core_pain_rejected_when_ruling_author_is_not_the_requester(gov_card):
@@ -1163,6 +1476,9 @@ def test_tier_downgrade_from_redline_succeeds_with_ruling(gov_card):
     # 降級必須逐字標記，稽核者不必自己比 T 值大小
     assert "→ 級別（降級）：原值「T4」→ 新值「T2」" in item.body
     assert f"授權 依需求方 {REQUESTER} 於" in item.body
+    # 降級與核心痛點呼叫同一個 `_authorize_by_requester_ruling`。這裡比對完整黃金值
+    # 而非片段（跨家族查核 R1 的非阻擋建議）：實測把模板措辭改掉（M25）時本條會紅。
+    assert f"；授權 {_golden_note()}。" in item.body
 
 
 def test_tier_upgrade_needs_no_ruling(gov_card):

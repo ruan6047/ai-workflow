@@ -60,6 +60,80 @@ critical blocking，逐字指出「amend 僅改驗收條件，不能更改 canon
 結構化事件承載授權（``review-escalation.md`` §4 (b′-1)），那屬 checkpoint writer
 的射程，不在本指令。
 
+**第二個上限——author 比對對代貼者恆真（WF-AMEND-AUTHZ-BINDING1）**：本指令
+從不讀取操作者身分（全 ``cli/src`` 只有 ``review_cmd`` 為了 ``marked_by`` 讀
+``gh api user``，amend 這條路徑沒有）。因此 author 比對能分辨的只有「留言是不是
+需求方這個平台身分發的」，**分辨不了「是需求方本人張貼」還是「他人以該身分代擬
+代貼」**。而本 repo 只有一個人類帳號——PM 的 ``gh`` 與需求方同為 ``ruan6047``
+——所以這道比對對 PM 恆真，一次也沒有區辨過任何東西。
+
+**第三個上限——留言內文從未被讀取**：``_resolve_ruling_author`` 只取 payload 的
+``user.login``。本指令因此不知道那則留言寫了什麼，也就無從判定它是否構成裁定、
+是否揭露代貼、是否載明授權來源。把該 URL 稱作「裁定」是**操作者的宣告**，不是
+本指令查得的事實——註記裡必須這樣講明，否則外層那個詞本身就是超出證據的宣稱。
+
+處置**不是**補上身分驗證（``docs/ROADMAP.md`` §1 已裁定三張授權款卡都不再追求
+驗證），也**不是**把恆真性導出成 ``structurally-vacuous`` 之類的值再當檢查用
+（同節逐字禁止）。處置是讓寫進 Log 的那句話**只到證據為止**：窮舉比對過的事實、
+逐項寫明分辨不了什麼，且**不替它們取任何總結名稱**。
+
+⚠️ 取名字就是本卡第二輪被擋下的原因：把上述兩件事總結成「宣告完整性已檢查」，
+名詞（完整性）的涵蓋範圍大於冒號後真正列出的內容，讀者拿到的是結論而非事實
+（跨家族查核 R1-001 blocking）。**換一個比較弱的形容詞不算修好**——「基本檢查」
+「初步核對」是同一個病換劑量。正解是沒有標籤。
+
+⚠️ 守衛本身也被擋下過三次。R2 用結構斷言釘住「（」與第一個事實之間不得插字，
+並宣稱「任何新標籤必然插在該位置，因此必然被抓」；查核者把同一個標籤插到第一個
+事實**之後**，測試全綠（R2-001）。R3 改為逐字比對回傳值；查核者讓實作依 comment id
+分支，fixture 那組維持原值，全套仍綠（R3-001）。R4 改為約束原始碼形狀；查核者在
+return 之前改寫 ``author``，全套仍綠（R4-001，裁定不修）。現行守衛的實際內容、
+歷代變異的實測紅綠、以及已知不涵蓋的清單，見 ``AUTHORITY_NOTE_TEMPLATE`` 與
+``test_amend.py`` 守衛區塊。
+
+此上限的正解與上一段同源——結構化事件承載授權，屬 checkpoint writer 的射程。
+
+--------------------------------------------------------------------------
+授權註記守衛的威脅模型：防誰，以及防不到誰
+--------------------------------------------------------------------------
+
+**本守衛防的是無意的後續編輯，不防蓄意繞過的提交者。**
+
+前者是有人改措辭、有人補說明時順手加個總結標籤、有人把標籤換成比較弱的形容詞。
+後者是有人刻意繞過守衛，例如在 ``return`` 之前依 comment id 改寫 ``author``
+（查核者 M27／R4-001）。
+
+⚠️ 本節刻意**不寫綜述**——不出現「因此…／所以…／故保證…」形式的句子。本卡四輪
+查核抓到的四句過度宣稱全部出自綜述類，而執行者自己掃了四次、四次都漏。只寫跑過
+什麼、不涵蓋什麼。
+
+無意的那一類，下列四個實例已實測會紅：M20（依 comment id 分支）、M22（模板加
+``{label}`` 插值）、M25（改模板措辭）、M26b（執行期以 ``globals()`` 換模板）。
+這是一份實測清單，不是對「所有無意編輯」的涵蓋範圍描述。
+
+M27 **記為已知不涵蓋，不修**。AST 釘的是 ``return`` 運算式的**語法形狀**，不約束
+``author`` 這個**值**的來源；要關掉它就得約束資料流，而關掉資料流之後還有裝飾器、
+``_resolve_ruling_author`` 內部、以及執行期 monkeypatch。**對擁有這份碼的人，任何
+測試與任何執行期檢查都無效。**
+
+⚠️ 這是比例判斷不是證明。需求方 2026-08-16 裁定原句，**逐字保留、不得軟化**，
+刻意不折行以免日後 reflow 把它拆散（``#57`` R5 同型陷阱）：
+
+    需求方不能證明 M27 不會發生，只能說它不是這個守衛被開出來要擋的東西
+
+本卡的核心痛點是「留痕宣稱了它沒有的區辨力」——那是**無意的過度宣稱**，不是防
+內鬼。
+
+**已知不涵蓋的清單（不宣稱其中任何一條已被處理）**：
+
+1. AST 只約束 ``_authorize_by_requester_ruling`` 這一個函式。模組別處以動態寫法
+   （如 ``globals()["AUTHORITY_NOTE_TEMPLATE"] = ...``）改掉常數，AST 看不見。
+2. **執行期 monkeypatch 無解**：原始碼層面攔不住，沒有辦法。
+3. 呼叫端事後加工（``run()`` 的 ``_fold``）只由固定輸入的測試覆蓋，那一層仍是取樣。
+4. 模板與測試黃金值兩邊同時改錯：測試會綠。
+
+⚠️ 往後遇到守衛類 finding，**先問「防誰」，涵蓋到了就停**——不是每次再多擋一個，
+是先定義「夠了」是什麼（需求方 2026-08-16 可重用判準；本卡是第一個案例）。
+
 **本指令關不掉的洞（指名記下，因為它是唯一出路）**：``review.py`` 的裁決留言
 只寫 ``core_pain_resolved：yes|no``，**不寫它所判斷的痛點原文**。裁決事件是
 append-only 且不可改，它所依據的前提卻可變——痛點一經更正，**歷史上每一筆
@@ -193,6 +267,50 @@ from ..project import (
     set_item_body,
 )
 from ..resources import ResourceDeclaration, ResourceDeclarationError, parse_block, render_block
+
+#: 授權註記的模板。寫進 Log 的授權欄由它代入 author／url 產生。
+#:
+#: 措辭本身為什麼長這樣（沒有總結標籤、外層「裁定」被降級為操作者宣告），見模組
+#: docstring「第二／第三個上限」。這裡講的是**為什麼它是一個具名常數**。
+#:
+#: ⚠️ 以下刻意**不寫綜述**——不出現「因此…／所以…／故保證…」形式的句子。本卡四輪
+#: 查核抓到的四句過度宣稱全部出自綜述類（R2-001／R5-001／R6-001 與一句自查補上的），
+#: 而我自己掃了四次、四次都漏。只寫做了什麼、跑過什麼、不涵蓋什麼；結論讀者自己下。
+#:
+#: **做了什麼**
+#:
+#:   1. 本常數是模組層的單一常數。`test_authority_note_template_is_verbatim_golden`
+#:      逐字元比對它，並檢查插值欄位名恰為 author 與 url。
+#:   2. `test_authority_note_is_template_substitution_by_construction` 以 AST 斷言
+#:      `_authorize_by_requester_ruling` 只有一個 return、無巢狀函式，且該 return
+#:      的運算式逐節點等於 `AUTHORITY_NOTE_TEMPLATE.format(author=author,
+#:      url=args.ruling_url)`。
+#:   3. `test_authority_note_template_is_assigned_exactly_once_in_the_module` 以 AST
+#:      數模組內對本常數的指派次數。
+#:   4. `test_runtime_output_matches_the_template_for_varied_inputs` 以四組
+#:      (author, comment id) 實際呼叫比對。
+#:
+#: **歷代變異與實測結果**：完整清單見 `test_amend.py` 守衛區塊第 2 節。與改動本檔
+#: 最相關的四筆：改回 f-string（輸出完全相同）→ 1 failed；改模板措辭 → 7 failed；
+#: 模板加 `{label}` 插值 → 12 failed；在 return 之前改寫 `author` → 976 passed。
+#:
+#: **已知不涵蓋**（威脅模型：防無意的後續編輯，不防蓄意繞過的提交者；需求方
+#: 2026-08-16 裁定）：在 return 之前改寫 `author`／`url` 這兩個**值**，AST 看不見、
+#: 測試不會紅（M27／R4-001，已知不涵蓋且不修）。執行期 monkeypatch、以及模組別處
+#: 用 `globals()[...] = ...` 動態指派改掉本常數，同樣不在涵蓋範圍。完整清單與需求方
+#: 那句「不能證明 M27 不會發生」的原文，見模組 docstring「授權註記守衛的威脅模型」。
+#:
+#: ⚠️ 要改措辭是合法的，但必須連同 `test_amend.py` 的黃金常數一起改——那一行 diff
+#: 就是要給查核者看的東西。改回 f-string 或改動 return 那一行運算式的形狀會讓上述
+#: 第 2 條紅。
+AUTHORITY_NOTE_TEMPLATE = (
+    "依需求方 {author} 於 {url} 的裁定"
+    "（已核對：該 URL 指向本卡 issue 的既存留言，"
+    "且其 GitHub author 欄逐字等於卡面「需求：」欄。"
+    "本指令不讀取留言內文或操作者身分，故不判定留言內容是否構成裁定"
+    "——上句「裁定」是操作者的宣告，不是本指令查得的事實——"
+    "亦不區分「需求方本人張貼」與「他人代擬代貼」）"
+)
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -475,13 +593,32 @@ def _resolve_ruling_author(runner, target, item, ruling_url: str) -> tuple[str, 
 
 
 def _authorize_by_requester_ruling(runner, target, item, args, what: str) -> str:
-    """核對「這次更正確經需求方以其平台身分裁定」，回傳寫進 Log 的授權註記。
+    """比對裁定留言的 author 欄與卡面「需求：」欄，回傳寫進 Log 的授權註記。
 
     三道檢查，缺一即拒（對齊 ``review-escalation.md`` §4 (a′) 與第 2、3 款）：
 
     1. 卡面「需求：」欄可解析（``parse_requested_by``，fail-closed）；
     2. 裁定留言的 GitHub comment author **逐字等於**該帳號；
     3. 該 author **不等於本卡當前 owner**——裁定者不得是被該裁定嘉惠的人。
+
+    ``docs/ROADMAP.md`` §1 裁定本卡所屬的三張卡都**不再追求身分驗證**，改為確認
+    宣告欄位存在且必填。但「不是身分驗證」不足以描述本函式的上限——三道檢查的
+    區辨力並不相同，且有一整類事實它根本沒看：
+
+    - 第 1、3 道與 ``_resolve_ruling_author`` 的形狀／卡號／留言存在各檢查**可以
+      為假**，實測會拒（見 ``test_amend.py`` 對應各條；2026-08-16 一次把 ``#31``
+      的 ``--ruling-url`` 誤指向 ``#88``，即由卡號檢查當場拒收）。
+    - 第 2 道在**單一人類帳號**的 repo 裡對代貼者恆真：PM 的 ``gh`` 與需求方是
+      同一個平台身分，故它從未區辨過任何東西。**恆真本身不導出成任何值**——
+      ``ROADMAP.md`` §1 逐字禁止「把恆真性導出成 ``structurally-vacuous`` 再繼續
+      假裝那是檢查」——只在回傳的註記裡據實寫明本比對不能分辨什麼。
+    - **完全沒看的**：留言內文。本函式只取 payload 的 ``user.login``，故它不知道
+      該留言寫了什麼，也無從判定它是否構成裁定、是否揭露代貼、是否載明授權來源。
+      呼叫端把該 URL 稱為「裁定」是**操作者的宣告**，不是本函式查得的事實。
+
+    因此回傳的註記**不替上述任何一組檢查命名**（不寫「完整性已檢查」之類的總結
+    標籤——那會讓讀者拿到的強度高於證據，跨家族查核 R1-001 blocking），只窮舉
+    比對過的兩件事，再逐項寫明它分辨不了什麼。
     """
     if not args.ruling_url:
         raise RulingError(
@@ -502,10 +639,10 @@ def _authorize_by_requester_ruling(runner, target, item, args, what: str) -> str
             f"裁定留言 author {author!r} 逐字等於本卡當前 owner；"
             "裁定者不得是被該裁定嘉惠的人（review-escalation.md §4 第 3 款同向）"
         )
-    return (
-        f"依需求方 {author} 於 {args.ruling_url} 的裁定"
-        f"（GitHub comment author 已逐字核對，非留言內文自述）"
-    )
+    # 這一行是本函式**唯一**的 return，且必須恰好是「模板 ＋ 兩個資料插值」。
+    # 不得改成 f-string、不得依 author／url／環境分支、不得在此拼接任何其他字串——
+    # 理由與守衛形狀見 `AUTHORITY_NOTE_TEMPLATE` 的說明。
+    return AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)
 
 
 def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢查本就是平鋪的

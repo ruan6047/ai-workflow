@@ -7,14 +7,18 @@ from pathlib import Path
 
 from wf_cli.doctor import (
     COMMIT_TRAILER_ROOT_CAUSE_ID,
+    LEGACY_AUTHORITY_NOTE_EXPLANATION,
+    LEGACY_AUTHORITY_NOTE_MARKER,
     SUPERSEDED_ROOT_CAUSE_IDS,
     TRAILER_GUARD_EPOCH,
     CommitRecord,
     DoctorReport,
     audit_commit_trailers,
+    audit_legacy_authority_notes,
     audit_review_channel,
     classify_commit_shape,
     evaluate_commit_trailers,
+    find_legacy_authority_notes,
     required_trailers,
     run_doctor,
     severed_declared_keys,
@@ -484,6 +488,7 @@ def test_doctor_rejects_invalid_source_sha_instead_of_reporting_unobservable(bad
         repo_root=str(tmp_path), registry="none", review_channel=True,
         repo="acme/x", issue_number=1, card_id="CARD-A", source_sha=bad_sha,
         owner="acme", project=1,
+        legacy_authority_notes=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=False, strict=False,
@@ -551,6 +556,7 @@ def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
         repo_root=str(tmp_path), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=False,
+        legacy_authority_notes=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
@@ -937,6 +943,7 @@ def test_cleanup_preview_json_payload_carries_previews(sandbox_repo, tmp_path, c
         repo_root=str(sandbox_repo), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=True,
+        legacy_authority_notes=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
@@ -1262,6 +1269,7 @@ def _trailer_args(repo, **overrides):
         "repo_root": str(repo), "registry": "none", "review_channel": False,
         "repo": None, "issue_number": None, "card_id": None, "source_sha": None,
         "owner": None, "project": None, "cleanup_preview": False,
+        "legacy_authority_notes": False,
         "commit_trailers": True, "commit_range": "main",
         "trailer_epoch": "none", "require_planned_by": False,
         "main_ref": "main", "lease_ttl_hours": 48.0, "json": False, "strict": False,
@@ -1317,3 +1325,319 @@ def test_rendered_report_refuses_to_claim_it_blocks_anything(sandbox_repo):
     text = audit_commit_trailers(sandbox_repo, "main", epoch=None).render_text()
     assert "唯讀" in text and "不阻擋" in text
     assert "DEV-AIWF-MINIMAL-CI1" in text, "必須指名強制面的承接者"
+
+
+# --------------------------------------------------------------------------
+# `#62` 之前的 amend 授權措辭：既存留痕的強度標記（WF-AMEND-AUTHZ-BINDING1）
+# --------------------------------------------------------------------------
+#
+# 既存事件不得追溯改寫，所以處置是讓它們可被機械認出。判準是舊字面本身，且
+# **必須落在授權欄內**——下面的假陰／假陽兩組測試就是在釘這條界線。
+#
+# 下面的夾具形狀取自 2026-08-16 全庫掃描實見的四行**沒有授權欄卻帶著舊措辭**的
+# Log／正文（`#62` 的痛點正文、`#62` 的 `--acceptance` 與 `--resources` 兩筆 amend
+# 原值／理由引用、`#22` 的 handoff 證據敘述）。報它們＝說一行「授權留痕不足」，
+# 而它壓根沒有授權留痕。
+#
+# ⚠️ 誠實界線：真實那四行裡只有兩行帶完整的 `LEGACY_AUTHORITY_NOTE_MARKER`，另兩行
+# 只引到前半句「已逐字核對」。夾具一律用完整 marker，是**刻意取較嚴的情形**——
+# 那才真正考驗位置錨；但因此夾具是照形狀重建的，不是那四行的逐字複本。
+
+_OLD_NOTE = f"（GitHub comment author 已逐字核對，{LEGACY_AUTHORITY_NOTE_MARKER}）"
+_NEW_NOTE = (
+    "（已核對：該 URL 指向本卡 issue 的既存留言，且其 GitHub author 欄逐字等於"
+    "卡面「需求：」欄。本指令不讀取留言內文或操作者身分，故不判定留言內容是否"
+    "構成裁定——上句「裁定」是操作者的宣告，不是本指令查得的事實——"
+    "亦不區分「需求方本人張貼」與「他人代擬代貼」）"
+)
+
+
+def _amend_line(op: str, note: str, *, old_value: str = "舊痛點", ts: str = "2026-08-12T12:27:51+08:00") -> str:
+    return (
+        f"- {ts} amend by wf-cli（op {op}）→ 核心痛點："
+        f"原值「{old_value}」→ 新值「新痛點」；理由 需求方裁定；"
+        f"授權 依需求方 ruan6047 於 https://github.com/o/r/issues/1#issuecomment-5 的裁定{note}。"
+    )
+
+
+def test_legacy_authority_note_is_detected_with_locator():
+    findings = find_legacy_authority_notes("CARD1", _amend_line("166322be", _OLD_NOTE))
+    assert len(findings) == 1
+    f = findings[0]
+    assert (f.card_id, f.op_id, f.field_name) == ("CARD1", "166322be", "核心痛點")
+    assert f.timestamp == "2026-08-12T12:27:51+08:00"
+
+
+def test_new_wording_authority_note_is_not_reported():
+    """`#62` 之後的措辭不得被報成舊留痕，否則修好的卡會永遠掛在報告上。"""
+    assert find_legacy_authority_notes("CARD1", _amend_line("aaaaaaaa", _NEW_NOTE)) == []
+
+
+@pytest.mark.parametrize(
+    "shape, line",
+    [
+        (
+            "卡的痛點正文（#62 本人）",
+            f"- **痛點**：amend_cmd.py:507 無條件輸出常數字面「GitHub comment author "
+            f"已逐字核對，{LEGACY_AUTHORITY_NOTE_MARKER}」到授權欄。",
+        ),
+        (
+            "--acceptance amend 的原值引用（#62）",
+            "- 2026-08-16T10:40:37+08:00 amend by wf-cli（op 05cf6174）→ 驗收條件："
+            f"原值「[ ] 移除 amend_cmd.py:507 那句「…{LEGACY_AUTHORITY_NOTE_MARKER}」」"
+            "→ 新值「[ ] 改寫措辭」；理由 需求方裁定。",
+        ),
+        (
+            "handoff 的證據敘述（#22）",
+            "- 2026-08-11T23:50:49+08:00 handoff by wf-cli → owner 跨家族查核；"
+            f"證據 R3：三項 blocking 全處置，含「{LEGACY_AUTHORITY_NOTE_MARKER}」一節。",
+        ),
+    ],
+)
+def test_marker_outside_the_authority_field_is_not_reported(shape, line):
+    """只是**引述**舊措辭的行沒有授權欄，報它就是新的過度宣稱。
+
+    這三種形狀都是實見的（2026-08-16 掃描，見上方註解含誠實界線）。排除是
+    **構造性**的——靠「授權欄」這個位置錨，不是把某張卡特判掉——所以將來任何
+    新的引述同樣不會誤報。實測：對真實 149 張卡面，粗判準 16 行、錨定後 14 行。
+    """
+    assert find_legacy_authority_notes("CARD1", line) == [], f"誤報了：{shape}"
+
+
+def test_old_literal_quoted_in_old_value_does_not_taint_a_new_authority_note():
+    """同一行可以「原值引用舊字面」＋「授權欄已是新措辭」——不得誤報。
+
+    這不是假想：`#62` 自己的痛點正文就引用著舊字面，日後用新版 CLI 再修訂它一次，
+    產生的就正是這種行。用整行比對會判它是舊留痕。
+    """
+    line = _amend_line(
+        "bbbbbbbb", _NEW_NOTE, old_value=f"…常數字面「{LEGACY_AUTHORITY_NOTE_MARKER}」…"
+    )
+    assert LEGACY_AUTHORITY_NOTE_MARKER in line  # 夾具確實含舊字面
+    assert find_legacy_authority_notes("CARD1", line) == []
+
+
+@pytest.mark.parametrize("n", [0, 1, 3, 7])
+def test_finding_count_follows_the_input_and_is_never_hardcoded(n):
+    """母體會隨新事件增減，所以檢查不得寫死任何計數。
+
+    本卡在途期間該缺陷仍在生產新實例（13 → 14），釘死數字的檢查隔天就是錯的。
+    """
+    body = "\n".join(_amend_line(f"{i:08x}", _OLD_NOTE) for i in range(n))
+    assert len(find_legacy_authority_notes("CARD1", body)) == n
+
+
+def test_not_scanned_is_distinguished_from_scanned_and_clean():
+    """沒掃 ≠ 沒有。兩者都回空清單，若報告不分就成了永不會響的偵測器。"""
+    not_scanned = audit_legacy_authority_notes(None)
+    assert (not_scanned.status, not_scanned.findings) == ("not_scanned", [])
+    assert audit_legacy_authority_notes({}).status == "not_scanned"
+
+    clean = audit_legacy_authority_notes({"CARD1": _amend_line("cccccccc", _NEW_NOTE)})
+    assert (clean.status, clean.scanned_cards, clean.findings) == ("scanned", 1, [])
+
+    dirty = audit_legacy_authority_notes(
+        {"CARD1": _amend_line("dddddddd", _OLD_NOTE), "CARD2": _amend_line("eeeeeeee", _OLD_NOTE)}
+    )
+    assert dirty.status == "scanned" and len(dirty.findings) == 2
+    assert dirty.affected_card_ids == ("CARD1", "CARD2")
+
+
+def test_rendered_report_separates_not_scanned_from_clean(sandbox_repo):
+    """render_text 也要分得開，否則人類讀者拿到的還是「一切乾淨」。"""
+    unscanned = run_doctor(sandbox_repo).render_text()
+    assert "未掃描" in unscanned and "這不等於沒有" in unscanned
+
+    report = run_doctor(sandbox_repo)
+    report.legacy_authority_notes = audit_legacy_authority_notes(
+        {"CARD1": _amend_line("ffffffff", _OLD_NOTE)}
+    )
+    text = report.render_text()
+    assert "CARD1" in text and "ffffffff" in text
+    assert LEGACY_AUTHORITY_NOTE_EXPLANATION in text
+
+
+def test_explanation_reports_evidence_strength_not_authorization_validity():
+    """⚠️ 這個檢查本身不得變成新的過度宣稱。
+
+    它必須說清楚三件事，且**第 3 件是關鍵**：報的是留痕強度不足，不是授權無效。
+    doctor 讀不到那則留言的內文，沒有立場評價個別授權的真假。
+
+    **突變檢驗**：把說明改成「該授權無效」之類的斷言，本測試轉紅。
+    """
+    text = LEGACY_AUTHORITY_NOTE_EXPLANATION
+    # (1) 這是 #62 之前的措辭
+    assert "#62 之前的措辭" in text
+    # (2) 區辨力構造上不成立，且說明為什麼（同一個帳號 → 比對恆真）
+    assert "構造上不成立" in text
+    assert "恆真" in text and "同一個平台身分" in text
+    # (3) 底下的授權可能仍然真實——這是強度陳述，不是效力裁定
+    assert "不表示那些授權是假的" in text
+    assert "不是「那次授權無效」" in text
+    # 反向：不得出現把它讀成效力裁定的字樣
+    for overclaim in ("授權無效", "授權不成立", "該次授權為假", "撤銷"):
+        assert overclaim not in text.replace("不是「那次授權無效」", "")
+
+
+def test_finding_carries_no_verdict_field_about_the_authorization():
+    """finding 只帶定位資訊。加一個「這次授權有效嗎」的欄位就是越權。"""
+    f = find_legacy_authority_notes("CARD1", _amend_line("11111111", _OLD_NOTE))[0]
+    assert set(vars(f)) == {"card_id", "timestamp", "op_id", "field_name"}
+
+
+# ---- CLI 接線（R3）------------------------------------------------------
+#
+# 上一輪的缺口：`doctor_cmd` 從不提供卡面，所以這一節從 CLI 跑必定印「未掃描」
+# ——一個構造上不可能執行的檢查不構成「機械標記」。本組釘住接線本身。
+
+
+class _FakeProjectRunner:
+    """`resolve_project` / `list_items` 用的最小替身；不連網。"""
+
+    def __init__(self, bodies: dict[str, str]):
+        self.bodies = bodies
+        self.calls: list[list[str]] = []
+
+    def run_json(self, args):
+        self.calls.append(list(args))
+        raise AssertionError("本替身只支援 project 讀取路徑")
+
+
+def _doctor_args(repo, **overrides):
+    import argparse
+
+    defaults = {
+        "repo_root": str(repo), "registry": "none", "review_channel": False,
+        "repo": None, "issue_number": None, "card_id": None, "source_sha": None,
+        "owner": None, "project": None, "cleanup_preview": False,
+        "legacy_authority_notes": False,
+        "commit_trailers": False, "commit_range": None,
+        "trailer_epoch": "none", "require_planned_by": False,
+        "main_ref": "main", "lease_ttl_hours": 48.0, "json": False, "strict": False,
+    }
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def _patch_project(monkeypatch, bodies):
+    """把 doctor_cmd 的 Project 讀取換掉，回傳給定卡面。"""
+    from wf_cli.commands import doctor_cmd
+
+    class _Item:
+        def __init__(self, card_id, body):
+            self.card_id, self.body = card_id, body
+
+    monkeypatch.setattr(doctor_cmd, "resolve_project", lambda *a, **k: {"id": "P"})
+    monkeypatch.setattr(
+        doctor_cmd, "list_items",
+        lambda *a, **k: [_Item(cid, b) for cid, b in bodies.items()],
+    )
+    return doctor_cmd
+
+
+def test_cli_flag_actually_scans_and_reports(sandbox_repo, monkeypatch, capsys):
+    """⚠️ 本組要擋的就是「測試綠但 CLI 跑不到」。
+
+    **突變檢驗**：把 `doctor_cmd` 傳給 `run_doctor` 的
+    `legacy_authority_card_bodies=legacy_bodies` 改回不傳（或傳 None），本測試轉紅。
+    """
+    doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    rc = doctor_cmd.run(
+        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "已掃描 1 張卡" in out
+    assert "CARD1" in out and "166322be" in out
+    assert LEGACY_AUTHORITY_NOTE_EXPLANATION in out
+    assert "未掃描" not in out
+
+
+def test_cli_without_the_flag_stays_not_scanned(sandbox_repo, capsys):
+    """不加旗標時仍是 `not_scanned`——不得謊報乾淨，也不得偷偷連網。"""
+    from wf_cli.commands import doctor_cmd
+
+    assert doctor_cmd.run(_doctor_args(sandbox_repo)) == 0
+    out = capsys.readouterr().out
+    assert "未掃描" in out and "這不等於沒有" in out
+    # 指路必須指向**CLI 可用的**旗標，不能只講程式參數
+    assert "--legacy-authority-notes" in out
+
+
+def test_cli_flag_requires_owner_and_project(sandbox_repo, capsys):
+    from wf_cli.commands import doctor_cmd
+
+    assert doctor_cmd.run(_doctor_args(sandbox_repo, legacy_authority_notes=True)) == 2
+    err = capsys.readouterr().err
+    assert "--owner" in err and "--project" in err
+
+
+def test_cli_keeps_not_scanned_when_card_fetch_fails(sandbox_repo, monkeypatch, capsys):
+    """抓取失敗 → 維持 `not_scanned`，不中止、也不當成掃過且乾淨。"""
+    from wf_cli.commands import doctor_cmd
+
+    def _boom(*a, **k):
+        raise RuntimeError("gh 掛了")
+
+    monkeypatch.setattr(doctor_cmd, "resolve_project", _boom)
+    rc = doctor_cmd.run(
+        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+    )
+    assert rc == 0, "抓取失敗不該讓整個 doctor 中止"
+    captured = capsys.readouterr()
+    assert "取不到 Project 卡面" in captured.err and "這不等於沒有" in captured.err
+    assert "未掃描" in captured.out
+
+
+def test_legacy_notes_never_affect_strict_exit_code(sandbox_repo, monkeypatch, capsys):
+    """既存事件不可改寫，把它們算進 --strict 會讓 CI 恆紅且無人能修好。"""
+    doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    rc = doctor_cmd.run(
+        _doctor_args(
+            sandbox_repo, legacy_authority_notes=True, owner="acme", project=4,
+            registry="none", strict=True,
+        )
+    )
+    assert "已掃描 1 張卡" in capsys.readouterr().out, "夾具必須真的有 finding"
+    assert rc == 0, "--strict 不得因舊措辭留痕而失敗"
+
+
+def test_cli_does_not_feed_cleanup_guard_when_scanning_legacy_notes(sandbox_repo, monkeypatch):
+    """接線**不得**順手改變 `--cleanup-preview` 的判定。
+
+    `run_doctor(card_bodies=...)` 餵的是 cleanup guard 第 3 步（資源宣告釋放），
+    今天 `doctor_cmd` 從不提供它。本檢查若共用該參數，會沉默地讓原本跳過的
+    資源釋放檢查開始生效——那是另一張卡的射程。
+    """
+    from wf_cli.commands import doctor_cmd
+
+    seen = {}
+
+    def _spy(repo_root, registry=None, **kw):
+        seen.update(kw)
+        return run_doctor(repo_root, registry, **kw)
+
+    _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    monkeypatch.setattr(doctor_cmd, "run_doctor", _spy)
+    doctor_cmd.run(
+        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+    )
+    assert seen.get("card_bodies") is None, "cleanup guard 的 card_bodies 不得被順手填上"
+    assert seen.get("legacy_authority_card_bodies") == {
+        "CARD1": _amend_line("166322be", _OLD_NOTE)
+    }
+
+
+def test_cli_json_payload_carries_legacy_authority_notes(sandbox_repo, monkeypatch, capsys):
+    """機器消費端要讀得到；只有人類可讀那份等於沒有對外提供。"""
+    import json as jsonlib
+
+    doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
+    assert doctor_cmd.run(
+        _doctor_args(
+            sandbox_repo, legacy_authority_notes=True, owner="acme", project=4, json=True
+        )
+    ) == 0
+    payload = jsonlib.loads(capsys.readouterr().out)["legacy_authority_notes"]
+    assert payload["status"] == "scanned" and payload["scanned_cards"] == 1
+    assert [f["op_id"] for f in payload["findings"]] == ["166322be"]
