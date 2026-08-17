@@ -250,7 +250,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | §4.4 事件無 writer | `escalation-epoch-change`、`handoff-accepted`、`review-correction`、`review-marker-clearance`、`baseline-change-request`、四個 clearance 分類 | `補寫入者`。`handoff-accepted` 優先——`event-verified` preflight 依據的不可達性以它為根因 |
 | §4.5 命名漂移 | `escalation-checkpoint`、`contract-baseline` | `已知限制`（或統一契約名與碼內錨點名，屬低風險整理） |
 | §4.6 守衛覆蓋 | `card.py` → `find_conflicts` | `待需求方裁定`：開卡時是否應做互斥比對（現況只有 assign 擋） |
-| 過抽（非契約符號） | `ubuntu-latest`、`update-branch`、`🔴紅線`、`⚪一般`、`→merge`、`→查核前`、`↔執行者`、`card_field` 的 `Log`／`目標`／`需求方`／`範圍` | `過抽`：抽取規則的已知代價，不須處置 |
+| 過抽（非契約符號） | `cpbl-analytics`（採用專案的 repo 名，寫在範本的警示句裡）、`ubuntu-latest`、`update-branch`、`🔴紅線`、`⚪一般`、`→merge`、`→查核前`、`↔執行者`、`card_field` 的 `Log`／`目標`／`需求方`／`範圍` | `過抽`：抽取規則的已知代價，不須處置 |
 | 列舉值非事件 | `data-migration`、`authoritative-artifact`、`change-executor` | `過抽`：皆有讀取者，判定為 `read-only` 屬正常 |
 | 刻意 fail-closed | `spec-narrowed`、`instruction-omitted` | `已知限制`：`checkpoint_cmd` 明寫「保留旗標，一律拒收」，兩個 defer cause 在本 repo 皆不可用 |
 
@@ -307,6 +307,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "event/review-marker-clearance": "mention-only",
     "event/spec-narrowed": "mention-only",
     "event/status-change": "absent",
+    "event/cpbl-analytics": "mention-only",
     "event/ubuntu-latest": "absent",
     "event/update-branch": "absent",
     "guard/cli/src/wf_cli/card.py→resources": "find_conflicts",
