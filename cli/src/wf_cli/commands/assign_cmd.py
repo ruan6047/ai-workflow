@@ -117,7 +117,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "⚠️ 它是**宣告**：本閘門不觀測、也不綁定後續真正的 git worktree add。",
     )
     p.add_argument(
-        "--status", default="🚧進行中", help="assign 後的交付狀態；預設 🚧進行中"
+        "--status", default="🔨執行中", help="assign 後的交付狀態；預設 🔨執行中"
     )
     p.add_argument(
         "--actual-capability",

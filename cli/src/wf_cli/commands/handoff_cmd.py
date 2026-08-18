@@ -85,7 +85,10 @@ from ..validation import ValidationError, validate_evidence, validate_source_sha
 from .assign_cmd import TERMINAL_STATUSES
 
 STAGE_STATUS = {
-    "implementation": "🚧進行中",
+    "requirement": "💡需求",
+    "research": "🔬研究中",
+    "planning": "🧭規劃中",
+    "implementation": "🔨執行中",
     "review": "🔍待查核",
 }
 
@@ -274,7 +277,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("card_id")
     p.add_argument("--to", required=True, help="下一位 owner（角色／帳號／模型@工具）")
     p.add_argument(
-        "--next-stage", required=True, choices=["implementation", "review", "release"]
+        "--next-stage", required=True, choices=["requirement", "research", "planning", "implementation", "review", "release"]
     )
     p.add_argument("--source-sha", required=True, help="完整 40 字元 hex SHA")
     p.add_argument("--evidence", required=True, help="測試／CI／審核／決策連結或摘要")

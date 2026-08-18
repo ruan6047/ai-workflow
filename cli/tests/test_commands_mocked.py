@@ -588,7 +588,7 @@ def test_assign_writes_owner_and_branch_worktree(fake_runner):
     item = list_items(fake_runner, project)[0]
     assert item.fields["owner"] == "Claude Sonnet 5@Claude Code"
     assert item.fields["分支worktree"] == "ai/agent/ASSIGN-CARD1 @ .claude/worktrees/assign-card1"
-    assert item.fields["交付狀態"] == "🚧進行中"
+    assert item.fields["交付狀態"] == "🔨執行中"
     assert "assign by wf-cli" in item.body
 
 

@@ -71,7 +71,7 @@ def test_worktree_classification_registered_orphan_prunable_and_detached(sandbox
         [
             RegisteredCard(
                 card_id="CARD-A", branch="ai/agent/CARD-A", worktree_path="wt-registered",
-                delivery_status="🚧進行中", owner="someone", last_handoff=None,
+                delivery_status="🔨執行中", owner="someone", last_handoff=None,
             )
         ]
     )
@@ -153,7 +153,7 @@ def test_stale_lease_flagged_when_registered_worktree_path_missing_on_disk(sandb
             RegisteredCard(
                 card_id="CARD-GONE", branch="ai/agent/CARD-GONE",
                 worktree_path=".claude/worktrees/does-not-exist",
-                delivery_status="🚧進行中", owner="Claude Sonnet 5@Claude Code",
+                delivery_status="🔨執行中", owner="Claude Sonnet 5@Claude Code",
                 last_handoff=None,
             )
         ]
@@ -182,7 +182,7 @@ def test_stale_lease_flagged_when_last_handoff_exceeds_ttl(sandbox_repo):
         [
             RegisteredCard(
                 card_id="CARD-OLD", branch=None, worktree_path=None,
-                delivery_status="🚧進行中", owner="Claude Opus 5@Claude Code",
+                delivery_status="🔨執行中", owner="Claude Opus 5@Claude Code",
                 last_handoff="2020-01-01T00:00:00+08:00",
             )
         ]

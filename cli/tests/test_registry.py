@@ -36,7 +36,7 @@ ACTIVE_LEDGER = """# 任務看板
 
 | 卡ID | Initiative | 級別 | 功能 | owner | 分支／worktree | iteration | 交付狀態 | 部署狀態 | 最後交接 |
 |---|---|---|---|---|---|---|---|---|---|
-| [CARD-A](tasks/CARD-A.md) | None | T2 | 示範卡 A | someone | `ai/agent/CARD-A @ .claude/worktrees/card-a` | 0 | 🚧進行中 | —不適用 | 2026-08-01T00:00:00+08:00 |
+| [CARD-A](tasks/CARD-A.md) | None | T2 | 示範卡 A | someone | `ai/agent/CARD-A @ .claude/worktrees/card-a` | 0 | 🔨執行中 | —不適用 | 2026-08-01T00:00:00+08:00 |
 | [CARD-B](tasks/CARD-B.md) | INIT-X | T3 | 示範卡 B | 待指派 | — | 0 | 📥Backlog | —不適用 | 2026-07-01T00:00:00+08:00 |
 
 ## 依賴註記
@@ -65,7 +65,7 @@ def test_parse_active_ledger_extracts_card_id_branch_and_worktree():
     by_id = {c.card_id: c for c in cards}
     assert by_id["CARD-A"].branch == "ai/agent/CARD-A"
     assert by_id["CARD-A"].worktree_path == ".claude/worktrees/card-a"
-    assert by_id["CARD-A"].delivery_status == "🚧進行中"
+    assert by_id["CARD-A"].delivery_status == "🔨執行中"
     assert by_id["CARD-A"].last_handoff == "2026-08-01T00:00:00+08:00"
     assert by_id["CARD-A"].owner_assigned() is True
 
