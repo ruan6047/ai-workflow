@@ -1,8 +1,13 @@
 """卡註冊來源（可插拔）：doctor 用來判斷「這個 worktree 對得上哪張卡」。
 
-遷移尚未 cutover 的專案（如 cpbl-analytics）目前仍以 ``docs/TASKS.md`` 的 Ledger
-表格作為 current-state 事實來源；已 cutover 的專案改用 GitHub Project（見
-``project.py``）。doctor／snapshot 的骨架刻意不綁定其中一種（卡面〈依賴與順序〉：
+尚未 cutover 的專案以 ``docs/TASKS.md`` 的 Ledger 表格作為 current-state 事實
+來源；已 cutover 的專案改用 GitHub Project（見 ``project.py``）。
+
+⚠️ **本 repo 與 cpbl-analytics 都已 cutover**（cpbl 於 2026-08-04，終筆
+``8271d7c``；兩邊的 ``TASKS.md`` 均凍結於 2026-08-05）。本檔原先舉 cpbl-analytics
+為「尚未 cutover」的例子，那已經過期。``tasks-md`` 來源保留給尚未遷移的採用專案，
+**對本 repo 與 cpbl 而言它讀到的是封存快照**——2026-08-12 實測 ``doctor`` 把六個
+WF 卡的 worktree 全報為孤兒，成因正是這個。doctor／snapshot 的骨架刻意不綁定其中一種（卡面〈依賴與順序〉：
 「doctor／snapshot 骨架不依賴 Issues 結構，可立即先行」），所以這裡定義一個共同的
 最小介面 ``RegisteredCard``，兩種來源各自轉成這個形狀。
 

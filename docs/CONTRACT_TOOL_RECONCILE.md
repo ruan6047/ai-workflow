@@ -352,7 +352,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `status-change` | absent | `templates/review-escalation.md:10`<br>`templates/review-escalation.md:15` | — | — | 相關動詞=無 |
 | `ubuntu-latest` | absent | `docs/ROADMAP.md:152` | — | — | 相關動詞=無 |
 | `update-branch` | absent | `docs/ROADMAP.md:135` | — | — | 相關動詞=無 |
-| `structurally-vacuous` | ok | `docs/ROADMAP.md:33`<br>`docs/ROADMAP.md:59`<br>`docs/ROADMAP.md:293` | `cli/src/wf_cli/validation.py:480`<br>`cli/src/wf_cli/validation.py:483`<br>`cli/src/wf_cli/validation.py:486` | `cli/src/wf_cli/review.py:618` | 相關動詞=無 |
+| `structurally-vacuous` | ok | `docs/ROADMAP.md:33`<br>`docs/ROADMAP.md:59`<br>`docs/ROADMAP.md:299` | `cli/src/wf_cli/validation.py:480`<br>`cli/src/wf_cli/validation.py:483`<br>`cli/src/wf_cli/validation.py:486` | `cli/src/wf_cli/review.py:618` | 相關動詞=無 |
 
 ### 交付狀態（23）
 
@@ -375,7 +375,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `✅已部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40`<br>…共 4 | Project 選項=是；專責動詞=是 |
 | `✅已驗證` | ok | `AI_WORKFLOW.md:18`<br>`templates/worktree-lifecycle.md:15` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:349` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:349`<br>…共 4 | Project 選項=是；專責動詞=是 |
 | `✅通過` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/project.py:40`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
-| `🏁完成` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/project-stub.md:25`<br>…共 5 | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/commands/handoff_cmd.py:356` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
+| `🏁完成` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/project-stub.md:25`<br>…共 6 | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/commands/handoff_cmd.py:356` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
 | `📥Backlog` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:113`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/card.py:295` | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
 | `🔍待查核` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/handoff-contract.md:154`<br>…共 6 | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/commands/review_cmd.py:104` | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
 | `🚀待部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38`<br>…共 4 | Project 選項=是；專責動詞=是 |
@@ -398,7 +398,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `根因` | mention-only | `templates/bug-card.md:5` | — | — | open 渲染=否；amend 可改=否 |
 | `決策與風險` | absent | `templates/initiative-card.md:22` | — | — | open 渲染=否；amend 可改=否 |
 | `環境` | mention-only | `templates/bug-card.md:3`<br>`templates/tasks-card.md:8` | — | — | open 渲染=否；amend 可改=否 |
-| `目標` | write-only | `templates/initiative-card.md:5` | `cli/src/wf_cli/cleanup.py:801`<br>`cli/src/wf_cli/cleanup.py:826`<br>`cli/src/wf_cli/registry.py:856`<br>…共 4 | — | open 渲染=否；amend 可改=否 |
+| `目標` | write-only | `templates/initiative-card.md:5` | `cli/src/wf_cli/cleanup.py:801`<br>`cli/src/wf_cli/cleanup.py:826`<br>`cli/src/wf_cli/registry.py:861`<br>…共 4 | — | open 渲染=否；amend 可改=否 |
 | `範圍` | read-only | `templates/tasks-card.md:9` | — | `cli/src/wf_cli/doctor.py:770` | open 渲染=否；amend 可改=否 |
 | `部署` | mention-only | `templates/tasks-card.md:8` | — | — | open 渲染=否；amend 可改=否 |
 | `里程碑` | absent | `templates/initiative-card.md:6` | — | — | open 渲染=否；amend 可改=否 |

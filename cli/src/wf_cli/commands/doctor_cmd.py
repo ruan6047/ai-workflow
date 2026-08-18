@@ -31,7 +31,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "--registry",
         choices=["tasks-md", "none"],
         default="tasks-md",
-        help="卡註冊來源：tasks-md 讀 docs/TASKS.md（未 cutover 專案）；none 只做純 git 檢查",
+        help="卡註冊來源：tasks-md 讀 docs/TASKS.md（⚠️ 僅限尚未 cutover 的專案；本 repo 與 cpbl 都已 cutover，讀到的是封存於 2026-08-05 的凍結快照）；none 只做純 git 檢查",
     )
     p.add_argument(
         "--review-channel",
