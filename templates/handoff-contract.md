@@ -19,7 +19,7 @@ card_id: <CARD_ID>
 actor: <lifecycle event writer；通常等於 from>
 from: <GitHub account / model@tool>
 to: <role / GitHub account / model@tool>
-next_stage: implementation | review | release
+next_stage: requirement | research | planning | implementation | review | release
 source_sha: <full-40-char-commit-sha>
 branch: <pushed remote branch>
 claim_event_id: <active claim event ID>
