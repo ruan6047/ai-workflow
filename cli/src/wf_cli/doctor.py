@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +24,7 @@ import re
 from typing import Any, Literal
 
 from . import git_ops
-from .card import now_iso8601
+from .card import AmendError, now_iso8601, split_at_log
 from .cleanup import (
     DESTRUCTIVE_ORDER,
     SUBSEQUENT_OBLIGATION_STEPS,
@@ -33,7 +34,7 @@ from .cleanup import (
     evaluate_cleanup_guard,
 )
 from .registry import RegisteredCard, TasksMdRegistry
-from .review import STATUS_BY_RESULT
+from .review import BASELINE_LOG_TAG, CHECKPOINT_LOG_TAG, STATUS_BY_RESULT
 
 WorktreeClass = Literal[
     "registered_active", "orphan_prunable", "orphan_untracked", "detached_sandbox"
@@ -1131,6 +1132,330 @@ def audit_legacy_authority_notes(
     return report
 
 
+# --------------------------------------------------------------------------
+# 狀態面漂移守衛：Log 最後一筆 lifecycle 事件 → 應有交付狀態 vs Project 欄位
+# （DEV-STATE-FACE-DRIFT-GUARD1，#65）
+# --------------------------------------------------------------------------
+#
+# 2026-08-12 的四筆看板失真（#38／#47／#52／#57）是本檢查的成因：PM 漏跑
+# handoff 四次，看板與真實不符，靠需求方發問才浮出。本檢查唯讀：由卡面
+# ``## Log`` 的最後一筆 lifecycle 事件推導該卡「應有」的交付狀態，與 Project
+# 欄位比對，不符即報。
+#
+# **推導的誠實邊界**（先實測 Log 行的實際欄位、後設計；實測樣本：
+# cpbl#139／#149 的完整生命週期、ai-workflow#38／#47／#52／#57／#65）：
+#
+# - ``assign`` 的 Log 行**逐字記下它寫入的交付狀態**（``；交付狀態 X；``，含
+#   ``--status`` 自由文字覆寫後的值）→ 可推導。
+# - ``review`` 的 Log 行記下結論與括號內的交付狀態（``review by wf-cli →
+#   APPROVE（✅通過）``）→ 可推導，且兩者可互相自洽檢查。
+# - ``open`` 的 Log 行不記狀態，但 ``wfcli open`` 沒有 ``--status`` 旋鈕，
+#   初始交付狀態是程式常數（`card.Card.delivery_status` 預設）→ 可推導。
+# - ``handoff`` 的 Log 行**只記 owner／iteration／SHA／證據，不含 next-stage
+#   也不含實際寫入的狀態**。它寫了什麼由 ``--next-stage``（六個，對應表
+#   `HANDOFF_STAGE_EXPECTED_STATUS`）或 ``--status``（無 choices 的自由文字）
+#   決定，而兩者都不在留痕裡 → **一律落「不判定」，不得默認通過**（卡面
+#   驗收第 1 條）。對應表本身仍完整列出：它記錄的是事件模型，「表完整」與
+#   「留痕投影遺失了查表所需的參數」是兩件事，後者不成為前者不窮舉的藉口。
+# - ``amend``／``checkpoint``／``contract-baseline`` 不寫交付狀態（各自的
+#   模組明文），對推導**透明**：跳過往前找上一筆會寫狀態的事件。
+# - 其餘行（手寫留痕、未知動詞）fail-closed 落「不判定」且**不往前跳**：
+#   未知事件可能寫過狀態，跳過它會把過時的舊事件當成現行依據，那是往
+#   false drift 的方向猜。
+#
+# **偵測不等於強制**：本檢查擋不住任何一次漏跑 handoff。事件沒寫時，Log 與
+# 欄位一起過期、彼此一致——2026-08-12 的四筆失真在各自漂移時點正是這個形態
+# （見 test_doctor.py 的回放 fixture），本軸看不見它們。本軸看得見的是
+# 「事件寫了而欄位沒跟上（half-write）」與「欄位被手動搬動而沒有事件」。
+# 強制面的承接者是 CI（DEV-AIWF-MINIMAL-CI1，#48）；且依 ROADMAP §2，連 #48
+# 也只產生紅叉，紅叉要變成閘門須套 repo 的 required_status_checks ruleset。
+
+#: ``handoff --next-stage`` → 交付狀態 的完整對應（六個，缺一不可）。
+#: 前五個鏡射 `commands/handoff_cmd.py` 的 ``STAGE_STATUS``；``release`` 在該
+#: 模組是獨立分支（部署閘門通過後寫 ``🏁完成``），此處併入同一張表以滿足
+#: 「推導表窮舉」。**測試以寫入端為準釘住每一格**（test_doctor.py），改錯任何
+#: 一格測試必紅。
+HANDOFF_STAGE_EXPECTED_STATUS: dict[str, str] = {
+    "requirement": "💡需求",
+    "research": "🔬研究中",
+    "planning": "🧭規劃中",
+    "implementation": "🔨執行中",
+    "review": "🔍待查核",
+    "release": "🏁完成",
+}
+
+#: ``review`` 結論 → 交付狀態（兩個結論窮舉）。鏡射 `review.STATUS_BY_RESULT`，
+#: 測試釘同一性。
+REVIEW_RESULT_EXPECTED_STATUS: dict[str, str] = {
+    "APPROVE": "✅通過",
+    "REQUEST_CHANGES": "↩退回",
+}
+
+#: ``wfcli open`` 寫入的初始交付狀態。open 無 ``--status``，值即
+#: `card.Card.delivery_status` 的 dataclass 預設；測試釘同一性。
+OPEN_INITIAL_STATUS = "📥Backlog"
+
+#: 不寫交付狀態、對推導透明的事件（可安全跳過往前找）。
+#: amend：`commands/amend_cmd.py` 只動 body 欄位與級別欄，明文不改交付狀態。
+#: checkpoint／contract-baseline：`commands/checkpoint_cmd.py` 明文
+#: 「本指令不改交付狀態」，兩個 tag 常數來自 `review.py`。
+_TRANSPARENT_EVENT_PREFIXES: tuple[str, ...] = (
+    "amend by wf-cli",
+    CHECKPOINT_LOG_TAG,
+    BASELINE_LOG_TAG,
+)
+
+# 推導規則／不判定原因（機械可枚舉，供量化統計與測試斷言）。
+RULE_OPEN = "open_initial"
+RULE_ASSIGN = "assign_logged_status"
+RULE_REVIEW = "review_result"
+UNDECIDABLE_HANDOFF = "handoff_status_not_in_log"
+UNDECIDABLE_ASSIGN_NO_STATUS = "assign_status_segment_missing"
+UNDECIDABLE_REVIEW_RESULT = "review_result_unrecognized"
+UNDECIDABLE_REVIEW_INCONSISTENT = "review_line_self_inconsistent"
+UNDECIDABLE_UNKNOWN_EVENT = "unrecognized_event"
+UNDECIDABLE_NO_EVENT = "no_status_bearing_event"
+UNDECIDABLE_NO_LOG = "no_log_section"
+UNDECIDABLE_AMBIGUOUS_LOG = "log_section_ambiguous"
+UNDECIDABLE_FACE_UNREADABLE = "face_unreadable"
+
+DriftVerdict = Literal["consistent", "drift", "undecidable"]
+
+#: Log 事件行的起點：``- <ISO8601 帶時區時間戳> <內文>``。續行（多段落證據）
+#: 不以此形狀開頭，歸入前一筆事件。已知的保守誤差：證據內若逐字引用了一整行
+#: 含時間戳的 Log 行，會被誤切成新事件——方向是把可判定的事件切碎成未知動詞
+#: 而落「不判定」，fail-closed。
+_DRIFT_EVENT_START_RE = re.compile(
+    r"^- (?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+\-]\d{2}:\d{2}|Z)) (?P<entry>.*)$"
+)
+#: assign Log 行的交付狀態欄（格式第 3 段，先於自由文字段，故取**第一個**命中）。
+_ASSIGN_STATUS_RE = re.compile(r"；交付狀態 (?P<status>[^；。\n]+)")
+#: review Log 行的結論與其括號內交付狀態。
+_REVIEW_VERDICT_RE = re.compile(
+    r"^review by wf-cli → (?P<result>[A-Z_]+)（(?P<status>[^）]+)）"
+)
+
+
+@dataclass(frozen=True)
+class StateFaceDriftFinding:
+    """Log 推導的應有交付狀態 vs Project 欄位的比對結果（唯讀）。
+
+    ``rule`` 是套用的推導規則（verdict 為 consistent／drift 時）或不判定原因
+    （verdict 為 undecidable 時），值域是本模組的 ``RULE_*``／``UNDECIDABLE_*``
+    常數——機械可枚舉，讓「不判定佔比」可以由 findings 直接統計而非人工宣稱。
+    """
+
+    verdict: DriftVerdict
+    card_id: str
+    expected_status: str | None
+    actual_status: str | None
+    rule: str
+    #: 據以推導（或使推導中止）的那筆事件的首行（截斷）；無事件時 None。
+    deciding_event: str | None = None
+    #: 推導時跳過的透明事件（amend／checkpoint／contract-baseline）數。
+    skipped_transparent: int = 0
+    detail: str = ""
+
+
+def parse_log_events(body: str) -> tuple[list[str] | None, str | None]:
+    """切出 ``## Log`` 區段內的事件清單（每筆含續行）。
+
+    回傳 ``(events, 不判定原因)``：兩者恰有一個為 None。切分沿用
+    `card.split_at_log` 的獨立標題行判準（Log 內的資源宣告哨兵回音、引用的
+    ``## Log`` 字樣導致標題不唯一時，該函式 fail closed，本函式跟著落
+    ``log_section_ambiguous``，不猜）。
+    """
+    try:
+        _, log_section = split_at_log(body or "")
+    except AmendError:
+        return None, UNDECIDABLE_AMBIGUOUS_LOG
+    if not log_section:
+        return None, UNDECIDABLE_NO_LOG
+    events: list[str] = []
+    current: list[str] | None = None
+    for line in log_section.splitlines()[1:]:  # 略過 `## Log` 標題行本身
+        match = _DRIFT_EVENT_START_RE.match(line)
+        if match:
+            if current is not None:
+                events.append("\n".join(current))
+            current = [match.group("entry")]
+        elif current is not None:
+            current.append(line)
+    if current is not None:
+        events.append("\n".join(current))
+    return events, None
+
+
+def derive_expected_status(
+    events: list[str],
+) -> tuple[str | None, str, str | None, int]:
+    """由最後一筆 lifecycle 事件推導應有交付狀態。
+
+    回傳 ``(expected, rule, deciding_event 首行, skipped_transparent)``；
+    ``expected`` 為 None 時 ``rule`` 是不判定原因。推導表詳見模組說明與
+    `HANDOFF_STAGE_EXPECTED_STATUS`／`REVIEW_RESULT_EXPECTED_STATUS`／
+    `OPEN_INITIAL_STATUS`。
+    """
+    skipped = 0
+    for entry in reversed(events):
+        first_line = entry.splitlines()[0] if entry else ""
+        if first_line.startswith(_TRANSPARENT_EVENT_PREFIXES):
+            skipped += 1
+            continue
+        if first_line.startswith("open by "):
+            return OPEN_INITIAL_STATUS, RULE_OPEN, first_line, skipped
+        if first_line.startswith("assign by wf-cli"):
+            status_match = _ASSIGN_STATUS_RE.search(entry)
+            if not status_match:
+                return None, UNDECIDABLE_ASSIGN_NO_STATUS, first_line, skipped
+            return status_match.group("status").strip(), RULE_ASSIGN, first_line, skipped
+        if first_line.startswith("handoff by wf-cli"):
+            return None, UNDECIDABLE_HANDOFF, first_line, skipped
+        if first_line.startswith("review by wf-cli"):
+            verdict_match = _REVIEW_VERDICT_RE.match(first_line)
+            if not verdict_match:
+                return None, UNDECIDABLE_REVIEW_RESULT, first_line, skipped
+            result = verdict_match.group("result")
+            if result not in REVIEW_RESULT_EXPECTED_STATUS:
+                return None, UNDECIDABLE_REVIEW_RESULT, first_line, skipped
+            expected = REVIEW_RESULT_EXPECTED_STATUS[result]
+            if verdict_match.group("status").strip() != expected:
+                # 行內括號狀態與結論查表值不符：該行已非產生器輸出（編輯過或
+                # 手寫），兩個候選無從取捨，落不判定。
+                return None, UNDECIDABLE_REVIEW_INCONSISTENT, first_line, skipped
+            return expected, RULE_REVIEW, first_line, skipped
+        return None, UNDECIDABLE_UNKNOWN_EVENT, first_line, skipped
+    return None, UNDECIDABLE_NO_EVENT, None, skipped
+
+
+def _short_event(first_line: str | None, limit: int = 96) -> str | None:
+    if first_line is None:
+        return None
+    return first_line if len(first_line) <= limit else first_line[: limit - 1] + "…"
+
+
+_UNDECIDABLE_DETAILS: dict[str, str] = {
+    UNDECIDABLE_HANDOFF: (
+        "最後一筆是 handoff：其 Log 行只記 owner／iteration／SHA／證據，不含 "
+        "next-stage 也不含 --status 覆寫值，寫入的交付狀態無法由留痕反推"
+        "（六個 next-stage 的對應表見 HANDOFF_STAGE_EXPECTED_STATUS）。依卡面"
+        "驗收落「不判定」，不得默認通過。"
+    ),
+    UNDECIDABLE_ASSIGN_NO_STATUS: (
+        "最後一筆是 assign，但行內沒有「；交付狀態 X」欄位（舊格式或手寫），"
+        "無法得知它寫了什麼。"
+    ),
+    UNDECIDABLE_REVIEW_RESULT: (
+        "最後一筆是 review，但結論不是 APPROVE／REQUEST_CHANGES 兩個列舉值"
+        "（或行格式無法解析），查不了表。"
+    ),
+    UNDECIDABLE_REVIEW_INCONSISTENT: (
+        "最後一筆是 review，但行內括號的交付狀態與結論查表值互相矛盾；該行已"
+        "非產生器輸出，兩個候選無從取捨。"
+    ),
+    UNDECIDABLE_UNKNOWN_EVENT: (
+        "最後一筆事件的動詞不在已知集合（open／assign／handoff／review 與透明事件 "
+        + "／".join(_TRANSPARENT_EVENT_PREFIXES)
+        + "）。未知事件可能寫過狀態，故不往前跳、整卡落「不判定」（fail-closed）。"
+    ),
+    UNDECIDABLE_NO_EVENT: "Log 區段內沒有任何可辨識的事件行（或全是透明事件）。",
+    UNDECIDABLE_NO_LOG: "卡面沒有 `## Log` 區段，無留痕可推導。",
+    UNDECIDABLE_AMBIGUOUS_LOG: (
+        "`## Log` 標題不唯一或排版已破壞（split_at_log fail closed），"
+        "不猜切分位置。"
+    ),
+    UNDECIDABLE_FACE_UNREADABLE: (
+        "讀不到 Project 交付狀態欄，比對缺一面；已推導出的應有狀態仍如實回報。"
+    ),
+}
+
+
+def audit_state_face_drift(
+    card_id: str, body: str, delivery_status: str | None
+) -> StateFaceDriftFinding:
+    """唯讀比對：Log 最後一筆 lifecycle 事件推導的應有交付狀態 vs Project 欄位。
+
+    本檢查**只列舉、不阻止**：漏跑 handoff 時事件與欄位一起缺席、彼此一致，
+    本軸看不見（模組說明「偵測不等於強制」段）。發現 drift 時的正確處置是
+    補跑對應的 wfcli 動詞讓事件與欄位重新同源，而不是手動搬看板——手動搬
+    正是本檢查會報的形態。
+    """
+    events, parse_reason = parse_log_events(body)
+    if events is None:
+        return StateFaceDriftFinding(
+            verdict="undecidable", card_id=card_id, expected_status=None,
+            actual_status=delivery_status, rule=parse_reason or UNDECIDABLE_NO_LOG,
+            detail=_UNDECIDABLE_DETAILS[parse_reason or UNDECIDABLE_NO_LOG],
+        )
+    expected, rule, deciding, skipped = derive_expected_status(events)
+    if expected is None:
+        return StateFaceDriftFinding(
+            verdict="undecidable", card_id=card_id, expected_status=None,
+            actual_status=delivery_status, rule=rule,
+            deciding_event=_short_event(deciding), skipped_transparent=skipped,
+            detail=_UNDECIDABLE_DETAILS[rule],
+        )
+    if delivery_status is None:
+        return StateFaceDriftFinding(
+            verdict="undecidable", card_id=card_id, expected_status=expected,
+            actual_status=None, rule=UNDECIDABLE_FACE_UNREADABLE,
+            deciding_event=_short_event(deciding), skipped_transparent=skipped,
+            detail=_UNDECIDABLE_DETAILS[UNDECIDABLE_FACE_UNREADABLE],
+        )
+    if delivery_status.strip() == expected:
+        return StateFaceDriftFinding(
+            verdict="consistent", card_id=card_id, expected_status=expected,
+            actual_status=delivery_status, rule=rule,
+            deciding_event=_short_event(deciding), skipped_transparent=skipped,
+            detail="Log 最後一筆事件推導的應有狀態與 Project 欄位一致。",
+        )
+    return StateFaceDriftFinding(
+        verdict="drift", card_id=card_id, expected_status=expected,
+        actual_status=delivery_status, rule=rule,
+        deciding_event=_short_event(deciding), skipped_transparent=skipped,
+        detail=(
+            f"漂移：Log 最後一筆事件（{rule}）推導應有 {expected!r}，Project "
+            f"交付狀態欄為 {delivery_status!r}。本檢查唯讀，只列舉不阻止；"
+            "修復請補跑對應的 wfcli 動詞讓事件與欄位重新同源，勿手動搬看板。"
+        ),
+    )
+
+
+def render_state_face_drift(findings: list[StateFaceDriftFinding]) -> str:
+    """彙整輸出。「不判定」佔比由 findings 直接統計，不是人工宣稱的數字。"""
+    lines = [
+        f"## 狀態面漂移對帳（Log 最後一筆事件 → 交付狀態；唯讀；{len(findings)} 張卡）"
+    ]
+    verdict_counts = Counter(f.verdict for f in findings)
+    total = len(findings)
+    undecidable = verdict_counts.get("undecidable", 0)
+    share = f"{undecidable / total:.0%}" if total else "—"
+    lines.append(
+        f"- 一致 {verdict_counts.get('consistent', 0)}／"
+        f"漂移 {verdict_counts.get('drift', 0)}／"
+        f"不判定 {undecidable}（不判定佔比 {share}）"
+    )
+    for rule, count in Counter(
+        f.rule for f in findings if f.verdict == "undecidable"
+    ).most_common():
+        lines.append(f"  - 不判定/{rule}：{count}")
+    for finding in findings:
+        if finding.verdict == "consistent":
+            continue
+        lines.append(
+            f"- [{finding.verdict}/{finding.rule}] {finding.card_id}　"
+            f"預期 {finding.expected_status or '—'}／實際 {finding.actual_status or '—'}"
+        )
+        if finding.verdict == "drift":
+            lines.append(f"  - {finding.detail}")
+    lines.append(
+        "- 偵測不等於強制：本檢查擋不住漏跑 handoff（事件與欄位一起缺席時彼此"
+        "一致，本軸看不見）；強制面承接者是 CI（DEV-AIWF-MINIMAL-CI1，#48）"
+        "加 repo 的 required_status_checks ruleset。"
+    )
+    return "\n".join(lines)
+
+
 def run_doctor(
     repo_root: Path,
     registry: TasksMdRegistry | None = None,
@@ -1307,9 +1632,12 @@ def run_doctor(
 __all__ = [
     "COMMIT_TRAILER_ROOT_CAUSE_ID",
     "FLOOR_TRAILERS",
+    "HANDOFF_STAGE_EXPECTED_STATUS",
     "LEGACY_AUTHORITY_NOTE_EXPLANATION",
     "LEGACY_AUTHORITY_NOTE_MARKER",
     "MERGE_TRAILER",
+    "OPEN_INITIAL_STATUS",
+    "REVIEW_RESULT_EXPECTED_STATUS",
     "SUPERSEDED_ROOT_CAUSE_IDS",
     "TIER2_TRAILER",
     "TRAILER_GUARD_EPOCH",
@@ -1323,15 +1651,20 @@ __all__ = [
     "LegacyAuthorityNoteFinding",
     "LegacyAuthorityNoteReport",
     "ReviewChannelFinding",
+    "StateFaceDriftFinding",
     "SubmoduleFinding",
     "WorktreeFinding",
     "audit_commit_trailers",
     "audit_legacy_authority_notes",
     "find_legacy_authority_notes",
     "audit_review_channel",
+    "audit_state_face_drift",
     "classify_commit_shape",
+    "derive_expected_status",
     "evaluate_commit_trailers",
+    "parse_log_events",
     "read_commit_records",
+    "render_state_face_drift",
     "required_trailers",
     "run_doctor",
     "severed_declared_keys",

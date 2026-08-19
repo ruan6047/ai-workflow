@@ -1641,3 +1641,336 @@ def test_cli_json_payload_carries_legacy_authority_notes(sandbox_repo, monkeypat
     payload = jsonlib.loads(capsys.readouterr().out)["legacy_authority_notes"]
     assert payload["status"] == "scanned" and payload["scanned_cards"] == 1
     assert [f["op_id"] for f in payload["findings"]] == ["166322be"]
+
+
+# --------------------------------------------------------------------------
+# 狀態面漂移守衛（DEV-STATE-FACE-DRIFT-GUARD1，#65）
+# --------------------------------------------------------------------------
+#
+# fixture 的 Log 行一律沿用各 writer 的**真實輸出格式**（assign_cmd／
+# handoff_cmd／review_cmd／checkpoint_cmd／card.render_issue_body），不得
+# 自創簡化格式——推導器解析的就是這些格式，fixture 偏離格式會讓測試測到
+# 一個不存在的世界。
+
+import inspect
+
+from wf_cli.card import Card
+from wf_cli.commands import handoff_cmd, open_cmd
+from wf_cli.doctor import (
+    HANDOFF_STAGE_EXPECTED_STATUS,
+    OPEN_INITIAL_STATUS,
+    REVIEW_RESULT_EXPECTED_STATUS,
+    RULE_ASSIGN,
+    RULE_OPEN,
+    RULE_REVIEW,
+    UNDECIDABLE_AMBIGUOUS_LOG,
+    UNDECIDABLE_ASSIGN_NO_STATUS,
+    UNDECIDABLE_FACE_UNREADABLE,
+    UNDECIDABLE_HANDOFF,
+    UNDECIDABLE_NO_EVENT,
+    UNDECIDABLE_NO_LOG,
+    UNDECIDABLE_REVIEW_INCONSISTENT,
+    UNDECIDABLE_REVIEW_RESULT,
+    UNDECIDABLE_UNKNOWN_EVENT,
+    audit_state_face_drift,
+    parse_log_events,
+    render_state_face_drift,
+)
+from wf_cli.review import STATUS_BY_RESULT as _WRITER_STATUS_BY_RESULT
+
+
+def _drift_body(*log_lines: str) -> str:
+    """組一張最小卡面：標頭＋ ``## Log``。log_lines 已含時間戳、不含 ``- `` 前綴。"""
+    log = "\n".join(f"- {line}" for line in log_lines)
+    return (
+        "- 需求：ruan6047　規劃：PM\n\n## 核心痛點\n\n- **痛點**：x\n\n"
+        f"## Log\n\n{log}\n"
+    )
+
+
+_OPEN_LINE = "2026-08-12T10:46:32+08:00 open by Claude Opus 5@Claude Code (PM)；owner 待指派；iteration 0。"
+_ASSIGN_LINE = (
+    "2026-08-12T11:01:28+08:00 assign by wf-cli → owner Claude Opus 5@Claude Code 子agent；"
+    "分支worktree claude/X @ /tmp/wt；交付狀態 🔨執行中；實際能力層級 主力型（非偏離）。"
+)
+_HANDOFF_LINE = (
+    "2026-08-12T12:41:23+08:00 handoff by wf-cli → owner 跨家族查核（GPT-5@Codex 子代理）；"
+    "iteration 1；SHA " + "a" * 40 + "；證據 R2 交付。"
+)
+_REVIEW_REJECT_LINE = (
+    "2026-08-12T12:23:56+08:00 review by wf-cli → REQUEST_CHANGES（↩退回）；查核者 GPT-5@Codex 子代理；"
+    "core_pain_resolved no；self_run 3 項；findings 2 項（blocking 1）；counts_toward_escalation true；"
+    "attempt CARD-A-e0-" + "b" * 40 + "。"
+)
+_REVIEW_APPROVE_LINE = (
+    "2026-08-19T01:17:03+08:00 review by wf-cli → APPROVE（✅通過）；查核者 GPT-5@Copilot；"
+    "core_pain_resolved yes；self_run 4 項；findings 0 項（blocking 0）；"
+    "escalation_account not-asserted（preflight_basis_binding structurally-unavailable）；"
+    "attempt CARD-A-e0-" + "c" * 40 + "。"
+)
+_AMEND_LINE = (
+    "2026-08-12T12:27:51+08:00 amend by wf-cli（op 166322be）→ 核心痛點：原值「舊」→ 新值「新」；理由 r。"
+)
+_CHECKPOINT_LINE = (
+    "2026-08-13T10:00:00+08:00 checkpoint by wf-cli → decision continue；trigger CARD-A-e0-"
+    + "d" * 40 + "；unique_attempt_count 2；寫入者 ruan6047；留言 https://x/1。"
+)
+_BASELINE_LINE = (
+    "2026-08-13T17:07:49+08:00 contract-baseline by wf-cli → contract templates/review-escalation.md；"
+    "宣告者 ruan6047；留言 https://x/2。"
+)
+
+
+# ---- 推導表窮舉＋與寫入端釘同一性（突變注入的紅線；改錯任何一格必紅） ----
+
+
+def test_drift_handoff_table_is_exhaustive_and_pinned_to_writer():
+    """六個 next-stage 窮舉；前五格逐格等於 handoff_cmd.STAGE_STATUS，release 釘寫入端字面。
+
+    卡面原文寫「三個 next-stage」，PR #102（2026-08-18）後機器現實是六個；
+    「窮舉」的要求管轄「三個」的字面（派工包修正 1）。
+    """
+    assert set(HANDOFF_STAGE_EXPECTED_STATUS) == set(handoff_cmd.STAGE_STATUS) | {"release"}
+    for stage, status in handoff_cmd.STAGE_STATUS.items():
+        assert HANDOFF_STAGE_EXPECTED_STATUS[stage] == status, stage
+    # release 不在 STAGE_STATUS（handoff_cmd 內是獨立分支），釘住寫入端的字面：
+    # 寫入端改了字面而表沒跟上時，這行必紅。
+    assert HANDOFF_STAGE_EXPECTED_STATUS["release"] == "🏁完成"
+    assert 'new_status = "🏁完成"' in inspect.getsource(handoff_cmd)
+
+
+def test_drift_review_table_is_pinned_to_writer_status_by_result():
+    assert REVIEW_RESULT_EXPECTED_STATUS == _WRITER_STATUS_BY_RESULT
+    assert set(REVIEW_RESULT_EXPECTED_STATUS) == {"APPROVE", "REQUEST_CHANGES"}
+
+
+def test_drift_open_initial_status_is_pinned_and_open_has_no_status_knob():
+    """open 的初始狀態＝Card dataclass 預設；且 open 沒有 --status 旋鈕。
+
+    後半是前半可推導的前提：open 若哪天長出 --status，初始狀態就不再是常數，
+    這行會逼著推導器同步改成不判定。
+    """
+    assert OPEN_INITIAL_STATUS == Card.__dataclass_fields__["delivery_status"].default
+    assert "--status" not in inspect.getsource(open_cmd)
+
+
+# ---- 各動詞推導 ----
+
+
+def test_drift_open_derives_backlog_and_flags_moved_face():
+    body = _drift_body(_OPEN_LINE)
+    ok = audit_state_face_drift("CARD-A", body, "📥Backlog")
+    assert (ok.verdict, ok.rule, ok.expected_status) == ("consistent", RULE_OPEN, "📥Backlog")
+    moved = audit_state_face_drift("CARD-A", body, "💡需求")
+    assert (moved.verdict, moved.expected_status, moved.actual_status) == ("drift", "📥Backlog", "💡需求")
+
+
+def test_drift_assign_derives_the_logged_status_including_free_text_override():
+    """assign 的 Log 行逐字記下寫入值，--status 自由文字覆寫因此**同樣可推導**。"""
+    consistent = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE), "🔨執行中")
+    assert (consistent.verdict, consistent.rule) == ("consistent", RULE_ASSIGN)
+    override_line = _ASSIGN_LINE.replace("交付狀態 🔨執行中", "交付狀態 ⏸阻塞")
+    override = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, override_line), "🔨執行中")
+    assert (override.verdict, override.expected_status, override.actual_status) == ("drift", "⏸阻塞", "🔨執行中")
+
+
+def test_drift_assign_takes_the_field_not_a_later_quote_of_it():
+    """交付狀態欄是格式第 3 段、先於自由文字；後段引用「；交付狀態 X」不得覆蓋。"""
+    line = _ASSIGN_LINE.replace(
+        "實際能力層級 主力型（非偏離）。",
+        "實際能力層級 主力型（偏離理由引述他卡「；交付狀態 ✅通過；」云云）。",
+    )
+    finding = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, line), "🔨執行中")
+    assert (finding.verdict, finding.expected_status) == ("consistent", "🔨執行中")
+
+
+def test_drift_assign_without_status_segment_is_undecidable():
+    line = "2026-08-12T11:01:28+08:00 assign by wf-cli → owner X；分支worktree b @ /w。"
+    finding = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, line), "🔨執行中")
+    assert (finding.verdict, finding.rule) == ("undecidable", UNDECIDABLE_ASSIGN_NO_STATUS)
+
+
+@pytest.mark.parametrize("face", [*HANDOFF_STAGE_EXPECTED_STATUS.values(), "🛑已停止", "🚨已升級"])
+def test_drift_handoff_is_undecidable_never_default_pass(face):
+    """handoff 的 Log 行不含 next-stage／--status，寫入值反推不出。
+
+    卡面驗收第 1 條的硬要求：推導不出的組合**明確落「不判定」而非默認通過**
+    ——對六個 next-stage 可能寫入的每一個狀態值（外加兩個 --status 自由文字
+    才寫得出的值）逐一驗證：verdict 恆為 undecidable，既不是 consistent 也
+    不是 drift。
+    """
+    finding = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE, _HANDOFF_LINE), face)
+    assert finding.verdict == "undecidable"
+    assert finding.rule == UNDECIDABLE_HANDOFF
+    assert finding.expected_status is None
+
+
+def test_drift_review_approve_and_reject_derive_by_result_table():
+    ok = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _REVIEW_APPROVE_LINE), "✅通過")
+    assert (ok.verdict, ok.rule, ok.expected_status) == ("consistent", RULE_REVIEW, "✅通過")
+    stuck = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _REVIEW_REJECT_LINE), "🔍待查核")
+    assert (stuck.verdict, stuck.expected_status, stuck.actual_status) == ("drift", "↩退回", "🔍待查核")
+
+
+def test_drift_review_unknown_result_and_self_inconsistent_line_are_undecidable():
+    waive = _REVIEW_REJECT_LINE.replace("REQUEST_CHANGES（↩退回）", "WAIVE（✅通過）")
+    f1 = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, waive), "✅通過")
+    assert (f1.verdict, f1.rule) == ("undecidable", UNDECIDABLE_REVIEW_RESULT)
+    edited = _REVIEW_REJECT_LINE.replace("REQUEST_CHANGES（↩退回）", "APPROVE（↩退回）")
+    f2 = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, edited), "✅通過")
+    assert (f2.verdict, f2.rule) == ("undecidable", UNDECIDABLE_REVIEW_INCONSISTENT)
+
+
+def test_drift_transparent_events_are_skipped_to_the_last_status_bearing_one():
+    """amend／checkpoint／contract-baseline 不寫交付狀態，推導穿透它們。"""
+    body = _drift_body(_OPEN_LINE, _REVIEW_REJECT_LINE, _AMEND_LINE, _BASELINE_LINE, _CHECKPOINT_LINE)
+    finding = audit_state_face_drift("CARD-A", body, "↩退回")
+    assert (finding.verdict, finding.rule) == ("consistent", RULE_REVIEW)
+    assert finding.skipped_transparent == 3
+
+
+def test_drift_unknown_last_event_is_undecidable_and_does_not_skip_past():
+    """未知動詞可能寫過狀態；跳過它會把過時事件當現行依據，故 fail-closed。"""
+    manual = "2026-08-13T09:00:00+08:00 PM 手動核可並調整看板（未走 wfcli）。"
+    body = _drift_body(_OPEN_LINE, _ASSIGN_LINE, manual)
+    finding = audit_state_face_drift("CARD-A", body, "🔨執行中")
+    assert (finding.verdict, finding.rule) == ("undecidable", UNDECIDABLE_UNKNOWN_EVENT)
+    assert finding.deciding_event is not None and "PM 手動核可" in finding.deciding_event
+
+
+def test_drift_multiline_entry_boundaries_use_timestamped_bullets_only():
+    """多段落證據（真 handoff 常態，如 #38 11:12）不得切斷事件；其後的 review 才是最後一筆。"""
+    multiline_handoff = _HANDOFF_LINE + "\n\n執行者自行複驗並推翻了 PM 原記載的成因。\n- 這是證據裡的普通條列，不是新事件。"
+    body = _drift_body(_OPEN_LINE, multiline_handoff, _REVIEW_APPROVE_LINE)
+    events, reason = parse_log_events(body)
+    assert reason is None and len(events) == 3
+    finding = audit_state_face_drift("CARD-A", body, "✅通過")
+    assert (finding.verdict, finding.rule) == ("consistent", RULE_REVIEW)
+
+
+def test_drift_missing_log_ambiguous_log_empty_log_and_unreadable_face():
+    no_log = audit_state_face_drift("CARD-A", "- 需求：x　規劃：y\n", "🔨執行中")
+    assert (no_log.verdict, no_log.rule) == ("undecidable", UNDECIDABLE_NO_LOG)
+    two = audit_state_face_drift("CARD-A", "## Log\n\n- x\n\n## Log\n", "🔨執行中")
+    assert (two.verdict, two.rule) == ("undecidable", UNDECIDABLE_AMBIGUOUS_LOG)
+    empty = audit_state_face_drift("CARD-A", "x\n\n## Log\n\n（尚無事件）\n", "🔨執行中")
+    assert (empty.verdict, empty.rule) == ("undecidable", UNDECIDABLE_NO_EVENT)
+    blind = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE), None)
+    assert (blind.verdict, blind.rule) == ("undecidable", UNDECIDABLE_FACE_UNREADABLE)
+    assert blind.expected_status == "🔨執行中"  # 已推導的一面仍如實回報
+
+
+# ---- 2026-08-12 四筆真實漂移的回放（驗收第 2 條） ----
+#
+# 歷史快照取不到：Projects v2 沒有欄位變更歷史的公開 API，四張卡的交付狀態
+# 在修復時已被覆寫。fixture 的**忠實性論證**：``## Log`` 是 append-only，四張
+# 卡今天的 Log 前綴就是漂移時點的完整 Log（修復事件全部落在其後，時間戳可
+# 對）；以下事件行逐字取自 2026-08-19 讀回的真卡（證據截短、動詞／參數／
+# 時間戳保留），交付狀態欄取自 #65 核心痛點的當事描述（待查核／進行中）。
+# 漂移時點取需求方發問前、21:14–21:18 修復 handoff 之前（約 20:30）。
+#
+# **誠實結論（不粉飾）**：四筆之中三筆落「不判定」、一筆「一致」，**零筆被
+# 本軸標成 drift**。成因是結構性的：這四筆的失真形態是「該發生的事件沒寫」，
+# 事件缺席時 Log 與欄位一起過期、彼此一致，Log→欄位這條軸構造上看不見——
+# 卡面核心痛點宣稱「Log 最後一筆事件的動詞與參數足以推導出應有狀態」對這
+# 四筆並不成立（#47 的 Log 自己也說「合併從未留痕」）。本軸真正的鑑別力在
+# 「事件寫了而欄位沒跟上」與「欄位被手動搬動」兩型（下兩個測試），#38 型
+# 的「裁決只存在於收據」則由既有的 audit_review_channel（receipt_untranscribed）
+# 承接。此結論是實測產物，詳見卡 #65 的交付報告。
+
+
+def _aug12_card(card_id: str, *log_lines: str, face: str):
+    return audit_state_face_drift(card_id, _drift_body(*log_lines), face)
+
+
+def test_replay_38_at_drift_time_last_event_is_handoff_hence_undecidable():
+    """#38：已宣告退回（收據在留言），狀態面停在 🔍待查核；Log 最後一筆是 12:41 handoff。"""
+    finding = _aug12_card(
+        "WF-DISPATCH-PRECHECK1",
+        "2026-08-12T10:46:32+08:00 open by Claude Opus 5@Claude Code (PM)；owner 待指派；iteration 0。",
+        "2026-08-12T11:01:28+08:00 assign by wf-cli → owner Claude Opus 5@Claude Code（子 agent）；分支worktree claude/WF-DISPATCH-PRECHECK1 @ /Users/ruanruan/Dev/ai-workflow/.claude/worktrees/wf-dispatch-precheck1；交付狀態 🚧進行中；實際能力層級 主力型（…）。",
+        "2026-08-12T11:12:13+08:00 handoff by wf-cli → owner 跨家族查核（本卡規則約束 Coordinator，Coordinator 即 PM，須跨家族避免自我背書）；iteration 0；SHA 075a17ed11486218c917099b738acb5451ec955d；證據 R1：交付 templates/review-prompt.md 新增 §3.1（…）。",
+        "2026-08-12T11:35:47+08:00 amend by wf-cli（op a96c569b）→ 驗收條件：原值「…」→ 新值「…」；理由 …。",
+        "2026-08-12T12:02:16+08:00 handoff by wf-cli → owner 跨家族查核（GPT-5@Codex 子代理）；iteration 0；SHA 075a17ed11486218c917099b738acb5451ec955d；證據 …。",
+        "2026-08-12T12:23:56+08:00 review by wf-cli → REQUEST_CHANGES（↩退回）；查核者 GPT-5@Codex 子代理（需求方轉貼；…）；attempt WF-DISPATCH-PRECHECK1-e0-075a17ed11486218c917099b738acb5451ec955d。",
+        "2026-08-12T12:27:51+08:00 amend by wf-cli（op 166322be）→ 核心痛點：原值「…」→ 新值「…」；理由 …。",
+        "2026-08-12T12:28:48+08:00 handoff by wf-cli → owner Claude Opus 5@Claude Code 子agent；iteration 1；SHA 075a17ed11486218c917099b738acb5451ec955d；證據 …。",
+        "2026-08-12T12:41:23+08:00 handoff by wf-cli → owner 跨家族查核（GPT-5@Codex 子代理）；iteration 1；SHA 1ee62b0f2f4a3f0f5b3f0e9e8d7c6b5a4f3e2d1c；證據 …。",
+        face="🔍待查核",
+    )
+    assert (finding.verdict, finding.rule) == ("undecidable", UNDECIDABLE_HANDOFF)
+
+
+def test_replay_47_at_drift_time_reads_consistent_because_the_merge_left_no_event():
+    """#47：碼早已在 main、狀態面停在 🚧進行中；Log 最後一筆是 13:50 assign（合併從未留痕）。
+
+    assign 推導出 🚧進行中、欄位也是 🚧進行中——**一致**。失真在「真實 vs
+    兩者」，不在「Log vs 欄位」；本軸對這型構造上盲，這正是「偵測不等於
+    強制」必須寫進交付報告的理由（驗收第 3 條）。
+    """
+    finding = _aug12_card(
+        "DEV-MAIN-RED-CAPABILITY-FLAGS1",
+        "2026-08-12T13:47:57+08:00 open by Claude Opus 5@Claude Code PM；owner 待指派；iteration 0。",
+        "2026-08-12T13:50:53+08:00 assign by wf-cli → owner Claude Opus 5@Claude Code 子agent；分支worktree claude/DEV-MAIN-RED-CAPABILITY-FLAGS1 @ /Users/ruanruan/Dev/ai-workflow/.claude/worktrees/dev-main-red-capability-flags1；交付狀態 🚧進行中；實際能力層級 主力型（…）。",
+        face="🚧進行中",
+    )
+    assert (finding.verdict, finding.rule, finding.expected_status) == ("consistent", RULE_ASSIGN, "🚧進行中")
+
+
+@pytest.mark.parametrize(
+    ("card_id", "handoff_ts"),
+    [("WF-EVENT-IDEMPOTENCY1-PROBE-CMD-DRIFT1", "2026-08-12T19:37:53+08:00"),
+     ("WF-WORKTREE-REPO-OWNERSHIP1", "2026-08-12T19:38:16+08:00")],
+)
+def test_replay_52_and_57_at_drift_time_last_event_is_handoff_hence_undecidable(card_id, handoff_ts):
+    """#52／#57：執行者已交回而卡未推進；Log 最後一筆是 19:37／19:38 的退回 handoff。"""
+    finding = _aug12_card(
+        card_id,
+        "2026-08-12T17:23:37+08:00 open by Claude Opus 5@Claude Code PM；owner 待指派；iteration 0。",
+        f"2026-08-12T18:00:14+08:00 assign by wf-cli → owner Claude Opus 5@Claude Code 子agent；分支worktree claude/{card_id} @ /Users/ruanruan/Dev/ai-workflow/.claude/worktrees/x；交付狀態 🚧進行中；實際能力層級 主力型（…）。",
+        "2026-08-12T18:24:41+08:00 handoff by wf-cli → owner 跨家族查核（GPT-5@Codex 子代理）；iteration 0；SHA " + "e" * 40 + "；證據 …。",
+        "2026-08-12T19:25:27+08:00 review by wf-cli → REQUEST_CHANGES（↩退回）；查核者 GPT-5@Codex 子代理（需求方轉貼；…）；attempt " + card_id + "-e0-" + "e" * 40 + "。",
+        f"{handoff_ts} handoff by wf-cli → owner Claude Opus 5@Claude Code 子agent；iteration 1；SHA " + "e" * 40 + "；證據 退回修正。",
+        face="🚧進行中",
+    )
+    assert (finding.verdict, finding.rule) == ("undecidable", UNDECIDABLE_HANDOFF)
+
+
+def test_equivalent_shape_38_one_event_later_verdict_transcribed_face_stuck_is_drift():
+    """#38 型往前一步的等價形：裁決一旦轉錄（review ↩退回）而欄位沒跟上 → drift。
+
+    忠實性：這正是 wfcli review 三次遠端寫入無交易性下「留言＋Log 成功、
+    欄位失敗」的 half-write 實體，也是 #38 的失真在裁決被轉錄那一刻的樣子。
+    本軸抓得到它——這是「鑑別力」的正面證明，與上面四筆回放的反面結論成對。
+    """
+    body = _drift_body(_OPEN_LINE, _ASSIGN_LINE.replace("🔨執行中", "🚧進行中"), _REVIEW_REJECT_LINE)
+    finding = audit_state_face_drift("WF-DISPATCH-PRECHECK1", body, "🔍待查核")
+    assert (finding.verdict, finding.expected_status, finding.actual_status) == ("drift", "↩退回", "🔍待查核")
+
+
+def test_equivalent_shape_47_manual_board_move_without_event_is_drift():
+    """#47 型的鏡像：欄位被手動搬到 📦已合併 而沒有任何事件 → drift。
+
+    忠實性：#47 的修復若當時用手搬看板（而非補 handoff），本檢查在下一次
+    doctor 就會報——「手動搬看板」正是本卡要讓其可被列舉的操作形態。
+    """
+    body = _drift_body(
+        "2026-08-12T13:47:57+08:00 open by Claude Opus 5@Claude Code PM；owner 待指派；iteration 0。",
+        "2026-08-12T13:50:53+08:00 assign by wf-cli → owner Claude Opus 5@Claude Code 子agent；分支worktree claude/DEV-MAIN-RED-CAPABILITY-FLAGS1 @ /w；交付狀態 🚧進行中；實際能力層級 主力型（…）。",
+    )
+    finding = audit_state_face_drift("DEV-MAIN-RED-CAPABILITY-FLAGS1", body, "📦已合併")
+    assert (finding.verdict, finding.expected_status, finding.actual_status) == ("drift", "🚧進行中", "📦已合併")
+
+
+def test_drift_render_reports_counts_share_and_itemizes_only_noteworthy_cards():
+    findings = [
+        audit_state_face_drift("C1", _drift_body(_OPEN_LINE), "📥Backlog"),
+        audit_state_face_drift("C2", _drift_body(_OPEN_LINE), "💡需求"),
+        audit_state_face_drift("C3", _drift_body(_OPEN_LINE, _ASSIGN_LINE, _HANDOFF_LINE), "🔍待查核"),
+    ]
+    text = render_state_face_drift(findings)
+    assert "一致 1／漂移 1／不判定 1（不判定佔比 33%）" in text
+    assert "[drift/open_initial] C2" in text
+    assert f"[undecidable/{UNDECIDABLE_HANDOFF}] C3" in text
+    assert "C1" not in text  # 一致的卡不逐條列出
+    assert "#48" in text  # 強制面承接者必須寫在輸出裡，不只寫在文件裡
