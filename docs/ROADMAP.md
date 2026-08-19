@@ -338,13 +338,24 @@ tip 不是 main 的祖先。PM 自己多驗一次才沒照它的建議刪。**�
 
 #### ⚠️ 判準重答（2026-08-19）：由「是」翻回「否」
 
-同一個判準（「收尾守衛恆拒 → 之後每張卡都收不掉尾」）出現了新的成立實例，對象從 squash
-換成 **submodule repo**：cleanup 的 `git worktree remove` 對「index 含 gitlink 且該路徑
-存在為目錄」一律被 git 的 `validate_no_submodules` 拒絕——**空目錄也算**，而 `worktree add`
-必建空目錄（實測 13/13 cpbl worktree 皆有 `.ai-workflow` 空目錄）；移除目錄後樹轉髒，守衛
-依設計不加 `--force`。兩道門都關。2026-08-19 已兩次退回人工收尾（`cpbl#149` 三次中止留痕、
-`cpbl#139`），而人工收尾正是 §3 判為「真正說謊」的形狀。**承接卡：`WF-CLEANUP-SUBMODULE-AWARE1`
-（#106）。它落地並在真實 cpbl worktree 上端到端收掉一次尾之後，本判準才再度成立。**
+⚠️ **本段的第一版機制歸因是錯的，2026-08-19 當日經 `#106` 執行者實測推翻、PM 複驗確認，以下是更正後版本。**
+
+原寫「git `validate_no_submodules` 對空 gitlink 目錄也拒絕，故對**任何** cpbl worktree
+構造性失敗」——**不成立**。實測（git 2.50.1）：空 gitlink 目錄 `worktree remove` rc=0 移得掉、
+不需 `--force`；真正的 blocker 是 `<worktree gitdir>/modules` 存在，即該 worktree **曾初始化
+submodule**。`cpbl#149` 落在該格（其工作內容就是 bump submodule，必須先 init）故確實被擋；
+`cpbl#139` 則是 PM 先 `rmdir` 再直接帶 `--force`、從未測過不帶 `--force` 是否本來就能過，
+那次人工收尾**可能根本不必要**。歸因 coordinator，兩張卡的收尾留痕已各自更正。
+
+**更正後的判準狀態：擋不住「正常運作」，但擋得住一類卡。** cleanup 對「工作內容需要初始化
+submodule」的卡（bump、submodule 內容比對）確實構造性失敗，那類卡今天只能人工收尾——而人工
+收尾正是 §3 判為「真正說謊」的形狀。同時 `#106` 反向量到一個更嚴重、原本沒人知道的洞：
+gitlink 目錄**有檔案但 submodule 未初始化**時，`git status --ignore-submodules=none` 報乾淨、
+`worktree remove` rc=0 並**連同工作內容一起刪除**——靜默的工作內容遺失，而 `_check_uncommitted`
+結構上看不到（git 自己就看不到）。
+
+**承接卡：`WF-CLEANUP-SUBMODULE-AWARE1`（#106，2026-08-19 已交付待查核）。** 它落地之後，
+「初始化型的卡收不掉尾」與「靜默刪除工作內容」兩者都有守衛，本判準即再度成立。
 
 #### 已解鎖但不排程（具名錨點）
 
