@@ -2355,3 +2355,303 @@ def test_the_effect_writer_cannot_write_a_terminal_note_without_the_outcome() ->
     assert params["outcome"].default is inspect.Parameter.empty, (
         "outcome 有預設值就等於允許呼叫端不傳，同源性就不是結構性的了"
     )
+
+
+# ---------------------------------------------------------------------------
+# 9. WF-CLEANUP-SUBMODULE-AWARE1：submodule 與 worktree 移除
+#
+# 本節的第一條**不驗我們的碼**，驗的是 git 自己的行為——整節的設計全建立在那個行為
+# 上，開卡時對它的假設（「空目錄也會被拒絕」）實測不成立。把它釘成測試，是為了讓
+# git 哪天真的改了判準時，這裡轉紅並指名理由，而不是讓上層某條斷言莫名其妙地壞掉。
+# ---------------------------------------------------------------------------
+
+SUBMODULE_PATH = "vendor/sub"
+SUB_CONTENT = "submodule content\n"
+HIDDEN_WORK = "檔案躲在未初始化的 gitlink 路徑底下，git status 不會報\n"
+
+
+def _git_rc(repo: Path, *args: str) -> tuple[int, str]:
+    """允許失敗的 git（`conftest.git` 是 check=True，預期失敗的案例用不了）。"""
+    proc = subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=False
+    )
+    return proc.returncode, (proc.stderr + proc.stdout).strip()
+
+
+def _make_submodule_origin(tmp_path: Path) -> Path:
+    origin = tmp_path / "submodule-origin"
+    origin.mkdir()
+    git(origin, "init", "-q", "-b", "main")
+    git(origin, "config", "user.email", "sub@example.com")
+    git(origin, "config", "user.name", "submodule origin")
+    (origin / "sub.txt").write_text(SUB_CONTENT, encoding="utf-8")
+    git(origin, "add", "sub.txt")
+    git(origin, "commit", "-q", "-m", "sub init", env=fixed_date_env(SANDBOX_COMMIT_DATE))
+    return origin
+
+
+def _add_submodule(repo: Path, origin: Path, path: str = SUBMODULE_PATH) -> None:
+    # `protocol.file.allow=always`：git ≥2.38 預設擋掉 file:// 來源的 submodule。
+    git(repo, "-c", "protocol.file.allow=always",
+        "submodule", "add", "-q", str(origin), path)
+    _c(repo, "add submodule")
+
+
+def _init_submodule(worktree: Path, path: str = SUBMODULE_PATH) -> None:
+    git(worktree, "-c", "protocol.file.allow=always",
+        "submodule", "update", "--init", "-q", path)
+
+
+@pytest.fixture
+def env_submodule(tmp_path: Path, sandbox_repo: Path) -> Env:
+    """與 `env` 同一種可安全收尾的情境，但 repo 帶一個真的 submodule。
+
+    這就是 cpbl 的形狀：`git worktree add` 會把 gitlink 實體化成一個**空**目錄。
+    """
+    _add_submodule(sandbox_repo, _make_submodule_origin(tmp_path))
+    return _build_env(tmp_path, sandbox_repo, merged=True)
+
+
+def _submodule_check(decision) -> GuardCheck:
+    hits = [c for c in decision.checks if c.check_id == cleanup.SUBMODULE_CHECK_ID]
+    assert len(hits) == 1, f"submodule 前提沒有恰好一條：{[c.check_id for c in decision.checks]}"
+    return hits[0]
+
+
+def _tree_snapshot(root: Path) -> dict:
+    """worktree 底下每一個路徑與其內容（目錄記 None）。用來證明「什麼都沒被動」。"""
+    snap: dict = {}
+    for p in sorted(root.rglob("*")):
+        rel = str(p.relative_to(root))
+        if p.is_dir():
+            snap[rel] = None
+        else:
+            try:
+                snap[rel] = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                snap[rel] = "<unreadable>"
+    return snap
+
+
+def test_git_itself_refuses_removal_only_for_an_initialized_submodule(tmp_path: Path) -> None:
+    """外部事實的釘子：git 的判準是「submodule 是否就位」，**不是**「目錄是否存在」。
+
+    三格全測，因為只測會拒絕的那一格，一個「永遠拒絕」的 git 也會綠：
+
+    - 空的 gitlink 目錄（``worktree add`` 必然產生的形狀）→ **移得掉**
+    - gitlink 目錄裡有檔案但 submodule 未初始化 → **移得掉，而且把那些檔案一起刪掉**
+    - submodule 已初始化 → 拒絕
+
+    第二格是本節加前提的真正理由：那次刪除**沒有任何事前警告**——`git status` 對它
+    一個字都不報（本測試一併斷言），所以 `_check_uncommitted` 結構上看不到它。
+    """
+    origin = _make_submodule_origin(tmp_path)
+
+    def fresh(name: str) -> tuple[Path, Path]:
+        repo = tmp_path / name
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        git(repo, "config", "user.email", "test@example.com")
+        git(repo, "config", "user.name", "wf-cli tests")
+        (repo / "README.md").write_text("sandbox\n", encoding="utf-8")
+        git(repo, "add", "README.md")
+        git(repo, "commit", "-q", "-m", "init", env=fixed_date_env(SANDBOX_COMMIT_DATE))
+        _add_submodule(repo, origin)
+        wt = tmp_path / f"{name}-wt"
+        git(repo, "worktree", "add", "-q", str(wt), "-b", f"card/{name}")
+        return repo, wt
+
+    # 1. 空目錄
+    repo_a, wt_a = fresh("case-empty")
+    assert (wt_a / SUBMODULE_PATH).is_dir() and not any((wt_a / SUBMODULE_PATH).iterdir())
+    rc, msg = _git_rc(repo_a, "worktree", "remove", str(wt_a))
+    assert rc == 0, f"git 拒絕了空 gitlink 目錄的 worktree（本節的前提翻掉了）：{msg}"
+    assert not wt_a.exists()
+
+    # 2. 有內容但未初始化
+    repo_b, wt_b = fresh("case-content")
+    (wt_b / SUBMODULE_PATH / "precious.txt").write_text(HIDDEN_WORK, encoding="utf-8")
+    assert git(wt_b, "status", "--porcelain", "--ignore-submodules=none").strip() == "", (
+        "git status 居然報得出來——那 `_check_uncommitted` 就攔得到，本前提不必存在"
+    )
+    rc, msg = _git_rc(repo_b, "worktree", "remove", str(wt_b))
+    assert rc == 0, msg
+    assert not (wt_b / SUBMODULE_PATH / "precious.txt").exists(), (
+        "git 沒刪掉它——靜默刪除這個病灶不存在了，本前提的理由要重寫"
+    )
+
+    # 3. 已初始化
+    repo_c, wt_c = fresh("case-initialized")
+    _init_submodule(wt_c)
+    rc, msg = _git_rc(repo_c, "worktree", "remove", str(wt_c))
+    assert rc != 0 and "submodule" in msg, msg
+    assert wt_c.exists()
+
+
+def test_a_worktree_whose_submodule_dir_is_empty_is_cleaned_up(env_submodule: Env) -> None:
+    """卡面驗收 1：帶（未初始化）submodule 的 worktree 收得掉，且不靠 ``--force``。"""
+    sub_dir = env_submodule.wt / SUBMODULE_PATH
+    assert sub_dir.is_dir() and not any(sub_dir.iterdir()), (
+        "前置不成立：worktree 的 gitlink 目錄不是空目錄，這個案例就不是要測的那一個"
+    )
+
+    log: list[list[str]] = []
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    result = execute_closeout_transition(
+        env_submodule.target, trigger="release", registry=env_submodule.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(), effect_writer=writer,
+        runner=recording_runner(log), occupancy_prober=free_prober,
+    )
+
+    assert result.mode == "applied", result.blocking_reasons
+    assert result.actions_performed == DESTRUCTIVE_ORDER
+    assert not env_submodule.wt.exists()
+
+    # 反假綠：必須是「量到空目錄之後放行」，不是根本沒看見那個 gitlink。
+    check = _submodule_check(result.decision)
+    assert check.outcome == "pass" and SUBMODULE_PATH in check.detail, check.detail
+
+    # 不得靠 submodule 子指令或強制旗標達成（`--force` 另有入口測試，這裡驗實際 argv）。
+    assert not [a for a in log if a[:1] == ["submodule"]], f"動用了 submodule 子指令：{log}"
+    assert not [
+        a for a in log
+        for x in a
+        if x.startswith("--force") and not cleanup.is_conditional_delete_lease(x)
+    ], log
+
+
+def test_an_initialized_submodule_is_refused_before_anything_is_destroyed(
+    env_submodule: Env,
+) -> None:
+    """卡面驗收 2：已初始化的 submodule → fail-closed，且擋在第一個破壞性動作之前。
+
+    這就是 cpbl#149 真正撞到的形狀（那張卡的工作內容正是 bump 那個 submodule）。
+    """
+    _init_submodule(env_submodule.wt)
+    sub_dir = env_submodule.wt / SUBMODULE_PATH
+    before = _tree_snapshot(env_submodule.wt)
+
+    log: list[list[str]] = []
+    remote = FakeRemoteState()
+    writer = FakeEffectWriter(remote)
+    result = execute_closeout_transition(
+        env_submodule.target, trigger="release", registry=env_submodule.registry,
+        card_body=CARD_BODY, remote_facts=remote.facts(), effect_writer=writer,
+        runner=recording_runner(log), occupancy_prober=free_prober,
+    )
+
+    assert result.mode == "detect_only"
+    assert result.actions_performed == ()
+    # 擋下的**只有**這一條：若別的前提也順便紅了，這個案例就會因為錯誤的理由而綠。
+    assert [c.check_id for c in result.decision.blocking] == [cleanup.SUBMODULE_CHECK_ID], (
+        [(c.check_id, c.outcome, c.detail) for c in result.decision.blocking]
+    )
+
+    reason = next(r for r in result.blocking_reasons if cleanup.SUBMODULE_CHECK_ID in r)
+    assert cleanup.AUTHORITY_PATH in reason, f"訊息沒指名人工路徑：{reason}"
+    assert "cpbl-analytics#149" in reason, f"訊息沒引用留痕格式：{reason}"
+
+    # 一個位元組都不准動，也不准繞道 deinit／force。
+    assert (sub_dir / "sub.txt").read_text(encoding="utf-8") == SUB_CONTENT
+    assert _tree_snapshot(env_submodule.wt) == before, "守衛動了 worktree 內的檔案"
+    assert not [a for a in log if a[:2] == ["worktree", "remove"]], "還是送出了移除指令"
+    assert not [a for a in log if a[:1] == ["submodule"]], "守衛跑了 submodule 子指令"
+    assert writer.calls == []
+    assert_work_intact(env_submodule)
+
+
+def test_a_deinitialized_submodule_is_still_refused_because_the_gitdir_remains(
+    env_submodule: Env,
+) -> None:
+    """`submodule deinit` 之後目錄是空的——但 git **仍然**拒絕移除。
+
+    只用「目錄空不空」當判準的實作會在這一格放行，然後撞上 git 的拒絕：留下來的是
+    worktree gitdir 底下的 ``modules``，deinit 不清它。
+    """
+    _init_submodule(env_submodule.wt)
+    git(env_submodule.wt, "submodule", "deinit", "-q", "-f", SUBMODULE_PATH)
+    sub_dir = env_submodule.wt / SUBMODULE_PATH
+    assert not any(sub_dir.iterdir()), "前置不成立：deinit 之後目錄不是空的"
+
+    decision = evaluate_cleanup_guard(
+        env_submodule.target, registry=env_submodule.registry,
+        card_body=CARD_BODY, occupancy_prober=free_prober,
+    )
+    check = _submodule_check(decision)
+    assert check.outcome == "fail", check.detail
+    assert "modules" in check.detail, check.detail
+    assert decision.mode == "detect_only"
+
+    # 佐證這一格真的是 git 也會拒絕的：不然這條前提就是純粹誤擋。
+    rc, msg = _git_rc(env_submodule.repo, "worktree", "remove", str(env_submodule.wt))
+    assert rc != 0 and "submodule" in msg, f"git 其實放行了，本前提在這一格誤擋：{msg}"
+
+
+def test_content_hiding_under_an_uninitialized_gitlink_path_is_refused(
+    env_submodule: Env,
+) -> None:
+    """本檢查比 git 嚴一格的那一格：非空但未初始化。
+
+    git 會照常移除並把內容一起刪掉，`git status` 事前不報——canonical「禁止靜默刪除
+    工作內容」指名要防的正是這個。斷言同時釘住「別的前提沒紅」，證明攔下它的確實是
+    這一條，而不是 `_check_uncommitted` 順手接住的。
+    """
+    hidden = env_submodule.wt / SUBMODULE_PATH / "precious.txt"
+    hidden.write_text(HIDDEN_WORK, encoding="utf-8")
+
+    decision = evaluate_cleanup_guard(
+        env_submodule.target, registry=env_submodule.registry,
+        card_body=CARD_BODY, occupancy_prober=free_prober,
+    )
+    uncommitted = next(c for c in decision.checks if c.check_id == "no_uncommitted_changes")
+    assert uncommitted.outcome == "pass", (
+        f"git status 報得出來的話，本檢查在這一格就是多餘的：{uncommitted.detail}"
+    )
+    check = _submodule_check(decision)
+    assert check.outcome == "fail", check.detail
+    assert SUBMODULE_PATH in check.detail, check.detail
+    assert decision.mode == "detect_only"
+    assert hidden.read_text(encoding="utf-8") == HIDDEN_WORK
+
+
+def test_a_repo_without_submodules_reports_the_submodule_check_as_pass(env: Env) -> None:
+    """卡面驗收 3 的正面取證：沒有 submodule 的 repo，這條前提恆 pass 且不改變結論。"""
+    decision = guard(env)
+    check = _submodule_check(decision)
+    assert check.outcome == "pass"
+    assert check.step_ref == 2
+    assert decision.mode == "proceed"
+
+
+def test_an_unreadable_gitdir_makes_the_submodule_check_unobservable(env: Env) -> None:
+    """探不到＝擋下。這條前提與模組其餘部分同一條規則，不留「查不到就當沒事」。"""
+    def blind(cwd: Path, args):
+        if list(args)[:2] == ["rev-parse", "--absolute-git-dir"]:
+            return cleanup.GitResult(128, "", "fatal: 模擬讀不到 git dir")
+        return default_git_runner(cwd, list(args))
+
+    decision = evaluate_cleanup_guard(
+        env.target, registry=env.registry, card_body=CARD_BODY,
+        runner=blind, occupancy_prober=free_prober,
+    )
+    check = _submodule_check(decision)
+    assert check.outcome == "unobservable", check.detail
+    assert decision.mode == "detect_only"
+
+
+def test_the_submodule_scan_reports_an_unreadable_gitlink_dir_as_unobservable(
+    env_submodule: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """列不出目錄內容 ≠ 目錄是空的。這一格若回 pass，就是本模組要消滅的 fail-open。"""
+    real = Path.iterdir
+
+    def blind(self):
+        if self.name == "sub" and self.parent.name == "vendor":
+            raise PermissionError("模擬列不出來")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", blind)
+    scan = cleanup.scan_submodules(env_submodule.wt, default_git_runner)
+    assert scan.unobservable and not scan.empty_gitlink_dirs, scan
+    assert scan.blockers == ()
