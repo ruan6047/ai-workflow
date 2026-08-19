@@ -20,6 +20,9 @@ PR——「機器自行 merge」在本專案的治理下是違規動作。孤兒
 的樹永不衝突、`[skip ci]` 不燒 CI、不會在 `wfcli doctor` 的 worktree 對帳裡長出孤兒
 worktree（排程用獨立 clone，不用 `git worktree add`）。
 
+`snapshots` 分支根目錄也有一份 `README.md`，那是**分支建立當下複製過去的**，方便直接
+checkout 該分支的人。它不會自動跟著更新——**權威版本是 `main` 上的本檔**。
+
 ## 怎麼稽核
 
 ```bash
