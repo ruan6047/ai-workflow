@@ -53,7 +53,7 @@ usage() {
 scripts/daily_snapshot.sh — 每日狀態面快照 export 回 git（launchd 觸發）
 
 在做什麼
-  1. 取鎖，確認 uv／gh／git 都在，確認遠端可達
+  1. 確認 uv／gh／git 都在、遠端可達，然後取鎖（--check 唯讀，不取鎖）
   2. 跑 `wfcli snapshot`（唯讀 GraphQL，實測 6 個 request／次）產出
      snapshot.json＋SNAPSHOT.md
   3. 寫進專用 clone 的 snapshots/YYYY-MM-DD/，commit（訊息帶 trigger 與來源 SHA）
@@ -236,10 +236,25 @@ done
 # 就是在這裡現形，而不是在 push 那一步才炸掉半成品）。
 git ls-remote --heads "$REMOTE" >/dev/null 2>&1 || die 77 "遠端不可達或憑證不可用：$REMOTE"
 
+# ============================================================== 取鎖（正式模式才需要）
+# 擺在 snapshot 之前：鎖被佔用時就不該再打那 6 個 GraphQL request。`--check` 唯讀，
+# 不取鎖，所以診斷永遠不會被一把殘留的鎖擋住。
+if [ "$MODE" = "run" ]; then
+  PHASE="lock"
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    die 75 "另一次執行仍持有鎖：$LOCK_DIR（確認沒有殘留後手動 rmdir）"
+  fi
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+fi
+
 # ============================================================== 產生快照
 PHASE="snapshot"
 OUT_TMP="$(mktemp -d "${TMPDIR:-/tmp}/wf-snapshot.XXXXXX")" || die 70 "mktemp 失敗"
-trap 'rm -rf "$OUT_TMP"' EXIT
+if [ "$MODE" = "run" ]; then
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null; rm -rf "$OUT_TMP"' EXIT
+else
+  trap 'rm -rf "$OUT_TMP"' EXIT
+fi
 
 SNAPSHOT_OUT="$(cd "$CLI_DIR" && uv run --project "$CLI_DIR" --frozen wfcli snapshot \
   --owner "$WFCLI_OWNER_FIXED" --project "$WFCLI_PROJECT_FIXED" --out-dir "$OUT_TMP" 2>&1)"
@@ -257,13 +272,6 @@ if [ "$MODE" = "check" ]; then
   prune_logs
   exit 0
 fi
-
-# ============================================================== 取鎖（正式模式才需要）
-PHASE="lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  die 75 "另一次執行仍持有鎖：$LOCK_DIR（確認沒有殘留後手動 rmdir）"
-fi
-trap 'rmdir "$LOCK_DIR" 2>/dev/null; rm -rf "$OUT_TMP"' EXIT
 
 # ============================================================== 專用 clone 就位
 PHASE="clone"
