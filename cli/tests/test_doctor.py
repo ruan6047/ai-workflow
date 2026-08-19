@@ -1974,3 +1974,127 @@ def test_drift_render_reports_counts_share_and_itemizes_only_noteworthy_cards():
     assert f"[undecidable/{UNDECIDABLE_HANDOFF}] C3" in text
     assert "C1" not in text  # 一致的卡不逐條列出
     assert "#48" in text  # 強制面承接者必須寫在輸出裡，不只寫在文件裡
+
+
+# --------------------------------------------------------------------------
+# WF-REVIEW-RECEIPT-CHANNEL1：身分依據的據實標註（需求方 2026-08-19 裁定「丙＋甲的殘留」）
+#
+# 收據紀律已從派工包移除，因為跨家族查核者沒有 GitHub 寫入通道、收據構造上取不到。
+# 殘留的配套是：doctor **不報錯、不改判定**，但要讓 recorded 不再讀起來像「身分已
+# 驗證」。以下測試同時釘住兩件事——標註要出現，且它不得升格成警告或阻擋。
+# --------------------------------------------------------------------------
+
+_RECEIPT = f"<!-- wf-review-receipt:v1\ncard_id: {_ECARD}\nsource_sha: {_ESHA}\n-->"
+
+
+def test_zero_receipt_recorded_still_recorded_but_marks_identity_as_endorsed():
+    """零收據：判定不變（recorded），但身分依據標成需求方背書。
+
+    這是 2026-08-19 五筆跨家族裁決的實際形態：--reviewer 是自由字串、收據數 0，
+    而三面一致——因為三面都是 PM 寫的。
+    """
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="✅通過",
+    )
+    assert finding.status == "recorded", "標註不得改變判定（改了就是退回甲）"
+    assert finding.identity_basis == "requester_endorsed"
+    assert "非機械可驗" in finding.detail
+    assert "需求方背書" in finding.detail
+    assert finding.receipt_urls == ()
+
+
+def test_receipt_backed_recorded_is_distinguishable_from_free_string_recorded():
+    """有收據且 card_id／source_sha 相符並已轉錄：身分依據＝平台可驗證的 author。
+
+    先前這兩種 recorded 的輸出**逐字相同**（收據在 recorded 路徑上被丟棄），
+    讀者無從分辨身分憑什麼成立——正是本卡要修的誤讀。
+    """
+    endorsed = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="✅通過",
+    )
+    backed = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())},
+         {"body": _RECEIPT, "html_url": "https://x/r1", "user": {"login": "copilot-reviewer"}}],
+        _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過",
+    )
+    assert (endorsed.status, backed.status) == ("recorded", "recorded")
+    assert backed.identity_basis == "receipt_backed"
+    assert backed.receipt_urls == ("https://x/r1",)
+    assert backed.receipt_authors == ("copilot-reviewer",)
+    assert "GitHub comment author" in backed.detail
+    assert backed.detail != endorsed.detail, "兩種身分依據的輸出必須可分辨"
+
+
+def test_identity_annotation_is_not_a_warning_and_not_a_gate():
+    """推翻條件的反面：標註不得改變 status，故 --strict 的 exit code 不受影響。
+
+    doctor_cmd 的 exit code 只看 ``status != "recorded"``（doctor_cmd.py:264），
+    所以「不阻擋」這件事等價於「零收據的 recorded 仍是 recorded」。有收據與零收據
+    兩種輸入的 status／expected／actual 三欄逐欄相同，才叫判定不受身分依據影響。
+    """
+    endorsed = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="✅通過",
+    )
+    backed = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())},
+         {"body": _RECEIPT, "html_url": "https://x/r3", "user": {"login": "rev"}}],
+        _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過",
+    )
+    judgment = lambda f: (f.status, f.expected_delivery_status, f.actual_delivery_status)
+    assert judgment(endorsed) == judgment(backed) == ("recorded", "✅通過", "✅通過")
+    # 措辭層面：標註必須自述「不改變判定」，否則讀者仍可能把它當成該處理的告警。
+    assert "不改變上面的判定" in endorsed.detail
+    assert "不是缺陷" in endorsed.detail
+
+
+def test_half_written_also_carries_the_identity_basis():
+    """裁決已被採認但狀態欄沒跟上時，身分維度的疑問與 recorded 完全一樣。"""
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="🔍待查核",
+    )
+    assert finding.status == "half_written"
+    assert finding.identity_basis == "requester_endorsed"
+    assert "非機械可驗" in finding.detail
+
+
+def test_no_verdict_adopted_means_no_identity_claim():
+    """unobservable／marker_quarantined 沒有採認任何裁決，就沒有「身分憑什麼」可談。
+
+    在這裡標身分依據會反過來暗示有個結論成立了，所以維持 not_applicable。
+    """
+    unobservable = audit_review_channel([], _ECARD, _ESHA)
+    quarantined = audit_review_channel(
+        [{"body": f"<!-- wf-review-event:v2 card_id={_ECARD} source_sha={_ESHA} attempt_id={_EATT} -->"}],
+        _ECARD, _ESHA, card_body=_ELOG, delivery_status="✅通過",
+    )
+    assert unobservable.status == "unobservable"
+    assert quarantined.status == "marker_quarantined"
+    assert unobservable.identity_basis == "not_applicable"
+    assert quarantined.identity_basis == "not_applicable"
+
+
+def test_untranscribed_receipt_reports_receipt_backed_identity():
+    finding = audit_review_channel(
+        [{"body": _RECEIPT, "html_url": "https://x/r2", "user": {"login": "copilot-reviewer"}}],
+        _ECARD, _ESHA,
+    )
+    assert finding.status == "receipt_untranscribed"
+    assert finding.identity_basis == "receipt_backed"
+    assert "GitHub comment author" in finding.detail
+
+
+def test_identity_basis_reaches_the_json_payload():
+    """機器消費端要拿得到；文字面走 detail，機器面走 --json 的 review_channel 鍵。"""
+    from wf_cli.commands.doctor_cmd import build_json_payload
+
+    finding = audit_review_channel(
+        [{"body": _verdict(_conformant_marker())}], _ECARD, _ESHA,
+        card_body=_ELOG, delivery_status="✅通過",
+    )
+    report = DoctorReport(repo_root=".", generated_at="t", registry_sources=[])
+    payload = build_json_payload(report, finding)
+    assert payload["review_channel"]["identity_basis"] == "requester_endorsed"

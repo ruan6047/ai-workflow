@@ -85,6 +85,12 @@ class ReviewChannelFinding:
 
     這裡刻意不把缺收據解讀成「查核沒做」。外部工具內的行為在沒有可讀收據時
     不可觀測；doctor 只能誠實地指出狀態面尚不能證明裁決已被轉錄。
+
+    ``identity_basis`` 是**身分維度**的旁註，與 ``status`` 正交：status 回答
+    「裁決有沒有進狀態面」，identity_basis 回答「誰查核的這件事憑什麼成立」。
+    它**不影響 status、不影響 exit code**，只是不讓 ``recorded`` 被讀成
+    「查核者身分已驗證」——後者在跨家族通道上構造性地做不到（見下方
+    ``_IDENTITY_*_NOTE``）。
     """
 
     status: Literal[
@@ -102,6 +108,11 @@ class ReviewChannelFinding:
     quarantine_reasons: tuple[str, ...] = ()
     expected_delivery_status: str | None = None
     actual_delivery_status: str | None = None
+    identity_basis: Literal[
+        "receipt_backed",
+        "requester_endorsed",
+        "not_applicable",
+    ] = "not_applicable"
 
 
 @dataclass(frozen=True)
@@ -404,6 +415,35 @@ def _check_third_face(expected: str | None, actual: str | None) -> str | None:
     return None
 
 
+_IDENTITY_ENDORSED_NOTE = (
+    "身分基礎：需求方背書，非機械可驗。本卡找不到可對帳的外部收據，"
+    "「誰查核的」只有 review event 的 reviewer 自由字串為憑，而該欄只驗非空——"
+    "GitHub 平台層無從證明裁決確實出自該查核者。跨家族查核者沒有 GitHub 寫入通道，"
+    "收據構造上取不到，**故這不是缺陷**：不改變上面的判定、不改變 exit code，"
+    "也不表示查核沒做。它只界定上面那個結論的效力範圍——已進狀態面的是「裁決內容」，"
+    "不是「查核者身分」。"
+)
+
+_IDENTITY_RECEIPT_NOTE = (
+    "身分基礎：外部收據的 GitHub comment author（平台可驗證）。"
+    "收據內文的模型／工具名稱仍只是自述，不是身分證明。"
+)
+
+
+def _identity_annotation(receipt_urls: list[str]) -> tuple[str, str]:
+    """回傳 ``(identity_basis, 附註文字)``。
+
+    唯一判準是「有沒有可對帳的收據」，因為那是這條通道上唯一由平台（而非由
+    寫入者自己）產生的身分證據。刻意**不**做成警告或阻擋：需求方 2026-08-19
+    裁定走「丙＋甲的殘留」，理由是收據在跨家族通道上構造上拿不到，凡以它為
+    條件的警告必然每次都響、內容永遠一樣，資訊量等於靜默（ai-workflow#31
+    停卡理由）。所以這裡只據實標明依據，不改判定。
+    """
+    if receipt_urls:
+        return "receipt_backed", _IDENTITY_RECEIPT_NOTE
+    return "requester_endorsed", _IDENTITY_ENDORSED_NOTE
+
+
 def audit_review_channel(
     comments: list[dict[str, Any]],
     card_id: str,
@@ -527,6 +567,9 @@ def audit_review_channel(
             # 時才收集，於是兩者並存時操作者只看得到停機，完全不知道有收據。
             receipt_urls=tuple(receipt_urls),
             receipt_authors=tuple(receipt_authors),
+            # identity_basis 維持 not_applicable：停機時**沒有任何裁決被採認**，
+            # 也就沒有「這個結論的身分憑什麼」這個問題。此時談身分依據會反過來
+            # 暗示有個結論成立了。unobservable 同理（找不到裁決）。
         )
 
     # 混合歷史的優先序：**同一 attempt 一旦存在受管轄的 v1 事件，就不得再由 legacy
@@ -549,17 +592,19 @@ def audit_review_channel(
         # 較新而應勝出。結論一致就照常放行，不一致則與多 v1 情形一樣判歧義。
         deciding = [*matched, *legacy_only]
         expected, ambiguity = _expected_delivery_status(verdicts, deciding)
+        basis, identity_note = _identity_annotation(receipt_urls)
         third_face = ambiguity or _check_third_face(expected, delivery_status)
         if third_face is not None:
             return ReviewChannelFinding(
                 status="half_written",
                 card_id=card_id,
                 source_sha=source_sha,
-                detail=third_face,
+                detail=f"{third_face}\n  - {identity_note}",
                 receipt_urls=tuple(receipt_urls),
                 receipt_authors=tuple(receipt_authors),
                 expected_delivery_status=expected,
                 actual_delivery_status=delivery_status,
+                identity_basis=basis,
             )
         return ReviewChannelFinding(
             status="recorded",
@@ -567,13 +612,21 @@ def audit_review_channel(
             source_sha=source_sha,
             detail=(
                 "已找到同一卡、同一 attempt 的 wfcli review event 與 Issue Log，"
-                "且 Project 交付狀態與裁決結論相符；三面一致，狀態面已有裁決。"
+                "且 Project 交付狀態與裁決結論相符；三面一致，**裁決內容**已在狀態面。"
+                f"\n  - {identity_note}"
             ),
+            # 收據先前在 recorded 這條路徑上被丟棄，於是「收據背書的 recorded」與
+            # 「純自由字串的 recorded」輸出一模一樣——身分依據看不出差別，正是本卡
+            # 要修的那個誤讀。收據既已找到就一併帶出，URL 與 author 交給呼叫端印。
+            receipt_urls=tuple(receipt_urls),
+            receipt_authors=tuple(receipt_authors),
             expected_delivery_status=expected,
             actual_delivery_status=delivery_status,
+            identity_basis=basis,
         )
 
     if receipt_urls:
+        basis, identity_note = _identity_annotation(receipt_urls)
         return ReviewChannelFinding(
             status="receipt_untranscribed",
             card_id=card_id,
@@ -581,9 +634,11 @@ def audit_review_channel(
             detail=(
                 "找到外部查核收據，但找不到對應 wfcli review event："
                 "裁決已可觀測、但尚未轉錄到狀態面；保持待查核並要求 PM 轉錄。"
+                f"\n  - {identity_note}"
             ),
             receipt_urls=tuple(receipt_urls),
             receipt_authors=tuple(receipt_authors),
+            identity_basis=basis,
         )
     return ReviewChannelFinding(
         status="unobservable",
