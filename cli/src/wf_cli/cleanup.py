@@ -107,6 +107,27 @@ compare-and-swap，窗只是變窄，沒有被關上。
 
 ⚠️ 三種誤放行（見 `prove_content_in_main()`）**依然是誤放行**，只是後果從「不可逆
 刪除」降為「worktree 被移除而分支仍在」。它們一字未刪，仍該被讀到。
+
+## submodule 為什麼只加一條前提、而不去動那個空目錄（WF-CLEANUP-SUBMODULE-AWARE1）
+
+開卡假設是「``git worktree add`` 必建的**空** gitlink 目錄本身就會讓
+``git worktree remove`` 拒絕，因此收尾對 submodule repo 構造性不可達」。實測（git
+2.50.1，真實 cpbl worktree）**推翻**了這條假設：空目錄不會讓 git 拒絕，未改任何碼的
+收尾在這種 worktree 上本來就跑得完。
+
+而卡面開的處方——移除前先把空目錄清掉——實測**會把本來會過的路徑弄壞**：目錄一移走
+``git status`` 就出現 ``D``，``git worktree remove`` 改以「含已修改或未追蹤檔案」為
+由拒絕，而那條路同樣只有 ``--force`` 能過。也就是說，若 git 真的拒絕空目錄，這條
+處方在不用 ``--force`` 的前提下**沒有出口**；而 git 並不拒絕，於是它連需要都不需要。
+
+真正會被 git 拒絕的是「已初始化的 submodule」，而那正是卡面要求維持 fail-closed 的
+那一種。順著這條線量下去還撞到一個**反方向**的洞：gitlink 目錄裡有檔案、但 submodule
+沒初始化時，``git status`` 什麼都不報、`git worktree remove` 照常移除並把那些檔案一起
+刪掉——`_check_uncommitted` 攔不到，因為 git 自己就看不到。
+
+因此本模組加的是第 2 步的一條前提（見 `SubmoduleScan`）：把現況實測出來，**任何非空
+的 gitlink 目錄都不放行**（比 git 嚴一格，方向是 canonical 的「禁止靜默刪除工作內
+容」），空目錄則確認為空後**原封不動**。整條路徑**不做任何檔案系統寫入**。
 """
 
 from __future__ import annotations
@@ -330,6 +351,7 @@ CHECK_IDS: tuple[str, ...] = (
     "merge_verified_remote",
     "no_uncommitted_changes",
     "no_stash",
+    "no_blocking_submodule",
     "no_locked_worktree",
     "not_self_cwd",
     "not_occupied_by_process",
@@ -343,6 +365,7 @@ CHECK_STEP_REF: Mapping[str, int] = {
     "merge_verified_remote": 1,
     "no_uncommitted_changes": 2,
     "no_stash": 2,
+    "no_blocking_submodule": 2,
     "no_locked_worktree": 2,
     "not_self_cwd": 2,
     "not_occupied_by_process": 2,
@@ -772,6 +795,174 @@ def _check_stash(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
     return GuardCheck("no_stash", "pass", f"{target.branch} 上無 stash", 2)
 
 
+# ---------------------------------------------------------------------------
+# submodule：git 自己會拒絕移除 worktree 的形狀（WF-CLEANUP-SUBMODULE-AWARE1）
+# ---------------------------------------------------------------------------
+
+#: 本檢查的 check_id。
+SUBMODULE_CHECK_ID = "no_blocking_submodule"
+
+#: index 內 gitlink（submodule）entry 的 mode。
+GITLINK_MODE = "160000"
+
+#: 被擋下時，留痕該長什麼樣。**不重述人工步驟**（那是 `AUTHORITY_PATH` 的職責），
+#: 只釘住「留痕要有什麼」——實證範本見 cpbl-analytics#149 的人工收尾留痕帖。
+MANUAL_RECEIPT_REQUIREMENT = (
+    "人工收尾後請把每一行實際送出的指令與其結果貼回卡片"
+    "（範本：cpbl-analytics#149 的人工收尾留痕）"
+)
+
+
+@dataclass(frozen=True)
+class SubmoduleScan:
+    """worktree 內的 submodule 現況——**實測，不由 ``.gitmodules`` 或路徑名推斷**。
+
+    ## git 自己的判準（實測 git 2.50.1，非讀碼推導）
+
+    `git worktree remove` 只在兩種形狀下拒絕：
+
+    1. 該 worktree 的 git dir 底下有 ``modules`` 目錄（此 worktree 曾初始化過
+       submodule，gitdir 還留著；``submodule deinit`` **不會**把它清掉）；
+    2. index 內某個 gitlink 路徑存在為目錄，且該目錄裡的 ``.git`` 解析得出 git dir
+       （＝submodule 已就位）。
+
+    ``git worktree add`` 必然把 gitlink 實體化成**空**目錄，而空目錄兩條都不中——
+    git 照常移除。開卡假設的「空目錄也算，因此對 submodule repo 構造性不可達」在實測
+    上不成立（證據表見交付報告）。
+
+    ## 為什麼本檢查比 git 嚴一格
+
+    第 2 條的判準是「有沒有 ``.git``」，**不是**「有沒有東西」。於是這個形狀存在：
+    gitlink 目錄裡有檔案、但 submodule 沒初始化——此時 ``git status`` **一個字都不
+    會報**（那條路徑是 gitlink，內容不歸本 repo 管），`git worktree remove` 也照常
+    移除，**連同那些檔案一起刪掉**。`_check_uncommitted` 看不到它，因為 git 自己就
+    看不到。那正是 canonical「禁止靜默刪除工作內容」指名要防的事。
+
+    因此本檢查的判準是**非空即擋**：`blockers` 收的是「已初始化」與「非空」兩種，
+    後者比 git 嚴。`empty_gitlink_dirs` 是實測為空、確認 git 不會拒絕、因此**刻意不
+    動它們**的路徑——移走空目錄會讓 ``git status`` 出現 ``D``，`git worktree remove`
+    改以「含已修改或未追蹤檔案」為由拒絕，而那條路一樣只有 ``--force`` 過得去。
+    `unobservable` 是連測都測不到的（目錄列不出來）——不放行，理由與 `aggregate_mode`
+    把 ``unobservable`` 當阻擋是同一條。
+    """
+
+    empty_gitlink_dirs: tuple[str, ...] = ()
+    blockers: tuple[str, ...] = ()
+    unobservable: tuple[str, ...] = ()
+
+
+def _dir_is_empty(path: Path) -> bool | None:
+    """目錄裡有沒有東西——**實際列出來看**，不由名稱或約定推斷。
+
+    讀不到回 `None`（不是 `False`，也不是 `True`）：「列不出來」不等於「是空的」，
+    把它當空的就是本模組要消滅的 fail-open。
+    """
+    try:
+        return not any(path.iterdir())
+    except OSError:
+        return None
+
+
+def _gitlink_paths(worktree: Path, runner: GitRunner) -> tuple[tuple[str, ...] | None, str]:
+    """index 內全部 gitlink 的路徑（相對 worktree 根）。讀不到回 ``(None, 理由)``。
+
+    用 ``-z``：路徑可能含空白或換行，逐行切會在那種路徑上靜默漏掉一筆。
+    """
+    res = _run(runner, worktree, ["ls-files", "--stage", "-z"])
+    if not res.ok:
+        return None, res.stderr.strip() or "無錯誤訊息"
+    paths: list[str] = []
+    for record in res.stdout.split("\0"):
+        if not record:
+            continue
+        meta, sep, name = record.partition("\t")
+        if not sep:
+            continue
+        if meta.split(" ", 1)[0] == GITLINK_MODE:
+            paths.append(name)
+    return tuple(paths), ""
+
+
+def scan_submodules(worktree: Path, runner: GitRunner) -> SubmoduleScan:
+    """量出 `SubmoduleScan`。順序刻意與 git 相同：先 ``modules``，再掃 index。"""
+    gitdir = _run(runner, worktree, ["rev-parse", "--absolute-git-dir"])
+    if not gitdir.ok or not gitdir.stdout.strip():
+        return SubmoduleScan(unobservable=(
+            f"讀不到 {worktree} 的 git dir（{gitdir.stderr.strip() or '無錯誤訊息'}），"
+            "無法判斷 submodule 會不會擋下移除",
+        ))
+    modules = Path(gitdir.stdout.strip()) / "modules"
+    if modules.is_dir():
+        return SubmoduleScan(blockers=(
+            f"{modules} 存在：此 worktree 曾初始化 submodule，gitdir 仍在；"
+            "git 的 worktree 移除檢查對此一律拒絕",
+        ))
+
+    paths, err = _gitlink_paths(worktree, runner)
+    if paths is None:
+        return SubmoduleScan(unobservable=(
+            f"git ls-files --stage 失敗（{err}），無法列出 index 內的 gitlink",
+        ))
+
+    empty: list[str] = []
+    blockers: list[str] = []
+    unobservable: list[str] = []
+    for rel in paths:
+        full = worktree / rel
+        if not full.is_dir():
+            continue  # git 也只在「存在為目錄」時才管
+        verdict = _dir_is_empty(full)
+        if verdict is None:
+            unobservable.append(f"{rel} 這個 gitlink 目錄列不出內容，無法證明它是空的")
+        elif verdict:
+            empty.append(rel)
+        else:
+            blockers.append(
+                f"{rel} 這個 gitlink 目錄實測非空；"
+                "移除 worktree 會把它裡面的內容一併刪掉，而 git status 不會事先報出來。"
+                "守衛不 deinit、不遞迴刪除、不加 --force"
+            )
+    return SubmoduleScan(
+        empty_gitlink_dirs=tuple(empty),
+        blockers=tuple(blockers),
+        unobservable=tuple(unobservable),
+    )
+
+
+def _check_submodules(target: CleanupTarget, runner: GitRunner) -> GuardCheck:
+    """第 2 步：submodule 會不會讓 `git worktree remove` 拒絕。
+
+    這一項的價值不是「多擋一種情況」——非空 submodule 本來就會被 git 擋下，然後撞上
+    `_execute_closeout()` 的 ``git worktree remove 失敗`` 保險絲。價值在於**擋在哪
+    一刻、留下什麼**：保險絲丟的是例外，訊息是 git 的原話（"working trees containing
+    submodules cannot be moved or removed"），既沒指名要人工做什麼，也不進 
+    `GuardDecision.reasons`。移到前提之後，同一件事變成 detect_only 的一列具名理由，
+    帶著人工路徑與留痕要求，而且**在任何破壞性動作開始之前**。
+    """
+    if target.worktree_path is None or not target.worktree_path.exists():
+        return GuardCheck(SUBMODULE_CHECK_ID, "pass",
+                          "worktree 不存在於磁碟，無 submodule 可擋下移除", 2)
+    scan = scan_submodules(target.worktree_path, runner)
+    if scan.unobservable:
+        return GuardCheck(SUBMODULE_CHECK_ID, "unobservable",
+                          "；".join(scan.unobservable), 2)
+    if scan.blockers:
+        return GuardCheck(
+            SUBMODULE_CHECK_ID, "fail",
+            "；".join(scan.blockers)
+            + f"。請依 {AUTHORITY_PATH} {AUTHORITY_ANCHOR}人工收尾，"
+            + MANUAL_RECEIPT_REQUIREMENT, 2,
+        )
+    if scan.empty_gitlink_dirs:
+        return GuardCheck(
+            SUBMODULE_CHECK_ID, "pass",
+            f"{len(scan.empty_gitlink_dirs)} 個 gitlink 目錄實測為空"
+            f"（{', '.join(scan.empty_gitlink_dirs)}），git 不會因此拒絕移除；"
+            "守衛不動它們——移走空目錄會讓工作樹轉髒，反而擋住移除", 2,
+        )
+    return GuardCheck(SUBMODULE_CHECK_ID, "pass", "index 內無 gitlink，且無 submodule gitdir", 2)
+
+
 def _worktree_records(target: CleanupTarget, runner: GitRunner) -> list[WorktreeRecord] | None:
     res = _run(runner, target.repo_root, ["worktree", "list", "--porcelain"])
     if not res.ok:
@@ -916,6 +1107,7 @@ def evaluate_cleanup_guard(
         _check_merge_remote(target, runner),
         _check_uncommitted(target, runner),
         _check_stash(target, runner),
+        _check_submodules(target, runner),
         _check_locked(records, target),
         _check_self_cwd(target),
         _check_occupied(target, prober),
@@ -1585,7 +1777,10 @@ __all__ = [
     "PRECONDITION_STEPS",
     "RECHECK_REMOTE_ID",
     "REMOTE_DELETE_CAS_ID",
+    "GITLINK_MODE",
+    "MANUAL_RECEIPT_REQUIREMENT",
     "STEP_ROLES",
+    "SUBMODULE_CHECK_ID",
     "SUBSEQUENT_OBLIGATION_STEPS",
     "CleanupGuardError",
     "CleanupOutcome",
@@ -1601,6 +1796,7 @@ __all__ = [
     "MergeProofKind",
     "RemoteCardFacts",
     "RemoteDeleteDecision",
+    "SubmoduleScan",
     "WorktreeRecord",
     "aggregate_mode",
     "classify_state",
@@ -1616,4 +1812,5 @@ __all__ = [
     "prove_content_in_main",
     "recheck_remote_branch",
     "remaining_status_face_steps",
+    "scan_submodules",
 ]
