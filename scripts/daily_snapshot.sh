@@ -47,6 +47,26 @@
 #         · 77 遠端／憑證不可用 · 78 wfcli snapshot 失敗 · 79 git commit／push 失敗
 set -uo pipefail
 
+# ⚠️ 本檔訊息幾乎全是中文，而 `set -u` ＋ 中文字元有一個 locale 依賴的地雷：
+#    未加花括號的 `$VAR` 若**緊鄰非 ASCII 字元**（全形括號、中文字、`／`、`·`…），
+#    bash 3.2 在 UTF-8 locale 下會把該字元的 lead byte 當成識別符字元吃進變數名，
+#    於是 `$OUT_TMP` 後面直接接一個全形左括號時，整串被解析成變數 `OUT_TMP\xef`，
+#    `set -u` 於是判定 unbound variable 並中止。（此處刻意不寫出相鄰的原形，否則
+#    下面那條守衛會把這行註解自己算成一次命中——實際上 2026-08-19 就發生過一次。）
+#    實測（2026-08-19，/bin/bash 3.2.57）：0x80–0xFF 共 65 個 byte 會被吃進變數名，
+#    涵蓋全部 CJK／全形的 lead byte（0xC2–0xEF）。
+#    ⚠️ **C locale 下驗不出來**（LANG／LC_ALL 未設時就是 C，launchd 也是 C），
+#    所以「本機跑過沒事」不構成證據——參見 docs/ROADMAP.md「runner 不是 UTF-8」那一節。
+#    這條地雷特別毒的地方在於受害者多半落在 die() 錯誤回報路徑上：錯誤處理自己二次
+#    崩潰，離開碼退化成 1、last-status.json 也不會被寫出來。
+#
+#    不變式：**具名變數展開一律 `${VAR}`**（`$?`／`$1`／`$#` 等單字元特殊參數不受影響）。
+#    守衛（期望輸出 `0`，任何非 0 都是回歸）：
+#      perl -ne '$n++ while /\$[A-Za-z_][A-Za-z0-9_]*[\x80-\xFF]/g;
+#                END{printf "%d\n", $n||0}' scripts/daily_snapshot.sh
+#    刻意**不**在此固定 locale：固定 C 會把地雷埋回去（腳本永遠走驗不出來的那一側），
+#    固定 UTF-8 則會連帶改變 git／gh／wfcli 子行程的輸出編碼。修的是程式碼，不是環境。
+
 # ============================================================== argv 守衛（放最前面）
 usage() {
   cat <<'EOF'
@@ -62,7 +82,7 @@ scripts/daily_snapshot.sh — 每日狀態面快照 export 回 git（launchd 觸
 
 會寫什麼
   · GitHub：ruan6047/ai-workflow 的 `snapshots` 分支（append-only，一天一筆）
-  · 本機：$WF_SNAPSHOT_STATE_DIR（預設 ~/.local/state/wf-daily-snapshot）
+  · 本機：${WF_SNAPSHOT_STATE_DIR}（預設 ~/.local/state/wf-daily-snapshot）
   · ⚠️ 不碰 main、不碰任何 Issue／Project 欄位（snapshot 是唯讀動詞）
 
 怎麼呼叫
@@ -228,7 +248,7 @@ prune_logs() {
 # ============================================================== 前置檢查
 PHASE="preflight"
 for tool in git uv gh; do
-  command -v "$tool" >/dev/null 2>&1 || die 69 "找不到 $tool（PATH=$PATH）"
+  command -v "$tool" >/dev/null 2>&1 || die 69 "找不到 ${tool}（PATH=${PATH}）"
 done
 [ -d "$CLI_DIR" ] || die 69 "找不到 wfcli 原始碼目錄：$CLI_DIR"
 
@@ -242,7 +262,7 @@ git ls-remote --heads "$REMOTE" >/dev/null 2>&1 || die 77 "遠端不可達或憑
 if [ "$MODE" = "run" ]; then
   PHASE="lock"
   if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    die 75 "另一次執行仍持有鎖：$LOCK_DIR（確認沒有殘留後手動 rmdir）"
+    die 75 "另一次執行仍持有鎖：${LOCK_DIR}（確認沒有殘留後手動 rmdir）"
   fi
   trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 fi
@@ -260,14 +280,14 @@ SNAPSHOT_OUT="$(cd "$CLI_DIR" && uv run --project "$CLI_DIR" --frozen wfcli snap
   --owner "$WFCLI_OWNER_FIXED" --project "$WFCLI_PROJECT_FIXED" --out-dir "$OUT_TMP" 2>&1)"
 SNAPSHOT_RC=$?
 echo "$SNAPSHOT_OUT"
-[ "$SNAPSHOT_RC" -eq 0 ] || die 78 "wfcli snapshot 失敗（rc=$SNAPSHOT_RC）"
+[ "$SNAPSHOT_RC" -eq 0 ] || die 78 "wfcli snapshot 失敗（rc=${SNAPSHOT_RC}）"
 [ -s "$OUT_TMP/snapshot.json" ] && [ -s "$OUT_TMP/SNAPSHOT.md" ] || die 78 "snapshot 產物缺失或為空"
 CARD_COUNT="$(echo "$SNAPSHOT_OUT" | sed -n 's/^\[snapshot\] \([0-9]*\) 張卡.*/\1/p' | tail -1)"
 
 if [ "$MODE" = "check" ]; then
   PHASE="check-done"
   echo "[check] 遠端可達、snapshot 可產生（${CARD_COUNT} 張卡）；本模式不 commit、不 push"
-  echo "[check] 產物暫存於 $OUT_TMP（本次結束即刪）"
+  echo "[check] 產物暫存於 ${OUT_TMP}（本次結束即刪）"
   write_status 0
   prune_logs
   exit 0
@@ -333,7 +353,7 @@ wfcli-source: ${SRC_SHA} (${SRC_REPO})" || die 79 "commit 失敗"
 COMMIT_SHA="$(git -C "$CLONE_DIR" rev-parse HEAD)"
 
 PHASE="push"
-git -C "$CLONE_DIR" push origin "$BRANCH" --quiet || die 79 "push 失敗（commit $COMMIT_SHA 留在本機 $CLONE_DIR）"
+git -C "$CLONE_DIR" push origin "$BRANCH" --quiet || die 79 "push 失敗（commit $COMMIT_SHA 留在本機 ${CLONE_DIR}）"
 
 PHASE="done"
 echo "[snapshot] ${TODAY} ${CARD_COUNT} 張卡 → ${BRANCH} @ ${COMMIT_SHA}（trigger=${TRIGGER}）"

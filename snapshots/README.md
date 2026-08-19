@@ -63,5 +63,44 @@ cat ~/.local/state/wf-daily-snapshot/last-status.json     # 最近一次結果
 ls -t ~/.local/state/wf-daily-snapshot/logs | head        # 完整輸出（留最近 30 份）
 ```
 
+## ⚠️ 改 `daily_snapshot.sh` 之前：中文訊息 ＋ `set -u` 的 locale 地雷
+
+腳本開啟 `set -uo pipefail`，而它的訊息幾乎全是中文。未加花括號的 `$VAR` 若**緊鄰非
+ASCII 字元**（全形括號、中文字、`／`、`·`…），bash 3.2 在 **UTF-8 locale** 下會把該字元
+的 lead byte 吃進變數名，於是 `set -u` 判定 unbound variable 並中止。
+
+**這條在 C locale 下驗不出來**（`LANG`／`LC_ALL` 未設時就是 C，launchd 也是 C），
+所以「本機跑過沒事」不構成證據——同族陷阱見 `docs/ROADMAP.md`「runner 不是 UTF-8」。
+2026-08-19 實測：`0x80`–`0xFF` 共 **65** 個 byte 會被吃進變數名，涵蓋全部 CJK／全形的
+lead byte（`0xC2`–`0xEF`）；`$?`／`$1`／`$#` 這類單字元特殊參數不受影響。
+
+**不變式：具名變數展開一律寫 `${VAR}`。** 守衛（期望輸出 `0`，非 0 即回歸）：
+
+```bash
+perl -ne '$n++ while /\$[A-Za-z_][A-Za-z0-9_]*[\x80-\xFF]/g;
+          END{printf "%d\n", $n||0}' scripts/daily_snapshot.sh
+```
+
+### 錯誤路徑煙霧測試（不打網路、不打 GitHub API）
+
+受害的訊息多半在 `die()` 上，**正常流程測不到**——錯誤處理自己二次崩潰時，離開碼會從
+設計值退化成 `1`，而且 `write_status` 不會執行，`last-status.json` 整份不見。所以驗收
+必須**在 UTF-8 locale 下逐條把錯誤路徑逼出來**。腳本自帶兩個測試接縫讓這件事不需要
+碰 GitHub：`WF_SNAPSHOT_REMOTE` 指向本機 bare repo、`WF_SNAPSHOT_STATE_DIR` 指向暫存目錄；
+`wfcli` 則用一支排在 `PATH` 最前面的假 `uv` 攔掉（GraphQL request 數 = 0）。
+
+| 逼出的路徑 | 手法 | 期望 |
+|---|---|---|
+| 缺工具 | `PATH` 只留 coreutils，抽掉 `git`／`uv`／`gh` | `exit 69`，印出 `找不到 git（PATH=…）` |
+| 鎖被佔用 | 先 `mkdir $STATE_DIR/run.lock` | `exit 75`，印出鎖路徑 |
+| snapshot 失敗 | 假 `uv` 直接 `exit 3` | `exit 78`，印出 `（rc=3）` |
+| `--check` 成功 | 假 `uv` 寫出假產物後 `exit 0` | `exit 0`，印出 `產物暫存於 …` |
+| push 失敗 | bare repo `chmod -R a-w` | `exit 79`，印出 commit SHA 與 clone 路徑 |
+
+每條都要確認**離開碼是上表的值而不是 `1`**，且 `last-status.json` 有被寫出來——退化成
+`1` 正是二次崩潰的指紋。
+
+## 成本
+
 每次執行對 GitHub GraphQL 的成本是 **6 個 request**（2026-08-19 實測，連續三次皆 6；
 成本隨卡數成長，`list_items` 每 50 張卡多一頁）。
