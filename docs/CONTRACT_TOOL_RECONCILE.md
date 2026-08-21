@@ -227,8 +227,11 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
   「該 writer 尚未實作（WF-22-CLI4 切片 A 之外），在它落地前，裁定只能以人讀留言存在，
   事件流上該區間仍是升級中」，`validation.py:827` 亦同。契約已裁定升級狀態**只能**由本事件
   解除，而今天沒有任何通道寫得出這則事件。
-  與 §4.4 的 `review-correction` 同型（`mention-only`、writer —、`相關動詞` 有卻不吐該字面），
-  處置一致。
+  判定與 §4.4 的 `review-correction` 相同（`mention-only`、writer —），處置一致；但**兩者在
+  `相關動詞` 這一軸上不同**，依 §4.5 立下的分辨法不是同一種缺口：`review-correction` 是
+  `相關動詞=review`（動詞在，只是不吐該字面），本項是 **`相關動詞=無`**——連一個沾得上邊的
+  動詞都沒有，與 `preflight-failed` 同格。這一軸不影響處置（都是 `補寫入者`），影響的是工程量：
+  前者近似留痕缺失，本項要從零長出一個寫入通道。
 - **`fresh-ruling`／`carried-forward`**（§5 `resolution_basis` 的兩個取值）→ 皆 `absent`。
 - **`continue-same-executor`**（§5 `resolution` 的唯一合法值）→ `absent`。
 
