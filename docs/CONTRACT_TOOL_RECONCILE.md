@@ -210,6 +210,54 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `card.py` | `resources` | `render_block` | `find_conflicts` | **新發現**：`render_issue_body` 在開卡時就渲染資源宣告區塊，而 `open` 路徑不做任何互斥比對。派工閘門只擋 `assign`，開卡不擋 |
 | `commands/assign_cmd.py` | `card` | `format_branch_worktree` | `validate_capability_routing` 等 | **候選，需人判**：配對是模組粒度，`card.py` 的 serializer 與 routing 驗證器被混在一起，很可能是偽陽性 |
 
+### 4.7 後續卡新增的契約符號（`WF-ESCALATION-RESOLUTION-GAP1`，4 項）
+
+⚠️ **這四項不屬於 2026-08-16 那次盤點。** 本對帳器由 `#97`（`6561e04`）帶入 main 的時點
+**晚於** `WF-ESCALATION-RESOLUTION-GAP1` 分支的最後一輪查核（2026-08-12），所以該卡在
+`templates/review-escalation.md` §4／§5 引入的契約符號，**三輪跨家族查核都不可能看見**——
+直到 `#116` 讓 CI 第一次在**合併結果**（`refs/pull/N/merge`）上跑，`--check` 才在合併**前**
+把它們撞出來。這正是 §2.3 那三個方向要買的東西：契約長出新符號而無人處置時的可見失敗。
+
+- **`escalation-resolution`**（`review-escalation.md` §4「`escalate` 之後的第三種結果」與
+  §5 的 schema 定義的新事件型別）→ `mention-only`，**writer 0**。四處字面全是提及：
+  `cli/src/wf_cli/validation.py:771`（docstring）、`:827`（拒收訊息常數）、
+  `cli/src/wf_cli/commands/checkpoint_cmd.py:261`（`print()`）、
+  `cli/src/wf_cli/review.py:614`（註解）。
+  **這一項不必倚賴對帳器的解析，碼自己講得更明白**：`checkpoint_cmd.py:261` 的訊息逐字寫著
+  「該 writer 尚未實作（WF-22-CLI4 切片 A 之外），在它落地前，裁定只能以人讀留言存在，
+  事件流上該區間仍是升級中」，`validation.py:827` 亦同。契約已裁定升級狀態**只能**由本事件
+  解除，而今天沒有任何通道寫得出這則事件。
+  ⚠️ **對帳器少看到一處，但方向是低估、不是高估。** `commands/checkpoint_cmd.py:104` 還有
+  第五處字面——argparse 的 `--escalation-resolution`，help 逐字寫著「（保留旗標，一律拒收）」。
+  對帳器沒把它列進來的原因見 §5 末條。**補上這一處不改變任何判定**：那是刻意 fail-closed 的
+  拒收面（與 §6 表列的 `spec-narrowed`／`instruction-omitted` 同族），不是 writer；writer 仍是 0。
+  記在這裡是因為它讓缺口的性質更精確：**不是沒人想到，是想到了而且明著擋住**——
+  契約先落地、寫入面暫以拒收佔位，等 writer 那張卡。
+  判定與 §4.4 的 `review-correction` 相同（`mention-only`、writer —），處置一致；但**兩者在
+  `相關動詞` 這一軸上不同**，依 §4.5 立下的分辨法不是同一種缺口：`review-correction` 是
+  `相關動詞=review`（動詞在，只是不吐該字面），本項是 **`相關動詞=無`**——連一個沾得上邊的
+  動詞都沒有，與 `preflight-failed` 同格。這一軸不影響處置（都是 `補寫入者`），影響的是工程量：
+  前者近似留痕缺失，本項要從零長出一個寫入通道。
+- **`fresh-ruling`／`carried-forward`**（§5 `resolution_basis` 的兩個取值）→ 皆 `absent`。
+- **`continue-same-executor`**（§5 `resolution` 的唯一合法值）→ `absent`。
+
+後三項是第一項的**取值**，同族一起缺，與 §4.4 末條的四個 clearance 分類
+（`forged-rejected` 等，同為 `review-marker-clearance` 的取值、同為 `absent`）**是同一形狀**，
+故不另立處置：writer 落地時它們會一起消失，`--check` 的第 2 個方向（登記了已不存在的缺口）
+會強制回來更新本檔。
+
+**射程界線（本檔只登記，不修補）。** 依 §2.3 與本節開頭的「本檔不實作任何一項修補」，此處
+只承認缺口。`escalation-resolution` 的 writer 屬 `WF-22-CLI4` 射程，補在哪一張卡由需求方裁定。
+
+⚠️ **同一節裡有一項看起來已實作，其實是字面碰撞，一併記下以免誤讀。**
+`structurally-vacuous`（§4／§5 `authorization_binding` 的取值之一）判定 `ok`、writer 在
+`cli/src/wf_cli/validation.py:480`／`:483`／`:486`——**但那不是本節的 writer**。
+`cli/src/wf_cli/review.py:614` 的註解逐字聲明「⚠️ 這**不是** #39 的那個欄位」：那三行導出的是
+**accepted 標記**的授權綁定（`ACCEPTED_MARKING_BINDINGS`），是同一個述詞套在另一組角色上，
+刻意不共用鍵名，只是**恰好共用取值字面**。所以 `escalation-resolution` 的 `authorization_binding`
+同樣沒有 writer，只是符號層看不出來——抽取規則是**詞法**的，同字面不同欄位會被併成一列
+（§5 已知限制的具體實例）。本列因此既不是缺口，**也不構成本節已實作的證據**。
+
 ## 5. 已知限制（對帳器本身的）
 
 誠實列出，不假裝機械判定是全知的。
@@ -232,6 +280,15 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 - **第一版的 ratchet 漏了守衛覆蓋缺口**：`--check` 只比對符號列，於是 M3 變異讓正控組 4
   整個消失時它仍是綠的。已修（§2.4）。同一個教訓的第二次：**規則與檢查本身都要被變異
   檢驗打一次，不能只驗被檢查的對象**。
+- **`--<kebab>` 形態的 argparse 旗標字面落在盲區**（實測：
+  `_contains_symbol("--escalation-resolution", "escalation-resolution")` 回 `False`）。
+  成因是 `_WORDISH` 含 `-`，於是前綴 `--` 算「詞內字元」、詞界不成立。
+  ⚠️ **這不是可以單獨拿掉的 bug**：那條詞界正是用來擋 `deployment-status-change` 誤命中
+  `status-change`（見該函式 docstring），拿掉它會讓已知缺口 `status-change` 假性變綠。
+  兩者是同一條規則的兩面，要改得先想清楚怎麼同時保住那個反例。
+  本檔記錄的實例是 mention 而非 writer（`commands/checkpoint_cmd.py:104` 是 argparse 宣告，
+  不在任何遠端寫入路徑上），故未影響本次判定；但**盲區對 write 角色一樣成立**——若日後有
+  寫入路徑以 `--` 前綴形態帶出符號，會被同樣漏判，那個方向就不再是低估。實例見 §4.7。
 
 ## 6. 缺口登記與處置
 
@@ -249,6 +306,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | §4.4 事件無 writer | `escalation-epoch-change`、`handoff-accepted`、`review-correction`、`review-marker-clearance`、`baseline-change-request`、四個 clearance 分類 | `補寫入者`。`handoff-accepted` 優先——`event-verified` preflight 依據的不可達性以它為根因 |
 | §4.5 命名漂移 | `escalation-checkpoint`、`contract-baseline` | `已知限制`（或統一契約名與碼內錨點名，屬低風險整理） |
 | §4.6 守衛覆蓋 | `card.py` → `find_conflicts` | `待需求方裁定`：開卡時是否應做互斥比對（現況只有 assign 擋） |
+| §4.7 事件無 writer（後續卡新增） | `escalation-resolution`，及其取值 `fresh-ruling`／`carried-forward`／`continue-same-executor` | `補寫入者`。**writer 今天不存在**——`commands/checkpoint_cmd.py:261` 與 `validation.py:827` 兩處自陳「尚未實作」，故三個取值同族一起缺，writer 落地時一併消失。補在 `WF-22-CLI4` 或另開卡由需求方裁定。⚠️ 同節的 `structurally-vacuous` 判 `ok` 是**字面碰撞**（見 §4.7 末段），不是本節已實作的證據 |
 | 過抽（非契約符號） | `ubuntu-latest`、`update-branch`、`🔴紅線`、`⚪一般`、`→merge`、`→查核前`、`↔執行者`、`card_field` 的 `Log`／`目標`／`需求方`／`範圍` | `過抽`：抽取規則的已知代價，不須處置 |
 | 列舉值非事件 | `data-migration`、`authoritative-artifact`、`change-executor` | `過抽`：皆有讀取者，判定為 `read-only` 屬正常 |
 | 刻意 fail-closed | `spec-narrowed`、`instruction-omitted` | `已知限制`：`checkpoint_cmd` 明寫「保留旗標，一律拒收」，兩個 defer cause 在本 repo 皆不可用 |
@@ -289,12 +347,16 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "delivery_status/🚧進行中": "read-only",
     "event/authoritative-artifact": "read-only",
     "event/baseline-change-request": "absent",
+    "event/carried-forward": "absent",
     "event/change-executor": "read-only",
+    "event/continue-same-executor": "absent",
     "event/contract-baseline": "write-only",
     "event/data-migration": "read-only",
     "event/escalation-checkpoint": "mention-only",
     "event/escalation-epoch-change": "mention-only",
+    "event/escalation-resolution": "mention-only",
     "event/forged-rejected": "absent",
+    "event/fresh-ruling": "absent",
     "event/handoff-accepted": "mention-only",
     "event/instruction-omitted": "mention-only",
     "event/malformed-ignored": "absent",
@@ -316,28 +378,35 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 ```
 <!-- reconcile-dispositions:end -->
 
-- 契約側符號總數：**82**（由掃描文件導出，非人工登記）
-- 判定為缺口：**51**
+> ⚠️ 以下是 `python3 scripts/contract_tool_reconcile.py` 的**產生輸出**，非手寫；要核對就重跑該指令逐字比對。
+> 表中的 `檔案:行` 錨點會隨其他卡合併而漂移，**漂移本身不是缺口變化**——判定是否變了以 `--check` 的第 3 個方向為準。
+
+- 契約側符號總數：**86**（由掃描文件導出，非人工登記）
+- 判定為缺口：**55**
 - 守衛覆蓋缺口：**3**
 - ⚠️ 自由文字狀態旗標（可繞過所有契約前提直接設定任一已宣告狀態）：`assign_cmd.py --status（預設 🔨執行中，無 choices）`
 
-### 事件型別（22）
+### 事件型別（26）
 
 | 符號 | 判定 | 契約出處 | 寫入者 | 讀取者 | 備註 |
 |---|---|---|---|---|---|
-| `authoritative-artifact` | read-only | `templates/review-escalation.md:39`<br>`templates/review-escalation.md:54`<br>`templates/review-escalation.md:176` | — | `cli/src/wf_cli/review.py:40`<br>`cli/src/wf_cli/review.py:590` | 相關動詞=無 |
+| `authoritative-artifact` | read-only | `templates/review-escalation.md:39`<br>`templates/review-escalation.md:54`<br>`templates/review-escalation.md:214` | — | `cli/src/wf_cli/review.py:40`<br>`cli/src/wf_cli/review.py:590` | 相關動詞=無 |
 | `baseline-change-request` | absent | `templates/baseline-cascade.md:12` | — | — | 相關動詞=無 |
-| `change-executor` | read-only | `templates/review-escalation.md:67` | — | `cli/src/wf_cli/review.py:586` | 相關動詞=無 |
-| `contract-baseline` | write-only | `templates/review-escalation.md:97`<br>`templates/review-escalation.md:274`<br>`templates/review-escalation.md:276` | `cli/src/wf_cli/commands/checkpoint_cmd.py:281` | — | 相關動詞=無 |
+| `carried-forward` | absent | `templates/review-escalation.md:174`<br>`templates/review-escalation.md:176`<br>`templates/review-escalation.md:182`<br>…共 6 | — | — | 相關動詞=無 |
+| `change-executor` | read-only | `templates/review-escalation.md:67`<br>`templates/review-escalation.md:161`<br>`templates/review-escalation.md:271`<br>…共 4 | — | `cli/src/wf_cli/review.py:586` | 相關動詞=無 |
+| `continue-same-executor` | absent | `templates/review-escalation.md:272` | — | — | 相關動詞=無 |
+| `contract-baseline` | write-only | `templates/review-escalation.md:97`<br>`templates/review-escalation.md:195`<br>`templates/review-escalation.md:277`<br>…共 5 | `cli/src/wf_cli/commands/checkpoint_cmd.py:281` | — | 相關動詞=無 |
 | `data-migration` | read-only | `AI_WORKFLOW.md:122`<br>`AI_WORKFLOW.md:154` | — | `cli/src/wf_cli/commands/open_cmd.py:81`<br>`cli/src/wf_cli/resources.py:39` | 相關動詞=無 |
-| `escalation-checkpoint` | mention-only | `templates/review-escalation.md:46`<br>`templates/review-escalation.md:61`<br>`templates/review-escalation.md:149`<br>…共 5 | — | — | 相關動詞=checkpoint |
-| `escalation-epoch-change` | mention-only | `AI_WORKFLOW.md:141`<br>`templates/review-escalation.md:157`<br>`templates/review-escalation.md:159`<br>…共 4 | — | — | 相關動詞=無 |
-| `forged-rejected` | absent | `templates/handoff-contract.md:129`<br>`templates/handoff-contract.md:233`<br>`templates/review-escalation.md:115`<br>…共 8 | — | — | 相關動詞=無 |
+| `escalation-checkpoint` | mention-only | `templates/review-escalation.md:46`<br>`templates/review-escalation.md:61`<br>`templates/review-escalation.md:149`<br>…共 7 | — | — | 相關動詞=checkpoint |
+| `escalation-epoch-change` | mention-only | `AI_WORKFLOW.md:141`<br>`templates/review-escalation.md:157`<br>`templates/review-escalation.md:159`<br>…共 9 | — | — | 相關動詞=無 |
+| `escalation-resolution` | mention-only | `templates/review-escalation.md:165`<br>`templates/review-escalation.md:167`<br>`templates/review-escalation.md:169`<br>…共 10 | — | — | 相關動詞=無 |
+| `forged-rejected` | absent | `templates/handoff-contract.md:129`<br>`templates/handoff-contract.md:233`<br>`templates/review-escalation.md:115`<br>…共 9 | — | — | 相關動詞=無 |
+| `fresh-ruling` | absent | `templates/review-escalation.md:173`<br>`templates/review-escalation.md:174`<br>`templates/review-escalation.md:176`<br>…共 4 | — | — | 相關動詞=無 |
 | `handoff-accepted` | mention-only | `AI_WORKFLOW.md:142`<br>`templates/control-plane-contract.md:58`<br>`templates/handoff-contract.md:9`<br>…共 6 | — | — | 相關動詞=handoff |
 | `instruction-omitted` | mention-only | `templates/review-escalation.md:104`<br>`templates/review-escalation.md:108`<br>`templates/review-escalation.md:117`<br>…共 9 | — | — | 相關動詞=無 |
-| `malformed-ignored` | absent | `templates/handoff-contract.md:130`<br>`templates/handoff-contract.md:233`<br>`templates/review-escalation.md:236`<br>…共 6 | — | — | 相關動詞=無 |
+| `malformed-ignored` | absent | `templates/handoff-contract.md:130`<br>`templates/handoff-contract.md:233`<br>`templates/review-escalation.md:303`<br>…共 6 | — | — | 相關動詞=無 |
 | `preflight-failed` | mention-only | `AI_WORKFLOW.md:103`<br>`templates/review-escalation.md:9`<br>`templates/review-escalation.md:15`<br>…共 4 | — | — | 相關動詞=無 |
-| `reissue-required` | absent | `templates/handoff-contract.md:129`<br>`templates/handoff-contract.md:132`<br>`templates/review-escalation.md:244`<br>…共 7 | — | — | 相關動詞=無 |
+| `reissue-required` | absent | `templates/handoff-contract.md:129`<br>`templates/handoff-contract.md:132`<br>`templates/review-escalation.md:311`<br>…共 7 | — | — | 相關動詞=無 |
 | `repaired-verified` | absent | `templates/handoff-contract.md:127`<br>`templates/handoff-contract.md:130`<br>`templates/handoff-contract.md:131`<br>…共 6 | — | — | 相關動詞=無 |
 | `review-correction` | mention-only | `AI_WORKFLOW.md:104`<br>`AI_WORKFLOW.md:141`<br>`templates/review-escalation.md:44`<br>…共 10 | — | — | 相關動詞=review |
 | `review-invalid` | mention-only | `AI_WORKFLOW.md:103`<br>`AI_WORKFLOW.md:202`<br>`templates/review-escalation.md:11`<br>…共 8 | — | — | 相關動詞=review |
@@ -346,7 +415,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `status-change` | absent | `templates/review-escalation.md:10`<br>`templates/review-escalation.md:15` | — | — | 相關動詞=無 |
 | `ubuntu-latest` | absent | `docs/ROADMAP.md:152` | — | — | 相關動詞=無 |
 | `update-branch` | absent | `docs/ROADMAP.md:135` | — | — | 相關動詞=無 |
-| `structurally-vacuous` | ok | `docs/ROADMAP.md:33`<br>`docs/ROADMAP.md:59`<br>`docs/ROADMAP.md:299` | `cli/src/wf_cli/validation.py:480`<br>`cli/src/wf_cli/validation.py:483`<br>`cli/src/wf_cli/validation.py:486` | `cli/src/wf_cli/review.py:618` | 相關動詞=無 |
+| `structurally-vacuous` | ok | `templates/review-escalation.md:189`<br>`templates/review-escalation.md:191`<br>`templates/review-escalation.md:197`<br>…共 7 | `cli/src/wf_cli/validation.py:480`<br>`cli/src/wf_cli/validation.py:483`<br>`cli/src/wf_cli/validation.py:486` | `cli/src/wf_cli/review.py:618` | 相關動詞=無 |
 
 ### 交付狀態（26）
 
@@ -358,26 +427,26 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `⏳待執行` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
 | `⏸阻塞` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:103`<br>`AI_WORKFLOW.md:191`<br>…共 11 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
 | `⚪一般` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；專責動詞=否 |
-| `📦已合併` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:171`<br>`templates/TASKS.md:6`<br>…共 7 | — | `cli/src/wf_cli/doctor.py:1269`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `📦已合併` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:171`<br>`templates/TASKS.md:6`<br>…共 7 | — | `cli/src/wf_cli/doctor.py:1649`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
 | `🔴紅線` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；專責動詞=否 |
 | `🚧進行中` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
-| `🚨已升級` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:104`<br>`AI_WORKFLOW.md:191`<br>…共 9 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
-| `↩退回` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/project.py:41`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
+| `🚨已升級` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:104`<br>`AI_WORKFLOW.md:191`<br>…共 12 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `↩退回` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/doctor.py:1246`<br>`cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/doctor.py:1246`<br>`cli/src/wf_cli/project.py:41`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
 | `⏳部署中` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:39` | `cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:39`<br>…共 4 | Project 選項=是；專責動詞=是 |
 | `⏸未部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_declare_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_declare_cmd.py:35`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>…共 5 | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:37`<br>`cli/src/wf_cli/project.py:46` | Project 選項=是；專責動詞=是 |
 | `✅已部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40` | `cli/src/wf_cli/commands/deploy_state_cmd.py:29`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:40`<br>…共 4 | Project 選項=是；專責動詞=是 |
 | `✅已驗證` | ok | `AI_WORKFLOW.md:18`<br>`templates/worktree-lifecycle.md:15` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:352` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:352`<br>…共 4 | Project 選項=是；專責動詞=是 |
-| `✅通過` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/project.py:40`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
-| `🏁完成` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/project-stub.md:25`<br>…共 6 | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/commands/handoff_cmd.py:359` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
-| `💡需求` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:88` | `cli/src/wf_cli/commands/handoff_cmd.py:88`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
-| `📥Backlog` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:113`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/card.py:295` | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
-| `🔍待查核` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/handoff-contract.md:154`<br>…共 6 | `cli/src/wf_cli/commands/handoff_cmd.py:92`<br>`cli/src/wf_cli/commands/review_cmd.py:104` | `cli/src/wf_cli/commands/handoff_cmd.py:92`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
-| `🔨執行中` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:9`<br>…共 4 | `cli/src/wf_cli/commands/assign_cmd.py:120`<br>`cli/src/wf_cli/commands/handoff_cmd.py:91` | `cli/src/wf_cli/commands/handoff_cmd.py:91`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
-| `🔬研究中` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:89` | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `✅通過` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/doctor.py:1245`<br>`cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/doctor.py:1245`<br>`cli/src/wf_cli/project.py:40`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
+| `🏁完成` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/project-stub.md:25`<br>…共 6 | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/commands/handoff_cmd.py:359`<br>`cli/src/wf_cli/doctor.py:1239` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/doctor.py:1239`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
+| `💡需求` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:88`<br>`cli/src/wf_cli/doctor.py:1234` | `cli/src/wf_cli/commands/handoff_cmd.py:88`<br>`cli/src/wf_cli/doctor.py:1234`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `📥Backlog` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:113`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/card.py:295`<br>`cli/src/wf_cli/doctor.py:1251` | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `🔍待查核` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/handoff-contract.md:154`<br>…共 6 | `cli/src/wf_cli/commands/handoff_cmd.py:92`<br>`cli/src/wf_cli/commands/review_cmd.py:104`<br>`cli/src/wf_cli/doctor.py:1238` | `cli/src/wf_cli/commands/handoff_cmd.py:92`<br>`cli/src/wf_cli/doctor.py:1238`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
+| `🔨執行中` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:9`<br>…共 5 | `cli/src/wf_cli/commands/assign_cmd.py:120`<br>`cli/src/wf_cli/commands/handoff_cmd.py:91`<br>`cli/src/wf_cli/doctor.py:1237` | `cli/src/wf_cli/commands/handoff_cmd.py:91`<br>`cli/src/wf_cli/doctor.py:1237`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `🔬研究中` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/doctor.py:1235` | `cli/src/wf_cli/commands/handoff_cmd.py:89`<br>`cli/src/wf_cli/doctor.py:1235`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
 | `🚀待部署` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38` | `cli/src/wf_cli/commands/deploy_state_cmd.py:27`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:28`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:38`<br>…共 4 | Project 選項=是；專責動詞=是 |
 | `🛑已停止` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/baseline-cascade.md:20` | `cli/src/wf_cli/commands/assign_cmd.py:89` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=是 |
 | `🧪驗證中` | ok | `AI_WORKFLOW.md:18` | `cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:41` | `cli/src/wf_cli/commands/deploy_state_cmd.py:30`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:41`<br>…共 4 | Project 選項=是；專責動詞=是 |
-| `🧭規劃中` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:90` | `cli/src/wf_cli/commands/handoff_cmd.py:90`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `🧭規劃中` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:90`<br>`cli/src/wf_cli/doctor.py:1236` | `cli/src/wf_cli/commands/handoff_cmd.py:90`<br>`cli/src/wf_cli/doctor.py:1236`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
 
 ### 卡面欄位（34）
 
@@ -395,8 +464,8 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `根因` | mention-only | `templates/bug-card.md:5` | — | — | open 渲染=否；amend 可改=否 |
 | `決策與風險` | absent | `templates/initiative-card.md:22` | — | — | open 渲染=否；amend 可改=否 |
 | `環境` | mention-only | `templates/bug-card.md:3`<br>`templates/tasks-card.md:8` | — | — | open 渲染=否；amend 可改=否 |
-| `目標` | write-only | `templates/initiative-card.md:5` | `cli/src/wf_cli/cleanup.py:801`<br>`cli/src/wf_cli/cleanup.py:826`<br>`cli/src/wf_cli/registry.py:861`<br>…共 4 | — | open 渲染=否；amend 可改=否 |
-| `範圍` | read-only | `templates/tasks-card.md:9` | — | `cli/src/wf_cli/doctor.py:770` | open 渲染=否；amend 可改=否 |
+| `目標` | write-only | `templates/initiative-card.md:5` | `cli/src/wf_cli/cleanup.py:992`<br>`cli/src/wf_cli/cleanup.py:1017`<br>`cli/src/wf_cli/registry.py:861`<br>…共 4 | — | open 渲染=否；amend 可改=否 |
+| `範圍` | read-only | `templates/tasks-card.md:9` | — | `cli/src/wf_cli/doctor.py:826` | open 渲染=否；amend 可改=否 |
 | `部署` | mention-only | `templates/tasks-card.md:8` | — | — | open 渲染=否；amend 可改=否 |
 | `里程碑` | absent | `templates/initiative-card.md:6` | — | — | open 渲染=否；amend 可改=否 |
 | `重現` | mention-only | `templates/bug-card.md:3` | — | — | open 渲染=否；amend 可改=否 |
@@ -405,7 +474,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `預期 vs 實際` | absent | `templates/bug-card.md:4` | — | — | open 渲染=否；amend 可改=否 |
 | `DB` | ok | `templates/tasks-card.md:6` | `cli/src/wf_cli/card.py:385`<br>`cli/src/wf_cli/card.py:412` | `cli/src/wf_cli/card.py:902` | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動 |
 | `Initiative` | ok | `templates/bug-card.md:8`<br>`templates/tasks-card.md:5` | `cli/src/wf_cli/card.py:384`<br>`cli/src/wf_cli/card.py:411`<br>`cli/src/wf_cli/card.py:578`<br>…共 6 | `cli/src/wf_cli/card.py:470`<br>`cli/src/wf_cli/card.py:901`<br>`cli/src/wf_cli/commands/amend_cmd.py:738`<br>…共 9 | open 渲染=是；amend 可改=是 |
-| `owner` | ok | `templates/initiative-card.md:3` | `cli/src/wf_cli/card.py:387`<br>`cli/src/wf_cli/card.py:432`<br>`cli/src/wf_cli/cleanup.py:863`<br>…共 11 | `cli/src/wf_cli/commands/amend_cmd.py:538`<br>`cli/src/wf_cli/commands/assign_cmd.py:253`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:44`<br>…共 15 | open 渲染=否；amend 可改=否 |
+| `owner` | ok | `templates/initiative-card.md:3` | `cli/src/wf_cli/card.py:387`<br>`cli/src/wf_cli/card.py:432`<br>`cli/src/wf_cli/cleanup.py:1054`<br>…共 11 | `cli/src/wf_cli/commands/amend_cmd.py:538`<br>`cli/src/wf_cli/commands/assign_cmd.py:253`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:44`<br>…共 15 | open 渲染=否；amend 可改=否 |
 | `spec 基線` | ok | `templates/initiative-card.md:4`<br>`templates/tasks-card.md:5` | `cli/src/wf_cli/card.py:385`<br>`cli/src/wf_cli/card.py:412`<br>`cli/src/wf_cli/card.py:578`<br>…共 6 | `cli/src/wf_cli/card.py:470`<br>`cli/src/wf_cli/commands/amend_cmd.py:735` | open 渲染=是；amend 可改=是 |
 | `分支` | ok | `templates/bug-card.md:7` | `cli/src/wf_cli/commands/assign_cmd.py:258` | `cli/src/wf_cli/commands/assign_cmd.py:254`<br>`cli/src/wf_cli/commands/open_cmd.py:228`<br>`cli/src/wf_cli/project.py:34`<br>…共 7 | open 渲染=否；amend 可改=否 |
 | `執行` | ok | `templates/bug-card.md:7`<br>`templates/tasks-card.md:4` | `cli/src/wf_cli/card.py:369` | `cli/src/wf_cli/card.py:214`<br>`cli/src/wf_cli/card.py:830`<br>`cli/src/wf_cli/card.py:844`<br>…共 4 | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動 |
@@ -414,7 +483,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `核心痛點` | ok | `templates/tasks-card.md:16` | `cli/src/wf_cli/card.py:389`<br>`cli/src/wf_cli/card.py:414`<br>`cli/src/wf_cli/resources.py:192` | `cli/src/wf_cli/commands/amend_cmd.py:742` | open 渲染=是；amend 可改=是 |
 | `規劃` | ok | `templates/tasks-card.md:3` | `cli/src/wf_cli/card.py:383`<br>`cli/src/wf_cli/card.py:410`<br>`cli/src/wf_cli/card.py:703` | `cli/src/wf_cli/card.py:473` | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動；⚠️ amend 讀它當判準卻改不動它 |
 | `資源宣告` | ok | `templates/tasks-card.md:20` | `cli/src/wf_cli/commands/amend_cmd.py:763`<br>`cli/src/wf_cli/resources.py:213`<br>`cli/src/wf_cli/resources.py:215` | `cli/src/wf_cli/commands/amend_cmd.py:767`<br>`cli/src/wf_cli/commands/amend_cmd.py:768`<br>`cli/src/wf_cli/commands/amend_cmd.py:774`<br>…共 9 | open 渲染=是；amend 可改=是 |
-| `需求` | ok | `templates/bug-card.md:7`<br>`templates/tasks-card.md:3` | `cli/src/wf_cli/card.py:381`<br>`cli/src/wf_cli/card.py:410`<br>`cli/src/wf_cli/card.py:703`<br>…共 5 | `cli/src/wf_cli/card.py:473`<br>`cli/src/wf_cli/card.py:900`<br>`cli/src/wf_cli/commands/handoff_cmd.py:88`<br>…共 4 | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動；⚠️ amend 讀它當判準卻改不動它 |
+| `需求` | ok | `templates/bug-card.md:7`<br>`templates/tasks-card.md:3` | `cli/src/wf_cli/card.py:381`<br>`cli/src/wf_cli/card.py:410`<br>`cli/src/wf_cli/card.py:703`<br>…共 5 | `cli/src/wf_cli/card.py:473`<br>`cli/src/wf_cli/card.py:900`<br>`cli/src/wf_cli/commands/handoff_cmd.py:88`<br>…共 5 | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動；⚠️ amend 讀它當判準卻改不動它 |
 | `驗收條件` | ok | `templates/tasks-card.md:30` | `cli/src/wf_cli/card.py:393`<br>`cli/src/wf_cli/card.py:420`<br>`cli/src/wf_cli/resources.py:192` | `cli/src/wf_cli/commands/amend_cmd.py:747` | open 渲染=是；amend 可改=是 |
 | `驗證` | ok | `templates/tasks-card.md:34` | `cli/src/wf_cli/card.py:397`<br>`cli/src/wf_cli/card.py:424` | `cli/src/wf_cli/commands/amend_cmd.py:752` | open 渲染=是；amend 可改=是 |
 
@@ -425,4 +494,3 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `cli/src/wf_cli/card.py` | `resources` | `render_block` | `find_conflicts` |
 | `cli/src/wf_cli/commands/amend_cmd.py` | `resources` | `render_block` | `find_conflicts` |
 | `cli/src/wf_cli/commands/assign_cmd.py` | `card` | `format_branch_worktree` | `validate_capability_routing／validate_routing_field／validate_routing_names` |
-
