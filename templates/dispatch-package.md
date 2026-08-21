@@ -48,9 +48,9 @@
 - 交付方式：**推分支到 origin，不 merge**；回報最終 **40 碼 SHA** ＋逐驗收條件證據 ＋「待需求方裁決」清單
 - 交接：由祕書寫 `handoff` 事件並派審；執行者不得自派查核者、不得自 merge（canonical §2.1）
 
-### 跨工具查核收據（查核者無 `wfcli` 時）
+### 跨工具查核的身分與留痕（查核者無 `wfcli` 時）
 
-- 查核者先在被審 Issue conversation 或 PR review body 留 `wf-review-receipt:v1`（`card_id`、完整 `source_sha`、查核報告 UTF-8 `report_sha256`）；GitHub author 才是可驗證身分，模型／工具名稱只是自述。
-- PM 僅能逐字轉錄與收據 hash 相符的報告，並在 `wfcli review` evidence 引用 receipt URL；不能以 `--reviewer` 自由字串代替收據。
-- 交付／結案前執行 `wfcli doctor <repo_root> --review-channel --owner <owner> --project <n> --repo <owner/repo> --issue-number <n> --card-id <CARD_ID> --source-sha <40 SHA>`。`receipt_untranscribed` 或 `unobservable` 一律不得視為已查核；前者催轉錄，後者只可陳述「不可觀測」。
+- ⚠️ **跨家族查核者的身分機械上不可驗證，由需求方背書**。它沒有 GitHub 寫入通道（ai-workflow#13），貼不了收據；要它留收據等於要需求方代貼，而代貼驗的是「需求方確實貼了」而非「查核者確實這樣說」——那件事需求方轉貼時本來就在做。故**不要求查核者留收據**，`wfcli review` 的 `--reviewer` 就是自由字串，身分憑需求方背書而非平台憑證（需求方 2026-08-19 裁定；原「必須留 `wf-review-receipt:v1`、不得以 `--reviewer` 代替」紀律於此撤除，理由是它在本通道上構造上無法遵守）。
+- 收據仍是**選配**：查核者若本身有 GitHub 寫入通道，可自行在被審 Issue conversation 或 PR review body 留 `wf-review-receipt:v1`（`card_id`、完整 `source_sha`、查核報告 UTF-8 `report_sha256`），此時 GitHub comment author 是平台可驗證身分，PM 轉錄前重算 hash 並在 evidence 引用 receipt URL。⚠️ **本節撤除紀律後沒有補上任何機器面保證**：PM 轉錄是否忠實於查核者原話，在沒有收據的路徑上**完全沒有機器可檢查的東西**；`wfcli` 是唯一狀態寫入通道，而 PM 是唯一寫入者。
+- 交付／結案前執行 `wfcli doctor <repo_root> --review-channel --owner <owner> --project <n> --repo <owner/repo> --issue-number <n> --card-id <CARD_ID> --source-sha <40 SHA>`。`receipt_untranscribed` 或 `unobservable` 一律不得視為已查核；前者催轉錄，後者只可陳述「不可觀測」。輸出另帶 `identity_basis`（`requester_endorsed`／`receipt_backed`／`not_applicable`）——它**只標明身分依據、不報錯也不影響判定**，讀 `recorded` 時據此理解「進狀態面的是裁決內容，不是查核者身分」。⚠️ doctor 是偵測器不是閘門（`AGENTS.md`：擋不住任何一次違規的落地），且**無自動執行路徑**——兩 repo 的 `.github` 對 doctor 零命中，只有本流程要求會叫它。
 - ⚠️ **留言引用紀律**：Issue／PR 留言中不得出現「wf-review-event」緊接半形冒號的完整前綴字樣，除非該留言本身就是事件（首行為合格 marker）。契約 §3.1.4 把任何含該前綴的留言判為受管轄，**引用即停機**——實測 #15／#17 兩張三面一致的已結案卡都因派審留言引用而被凍（2026-08-11）。轉述時寫「event marker」或「wf-review-event 前綴（冒號略）」。本條目本身即示範合規寫法：組裝進派工包照貼留言也不會觸發。receipt 前綴不受此限（其未知形態落 unobservable，方向本就保守）。
