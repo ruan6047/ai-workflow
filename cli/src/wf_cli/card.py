@@ -292,7 +292,7 @@ class Card:
     branch: str | None = None
     worktree: str | None = None
     iteration: int = 0
-    delivery_status: str = "📥Backlog"
+    delivery_status: str = "💡需求"
     deployment_status: str = "—不適用"
     last_handoff: str = field(default_factory=now_iso8601)
     chain_depth: int = 0

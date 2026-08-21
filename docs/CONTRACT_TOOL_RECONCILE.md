@@ -337,7 +337,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | 族 | 成員 | 建議處置 |
 |---|---|---|
 | §3 五個已知實例 | `review-invalid`、`preflight-failed`、`status-change`、amend 繞過 `find_conflicts`、`需求` 欄 | `補寫入者`（`review-invalid` 工程量最小：偵測已在，只差留痕）。`amend` 那項是**閘門繞過**，風險高於留痕缺失，建議單獨開卡 |
-| §4.1 狀態無專責動詞 | `⏸阻塞`、`⏳待執行`、`💡需求`、`🔨執行中`、`🚨已升級`、`📦已合併`，以及 `assign --status` 自由文字逃生口 | `🚨已升級` `補寫入者`；`📦已合併` `待需求方裁定`（先釐清現況是怎麼設定的）；其餘 `待需求方裁定`（補動詞或從狀態表移除）。**`--status` 該不該收斂成 `choices` 是獨立一問**——它現在讓所有前提都可繞過 |
+| §4.1 狀態無專責動詞 | `⏸阻塞`、`⏳待執行`、`💡需求`、`🔨執行中`、`🚨已升級`、`📦已合併`，以及 `assign --status` 自由文字逃生口。**`📥Backlog` 於 2026-08-21 加入本族**（`WF-OPEN-INITIAL-STATUS1`：`open` 的初始值改為 `💡需求` 後，`card.py`／`doctor.py` 兩處字面消失，本狀態自此沒有任何專責動詞寫得進去，只剩 `assign --status`／`handoff --status` 兩個自由文字逃生口。該卡的非目標明列「不新增旗標」，故未補動詞——**補不補由需求方另裁**） | `🚨已升級` `補寫入者`；`📦已合併` `待需求方裁定`（先釐清現況是怎麼設定的）；其餘 `待需求方裁定`（補動詞或從狀態表移除）。**`--status` 該不該收斂成 `choices` 是獨立一問**——它現在讓所有前提都可繞過 |
 | §4.2 開卡後改不動 | `規劃`、`執行`、`查核`、`DB`、`服務的原始目標` | `補寫入者`（`規劃` 優先：它與 `需求` 同樣被讀作授權判準） |
 | §4.3 完全不渲染 | tasks-card 7 項＋initiative-card 6 項＋bug-card 6 項 | `待需求方裁定`：`從契約移除`（承認這些是手填欄位）或補 `wfcli open --kind initiative/bug`。**不建議逐欄補**——19 個欄位逐欄開卡正是本卡要消滅的「修實例不修形狀」 |
 | §4.4 事件無 writer | `escalation-epoch-change`、`handoff-accepted`、`review-correction`、`review-marker-clearance`、`baseline-change-request`、四個 clearance 分類 | `補寫入者`。`handoff-accepted` 優先——`event-verified` preflight 依據的不可達性以它為根因 |
@@ -378,6 +378,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "delivery_status/⏳待執行": "read-only",
     "delivery_status/⏸阻塞": "read-only",
     "delivery_status/⚪一般": "absent",
+    "delivery_status/📥Backlog": "read-only",
     "delivery_status/📦已合併": "read-only",
     "delivery_status/🔴紅線": "absent",
     "delivery_status/🚨已升級": "read-only",

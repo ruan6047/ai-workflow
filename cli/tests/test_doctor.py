@@ -1768,12 +1768,50 @@ def test_drift_open_initial_status_is_pinned_and_open_has_no_status_knob():
 # ---- 各動詞推導 ----
 
 
-def test_drift_open_derives_backlog_and_flags_moved_face():
+def test_drift_open_derives_requirement_and_flags_moved_face():
+    """open 推導 ``💡需求``；欄位被搬到 ``📥Backlog`` 而 Log 只有 open ⇒ drift。
+
+    ⚠️ 本卡（WF-OPEN-INITIAL-STATUS1）把這兩條斷言的語意整個反轉，逐條對照：
+
+    - 第一條（consistent）。**舊判準**：open 之後的預期是 ``📥Backlog``，欄位停在
+      ``📥Backlog`` 才算一致。**新判準**：規劃閘門在開卡**之後**才跑，開卡當下不可能
+      已通過（canonical §3.1／採用專案 ROADMAP §2.0），所以預期是 ``💡需求``。
+    - 第二條（drift）。**舊判準**：一張卡從 ``📥Backlog`` 移到 ``💡需求`` 是漂移——而
+      那正是 PM 為了符合規劃閘門所做的**補救**，於是觀測面把合規記成異常，且與真正的
+      違規（工具直接丟進 Backlog）在欄位上長得一模一樣。**新判準**：方向調轉，
+      ``📥Backlog`` 才是需要一則明示事件來解釋的那一邊；沒有事件就報漂移。
+
+    兩條都不是為了讓紅的變綠而放寬——斷言數量與強度不變（仍是逐字黃金值的三元組），
+    變的只有「哪一個值是預期」。反向的鑑別力由下一個測試（明示事件在場時不得報漂移）
+    補上，否則一個「永遠回 ``💡需求``」的實作也會通過本測試。
+    """
     body = _drift_body(_OPEN_LINE)
-    ok = audit_state_face_drift("CARD-A", body, "📥Backlog")
-    assert (ok.verdict, ok.rule, ok.expected_status) == ("consistent", RULE_OPEN, "📥Backlog")
-    moved = audit_state_face_drift("CARD-A", body, "💡需求")
-    assert (moved.verdict, moved.expected_status, moved.actual_status) == ("drift", "📥Backlog", "💡需求")
+    ok = audit_state_face_drift("CARD-A", body, "💡需求")
+    assert (ok.verdict, ok.rule, ok.expected_status) == ("consistent", RULE_OPEN, "💡需求")
+    moved = audit_state_face_drift("CARD-A", body, "📥Backlog")
+    assert (moved.verdict, moved.expected_status, moved.actual_status) == ("drift", "💡需求", "📥Backlog")
+
+
+def test_drift_explicit_move_to_backlog_is_consistent_and_handoff_stays_undecidable():
+    """對照組：明示寫下 ``📥Backlog`` 的事件在場時，欄位是 ``📥Backlog`` 不得報漂移。
+
+    ⚠️ 這一條是上一個測試的**反向可證偽**：只驗「open ⇒ 💡需求」會被一個「永遠回
+    ``💡需求``」的推導器通過，本軸就退化成一個常數。這裡讓推導器必須真的讀事件。
+
+    ⚠️ 卡面驗收原文寫的是「由 **handoff** 明示移到 ``📥Backlog``」，但 handoff 的 Log
+    行構造上**不記** next-stage 也不記 ``--status`` 覆寫值（見 ``UNDECIDABLE_HANDOFF``
+    的說明），所以 handoff 在本軸永遠落「不判定」、拿不到 ``consistent``。這與本卡無關、
+    本卡也沒改它；末兩行把這個事實一併釘住，免得它日後被讀成本卡造成的。**真正逐字記下
+    交付狀態的動詞是 assign**，對照組因此建在 assign 上。
+    """
+    line = _ASSIGN_LINE.replace("交付狀態 🔨執行中", "交付狀態 📥Backlog")
+    moved = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, line), "📥Backlog")
+    assert (moved.verdict, moved.rule, moved.expected_status) == ("consistent", RULE_ASSIGN, "📥Backlog")
+    # 同一則事件在場、欄位卻停在 open 的初始值 ⇒ 仍須報漂移（推導器沒有偏袒 💡需求）。
+    stale = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, line), "💡需求")
+    assert (stale.verdict, stale.expected_status, stale.actual_status) == ("drift", "📥Backlog", "💡需求")
+    handoff = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _HANDOFF_LINE), "📥Backlog")
+    assert (handoff.verdict, handoff.rule) == ("undecidable", UNDECIDABLE_HANDOFF)
 
 
 def test_drift_backlog_face_needs_an_explaining_event_and_handoff_does_not_explain():
@@ -2010,8 +2048,10 @@ def test_equivalent_shape_47_manual_board_move_without_event_is_drift():
 
 def test_drift_render_reports_counts_share_and_itemizes_only_noteworthy_cards():
     findings = [
-        audit_state_face_drift("C1", _drift_body(_OPEN_LINE), "📥Backlog"),
-        audit_state_face_drift("C2", _drift_body(_OPEN_LINE), "💡需求"),
+        # C1 一致／C2 漂移：兩者依 WF-OPEN-INITIAL-STATUS1 對調——open 的預期值改為
+        # 💡需求，故停在 📥Backlog 的那張才是需要事件解釋的。計數與逐條列出的判準不變。
+        audit_state_face_drift("C1", _drift_body(_OPEN_LINE), "💡需求"),
+        audit_state_face_drift("C2", _drift_body(_OPEN_LINE), "📥Backlog"),
         audit_state_face_drift("C3", _drift_body(_OPEN_LINE, _ASSIGN_LINE, _HANDOFF_LINE), "🔍待查核"),
     ]
     text = render_state_face_drift(findings)

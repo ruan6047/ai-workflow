@@ -132,6 +132,26 @@ def _deploy_declare_argv(card_id: str, **overrides) -> list[str]:
     return argv
 
 
+def test_open_initial_status_is_the_same_for_every_tier(fake_runner):
+    """五個級別全開一次，初始交付狀態必須逐級相同（⛔ 不得依 --tier 分流）。
+
+    canonical `AI_WORKFLOW.md` §3.1 只點名 T3 的批註放行，採用專案 cpbl
+    `docs/ROADMAP.md` §2.0 說「所有新卡」；需求方 2026-08-21 裁定採後者——理由是
+    不讓 wfcli 對「哪一級要過閘門」有自己的意見，且一律 💡需求 是保守方向（採用專案
+    要放寬，在自己的流程裡多一次明示轉換即可；反向不安全）。這條把該裁定釘成機械事實：
+    哪天有人為某一級開特例，逐級相同就會破。
+    """
+    project = resolve_project(fake_runner, "acme", 1)
+    for tier in ("T0", "T1", "T2", "T3", "T4"):
+        assert run_cli(_open_argv(f"TIER-{tier}-CARD1", **{"--tier": tier})) == 0
+    seen = {
+        i.fields["級別"]: i.fields["交付狀態"]
+        for i in list_items(fake_runner, project)
+        if i.fields["卡ID"].startswith("TIER-")
+    }
+    assert seen == {t: "💡需求" for t in ("T0", "T1", "T2", "T3", "T4")}, seen
+
+
 def test_open_creates_draft_item_with_all_ledger_fields(fake_runner, capsys):
     rc = run_cli(_open_argv("DEMO-CARD1", **{"--resources": "file:demo.py,port:9000"}))
     assert rc == 0
@@ -141,7 +161,9 @@ def test_open_creates_draft_item_with_all_ledger_fields(fake_runner, capsys):
     item = items[0]
     assert item.fields["卡ID"] == "DEMO-CARD1"
     assert item.fields["級別"] == "T3"
-    assert item.fields["交付狀態"] == "📥Backlog"
+    # WF-OPEN-INITIAL-STATUS1：open 寫 💡需求，不是 📥Backlog。規劃閘門在開卡**之後**
+    # 才跑（canonical §3.1／採用專案 ROADMAP §2.0），開卡當下不可能已經通過。
+    assert item.fields["交付狀態"] == "💡需求"
     assert item.fields["部署狀態"] == "—不適用"
     assert "file:demo.py" in item.body
     assert "## 資源宣告" in item.body
