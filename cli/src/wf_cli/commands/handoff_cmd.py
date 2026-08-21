@@ -45,6 +45,51 @@ implementation`` 承載「查核退回」語意（review → 退回 implementati
 Issue 不關，**只記錄本次實際動作與阻擋原因**。守衛擋下、一個動作都沒走的 ``detect_only``
 不寫——世界沒被動過，重跑就能重新得到同一份判定。
 
+## ``--next-stage backlog``：閘門過了、進待辦池（WF-BACKLOG-STAGE1）
+
+``📥Backlog`` 在 canonical ``AI_WORKFLOW.md:18`` 的序列裡（``🧭規劃中 → 📥Backlog``），
+但 **從來沒有專責 writer**：唯一寫得出它的是 ``wfcli open`` 的 dataclass 預設（意外充當）
+與 ``--status`` 這個無 ``choices`` 的自由文字旗標。後果是**合規的轉換與違規的轉換在機械
+上完全同形**。本階段補上那個動詞。
+
+**「受檢查的」逐項回答**（ai-workflow#118 的 R1-002 用詞；三個候選逐一裁定，不挑好做的做）：
+
+1. **要帶前提檢查。** 只加一個 enum 值＝只有「專責」沒有「受檢查」，那不閉合 R1-002
+   ——它抱怨的正是自由文字逃生口「不能取代具名、**受前提檢查**的狀態轉換」。
+
+2. **檢查的是：卡片現在的交付狀態必須是 ``🧭規劃中``**（`BACKLOG_REQUIRED_PRIOR_STATUS`）。
+   資料來源是 Project 的交付狀態欄，與 ``release`` 讀 ``部署狀態`` 同一形狀、同一退出碼。
+   **它會擋人**：剛開的卡、執行中的卡、已退回的卡一律拒絕；要進 Backlog 得先真的到過
+   規劃階段。
+
+3. **被否決的候選 A——「Log 內須有 planning 階段的事件」**（卡面舉的例）：**機械上做不到。**
+   ``handoff`` 的 Log 行只記 owner／iteration／SHA／證據，**不記 ``--next-stage`` 也不記
+   ``--status``**（`doctor.HANDOFF_STAGE_EXPECTED_STATUS` 上方的長註解逐條寫明，並把後果
+   釘成 `doctor.UNDECIDABLE_HANDOFF`）。因此 ``handoff --next-stage planning`` 留下的行與
+   ``--next-stage review`` 留下的行**逐位元組相同**。照這條做，檢查會退化成「Log 裡有任何一
+   筆 handoff」——那才是恆真的裝飾。要讓它成立必須改 handoff 的留痕格式與 doctor 的推導語意，
+   兩者都在本卡射程外。
+
+4. **被否決的候選 B——「需求方批註放行」**（canonical §3.1 T3 列的字面）：**在本 repo 恆真，
+   故明文不實作。** ``docs/ROADMAP.md`` §1：人類、PM、執行者、查核者共用同一個 GitHub 帳號
+   ``ruan6047``，且該節逐字禁止「寫看起來在驗證身分、實際恆真的條文」。把它做成欄位＝正是
+   被禁的那個東西。
+
+**這個檢查不驗什麼**（誠實邊界，不得被讀成比實際更強）：
+
+- **它不證明規劃閘門真的跑過。** ``🧭規劃中`` 本身既可由 ``handoff --next-stage planning``
+  寫入，也可由 ``assign --status 🧭規劃中`` 這個自由文字旗標寫入。本檢查證明的是「狀態面
+  說它來自規劃」，不是「有人真的做了規劃」。門檻由「沒有」升到「至少得先移動到規劃」，
+  **不是升到不可偽造**。
+- **它不驗需求方批註**（見第 4 點）。canonical §3.1 T3 列的「需求方批註放行後才進
+  ``📥Backlog``」這半句**仍然無執行者**，本卡不宣稱它已落地。
+- **``--status`` 仍然繞得過。** 給了 ``--status`` 時整條 ``elif`` 鏈不進來，前提一條都不跑
+  ——這與 ``release`` 的部署閘門是**同一個既有形狀**，不是本卡新開的口。收斂 ``--status``
+  成 ``choices`` 是獨立一問（``docs/CONTRACT_TOOL_RECONCILE.md`` §4.1 已登記），不在本卡射程內。
+
+**不遞增 iteration**：只有 ``--next-stage implementation`` 承載退回語意，backlog 與
+``review``／``release`` 同樣走 else 分支（現值原樣寫回）。
+
 **不帶 ``--cleanup`` 的代價也必須講明**：那條路徑會在清理完成前寫入終態，依
 `cleanup.classify_state` 的分類即 ``illegal_terminal_before_cleanup``；守衛不自動
 修復非法態，所以事後再補 ``--cleanup`` 會被擋。因此該路徑會印出警示，而不是靜靜
@@ -88,9 +133,16 @@ STAGE_STATUS = {
     "requirement": "💡需求",
     "research": "🔬研究中",
     "planning": "🧭規劃中",
+    "backlog": "📥Backlog",
     "implementation": "🔨執行中",
     "review": "🔍待查核",
 }
+
+#: ``--next-stage backlog`` 的**唯一**合法前身狀態（canonical ``AI_WORKFLOW.md:18``
+#: 的序列 ``🧭規劃中 → 📥Backlog``）。讀 Project 的交付狀態欄，不符即拒絕——形狀與
+#: ``release`` 讀 ``部署狀態`` 完全相同。**這個檢查會擋人，不是恆真的裝飾**：任何不在
+#: 規劃中的卡（含剛開的卡）都過不了。它**不驗**的東西見本模組 docstring。
+BACKLOG_REQUIRED_PRIOR_STATUS = STAGE_STATUS["planning"]
 
 #: 不帶 ``--cleanup`` 的 release 會造出「終態已寫、清理未做」的組合。這不是猜測，
 #: 是 `cleanup.classify_state` 對該組合的分類名稱。
@@ -277,7 +329,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("card_id")
     p.add_argument("--to", required=True, help="下一位 owner（角色／帳號／模型@工具）")
     p.add_argument(
-        "--next-stage", required=True, choices=["requirement", "research", "planning", "implementation", "review", "release"]
+        "--next-stage",
+        required=True,
+        choices=[
+            "requirement", "research", "planning", "backlog",
+            "implementation", "review", "release",
+        ],
     )
     p.add_argument("--source-sha", required=True, help="完整 40 字元 hex SHA")
     p.add_argument("--evidence", required=True, help="測試／CI／審核／決策連結或摘要")
@@ -357,6 +414,18 @@ def run(args: argparse.Namespace) -> int:
             )
             return 4
         new_status = "🏁完成"
+    elif args.next_stage == "backlog":
+        current_status = item.fields.get("交付狀態")
+        if current_status != BACKLOG_REQUIRED_PRIOR_STATUS:
+            print(
+                "[handoff] 拒絕：只有 "
+                f"{BACKLOG_REQUIRED_PRIOR_STATUS} 的卡可以進 {STAGE_STATUS['backlog']}"
+                f"（目前交付狀態={current_status}；canonical §0 的序列 "
+                f"{BACKLOG_REQUIRED_PRIOR_STATUS} → {STAGE_STATUS['backlog']}）",
+                file=sys.stderr,
+            )
+            return 4
+        new_status = STAGE_STATUS[args.next_stage]
     else:
         new_status = STAGE_STATUS[args.next_stage]
 

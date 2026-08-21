@@ -925,6 +925,76 @@ def test_handoff_next_stage_release_does_not_increment_iteration(fake_runner):
     assert item.fields["iteration"] == 0
 
 
+def test_handoff_next_stage_backlog_writes_backlog_only_from_planning(fake_runner, capsys):
+    """WF-BACKLOG-STAGE1 端到端：`📥Backlog` 有了專責 writer，且那個 writer 受前提檢查。
+
+    ⚠️ 兩個方向都在同一條測試裡，因為只驗放行那一半的話，一個「無條件寫
+    📥Backlog」的實作也會通過。
+    """
+    run_cli(_open_argv("BACKLOG-CARD1"))
+    project = resolve_project(fake_runner, "acme", 1)
+
+    # ⚠️ 起點刻意先推到 🔨執行中：本 repo 現行的 `open` 預設就是 📥Backlog
+    # （那正是 #118 在修的洞），直接從剛開的卡驗「沒被寫成 📥Backlog」會與預設值
+    # 混淆——拒絕生效與拒絕失效在那個樣本上長得一樣。
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD1", "0" * 40, **{"--next-stage": "implementation"})
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "🔨執行中"
+
+    # (b) 前提不成立時必須拒絕：🔨執行中 不是 🧭規劃中。
+    blocked_sha = "1" * 40
+    rc_blocked = run_cli(
+        _handoff_argv("BACKLOG-CARD1", blocked_sha, **{"--next-stage": "backlog"})
+    )
+    assert rc_blocked == 4
+    assert "只有 🧭規劃中 的卡可以進 📥Backlog" in capsys.readouterr().err
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "🔨執行中"      # 欄位一格都沒被寫
+    assert f"SHA {blocked_sha}" not in item.body      # Log 也沒留下這次交接
+
+    # 先合規地過規劃階段。
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD1", "2" * 40, **{"--next-stage": "planning"})
+    ) == 0
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "🧭規劃中"
+
+    # (a) 前提成立 → 專責動詞寫出 📥Backlog。
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD1", "3" * 40, **{"--next-stage": "backlog", "--to": "待認領"})
+    ) == 0
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "📥Backlog"
+    assert item.fields["owner"] == "待認領"
+    assert item.fields["iteration"] == 1  # 起點那次 implementation 記的 1，backlog 不遞增
+    assert f"SHA {'3' * 40}" in item.body
+
+
+def test_handoff_backlog_gate_is_bypassed_by_the_free_text_status_flag(fake_runner):
+    """誠實邊界：``--status`` 仍然繞得過本閘門——與 ``release`` 的部署閘門同形。
+
+    這**不是**本卡新開的口（`--status` 加 choices 是獨立一問，見
+    docs/CONTRACT_TOOL_RECONCILE.md §4.1）。釘住它是為了讓「這個檢查有多強」寫在
+    測試裡而不是只寫在散文裡：宣稱它擋得住所有路徑的人會被這條測試打臉。
+    """
+    run_cli(_open_argv("BACKLOG-CARD2"))
+    project = resolve_project(fake_runner, "acme", 1)
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD2", "4" * 40, **{"--next-stage": "implementation"})
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "🔨執行中"
+
+    # 卡在 🔨執行中（非 🧭規劃中），但帶 --status 就整條前提鏈都不跑。
+    assert run_cli(
+        _handoff_argv(
+            "BACKLOG-CARD2", "5" * 40,
+            **{"--next-stage": "backlog", "--status": "📥Backlog"},
+        )
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "📥Backlog"
+
+
 def test_handoff_iteration_override_sets_exact_value_and_warns(fake_runner, capsys):
     run_cli(_open_argv("ITER-CARD4"))
     rc = run_cli(_handoff_argv("ITER-CARD4", "5" * 40, **{"--iteration": "7"}))

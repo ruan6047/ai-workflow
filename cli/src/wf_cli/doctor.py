@@ -1207,7 +1207,7 @@ def audit_legacy_authority_notes(
 # - ``open`` 的 Log 行不記狀態，但 ``wfcli open`` 沒有 ``--status`` 旋鈕，
 #   初始交付狀態是程式常數（`card.Card.delivery_status` 預設）→ 可推導。
 # - ``handoff`` 的 Log 行**只記 owner／iteration／SHA／證據，不含 next-stage
-#   也不含實際寫入的狀態**。它寫了什麼由 ``--next-stage``（六個，對應表
+#   也不含實際寫入的狀態**。它寫了什麼由 ``--next-stage``（七個，對應表
 #   `HANDOFF_STAGE_EXPECTED_STATUS`）或 ``--status``（無 choices 的自由文字）
 #   決定，而兩者都不在留痕裡 → **一律落「不判定」，不得默認通過**（卡面
 #   驗收第 1 條）。對應表本身仍完整列出：它記錄的是事件模型，「表完整」與
@@ -1225,8 +1225,8 @@ def audit_legacy_authority_notes(
 # 強制面的承接者是 CI（DEV-AIWF-MINIMAL-CI1，#48）；且依 ROADMAP §2，連 #48
 # 也只產生紅叉，紅叉要變成閘門須套 repo 的 required_status_checks ruleset。
 
-#: ``handoff --next-stage`` → 交付狀態 的完整對應（六個，缺一不可）。
-#: 前五個鏡射 `commands/handoff_cmd.py` 的 ``STAGE_STATUS``；``release`` 在該
+#: ``handoff --next-stage`` → 交付狀態 的完整對應（七個，缺一不可）。
+#: 前六個鏡射 `commands/handoff_cmd.py` 的 ``STAGE_STATUS``；``release`` 在該
 #: 模組是獨立分支（部署閘門通過後寫 ``🏁完成``），此處併入同一張表以滿足
 #: 「推導表窮舉」。**測試以寫入端為準釘住每一格**（test_doctor.py），改錯任何
 #: 一格測試必紅。
@@ -1234,6 +1234,7 @@ HANDOFF_STAGE_EXPECTED_STATUS: dict[str, str] = {
     "requirement": "💡需求",
     "research": "🔬研究中",
     "planning": "🧭規劃中",
+    "backlog": "📥Backlog",
     "implementation": "🔨執行中",
     "review": "🔍待查核",
     "release": "🏁完成",
@@ -1393,7 +1394,7 @@ _UNDECIDABLE_DETAILS: dict[str, str] = {
     UNDECIDABLE_HANDOFF: (
         "最後一筆是 handoff：其 Log 行只記 owner／iteration／SHA／證據，不含 "
         "next-stage 也不含 --status 覆寫值，寫入的交付狀態無法由留痕反推"
-        "（六個 next-stage 的對應表見 HANDOFF_STAGE_EXPECTED_STATUS）。依卡面"
+        "（七個 next-stage 的對應表見 HANDOFF_STAGE_EXPECTED_STATUS）。依卡面"
         "驗收落「不判定」，不得默認通過。"
     ),
     UNDECIDABLE_ASSIGN_NO_STATUS: (
