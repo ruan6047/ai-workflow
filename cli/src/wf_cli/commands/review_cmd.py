@@ -30,6 +30,33 @@
 - review 只寫兩件事：Issue 留言（裁決全文，canonical §4.3「事件＝Issue timeline ＋
   結構化 comment」）＋交付狀態（``✅通過``／``↩退回``，review-escalation.md §1）；
   另在 body 的 ``## Log`` 補一行索引，與 assign／handoff 的留痕慣例一致。
+
+## escalation 帳（WF-22-CLI4 切片 A）
+
+本指令自此以 **lifecycle writer** 身分標記 ``accepted``、把 ``status`` 記為 ``open``
+（§2：新採認的 blocking finding 以 open 開始），並依 §3 推導 ``counts_toward_escalation``
+寫進留言的結構化區塊與 Log 索引行。reviewer 自填的這三個鍵仍一律警示並忽略。
+
+§3 第 1 款（preflight）**不是閘門**，是一個由 writer 加蓋到事件上的導出值
+（``preflight_basis_binding``）。今天恆為 ``structurally-unavailable``：本 repo 沒有受管轄的
+preflight pass event writer，也沒有該事件的可驗證格式，故該款無從成立，本指令寫出的每一則
+裁決都帶 ``escalation_account: not-asserted``（不對帳作斷言），並**缺** §5:168 的
+``preflight_passed: true``——已知且刻意記錄的 schema 落差。
+
+這是 WF-22-CLI4-R4-01 的處置＋需求方 2026-08-12 的裁定：上一輪把「有沒有依據」交給一個讀
+留言內文的讀取器，任意四欄 YAML 就能解鎖（留言內文判定不出 canonical §4.1 的「受管轄」，
+那是通道屬性）；本輪刪掉讀取器，但**不改成恆拒**——恆拒會讓狀態面再次分不出「已查核」與
+「未查核」，那是 WF-25-REVIEW-WRITE-CHANNEL1（ai-workflow#13）解過的問題。正解是照寫並
+把恆虛性寫在事件上。
+
+寫入前另有三道 fail-closed 閘門（全部走 exit 2，未寫入任何遠端狀態）：
+
+1. **``attempt_id`` 去重**：同一 attempt 已存在即拒。必須擋在寫入前——``doctor.py``
+   對重複 attempt 判 ``marker_quarantined``，而該隔離的解除表示法未定義（#30）。
+2. **帳可重建**：cutover（``contract-baseline``）之後的留痕若有讀不懂的 marker，或
+   review event 缺結構化 counts 事實，一律拒絕；**未知不得推定為不計數**
+   （review-escalation.md:276）。
+3. **checkpoint 漏建**：上一個可計數 attempt 序位 ≥3 卻找不到對應 checkpoint 即拒。
 """
 
 from __future__ import annotations
@@ -53,17 +80,51 @@ from ..project import (
 from ..review import (
     ReviewParseError,
     attempt_id,
+    derive_counts_toward_escalation,
+    derive_preflight_basis_binding,
     parse_structured_block,
     render_verdict_comment,
 )
 from ..validation import (
     ValidationError,
+    build_accepted_marks,
+    build_issue_event_history,
+    check_attempt_not_duplicated,
+    check_checkpoint_gate,
+    counted_attempts,
+    derive_preflight_basis,
     review_invalid_reasons,
+    unasserted_attempts,
+    validate_accepted_overrides,
+    validate_marked_by,
     validate_review_report,
     validate_source_sha,
 )
 
 AWAITING_REVIEW_STATUS = "🔍待查核"
+
+
+def fetch_issue_comments(runner, repo: str, issue_number: int) -> list[dict]:
+    """讀回 Issue 的留言（唯讀）。依 ``gh`` 回傳順序，即建立順序。
+
+    刻意不放 ``project.py``：那是 Projects v2 adapter，而留言屬 Issue timeline；且
+    ``project.py`` 不在本卡宣告的寫入集內。``runner`` 只需具備 ``run_json``（鴨子型別），
+    因此本函式不引入任何新的模組相依。
+    """
+    data = runner.run_json(
+        ["issue", "view", str(issue_number), "--repo", repo, "--json", "comments"]
+    )
+    return list((data or {}).get("comments") or [])
+
+
+def resolve_platform_login(runner) -> str:
+    """``accepted=false`` 標記者的平台身分：``gh api user --jq .login``。
+
+    刻意不接受自陳字串：``--reviewer`` 那一欄只驗非空（handoff-contract.md §3.1.1
+    明記此洞），身分維度上等同無佐證；撤銷採認是把 finding 移出 open set 的動作，
+    不能靠自述成立。
+    """
+    return runner.execute(["api", "user", "--jq", ".login"]).strip()
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -94,6 +155,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         default=0,
         help="attempt_id 的 epoch（review-escalation.md §5，預設 0）；"
         "epoch 遞增須另有 escalation-epoch-change 授權，本指令不代為切換",
+    )
+    p.add_argument(
+        "--mark-not-accepted",
+        action="append",
+        default=[],
+        metavar="FINDING_ID=理由",
+        help="把某個 finding 標為 accepted=false（預設全部 true，見 review-escalation.md §2）；"
+        "理由必填，標記者身分取自 `gh api user`。可重複給。",
     )
     p.add_argument(
         "--validate-only",
@@ -167,11 +236,27 @@ def run(args: argparse.Namespace) -> int:
             "依可重現證據標記，reviewer 不得自行決定，本次一律忽略其值。",
             file=sys.stderr,
         )
+    try:
+        overrides = validate_accepted_overrides(args.mark_not_accepted, report.findings)
+    except ValidationError as exc:
+        print("[review] 拒收：accepted 標記不合格（未寫入任何遠端狀態）", file=sys.stderr)
+        for error in exc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 2
+
     if args.validate_only:
         print(
             f"[review] 驗證通過（--validate-only，未寫入任何狀態）："
             f"{report.review_result}／core_pain_resolved={report.core_pain_resolved}／"
             f"self_run {len(report.self_run)} 項／findings {len(report.findings)} 項"
+        )
+        print(
+            "[review] 注意：--validate-only 不連 GitHub，因此去重、帳可重建與 checkpoint "
+            "三道閘門都未執行；實寫時才會檢查。⚠️ 另請知悉：實寫時 preflight_basis_binding "
+            "今天恆為 structurally-unavailable（本 repo 沒有受管轄的 preflight pass event "
+            "writer 與可驗證格式），故該則裁決會帶 escalation_account: not-asserted、"
+            "不對 escalation 帳作任何斷言。查核輸出的格式與契約檢查在此已完整跑過。",
+            file=sys.stderr,
         )
         return 0
 
@@ -216,6 +301,49 @@ def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # ---- 寫入前的閘門（全部 fail-closed，未寫入任何遠端狀態）----
+    target_attempt = attempt_id(args.card_id, args.escalation_epoch, args.source_sha)
+    comments = fetch_issue_comments(runner, target.repo, item.issue_number)
+    history = build_issue_event_history(comments)
+    # §3 第 1 款的依據：**刻意不掃留言**——留言內文判定不出 canonical §4.1 的「受管轄」，
+    # 上一輪就是在這裡放了一個讀取器而讓任意四欄 YAML 解鎖（R4-01）。本 repo 今天恆回
+    # not-established，其恆虛性由 render_verdict_comment 以
+    # preflight_basis_binding: structurally-unavailable 加蓋進事件（需求方 2026-08-12
+    # 裁定：保留寫入能力，把空虛性寫進事件，而不是拒寫）。
+    preflight = derive_preflight_basis(card_id=args.card_id, source_sha=args.source_sha)
+    try:
+        check_attempt_not_duplicated(history, target_attempt)
+        check_checkpoint_gate(
+            history, escalation_epoch=args.escalation_epoch, card_body=item.body
+        )
+    except ValidationError as exc:
+        print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+        for error in exc.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 2
+
+    marked_by = ""
+    if overrides:
+        marked_by = resolve_platform_login(runner)
+        try:
+            validate_marked_by(marked_by, item.owner_field)
+        except ValidationError as exc:
+            print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+            for error in exc.errors:
+                print(f"  - {error}", file=sys.stderr)
+            return 2
+    marks = build_accepted_marks(
+        report.findings,
+        overrides,
+        marked_by,
+        owner_field=item.owner_field,
+        # handoff-contract.md §5 的「被授權的 review event writer 帳號集合」在本 repo
+        # 仍是未填的樣板佔位，故傳 None——導出值因此恆為 structurally-vacuous，而那正是
+        # 要被寫進事件流的事實（review-escalation.md §4／§5 同型處理，ai-workflow#39）。
+        # 本 CLI 不代為解析該樣板：那是跨檔的契約宣告，應由專案自己的設定承載。
+        authorized_writers=None,
+    )
+
     timestamp = now_iso8601()
     comment = render_verdict_comment(
         card_id=args.card_id,
@@ -224,19 +352,38 @@ def run(args: argparse.Namespace) -> int:
         reviewer=args.reviewer,
         escalation_epoch=args.escalation_epoch,
         timestamp=timestamp,
+        accepted_marks=marks,
+        preflight=preflight,
+        # current-state 平面的時點快照（見 review.render_escalation_facts_block 的說明）。
+        # 每次 handoff 都會覆寫這一欄，故它只有在 append-only 的事件留言裡才留得住；
+        # 但留住的是「寫裁決那一刻該欄長什麼樣」，不是 attempt 的固有屬性。
+        owner_field_at_verdict_write=item.owner_field,
     )
     # 先留言、後翻狀態：反過來若留言失敗，板上會出現沒有裁決全文的 ✅通過，
     # 那正是本卡要消滅的「宣稱與證據脫節」。
     add_issue_comment(runner, target.repo, item.issue_number, comment)
     set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
 
+    binding = derive_preflight_basis_binding(preflight)
+    counts = (
+        derive_counts_toward_escalation(report, marks, preflight)
+        if preflight.established
+        else None
+    )
+    # Log 索引行同樣不得把「未斷言」寫成 false——那是洗白（R3 的原話）。
+    counts_text = (
+        f"counts_toward_escalation {'true' if counts else 'false'}"
+        if counts is not None
+        else f"escalation_account not-asserted（preflight_basis_binding {binding}）"
+    )
     log_line = (
         f"{timestamp} review by wf-cli → {report.review_result}"
         f"（{report.delivery_status}）；查核者 {args.reviewer}；"
         f"core_pain_resolved {report.core_pain_resolved}；"
         f"self_run {len(report.self_run)} 項；findings {len(report.findings)} 項"
         f"（blocking {len(report.blocking_findings)}）；"
-        f"attempt {attempt_id(args.card_id, args.escalation_epoch, args.source_sha)}。"
+        f"{counts_text}；"
+        f"attempt {target_attempt}。"
     )
     new_body = append_log_line(item.body, log_line)
     set_item_body(
@@ -247,10 +394,41 @@ def run(args: argparse.Namespace) -> int:
         f"[review] 已寫入裁決 {args.card_id} → {report.review_result}"
         f"（交付狀態={report.delivery_status}，留言於 #{item.issue_number}）"
     )
+    if overrides:
+        print(
+            "[review] accepted=false 標記："
+            + "、".join(f"{fid}（marked_by={marked_by}）" for fid in sorted(overrides))
+        )
     if report.review_result == "REQUEST_CHANGES":
         print(
             "[review] iteration 不由本指令遞增：請以 "
             "`wfcli handoff --next-stage implementation` 把卡交回執行者，"
             "遞增在該處發生（WF-22-CLI2 既有規則）"
         )
+    if counts is None:
+        prior = len(unasserted_attempts(history, args.escalation_epoch)) + 1
+        print(
+            f"[review] ⚠️ preflight_basis_binding={binding}：本則裁決**不對 escalation 帳"
+            f"作任何斷言**（escalation_account: not-asserted），本 epoch 累計 {prior} 個"
+            "未斷言 attempt。本 repo 沒有受管轄的 preflight pass event writer 與可驗證格式，"
+            "故 §3 第 1 款無從成立——自動計數（**含三振門檻**）在承接卡落地前不可用，"
+            "請勿把「沒有可計數 attempt」讀成「執行者沒有累計」。"
+            "本事件另缺 review-escalation.md §5:168 的 preflight_passed: true，"
+            "屬已知且刻意記錄的 schema 落差（登記於 docs/CONSUMER_CONFORMANCE.md）。",
+            file=sys.stderr,
+        )
+    if counts:
+        ordinal = len(counted_attempts(history, args.escalation_epoch)) + 1
+        print(
+            f"[review] counts_toward_escalation=true：本輪是本 epoch 第 {ordinal} 個可計數 attempt。"
+        )
+        if ordinal >= 3:
+            print(
+                "[review] ⚠️ review-escalation.md §4：第三個及其後每個可計數 attempt 出現時"
+                "**先建立 escalation-checkpoint**，不得只按整數直接寫 🚨已升級。請執行："
+                f"`wfcli checkpoint {args.card_id} --trigger-attempt-id {target_attempt} "
+                f"--unique-attempt-count {ordinal} --escalation-epoch {args.escalation_epoch} "
+                "--decision <continue|replan|change-executor|escalate> --rationale <理由>`。"
+                "下一輪裁決寫入前若仍缺此 checkpoint，`wfcli review` 會拒絕。"
+            )
     return 0

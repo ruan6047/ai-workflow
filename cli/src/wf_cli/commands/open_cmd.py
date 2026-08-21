@@ -15,6 +15,7 @@ from ..card import (
     render_issue_body,
     render_spec_markdown,
     validate_capability_routing,
+    validate_routing_names,
 )
 from ..config import add_target_args, resolve_target
 from ..gh import default_runner
@@ -141,6 +142,13 @@ def run(args: argparse.Namespace) -> int:
     # 規劃期路由（canonical §3 Plan／MODEL_ROUTING.md「路由決定於規劃期」）。
     # argparse 的 required＋choices 已擋掉「沒給」與「不在語彙內」；這裡補的是
     # argparse 擋不到的空白字串理由——與 --core-pain 空白時同樣硬拒，不建卡。
+    #
+    # ``validate_routing_names`` 檢查的是路由行**名字欄**的保留字元（見 card.py
+    # 「路由行的保留字元」一段）。它同時也是 ``Card.__post_init__`` 的防線，所以拿掉
+    # 這裡仍然不會建出讀不回的卡——但那條路徑拋的是 ``cli.py`` 的 ``KNOWN_ERRORS``
+    # 不收的 ``ValueError``，會以 traceback 收場。**以 stack trace 收場的 fail-closed
+    # 不算乾淨拒絕**，而乾淨的寫入端拒收正是本卡存在的理由，故在此補上前置檢查，
+    # 讓名字側與理由側輸出同一種訊息與退出碼。
     try:
         validate_capability_routing(
             executor_capability=args.exec_capability,
@@ -148,6 +156,7 @@ def run(args: argparse.Namespace) -> int:
             reviewer_capability=args.review_capability,
             reviewer_capability_reason=args.review_capability_reason,
         )
+        validate_routing_names(executor=args.executor, reviewer=args.reviewer)
     except ValueError as exc:
         print(f"[open] 拒絕：{exc}", file=sys.stderr)
         return 2

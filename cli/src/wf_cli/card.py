@@ -82,6 +82,118 @@ def capability_reason_missing_message(axis: str) -> str:
     )
 
 
+# --------------------------------------------------------------------------
+# 路由行的保留字元（WF-CARD-FIELD-CORRECTION1；需求方 2026-08-12 裁定）
+# --------------------------------------------------------------------------
+#
+# **這一段是「保留字元清單」的機器可讀居所。** ``templates/tasks-card.md`` 第 4 行
+# 早就逐字寫出了這些分隔符，缺的從來不是文件詳盡度，而是**沒有任何一處宣告它們是
+# 保留字**、且寫入端對名字**完全不做格式檢查**。後果是 #21 的往返缺陷：
+#
+#     open 寫得出 ``- 執行：Claude Opus 5@Claude Code（子 agent）（建議 主力型；…）``
+#     assign 讀不回（``_ROUTING_PARSE_RE`` 的名字段在第一個全形左括號就停）
+#     → 同一張卡的同一行被兩支給出不一致的解讀（#21 已 🏁完成後才被發現）
+#
+# 修法方向是**保留字元**而非跳脫：結構字元不得同時當資料。寫入端拒收，讀取端也不把
+# 它們當資料收（見 ``_ROUTING_PARSE_RE`` 的字元類與本清單同源）。
+#
+# **清單逐欄位不同，而且是實測出來的、不是照第 4 行的外觀推的。**
+# 2026-08-12 對六個值欄位 × 四個候選結構字元做過往返實測（24 格；探針形狀見
+# ``cli/tests/test_amend.py`` 的「保留字元完整性」測試，該測試就是探針的常駐版本）。
+# 結論按欄位分三類：
+#
+#   * **名字段**（``executor``／``reviewer``）：四個字元全禁。實測四格全部使解析失配，
+#     故這裡的禁止與需求方 2026-08-12 的裁定重合，不是為了對齊裁定而多禁。
+#   * **理由段**（``exec_reason``／``rev_reason``）：**只禁全形空格**。
+#     ``（``／``）``／``；`` 實測全部往返成立，且是**現行真實用法**——中文散文本來就
+#     大量使用全形括號（#38 的規劃理由「…真實歸因（PM 的 checkpoint 記錄與可稽核
+#     留痕不符），再判斷…」正是被舊 ``[^）]+`` 攔掉的真實個案：其 assign 事件落
+#     ``ambiguous``、被要求填偏離理由後才放行，**不是被拒絕派工**——路由行讀不回的
+#     代價是留下一筆不實的「卡面建議無法解析」，不是停機）。
+#     禁全形空格則有硬理由：名字與層級都不含它之後，**整行唯一的全形空格就是軸分隔
+#     符**，這條唯一性把「哪裡切開執行段與查核段」變成確定性的，不再靠正則貪婪回溯。
+#
+#     ⚠️ **「名字段禁四個、理由段只禁一個」不是漏寫，是實測結論。** 需求方 2026-08-12
+#     的裁定原文是「全形左右括號、全形分號、全形空格…不得出現在執行者／查核者名的
+#     值裡」——只涵蓋名字段。把同一份清單照抄到理由段會當場擋掉 #38 那條合法理由，
+#     等於用一個新缺陷換掉舊缺陷。要改動這一格，請先重跑 24 格逐欄位往返實測。
+#   * **層級段**（``exec_tier``／``rev_tier``）：不設保留字元清單，因為它是**封閉語彙**
+#     （``CAPABILITY_TIERS``），值不可能由使用者自由輸入。這條保護以測試釘住
+#     （語彙成員不得含任何結構字元）。實測中唯一會**靜默錯讀**的格子在這裡：層級值
+#     若含全形分號，解析會讀成截斷後的前半段而不是失配——正因如此，封閉語彙那條
+#     保證不能只留在註解裡。
+#
+# 換行字元對名字與理由皆禁：路由行是單行結構，塞進換行會在標頭區多長出一行，使候選
+# 路由行不唯一 → ``ambiguous``。這同樣是「寫得出、讀不回」，與全形空格同一類。
+ROUTING_NAME_RESERVED = ("（", "）", "；", "　")
+ROUTING_REASON_RESERVED = ("　",)
+ROUTING_TIER_SEPARATORS = ("；", "　")
+# 路由行用到的**全部**結構字元（＝逐欄位清單的聯集，也是實測矩陣的行）。與
+# ``ROUTING_NAME_RESERVED`` 目前值相同純屬巧合——名字段恰好把四個全禁；兩者語意不同，
+# 不可互相取代。
+ROUTING_STRUCTURAL_CHARS = ("（", "）", "；", "　")
+_ROUTING_LINE_BREAKS = ("\n", "\r")
+
+_ROUTING_RESERVED_ROLE = {
+    "（": "界定「（建議 <層級>；<理由>）」段的左界",
+    "）": "界定該段的右界",
+    "；": "分隔建議層級與理由",
+    "　": "分隔執行軸與查核軸，且是整行唯一的軸分隔訊號",
+    "\n": "路由行是單行結構，換行會在標頭區多長出一行",
+    "\r": "路由行是單行結構，換行會在標頭區多長出一行",
+}
+
+
+def routing_reserved_char_message(field_label: str, value: str, offending: tuple[str, ...]) -> str:
+    """路由行欄位含保留字元時的拒絕訊息；寫入端與 model 層共用同一段文字。
+
+    訊息裡逐字說明每個字元承擔什麼結構，並給出可用的替代寫法——被擋的人要的是
+    「那我該怎麼寫」，不是「你錯了」。半形括號／分號／空白不承擔結構，可直接用。
+    """
+    roles = "、".join(f"{ch!r}（{_ROUTING_RESERVED_ROLE[ch]}）" for ch in offending)
+    return (
+        f"{field_label}不得含路由行保留字元：{roles}"
+        "——這些字元在 templates/tasks-card.md 第 4 行承擔結構，寫進值裡會讓 open "
+        "寫得出、assign 讀不回（WF-CLI-ROUTING-TIER1 的往返缺陷）。"
+        "改用半形括號 ()／半形分號 ;／半形空白，它們不承擔結構。"
+        "（理由欄只禁全形空格；全形括號與全形分號在理由裡合法，不必改寫。）"
+        f"收到 {value!r}"
+    )
+
+
+def validate_routing_field(field_label: str, value: str, reserved: tuple[str, ...]) -> None:
+    """單一路由行欄位的保留字元檢查；不合格一律 ``ValueError``。
+
+    ``reserved`` 由呼叫端指定（名字段與理由段的清單不同，見上方說明），這裡不內建
+    預設值——「哪些字元對這個欄位是結構」是欄位的性質，不該由本函式代為猜測。
+    """
+    offending = tuple(
+        ch for ch in (*reserved, *_ROUTING_LINE_BREAKS) if ch in (value or "")
+    )
+    if offending:
+        raise ValueError(routing_reserved_char_message(field_label, value, offending))
+
+
+def validate_routing_names(*, executor: str, reviewer: str) -> None:
+    """執行者／查核者**名字**的保留字元檢查；不合格一律 ``ValueError``。
+
+    刻意獨立成具名函式而不是塞進 ``validate_capability_routing`` 的可選參數：後者
+    的兩個呼叫端（``commands/open_cmd.py``、``Card.__post_init__``）不會同時改，
+    加一個有預設值的參數等於留一個「沒傳就不檢查」的靜默洞——正是本卡要消滅的形態。
+
+    **兩個呼叫端各自負責一半，缺一不可**：
+
+    - ``commands/open_cmd.py`` 的前置檢查給的是**乾淨的拒絕**——``[open] 拒絕：…``
+      ＋ 退出碼 2，與理由側同一種形狀。``cli.py`` 的 ``KNOWN_ERRORS`` 不收
+      ``ValueError``，少了這一道就會以 traceback 收場，而**以 stack trace 收場的
+      fail-closed 不算乾淨拒絕**。
+    - ``Card.__post_init__`` 給的是**防線**：繞過 CLI 直接建 Card 的路徑同樣擋得住，
+      且 Card 建構早於任何 GitHub 寫入，故拒收不留半寫狀態。
+    """
+    for axis, name in (("執行者", executor), ("查核者", reviewer)):
+        validate_routing_field(f"{axis}名", name, ROUTING_NAME_RESERVED)
+
+
 def validate_capability_routing(
     *,
     executor_capability: str,
@@ -93,6 +205,10 @@ def validate_capability_routing(
 
     純函式、不碰網路，故 CLI 層（``commands/open_cmd.py``）與 model 層
     （``Card.__post_init__``）呼叫同一份，兩層不會 drift 出不一致的判準。
+
+    理由段的保留字元一併在此檢查——這兩個呼叫端都已存在，故理由側的拒收在
+    ``open`` 是完整的（``[open] 拒絕：…`` ＋ 退出碼 2）。名字側見
+    ``validate_routing_names`` 的說明。
     """
     for axis, tier, reason in (
         ("執行", executor_capability, executor_capability_reason),
@@ -102,6 +218,7 @@ def validate_capability_routing(
             raise ValueError(capability_tier_violation_message(axis, tier))
         if not reason or not reason.strip():
             raise ValueError(capability_reason_missing_message(axis))
+        validate_routing_field(f"{axis}能力層級理由", reason, ROUTING_REASON_RESERVED)
 
 
 def now_iso8601() -> str:
@@ -196,6 +313,10 @@ class Card:
             reviewer_capability=self.reviewer_capability,
             reviewer_capability_reason=self.reviewer_capability_reason,
         )
+        # 寫入端拒收（WF-CARD-FIELD-CORRECTION1 驗收 (b)）：不得靜默接受一個自己
+        # 讀不回的名字。放在 Card 建構而非只放 CLI，是因為繞過 CLI 直接建 Card 的
+        # 路徑（測試／未來呼叫端）同樣不該產出無法解析的路由行。
+        validate_routing_names(executor=self.executor, reviewer=self.reviewer)
         if self.chain_depth > CHAIN_DEPTH_HARD_CAP:
             # 與 validation.validate_chain_depth 相同的機械紅線，這裡是繞過 CLI
             # 直接建構 Card（測試／未來呼叫端）時的防線；CLI 路徑應該在到達這裡
@@ -345,8 +466,11 @@ class AmendError(ValueError):
 _ACCEPTANCE_HEADING = "## 驗收條件"
 _VERIFICATION_HEADING = "## 驗證"
 _RESOURCE_HEADING = "## 資源宣告"
+_CORE_PAIN_HEADING = "## 核心痛點"
 _SPEC_BASELINE_RE = re.compile(r"^- Initiative：(?P<init>.*)　spec 基線：(?P<base>.*)$")
 _CHECKBOX_RE = re.compile(r"^- \[(?P<state>[ xX])\] (?P<text>.*)$")
+_CORE_PAIN_RE = re.compile(r"^- \*\*痛點\*\*：(?P<pain>.*)$")
+_REQUESTED_BY_RE = re.compile(r"^- 需求：(?P<requested>.*?)　規劃：(?P<planned>.*)$")
 
 
 def split_at_log(body: str) -> tuple[str, str]:
@@ -477,6 +601,147 @@ def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     return candidate, " ".join(old_repr.split())
 
 
+def amend_initiative(body: str, new_value: str) -> tuple[str, str]:
+    """改 Initiative（與 spec 基線同一行）；回傳 (新 body, 原值)。
+
+    刻意與 ``amend_spec_baseline`` 分成兩個函式而非一個帶兩參數的：兩者的授權
+    層級相同（都只需 ``--reason``），但**語意不同**——spec 基線是版本釘選，
+    Initiative 是父卡身分。同一次修訂改動其中一個時，另一個必須逐字保留，
+    分開實作才能讓「只改一半」成為型別上的預設而不是要記得做的事。
+    """
+    if not new_value.strip():
+        raise AmendError("Initiative 不得為空；無父卡請明確填 `—`")
+    if "\n" in new_value or "\r" in new_value:
+        # 與 spec 基線同理：這是標頭區的單行欄位，內嵌換行會多長出一行，
+        # 而標頭區正是路由版本宣告的判定範圍（見 compare_capability_to_card）。
+        raise AmendError("Initiative 是單行欄位，不得含換行（會在卡面標頭區插入額外行）")
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    hits = [i for i, line in enumerate(lines) if _SPEC_BASELINE_RE.match(line)]
+    if len(hits) != 1:
+        raise AmendError(
+            f"`- Initiative：…　spec 基線：…` 這一行在 Log 之前命中 {len(hits)} 次，必須恰好 1 次"
+        )
+    match = _SPEC_BASELINE_RE.match(lines[hits[0]])
+    assert match is not None
+    old = match.group("init")
+    if old.strip() == new_value.strip():
+        raise AmendError("Initiative 與現值相同；拒絕寫入不實的修訂留痕")
+    lines[hits[0]] = f"- Initiative：{new_value}　spec 基線：{match.group('base')}"
+    return _join("\n".join(lines), tail), old
+
+
+def amend_core_pain(body: str, new_value: str) -> tuple[str, str]:
+    """改核心痛點；回傳 (新 body, 原值)。
+
+    **這個欄位與其他被 amend 的欄位不同類。** 它餵給查核第一判準
+    ``core_pain_resolved``（canonical §5.1、``templates/review-prompt.md`` §2），
+    該判準具否決權：痛點未消即 ``REQUEST_CHANGES``，即使驗收清單全過。
+
+    因此本函式**刻意只做字串替換、不含任何授權判斷**——授權屬指令層
+    （見 ``commands/amend_cmd.py`` 的「核心痛點的授權模型」）。純函式層保持
+    無副作用可測，但呼叫端不得繞過指令層的授權檢查直接用它改卡。
+    """
+    if not new_value.strip():
+        raise AmendError("核心痛點不得為空——它是查核第一判準的來源，空值等於移除否決權")
+    if "\n" in new_value or "\r" in new_value:
+        # 痛點在範本裡是 `- **痛點**：…` 單行條目。允許換行會讓下一次修訂
+        # 定位不到唯一錨點（_CORE_PAIN_RE 逐行比對），把可改欄位變成不可改。
+        raise AmendError("核心痛點是單行欄位，不得含換行（會破壞 `- **痛點**：` 錨點的唯一性）")
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    start, end = _locate_section(lines, _CORE_PAIN_HEADING)
+    hits = [i for i in range(start + 1, end) if _CORE_PAIN_RE.match(lines[i].strip())]
+    if len(hits) != 1:
+        raise AmendError(
+            f"`- **痛點**：…` 這一行在 `{_CORE_PAIN_HEADING}` 章節內命中 {len(hits)} 次，必須恰好 1 次"
+        )
+    match = _CORE_PAIN_RE.match(lines[hits[0]].strip())
+    assert match is not None
+    old = match.group("pain")
+    if old.strip() == new_value.strip():
+        raise AmendError("核心痛點與現值相同；拒絕寫入不實的修訂留痕")
+    lines[hits[0]] = f"- **痛點**：{new_value}"
+    return _join("\n".join(lines), tail), old
+
+
+class RequesterUnparseable(AmendError):
+    """卡面「需求：」欄缺漏或無法解析。
+
+    獨立成一個類別而非沿用 ``AmendError``，是因為它的**處置方式不同**：一般
+    ``AmendError`` 是「這次修訂不合法」，本例外是「**授權無法機械核對**」。
+    ``review-escalation.md`` §4 第 2 款對此已有明文：「該欄未宣告或無法解析時
+    本出口不可用，adapter 一律 fail-closed——無法機械核對的授權不得以自述成立」。
+    呼叫端必須據此拒絕，不得退回「找不到就當作放行」。
+    """
+
+
+def parse_requested_by(body: str) -> str:
+    """讀出卡面「需求：」欄宣告的帳號（``wfcli open`` 寫入的 ``requested_by``）。
+
+    **本函式刻意具名並公開匯出，供跨卡共用。** 目前有兩個已知消費者：
+
+    1. 本檔的卡面修訂授權（核心痛點更正、紅線級別降級）——比對裁定留言的
+       GitHub comment author 是否為需求方；
+    2. ``review-escalation.md`` §4 的 ``deferred_findings`` 出口——第 2 款要求
+       ``deferred_by`` 逐字等於本欄、第 3 款要求它不等於 owner／reviewer。
+       該 checkpoint writer 尚未實作（屬另一張卡）。
+
+    兩處若各寫一份解析器就會 drift，而 drift 的後果是**兩個授權閘門對「誰是
+    需求方」給出不同答案**。因此這裡先落一份，後續消費者匯入而非重寫。
+
+    只讀 ``## Log`` 之前的區段：Log 會逐字引用被 amend 掉的舊值原文，其中可能
+    含字面的「- 需求：」，不切掉就會把歷史當成現況讀（與
+    ``compare_capability_to_card`` 同一個理由）。
+
+    fail closed：命中次數不等於 1、或值為空／佔位符時拋 ``RequesterUnparseable``。
+    """
+    head, _ = split_at_log(body)
+    hits = [m for m in (_REQUESTED_BY_RE.match(line) for line in head.splitlines()) if m]
+    if len(hits) != 1:
+        raise RequesterUnparseable(
+            f"`- 需求：…　規劃：…` 這一行在 Log 之前命中 {len(hits)} 次，必須恰好 1 次；"
+            "無法機械核對需求方身分，拒絕以自述成立"
+        )
+    value = hits[0].group("requested").strip()
+    # 佔位字串判準與 is_owner_assigned 共用同一組前綴，避免兩處對「這欄填了沒」
+    # 漂移出不一致的答案。
+    if not value or value.startswith(_OWNER_PLACEHOLDER_PREFIXES):
+        raise RequesterUnparseable(
+            f"卡面「需求：」欄為 {value or '（空）'!r}，未宣告實際帳號；"
+            "無法機械核對需求方身分，拒絕以自述成立"
+        )
+    return value
+
+
+def is_tier_downgrade(old_tier: str | None, new_tier: str) -> bool:
+    """新級別是否低於原級別。原級別未知（未設定／不在語彙內）時一律回 False。
+
+    未知即 False 是刻意的：把「讀不出原值」當成降級會讓正常的補值操作被擋，
+    而降級的額外要求本就該由**可確認的**原值觸發。讀不出原值時真正的問題是
+    卡面壞了，那由其他檢查處理。
+    """
+    if old_tier not in TIERS or new_tier not in TIERS:
+        return False
+    return TIERS.index(new_tier) < TIERS.index(old_tier)
+
+
+# 需求方**親自操作**規劃閘門的級別（canonical §3.1 三級制）：
+#
+#   - Initiative／T4／不可逆 → 同步對抗式質詢真對話（「不得以 brief 代替對話」）
+#   - T3                     → 核心痛點三問，**需求方批註放行**後才進 📥Backlog
+#   - 所有 T2 以上           → 前提清單附實查證據（規劃者的義務，非需求方閘門）
+#
+# 從 T3／T4 降下來，移除的是需求方**本人**操作過的閘門；T2 以下沒有這種閘門。
+# 這就是降級授權要求只綁在這兩級的理由，見 amend_cmd「級別降級的不對稱」。
+REQUESTER_GATED_TIERS = ("T3", "T4")
+
+
+def tier_downgrade_needs_ruling(old_tier: str | None, new_tier: str) -> bool:
+    """降級是否需要需求方裁定留痕（而非只要 ``--reason``）。"""
+    return is_tier_downgrade(old_tier, new_tier) and old_tier in REQUESTER_GATED_TIERS
+
+
 # --------------------------------------------------------------------------
 # 派工端：實際能力層級 vs 卡面建議（WF-CLI-ROUTING-TIER1 R1-001）
 # --------------------------------------------------------------------------
@@ -528,12 +793,44 @@ _REASON_REQUIRED_BY_OUTCOME: dict[str, bool] = {
 
 # 解析用；與測試裡那支「範本合規 oracle」刻意分開兩份，round-trip 測試才不是套套邏輯。
 #
-# 理由欄用 ``[^）]+`` 而非 ``[^）]*``：空理由必須讓整行**不匹配**，不能匹配成功後
-# 才靠後續檢查補救（R2-001 就是後者漏掉的）。全空白理由 ``+`` 擋不掉，由下方
-# ``_field_problems`` 的 strip 檢查接手。
+# 理由欄用 ``+`` 而非 ``*``（現行字元類是 ``[^　]+``）：空理由必須讓整行**不匹配**，
+# 不能匹配成功後才靠後續檢查補救（R2-001 就是後者漏掉的）。全空白理由 ``+`` 擋不掉，
+# 由下方 ``_field_problems`` 的 strip 檢查接手。
+#
+# 三個字元類與寫入端的保留字元清單**同源**（``ROUTING_NAME_RESERVED``／
+# ``ROUTING_REASON_RESERVED``／``ROUTING_TIER_SEPARATORS``），由 ``_char_class``
+# 生成而非兩處各手打一份：寫入端禁什麼，讀取端就不把什麼當資料收。這條對稱性正是
+# #21 往返缺陷缺的那一半——當時名字段寫成 ``[^（]*``（只擋左括號），寫入端則什麼都不擋。
+#
+# 兩個方向的改動各自的射程，明列以便查核：
+#
+#   * 名字段 ``[^（]*`` → ``[^（）；　]*``：**加嚴**。原先名字含 ``）``／``；``／``　``
+#     能靠貪婪回溯讀回；現在一律失配。只會 matched → ambiguous，不會反向放行。
+#   * 理由段 ``[^）]+`` → ``[^　]+``：**放寬全形括號與全形分號、收緊全形空格**。
+#     放寬是為了修 #38 那一類真實個案（理由是中文散文，本來就含全形括號）；
+#     它不會造成歧義，因為名字與層級都不含全形空格之後，整行唯一的全形空格就是軸
+#     分隔符，``[^　]+`` 的貪婪邊界因此是確定性的、不依賴回溯順序。
+#   * 層級段 ``[^；）]+`` → ``[^；　]+``：跟著上一條走（``）`` 不再是理由的邊界）。
+#     層級的真正保護是封閉語彙 ``CAPABILITY_TIERS``，由 ``_field_problems`` 查表。
+#
+# 兩個方向都碰不到永久 absent 的舊卡：解析只在卡面已宣告 ``ROUTING_MARKER`` 時才跑，
+# 而那 18 張卡的標頭區沒有標記，在到達本正則之前就已判 absent。
+
+
+def _char_class(reserved: tuple[str, ...]) -> str:
+    """把保留字元清單轉成正規表示式的否定字元類內容（含跳脫）。"""
+    return "".join(re.escape(ch) for ch in reserved)
+
+
+_NAME_CLASS = _char_class(ROUTING_NAME_RESERVED)
+_REASON_CLASS = _char_class(ROUTING_REASON_RESERVED)
+_TIER_CLASS = _char_class(ROUTING_TIER_SEPARATORS)
+
 _ROUTING_PARSE_RE = re.compile(
-    r"^- 執行：(?P<executor>[^（]*)（建議 (?P<exec_tier>[^；）]+)；(?P<exec_reason>[^）]+)）"
-    r"　查核：(?P<reviewer>[^（]*)（建議 (?P<rev_tier>[^；）]+)；(?P<rev_reason>[^）]+)）$"
+    rf"^- 執行：(?P<executor>[^{_NAME_CLASS}]*)（建議 (?P<exec_tier>[^{_TIER_CLASS}]+)；"
+    rf"(?P<exec_reason>[^{_REASON_CLASS}]+)）"
+    rf"　查核：(?P<reviewer>[^{_NAME_CLASS}]*)（建議 (?P<rev_tier>[^{_TIER_CLASS}]+)；"
+    rf"(?P<rev_reason>[^{_REASON_CLASS}]+)）$"
 )
 
 def _field_problems(match: re.Match[str]) -> list[str]:
@@ -847,12 +1144,20 @@ __all__ = [
     "CAPABILITY_MATCHED",
     "CAPABILITY_TIERS",
     "CHAIN_DEPTH_HARD_CAP",
+    "REQUESTER_GATED_TIERS",
     "ROUTING_MARKER",
+    "ROUTING_NAME_RESERVED",
+    "ROUTING_REASON_RESERVED",
+    "ROUTING_STRUCTURAL_CHARS",
+    "ROUTING_TIER_SEPARATORS",
     "TIERS",
     "AmendError",
     "CapabilityComparison",
     "Card",
+    "RequesterUnparseable",
     "amend_acceptance",
+    "amend_core_pain",
+    "amend_initiative",
     "amend_resource_block",
     "amend_spec_baseline",
     "amend_verification",
@@ -863,10 +1168,16 @@ __all__ = [
     "compare_capability_to_card",
     "format_branch_worktree",
     "format_routing_line",
+    "is_tier_downgrade",
     "now_iso8601",
     "parse_branch_worktree",
+    "parse_requested_by",
     "render_issue_body",
     "render_spec_markdown",
+    "routing_reserved_char_message",
     "split_at_log",
+    "tier_downgrade_needs_ruling",
     "validate_capability_routing",
+    "validate_routing_field",
+    "validate_routing_names",
 ]

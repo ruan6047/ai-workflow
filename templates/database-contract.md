@@ -35,6 +35,25 @@ db_resources:
 migration_phase: none | expand | migrate | contract
 ```
 
+⚠️ **`schema` 與 `table` 是字面關鍵字，不是佔位符。** 只有 `<environment>` 與
+`<table-name>` 要換成你的值。整個 schema 的鎖逐字就是 `db:production:schema`——
+**不要**把 `schema` 換成 schema 的名字。文法在 `cli/src/wf_cli/resources.py`
+（`db:[^:]+:(schema|table:.+)`），換掉會被 `ResourceDeclarationError` 拒收。
+
+⚠️ 注意上面 yaml 區塊**第一行**的 `db_scope` 也有一個 `schema`，那是**另一回事**
+（宣告這張卡對資料庫的動作幅度），與資源 token 裡的字面關鍵字無關。兩種身分在同
+一個區塊內相隔三行，是這個誤讀最容易發生的地方。
+
+這條寫在這裡是因為它**已經發生過**：採用專案 cpbl-analytics 的
+`docs/DATABASE_CONTRACT.md` 把它寫成 `db:<environment>:cpbl`（`cpbl` 是該專案的
+schema 名），**5 行、6 處**全部不合法（`:20` 一行有兩處；⚠️ `ai-workflow#87` 卡面另列 `:38`，那是散文裡的 `db:*` 萬用字元，不是同一個病）。⚠️ **失效方向是靜默的**——照著寫的人要嘛貼進卡面被
+拒收、要嘛寫進 spec 檔而永遠沒有人檢查。
+
+⚠️ **`db:<env>:schema` 不支配 `db:<env>:table:<name>`。** 互斥判定是
+`find_conflicts` 的完全字串比對，所以宣告整個 schema **不會**擋住另一張只宣告
+個別表的卡。這與「schema 是全域互斥鎖」的直覺相反：兩張卡可以同時動同一張表而
+不被判為衝突。要真的互斥，兩邊必須宣告**同一個字串**。
+
 列出互斥規則、lease TTL、續約與逾期回收程序：
 
 <專案實作>
