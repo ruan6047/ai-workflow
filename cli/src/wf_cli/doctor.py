@@ -661,17 +661,17 @@ def _parse_iso(value: str | None) -> datetime | None:
 
 
 # --------------------------------------------------------------------------
-# commit trailer 完整性檢查（AI_WORKFLOW.md §6:210-226、AGENTS.md:10）
+# commit trailer 完整性檢查（canonical 三條見 CANONICAL_ANCHORS、AGENTS.md:10）
 # --------------------------------------------------------------------------
 #
-# 規則早就成文，守衛一直不存在：`AI_WORKFLOW.md:220` 白紙黑字寫「守衛必紅」，
+# 規則早就成文，守衛一直不存在：`ANCHOR_BLOCK` 那條白紙黑字寫「守衛必紅」，
 # 而 2026-08-12 之前全 repo 非 docs 路徑 grep `Implemented-by`／`interpret-trailers`
 # 零命中。後果同日實現——當日落 main 的 31 筆非 merge commit，`Implemented-by`
 # 解析得出者 0 筆。本節就是那個從缺的守衛的**偵測面**。
 #
 # 判定一律以 **git 自己的 trailer parser** 為準，不自行重寫：讀取層用
 # `%(trailers:only=true,unfold=true)`，它與 `git interpret-trailers --parse` 同一份
-# 實作。這一點是本檢查器有沒有鑑別力的關鍵——`AI_WORKFLOW.md:220` 的規則正是
+# 實作。這一點是本檢查器有沒有鑑別力的關鍵——`ANCHOR_BLOCK` 的規則正是
 # 「trailer 與 `Co-Authored-By` 之間插一個空行就切斷解析」，而肉眼看訊息尾端
 # 「明明寫了 Implemented-by」。自行寫 regex 掃訊息會把那種 commit 判綠，等於
 # 守衛在最常發生的失敗形態上失效。
@@ -682,16 +682,64 @@ def _parse_iso(value: str | None) -> datetime | None:
 # 收下，只檢查該宣稱在不在。任何比對 GitHub 帳號、模型名單或簽章的機制都不屬
 # 本模組射程（本 repo 的人類、PM、執行者、查核者共用同一個帳號，那種檢查恆真）。
 
-#: 每個級別都要求的下限。`AI_WORKFLOW.md:211`（T0／T1）與 `:216`（T2 以上）的交集
-#: ——因此判定它**不需要知道卡的級別**，而級別不在 commit 裡。
+#: canonical 條文的**逐字錨點** [verbatim anchor]。⭐ 這裡刻意**不寫行號**。
+#:
+#: 行號在 canonical 每一次插行時**靜默失準**，而且已經失準三輪：`#119` 抓到既存漂移、
+#: `#120` 自己在 §3.1 插兩行又把引用整批推歪、本輪（R3）才改形狀。再修一次數字，
+#: 下一張動 canonical 的卡就會有第四次。改引用**條文原文片段**之後，失準會被
+#: `cli/tests/test_doctor.py::test_canonical_anchors_are_verbatim_and_in_the_cited_section`
+#: 與 `::test_canonical_citations_do_not_regrow_line_numbers` 打紅。
+#:
+#: ⚠️ **這兩條守衛驗得到什麼**：片段不再逐字存在於 `AI_WORKFLOW.md`；同一片段出現
+#: 超過一次（定位變歧義）；片段被搬離所引的節次；本檔或 `test_doctor.py` 裡長回
+#: 「canonical 檔名 ＋ 冒號 ＋ 行號」形態的引用；宣告了卻沒人用的死錨點。
+#:
+#: ⚠️ **驗不到什麼——明說，不得當成比實際可靠**：條文語意被改寫而片段字串原封不動
+#: 時**仍然全綠**（例如整條規則被反轉、只要這一小段主詞句還在，守衛不會響），因為
+#: 它比對的是字串在不在、不是條文說了什麼。射程也只涵蓋本檔與 `test_doctor.py`；
+#: `docs/`、`cleanup.py`、`handoff_cmd.py` 等處的手寫引用不在守衛內，仍會靜默腐爛。
+#: 結論：把失準從「必然靜默」降到「多數會轉紅」，**不是**降到不可能。
+CANONICAL_SECTION_HEADING = "## 6. 留痕與交付"
+#: 節次標籤由標題導出，不另寫一個數字——兩處各寫一個編號遲早分岔。
+CANONICAL_SECTION = "§" + CANONICAL_SECTION_HEADING.removeprefix("## ").split(".", 1)[0]
+
+#: 錨點鍵。用具名常數而非裸字串，好讓散文裡的「`ANCHOR_BLOCK` 那條」可以 grep 到。
+ANCHOR_FLOOR = "floor"
+ANCHOR_MERGE = "merge"
+ANCHOR_BLOCK = "block"
+
+CANONICAL_ANCHORS: dict[str, str] = {
+    ANCHOR_FLOOR: (
+        "T0／T1 的直接 commit 至少記錄 `Requested-by` 與 `Implemented-by`；T2 以上的實作 commit 必加"
+    ),
+    ANCHOR_MERGE: (
+        "merge commit、PR 結案紀錄或 B2 權威文件的核可 commit 另必加 `Reviewed-by`"
+    ),
+    ANCHOR_BLOCK: "**trailer 必須是 commit message 末端的連續單一區塊**",
+}
+
+
+def canonical_cite(anchor: str) -> str:
+    """人可讀的條文定位＝節次 ＋ 逐字片段。註解、docstring 與診斷訊息共用同一份。
+
+    診斷訊息也走這裡，是因為**輸出給使用者的定位錯得最貴**：操作者照著行號去翻，
+    翻到的是另一條規則，而他沒有理由懷疑。片段可以直接 grep，不需要知道它今天在
+    第幾行。
+    """
+    return f"`AI_WORKFLOW.md` {CANONICAL_SECTION}「{CANONICAL_ANCHORS[anchor]}」"
+
+
+#: 每個級別都要求的下限——`ANCHOR_FLOOR` 那條同時規定了 T0／T1 的下限與 T2 以上的
+#: 必加集合，兩者的交集就是這裡。因此判定它**不需要知道卡的級別**，而級別不在
+#: commit 裡。
 FLOOR_TRAILERS: tuple[str, ...] = ("Requested-by", "Implemented-by")
 
-#: 只有 T2 以上要求（`AI_WORKFLOW.md:216`）。級別是卡面欄位、不在 commit 裡，故
-#: **預設不判為違規**，只如實回報有無；要把它升成違規須由呼叫端明示（見
+#: 只有 T2 以上要求（同為 `ANCHOR_FLOOR` 那條的後半）。級別是卡面欄位、不在 commit
+#: 裡，故**預設不判為違規**，只如實回報有無；要把它升成違規須由呼叫端明示（見
 #: `require_planned_by`），那是呼叫端提供的級別知識，不是本檢查器導出的。
 TIER2_TRAILER = "Planned-by"
 
-#: merge commit／PR 結案紀錄／B2 權威文件核可 commit 另必加（`AI_WORKFLOW.md:222`）。
+#: merge commit／PR 結案紀錄／B2 權威文件核可 commit 另必加（`ANCHOR_MERGE`）。
 MERGE_TRAILER = "Reviewed-by"
 
 #: 「寫了但被空行切斷」的偵測範圍。只看治理 trailer，不含 `Co-Authored-By`。
@@ -703,7 +751,7 @@ _PARAGRAPH_SPLIT_RE = re.compile(r"\n[ \t]*\n")
 def severed_declared_keys(message: str, present: set[str]) -> tuple[str, ...]:
     """訊息尾端**寫成 trailer 樣子、卻沒被 git 解析成 trailer** 的治理欄位。
 
-    這是 `AI_WORKFLOW.md:220` 那條規則的直接偵測面：`Implemented-by` 明明寫在
+    這是 `ANCHOR_BLOCK` 那條規則的直接偵測面：`Implemented-by` 明明寫在
     訊息末端，只因為與 `Co-Authored-By` 之間多一個空行，`interpret-trailers`
     就在那裡切斷，整段變成內文。肉眼看是「有寫」，機器看是「沒有」——不把兩者
     分開講，操作者會以為守衛壞了。
@@ -799,7 +847,7 @@ class CommitTrailerFinding:
     status: CommitTrailerStatus
     #: 該形狀所要求、而 git 解析不出來的 trailer。
     missing: tuple[str, ...] = ()
-    #: 訊息裡**寫了**但沒被 git 解析成 trailer 的治理欄位——`AI_WORKFLOW.md:220`
+    #: 訊息裡**寫了**但沒被 git 解析成 trailer 的治理欄位——`ANCHOR_BLOCK`
     #: 的空行切斷即為此形態。與「根本沒寫」是兩種不同的病，處置也不同。
     severed: tuple[str, ...] = ()
     #: 只回報、不判違規的欄位（級別不在 commit 裡時的 `Planned-by`）。
@@ -823,7 +871,8 @@ class CommitTrailerReport:
 
     def render_text(self) -> str:
         lines = [
-            f"## commit trailer 完整性（範圍 {self.rev_range}；AI_WORKFLOW.md §6）",
+            f"## commit trailer 完整性（範圍 {self.rev_range}；"
+            f"AI_WORKFLOW.md {CANONICAL_SECTION}）",
             f"- 分流界線（committer date）：{self.epoch or '（無；全範圍一律判定）'}",
             f"- Planned-by：{'計入違規（呼叫端宣告本範圍為 T2 以上）' if self.require_planned_by else '只回報不判違規（級別不在 commit 裡）'}",
             f"- canonical root_cause_id：`{COMMIT_TRAILER_ROOT_CAUSE_ID}`",
@@ -863,7 +912,7 @@ def classify_commit_shape(record: CommitRecord) -> CommitShape:
     - **基線更新 merge**：也是 merge commit，同一格處理。本模組**刻意不區分**
       它與整合 merge——兩者都只是 `parents >= 2`，誰是 main 取決於你站在哪個
       ref 上看，那是脈絡不是 commit 自身的性質。既然導不出來就不假裝導得出來；
-      何況兩者要求相同（`AI_WORKFLOW.md:222` 對 merge commit 一視同仁），區分了
+      何況兩者要求相同（`ANCHOR_MERGE` 對 merge commit 一視同仁），區分了
       也不改變判定。
     - **cherry-pick**：不設特例，一律當普通實作 commit。理由是它**認不出來**：
       `-x` 才會留 `(cherry picked from commit …)`，而 `-x` 是選配，沒帶就與原生
@@ -889,7 +938,7 @@ def classify_commit_shape(record: CommitRecord) -> CommitShape:
 
 
 def required_trailers(shape: CommitShape, *, require_planned_by: bool = False) -> tuple[str, ...]:
-    """該形狀在 `AI_WORKFLOW.md` §6 下必須帶的 trailer。"""
+    """該形狀在 canonical `CANONICAL_SECTION` 那一節下必須帶的 trailer。"""
     if shape == "empty":
         return ()
     if shape == "merge_clean":
@@ -954,8 +1003,8 @@ def evaluate_commit_trailers(
     if severed:
         parts.append(
             f"訊息末端**寫了** {'／'.join(severed)} 但 git 解析不到——"
-            "`AI_WORKFLOW.md:220`：trailer 與 `Co-Authored-By` 等之間插入空行即切斷解析，"
-            "被切掉的行不算 trailer"
+            f"{canonical_cite(ANCHOR_BLOCK)}："
+            "trailer 與 `Co-Authored-By` 等之間插入空行即切斷解析，被切掉的行不算 trailer"
         )
     if before_epoch:
         parts.append(
@@ -1004,7 +1053,7 @@ def read_commit_records(repo_root: Path, rev_range: str) -> list[CommitRecord]:
     """讀出 rev_range 內每筆 commit 的事實。唯讀（`log`／`diff-tree`）。
 
     刻意用 `%(trailers:…)` 而非自行解析：那個 placeholder 與
-    `git interpret-trailers --parse` 是同一份實作，`AI_WORKFLOW.md:220` 指名的
+    `git interpret-trailers --parse` 是同一份實作，`ANCHOR_BLOCK` 指名的
     就是它的行為。自己寫 regex 會在「空行切斷」這個最常見的失敗形態上判錯。
     """
     log = _git_read(repo_root, ["log", rev_range, f"--format={_LOG_FORMAT}", "--name-only"])

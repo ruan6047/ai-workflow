@@ -6,6 +6,12 @@ import shutil
 from pathlib import Path
 
 from wf_cli.doctor import (
+    ANCHOR_BLOCK,
+    ANCHOR_FLOOR,
+    ANCHOR_MERGE,
+    CANONICAL_ANCHORS,
+    CANONICAL_SECTION,
+    CANONICAL_SECTION_HEADING,
     COMMIT_TRAILER_ROOT_CAUSE_ID,
     LEGACY_AUTHORITY_NOTE_EXPLANATION,
     LEGACY_AUTHORITY_NOTE_MARKER,
@@ -16,6 +22,7 @@ from wf_cli.doctor import (
     audit_commit_trailers,
     audit_legacy_authority_notes,
     audit_review_channel,
+    canonical_cite,
     classify_commit_shape,
     evaluate_commit_trailers,
     find_legacy_authority_notes,
@@ -1075,7 +1082,7 @@ def test_epoch_none_grades_the_whole_range():
     assert evaluate_commit_trailers(rec, epoch=None).status == "violation"
 
 
-# ---- 「寫了但被空行切斷」的偵測（AI_WORKFLOW.md:220） -------------------
+# ---- 「寫了但被空行切斷」的偵測（canonical `ANCHOR_BLOCK` 那條） --------
 
 
 def test_severed_block_is_reported_separately_from_never_written():
@@ -2137,3 +2144,85 @@ def test_identity_basis_reaches_the_json_payload():
     report = DoctorReport(repo_root=".", generated_at="t", registry_sources=[])
     payload = build_json_payload(report, finding)
     assert payload["review_channel"]["identity_basis"] == "requester_endorsed"
+
+
+# ---- canonical 引用的形狀守衛（R2-001） --------------------------------
+#
+# `doctor.py` 原本手寫「canonical 檔名 ＋ 冒號 ＋ 行號」。行號在 canonical 插行時
+# **靜默失準**，而且已經失準三輪（#119 抓到既存漂移、#120 自己插兩行又推歪一批）。
+# 引用改成條文原文片段之後，由下面兩條負責讓失準**轉紅**而不是繼續爛在註解裡。
+
+# ⚠️ 路徑索引與檔名刻意拆兩行：下面那條守衛不准「點名 canonical 的行夾帶數字」，
+# 而 `parents[...]` 的索引就是數字——寫成一行會自己打自己（實測會紅）。
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CANONICAL_PATH = _REPO_ROOT / "AI_WORKFLOW.md"
+_CITING_SOURCES = (
+    _REPO_ROOT / "cli" / "src" / "wf_cli" / "doctor.py",
+    Path(__file__).resolve(),
+)
+
+
+def _enclosing_h2(lines: list[str], index: int) -> str | None:
+    """`index` 這一行往回找到的最近一個 `##` 級標題。`###` 不算（不是節，是小節）。"""
+    for probe in range(index, -1, -1):
+        if lines[probe].startswith("## "):
+            return lines[probe]
+    return None
+
+
+def test_canonical_anchors_are_verbatim_and_in_the_cited_section():
+    """⭐ 錨點必須是**驗得到的**：片段要逐字、唯一，且真的落在所引的那一節底下。
+
+    ⚠️ 驗得到：片段被改寫／被刪／出現多筆（定位變歧義）／被搬去別節；宣告了卻沒人
+    用的死錨點。
+    ⚠️ 驗不到（明說）：條文語意被改寫而片段字串原封不動時**仍然全綠**——它比對的是
+    字串在不在，不是條文說了什麼。整條規則被反轉、只要這一小段主詞句還在就不會響。
+    """
+    text = _CANONICAL_PATH.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    assert text.count(CANONICAL_SECTION_HEADING) == 1, "節標題必須唯一，否則節次定位有歧義"
+    assert CANONICAL_SECTION == "§" + CANONICAL_SECTION_HEADING.removeprefix("## ").split(".", 1)[0]
+
+    assert set(CANONICAL_ANCHORS) == {ANCHOR_FLOOR, ANCHOR_MERGE, ANCHOR_BLOCK}
+
+    doctor_src = _CITING_SOURCES[0].read_text(encoding="utf-8")
+    for key, name in ((ANCHOR_FLOOR, "ANCHOR_FLOOR"), (ANCHOR_MERGE, "ANCHOR_MERGE"),
+                      (ANCHOR_BLOCK, "ANCHOR_BLOCK")):
+        fragment = CANONICAL_ANCHORS[key]
+        hits = [i for i, ln in enumerate(lines) if fragment in ln]
+        assert len(hits) == 1, f"{name} 的片段在 canonical 出現 {len(hits)} 次，必須恰好一次"
+        assert _enclosing_h2(lines, hits[0]) == CANONICAL_SECTION_HEADING, (
+            f"{name} 的條文已不在 {CANONICAL_SECTION_HEADING} 底下"
+        )
+        # 死錨點檢查：扣掉常數定義與 `CANONICAL_ANCHORS` 的鍵之後，至少還要有一處
+        # 真正的引用。⚠️ 不能用出現次數門檻——各錨點的引用數不同，門檻要嘛太鬆
+        # （拿掉一處仍過）要嘛太緊（實測：`>= 3` 的版本殺不掉「拿掉一處引用」的變異）。
+        cites = [
+            ln for ln in doctor_src.splitlines()
+            if name in ln
+            and not ln.startswith(f"{name} = ")
+            and not ln.strip().startswith(f"{name}:")
+        ]
+        assert cites, f"{name} 已無人引用，該刪掉或該補回引用"
+
+        cite = canonical_cite(key)
+        assert fragment in cite and CANONICAL_SECTION in cite
+
+
+def test_canonical_citations_do_not_regrow_line_numbers():
+    """引用長回行號形態時轉紅——這是同族第四次的預防，不是本次的修補。
+
+    判準刻意取**封閉集合**：凡是點名 canonical 檔名的那一行，就不准同時帶任何數字。
+    這比「掃某個特定寫法的 regex」強——`§6:220`、`第 220 行`、`L220` 都一樣會被抓到，
+    不必事先窮舉寫法。代價是節次也得走 `CANONICAL_SECTION` 而不能手寫，這正是要的。
+
+    ⚠️ 射程只有 `doctor.py` 與本檔。`docs/`、`cleanup.py`、`handoff_cmd.py` 等處的
+    手寫行號引用**不在守衛內**，仍會靜默腐爛（本卡寫入集外，未處理）。
+    """
+    offenders: list[str] = []
+    for path in _CITING_SOURCES:
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "AI_WORKFLOW" in line and any(ch.isdigit() for ch in line):
+                offenders.append(f"{path.name}:{lineno}: {line.strip()}")
+    assert not offenders, "點名 canonical 的行不得夾帶數字（行號會靜默失準）：\n" + "\n".join(offenders)
