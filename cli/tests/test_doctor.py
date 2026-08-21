@@ -1725,10 +1725,14 @@ _BASELINE_LINE = (
 
 
 def test_drift_handoff_table_is_exhaustive_and_pinned_to_writer():
-    """六個 next-stage 窮舉；前五格逐格等於 handoff_cmd.STAGE_STATUS，release 釘寫入端字面。
+    """七個 next-stage 窮舉；前六格逐格等於 handoff_cmd.STAGE_STATUS，release 釘寫入端字面。
 
-    卡面原文寫「三個 next-stage」，PR #102（2026-08-18）後機器現實是六個；
-    「窮舉」的要求管轄「三個」的字面（派工包修正 1）。
+    卡面原文寫「三個 next-stage」，PR #102（2026-08-18）後機器現實是六個，
+    WF-BACKLOG-STAGE1（2026-08-21）補上 ``backlog`` 後是七個；「窮舉」的要求管轄
+    「三個」的字面（派工包修正 1）。
+
+    ⚠️ 下面兩行釘的是**導出的同一性**（``set(...) == set(...) | {"release"}`` 與逐格
+    相等），不是硬編清單——寫入端加一格會自動流進斷言，**只改一邊必紅**。
     """
     assert set(HANDOFF_STAGE_EXPECTED_STATUS) == set(handoff_cmd.STAGE_STATUS) | {"release"}
     for stage, status in handoff_cmd.STAGE_STATUS.items():
@@ -1765,6 +1769,36 @@ def test_drift_open_derives_backlog_and_flags_moved_face():
     assert (moved.verdict, moved.expected_status, moved.actual_status) == ("drift", "📥Backlog", "💡需求")
 
 
+def test_drift_backlog_face_needs_an_explaining_event_and_handoff_does_not_explain():
+    """WF-BACKLOG-STAGE1 的雙向對照組：`📥Backlog` 欄位值不得默認通過。
+
+    ⚠️ **為什麼三個案例都用 assign 形狀而不是 handoff 形狀**：handoff 的 Log 行不記
+    ``--next-stage``（`doctor.HANDOFF_STAGE_EXPECTED_STATUS` 上方註解），所以
+    ``handoff --next-stage backlog`` 對本軸構造性地不可判定——見本檔
+    ``test_drift_handoff_is_undecidable_never_default_pass``，`📥Backlog` 已隨新增的
+    表格自動流入該組。本測試因此驗的是**狀態面 vs 留痕**這條軸上「Backlog 有沒有事件
+    依據」，這也是 #118 R1 明文接受的替代形狀。
+    """
+    to_backlog = _ASSIGN_LINE.replace("交付狀態 🔨執行中", "交付狀態 📥Backlog")
+
+    # (a) 有解釋事件、欄位相符 → consistent
+    ok = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, to_backlog), "📥Backlog")
+    assert (ok.verdict, ok.rule, ok.expected_status) == ("consistent", RULE_ASSIGN, "📥Backlog")
+
+    # (b) 對照組：欄位是 📥Backlog，但最後一筆解釋事件說的是別的值 → 仍須 drift。
+    #     少了這一條，一個「永遠回 📥Backlog」的推導器也會讓 (a) 通過。
+    moved = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE), "📥Backlog")
+    assert (moved.verdict, moved.expected_status, moved.actual_status) == (
+        "drift", "🔨執行中", "📥Backlog",
+    )
+
+    # (c) 反向：有 Backlog 事件而欄位沒跟上（half-write）→ 也是 drift，不是 consistent。
+    half = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, to_backlog), "🔨執行中")
+    assert (half.verdict, half.expected_status, half.actual_status) == (
+        "drift", "📥Backlog", "🔨執行中",
+    )
+
+
 def test_drift_assign_derives_the_logged_status_including_free_text_override():
     """assign 的 Log 行逐字記下寫入值，--status 自由文字覆寫因此**同樣可推導**。"""
     consistent = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE), "🔨執行中")
@@ -1795,9 +1829,14 @@ def test_drift_handoff_is_undecidable_never_default_pass(face):
     """handoff 的 Log 行不含 next-stage／--status，寫入值反推不出。
 
     卡面驗收第 1 條的硬要求：推導不出的組合**明確落「不判定」而非默認通過**
-    ——對六個 next-stage 可能寫入的每一個狀態值（外加兩個 --status 自由文字
+    ——對七個 next-stage 可能寫入的每一個狀態值（外加兩個 --status 自由文字
     才寫得出的值）逐一驗證：verdict 恆為 undecidable，既不是 consistent 也
     不是 drift。
+
+    ⚠️ parametrize 直接取 ``HANDOFF_STAGE_EXPECTED_STATUS.values()``，所以
+    WF-BACKLOG-STAGE1 新增的 ``📥Backlog`` 自動進入本組：**handoff 寫出的
+    Backlog 一樣落「不判定」**，這正是下方 backlog 對照組要用 assign 形狀而
+    不能用 handoff 形狀的原因。
     """
     finding = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE, _HANDOFF_LINE), face)
     assert finding.verdict == "undecidable"
