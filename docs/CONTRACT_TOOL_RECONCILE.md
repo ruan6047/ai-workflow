@@ -227,6 +227,12 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
   「該 writer 尚未實作（WF-22-CLI4 切片 A 之外），在它落地前，裁定只能以人讀留言存在，
   事件流上該區間仍是升級中」，`validation.py:827` 亦同。契約已裁定升級狀態**只能**由本事件
   解除，而今天沒有任何通道寫得出這則事件。
+  ⚠️ **對帳器少看到一處，但方向是低估、不是高估。** `commands/checkpoint_cmd.py:104` 還有
+  第五處字面——argparse 的 `--escalation-resolution`，help 逐字寫著「（保留旗標，一律拒收）」。
+  對帳器沒把它列進來的原因見 §5 末條。**補上這一處不改變任何判定**：那是刻意 fail-closed 的
+  拒收面（與 §6 表列的 `spec-narrowed`／`instruction-omitted` 同族），不是 writer；writer 仍是 0。
+  記在這裡是因為它讓缺口的性質更精確：**不是沒人想到，是想到了而且明著擋住**——
+  契約先落地、寫入面暫以拒收佔位，等 writer 那張卡。
   判定與 §4.4 的 `review-correction` 相同（`mention-only`、writer —），處置一致；但**兩者在
   `相關動詞` 這一軸上不同**，依 §4.5 立下的分辨法不是同一種缺口：`review-correction` 是
   `相關動詞=review`（動詞在，只是不吐該字面），本項是 **`相關動詞=無`**——連一個沾得上邊的
@@ -274,6 +280,15 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 - **第一版的 ratchet 漏了守衛覆蓋缺口**：`--check` 只比對符號列，於是 M3 變異讓正控組 4
   整個消失時它仍是綠的。已修（§2.4）。同一個教訓的第二次：**規則與檢查本身都要被變異
   檢驗打一次，不能只驗被檢查的對象**。
+- **`--<kebab>` 形態的 argparse 旗標字面落在盲區**（實測：
+  `_contains_symbol("--escalation-resolution", "escalation-resolution")` 回 `False`）。
+  成因是 `_WORDISH` 含 `-`，於是前綴 `--` 算「詞內字元」、詞界不成立。
+  ⚠️ **這不是可以單獨拿掉的 bug**：那條詞界正是用來擋 `deployment-status-change` 誤命中
+  `status-change`（見該函式 docstring），拿掉它會讓已知缺口 `status-change` 假性變綠。
+  兩者是同一條規則的兩面，要改得先想清楚怎麼同時保住那個反例。
+  本檔記錄的實例是 mention 而非 writer（`commands/checkpoint_cmd.py:104` 是 argparse 宣告，
+  不在任何遠端寫入路徑上），故未影響本次判定；但**盲區對 write 角色一樣成立**——若日後有
+  寫入路徑以 `--` 前綴形態帶出符號，會被同樣漏判，那個方向就不再是低估。實例見 §4.7。
 
 ## 6. 缺口登記與處置
 
