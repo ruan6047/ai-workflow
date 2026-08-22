@@ -1,8 +1,9 @@
 # `snapshots/` — 狀態面的每日離線稽核副本
 
-`AI_WORKFLOW.md` §4.1／§4.3 說：事件載體是 Issue timeline ＋結構化 comment，**因其非嚴格
-不可覆寫，必須以每日 snapshot export 回 git 建立離線稽核副本**。本目錄就是那句話的落點，
-產生者是 [`scripts/daily_snapshot.sh`](../scripts/daily_snapshot.sh)（launchd `com.wf.daily-snapshot`，每日 10:40）。
+`AI_WORKFLOW.md` §4.1／§4.3 說：
+「因其非嚴格不可覆寫，必須以**每日 snapshot export 回 git** 建立離線稽核副本」。
+本目錄就是那句話的落點，產生者是
+[`scripts/daily_snapshot.sh`](../scripts/daily_snapshot.sh)（launchd `com.wf.daily-snapshot`，每日 10:40）。
 
 ## 產物在哪：`snapshots` 分支，不是 `main`
 

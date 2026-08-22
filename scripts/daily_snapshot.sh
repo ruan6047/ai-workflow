@@ -11,7 +11,9 @@
 # ⚠️ 它做不到的事（別把它當成 event log 的備份）：`wfcli snapshot` 匯出的是**看板
 #    當前狀態**（13 個凍結欄位＋卡面資源宣告），**不含 Issue timeline 上的 lifecycle
 #    event 留言**。也就是說：被事後編輯或刪除的結構化 comment，本快照偵測不到。
-#    canonical:138 想要的「事件流離線稽核副本」，本檔只完成了「狀態面」那一半。
+#    canonical AI_WORKFLOW.md §4.1 那條——
+#    「因其非嚴格不可覆寫，必須以**每日 snapshot export 回 git** 建立離線稽核副本」
+#    ——想要的是「事件流」的離線副本，本檔只完成了「狀態面」那一半。
 #    詳見 snapshots/README.md「這份快照證明得了什麼」。
 #
 # 三個寫死的決策（刻意不留第二種可能；要改就改本檔，不是加旗標）：
