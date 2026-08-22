@@ -2241,6 +2241,7 @@ _PROSE_CITERS = (
     _REPO_ROOT / "docs" / "WF_CLEANUP_GUARD1.md",
     _REPO_ROOT / "docs" / "WF_EVENT_IDEMPOTENCY1.md",
     _REPO_ROOT / "docs" / "WF_RESOURCE_WRITESET1.md",
+    _REPO_ROOT / "snapshots" / "README.md",
 )
 
 #: `doctor.py:211`、`templates/bar.md:9`——指名了自己來源檔的引用。它們指的不是
@@ -2264,13 +2265,21 @@ def test_prose_citations_of_canonical_carry_no_line_numbers():
 
     ⚠️ **驗不到什麼（明說，別把它當成比實際更可靠）**：
 
-    - 射程是上面那份**寫死的檔案清單**。全 repo 另有 4 處手寫 canonical 行號在射程外、
-      本卡寫入集外、**未處理**，本測試看不到它們：`snapshots/README.md`（基線上指得對，
-      **被本卡插行推歪了**——寫入集外故無法修，已回報請求擴權）、`docs/ROADMAP.md` 兩處
-      （一處 off-by-one、一處指到空行，**基線就已錯**）、`docs/DEV_AIWF_MINIMAL_CI1.md`
-      （指的行在插入點之前，目前仍對）。日後新增引用 canonical 的檔案也**不會**自動
-      納管，清單得手動加——這是本守衛最大的漏洞。
-    - 找齊那 4 處花了兩輪：起初只掃 `檔名:數字` 與反引號包住的 `` `:數字` ``，漏掉
+    - 射程是上面那份**寫死的檔案清單**，日後新增引用 canonical 的檔案**不會**自動納管，
+      清單得手動加——這是本守衛最大的漏洞，而且**已經漏掉過真實缺陷**（見下一條）。
+    - **仍在射程外、且確實壞著的**：`scripts/daily_snapshot.sh` 的檔頭註解同樣寫
+      `canonical` 加冒號行號，指的是同一條條文，**同樣是被本卡插行推歪的**（基線上指得
+      對）。它在本卡寫入集外，R5 無權限修；**納入射程會讓本測試紅在一個修不了的缺陷上**，
+      故刻意不加，改以本條留痕並另請擴權。⚠️ R4 列「全 repo 另有 4 處」時**漏了它**，
+      漏的原因未經查證、不在此臆測；可確定的是那份清單當時就不完整。
+    - 另有 `docs/ROADMAP.md` 兩處（一處 off-by-one、一處指到空行，**基線就已錯**）與
+      `docs/DEV_AIWF_MINIMAL_CI1.md`（指的行在插入點之前，目前仍對）同樣在射程外。
+    - `docs/CONTRACT_TOOL_RECONCILE.md` 有大量 `檔名:行` 錨點但**刻意不納管**：那是
+      `scripts/contract_tool_reconcile.py` 的產生輸出，該檔自己已寫明錨點會隨其他卡合併
+      而漂移、且漂移不算缺口變化。把產生物納入手寫錨點的守衛只會製造假紅。
+    - `snapshots/README.md` 原本也在這份「射程外且壞著」的名單上，R5 取得擴權後已修並
+      納入射程；它是「清單制漏掉真實缺陷」的第一個實例。
+    - 找齊這些花了兩輪以上：起初只掃 `檔名:數字` 與反引號包住的 `` `:數字` ``，漏掉
       `§6:222`（節次夾行號）與 `canonical:138`（連反引號都沒有）。**寫法窮舉不完**，
       所以本守衛不追寫法，改判「這一行還剩不剩冒號數字」。
     - 它只管**形態**，不管指得對不對：`§4.1「一段不存在的文字」` 照樣全綠。片段逐字
