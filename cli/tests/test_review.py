@@ -539,7 +539,7 @@ findings: []
     for card_id in ("HARD-CARD1", "HARD-CARD2"):
         item = card_item(fake_runner, card_id)
         assert [c for c in issue_comments(fake_runner, item.issue_url) if "查核裁決" in c] == []
-        assert item.fields["交付狀態"] == "📥Backlog"  # 兩者都沒翻板
+        assert item.fields["交付狀態"] == "💡需求"  # 兩者都沒翻板（open 的初始值）
 
 
 def test_malformed_finding_does_not_trigger_the_consistency_message(capsys):
@@ -621,7 +621,7 @@ def test_draft_item_without_issue_timeline_is_rejected(fake_runner, tmp_path, ca
     rc = run_cli(review_argv("DRAFT-CARD1", write_input(tmp_path, APPROVE_REPORT)))
     assert rc == 2
     assert "draft item" in capsys.readouterr().err
-    assert card_item(fake_runner, "DRAFT-CARD1").fields["交付狀態"] == "📥Backlog"
+    assert card_item(fake_runner, "DRAFT-CARD1").fields["交付狀態"] == "💡需求"  # 停在 open 的初始值
 
 
 def test_unknown_card_returns_exit_3(fake_runner, tmp_path, capsys):
@@ -677,11 +677,11 @@ def test_missing_input_file_is_rejected(fake_runner, capsys):
 def test_status_mismatch_warns_but_does_not_block(fake_runner, tmp_path, capsys):
     # 契約沒規定「非 🔍待查核 不得下裁決」（補記舊裁決／⏸阻塞 期間收報告都是實務
     # 情境），所以只警示不硬擋；是否升級為硬拒屬新裁量，留給需求方。
-    open_card("STATUS-CARD1", runner=fake_runner)  # 停在 📥Backlog，不是 🔍待查核
+    open_card("STATUS-CARD1", runner=fake_runner)  # 停在 open 的初始值 💡需求，不是 🔍待查核
     rc = run_cli(review_argv("STATUS-CARD1", write_input(tmp_path, APPROVE_REPORT)))
     assert rc == 0
     err = capsys.readouterr().err
-    assert "警示" in err and "🔍待查核" in err and "📥Backlog" in err
+    assert "警示" in err and "🔍待查核" in err and "💡需求" in err
     assert card_item(fake_runner, "STATUS-CARD1").fields["交付狀態"] == "✅通過"
 
 

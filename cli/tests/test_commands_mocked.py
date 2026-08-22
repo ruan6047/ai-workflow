@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json as jsonlib
 import subprocess
 from pathlib import Path
@@ -15,6 +16,11 @@ from wf_cli.commands import (
     handoff_cmd,
     open_cmd,
     snapshot_cmd,
+)
+from wf_cli.doctor import (
+    UNDECIDABLE_HANDOFF,
+    audit_state_face_drift,
+    parse_log_events,
 )
 from wf_cli.project import (
     ProjectError,
@@ -132,6 +138,64 @@ def _deploy_declare_argv(card_id: str, **overrides) -> list[str]:
     return argv
 
 
+def test_open_initial_status_is_the_same_for_every_tier(fake_runner):
+    """五個級別全開一次，初始交付狀態必須逐級相同（⛔ 不得依 --tier 分流）。
+
+    canonical 的「規劃閘門三級制」那節只點名 T3 那一列的批註放行；採用專案 cpbl 的
+    ROADMAP 在「規劃生命週期」那節說「所有新卡一律由 `💡需求` 開始」——⚠️ **不是本 repo
+    同名的 `docs/ROADMAP.md`**，該檔沒有這條。需求方 2026-08-21 裁定採後者：不讓 wfcli
+    對「哪一級要過閘門」有自己的意見，且一律 💡需求 是保守方向（採用專案要放寬，在自己
+    的流程裡多一次明示轉換即可；反向不安全）。這條把該裁定釘成機械事實：哪天有人為某
+    一級開特例，逐級相同就會破。
+    """
+    project = resolve_project(fake_runner, "acme", 1)
+    for tier in ("T0", "T1", "T2", "T3", "T4"):
+        assert run_cli(_open_argv(f"TIER-{tier}-CARD1", **{"--tier": tier})) == 0
+    seen = {
+        i.fields["級別"]: i.fields["交付狀態"]
+        for i in list_items(fake_runner, project)
+        if i.fields["卡ID"].startswith("TIER-")
+    }
+    assert seen == {t: "💡需求" for t in ("T0", "T1", "T2", "T3", "T4")}, seen
+
+
+def test_open_default_still_reaches_backlog_through_the_checked_transition(fake_runner):
+    """⭐ 本卡（`#118`）與 `WF-BACKLOG-STAGE1`（`#120`）**組合起來**必須自洽。
+
+    兩張卡各自合理、合起來才有可能把路走死，而那正是文字合併攔不住的東西（本輪實測：
+    rebase 與 merge 都零衝突，語意衝突是 `contract_tool_reconcile --check` 抓到的）。
+    ⛔ 所以這裡不用散文宣稱自洽，直接把**唯一一條受檢查的入池路徑**跑一遍。
+
+    `#118` 之前 `open` 直接寫 `📥Backlog`——那條路**繞過** `#120` 的閘門，於是看板上
+    最常見的入池方式根本不受檢查。`#118` 之後入池只剩三個口：本測試跑的受檢查轉換，
+    以及 `assign --status`／`handoff --status` 兩個自由文字逃生口（後者由
+    `test_handoff_backlog_gate_is_bypassed_by_the_free_text_status_flag` 誠實釘住）。
+
+    ⚠️ 這條測試**不驗**「規劃真的做過」——`🧭規劃中` 一樣寫得進自由文字旗標。它驗的
+    只有一件事：新的初始值沒有把 T2 以上的卡鎖在池外。
+    """
+    project = resolve_project(fake_runner, "acme", 1)
+    assert run_cli(_open_argv("COHERE-CARD1")) == 0  # 預設 T3 ⇒ 課前提的那一支
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "💡需求"
+
+    # 剛開的卡直接入池必須被擋——否則本測試的後半是零資訊的（閘門若失效，
+    # 「走得到」對任何起點都成立，就證明不了那條路徑是**受檢查**的那一條）。
+    assert run_cli(
+        _handoff_argv("COHERE-CARD1", "a" * 40, **{"--next-stage": "backlog"})
+    ) == 4
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "💡需求"
+
+    # 而規劃階段本身不課前提，所以 💡需求 → 🧭規劃中 → 📥Backlog 這條路走得通。
+    assert run_cli(
+        _handoff_argv("COHERE-CARD1", "b" * 40, **{"--next-stage": "planning"})
+    ) == 0
+    assert run_cli(
+        _handoff_argv("COHERE-CARD1", "c" * 40, **{"--next-stage": "backlog"})
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "📥Backlog"
+
+
 def test_open_creates_draft_item_with_all_ledger_fields(fake_runner, capsys):
     rc = run_cli(_open_argv("DEMO-CARD1", **{"--resources": "file:demo.py,port:9000"}))
     assert rc == 0
@@ -141,7 +205,9 @@ def test_open_creates_draft_item_with_all_ledger_fields(fake_runner, capsys):
     item = items[0]
     assert item.fields["卡ID"] == "DEMO-CARD1"
     assert item.fields["級別"] == "T3"
-    assert item.fields["交付狀態"] == "📥Backlog"
+    # WF-OPEN-INITIAL-STATUS1：open 寫 💡需求，不是 📥Backlog。規劃閘門在開卡**之後**
+    # 才跑（canonical §3.1／採用專案 ROADMAP §2.0），開卡當下不可能已經通過。
+    assert item.fields["交付狀態"] == "💡需求"
     assert item.fields["部署狀態"] == "—不適用"
     assert "file:demo.py" in item.body
     assert "## 資源宣告" in item.body
@@ -884,6 +950,71 @@ def test_handoff_updates_owner_status_and_last_handoff(fake_runner):
     assert "證據 pytest 全綠" in item.body
 
 
+def test_handoff_log_line_never_carries_the_status_it_wrote(fake_runner):
+    """`UNDECIDABLE_HANDOFF` 的**前提**：handoff 寫進欄位的狀態，復原不出來。
+
+    ⚠️ 本測試是為了取代 `test_doctor.py` 一句**實測為假**的保證而寫（`#118` R2-002）。
+    那句話說「若哪天 handoff 的 Log 行開始記狀態，`test_drift_explicit_move_to_backlog_
+    is_consistent_and_handoff_stays_undecidable` 的末行會先轉紅」。實測兩件事都不成立：
+
+    1. 該處餵的是手打的 `_HANDOFF_LINE` 常數，與寫入端沒有連線。把 `handoff_cmd` 的
+       Log 行改成夾帶 `交付狀態 {new_status}` 之後，那條測試照樣綠。
+    2. **就算把夾帶狀態的行直接餵進 `audit_state_face_drift` 也還是綠**——
+       `derive_expected_status` 對 `handoff by wf-cli` 開頭是無條件短路、從不看行內容。
+       所以查核者建議的「改成真正從 handoff 輸出餵入 doctor」這個修法**單獨也救不了
+       那句話**：只要讀取端還短路，那條斷言就恆綠。要它轉紅得同時改讀取端，而那不是
+       一句註解描述得了的事。
+
+    真正可證偽、也真正撐住 `undecidable` 正當性的，是**寫入端的留痕復原不出狀態**這件
+    事本身——那與 doctor 怎麼判無關。下面三條各自會被什麼推翻，逐條講明：
+
+    - `written_status not in line`：寫入端開始把狀態值寫進 Log 行時紅。**這就是那句
+      保證原本想講的事**，改由這裡承接。
+    - `stage not in line`：寫入端改記 `--next-stage` 鍵（`review`…）時紅。那同樣讓
+      `doctor.HANDOFF_STAGE_EXPECTED_STATUS` 查得出狀態，是第二條復原路徑。
+    - 餵**產生器實際輸出**進 doctor 仍回 `UNDECIDABLE_HANDOFF`：寫入端改掉行首前綴、
+      或改到 `parse_log_events` 切不出事件時紅。實測改前綴時**先紅的是上面那行
+      `startswith`**，但把該行拿掉本條自己也接得住（落 `unrecognized_event`）——兩條
+      各自成立，不是一條靠另一條。⚠️ 它**不會**因為行內多了狀態而紅（上面第 2 點）；
+      列在這裡是為了釘「寫入端前綴 ↔ 讀取端前綴」這條連線，不是為了接住狀態。
+
+    ⛔ 沒封住的：狀態若以上面兩個字面之外的編碼進 Log（自創縮寫、內部代碼），本測試
+    看不見。那是開放集合，不假裝封得住。
+    """
+    project = resolve_project(fake_runner, "acme", 1)
+    run_cli(_open_argv("HANDOFF-LOGLINE1"))
+
+    # 六個 next-stage 逐一跑**真的** handoff。順序讓 planning 緊接 backlog 之前，
+    # 好讓 `BACKLOG_REQUIRED_PRIOR_STATUS` 的前提自然成立（不是繞過閘門）。
+    ordered = ["requirement", "research", "planning", "backlog", "implementation", "review"]
+    assert set(ordered) == set(handoff_cmd.STAGE_STATUS), ordered
+
+    for i, stage in enumerate(ordered):
+        assert run_cli(
+            _handoff_argv("HANDOFF-LOGLINE1", str(i) * 40, **{"--next-stage": stage})
+        ) == 0, stage
+        item = list_items(fake_runner, project)[0]
+        written_status = item.fields["交付狀態"]
+        assert written_status == handoff_cmd.STAGE_STATUS[stage], stage
+
+        # 這一行是產生器**這一次實際寫下**的東西，不是測試自己組的字串。
+        events, undecidable_reason = parse_log_events(item.body)
+        assert undecidable_reason is None, (stage, undecidable_reason)
+        line = events[-1].splitlines()[0]
+        assert line.startswith("handoff by wf-cli"), line
+
+        assert written_status not in line, (stage, line)
+        assert stage not in line, (stage, line)
+
+        finding = audit_state_face_drift("HANDOFF-LOGLINE1", item.body, written_status)
+        assert (finding.verdict, finding.rule) == ("undecidable", UNDECIDABLE_HANDOFF), stage
+
+    # `release` 不在迴圈裡（它另有部署驗證前提），但它與上面六個共用同一個格式字串。
+    # 「共用」不用散文宣稱：整個模組只有這一處產生 handoff 的 Log 行。多出第二處時本行
+    # 紅，屆時上面的迴圈就不再窮舉，得有人回來補。
+    assert inspect.getsource(handoff_cmd).count("handoff by wf-cli") == 1
+
+
 def test_handoff_next_stage_implementation_auto_increments_iteration(fake_runner):
     # --next-stage implementation 承載「查核退回」語意：讀回現值 +1 寫回，
     # 連續兩次退回應累加而非固定寫 1。
@@ -934,9 +1065,11 @@ def test_handoff_next_stage_backlog_writes_backlog_only_from_planning(fake_runne
     run_cli(_open_argv("BACKLOG-CARD1"))
     project = resolve_project(fake_runner, "acme", 1)
 
-    # ⚠️ 起點刻意先推到 🔨執行中：本 repo 現行的 `open` 預設就是 📥Backlog
-    # （那正是 #118 在修的洞），直接從剛開的卡驗「沒被寫成 📥Backlog」會與預設值
-    # 混淆——拒絕生效與拒絕失效在那個樣本上長得一樣。
+    # ⚠️ 起點刻意先推到 🔨執行中。**本註解的原始理由已於 WF-OPEN-INITIAL-STATUS1
+    # 失效**：寫下它時 `open` 的預設是 📥Backlog，所以剛開的卡分不出「拒絕生效」與
+    # 「拒絕失效」；現在 `open` 預設是 💡需求，那個混淆不存在了。但這一步**保留**，
+    # 理由換成更強的一條：💡需求 與 🔨執行中 都不是 🧭規劃中，而 🔨執行中 是實際
+    # 看板上最常見的非法起點，用它當樣本比用開卡預設值更有鑑別力。
     assert run_cli(
         _handoff_argv("BACKLOG-CARD1", "0" * 40, **{"--next-stage": "implementation"})
     ) == 0
