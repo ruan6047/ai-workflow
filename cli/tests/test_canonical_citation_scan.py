@@ -70,15 +70,17 @@ _TIMESTAMP_LINE = (
     "line, expected",
     [
         (_BAD_CANONICAL_REF, (ccs.KIND_CANONICAL,)),
-        (_BAD_SECTION_REF, (ccs.KIND_CANONICAL, ccs.KIND_BARE)),
+        (_BAD_SECTION_REF, (ccs.KIND_BARE,)),
         (_BAD_BARE_REF, (ccs.KIND_BARE,)),
     ],
 )
 def test_each_line_number_shape_is_flagged(line, expected):
-    """三種寫法都要命中——判準不追寫法，所以三種都該落在同一組規則底下。
+    """三種寫法都要命中——判準不追寫法，所以三種都被同一組規則接住。
 
-    ⚠️ ``_BAD_SECTION_REF`` 同時觸發兩條規則：它既是「檔名加冒號行號」也是剪除後
-    仍有冒號數字。這不是重複計數的 bug，是兩條規則各自獨立成立。
+    ⚠️ 落在**哪一條**規則不是隨意的：``_BAD_SECTION_REF`` 的冒號夾在節次後面、不是
+    緊接檔名，所以它走的是「剪除後仍有冒號數字」那條，不是「檔名加冒號行號」。
+    兩條規則的分工在這裡被釘死——把 ``_CANONICAL_LINE_REF`` 放寬成允許檔名與冒號
+    之間有其他字元，本測試會轉紅。
     """
     assert ccs.line_offence_kinds(line) == expected
 

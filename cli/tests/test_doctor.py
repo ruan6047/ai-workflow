@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import re
 import shutil
 from pathlib import Path
 
@@ -2230,73 +2229,15 @@ def test_canonical_citations_do_not_regrow_line_numbers():
     assert not offenders, "點名 canonical 的行不得夾帶數字（行號會靜默失準）：\n" + "\n".join(offenders)
 
 
-# ---- 散文引用的行號形態守衛（R3-001） --------------------------------------
+
+# ---- 散文引用的行號守衛已升級為全 repo 掃描 ------------------------------
 #
-# 上面那條的「任何數字」判準對散文不適用：改寫後的引用長成「canonical 檔名 ＋
-# 節次 ＋ 原文片段」，而節次自己就帶數字。這裡改用另一個同樣封閉、但只盯**行號
-# 形態**的判準：冒號緊接數字。節次、issue 號、年份都不長那個樣子。
-_PROSE_CITERS = (
-    _REPO_ROOT / "cli" / "src" / "wf_cli" / "cleanup.py",
-    _REPO_ROOT / "cli" / "src" / "wf_cli" / "commands" / "handoff_cmd.py",
-    _REPO_ROOT / "docs" / "WF_CLEANUP_GUARD1.md",
-    _REPO_ROOT / "docs" / "WF_EVENT_IDEMPOTENCY1.md",
-    _REPO_ROOT / "docs" / "WF_RESOURCE_WRITESET1.md",
-    _REPO_ROOT / "snapshots" / "README.md",
-)
-
-#: `doctor.py:211`、`templates/bar.md:9`——指名了自己來源檔的引用。它們指的不是
-#: canonical，canonical 插行動不到它們，故不在射程；先剪掉再看該行還剩什麼。
-_QUALIFIED_REF = re.compile(r"[A-Za-z0-9_./-]+\.[A-Za-z]+:\d+")
-#: 剪掉具名引用後還剩的冒號數字＝無主行號，正是會靜默腐爛的那種寫法。
-_BARE_LINE_REF = re.compile(r":\d+")
-#: canonical 自己被冠上行號。單獨列一條，因為這形態會被 `_QUALIFIED_REF` 剪掉。
-_CANONICAL_LINE_REF = re.compile(r"AI_WORKFLOW\.md:\d+")
-
-
-def test_prose_citations_of_canonical_carry_no_line_numbers():
-    """散文引用 canonical 只准「節次＋原文片段」，不准行號。
-
-    兩條判準，都只在**點名 canonical 的行**上生效（行內有 `AI_WORKFLOW` 或
-    `canonical` 一詞）：
-
-    - 不得出現「canonical 檔名 ＋ 冒號 ＋ 數字」。
-    - 剪掉「指名了來源檔」的引用之後，該行不得再有冒號數字——剩下的必然是無主
-      行號，例如改寫前那種只寫冒號加數字、連檔名都沒有的續寫。
-
-    ⚠️ **驗不到什麼（明說，別把它當成比實際更可靠）**：
-
-    - 射程是上面那份**寫死的檔案清單**，日後新增引用 canonical 的檔案**不會**自動納管，
-      清單得手動加——這是本守衛最大的漏洞，而且**已經漏掉過真實缺陷**（見下一條）。
-    - **仍在射程外、且確實壞著的**：`scripts/daily_snapshot.sh` 的檔頭註解同樣寫
-      `canonical` 加冒號行號，指的是同一條條文，**同樣是被本卡插行推歪的**（基線上指得
-      對）。它在本卡寫入集外，R5 無權限修；**納入射程會讓本測試紅在一個修不了的缺陷上**，
-      故刻意不加，改以本條留痕並另請擴權。⚠️ R4 列「全 repo 另有 4 處」時**漏了它**，
-      漏的原因未經查證、不在此臆測；可確定的是那份清單當時就不完整。
-    - 另有 `docs/ROADMAP.md` 兩處（一處 off-by-one、一處指到空行，**基線就已錯**）與
-      `docs/DEV_AIWF_MINIMAL_CI1.md`（指的行在插入點之前，目前仍對）同樣在射程外。
-    - `docs/CONTRACT_TOOL_RECONCILE.md` 有大量 `檔名:行` 錨點但**刻意不納管**：那是
-      `scripts/contract_tool_reconcile.py` 的產生輸出，該檔自己已寫明錨點會隨其他卡合併
-      而漂移、且漂移不算缺口變化。把產生物納入手寫錨點的守衛只會製造假紅。
-    - `snapshots/README.md` 原本也在這份「射程外且壞著」的名單上，R5 取得擴權後已修並
-      納入射程；它是「清單制漏掉真實缺陷」的第一個實例。
-    - 找齊這些花了兩輪以上：起初只掃 `檔名:數字` 與反引號包住的 `` `:數字` ``，漏掉
-      `§6:222`（節次夾行號）與 `canonical:138`（連反引號都沒有）。**寫法窮舉不完**，
-      所以本守衛不追寫法，改判「這一行還剩不剩冒號數字」。
-    - 它只管**形態**，不管指得對不對：`§4.1「一段不存在的文字」` 照樣全綠。片段逐字
-      與否、是否真落在所引節次底下，由 `test_canonical_anchors_are_verbatim_and_in_the_cited_section`
-      負責，而那條**只涵蓋 `doctor.py` 的三個具名錨點**，不涵蓋這些散文片段。
-    - 條文語意被改寫、而引用的片段字串原封不動時，兩條都不會響。
-    """
-    offenders: list[str] = []
-    for path in _PROSE_CITERS:
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "AI_WORKFLOW" not in line and "canonical" not in line:
-                continue
-            if _CANONICAL_LINE_REF.search(line):
-                offenders.append(f"{path.name}:{lineno}: [canonical 帶行號] {line.strip()}")
-            if _BARE_LINE_REF.search(_QUALIFIED_REF.sub("", line)):
-                offenders.append(f"{path.name}:{lineno}: [無主行號] {line.strip()}")
-    assert not offenders, (
-        "引用 canonical 只准節次＋原文片段，不准行號（canonical 插行會讓行號靜默失準）：\n"
-        + "\n".join(offenders)
-    )
+# R3–R5 在此維護一份 `_PROSE_CITERS` **寫死清單**。那個形狀壞在構造上：新增引用
+# canonical 的檔案不會自動納管，得有人記得手動加——而它**已經漏掉過真實缺陷**
+# （`snapshots/README.md` 與 `scripts/daily_snapshot.sh` 兩處都壞著、都不在清單裡）。
+#
+# R6 依需求方裁定改成**開放集合 ＋ 明文排除集**：判準與清單搬到
+# `scripts/canonical_citation_scan.py`，守衛在
+# `cli/tests/test_canonical_citation_scan.py`，射程是 `git ls-files` 全部。
+# 判準本身沒變（仍是「剪掉指名來源檔的引用之後還剩不剩冒號數字」），只是不再由
+# 一份人維護的清單決定掃誰。
