@@ -117,7 +117,7 @@
 ## 2. 唯一的執行面：CI
 
 **2026-08-12 之前本 repo 完全沒有 CI**（`.github/` 不存在）。canonical 多處寫「守衛必紅」，
-而那些守衛不存在——例如 `AI_WORKFLOW.md:221` 的 commit trailer 守衛，實測零命中。
+而那些守衛不存在——例如 `AI_WORKFLOW.md` §6「被切掉的行不算 trailer，守衛必紅」的 commit trailer 守衛，實測零命中。
 
 **後果當日實現**：連續合併三張卡、每次只跑 `git merge-tree` 確認文字無衝突並在分支自己的基線上跑測試，
 從未在合併後的結果上跑過；`WF-CLEANUP-GUARD1` 的基線早於能力旗標改必填的那次合併，
@@ -231,7 +231,7 @@ Issue 保留其 R1 兩條 finding 的紀錄。
 
 ### 問題
 
-`AI_WORKFLOW.md §6:222` 要求 merge commit 帶 `Reviewed-by`，而 **GitHub 的 merge 按鈕
+`AI_WORKFLOW.md` §6 要求「merge commit、PR 結案紀錄或 B2 權威文件的核可 commit 另必加 `Reviewed-by`」，而 **GitHub 的 merge 按鈕
 結構上產不出這一行**。`TRAILER_GUARD_EPOCH`（`2026-08-13T00:00:00+08:00`）跨過之後，
 **每一次以 merge 按鈕合併的 PR 都會是一筆違規**——實測 `0ea7aba` 與 `dbf18d7` 的
 `git interpret-trailers --parse` 解析出**零個** trailer。

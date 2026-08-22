@@ -6,6 +6,12 @@ import shutil
 from pathlib import Path
 
 from wf_cli.doctor import (
+    ANCHOR_BLOCK,
+    ANCHOR_FLOOR,
+    ANCHOR_MERGE,
+    CANONICAL_ANCHORS,
+    CANONICAL_SECTION,
+    CANONICAL_SECTION_HEADING,
     COMMIT_TRAILER_ROOT_CAUSE_ID,
     LEGACY_AUTHORITY_NOTE_EXPLANATION,
     LEGACY_AUTHORITY_NOTE_MARKER,
@@ -16,6 +22,7 @@ from wf_cli.doctor import (
     audit_commit_trailers,
     audit_legacy_authority_notes,
     audit_review_channel,
+    canonical_cite,
     classify_commit_shape,
     evaluate_commit_trailers,
     find_legacy_authority_notes,
@@ -1075,7 +1082,7 @@ def test_epoch_none_grades_the_whole_range():
     assert evaluate_commit_trailers(rec, epoch=None).status == "violation"
 
 
-# ---- 「寫了但被空行切斷」的偵測（AI_WORKFLOW.md:220） -------------------
+# ---- 「寫了但被空行切斷」的偵測（canonical `ANCHOR_BLOCK` 那條） --------
 
 
 def test_severed_block_is_reported_separately_from_never_written():
@@ -1725,10 +1732,14 @@ _BASELINE_LINE = (
 
 
 def test_drift_handoff_table_is_exhaustive_and_pinned_to_writer():
-    """六個 next-stage 窮舉；前五格逐格等於 handoff_cmd.STAGE_STATUS，release 釘寫入端字面。
+    """七個 next-stage 窮舉；前六格逐格等於 handoff_cmd.STAGE_STATUS，release 釘寫入端字面。
 
-    卡面原文寫「三個 next-stage」，PR #102（2026-08-18）後機器現實是六個；
-    「窮舉」的要求管轄「三個」的字面（派工包修正 1）。
+    卡面原文寫「三個 next-stage」，PR #102（2026-08-18）後機器現實是六個，
+    WF-BACKLOG-STAGE1（2026-08-21）補上 ``backlog`` 後是七個；「窮舉」的要求管轄
+    「三個」的字面（派工包修正 1）。
+
+    ⚠️ 下面兩行釘的是**導出的同一性**（``set(...) == set(...) | {"release"}`` 與逐格
+    相等），不是硬編清單——寫入端加一格會自動流進斷言，**只改一邊必紅**。
     """
     assert set(HANDOFF_STAGE_EXPECTED_STATUS) == set(handoff_cmd.STAGE_STATUS) | {"release"}
     for stage, status in handoff_cmd.STAGE_STATUS.items():
@@ -1803,6 +1814,36 @@ def test_drift_explicit_move_to_backlog_is_consistent_and_handoff_stays_undecida
     assert (handoff.verdict, handoff.rule) == ("undecidable", UNDECIDABLE_HANDOFF)
 
 
+def test_drift_backlog_face_needs_an_explaining_event_and_handoff_does_not_explain():
+    """WF-BACKLOG-STAGE1 的雙向對照組：`📥Backlog` 欄位值不得默認通過。
+
+    ⚠️ **為什麼三個案例都用 assign 形狀而不是 handoff 形狀**：handoff 的 Log 行不記
+    ``--next-stage``（`doctor.HANDOFF_STAGE_EXPECTED_STATUS` 上方註解），所以
+    ``handoff --next-stage backlog`` 對本軸構造性地不可判定——見本檔
+    ``test_drift_handoff_is_undecidable_never_default_pass``，`📥Backlog` 已隨新增的
+    表格自動流入該組。本測試因此驗的是**狀態面 vs 留痕**這條軸上「Backlog 有沒有事件
+    依據」，這也是 #118 R1 明文接受的替代形狀。
+    """
+    to_backlog = _ASSIGN_LINE.replace("交付狀態 🔨執行中", "交付狀態 📥Backlog")
+
+    # (a) 有解釋事件、欄位相符 → consistent
+    ok = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, to_backlog), "📥Backlog")
+    assert (ok.verdict, ok.rule, ok.expected_status) == ("consistent", RULE_ASSIGN, "📥Backlog")
+
+    # (b) 對照組：欄位是 📥Backlog，但最後一筆解釋事件說的是別的值 → 仍須 drift。
+    #     少了這一條，一個「永遠回 📥Backlog」的推導器也會讓 (a) 通過。
+    moved = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE), "📥Backlog")
+    assert (moved.verdict, moved.expected_status, moved.actual_status) == (
+        "drift", "🔨執行中", "📥Backlog",
+    )
+
+    # (c) 反向：有 Backlog 事件而欄位沒跟上（half-write）→ 也是 drift，不是 consistent。
+    half = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, to_backlog), "🔨執行中")
+    assert (half.verdict, half.expected_status, half.actual_status) == (
+        "drift", "📥Backlog", "🔨執行中",
+    )
+
+
 def test_drift_assign_derives_the_logged_status_including_free_text_override():
     """assign 的 Log 行逐字記下寫入值，--status 自由文字覆寫因此**同樣可推導**。"""
     consistent = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE), "🔨執行中")
@@ -1833,9 +1874,14 @@ def test_drift_handoff_is_undecidable_never_default_pass(face):
     """handoff 的 Log 行不含 next-stage／--status，寫入值反推不出。
 
     卡面驗收第 1 條的硬要求：推導不出的組合**明確落「不判定」而非默認通過**
-    ——對六個 next-stage 可能寫入的每一個狀態值（外加兩個 --status 自由文字
+    ——對七個 next-stage 可能寫入的每一個狀態值（外加兩個 --status 自由文字
     才寫得出的值）逐一驗證：verdict 恆為 undecidable，既不是 consistent 也
     不是 drift。
+
+    ⚠️ parametrize 直接取 ``HANDOFF_STAGE_EXPECTED_STATUS.values()``，所以
+    WF-BACKLOG-STAGE1 新增的 ``📥Backlog`` 自動進入本組：**handoff 寫出的
+    Backlog 一樣落「不判定」**，這正是下方 backlog 對照組要用 assign 形狀而
+    不能用 handoff 形狀的原因。
     """
     finding = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, _ASSIGN_LINE, _HANDOFF_LINE), face)
     assert finding.verdict == "undecidable"
@@ -2138,3 +2184,100 @@ def test_identity_basis_reaches_the_json_payload():
     report = DoctorReport(repo_root=".", generated_at="t", registry_sources=[])
     payload = build_json_payload(report, finding)
     assert payload["review_channel"]["identity_basis"] == "requester_endorsed"
+
+
+# ---- canonical 引用的形狀守衛（R2-001） --------------------------------
+#
+# `doctor.py` 原本手寫「canonical 檔名 ＋ 冒號 ＋ 行號」。行號在 canonical 插行時
+# **靜默失準**，而且已經失準三輪（#119 抓到既存漂移、#120 自己插兩行又推歪一批）。
+# 引用改成條文原文片段之後，由下面兩條負責讓失準**轉紅**而不是繼續爛在註解裡。
+
+# ⚠️ 路徑索引與檔名刻意拆兩行：下面那條守衛不准「點名 canonical 的行夾帶數字」，
+# 而 `parents[...]` 的索引就是數字——寫成一行會自己打自己（實測會紅）。
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CANONICAL_PATH = _REPO_ROOT / "AI_WORKFLOW.md"
+_CITING_SOURCES = (
+    _REPO_ROOT / "cli" / "src" / "wf_cli" / "doctor.py",
+    Path(__file__).resolve(),
+)
+
+
+def _enclosing_h2(lines: list[str], index: int) -> str | None:
+    """`index` 這一行往回找到的最近一個 `##` 級標題。`###` 不算（不是節，是小節）。"""
+    for probe in range(index, -1, -1):
+        if lines[probe].startswith("## "):
+            return lines[probe]
+    return None
+
+
+def test_canonical_anchors_are_verbatim_and_in_the_cited_section():
+    """⭐ 錨點必須是**驗得到的**：片段要逐字、唯一，且真的落在所引的那一節底下。
+
+    ⚠️ 驗得到：片段被改寫／被刪／出現多筆（定位變歧義）／被搬去別節；宣告了卻沒人
+    用的死錨點。
+    ⚠️ 驗不到（明說）：條文語意被改寫而片段字串原封不動時**仍然全綠**——它比對的是
+    字串在不在，不是條文說了什麼。整條規則被反轉、只要這一小段主詞句還在就不會響。
+    """
+    text = _CANONICAL_PATH.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    assert text.count(CANONICAL_SECTION_HEADING) == 1, "節標題必須唯一，否則節次定位有歧義"
+    assert CANONICAL_SECTION == "§" + CANONICAL_SECTION_HEADING.removeprefix("## ").split(".", 1)[0]
+
+    assert set(CANONICAL_ANCHORS) == {ANCHOR_FLOOR, ANCHOR_MERGE, ANCHOR_BLOCK}
+
+    doctor_src = _CITING_SOURCES[0].read_text(encoding="utf-8")
+    for key, name in ((ANCHOR_FLOOR, "ANCHOR_FLOOR"), (ANCHOR_MERGE, "ANCHOR_MERGE"),
+                      (ANCHOR_BLOCK, "ANCHOR_BLOCK")):
+        fragment = CANONICAL_ANCHORS[key]
+        hits = [i for i, ln in enumerate(lines) if fragment in ln]
+        assert len(hits) == 1, f"{name} 的片段在 canonical 出現 {len(hits)} 次，必須恰好一次"
+        assert _enclosing_h2(lines, hits[0]) == CANONICAL_SECTION_HEADING, (
+            f"{name} 的條文已不在 {CANONICAL_SECTION_HEADING} 底下"
+        )
+        # 死錨點檢查：扣掉常數定義與 `CANONICAL_ANCHORS` 的鍵之後，至少還要有一處
+        # 真正的引用。⚠️ 不能用出現次數門檻——各錨點的引用數不同，門檻要嘛太鬆
+        # （拿掉一處仍過）要嘛太緊（實測：`>= 3` 的版本殺不掉「拿掉一處引用」的變異）。
+        cites = [
+            ln for ln in doctor_src.splitlines()
+            if name in ln
+            and not ln.startswith(f"{name} = ")
+            and not ln.strip().startswith(f"{name}:")
+        ]
+        assert cites, f"{name} 已無人引用，該刪掉或該補回引用"
+
+        cite = canonical_cite(key)
+        assert fragment in cite and CANONICAL_SECTION in cite
+
+
+def test_canonical_citations_do_not_regrow_line_numbers():
+    """引用長回行號形態時轉紅——這是同族第四次的預防，不是本次的修補。
+
+    判準刻意取**封閉集合**：凡是點名 canonical 檔名的那一行，就不准同時帶任何數字。
+    這比「掃某個特定寫法的 regex」強——`§6:220`、`第 220 行`、`L220` 都一樣會被抓到，
+    不必事先窮舉寫法。代價是節次也得走 `CANONICAL_SECTION` 而不能手寫，這正是要的。
+
+    ⚠️ 射程只有 `doctor.py` 與本檔——這兩支引用 canonical 時不帶節次數字，才禁得起
+    「任何數字」這種判準。散文（`docs/`、`cleanup.py`、`handoff_cmd.py`）的引用長成
+    `§4.1「原文片段」`，節次本身就有數字，改由下面那條以**行號形態**為準檢查。
+    """
+    offenders: list[str] = []
+    for path in _CITING_SOURCES:
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "AI_WORKFLOW" in line and any(ch.isdigit() for ch in line):
+                offenders.append(f"{path.name}:{lineno}: {line.strip()}")
+    assert not offenders, "點名 canonical 的行不得夾帶數字（行號會靜默失準）：\n" + "\n".join(offenders)
+
+
+
+# ---- 散文引用的行號守衛已升級為全 repo 掃描 ------------------------------
+#
+# R3–R5 在此維護一份 `_PROSE_CITERS` **寫死清單**。那個形狀壞在構造上：新增引用
+# canonical 的檔案不會自動納管，得有人記得手動加——而它**已經漏掉過真實缺陷**
+# （`snapshots/README.md` 與 `scripts/daily_snapshot.sh` 兩處都壞著、都不在清單裡）。
+#
+# R6 依需求方裁定改成**開放集合 ＋ 明文排除集**：判準與清單搬到
+# `scripts/canonical_citation_scan.py`，守衛在
+# `cli/tests/test_canonical_citation_scan.py`，射程是 `git ls-files` 全部。
+# 判準本身沒變（仍是「剪掉指名來源檔的引用之後還剩不剩冒號數字」），只是不再由
+# 一份人維護的清單決定掃誰。

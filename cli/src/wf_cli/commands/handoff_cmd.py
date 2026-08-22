@@ -22,7 +22,7 @@ implementation`` 承載「查核退回」語意（review → 退回 implementati
 
 1. `release` 現行使用者的預期是「只改狀態」。把預設改成會刪 worktree 與遠端分支，
    等於讓一個既有指令在沒人要求的情況下開始刪東西——那正是本卡（canonical
-   ``AI_WORKFLOW.md:146``「禁止靜默刪除工作內容」）要消滅的形態。
+   ``AI_WORKFLOW.md`` §4.1「禁止靜默刪除工作內容」）要消滅的形態。
 2. 兩種預設的錯誤代價不對稱：漏清理可以再跑一次補；刪錯了沒有補救。預設值取
    代價可回復的那一邊。
 3. ``--cleanup`` 需搭配 ``--repo-path``。沒有 repo 就沒有可刪對象，這個旗標因此
@@ -45,6 +45,94 @@ implementation`` 承載「查核退回」語意（review → 退回 implementati
 Issue 不關，**只記錄本次實際動作與阻擋原因**。守衛擋下、一個動作都沒走的 ``detect_only``
 不寫——世界沒被動過，重跑就能重新得到同一份判定。
 
+## ``--next-stage backlog``：閘門過了、進待辦池（WF-BACKLOG-STAGE1）
+
+``📥Backlog`` 在 canonical ``AI_WORKFLOW.md`` §0 的序列裡（``🧭規劃中 → 📥Backlog``），
+但 **從來沒有專責 writer**：唯一寫得出它的是 ``wfcli open`` 的 dataclass 預設（意外充當）
+與 ``--status`` 這個無 ``choices`` 的自由文字旗標。後果是**合規的轉換與違規的轉換在機械
+上完全同形**。本階段補上那個動詞。
+
+**「受檢查的」逐項回答**（ai-workflow#118 的 R1-002 用詞；三個候選逐一裁定，不挑好做的做）：
+
+1. **要帶前提檢查。** 只加一個 enum 值＝只有「專責」沒有「受檢查」，那不閉合 R1-002
+   ——它抱怨的正是自由文字逃生口「不能取代具名、**受前提檢查**的狀態轉換」。
+
+2. **檢查的是：卡片現在的交付狀態必須是 ``🧭規劃中``**（`BACKLOG_REQUIRED_PRIOR_STATUS`），
+   **但只對 T2 以上的卡課這個前提**（`BACKLOG_GATE_EXEMPT_TIERS`）。資料來源是 Project 的
+   交付狀態欄與級別欄，與 ``release`` 讀 ``部署狀態`` 同一形狀、同一退出碼。
+   **它會擋人**：T2 以上、剛開的卡、執行中的卡、已退回的卡一律拒絕；要進 Backlog 得先真的
+   到過規劃階段。
+
+   ⚠️ **級別分流的規則本體寫在 canonical** ``AI_WORKFLOW.md`` §3.1（「進 ``📥Backlog`` 的
+   狀態前提依級別分流」），本模組只是那條規則的執行者。**先有條文才有這段碼**——讓工具執行
+   canonical 沒說的規則，正是 WF-BACKLOG-STAGE1 要治的病，重演一次即是回歸。分流依據
+   （需求方 2026-08-21 就 R1-001 的裁定）：§3.1 表格第三列的「所有 T2 以上」是**疊加下限**
+   不是替代選項，故 T2 在 §3.1 射程內、有規劃義務；**只有 T0／T1 沒有對應列**。
+
+   ⛔ **``⏸阻塞`` 不是合法前身**，即使它在別的流程裡是個「回得來」的狀態：實查全部阻塞卡
+   皆由執行態或查核退回態進入、解阻後回 ``🔨執行中``，``⏸阻塞`` → ``📥Backlog`` 的實例
+   為 0。加進來只會得到一條零資訊的檢查。
+
+2b. **T0／T1 直通分支：這個分支一個檢查都不做，而且是刻意的。** 理由不是「T0／T1 風險低」
+   這種感覺，是 §3.1 的表**沒有 T0／T1 的列**——沒有條文就沒有可執行的前提，硬編一個出來
+   等於工具自己立法。這與下面第 4 點對「需求方批註放行」的處置是**同一個形狀**：說清楚它
+   不做什麼，而不是留一個看起來有檢查的空殼。該分支會往 stderr 印一行明說「未做前提檢查」，
+   讓「這裡沒有閘門」在操作當下就看得見，而不是要讀碼才知道。
+
+2c. **級別讀不到、為空、或不在 ``card.TIERS`` 語彙內 → 照 T2 以上處理**（fail closed）。
+   讀法與 `snapshot.py` 對級別欄的讀法同源（``item.text("級別")``，非字串一律回 ``None``）。
+   取 fail closed 的理由是錯誤代價不對稱：誤擋一張 T0 卡，操作者補一次級別欄就過；誤放一張
+   級別壞掉的 T4 卡，狀態面上再也看不出它沒走過規劃。
+
+   ⚠️ **這條分支的可達性要說實話：只走 ``wfcli`` 幾乎踩不到。** ``open`` 必填 ``--tier``
+   且 ``validation.py`` 驗過語彙，``project.py`` 又把 ``級別`` 宣告成只有 T0–T4 五個選項的
+   SINGLE_SELECT，所以本工具自己寫不出空值或語彙外的值。它變得可達要靠**帶外**途徑：
+   GitHub UI 直接改欄位或替該欄加選項（``ensure_fields`` 對已存在欄位「原樣保留」，不驗
+   選項集合），或 ``open`` 半寫入使 ``卡ID`` 已寫、``級別`` 未寫。⇒ 這是一個**防禦性預設**，
+   不是天天會擋人的檢查；⛔ 不得把它講成後者。它的價值在於「真的發生時往哪邊倒」是被
+   決定過、且測得出來的，而不是留給 ``None`` 去比較。
+
+   ⚠️ 這也意味著**本檢查信任級別欄**——級別是 ``amend --tier`` 可改的欄位，改級別就能改變
+   自己受不受這道閘門管。那不是本卡能關的口（降級另有需求方裁定留痕的要求，見
+   ``commands/amend_cmd.py``「級別降級的不對稱」），但必須寫在這裡，不得讓人讀成閘門管得住
+   級別本身。
+
+3. **被否決的候選 A——「Log 內須有 planning 階段的事件」**（卡面舉的例）：**機械上做不到。**
+   ``handoff`` 的 Log 行只記 owner／iteration／SHA／證據，**不記 ``--next-stage`` 也不記
+   ``--status``**（`doctor.HANDOFF_STAGE_EXPECTED_STATUS` 上方的長註解逐條寫明，並把後果
+   釘成 `doctor.UNDECIDABLE_HANDOFF`）。因此 ``handoff --next-stage planning`` 留下的行與
+   ``--next-stage review`` 留下的行**逐位元組相同**。照這條做，檢查會退化成「Log 裡有任何一
+   筆 handoff」——那才是恆真的裝飾。要讓它成立必須改 handoff 的留痕格式與 doctor 的推導語意，
+   兩者都在本卡射程外。
+
+4. **被否決的候選 B——「需求方批註放行」**（canonical §3.1 T3 列的字面）：**在本 repo 恆真，
+   故明文不實作。** ``docs/ROADMAP.md`` §1：人類、PM、執行者、查核者共用同一個 GitHub 帳號
+   ``ruan6047``，且該節逐字禁止「寫看起來在驗證身分、實際恆真的條文」。把它做成欄位＝正是
+   被禁的那個東西。
+
+**這個檢查不驗什麼**（誠實邊界，不得被讀成比實際更強）：
+
+- **它不證明規劃閘門真的跑過。** ``🧭規劃中`` 本身既可由 ``handoff --next-stage planning``
+  寫入，也可由 ``assign --status 🧭規劃中`` 這個自由文字旗標寫入。本檢查證明的是「狀態面
+  說它來自規劃」，不是「有人真的做了規劃」。門檻由「沒有」升到「至少得先移動到規劃」，
+  **不是升到不可偽造**。
+- **它不驗需求方批註**（見第 4 點）。canonical §3.1 T3 列的「需求方批註放行後才進
+  ``📥Backlog``」這半句**仍然無執行者**，本卡不宣稱它已落地。
+- **``--status`` 仍然繞得過。** 給了 ``--status`` 時整條 ``elif`` 鏈不進來，前提一條都不跑
+  ——這與 ``release`` 的部署閘門是**同一個既有形狀**，不是本卡新開的口。收斂 ``--status``
+  成 ``choices`` 是獨立一問（``docs/CONTRACT_TOOL_RECONCILE.md`` §4.1 已登記），不在本卡射程內。
+  ⚠️ 這不是假想：2026-08-21 的看板快照裡，``WF-24-EVIDENCE-STRENGTH1`` 的 Log 就有一筆
+  ``assign … 交付狀態 📥Backlog``——那條路真的被走過。
+- **T0／T1 這條路上沒有任何閘門。** 不是「檢查通過了」，是**沒有檢查**（第 2b 點）。任何
+  「``handoff --next-stage backlog`` 成功＝這張卡走過規劃」的推論，對 T0／T1 一律不成立。
+- **它管不住級別本身。** 級別由 ``amend --tier`` 可改，改成 T1 就繞開了本閘門（第 2c 點）。
+- **它不驗任何既有卡。** 本閘門只管 ``handoff --next-stage backlog`` 這一個動詞；既有卡進
+  ``📥Backlog`` 走的是 ``open`` 的 dataclass 預設或 ``--status``，兩條都不經過這裡。因此
+  「回放既有卡，零張被本閘門擋下」是**構造上必然**，⛔ 不得拿來當閘門設計良好的證據。
+
+**不遞增 iteration**：只有 ``--next-stage implementation`` 承載退回語意，backlog 與
+``review``／``release`` 同樣走 else 分支（現值原樣寫回）。
+
 **不帶 ``--cleanup`` 的代價也必須講明**：那條路徑會在清理完成前寫入終態，依
 `cleanup.classify_state` 的分類即 ``illegal_terminal_before_cleanup``；守衛不自動
 修復非法態，所以事後再補 ``--cleanup`` 會被擋。因此該路徑會印出警示，而不是靜靜
@@ -59,7 +147,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .. import git_ops
-from ..card import append_log_line, now_iso8601, parse_branch_worktree
+from ..card import TIERS, append_log_line, now_iso8601, parse_branch_worktree
 from ..cleanup import (
     SUBSEQUENT_OBLIGATION_STEPS,
     CleanupTarget,
@@ -88,9 +176,24 @@ STAGE_STATUS = {
     "requirement": "💡需求",
     "research": "🔬研究中",
     "planning": "🧭規劃中",
+    "backlog": "📥Backlog",
     "implementation": "🔨執行中",
     "review": "🔍待查核",
 }
+
+#: ``--next-stage backlog`` 的**唯一**合法前身狀態（canonical ``AI_WORKFLOW.md`` §3.1
+#: 「進 ``📥Backlog`` 的狀態前提依級別分流」）。讀 Project 的交付狀態欄，不符即拒絕
+#: ——形狀與 ``release`` 讀 ``部署狀態`` 完全相同。**這個檢查會擋人，不是恆真的裝飾**：
+#: 任何不在規劃中的 T2 以上卡（含剛開的卡）都過不了。它**不驗**的東西見本模組 docstring。
+#: ⛔ 這裡刻意只有一個值：``⏸阻塞`` 不加進來（理由見 docstring 第 2 點）。
+BACKLOG_REQUIRED_PRIOR_STATUS = STAGE_STATUS["planning"]
+
+#: **不課前身狀態前提的級別**（canonical ``AI_WORKFLOW.md`` §3.1；需求方 2026-08-21 就
+#: WF-BACKLOG-STAGE1 的 R1-001 裁定）。⚠️ 這個集合是**條文的鏡射，不是本模組的判斷**
+#: ——§3.1 的表對 T0／T1 沒有列，所以這條路徑上沒有可執行的前提；集合要變，先改條文。
+#: 反過來說：不在本集合裡的一切（T2／T3／T4，以及讀不出來的級別）都課前提，因此擴充
+#: 本集合＝實質放寬閘門，屬 canonical 變更而非實作細節。
+BACKLOG_GATE_EXEMPT_TIERS = ("T0", "T1")
 
 #: 不帶 ``--cleanup`` 的 release 會造出「終態已寫、清理未做」的組合。這不是猜測，
 #: 是 `cleanup.classify_state` 對該組合的分類名稱。
@@ -277,7 +380,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("card_id")
     p.add_argument("--to", required=True, help="下一位 owner（角色／帳號／模型@工具）")
     p.add_argument(
-        "--next-stage", required=True, choices=["requirement", "research", "planning", "implementation", "review", "release"]
+        "--next-stage",
+        required=True,
+        choices=[
+            "requirement", "research", "planning", "backlog",
+            "implementation", "review", "release",
+        ],
     )
     p.add_argument("--source-sha", required=True, help="完整 40 字元 hex SHA")
     p.add_argument("--evidence", required=True, help="測試／CI／審核／決策連結或摘要")
@@ -357,6 +465,41 @@ def run(args: argparse.Namespace) -> int:
             )
             return 4
         new_status = "🏁完成"
+    elif args.next_stage == "backlog":
+        tier = item.text("級別")
+        if tier in BACKLOG_GATE_EXEMPT_TIERS:
+            # ⚠️ 直通分支：**這裡沒有任何前提檢查，而且是刻意的**——canonical
+            # AI_WORKFLOW.md §3.1 的表沒有 T0／T1 的列，沒有條文就沒有可執行的前提，
+            # 硬編一個出來等於工具自己立法。與 docstring 第 4 點對「需求方批註放行」
+            # 的處置同形：明說它不做什麼，不留一個看起來有檢查的空殼。
+            # 印出來而不是靜靜放行，是為了讓「這裡沒有閘門」在操作當下就看得見。
+            print(
+                f"[handoff] 注意：級別 {tier} 直通 {STAGE_STATUS['backlog']}，"
+                "**本次未做任何前身狀態檢查**"
+                "（canonical §3.1 的表沒有 T0／T1 的列，故此分支無可執行的前提；"
+                f"T2 以上才要求前身為 {BACKLOG_REQUIRED_PRIOR_STATUS}）",
+                file=sys.stderr,
+            )
+        else:
+            # T2／T3／T4，以及級別讀不到／為空／不在語彙內——後者一律照 T2 以上處理
+            # （fail closed，理由與可達性見 docstring 第 2c 點）。
+            tier_known = tier in TIERS
+            current_status = item.fields.get("交付狀態")
+            if current_status != BACKLOG_REQUIRED_PRIOR_STATUS:
+                basis = (
+                    f"級別 {tier}"
+                    if tier_known
+                    else f"級別讀到 {tier!r}，不在 T0–T4 語彙內，依 canonical §3.1 照 T2 以上處理"
+                )
+                print(
+                    f"[handoff] 拒絕：{basis}；進 {STAGE_STATUS['backlog']} 時"
+                    f"當下交付狀態必須是 {BACKLOG_REQUIRED_PRIOR_STATUS}"
+                    f"（目前交付狀態={current_status}；canonical §3.1"
+                    "「進 📥Backlog 的狀態前提依級別分流」）",
+                    file=sys.stderr,
+                )
+                return 4
+        new_status = STAGE_STATUS[args.next_stage]
     else:
         new_status = STAGE_STATUS[args.next_stage]
 
