@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json as jsonlib
 import subprocess
 from pathlib import Path
@@ -15,6 +16,11 @@ from wf_cli.commands import (
     handoff_cmd,
     open_cmd,
     snapshot_cmd,
+)
+from wf_cli.doctor import (
+    UNDECIDABLE_HANDOFF,
+    audit_state_face_drift,
+    parse_log_events,
 )
 from wf_cli.project import (
     ProjectError,
@@ -942,6 +948,71 @@ def test_handoff_updates_owner_status_and_last_handoff(fake_runner):
     assert "T" in item.fields["最後交接"]
     assert f"SHA {sha}" in item.body
     assert "證據 pytest 全綠" in item.body
+
+
+def test_handoff_log_line_never_carries_the_status_it_wrote(fake_runner):
+    """`UNDECIDABLE_HANDOFF` 的**前提**：handoff 寫進欄位的狀態，復原不出來。
+
+    ⚠️ 本測試是為了取代 `test_doctor.py` 一句**實測為假**的保證而寫（`#118` R2-002）。
+    那句話說「若哪天 handoff 的 Log 行開始記狀態，`test_drift_explicit_move_to_backlog_
+    is_consistent_and_handoff_stays_undecidable` 的末行會先轉紅」。實測兩件事都不成立：
+
+    1. 該處餵的是手打的 `_HANDOFF_LINE` 常數，與寫入端沒有連線。把 `handoff_cmd` 的
+       Log 行改成夾帶 `交付狀態 {new_status}` 之後，那條測試照樣綠。
+    2. **就算把夾帶狀態的行直接餵進 `audit_state_face_drift` 也還是綠**——
+       `derive_expected_status` 對 `handoff by wf-cli` 開頭是無條件短路、從不看行內容。
+       所以查核者建議的「改成真正從 handoff 輸出餵入 doctor」這個修法**單獨也救不了
+       那句話**：只要讀取端還短路，那條斷言就恆綠。要它轉紅得同時改讀取端，而那不是
+       一句註解描述得了的事。
+
+    真正可證偽、也真正撐住 `undecidable` 正當性的，是**寫入端的留痕復原不出狀態**這件
+    事本身——那與 doctor 怎麼判無關。下面三條各自會被什麼推翻，逐條講明：
+
+    - `written_status not in line`：寫入端開始把狀態值寫進 Log 行時紅。**這就是那句
+      保證原本想講的事**，改由這裡承接。
+    - `stage not in line`：寫入端改記 `--next-stage` 鍵（`review`…）時紅。那同樣讓
+      `doctor.HANDOFF_STAGE_EXPECTED_STATUS` 查得出狀態，是第二條復原路徑。
+    - 餵**產生器實際輸出**進 doctor 仍回 `UNDECIDABLE_HANDOFF`：寫入端改掉行首前綴、
+      或改到 `parse_log_events` 切不出事件時紅。實測改前綴時**先紅的是上面那行
+      `startswith`**，但把該行拿掉本條自己也接得住（落 `unrecognized_event`）——兩條
+      各自成立，不是一條靠另一條。⚠️ 它**不會**因為行內多了狀態而紅（上面第 2 點）；
+      列在這裡是為了釘「寫入端前綴 ↔ 讀取端前綴」這條連線，不是為了接住狀態。
+
+    ⛔ 沒封住的：狀態若以上面兩個字面之外的編碼進 Log（自創縮寫、內部代碼），本測試
+    看不見。那是開放集合，不假裝封得住。
+    """
+    project = resolve_project(fake_runner, "acme", 1)
+    run_cli(_open_argv("HANDOFF-LOGLINE1"))
+
+    # 六個 next-stage 逐一跑**真的** handoff。順序讓 planning 緊接 backlog 之前，
+    # 好讓 `BACKLOG_REQUIRED_PRIOR_STATUS` 的前提自然成立（不是繞過閘門）。
+    ordered = ["requirement", "research", "planning", "backlog", "implementation", "review"]
+    assert set(ordered) == set(handoff_cmd.STAGE_STATUS), ordered
+
+    for i, stage in enumerate(ordered):
+        assert run_cli(
+            _handoff_argv("HANDOFF-LOGLINE1", str(i) * 40, **{"--next-stage": stage})
+        ) == 0, stage
+        item = list_items(fake_runner, project)[0]
+        written_status = item.fields["交付狀態"]
+        assert written_status == handoff_cmd.STAGE_STATUS[stage], stage
+
+        # 這一行是產生器**這一次實際寫下**的東西，不是測試自己組的字串。
+        events, undecidable_reason = parse_log_events(item.body)
+        assert undecidable_reason is None, (stage, undecidable_reason)
+        line = events[-1].splitlines()[0]
+        assert line.startswith("handoff by wf-cli"), line
+
+        assert written_status not in line, (stage, line)
+        assert stage not in line, (stage, line)
+
+        finding = audit_state_face_drift("HANDOFF-LOGLINE1", item.body, written_status)
+        assert (finding.verdict, finding.rule) == ("undecidable", UNDECIDABLE_HANDOFF), stage
+
+    # `release` 不在迴圈裡（它另有部署驗證前提），但它與上面六個共用同一個格式字串。
+    # 「共用」不用散文宣稱：整個模組只有這一處產生 handoff 的 Log 行。多出第二處時本行
+    # 紅，屆時上面的迴圈就不再窮舉，得有人回來補。
+    assert inspect.getsource(handoff_cmd).count("handoff by wf-cli") == 1
 
 
 def test_handoff_next_stage_implementation_auto_increments_iteration(fake_runner):
