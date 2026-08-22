@@ -49,8 +49,10 @@ _COLON = ":"
 #: 組裝出來的壞樣本。實際內容長成「檔名 ＋ 冒號 ＋ 行號」，但**原始碼裡看不到**
 #: 那個形態，所以掃描器掃本檔時不會命中自己。
 _BAD_CANONICAL_REF = f"見 `{ccs.CANONICAL_FILENAME}{_COLON}{_N}` 的那條規則"
-#: 節次夾行號：R4 用鬆散時戳過濾時被吃掉的那種形態。
-_BAD_SECTION_REF = f"見 `{ccs.CANONICAL_FILENAME}` §{_SECTION}{_COLON}{_N} 那條"
+#: 節次夾行號：R4 用鬆散時戳過濾時被吃掉的那種形態。**單獨抽成常數**是為了讓對照組
+#: 能用字串剪除產生，差異因此是機器保證的「只差這一段」，不是人眼比對兩個字面值。
+_SECTION_LINE_REF = f" §{_SECTION}{_COLON}{_N}"
+_BAD_SECTION_REF = f"見 `{ccs.CANONICAL_FILENAME}`{_SECTION_LINE_REF} 那條"
 #: 連檔名都沒有，只在 `canonical` 一詞後面接冒號行號。
 _BAD_BARE_REF = f"canonical{_COLON}{_N} 想要的離線稽核副本"
 #: 指名了**別的**來源檔的行號。它不是 canonical 的引用，故不在射程。
@@ -59,6 +61,8 @@ _QUALIFIED_OTHER = f"canonical 的實作見 `project.py{_COLON}{_OTHER_N}`"
 _TIMESTAMP_LINE = (
     "- 2026-07-17T18:40:00+08:00 handoff by ruan6047；證據：需求方指示上修 canonical"
 )
+#: 單獨一枚完整 ISO 時戳，供「時戳與行號同行」的差分樣本組裝用。
+_ISO_STAMP = "2026-07-30T18:51:22+08:00"
 
 
 # ==========================================================================
@@ -88,12 +92,24 @@ def test_each_line_number_shape_is_flagged(line, expected):
 def test_iso_stripping_does_not_swallow_a_section_line_ref():
     """⭐ R4 的實際踩坑：鬆散的時戳過濾會吃掉節次夾行號，讓真缺陷變成零命中。
 
-    這裡把節次夾行號**和**一個完整 ISO 時戳放進同一行。時戳必須被剪掉，節次夾行號
-    必須活下來。若有人把 ``_ISO_TIMESTAMP`` 放寬成「一到兩位數字、冒號、兩位數字」，
-    本測試轉紅。
+    ⚠️ **只斷言「這行有命中」殺不掉那個變異，所以本測試是差分的。** 把
+    ``_ISO_TIMESTAMP`` 放寬成「一到兩位數字、冒號、兩位數字」時，節次夾行號的確被吃
+    掉了，但同一行的時戳也只被剪掉半截，剩下的秒數自己就是一段冒號數字，命中照樣
+    成立。本測試的舊版就是這樣：docstring 逐字宣稱該變異會讓它轉紅，``#120`` R6 的
+    跨家族查核者實跑後記錄它仍然全綠（``#124``）。
+
+    差分的做法是先斷言**把節次夾行號剪掉、其餘一字不動**的同一行必須零命中——證明
+    時戳（含任何殘骸）不供給命中——再斷言把它加回去必須且只能命中無主行號。兩個放寬
+    方向因此都逃不掉：只吃時分的版本被第一個斷言擋下（殘骸自成命中），連秒一起吃的
+    版本把時戳剪乾淨、卻吃掉節次夾行號，被第二個斷言擋下。若 ``_SECTION_LINE_REF``
+    哪天對不上樣本、剪除變成空操作，對照組會拿到與主樣本相同的字串而轉紅，不會默默
+    退化成零資訊的檢查。
     """
-    line = f"{_BAD_SECTION_REF}（2026-07-30T18:51:22+08:00 記錄）"
-    assert ccs.KIND_BARE in ccs.line_offence_kinds(line)
+    with_ref = f"{_BAD_SECTION_REF}（{_ISO_STAMP} 記錄）"
+    without_ref = with_ref.replace(_SECTION_LINE_REF, "")
+
+    assert ccs.line_offence_kinds(without_ref) == ()
+    assert ccs.line_offence_kinds(with_ref) == (ccs.KIND_BARE,)
 
 
 def test_pure_timestamps_are_not_flagged():
