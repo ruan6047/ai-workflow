@@ -14,7 +14,7 @@
 
 本節**引用**既有權威，不另立分類。
 
-- canonical `AI_WORKFLOW.md:145`：「共享可寫資源必須宣告並互斥：`file:<path>`、`port:<n>`、`container:<name>`、`db:<env>:schema`、`db:<env>:table:<name>`；read-only 才可共用。」
+- canonical `AI_WORKFLOW.md` §4.1：「共享可寫資源必須宣告並互斥：`file:<path>`、`port:<n>`、`container:<name>`、`db:<env>:schema`、`db:<env>:table:<name>`；read-only 才可共用。」
 - `templates/control-plane-contract.md:49`：「派工前資源交集比對：〈命令；**比對本卡寫入集 × 現役卡寫入集**，撞則排隊。〉」
 
 兩處權威講的都是**寫入集相交**。而 `cli/src/wf_cli/resources.py` 的 `find_conflicts` 實作為「完全相同字串才算撞（不做路徑前綴模糊比對，避免誤判）」。
@@ -284,7 +284,7 @@ symlink 可能在宣告之後才被加入，故 `assign` 於派工當下重跑 �
 
 ### 6.2 TOCTOU 防護
 
-> **解析 SHA、跑檢查、寫入 assign 三者在同機原子目錄鎖** [atomic directory lock] **內完成**（canonical `AI_WORKFLOW.md:147`：「本機可採原子目錄鎖」；該鎖的取得／釋放語意歸 [#23](https://github.com/ruan6047/ai-workflow/issues/23)）。
+> **解析 SHA、跑檢查、寫入 assign 三者在同機原子目錄鎖** [atomic directory lock] **內完成**（canonical `AI_WORKFLOW.md` §4.1：「本機可採原子目錄鎖」；該鎖的取得／釋放語意歸 [#23](https://github.com/ruan6047/ai-workflow/issues/23)）。
 >
 > **寫入前重讀 `HEAD`**；若已非 `resource_check_rev`，**放棄本次派工**並要求重跑，不得帶著過期的檢查結果寫入。
 
@@ -1358,11 +1358,11 @@ R3-001 打的是「§9.9 宣稱一般性可攜，實作只兌現一個特例」�
 
 本檔**引用而非另立**：
 
-- canonical `AI_WORKFLOW.md:145` 的資源前綴列舉（`file:`／`port:`／`container:`／`db:`）**未被本卡修改**。本卡只定義 `file:` 的相交語意，`port:`／`container:` 沿用字串相等，`db:` 沿用「read-only 才可共用」。
+- canonical `AI_WORKFLOW.md` §4.1「共享可寫資源必須宣告並互斥」的資源前綴列舉（`file:`／`port:`／`container:`／`db:`）**未被本卡修改**。本卡只定義 `file:` 的相交語意，`port:`／`container:` 沿用字串相等，`db:` 沿用「read-only 才可共用」。
 - `control-plane-contract.md:49` 的「比對本卡**寫入集** × 現役卡寫入集」——本卡使 `find_conflicts` 真的計算寫入集相交，**該行文字不需修改**。這是實作向契約靠攏，不是契約向實作讓步。
 - 「現役」的定義（含 `📦已合併` 未收尾者，canonical §4.4）**未被本卡修改**；現行 `assign` 的活卡判準（非終態＋已指派）沿用不動。
 
-> **本檔不修改任何 canonical 條文。** 若跨家族查核認為 §4 的 repo 限定詞屬 canonical `:145` 的語意擴充而非澄清，該判斷應退回並另走契約修訂 PR——本檔對此**不自行認定**。
+> **本檔不修改任何 canonical 條文。** 若跨家族查核認為 §4 的 repo 限定詞屬 canonical `AI_WORKFLOW.md` §4.1「共享可寫資源必須宣告並互斥」的語意擴充而非澄清，該判斷應退回並另走契約修訂 PR——本檔對此**不自行認定**。
 
 ---
 

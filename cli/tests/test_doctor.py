@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import re
 import shutil
 from pathlib import Path
 
@@ -2217,8 +2218,9 @@ def test_canonical_citations_do_not_regrow_line_numbers():
     這比「掃某個特定寫法的 regex」強——`§6:220`、`第 220 行`、`L220` 都一樣會被抓到，
     不必事先窮舉寫法。代價是節次也得走 `CANONICAL_SECTION` 而不能手寫，這正是要的。
 
-    ⚠️ 射程只有 `doctor.py` 與本檔。`docs/`、`cleanup.py`、`handoff_cmd.py` 等處的
-    手寫行號引用**不在守衛內**，仍會靜默腐爛（本卡寫入集外，未處理）。
+    ⚠️ 射程只有 `doctor.py` 與本檔——這兩支引用 canonical 時不帶節次數字，才禁得起
+    「任何數字」這種判準。散文（`docs/`、`cleanup.py`、`handoff_cmd.py`）的引用長成
+    `§4.1「原文片段」`，節次本身就有數字，改由下面那條以**行號形態**為準檢查。
     """
     offenders: list[str] = []
     for path in _CITING_SOURCES:
@@ -2226,3 +2228,62 @@ def test_canonical_citations_do_not_regrow_line_numbers():
             if "AI_WORKFLOW" in line and any(ch.isdigit() for ch in line):
                 offenders.append(f"{path.name}:{lineno}: {line.strip()}")
     assert not offenders, "點名 canonical 的行不得夾帶數字（行號會靜默失準）：\n" + "\n".join(offenders)
+
+
+# ---- 散文引用的行號形態守衛（R3-001） --------------------------------------
+#
+# 上面那條的「任何數字」判準對散文不適用：改寫後的引用長成「canonical 檔名 ＋
+# 節次 ＋ 原文片段」，而節次自己就帶數字。這裡改用另一個同樣封閉、但只盯**行號
+# 形態**的判準：冒號緊接數字。節次、issue 號、年份都不長那個樣子。
+_PROSE_CITERS = (
+    _REPO_ROOT / "cli" / "src" / "wf_cli" / "cleanup.py",
+    _REPO_ROOT / "cli" / "src" / "wf_cli" / "commands" / "handoff_cmd.py",
+    _REPO_ROOT / "docs" / "WF_CLEANUP_GUARD1.md",
+    _REPO_ROOT / "docs" / "WF_EVENT_IDEMPOTENCY1.md",
+    _REPO_ROOT / "docs" / "WF_RESOURCE_WRITESET1.md",
+)
+
+#: `doctor.py:211`、`templates/bar.md:9`——指名了自己來源檔的引用。它們指的不是
+#: canonical，canonical 插行動不到它們，故不在射程；先剪掉再看該行還剩什麼。
+_QUALIFIED_REF = re.compile(r"[A-Za-z0-9_./-]+\.[A-Za-z]+:\d+")
+#: 剪掉具名引用後還剩的冒號數字＝無主行號，正是會靜默腐爛的那種寫法。
+_BARE_LINE_REF = re.compile(r":\d+")
+#: canonical 自己被冠上行號。單獨列一條，因為這形態會被 `_QUALIFIED_REF` 剪掉。
+_CANONICAL_LINE_REF = re.compile(r"AI_WORKFLOW\.md:\d+")
+
+
+def test_prose_citations_of_canonical_carry_no_line_numbers():
+    """散文引用 canonical 只准「節次＋原文片段」，不准行號。
+
+    兩條判準，都只在**點名 canonical 的行**上生效（行內有 `AI_WORKFLOW` 或
+    `canonical` 一詞）：
+
+    - 不得出現「canonical 檔名 ＋ 冒號 ＋ 數字」。
+    - 剪掉「指名了來源檔」的引用之後，該行不得再有冒號數字——剩下的必然是無主
+      行號，例如改寫前那種只寫冒號加數字、連檔名都沒有的續寫。
+
+    ⚠️ **驗不到什麼（明說，別把它當成比實際更可靠）**：
+
+    - 射程是上面那份**寫死的檔案清單**。`docs/ROADMAP.md` 與
+      `docs/DEV_AIWF_MINIMAL_CI1.md` 都還帶著手寫的 canonical 行號（前者在基線上就
+      已 off-by-one，後者目前仍指得對），兩者皆在本卡寫入集外、未處理，本測試
+      **看不到它們**。日後新增引用 canonical 的檔案也**不會**自動納管，清單得手動
+      加——這是本守衛最大的漏洞。
+    - 它只管**形態**，不管指得對不對：`§4.1「一段不存在的文字」` 照樣全綠。片段逐字
+      與否、是否真落在所引節次底下，由 `test_canonical_anchors_are_verbatim_and_in_the_cited_section`
+      負責，而那條**只涵蓋 `doctor.py` 的三個具名錨點**，不涵蓋這些散文片段。
+    - 條文語意被改寫、而引用的片段字串原封不動時，兩條都不會響。
+    """
+    offenders: list[str] = []
+    for path in _PROSE_CITERS:
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "AI_WORKFLOW" not in line and "canonical" not in line:
+                continue
+            if _CANONICAL_LINE_REF.search(line):
+                offenders.append(f"{path.name}:{lineno}: [canonical 帶行號] {line.strip()}")
+            if _BARE_LINE_REF.search(_QUALIFIED_REF.sub("", line)):
+                offenders.append(f"{path.name}:{lineno}: [無主行號] {line.strip()}")
+    assert not offenders, (
+        "引用 canonical 只准節次＋原文片段，不准行號（canonical 插行會讓行號靜默失準）：\n"
+        + "\n".join(offenders)
+    )

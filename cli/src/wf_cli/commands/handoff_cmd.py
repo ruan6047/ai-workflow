@@ -22,7 +22,7 @@ implementation`` 承載「查核退回」語意（review → 退回 implementati
 
 1. `release` 現行使用者的預期是「只改狀態」。把預設改成會刪 worktree 與遠端分支，
    等於讓一個既有指令在沒人要求的情況下開始刪東西——那正是本卡（canonical
-   ``AI_WORKFLOW.md:146``「禁止靜默刪除工作內容」）要消滅的形態。
+   ``AI_WORKFLOW.md`` §4.1「禁止靜默刪除工作內容」）要消滅的形態。
 2. 兩種預設的錯誤代價不對稱：漏清理可以再跑一次補；刪錯了沒有補救。預設值取
    代價可回復的那一邊。
 3. ``--cleanup`` 需搭配 ``--repo-path``。沒有 repo 就沒有可刪對象，這個旗標因此
@@ -47,7 +47,7 @@ Issue 不關，**只記錄本次實際動作與阻擋原因**。守衛擋下、�
 
 ## ``--next-stage backlog``：閘門過了、進待辦池（WF-BACKLOG-STAGE1）
 
-``📥Backlog`` 在 canonical ``AI_WORKFLOW.md:18`` 的序列裡（``🧭規劃中 → 📥Backlog``），
+``📥Backlog`` 在 canonical ``AI_WORKFLOW.md`` §0 的序列裡（``🧭規劃中 → 📥Backlog``），
 但 **從來沒有專責 writer**：唯一寫得出它的是 ``wfcli open`` 的 dataclass 預設（意外充當）
 與 ``--status`` 這個無 ``choices`` 的自由文字旗標。後果是**合規的轉換與違規的轉換在機械
 上完全同形**。本階段補上那個動詞。
