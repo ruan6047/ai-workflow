@@ -925,6 +925,196 @@ def test_handoff_next_stage_release_does_not_increment_iteration(fake_runner):
     assert item.fields["iteration"] == 0
 
 
+def test_handoff_next_stage_backlog_writes_backlog_only_from_planning(fake_runner, capsys):
+    """WF-BACKLOG-STAGE1 端到端：`📥Backlog` 有了專責 writer，且那個 writer 受前提檢查。
+
+    ⚠️ 兩個方向都在同一條測試裡，因為只驗放行那一半的話，一個「無條件寫
+    📥Backlog」的實作也會通過。
+    """
+    run_cli(_open_argv("BACKLOG-CARD1"))
+    project = resolve_project(fake_runner, "acme", 1)
+
+    # ⚠️ 起點刻意先推到 🔨執行中：本 repo 現行的 `open` 預設就是 📥Backlog
+    # （那正是 #118 在修的洞），直接從剛開的卡驗「沒被寫成 📥Backlog」會與預設值
+    # 混淆——拒絕生效與拒絕失效在那個樣本上長得一樣。
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD1", "0" * 40, **{"--next-stage": "implementation"})
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "🔨執行中"
+
+    # (b) 前提不成立時必須拒絕：🔨執行中 不是 🧭規劃中。
+    blocked_sha = "1" * 40
+    rc_blocked = run_cli(
+        _handoff_argv("BACKLOG-CARD1", blocked_sha, **{"--next-stage": "backlog"})
+    )
+    assert rc_blocked == 4
+    # 卡的級別是 T3（`_open_argv` 預設）⇒ 走課前提的那一支。
+    assert "當下交付狀態必須是 🧭規劃中" in capsys.readouterr().err
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "🔨執行中"      # 欄位一格都沒被寫
+    assert f"SHA {blocked_sha}" not in item.body      # Log 也沒留下這次交接
+
+    # 先合規地過規劃階段。
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD1", "2" * 40, **{"--next-stage": "planning"})
+    ) == 0
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "🧭規劃中"
+
+    # (a) 前提成立 → 專責動詞寫出 📥Backlog。
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD1", "3" * 40, **{"--next-stage": "backlog", "--to": "待認領"})
+    ) == 0
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "📥Backlog"
+    assert item.fields["owner"] == "待認領"
+    assert item.fields["iteration"] == 1  # 起點那次 implementation 記的 1，backlog 不遞增
+    assert f"SHA {'3' * 40}" in item.body
+
+
+def test_handoff_backlog_gate_is_bypassed_by_the_free_text_status_flag(fake_runner):
+    """誠實邊界：``--status`` 仍然繞得過本閘門——與 ``release`` 的部署閘門同形。
+
+    這**不是**本卡新開的口（`--status` 加 choices 是獨立一問，見
+    docs/CONTRACT_TOOL_RECONCILE.md §4.1）。釘住它是為了讓「這個檢查有多強」寫在
+    測試裡而不是只寫在散文裡：宣稱它擋得住所有路徑的人會被這條測試打臉。
+    """
+    run_cli(_open_argv("BACKLOG-CARD2"))
+    project = resolve_project(fake_runner, "acme", 1)
+    assert run_cli(
+        _handoff_argv("BACKLOG-CARD2", "4" * 40, **{"--next-stage": "implementation"})
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "🔨執行中"
+
+    # 卡在 🔨執行中（非 🧭規劃中），但帶 --status 就整條前提鏈都不跑。
+    assert run_cli(
+        _handoff_argv(
+            "BACKLOG-CARD2", "5" * 40,
+            **{"--next-stage": "backlog", "--status": "📥Backlog"},
+        )
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "📥Backlog"
+
+
+@pytest.mark.parametrize("tier", ["T0", "T1"])
+def test_handoff_backlog_lets_t0_t1_through_without_any_precondition(fake_runner, capsys, tier):
+    """R1-001 丙案的**放行**那一半：T0／T1 直通，而且明說「這裡沒有檢查」。
+
+    canonical ``AI_WORKFLOW.md`` §3.1 的表沒有 T0／T1 的列 ⇒ 沒有條文就沒有可執行的
+    前提。⚠️ 這條測試同時釘住 stderr 的告知：直通分支必須**看得出來它沒檢查**，
+    不能與「檢查通過」在輸出上長得一樣——那正是空殼閘門的形態。
+    """
+    card = f"BACKLOG-{tier}"
+    run_cli(_open_argv(card, **{"--tier": tier}))
+    project = resolve_project(fake_runner, "acme", 1)
+
+    # 推到 🔨執行中：一個對 T2 以上必定被拒的起點，用來證明放行不是因為狀態剛好合格。
+    assert run_cli(_handoff_argv(card, "6" * 40, **{"--next-stage": "implementation"})) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "🔨執行中"
+    capsys.readouterr()
+
+    assert run_cli(_handoff_argv(card, "7" * 40, **{"--next-stage": "backlog"})) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "📥Backlog"
+    err = capsys.readouterr().err
+    assert f"級別 {tier} 直通" in err
+    assert "本次未做任何前身狀態檢查" in err
+
+
+def test_handoff_backlog_gate_applies_from_t2_up_not_only_t3(fake_runner, capsys):
+    """R1-001 丙案的**擋人**那一半，且刻意逐級別列舉——甲案（T3-only）會在 T2 那格轉紅。
+
+    ⚠️ 只驗 T3 被擋是不夠的：甲案與丙案在 T3 上的行為完全相同，那個樣本分不出兩者。
+    有鑑別力的樣本是 **T2**（實測看板上佔 35%）。
+    """
+    blocked: dict[str, int] = {}
+    for tier in ("T2", "T3", "T4"):
+        card = f"BACKLOG-GATED-{tier}"
+        run_cli(_open_argv(card, **{"--tier": tier}))
+        assert run_cli(_handoff_argv(card, "8" * 40, **{"--next-stage": "implementation"})) == 0
+        capsys.readouterr()
+        blocked[tier] = run_cli(_handoff_argv(card, "9" * 40, **{"--next-stage": "backlog"}))
+        err = capsys.readouterr().err
+        assert f"級別 {tier}" in err
+        assert "當下交付狀態必須是 🧭規劃中" in err
+
+    assert blocked == {"T2": 4, "T3": 4, "T4": 4}
+
+    # 欄位一格都沒被寫（拒絕路徑零寫入）。
+    project = resolve_project(fake_runner, "acme", 1)
+    for item in list_items(fake_runner, project):
+        if (item.fields.get("卡ID") or "").startswith("BACKLOG-GATED-"):
+            assert item.fields["交付狀態"] == "🔨執行中"
+
+
+def test_handoff_backlog_gate_blocks_when_tier_is_unreadable(fake_runner, capsys):
+    """級別讀不到／為空／不在語彙內 → 照 T2 以上處理（fail closed）。
+
+    ⚠️ 這三種輸入**只走 ``wfcli`` 產不出來**（``open`` 必填且驗過語彙，Project 欄位是
+    只有 T0–T4 的 SINGLE_SELECT），所以這裡直接構造 fake 的欄位字典——它模擬的是**帶外**
+    途徑：GitHub UI 改欄位／加選項，或 ``open`` 半寫入。這條測試證明的是「真的發生時往
+    哪邊倒」，不是「這件事常發生」。
+    """
+    run_cli(_open_argv("BACKLOG-BADTIER"))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+
+    raw_fields = fake_runner.items[item.item_id]["fields"]
+    for label, mutate in (
+        ("缺欄位", lambda f: f.pop("級別", None)),
+        ("空字串", lambda f: f.__setitem__("級別", "")),
+        ("語彙外", lambda f: f.__setitem__("級別", "T9")),
+        ("非字串", lambda f: f.__setitem__("級別", 2.0)),
+    ):
+        raw_fields["級別"] = "T3"
+        mutate(raw_fields)
+        # ⭐ 起點刻意是 🔨執行中（**不合格**的前身）：fail closed 會拒、fail open 會放行，
+        # 兩種預設在這個樣本上分得開。起點若取 🧭規劃中，兩者都放行、樣本零鑑別力。
+        raw_fields["交付狀態"] = "🔨執行中"
+        capsys.readouterr()
+        rc = run_cli(_handoff_argv("BACKLOG-BADTIER", "b" * 40, **{"--next-stage": "backlog"}))
+        assert rc == 4, label
+        assert "不在 T0–T4 語彙內" in capsys.readouterr().err, label
+        assert raw_fields["交付狀態"] == "🔨執行中", label
+
+
+def test_handoff_backlog_gate_does_not_accept_blocked_as_a_prior_status(fake_runner, capsys):
+    """⛔ ``⏸阻塞`` 不是合法前身——實查 ``⏸阻塞`` → ``📥Backlog`` 的實例為 0。
+
+    釘住它是因為「已經被阻塞過的卡回待辦池」聽起來很合理；把它加進合法前身集合會讓
+    這道閘門變成零資訊的檢查，而那個改動不會有任何既有測試轉紅。
+    """
+    run_cli(_open_argv("BACKLOG-BLOCKED"))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = list_items(fake_runner, project)[0]
+    fields = ensure_fields(fake_runner, "acme", 1)
+    set_field_value(fake_runner, project, item.item_id, fields["交付狀態"], "⏸阻塞")
+    capsys.readouterr()
+
+    assert run_cli(_handoff_argv("BACKLOG-BLOCKED", "c" * 40, **{"--next-stage": "backlog"})) == 4
+    assert "目前交付狀態=⏸阻塞" in capsys.readouterr().err
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "⏸阻塞"
+
+
+def test_backlog_gate_exempt_tiers_mirror_the_canonical_rule_text(fake_runner):
+    """⭐ 分流規則必須先寫進 canonical，工具只是執行者。
+
+    ⚠️ 這條測試讀的是 ``AI_WORKFLOW.md`` 的正文。它會在「有人改了碼裡的級別集合卻沒
+    改條文」時轉紅——那正是本卡要治的病（工具執行 canonical 沒說的規則）。
+    """
+    canonical = (
+        Path(__file__).resolve().parents[2] / "AI_WORKFLOW.md"
+    ).read_text(encoding="utf-8")
+    rule = [ln for ln in canonical.splitlines() if "進 `📥Backlog` 的狀態前提依級別分流" in ln]
+    assert len(rule) == 1, "canonical 必須恰好有一條分流條文"
+    text = rule[0]
+    assert "**T2 以上**" in text and "當下的交付狀態必須是 `🧭規劃中`" in text
+    assert "**T0／T1 直通**" in text
+    assert "不在 T0–T4 語彙內時，一律照 T2 以上處理" in text
+    # 碼側的豁免集合逐字對得上條文點名的兩級，且**只有**這兩級。
+    assert handoff_cmd.BACKLOG_GATE_EXEMPT_TIERS == ("T0", "T1")
+    assert all(f"{t}／" in text or f"／{t}" in text for t in handoff_cmd.BACKLOG_GATE_EXEMPT_TIERS)
+
+
 def test_handoff_iteration_override_sets_exact_value_and_warns(fake_runner, capsys):
     run_cli(_open_argv("ITER-CARD4"))
     rc = run_cli(_handoff_argv("ITER-CARD4", "5" * 40, **{"--iteration": "7"}))
