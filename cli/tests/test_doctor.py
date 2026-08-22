@@ -1810,7 +1810,14 @@ def test_drift_explicit_move_to_backlog_is_consistent_and_handoff_stays_undecida
     ⚠️ ``WF-BACKLOG-STAGE1``（``#120``，已合併）之後這一點**更容易被誤讀**，故明講：
     ``handoff --next-stage backlog`` 現在確實是 ``📥Backlog`` 的專責寫入者，但**寫得進去
     不等於本軸推得出來**——留痕格式沒變，末行那個 ``undecidable`` 因此不是舊事實的殘留，
-    是合併後仍然成立的現況。若哪天 handoff 的 Log 行開始記狀態，末行會先轉紅。
+    是合併後仍然成立的現況。
+
+    ⛔ 這裡原本還有一句「若哪天 handoff 的 Log 行開始記狀態，末行會先轉紅」，**實測為假**
+    （`#118` R2-002），已撤除。假在兩層：末行餵的是手打的 ``_HANDOFF_LINE`` 常數，與寫入端
+    沒有連線；而且就算餵夾帶狀態的行進去，``derive_expected_status`` 對 ``handoff by wf-cli``
+    開頭是**無條件短路、從不看行內容**，末行仍恆綠。⚠️ 所以本檔任何一條斷言都接不住那個
+    變異——它是關於寫入端的事，得在寫入端量。真正跑得到的版本在
+    ``test_commands_mocked.py`` 的 ``test_handoff_log_line_never_carries_the_status_it_wrote``。
     """
     line = _ASSIGN_LINE.replace("交付狀態 🔨執行中", "交付狀態 📥Backlog")
     moved = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, line), "📥Backlog")
