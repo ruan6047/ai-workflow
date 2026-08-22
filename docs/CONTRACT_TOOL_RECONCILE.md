@@ -185,6 +185,15 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 > 本節不改處置 JSON：`📥Backlog` 在本 repo 現行 `origin/main`（`b2a6d54`）上判 `ok`、
 > 本來就不是缺口，登記表裡沒有它。這一格的意義在 #118 合併後才會顯現——屆時
 > `card.py:295` 這個 writer 消失，而 `handoff_cmd.py` 的這一格讓它**不會**掉回 `read-only`。
+>
+> **上述預測已兌現、且已實測**（`WF-OPEN-INITIAL-STATUS1` R2，2026-08-22）。`open` 的
+> 預設改成 `💡需求` 之後，`card.py` 與 `doctor.py` 的兩處字面確實消失，而本節下方的產生
+> 輸出表顯示 `📥Backlog` **仍判 `ok`**、writer 由 `handoff_cmd.py` 承接——所以它沒有進
+> §4.1 那一族，處置 JSON 也不需要新增它。⚠️ 這裡記一筆反向的事：該卡 R1 是在本節寫成
+> **之前**的基線上做的，當時把 `delivery_status/📥Backlog` 登記成 `read-only`；對齊新
+> `origin/main` 後 `--check` 以「登記了已不存在的缺口」轉紅，該列已於 R2 移除。**乾淨的
+> 文字合併沒有攔下這個語意衝突，攔下它的是 `--check` 的第 2 個方向**——這正是 §2.3 說
+> 「不能靠刪一列讓檢查變綠」的那條 ratchet 在反方向上也有效的實例。
 
 ### 4.2 卡面欄位：開卡寫得進、開卡後改不動（4 項新增）
 
@@ -337,7 +346,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | 族 | 成員 | 建議處置 |
 |---|---|---|
 | §3 五個已知實例 | `review-invalid`、`preflight-failed`、`status-change`、amend 繞過 `find_conflicts`、`需求` 欄 | `補寫入者`（`review-invalid` 工程量最小：偵測已在，只差留痕）。`amend` 那項是**閘門繞過**，風險高於留痕缺失，建議單獨開卡 |
-| §4.1 狀態無專責動詞 | `⏸阻塞`、`⏳待執行`、`💡需求`、`🔨執行中`、`🚨已升級`、`📦已合併`，以及 `assign --status` 自由文字逃生口。**`📥Backlog` 於 2026-08-21 加入本族**（`WF-OPEN-INITIAL-STATUS1`：`open` 的初始值改為 `💡需求` 後，`card.py`／`doctor.py` 兩處字面消失，本狀態自此沒有任何專責動詞寫得進去，只剩 `assign --status`／`handoff --status` 兩個自由文字逃生口。該卡的非目標明列「不新增旗標」，故未補動詞——**補不補由需求方另裁**） | `🚨已升級` `補寫入者`；`📦已合併` `待需求方裁定`（先釐清現況是怎麼設定的）；其餘 `待需求方裁定`（補動詞或從狀態表移除）。**`--status` 該不該收斂成 `choices` 是獨立一問**——它現在讓所有前提都可繞過 |
+| §4.1 狀態無專責動詞 | `⏸阻塞`、`⏳待執行`、`💡需求`、`🔨執行中`、`🚨已升級`、`📦已合併`，以及 `assign --status` 自由文字逃生口。⛔ **`📥Backlog` 不在本族**——理由見 §4.1.1，`WF-BACKLOG-STAGE1` 已補上 `handoff --next-stage backlog` | `🚨已升級` `補寫入者`；`📦已合併` `待需求方裁定`（先釐清現況是怎麼設定的）；其餘 `待需求方裁定`（補動詞或從狀態表移除）。**`--status` 該不該收斂成 `choices` 是獨立一問**——它現在讓所有前提都可繞過 |
 | §4.2 開卡後改不動 | `規劃`、`執行`、`查核`、`DB`、`服務的原始目標` | `補寫入者`（`規劃` 優先：它與 `需求` 同樣被讀作授權判準） |
 | §4.3 完全不渲染 | tasks-card 7 項＋initiative-card 6 項＋bug-card 6 項 | `待需求方裁定`：`從契約移除`（承認這些是手填欄位）或補 `wfcli open --kind initiative/bug`。**不建議逐欄補**——19 個欄位逐欄開卡正是本卡要消滅的「修實例不修形狀」 |
 | §4.4 事件無 writer | `escalation-epoch-change`、`handoff-accepted`、`review-correction`、`review-marker-clearance`、`baseline-change-request`、四個 clearance 分類 | `補寫入者`。`handoff-accepted` 優先——`event-verified` preflight 依據的不可達性以它為根因 |
@@ -378,7 +387,6 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "delivery_status/⏳待執行": "read-only",
     "delivery_status/⏸阻塞": "read-only",
     "delivery_status/⚪一般": "absent",
-    "delivery_status/📥Backlog": "read-only",
     "delivery_status/📦已合併": "read-only",
     "delivery_status/🔴紅線": "absent",
     "delivery_status/🚨已升級": "read-only",
@@ -465,7 +473,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `⏳待執行` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
 | `⏸阻塞` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:103`<br>`AI_WORKFLOW.md:118`<br>…共 12 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
 | `⚪一般` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；專責動詞=否 |
-| `📦已合併` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:173`<br>`templates/TASKS.md:6`<br>…共 7 | — | `cli/src/wf_cli/doctor.py:1699`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `📦已合併` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:173`<br>`templates/TASKS.md:6`<br>…共 7 | — | `cli/src/wf_cli/doctor.py:1715`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
 | `🔴紅線` | absent | `templates/bug-card.md:1`<br>`templates/tasks-card.md:1` | — | — | Project 選項=否；專責動詞=否 |
 | `🚧進行中` | read-only | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | — | `cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
 | `🚨已升級` | read-only | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:104`<br>`AI_WORKFLOW.md:193`<br>…共 12 | — | `cli/src/wf_cli/project.py:41` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
@@ -476,8 +484,8 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `✅已驗證` | ok | `AI_WORKFLOW.md:18`<br>`templates/worktree-lifecycle.md:15` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:460` | `cli/src/wf_cli/commands/deploy_state_cmd.py:31`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py:42`<br>`cli/src/wf_cli/commands/handoff_cmd.py:460`<br>…共 4 | Project 選項=是；專責動詞=是 |
 | `✅通過` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/review-escalation.md:12` | `cli/src/wf_cli/doctor.py:1295`<br>`cli/src/wf_cli/review.py:64` | `cli/src/wf_cli/doctor.py:1295`<br>`cli/src/wf_cli/project.py:40`<br>`cli/src/wf_cli/review.py:64` | Project 選項=是；專責動詞=是 |
 | `🏁完成` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/project-stub.md:25`<br>…共 6 | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/commands/handoff_cmd.py:467`<br>`cli/src/wf_cli/doctor.py:1289` | `cli/src/wf_cli/commands/assign_cmd.py:89`<br>`cli/src/wf_cli/doctor.py:1289`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
-| `💡需求` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:176`<br>`cli/src/wf_cli/doctor.py:1283` | `cli/src/wf_cli/commands/handoff_cmd.py:176`<br>`cli/src/wf_cli/doctor.py:1283`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
-| `📥Backlog` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:113`<br>`AI_WORKFLOW.md:118`<br>…共 4 | `cli/src/wf_cli/card.py:295`<br>`cli/src/wf_cli/commands/handoff_cmd.py:179`<br>`cli/src/wf_cli/doctor.py:1286`<br>…共 4 | `cli/src/wf_cli/commands/handoff_cmd.py:179`<br>`cli/src/wf_cli/doctor.py:1286`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `💡需求` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/card.py:295`<br>`cli/src/wf_cli/commands/handoff_cmd.py:176`<br>`cli/src/wf_cli/doctor.py:1283`<br>…共 4 | `cli/src/wf_cli/commands/handoff_cmd.py:176`<br>`cli/src/wf_cli/doctor.py:1283`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
+| `📥Backlog` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:113`<br>`AI_WORKFLOW.md:118`<br>…共 4 | `cli/src/wf_cli/commands/handoff_cmd.py:179`<br>`cli/src/wf_cli/doctor.py:1286` | `cli/src/wf_cli/commands/handoff_cmd.py:179`<br>`cli/src/wf_cli/doctor.py:1286`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
 | `🔍待查核` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6`<br>`templates/handoff-contract.md:154`<br>…共 6 | `cli/src/wf_cli/commands/handoff_cmd.py:181`<br>`cli/src/wf_cli/commands/review_cmd.py:104`<br>`cli/src/wf_cli/doctor.py:1288` | `cli/src/wf_cli/commands/handoff_cmd.py:181`<br>`cli/src/wf_cli/doctor.py:1288`<br>`cli/src/wf_cli/project.py:40` | Project 選項=是；專責動詞=是 |
 | `🔨執行中` | ok | `AI_WORKFLOW.md:18`<br>`AI_WORKFLOW.md:118`<br>`templates/TASKS.md:6`<br>…共 6 | `cli/src/wf_cli/commands/assign_cmd.py:120`<br>`cli/src/wf_cli/commands/handoff_cmd.py:180`<br>`cli/src/wf_cli/doctor.py:1287` | `cli/src/wf_cli/commands/handoff_cmd.py:180`<br>`cli/src/wf_cli/doctor.py:1287`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |
 | `🔬研究中` | ok | `AI_WORKFLOW.md:18`<br>`templates/TASKS.md:6` | `cli/src/wf_cli/commands/handoff_cmd.py:177`<br>`cli/src/wf_cli/doctor.py:1284` | `cli/src/wf_cli/commands/handoff_cmd.py:177`<br>`cli/src/wf_cli/doctor.py:1284`<br>`cli/src/wf_cli/project.py:39` | Project 選項=是；專責動詞=是 |

@@ -1775,7 +1775,10 @@ def test_drift_open_derives_requirement_and_flags_moved_face():
 
     - 第一條（consistent）。**舊判準**：open 之後的預期是 ``📥Backlog``，欄位停在
       ``📥Backlog`` 才算一致。**新判準**：規劃閘門在開卡**之後**才跑，開卡當下不可能
-      已通過（canonical §3.1／採用專案 ROADMAP §2.0），所以預期是 ``💡需求``。
+      已通過。依據是 canonical 的「規劃閘門三級制」那節（T3 列：「需求方批註放行後才進
+      ``📥Backlog``」）與採用專案 cpbl 的 ROADMAP「規劃生命週期」那節（「所有新卡一律由
+      ``💡需求`` 開始」）；⚠️ **不是本 repo 同名的 `docs/ROADMAP.md`**，該檔沒有這條。
+      引節次標題而非節次編號：編號與行號一樣會隨改版靜默失準。
     - 第二條（drift）。**舊判準**：一張卡從 ``📥Backlog`` 移到 ``💡需求`` 是漂移——而
       那正是 PM 為了符合規劃閘門所做的**補救**，於是觀測面把合規記成異常，且與真正的
       違規（工具直接丟進 Backlog）在欄位上長得一模一樣。**新判準**：方向調轉，
@@ -1803,6 +1806,11 @@ def test_drift_explicit_move_to_backlog_is_consistent_and_handoff_stays_undecida
     的說明），所以 handoff 在本軸永遠落「不判定」、拿不到 ``consistent``。這與本卡無關、
     本卡也沒改它；末兩行把這個事實一併釘住，免得它日後被讀成本卡造成的。**真正逐字記下
     交付狀態的動詞是 assign**，對照組因此建在 assign 上。
+
+    ⚠️ ``WF-BACKLOG-STAGE1``（``#120``，已合併）之後這一點**更容易被誤讀**，故明講：
+    ``handoff --next-stage backlog`` 現在確實是 ``📥Backlog`` 的專責寫入者，但**寫得進去
+    不等於本軸推得出來**——留痕格式沒變，末行那個 ``undecidable`` 因此不是舊事實的殘留，
+    是合併後仍然成立的現況。若哪天 handoff 的 Log 行開始記狀態，末行會先轉紅。
     """
     line = _ASSIGN_LINE.replace("交付狀態 🔨執行中", "交付狀態 📥Backlog")
     moved = audit_state_face_drift("CARD-A", _drift_body(_OPEN_LINE, line), "📥Backlog")

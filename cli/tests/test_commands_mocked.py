@@ -135,11 +135,12 @@ def _deploy_declare_argv(card_id: str, **overrides) -> list[str]:
 def test_open_initial_status_is_the_same_for_every_tier(fake_runner):
     """五個級別全開一次，初始交付狀態必須逐級相同（⛔ 不得依 --tier 分流）。
 
-    canonical `AI_WORKFLOW.md` §3.1 只點名 T3 的批註放行，採用專案 cpbl
-    `docs/ROADMAP.md` §2.0 說「所有新卡」；需求方 2026-08-21 裁定採後者——理由是
-    不讓 wfcli 對「哪一級要過閘門」有自己的意見，且一律 💡需求 是保守方向（採用專案
-    要放寬，在自己的流程裡多一次明示轉換即可；反向不安全）。這條把該裁定釘成機械事實：
-    哪天有人為某一級開特例，逐級相同就會破。
+    canonical 的「規劃閘門三級制」那節只點名 T3 那一列的批註放行；採用專案 cpbl 的
+    ROADMAP 在「規劃生命週期」那節說「所有新卡一律由 `💡需求` 開始」——⚠️ **不是本 repo
+    同名的 `docs/ROADMAP.md`**，該檔沒有這條。需求方 2026-08-21 裁定採後者：不讓 wfcli
+    對「哪一級要過閘門」有自己的意見，且一律 💡需求 是保守方向（採用專案要放寬，在自己
+    的流程裡多一次明示轉換即可；反向不安全）。這條把該裁定釘成機械事實：哪天有人為某
+    一級開特例，逐級相同就會破。
     """
     project = resolve_project(fake_runner, "acme", 1)
     for tier in ("T0", "T1", "T2", "T3", "T4"):
@@ -150,6 +151,43 @@ def test_open_initial_status_is_the_same_for_every_tier(fake_runner):
         if i.fields["卡ID"].startswith("TIER-")
     }
     assert seen == {t: "💡需求" for t in ("T0", "T1", "T2", "T3", "T4")}, seen
+
+
+def test_open_default_still_reaches_backlog_through_the_checked_transition(fake_runner):
+    """⭐ 本卡（`#118`）與 `WF-BACKLOG-STAGE1`（`#120`）**組合起來**必須自洽。
+
+    兩張卡各自合理、合起來才有可能把路走死，而那正是文字合併攔不住的東西（本輪實測：
+    rebase 與 merge 都零衝突，語意衝突是 `contract_tool_reconcile --check` 抓到的）。
+    ⛔ 所以這裡不用散文宣稱自洽，直接把**唯一一條受檢查的入池路徑**跑一遍。
+
+    `#118` 之前 `open` 直接寫 `📥Backlog`——那條路**繞過** `#120` 的閘門，於是看板上
+    最常見的入池方式根本不受檢查。`#118` 之後入池只剩三個口：本測試跑的受檢查轉換，
+    以及 `assign --status`／`handoff --status` 兩個自由文字逃生口（後者由
+    `test_handoff_backlog_gate_is_bypassed_by_the_free_text_status_flag` 誠實釘住）。
+
+    ⚠️ 這條測試**不驗**「規劃真的做過」——`🧭規劃中` 一樣寫得進自由文字旗標。它驗的
+    只有一件事：新的初始值沒有把 T2 以上的卡鎖在池外。
+    """
+    project = resolve_project(fake_runner, "acme", 1)
+    assert run_cli(_open_argv("COHERE-CARD1")) == 0  # 預設 T3 ⇒ 課前提的那一支
+    item = list_items(fake_runner, project)[0]
+    assert item.fields["交付狀態"] == "💡需求"
+
+    # 剛開的卡直接入池必須被擋——否則本測試的後半是零資訊的（閘門若失效，
+    # 「走得到」對任何起點都成立，就證明不了那條路徑是**受檢查**的那一條）。
+    assert run_cli(
+        _handoff_argv("COHERE-CARD1", "a" * 40, **{"--next-stage": "backlog"})
+    ) == 4
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "💡需求"
+
+    # 而規劃階段本身不課前提，所以 💡需求 → 🧭規劃中 → 📥Backlog 這條路走得通。
+    assert run_cli(
+        _handoff_argv("COHERE-CARD1", "b" * 40, **{"--next-stage": "planning"})
+    ) == 0
+    assert run_cli(
+        _handoff_argv("COHERE-CARD1", "c" * 40, **{"--next-stage": "backlog"})
+    ) == 0
+    assert list_items(fake_runner, project)[0].fields["交付狀態"] == "📥Backlog"
 
 
 def test_open_creates_draft_item_with_all_ledger_fields(fake_runner, capsys):
@@ -956,9 +994,11 @@ def test_handoff_next_stage_backlog_writes_backlog_only_from_planning(fake_runne
     run_cli(_open_argv("BACKLOG-CARD1"))
     project = resolve_project(fake_runner, "acme", 1)
 
-    # ⚠️ 起點刻意先推到 🔨執行中：本 repo 現行的 `open` 預設就是 📥Backlog
-    # （那正是 #118 在修的洞），直接從剛開的卡驗「沒被寫成 📥Backlog」會與預設值
-    # 混淆——拒絕生效與拒絕失效在那個樣本上長得一樣。
+    # ⚠️ 起點刻意先推到 🔨執行中。**本註解的原始理由已於 WF-OPEN-INITIAL-STATUS1
+    # 失效**：寫下它時 `open` 的預設是 📥Backlog，所以剛開的卡分不出「拒絕生效」與
+    # 「拒絕失效」；現在 `open` 預設是 💡需求，那個混淆不存在了。但這一步**保留**，
+    # 理由換成更強的一條：💡需求 與 🔨執行中 都不是 🧭規劃中，而 🔨執行中 是實際
+    # 看板上最常見的非法起點，用它當樣本比用開卡預設值更有鑑別力。
     assert run_cli(
         _handoff_argv("BACKLOG-CARD1", "0" * 40, **{"--next-stage": "implementation"})
     ) == 0

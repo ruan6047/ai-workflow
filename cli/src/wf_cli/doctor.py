@@ -1299,15 +1299,21 @@ REVIEW_RESULT_EXPECTED_STATUS: dict[str, str] = {
 #: ``wfcli open`` 寫入的初始交付狀態。open 無 ``--status``，值即
 #: `card.Card.delivery_status` 的 dataclass 預設；測試釘同一性。
 #:
-#: 值是 ``💡需求`` 而不是 ``📥Backlog``：規劃閘門在開卡**之後**才跑，開卡當下
-#: 不可能已經通過（canonical ``AI_WORKFLOW.md`` §3.1「T3 需求方批註放行後才進
-#: 📥Backlog」；採用專案 cpbl ``docs/ROADMAP.md`` §2.0「所有新卡一律由 💡需求
-#: 開始」）。一律 ``💡需求``、不依 tier 分流（需求方 2026-08-21 裁定）——wfcli
-#: 不對「哪一級要過閘門」有自己的意見，收嚴的方向由採用專案在自己的流程裡放寬。
-#: 因此**進 ``📥Backlog`` 必須有一則逐字記下該狀態的事件**作為解釋——本軸能認的
-#: 只有 assign（其 Log 行帶「；交付狀態 X」）；handoff 的 Log 行構造上不記狀態，
-#: 落 ``UNDECIDABLE_HANDOFF``（不判定，非 consistent）。開卡後直接停在
-#: ``📥Backlog`` 而 Log 只有 open 事件，本軸會判成漂移。
+#: 值是 ``💡需求`` 而不是 ``📥Backlog``：規劃閘門在開卡**之後**才跑，開卡當下不可能
+#: 已經通過。規則本體在 canonical ``AI_WORKFLOW.md`` 的「規劃閘門三級制」那一節——
+#: 其中 T3 那一列寫「需求方批註放行後才進 `📥Backlog`」；採用專案 cpbl 的 ROADMAP
+#: （⚠️ **不是本 repo 的 `docs/ROADMAP.md`**，兩份同名而內容無關）在「規劃生命週期」
+#: 那節寫「所有新卡一律由 `💡需求` 開始」。一律 ``💡需求``、不依 tier 分流（需求方
+#: 2026-08-21 裁定）——wfcli 不對「哪一級要過閘門」有自己的意見，收嚴的方向由採用
+#: 專案在自己的流程裡放寬。
+#:
+#: ⚠️ **本軸的判定與「有沒有專責動詞」是兩件事，不要合讀。** ``WF-BACKLOG-STAGE1``
+#: 之後 ``📥Backlog`` 已經有專責動詞（``handoff --next-stage backlog``，且對 T2 以上
+#: 課前身狀態前提），但那**不改變**這裡：進 ``📥Backlog`` 仍須有一則**逐字記下該狀態
+#: 的事件**本軸才認得，而 handoff 的 Log 行構造上不記狀態，一律落
+#: ``UNDECIDABLE_HANDOFF``（不判定，非 consistent）。本軸能認的只有 assign（其 Log
+#: 行帶「；交付狀態 X」）。開卡後直接停在 ``📥Backlog`` 而 Log 只有 open 事件，本軸
+#: 會判成漂移。
 OPEN_INITIAL_STATUS = "💡需求"
 
 #: 不寫交付狀態、對推導透明的事件（可安全跳過往前找）。
