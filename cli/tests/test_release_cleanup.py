@@ -386,9 +386,15 @@ def test_cleanup_help_states_the_two_branch_contract(capsys) -> None:
     parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["handoff", "--help"])
-    out = capsys.readouterr().out
+    # ⭐ 必須先正規化折行才能斷言。argparse 走 textwrap，而 textwrap 的
+    # break_long_words 預設為 True ⇒ 中文長串（無 ASCII 空白）**會**被從中間切斷。
+    # ⛔ 直接對格式化輸出做連續字串比對，舊字面只要剛好落在折行處就測不到——
+    # 實測填充 42 個字元即可讓「預設值取代價可回復的那一邊」被折斷、負向斷言通過
+    # （R2-001，查核者構造、PM 以掃填充長度獨立重現）。
+    out = "".join(capsys.readouterr().out.split())
     # ⛔ 被推翻的說法不得出現在使用者看得到的 help 裡
     assert "預設值取代價可回復的那一邊" not in out
+    assert "預設不清理——刪除不可逆" not in out
     # ⭐ 兩分支契約必須講明
     assert "兩分支契約" in out
     assert "illegal_terminal_before_cleanup" in out
