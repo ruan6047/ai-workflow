@@ -165,41 +165,62 @@ def card_fields(runner: ReleaseGhRunner) -> dict:
     return item.fields
 
 
-#: 完整 CSI 語法：``ESC[`` 後為參數位元組 ``[0-?]``、中間位元組 ``[ -/]``、
-#: 結尾位元組 ``[@-~]``。⛔ 先前只吃 ``[0-9;]*[A-Za-z]``，私有 CSI ``ESC[?25l``
-#: 因此漏網、殘留 ``25l`` 打斷禁止文字（R4-002）。
-_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+#: help 輸出唯一允許的控制字元。其餘一律視為污染。
+_ALLOWED_CONTROL = frozenset("\n\r\t")
 
-#: 允許保留的字元範圍——**逐字列舉的封閉集合**。
-#: ⛔ 先前用 ``str.isalnum()``，它連 CJK Compatibility Ideographs 一起保留：
-#: U+F967 與 U+F966 在 NFKC 下映射為「不」「復」，但未正規化前是不同碼點，
-#: 於是負向斷言被繞過（R4-001）。
+#: 允許保留的字元範圍——**逐字列舉的封閉集合**（見 `comparable` 的 docstring）。
 _CJK_RANGES = ((0x4E00, 0x9FFF), (0x3400, 0x4DBF))
 
 
-def comparable(text: str) -> str:
-    """把文字化為可比對形式：⭐ **NFKC 正規化後，只保留逐字列舉的字元**。
+def _is_control(ch: str) -> bool:
+    o = ord(ch)
+    return (o < 0x20 or 0x7F <= o <= 0x9F) and ch not in _ALLOWED_CONTROL
 
-    三輪演進，每一輪的失敗都留在這裡：
+
+def assert_no_control_chars(text: str) -> None:
+    """⭐ help 輸出中不得出現非換行類的控制字元——**存在即失敗，不嘗試剝除**。
+
+    這是 escape 家族列舉的**形狀修法**，同族第二次之後才換的：
+
+    - **R4-002**：``_ANSI_RE`` 只吃 CSI 的 ``[0-9;]`` 參數 ⇒ 私有 CSI ``ESC[?25l`` 漏網。
+    - **R5-001**：改用完整 CSI 語法後，**OSC**（``ESC]0;X BEL``）仍漏網——它根本不是 CSI。
+
+    ⛔ 兩次的修法都是「再列舉一個 escape 家族」，而 escape 家族是**開放集合**
+    （CSI、OSC、DCS、APC、PM、SOS、單字元 ESC 序列…）。⭐ 但**控制字元本身是封閉集合**：
+    C0（U+0000–U+001F）、DEL（U+007F）、C1（U+0080–U+009F）。⇒ 改為偵測控制字元存在，
+    escape 家族的列舉問題整個消失。
+
+    ⚠️ 為什麼剝除不夠、必須「存在即失敗」：OSC 的 **payload 是英數字**
+    （``0;X`` 的 ``0`` 與 ``X``），會通過 `comparable` 的允許集合並插在句中把字面切斷。
+    ⇒ 即使剝掉 ESC 與 BEL，殘留的 payload 仍能繞過。**只有拒絕整段輸出才是封閉的。**
+    """
+    bad = sorted({ch for ch in text if _is_control(ch)})
+    assert not bad, (
+        "help 輸出含非換行類控制字元 "
+        f"{[hex(ord(c)) for c in bad]}——escape 序列可讓舊說法在終端顯示卻逃過比對"
+    )
+
+
+def comparable(text: str) -> str:
+    """把文字化為可比對形式：⭐ NFKC 正規化後，**只保留逐字列舉的字元**。
+
+    ⚠️ 呼叫前應先 `assert_no_control_chars`——本函式不處理 escape 序列，那是
+    刻意的分工：控制字元由存在性斷言擋下，本函式只負責可見字元的正規化。
+
+    四輪演進，每一輪的失敗都留在這裡：
 
     - **R2**：直接比對 argparse 格式化輸出 ⇒ 折行即繞過（``textwrap`` 的
       ``break_long_words`` 預設為 True，中文長串會被從中間切斷）。
-    - **R3**：加 ``str.split()`` 移除空白 ⇒ U+200B 即繞過（``str.split`` 不吃零寬字元）。
-      ⚠️ 與 R2 同 ``root_cause_id`` ⇒ 形狀錯：移除清單是**開放集合**，永遠有下一個字元。
-    - **R4**：改為只保留 ``str.isalnum()`` ⇒ 形狀對了，但**邊界太寬**：CJK 相容漢字
-      與私有 CSI 皆漏網（兩個新 ``root_cause_id``，非同族）。
+    - **R3**：加 ``str.split()`` 移除空白 ⇒ U+200B 即繞過。⚠️ 與 R2 同
+      ``root_cause_id`` ⇒ 形狀錯：移除清單是**開放集合**。
+    - **R4**：改為只保留 ``str.isalnum()`` ⇒ 形狀對，但**邊界太寬**：CJK 相容漢字
+      （U+F967／U+F966 在 NFKC 下映射為「不」「復」）漏網。
+    - **R5**：收窄為逐字列舉的 CJK 區塊 ⇒ 可見字元這一面收斂。
 
-    ⇒ 現行：先剝完整 CSI，再 NFKC，最後只留 **ASCII 字母數字、底線、以及逐字列舉的
-    CJK Unified Ideographs 區塊**（U+4E00–U+9FFF 與 Ext A U+3400–U+4DBF）。
-
-    ⚠️ 兩側同轉換仍是必要條件——標點與破折號一律落掉，含 ``——`` 的期待值若不走同一個
-    轉換就永遠不會命中。
-
-    ⛔ 仍不主張窮舉：允許集合可以再窄（例如逐字列舉本專案實際用到的字），而 NFKC 也
-    不處理所有同形異義（例如 Cyrillic ``а`` 在 NFKC 下不變且不在允許集合內，會被落掉——
-    那是安全方向；但若攻擊面換成 ASCII 同形，本函式擋不住）。
+    ⛔ 仍不主張窮舉：NFKC 不處理所有同形異義——Cyrillic ``а`` 不在允許集合內會被
+    落掉（安全方向），但若攻擊面換成 ASCII 同形（``il1egal``）則本函式擋不住。
     """
-    text = ud.normalize("NFKC", _ANSI_RE.sub("", text))
+    text = ud.normalize("NFKC", text)
     kept = []
     for ch in text:
         o = ord(ch)
@@ -436,7 +457,10 @@ def test_cleanup_help_states_the_two_branch_contract(capsys) -> None:
     # ⭐ 兩側都走 comparable()——封閉集合的比較，見該函式的 docstring。
     # 這是同族第三輪的形狀修法：R2 用原始字串（折行可繞）、R3 用 str.split()
     # （U+200B 可繞），兩次 root_cause_id 相同 ⇒ 換形狀而非再補一個要移除的字元。
-    out = comparable(capsys.readouterr().out)
+    raw = capsys.readouterr().out
+    # ⭐ 先擋控制字元（存在即失敗），再比對可見字元——兩層分工見各自 docstring
+    assert_no_control_chars(raw)
+    out = comparable(raw)
     # ⛔ 被推翻的說法不得出現在使用者看得到的 help 裡
     assert comparable("預設值取代價可回復的那一邊") not in out
     assert comparable("預設不清理——刪除不可逆") not in out
