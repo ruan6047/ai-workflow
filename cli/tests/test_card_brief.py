@@ -287,34 +287,56 @@ def test_insert_works_on_cards_without_a_core_pain_section() -> None:
 # ---------------------------------------------------------------- dry-run 零寫入
 
 
-def test_amend_dry_run_never_creates_project_fields() -> None:
-    """⛔ ``amend --dry-run`` 不得呼叫 ``project field-create``（查核 R3-001）。
+def test_amend_dry_run_never_creates_project_fields(monkeypatch) -> None:
+    """⛔ ``amend --dry-run`` 不得呼叫 ``project field-create``（查核 R3-001／R4-001）。
 
-    ⚠️ 這不是理論風險：``ensure_fields`` 是**冪等但不唯讀**的，缺欄位時它會建欄位。
-    ⇒ 在欄位尚未建立的 Project 上跑 dry-run 會先把欄位建出來，違反它自己
-    「未寫入任何狀態」的承諾，也違反本卡 A5「欄位須在 APPROVE 之後才建」的時序裁定。
+    ⚠️ **本測試的前一版是零資訊的**：它只直接呼叫 ``ac.list_fields``，沒有經過
+    ``amend_cmd.run`` 的分流 ⇒ 把實作改回無條件 ``ensure_fields`` 後它照樣綠
+    （PM 實跑變異檢驗確認：1 passed）。而它的 docstring 當時宣稱「負控會轉紅」——
+    ⛔ 那個宣稱是假的。⭐ 本版改為**指令層**：跑真正的 ``run()``，並讓
+    ``ensure_fields`` 一旦被呼叫就炸。
 
-    ⭐ **負控**：把 dry-run 分流拿掉（改回無條件 ensure_fields）就會轉紅——
-    因為 FakeRunner 的 field-list 回空集合，ensure_fields 必然走 field-create。
+    **變異檢驗（PM 於本版寫成後實跑）**：把 ``run()`` 內的分流改回無條件
+    ``ensure_fields`` ⇒ 本測試轉紅（``ensure_fields 不該在 dry-run 被呼叫``）。
     """
+    import argparse
+
     import wf_cli.commands.amend_cmd as ac
 
-    calls: list[list[str]] = []
+    created: list[list[str]] = []
 
     class FakeRunner:
         def run_json(self, argv, **_):
-            calls.append(argv)
+            created.append(argv)
             if argv[:2] == ["project", "field-list"]:
-                return {"fields": []}
-            raise AssertionError(f"dry-run 不該呼叫 {argv}")
+                return {"fields": []}  # ⚠️ 刻意回空：缺欄位才會觸發 field-create
+            if argv[:2] == ["project", "view"]:
+                return {"id": "PVT_x", "owner": {"login": "o"}, "number": 4, "url": "u"}
+            if argv[:2] == ["project", "item-list"]:
+                return {"items": []}
+            return {}
 
         def run(self, argv, **_):
-            calls.append(argv)
-            raise AssertionError(f"dry-run 不該呼叫 {argv}")
+            created.append(argv)
+            return ""
 
-    runner = FakeRunner()
-    fields = ac.list_fields(runner, "o", 1)
-    assert fields == {}
-    assert all("field-create" not in " ".join(c) for c in calls), (
-        f"dry-run 路徑呼叫了 field-create：{calls}"
+        def graphql(self, *_a, **_k):
+            return {"data": {"node": {"items": {"pageInfo": {}, "nodes": []}}}}
+
+    def boom(*_a, **_k):
+        raise AssertionError("ensure_fields 不該在 dry-run 被呼叫")
+
+    monkeypatch.setattr(ac, "default_runner", FakeRunner())
+    monkeypatch.setattr(ac, "ensure_fields", boom)
+
+    args = argparse.Namespace(
+        card_id="NOPE1", owner="o", project=4, repo=None, config=None,
+        reason="probe", dry_run=True, brief=GOOD,
+        spec_baseline=None, acceptance=None, verification=None, preserve_checked=False,
+        db_scope=None, resources=None, tier=None, initiative=None,
+        core_pain=None, ruling_url=None, record_unlogged_change=False, escalate=None,
+    )
+    ac.run(args)  # 找不到卡會回非 0，⛔ 但那不是本測試的斷言對象
+    assert all("field-create" not in " ".join(c) for c in created), (
+        f"dry-run 路徑呼叫了 field-create：{created}"
     )
