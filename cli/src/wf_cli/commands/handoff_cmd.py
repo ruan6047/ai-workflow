@@ -18,15 +18,30 @@ implementation`` 承載「查核退回」語意（review → 退回 implementati
 `cleanup.execute_closeout_transition`——與 `reconcile --apply` 白名單第 2 條**同一份**
 守衛與同一個 executor（`cleanup.py` 模組說明）。差別只在誰發動，前提一條都不放寬。
 
-**預設不清理，理由寫在這裡而不是只寫在文件裡**：
+**兩分支契約（WF-RELEASE-NO-CLEANUP-REFUSE1，2026-08-24 需求方裁定）**：
 
-1. `release` 現行使用者的預期是「只改狀態」。把預設改成會刪 worktree 與遠端分支，
-   等於讓一個既有指令在沒人要求的情況下開始刪東西——那正是本卡（canonical
-   ``AI_WORKFLOW.md`` §4.1「禁止靜默刪除工作內容」）要消滅的形態。
-2. 兩種預設的錯誤代價不對稱：漏清理可以再跑一次補；刪錯了沒有補救。預設值取
-   代價可回復的那一邊。
-3. ``--cleanup`` 需搭配 ``--repo-path``。沒有 repo 就沒有可刪對象，這個旗標因此
-   無法被設定檔或環境變數「不小心變成預設」。
+1. **給了 ``--repo-path`` 卻沒給 ``--cleanup`` ⇒ 拒絕**（``rc=2``，狀態面一個字都不寫）。
+   此時守衛拿得到真實 repo，能證明繼續下去會落成
+   ``cleanup.classify_state`` 的 ``illegal_terminal_before_cleanup``——而守衛明文拒絕
+   修復該狀態（實測 ``illegal_state``：須人工判斷，守衛不代為修復），只能人工刪
+   worktree／本地分支／遠端分支再手動關 Issue。
+2. **沒給 ``--repo-path`` ⇒ 不拒絕**，但把「收尾清理未執行」寫進卡上 Log 行。該分支的
+   ``--cleanup`` 構造上做不到（見下方 ``--cleanup and not args.repo_path`` 的既有拒絕），
+   且本專案無該情境實例 ⇒ 不為它設計拒絕；但它先前**只印 stderr、卡上零紀錄**，
+   使「不帶 ``--cleanup`` 的 release 發生過幾次」事後不可觀測。
+
+⛔ **本節先前寫的「預設不清理較安全」已被推翻，理由留在這裡以免後人重提**：原論證是
+「兩種預設的錯誤代價不對稱：漏清理可以再跑一次補；刪錯了沒有補救」。但**刪錯**那一半
+早就被 ``cleanup.AUTHORITY_BY_PROOF`` 以證明分級中和——只有分支已證明是 main 祖先
+（commit 都在 main、刪了可用 ``git branch <name> <sha>`` 復原）時才授權刪分支；
+``content_absorbed``（squash）只授權 ``remove_worktree``；``diverged`` 與
+``unobservable`` 皆為空集合；``NO_AUTHORITY`` 亦空且註解逐字「空集合＝fail-closed：
+證不出來就不動手」。⇒ 預設選的那一邊產生的才是**比較不可回復**的狀態，與該論證相反。
+
+兩例實害：``cpbl#138``（2026-08-15）與 ``cpbl#166``（2026-08-22）。⚠️ 因該路徑先前
+不寫卡上留痕，兩例是**下限**而非總數。
+
+``--cleanup`` 仍需搭配 ``--repo-path``，因此它無法被設定檔或環境變數「不小心變成預設」。
 
 **刻意不提供 ``--main-ref``／``--remote``**：它們是能讓祖先檢查名存實亡的旋鈕
 （把 main_ref 指向待刪分支自己，``merge-base --is-ancestor`` 必然通過）。doctor 的
@@ -436,7 +451,10 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "**實際做哪幾個動作視合併方式而定**：merge 合併（分支是 main 的祖先）會移除 "
         "worktree 並刪本地與遠端分支；squash 合併只移除 worktree，分支刻意保留"
         "（cleanup.AUTHORITY_BY_PROOF）。做了什麼以本次輸出與寫回卡片的留痕為準。"
-        "**預設不清理**——刪除不可逆，預設值取代價可回復的那一邊；需搭配 --repo-path",
+        "**兩分支契約**：給了 --repo-path 卻沒給本旗標一律拒絕（守衛看得見資源就不准"
+        "製造 illegal_terminal_before_cleanup）；沒給 --repo-path 才放行，且會把"
+        "「收尾清理未執行」寫進卡上留痕。⛔ 舊說法「預設不清理較安全」已被推翻——"
+        "不可逆的那一半早被 AUTHORITY_BY_PROOF 以證明分級中和。需搭配 --repo-path",
     )
     p.add_argument(
         "--iteration",

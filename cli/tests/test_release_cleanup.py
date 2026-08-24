@@ -373,6 +373,28 @@ def test_cleanup_after_a_status_only_release_is_refused_as_illegal(env: Env) -> 
     assert remote_branch_exists(env.repo)
 
 
+def test_cleanup_help_states_the_two_branch_contract(capsys) -> None:
+    """R1-001：help 與行為必須一致。
+
+    ⛔ 實作改成兩分支後，``--cleanup`` 的 help 仍宣稱「預設不清理——刪除不可逆，
+    預設值取代價可回復的那一邊」，而那個理由已被 ``cleanup.AUTHORITY_BY_PROOF``
+    推翻（只有 ancestor 授權刪分支）。本條把一致性釘成可執行的事實。
+
+    ⚠️ 斷言的是 **help 的實際輸出**，⛔ 不是 grep 原始碼——模組說明裡刻意保留了
+    一段對舊說法的引述（標為已被推翻的歷史），grep 會誤判。
+    """
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["handoff", "--help"])
+    out = capsys.readouterr().out
+    # ⛔ 被推翻的說法不得出現在使用者看得到的 help 裡
+    assert "預設值取代價可回復的那一邊" not in out
+    # ⭐ 兩分支契約必須講明
+    assert "兩分支契約" in out
+    assert "illegal_terminal_before_cleanup" in out
+    assert "收尾清理未執行" in out
+
+
 def test_non_release_stages_are_untouched_by_the_refusal(env: Env) -> None:
     """⛔ 拒絕只作用於 release：其他 next-stage 帶 --repo-path 不受影響。
 
