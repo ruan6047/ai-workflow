@@ -165,70 +165,35 @@ def card_fields(runner: ReleaseGhRunner) -> dict:
     return item.fields
 
 
-#: help 輸出唯一允許的控制字元。其餘一律視為污染。
-_ALLOWED_CONTROL = frozenset("\n\r\t")
-
-#: 允許保留的字元範圍——**逐字列舉的封閉集合**（見 `comparable` 的 docstring）。
-_CJK_RANGES = ((0x4E00, 0x9FFF), (0x3400, 0x4DBF))
-
-
-def _is_control(ch: str) -> bool:
-    o = ord(ch)
-    return (o < 0x20 or 0x7F <= o <= 0x9F) and ch not in _ALLOWED_CONTROL
-
-
-def assert_no_control_chars(text: str) -> None:
-    """⭐ help 輸出中不得出現非換行類的控制字元——**存在即失敗，不嘗試剝除**。
-
-    這是 escape 家族列舉的**形狀修法**，同族第二次之後才換的：
-
-    - **R4-002**：``_ANSI_RE`` 只吃 CSI 的 ``[0-9;]`` 參數 ⇒ 私有 CSI ``ESC[?25l`` 漏網。
-    - **R5-001**：改用完整 CSI 語法後，**OSC**（``ESC]0;X BEL``）仍漏網——它根本不是 CSI。
-
-    ⛔ 兩次的修法都是「再列舉一個 escape 家族」，而 escape 家族是**開放集合**
-    （CSI、OSC、DCS、APC、PM、SOS、單字元 ESC 序列…）。⭐ 但**控制字元本身是封閉集合**：
-    C0（U+0000–U+001F）、DEL（U+007F）、C1（U+0080–U+009F）。⇒ 改為偵測控制字元存在，
-    escape 家族的列舉問題整個消失。
-
-    ⚠️ 為什麼剝除不夠、必須「存在即失敗」：OSC 的 **payload 是英數字**
-    （``0;X`` 的 ``0`` 與 ``X``），會通過 `comparable` 的允許集合並插在句中把字面切斷。
-    ⇒ 即使剝掉 ESC 與 BEL，殘留的 payload 仍能繞過。**只有拒絕整段輸出才是封閉的。**
-    """
-    bad = sorted({ch for ch in text if _is_control(ch)})
-    assert not bad, (
-        "help 輸出含非換行類控制字元 "
-        f"{[hex(ord(c)) for c in bad]}——escape 序列可讓舊說法在終端顯示卻逃過比對"
-    )
+#: ``--cleanup`` 的 help **逐字黃金值**。形狀取自本 repo 既有的
+#: ``test_amend.py::test_authority_note_template_is_verbatim_golden`` 三件套，
+#: ⛔ 不自行發明。
+#:
+#: **為什麼是黃金值而不是「舊字面不得出現」**：後者是**開放集合**的負向斷言，
+#: 五輪查核證實它擋不完——R2 折行、R3 U+200B、R4 CJK 相容漢字與私有 CSI、R5 OSC，
+#: 每一輪都是「再列舉一個要處理的字元或 escape 家族」。⭐ 自由文字上的負向斷言
+#: 構造上封閉不了：永遠有下一種混淆。
+#:
+#: ⭐ 逐字黃金值是封閉的：**任何插入都會改變字串**，不論它是折行、零寬字元、
+#: 相容漢字、CSI、OSC 或尚未被想到的第六種。且它斷言的是 argparse 的**原始 help
+#: 字串**而非格式化輸出 ⇒ 折行這一整族的問題根本不存在。
+#:
+#: ⚠️ 代價：help 正當修改時本測試必紅，須同步本常數。那是**特性不是缺陷**——
+#: 它強制一次刻意的動作，而 diff 會顯示改了什麼。
+#:
+#: ⛔ 不驗語意：若有人把本常數與 help 一起改成錯的，測試會過。那一層靠查核，
+#: 而 R1-001（help 與行為不一致）本來就是查核抓到的。
+CLEANUP_HELP_GOLDEN = (
+    '僅 --next-stage release：連同執行守衛化的收尾清理，全部前提成立才動手。**實際做哪幾個動作視合併方式而定**：merge 合併（分支是 main 的祖先）會移除 worktree 並刪本地與遠端分支；squash 合併只移除 worktree，分支刻意保留（cleanup.AUTHORITY_BY_PROOF）。做了什麼以本次輸出與寫回卡片的留痕為準。**兩分支契約**：給了 --repo-path 卻沒給本旗標一律拒絕（守衛看得見資源就不准製造 illegal_terminal_before_cleanup）；沒給 --repo-path 才放行，且會把「收尾清理未執行」寫進卡上留痕。⛔ 舊說法「預設不清理較安全」已被推翻——不可逆的那一半早被 AUTHORITY_BY_PROOF 以證明分級中和。需搭配 --repo-path'
+)
 
 
-def comparable(text: str) -> str:
-    """把文字化為可比對形式：⭐ NFKC 正規化後，**只保留逐字列舉的字元**。
-
-    ⚠️ 呼叫前應先 `assert_no_control_chars`——本函式不處理 escape 序列，那是
-    刻意的分工：控制字元由存在性斷言擋下，本函式只負責可見字元的正規化。
-
-    四輪演進，每一輪的失敗都留在這裡：
-
-    - **R2**：直接比對 argparse 格式化輸出 ⇒ 折行即繞過（``textwrap`` 的
-      ``break_long_words`` 預設為 True，中文長串會被從中間切斷）。
-    - **R3**：加 ``str.split()`` 移除空白 ⇒ U+200B 即繞過。⚠️ 與 R2 同
-      ``root_cause_id`` ⇒ 形狀錯：移除清單是**開放集合**。
-    - **R4**：改為只保留 ``str.isalnum()`` ⇒ 形狀對，但**邊界太寬**：CJK 相容漢字
-      （U+F967／U+F966 在 NFKC 下映射為「不」「復」）漏網。
-    - **R5**：收窄為逐字列舉的 CJK 區塊 ⇒ 可見字元這一面收斂。
-
-    ⛔ 仍不主張窮舉：NFKC 不處理所有同形異義——Cyrillic ``а`` 不在允許集合內會被
-    落掉（安全方向），但若攻擊面換成 ASCII 同形（``il1egal``）則本函式擋不住。
-    """
-    text = ud.normalize("NFKC", text)
-    kept = []
-    for ch in text:
-        o = ord(ch)
-        if ("a" <= ch <= "z") or ("A" <= ch <= "Z") or ("0" <= ch <= "9") or ch == "_":
-            kept.append(ch)
-        elif any(lo <= o <= hi for lo, hi in _CJK_RANGES):
-            kept.append(ch)
-    return "".join(kept)
+def cleanup_help_text() -> str:
+    """取 ``--cleanup`` 的原始 help 字串——⛔ 非 argparse 格式化後的輸出。"""
+    parser = build_parser()
+    handoff = parser._subparsers._group_actions[0].choices["handoff"]
+    action = next(a for a in handoff._actions if "--cleanup" in (a.option_strings or []))
+    return action.help
 
 
 def card_body(runner: ReleaseGhRunner) -> str:
@@ -441,33 +406,32 @@ def test_cleanup_after_a_status_only_release_is_refused_as_illegal(env: Env) -> 
     assert remote_branch_exists(env.repo)
 
 
-def test_cleanup_help_states_the_two_branch_contract(capsys) -> None:
-    """R1-001：help 與行為必須一致。
+def test_cleanup_help_is_verbatim_golden() -> None:
+    """R1-001 的回歸守衛：``--cleanup`` 的 help 必須逐字等於黃金值。
 
-    ⛔ 實作改成兩分支後，``--cleanup`` 的 help 仍宣稱「預設不清理——刪除不可逆，
-    預設值取代價可回復的那一邊」，而那個理由已被 ``cleanup.AUTHORITY_BY_PROOF``
-    推翻（只有 ancestor 授權刪分支）。本條把一致性釘成可執行的事實。
-
-    ⚠️ 斷言的是 **help 的實際輸出**，⛔ 不是 grep 原始碼——模組說明裡刻意保留了
-    一段對舊說法的引述（標為已被推翻的歷史），grep 會誤判。
+    ⭐ 封閉斷言——任何插入（折行、零寬字元、相容漢字、CSI、OSC、以及尚未被想到的
+    第六種混淆）都會改變字串。⇒ 前五輪逐一列舉字元與 escape 家族的路徑到此為止。
     """
-    parser = build_parser()
-    with pytest.raises(SystemExit):
-        parser.parse_args(["handoff", "--help"])
-    # ⭐ 兩側都走 comparable()——封閉集合的比較，見該函式的 docstring。
-    # 這是同族第三輪的形狀修法：R2 用原始字串（折行可繞）、R3 用 str.split()
-    # （U+200B 可繞），兩次 root_cause_id 相同 ⇒ 換形狀而非再補一個要移除的字元。
-    raw = capsys.readouterr().out
-    # ⭐ 先擋控制字元（存在即失敗），再比對可見字元——兩層分工見各自 docstring
-    assert_no_control_chars(raw)
-    out = comparable(raw)
-    # ⛔ 被推翻的說法不得出現在使用者看得到的 help 裡
-    assert comparable("預設值取代價可回復的那一邊") not in out
-    assert comparable("預設不清理——刪除不可逆") not in out
-    # ⭐ 兩分支契約必須講明
-    assert comparable("兩分支契約") in out
-    assert comparable("illegal_terminal_before_cleanup") in out
-    assert comparable("收尾清理未執行") in out
+    assert cleanup_help_text() == CLEANUP_HELP_GOLDEN
+
+
+def test_cleanup_help_golden_is_reflow_stable() -> None:
+    """黃金值本身不得含連續空白或換行——否則它會隨原始碼的 reflow 而變動。
+
+    形狀取自 ``test_amend.py::test_golden_note_is_reflow_stable``。
+    """
+    assert " ".join(CLEANUP_HELP_GOLDEN.split()) == CLEANUP_HELP_GOLDEN
+
+
+def test_cleanup_help_golden_carries_the_two_branch_contract() -> None:
+    """黃金值是機械防線，但它不說明**為什麼**是這串。本條釘住語意上的必要成分。
+
+    ⚠️ 與黃金值互補而非冗餘：黃金值擋任何改動，本條說明改動時哪些成分不可失去。
+    """
+    for required in ("兩分支契約", "illegal_terminal_before_cleanup", "收尾清理未執行"):
+        assert required in CLEANUP_HELP_GOLDEN
+    # ⛔ 已被推翻的說法不得留在黃金值裡
+    assert "預設值取代價可回復的那一邊" not in CLEANUP_HELP_GOLDEN
 
 
 def test_non_release_stages_are_untouched_by_the_refusal(env: Env) -> None:
