@@ -49,6 +49,22 @@ FIELD_SPECS: dict[str, tuple[FieldType, tuple[str, ...] | None]] = {
     "服務的原始目標": ("TEXT", None),
     "鏈深": ("NUMBER", None),
     "資源宣告": ("TEXT", None),
+    #: 卡片簡介（canonical §6.3）。TEXT，且是 body 哨兵區塊的**恆等導出**——
+    #: 非摘要、非截斷。寫入順序 body 先、欄位後並讀回驗證（見 brief.drifted）。
+    "簡介": ("TEXT", None),
+    #: 階段（canonical §0.1 兩軸狀態模型的第一軸）。⚠️ **本卡只建欄位、不切換語彙**：
+    #: §0.1 逐字「本節定義目標狀態，尚未切換；上方 §0 的單欄序列仍是現行實作」，
+    #: 且切換須待 cpbl 相容層（子卡 S2）落地——cpbl 有六個檔綁狀態語彙，而
+    #: roadmap_lines.gate_of 對未知狀態 fail closed，切換那一刻三支腳本會停。
+    #: ⇒ 本欄位建立後暫時無人寫入，交付狀態仍承載階段與狀態兩者。
+    "階段": (
+        "SINGLE_SELECT",
+        # ⛔ **恰好七個，與 canonical §0.1 逐字相同**（查核 R2-001）。
+        # 「階段可選」以**欄位空值**表達，⛔ 不另造第八個哨兵值——SINGLE_SELECT 的選項
+        # 建立後改不掉（ensure_fields 逐字「已存在的原樣保留，含既有 option id」），
+        # 把無 canonical 依據的值凍結進真實狀態面是不可逆的。
+        ("需求", "研究", "規劃", "執行", "審核", "部署", "維護"),
+    ),
 }
 
 # card.py 的可變 Ledger 欄位對照到 FIELD_SPECS 的 key；set_card_fields 依此逐一寫入。
@@ -66,6 +82,9 @@ CARD_FIELD_MAP: dict[str, str] = {
     "service_goal": "服務的原始目標",
     "chain_depth": "鏈深",
     "resource_summary": "資源宣告",
+    #: 簡介的 Project 欄位是 body 哨兵區塊的**恆等導出**（canonical §6.3）。
+    #: ⚠️ 寫入順序 body 先、欄位後並讀回驗證——見 brief.drifted 與 doctor 的漂移偵測。
+    "brief": "簡介",
 }
 
 

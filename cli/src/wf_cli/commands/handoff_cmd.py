@@ -203,6 +203,27 @@ STAGE_STATUS = {
 #: ⛔ 這裡刻意只有一個值：``⏸阻塞`` 不加進來（理由見 docstring 第 2 點）。
 BACKLOG_REQUIRED_PRIOR_STATUS = STAGE_STATUS["planning"]
 
+#: ``--next-stage`` 對 canonical §0.1「階段」軸的映射（WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1）。
+#:
+#: ⭐ **``backlog`` 刻意不在表內——它改的是狀態不是階段。** canonical §0.1 的範例逐字
+#: 示範同階段換狀態（``階段 = 執行 / 狀態 = 已合併``），而 Backlog 不在 7 階段裡、
+#: 「待辦」在 8 個通用狀態裡。碼內 :data:`BACKLOG_REQUIRED_PRIOR_STATUS` 又強制
+#: T2 以上進 Backlog 前必為 ``🧭規劃中`` ⇒ 階段本來就是規劃，寫它是多餘且對
+#: :data:`BACKLOG_GATE_EXEMPT_TIERS` 的 T0／T1 會寫錯。⇒ 不寫，沿用現值。
+#:
+#: ⚠️ **缺 ``maintenance``**：canonical §0.1 逐字「排程、爬蟲、告警這類靠外部觸發的
+#: 交付物**必須**宣告維護階段」，但維護專屬狀態「運行中」「失效」在現行交付狀態的
+#: 15 個選項裡都不存在（實測）⇒ 新增屬語彙變更，會觸發 cpbl 的 ``roadmap_lines.gate_of``
+#: fail-closed；須待子卡 S2（cpbl 相容層）落地。⛔ 本卡不補，缺口已記入卡面未驗清單。
+STAGE_PHASE: dict[str, str] = {
+    "requirement": "需求",
+    "research": "研究",
+    "planning": "規劃",
+    "implementation": "執行",
+    "review": "審核",
+    "release": "部署",
+}
+
 #: **不課前身狀態前提的級別**（canonical ``AI_WORKFLOW.md`` §3.1；需求方 2026-08-21 就
 #: WF-BACKLOG-STAGE1 的 R1-001 裁定）。⚠️ 這個集合是**條文的鏡射，不是本模組的判斷**
 #: ——§3.1 的表對 T0／T1 沒有列，所以這條路徑上沒有可執行的前提；集合要變，先改條文。
@@ -598,6 +619,11 @@ def run(args: argparse.Namespace) -> int:
         set_field_value(runner, project, item.item_id, fields["交付狀態"], new_status)
         set_field_value(runner, project, item.item_id, fields["最後交接"], ts)
         set_field_value(runner, project, item.item_id, fields["iteration"], new_iteration)
+        # 兩軸的第一軸（canonical §0.1）。⭐ 純新增：不動交付狀態、不需 cpbl 相容層。
+        # ⛔ backlog 不在 STAGE_PHASE 內（它改的是狀態），⇒ 階段沿用現值不寫。
+        phase = STAGE_PHASE.get(args.next_stage)
+        if phase is not None and "階段" in fields:
+            set_field_value(runner, project, item.item_id, fields["階段"], phase)
 
         append_card_log(
             f"handoff by wf-cli → owner {args.to}；iteration {new_iteration}；"

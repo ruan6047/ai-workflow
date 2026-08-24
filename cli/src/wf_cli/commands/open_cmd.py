@@ -30,6 +30,7 @@ from ..project import (
     set_field_value,
 )
 from ..resources import ResourceDeclaration, ResourceDeclarationError
+from ..brief import validate_shape as validate_brief_shape
 from ..validation import ValidationError, validate_chain_depth, validate_open_fields
 
 
@@ -80,6 +81,16 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         required=True,
         choices=["none", "read", "write", "schema", "data-migration"],
     )
+    p.add_argument(
+        "--brief",
+        default=None,
+        help=(
+            "卡片簡介（canonical §6.3）。⚠️ **可選**：既有卡在本欄位上線前一律沒有簡介，"
+            "強制必填會讓所有既有卡的動詞失效。形狀兩個要求皆機械檢查——必含「適用時機」"
+            "與「⛔ 非射程：」；⛔ 不驗字數（§6.3 逐字：由 70 個 skill description 推導的"
+            "長度區間因母體未經品質檢查已整組撤回）。"
+        ),
+    )
     p.add_argument("--core-pain", required=True, help="核心痛點")
     p.add_argument("--service-goal", required=True, help="服務的原始目標")
     p.add_argument(
@@ -114,6 +125,33 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "決定 handoff --next-stage release 時是否要求先 ✅已驗證。",
     )
     p.set_defaults(func=run)
+
+
+def _verify_brief_field(runner, project, item_id: str, expected: str) -> None:
+    """讀回 Project 的簡介欄位並與 body 權威值**逐字比對**（canonical §6.3）。
+
+    ⛔ 不做正規化、不比對「第一句」——那個切句規則本身就是會出錯的 parser。
+    ⚠️ 讀不到 item（理論上剛建完就該在）視為**失敗**而非略過：靜默略過會讓
+    「欄位寫入失敗」與「一切正常」在留痕上無法區分，而那正是本卡要消滅的形狀。
+    """
+    for snap in list_items(runner, project):
+        if snap.item_id != item_id:
+            continue
+        actual = snap.fields.get("簡介")
+        if actual == expected:
+            return
+        print(
+            f"[open] 警示：簡介欄位讀回不符——body 為權威、欄位是恆等導出，"
+            f"兩者現在不一致（欄位={actual!r}）。卡已建立，⛔ 請以 "
+            f"`wfcli amend <卡ID> --brief` 重寫欄位後再派工。",
+            file=sys.stderr,
+        )
+        return
+    print(
+        "[open] 警示：剛建立的 item 在讀回時找不到，簡介欄位無法驗證。"
+        "⛔ 不視為成功——請以 `wfcli doctor` 確認雙居所是否一致。",
+        file=sys.stderr,
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -157,6 +195,12 @@ def run(args: argparse.Namespace) -> int:
             reviewer_capability_reason=args.review_capability_reason,
         )
         validate_routing_names(executor=args.executor, reviewer=args.reviewer)
+        # ⛔ **簡介形狀必須在任何 GitHub／Project 操作之前驗**（查核 R1-002）：
+        # 原本它在 Card 建構時才驗，而 Card 建構排在 ensure_fields 之後 ⇒ 一個缺標記的
+        # --brief 會先在 Project 上建出 15 個欄位才拋錯。**副作用先於驗證**是本 repo
+        # 明令要消滅的形狀（零寫入拒絕，同 amend 的前置檢查）。
+        if args.brief is not None:
+            validate_brief_shape(args.brief)
     except ValueError as exc:
         print(f"[open] 拒絕：{exc}", file=sys.stderr)
         return 2
@@ -175,6 +219,7 @@ def run(args: argparse.Namespace) -> int:
         db_scope=args.db_scope,
         core_pain=args.core_pain,
         service_goal=args.service_goal,
+        brief=args.brief,
         resources=decl,
         executor_capability=args.exec_capability,
         executor_capability_reason=args.exec_capability_reason,
@@ -234,8 +279,20 @@ def run(args: argparse.Namespace) -> int:
         "鏈深": card.chain_depth,
         "資源宣告": decl.summary(),
     }
+    # 雙居所的**導出**那一半（canonical §6.3）：body 已在上方寫成，欄位在此跟上。
+    # ⚠️ 只在有簡介時寫——既有卡與不給 --brief 的新卡都不該被塞空字串，那會讓
+    # brief.drifted 把「兩居所皆空」誤判成「欄位有值而 body 沒有」。
+    if card.brief is not None:
+        values["簡介"] = card.brief
+    # 階段軸的初始值（canonical §0.1）：open 建的卡一律始於「需求」——
+    # ⚠️ 與交付狀態 💡需求 同源但**不是同一件事**：那是狀態，這是階段。
+    values["階段"] = "需求"
     for name, value in values.items():
         set_field_value(runner, project, item_id, fields[name], value)
+    # ⭐ 讀回驗證（§6.3 逐字「寫入順序 body 先、欄位後並讀回驗證」）。
+    # 失敗模式是「body 已更新、欄位過期」，⛔ 靜默失敗正是本卡要防的。
+    if card.brief is not None:
+        _verify_brief_field(runner, project, item_id, card.brief)
 
     spec_path: Path | None = None
     if args.spec_dir:

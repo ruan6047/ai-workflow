@@ -362,6 +362,8 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 {
   "gaps": {
     "card_field/Design": "absent",
+    "guard/cli/src/wf_cli/card.py→brief": "validate_shape",
+    "guard/cli/src/wf_cli/commands/amend_cmd.py→brief": "validate_shape",
     "card_field/Discovery": "absent",
     "card_field/Log": "write-only",
     "card_field/Merge SHA": "absent",
@@ -375,7 +377,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "card_field/環境": "mention-only",
     "card_field/目標": "write-only",
     "card_field/範圍": "read-only",
-    "card_field/部署": "mention-only",
+    "card_field/部署": "read-only",
     "card_field/里程碑": "absent",
     "card_field/重現": "mention-only",
     "card_field/需求方": "write-only",
