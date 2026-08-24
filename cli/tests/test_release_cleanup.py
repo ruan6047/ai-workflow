@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata as ud
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -164,25 +165,49 @@ def card_fields(runner: ReleaseGhRunner) -> dict:
     return item.fields
 
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+#: 完整 CSI 語法：``ESC[`` 後為參數位元組 ``[0-?]``、中間位元組 ``[ -/]``、
+#: 結尾位元組 ``[@-~]``。⛔ 先前只吃 ``[0-9;]*[A-Za-z]``，私有 CSI ``ESC[?25l``
+#: 因此漏網、殘留 ``25l`` 打斷禁止文字（R4-002）。
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+#: 允許保留的字元範圍——**逐字列舉的封閉集合**。
+#: ⛔ 先前用 ``str.isalnum()``，它連 CJK Compatibility Ideographs 一起保留：
+#: U+F967 與 U+F966 在 NFKC 下映射為「不」「復」，但未正規化前是不同碼點，
+#: 於是負向斷言被繞過（R4-001）。
+_CJK_RANGES = ((0x4E00, 0x9FFF), (0x3400, 0x4DBF))
 
 
 def comparable(text: str) -> str:
-    """把文字化為可比對形式：⭐ **只保留允許的字元**，不是移除禁止的字元。
+    """把文字化為可比對形式：⭐ **NFKC 正規化後，只保留逐字列舉的字元**。
 
-    ⛔ 前兩輪的修法都是「移除清單」——R2 只比對原始輸出（折行即繞過）、R3 加
-    ``str.split()`` 移除空白（U+200B 即繞過，因為 ``str.split`` 不吃零寬字元）。
-    兩次的 ``root_cause_id`` 相同 ⇒ 形狀錯了不是實例沒抓完：移除清單是**開放集合**，
-    永遠有下一個分隔字元（U+FEFF、ESC、各種 Unicode 空白）。
+    三輪演進，每一輪的失敗都留在這裡：
 
-    ⭐ 本函式改為**封閉集合**：先剝掉 ANSI escape，再只留 ``str.isalnum()`` 為真的
-    字元與底線。CJK 在 Unicode 下 ``isalnum()`` 為真，⇒ 中文全部保留；空白、零寬
-    字元、破折號、標點、控制碼全部落掉。
+    - **R2**：直接比對 argparse 格式化輸出 ⇒ 折行即繞過（``textwrap`` 的
+      ``break_long_words`` 預設為 True，中文長串會被從中間切斷）。
+    - **R3**：加 ``str.split()`` 移除空白 ⇒ U+200B 即繞過（``str.split`` 不吃零寬字元）。
+      ⚠️ 與 R2 同 ``root_cause_id`` ⇒ 形狀錯：移除清單是**開放集合**，永遠有下一個字元。
+    - **R4**：改為只保留 ``str.isalnum()`` ⇒ 形狀對了，但**邊界太寬**：CJK 相容漢字
+      與私有 CSI 皆漏網（兩個新 ``root_cause_id``，非同族）。
 
-    ⚠️ 代價講明：破折號等標點也被移除 ⇒ **期待值必須走同一個轉換**，否則含
-    ``——`` 的負向期待永遠不會命中。兩側同轉換是本形狀的必要條件，不是可選的。
+    ⇒ 現行：先剝完整 CSI，再 NFKC，最後只留 **ASCII 字母數字、底線、以及逐字列舉的
+    CJK Unified Ideographs 區塊**（U+4E00–U+9FFF 與 Ext A U+3400–U+4DBF）。
+
+    ⚠️ 兩側同轉換仍是必要條件——標點與破折號一律落掉，含 ``——`` 的期待值若不走同一個
+    轉換就永遠不會命中。
+
+    ⛔ 仍不主張窮舉：允許集合可以再窄（例如逐字列舉本專案實際用到的字），而 NFKC 也
+    不處理所有同形異義（例如 Cyrillic ``а`` 在 NFKC 下不變且不在允許集合內，會被落掉——
+    那是安全方向；但若攻擊面換成 ASCII 同形，本函式擋不住）。
     """
-    return "".join(c for c in _ANSI_RE.sub("", text) if c.isalnum() or c == "_")
+    text = ud.normalize("NFKC", _ANSI_RE.sub("", text))
+    kept = []
+    for ch in text:
+        o = ord(ch)
+        if ("a" <= ch <= "z") or ("A" <= ch <= "Z") or ("0" <= ch <= "9") or ch == "_":
+            kept.append(ch)
+        elif any(lo <= o <= hi for lo, hi in _CJK_RANGES):
+            kept.append(ch)
+    return "".join(kept)
 
 
 def card_body(runner: ReleaseGhRunner) -> str:
