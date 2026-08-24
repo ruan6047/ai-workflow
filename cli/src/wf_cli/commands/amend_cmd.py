@@ -244,6 +244,7 @@ from ..card import (
     AmendError,
     RequesterUnparseable,
     amend_acceptance,
+    amend_brief,
     amend_core_pain,
     amend_initiative,
     amend_resource_block,
@@ -360,6 +361,17 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="更正核心痛點。**須併 --ruling-url**，且不得與其他欄位旗標同一次調用："
         "此欄餵給具否決權的 core_pain_resolved，一次調用＝一次治理裁定",
+    )
+    p.add_argument(
+        "--brief",
+        default=None,
+        help=(
+            "改（或首次寫入）卡片簡介（canonical §6.3）。⚠️ 既有卡沒有 `## 簡介` 區段——"
+            "本旗標會**插入**一個到核心痛點之前，⛔ 不是報錯：188 張既有卡的補寫通道正是"
+            "本旗標。形狀機械檢查必含「適用時機」與「⛔ 非射程：」；⛔ 不驗字數。"
+            "雙居所：body 哨兵為權威、Project TEXT 欄位為恆等導出，寫入順序 body 先、"
+            "欄位後並讀回驗證。"
+        ),
     )
     p.add_argument(
         "--ruling-url",
@@ -658,6 +670,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         args.tier,
         args.initiative,
         args.core_pain,
+        args.brief,
     ]
     wants_fields = any(f is not None for f in field_flags) or wants_resources
 
@@ -740,6 +753,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         if args.core_pain is not None:
             body, old = amend_core_pain(body, args.core_pain)
             changes.append(("核心痛點", old, args.core_pain, ruling_note))
+        if args.brief is not None:
+            body, old = amend_brief(body, args.brief)
+            changes.append(("簡介", old or "（原本沒有）", args.brief, None))
+            # ⚠️ 欄位是 body 的恆等導出，故排進 pending_field_writes——指令層在 body
+            # 寫成功後才寫欄位，並由 doctor 的漂移偵測抓「body 已更新、欄位過期」。
+            pending_field_writes["簡介"] = args.brief
         if args.acceptance is not None:
             body, old = amend_acceptance(
                 body, args.acceptance, preserve_checked=args.preserve_checked

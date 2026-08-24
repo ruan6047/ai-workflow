@@ -80,6 +80,16 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         required=True,
         choices=["none", "read", "write", "schema", "data-migration"],
     )
+    p.add_argument(
+        "--brief",
+        default=None,
+        help=(
+            "卡片簡介（canonical §6.3）。⚠️ **可選**：既有卡在本欄位上線前一律沒有簡介，"
+            "強制必填會讓所有既有卡的動詞失效。形狀兩個要求皆機械檢查——必含「適用時機」"
+            "與「⛔ 非射程：」；⛔ 不驗字數（§6.3 逐字：由 70 個 skill description 推導的"
+            "長度區間因母體未經品質檢查已整組撤回）。"
+        ),
+    )
     p.add_argument("--core-pain", required=True, help="核心痛點")
     p.add_argument("--service-goal", required=True, help="服務的原始目標")
     p.add_argument(
@@ -175,6 +185,7 @@ def run(args: argparse.Namespace) -> int:
         db_scope=args.db_scope,
         core_pain=args.core_pain,
         service_goal=args.service_goal,
+        brief=args.brief,
         resources=decl,
         executor_capability=args.exec_capability,
         executor_capability_reason=args.exec_capability_reason,

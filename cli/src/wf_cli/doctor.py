@@ -699,6 +699,8 @@ def _parse_iso(value: str | None) -> datetime | None:
 #: 它比對的是字串在不在、不是條文說了什麼。射程也只涵蓋本檔與 `test_doctor.py`；
 #: `docs/`、`cleanup.py`、`handoff_cmd.py` 等處的手寫引用不在守衛內，仍會靜默腐爛。
 #: 結論：把失準從「必然靜默」降到「多數會轉紅」，**不是**降到不可能。
+from .brief import drifted as brief_drifted  # noqa: E402  （放在常數區前會與既有排序衝突）
+
 CANONICAL_SECTION_HEADING = "## 6. 留痕與交付"
 #: 節次標籤由標題導出，不另寫一個數字——兩處各寫一個編號遲早分岔。
 CANONICAL_SECTION = "§" + CANONICAL_SECTION_HEADING.removeprefix("## ").split(".", 1)[0]
@@ -1233,6 +1235,50 @@ def audit_legacy_authority_notes(
     report = LegacyAuthorityNoteReport(status="scanned", scanned_cards=len(card_bodies))
     for card_id in sorted(card_bodies):
         report.findings.extend(find_legacy_authority_notes(card_id, card_bodies[card_id]))
+    return report
+
+
+@dataclass
+class BriefDriftFinding:
+    """一張卡的簡介雙居所漂移（canonical §6.3）。"""
+
+    card_id: str
+    reason: str
+
+
+@dataclass
+class BriefDriftReport:
+    status: str = "not_scanned"
+    scanned_cards: int = 0
+    findings: list[BriefDriftFinding] = field(default_factory=list)
+
+
+def find_brief_drift(card_id: str, body: str, field_value: str | None) -> BriefDriftFinding | None:
+    """單張卡的簡介雙居所比對（純函式，不碰網路）。
+
+    ⛔ **判準是兩居所實際值直接字串比對**（``brief.drifted``），不做正規化、不比對
+    「第一句」——canonical §6.3 逐字：那個切句規則本身就是一個會出錯的 parser。
+
+    ⚠️ 兩居所皆空**不是**漂移：既有卡在簡介通道上線前一律沒有簡介，把它們全報成
+    findings 會讓本檢查在 188 張卡上噴滿雜訊而失去鑑別力。
+    """
+    drift, reason = brief_drifted(body or "", field_value)
+    return BriefDriftFinding(card_id=card_id, reason=reason) if drift else None
+
+
+def audit_brief_drift(
+    card_bodies: dict[str, str] | None,
+    field_values: dict[str, str | None] | None = None,
+) -> BriefDriftReport:
+    """掃描一批卡。``card_bodies`` 為 None／空時回報 ``not_scanned``，⛔ 不謊報乾淨。"""
+    if not card_bodies:
+        return BriefDriftReport(status="not_scanned")
+    values = field_values or {}
+    report = BriefDriftReport(status="scanned", scanned_cards=len(card_bodies))
+    for card_id in sorted(card_bodies):
+        found = find_brief_drift(card_id, card_bodies[card_id], values.get(card_id))
+        if found is not None:
+            report.findings.append(found)
     return report
 
 

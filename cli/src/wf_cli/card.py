@@ -17,6 +17,11 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from .brief import BRIEF_SECTION_HEADING_ALIAS as BRIEF_SECTION_HEADING
+from .brief import Brief
+from .brief import render_block as render_brief_block
+from .brief import try_parse_block as try_parse_brief
+from .brief import validate_shape as validate_brief_shape
 from .resources import ResourceDeclaration, render_block
 
 TIERS = ("T0", "T1", "T2", "T3", "T4")
@@ -280,6 +285,9 @@ class Card:
     executor_capability_reason: str
     reviewer_capability: str
     reviewer_capability_reason: str
+    #: 卡片簡介（canonical §6.3）。⚠️ **可選**——既有卡在本欄位上線前一律沒有簡介，
+    #: ⛔ 不得讓它們因缺欄位而無法 amend 或 handoff（fail-open，見 brief.try_parse_block）。
+    brief: str | None = None
     initiative: str | None = None
     requested_by: str = "—"
     planned_by: str = "—"
@@ -407,13 +415,14 @@ def render_issue_body(c: Card) -> str:
     acceptance = "\n".join(f"- [ ] {line}" for line in c.acceptance)
     verification = "\n".join(f"- [ ] {line}" for line in c.verification)
     resource_block = render_block(c.resources)
+    brief_block = f"{render_brief_block(Brief(text=c.brief))}\n\n" if c.brief else ""
     return f"""- 需求：{c.requested_by}　規劃：{c.planned_by}
 {format_routing_line(c)}
 - Initiative：{c.initiative or '—'}　spec 基線：{c.spec_baseline}
 - DB：db_scope={c.db_scope}
 - 服務的原始目標：{c.service_goal}
 
-## 核心痛點
+{brief_block}## 核心痛點
 
 - **痛點**：{c.core_pain}
 
@@ -629,6 +638,42 @@ def amend_initiative(body: str, new_value: str) -> tuple[str, str]:
         raise AmendError("Initiative 與現值相同；拒絕寫入不實的修訂留痕")
     lines[hits[0]] = f"- Initiative：{new_value}　spec 基線：{match.group('base')}"
     return _join("\n".join(lines), tail), old
+
+
+def amend_brief(body: str, new_value: str) -> tuple[str, str | None]:
+    """改（或首次寫入）卡片簡介；回傳 (新 body, 原值或 None)。
+
+    canonical §6.3：body 哨兵區塊為**權威**、Project TEXT 欄位為恆等導出。本函式只動
+    body 那一半——欄位由指令層在 body 寫成功後才寫，並讀回驗證（失敗模式是
+    「body 已更新、欄位過期」，偵測見 :func:`brief.drifted`）。
+
+    ⚠️ **既有卡沒有 ``## 簡介`` 區段**（canonical §6.3 逐字：今天沒有任何卡符合這一條）。
+    ⇒ 找不到區段時**插入**一個到 ``## 核心痛點`` 之前，⛔ 不是報錯——那會讓 188 張既有卡
+    永遠補不了簡介，而本卡的存在理由正是給它們一條通道。
+
+    ⛔ 形狀由 :func:`brief.validate_shape` 驗（必含兩個標記、不驗字數），⛔ 不在此重寫。
+    """
+    validate_brief_shape(new_value)
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    old: str | None = None
+    try:
+        start, end = _locate_section(lines, BRIEF_SECTION_HEADING)
+    except AmendError:
+        if any(line.strip() == BRIEF_SECTION_HEADING for line in lines):
+            raise
+        start = end = None
+    if start is not None and end is not None:
+        parsed = try_parse_brief(body)
+        old = parsed.text if parsed else None
+        block = render_brief_block(Brief(text=new_value)).splitlines()
+        lines[start:end] = block + [""]
+    else:
+        pain_start, _ = _locate_section(lines, _CORE_PAIN_HEADING)
+        block = render_brief_block(Brief(text=new_value)).splitlines()
+        lines[pain_start:pain_start] = block + [""]
+    new_head = "\n".join(lines)
+    return (new_head + ("\n" + tail if tail else "\n"), old)
 
 
 def amend_core_pain(body: str, new_value: str) -> tuple[str, str]:
