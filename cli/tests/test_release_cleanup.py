@@ -307,30 +307,62 @@ def test_terminal_status_is_written_only_after_the_branch_is_gone(
 # ---------------------------------------------------------------------------
 
 
-def test_release_without_cleanup_flag_deletes_nothing(env: Env, capsys) -> None:
-    """預設值取較安全的一邊：沒要求就不刪。"""
+def test_repo_path_without_cleanup_is_refused_and_writes_nothing(env: Env, capsys) -> None:
+    """WF-RELEASE-NO-CLEANUP-REFUSE1：看得見資源就不准製造非法態。
+
+    先前這條測的是「預設值取較安全的一邊：沒要求就不刪」。⛔ 那個理由已被推翻——
+    不可逆的那一半早就被 ``cleanup.AUTHORITY_BY_PROOF`` 以證明分級中和（只有分支
+    已證明是 main 祖先時才刪分支，squash 只授權 remove_worktree，diverged 與
+    unobservable 皆為空集合），⇒ 預設選的那一邊產生的才是比較不可回復的狀態。
+    """
     rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
                               **{"--repo-path": str(env.repo)}))
-    assert rc == 0
+    assert rc == 2
+    # ⭐ 拒絕必須是乾淨的：資源全在、狀態面一個字都沒寫
     assert env.wt.exists()
     assert (env.wt / "work.txt").read_text(encoding="utf-8") == WORK_CONTENT
     assert local_branch_exists(env.repo)
     assert remote_branch_exists(env.repo)
     assert env.runner.closed_issues == []
-    # 既有行為完全不變：狀態面照寫
+    assert card_fields(env.runner)["交付狀態"] != "🏁完成"
+    err = capsys.readouterr().err
+    assert "illegal_terminal_before_cleanup" in err
+    assert "--repo-path" in err
+
+
+def test_release_without_repo_path_is_allowed_but_traced_on_the_card(env: Env, capsys) -> None:
+    """無 --repo-path 的 release 不拒絕，但必須寫進卡上留痕。
+
+    ⛔ 該分支不拒絕：沒有本機 repo 時 ``--cleanup`` 在構造上做不到（見既有的
+    ``--cleanup and not args.repo_path`` 拒絕），且本專案無該情境的實例。
+    ⭐ 但它先前只印 stderr、卡上零紀錄，使「不帶 --cleanup 的 release 發生過幾次」
+    在事後不可觀測——實測搜三個收尾留痕字串，「已清除」有命中而「未走到」「無任何
+    對象」皆 0，那個 0 是不可觀測不是未發生。本條把可稽核性釘成可執行的事實。
+    """
+    rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo)))
+    assert rc == 0
+    # 行為不變：什麼都沒刪、狀態面照寫
+    assert env.wt.exists()
+    assert local_branch_exists(env.repo)
+    assert remote_branch_exists(env.repo)
     assert card_fields(env.runner)["交付狀態"] == "🏁完成"
-    # 但它造出的是 illegal_terminal_before_cleanup，必須講明而非靜靜維持原狀
+    # 警示照印
     assert "illegal_terminal_before_cleanup" in capsys.readouterr().err
+    # ⭐ 而且寫進了卡上留痕，不只 stderr——用既有 helper 讀，不自己造存取路徑
+    lines = handoff_log_lines(env.runner)
+    assert lines, "release 應留下 handoff Log 行"
+    assert "收尾清理未執行" in lines[-1]
+    assert "未帶 --cleanup 且未帶 --repo-path" in lines[-1]
 
 
 def test_cleanup_after_a_status_only_release_is_refused_as_illegal(env: Env) -> None:
     """未帶 --cleanup 的 release 之後再補 --cleanup 會被擋——警示裡講的就是這件事。
 
     守衛刻意不自動修復非法態；這條把那個代價釘成可執行的事實，免得文件與實作各說
-    各話。
+    各話。⚠️ 現在只有「無 --repo-path」那條路徑到得了該非法態（帶 --repo-path 的
+    組合已於前置檢查被拒），所以第一次呼叫刻意不帶 --repo-path。
     """
-    assert run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
-                                **{"--repo-path": str(env.repo)})) == 0
+    assert run_cli(handoff_argv(CARD_ID, head_sha(env.repo))) == 0
     env.runner.issue_states[env.issue_number] = "CLOSED"
 
     rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
@@ -339,6 +371,19 @@ def test_cleanup_after_a_status_only_release_is_refused_as_illegal(env: Env) -> 
     assert env.wt.exists()
     assert local_branch_exists(env.repo)
     assert remote_branch_exists(env.repo)
+
+
+def test_non_release_stages_are_untouched_by_the_refusal(env: Env) -> None:
+    """⛔ 拒絕只作用於 release：其他 next-stage 帶 --repo-path 不受影響。
+
+    收緊過頭會擋掉正當流程——本卡今晚的每一次 handoff（research／planning／backlog）
+    都帶 --repo-path 且沒有 --cleanup。
+    """
+    rc = run_cli(handoff_argv(CARD_ID, head_sha(env.repo),
+                              **{"--repo-path": str(env.repo),
+                                 "--next-stage": "implementation"}))
+    assert rc == 0
+    assert card_fields(env.runner)["交付狀態"] == "🔨執行中"
 
 
 # ---------------------------------------------------------------------------

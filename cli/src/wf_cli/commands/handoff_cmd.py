@@ -204,6 +204,40 @@ NO_CLEANUP_WARNING = (
     "守衛不自動修復非法態，事後再補 --cleanup 會被擋，屆時只能人工收尾。"
 )
 
+#: ``--repo-path`` 給了卻沒給 ``--cleanup`` 時的拒絕。**能看見資源就不准製造非法態**：
+#: 有 ``--repo-path`` 時守衛拿得到真實 repo，可以證明繼續下去會落成
+#: ``illegal_terminal_before_cleanup``——而那正是守衛自己拒絕修復的那一格
+#: （``cleanup.classify_state`` 對該組合的分類名稱，實測拒絕訊息為 ``illegal_state``）。
+#:
+#: **為什麼是拒絕而不是警示**：原設計選警示，理由寫在 ``--cleanup`` 的 help 逐字
+#: 「預設不清理——刪除不可逆，預設值取代價可回復的那一邊」。但不可逆那一半早就被
+#: ``cleanup.AUTHORITY_BY_PROOF`` 以證明分級中和了——只有分支已證明是 main 祖先
+#: （commit 都在 main、刪了可用 ``git branch <name> <sha>`` 復原）時才會刪分支；
+#: squash 只授權 ``remove_worktree``；``diverged``／``unobservable`` 皆為空集合。
+#: ⇒ 預設選的那一邊產生的才是比較不可回復的狀態，與它自己寫下的理由相反。
+#:
+#: 兩例實害：``cpbl#138``（2026-08-15）與 ``cpbl#166``（2026-08-22），皆須人工刪
+#: worktree／本地分支／遠端分支再手動關 Issue。⚠️ 因該路徑先前不寫卡上留痕，
+#: 兩例是**下限**而非總數。
+REPO_PATH_WITHOUT_CLEANUP_REFUSAL = (
+    "[handoff] 拒絕：--next-stage release 帶了 --repo-path 卻沒帶 --cleanup。"
+    "有 --repo-path 時守衛看得見 worktree 與分支，能證明這樣寫下去會落成 "
+    "illegal_terminal_before_cleanup——而守衛拒絕修復非法態，事後補 --cleanup 會被擋、"
+    "只能人工收尾。請補 --cleanup；若確實要跳過清理，請移除 --repo-path 並在 "
+    "--evidence 說明理由（該路徑會把跳過清理寫進卡上留痕）。"
+)
+
+#: 無 ``--repo-path`` 的 release 之留痕後綴。⛔ 該分支**不拒絕**——沒有本機 repo 時
+#: ``--cleanup`` 在構造上做不到（見上方 ``--cleanup and not args.repo_path`` 的既有拒絕），
+#: 且本專案無該情境的實例，⇒ 不為它設計拒絕。但它先前**只印 stderr、卡上零紀錄**，
+#: 使「不帶 --cleanup 的 release 發生過幾次」在事後不可觀測（實測：搜三個收尾留痕
+#: 字串，「已清除」有命中而「未走到」「無任何對象」皆 0——那個 0 是不可觀測不是未發生）。
+#: ⇒ 本後綴讓它可事後稽核。
+NO_REPO_PATH_TRACE_SUFFIX = (
+    "；⚠️ 未帶 --cleanup 且未帶 --repo-path，收尾清理未執行"
+    "（worktree、本地分支、遠端分支皆未處理），狀態面已寫終態"
+)
+
 
 class _CallbackEffectWriter:
     """把第 4 步的兩次狀態面寫入包成 `cleanup.CloseoutEffectWriter`。
@@ -430,6 +464,9 @@ def run(args: argparse.Namespace) -> int:
         print("[handoff] 拒絕：--cleanup 需要 --repo-path（守衛要在真實 repo 上驗前提）",
               file=sys.stderr)
         return 2
+    if args.next_stage == "release" and not args.cleanup and args.repo_path:
+        print(REPO_PATH_WITHOUT_CLEANUP_REFUSAL, file=sys.stderr)
+        return 2
 
     if args.repo_path:
         repo_root = Path(args.repo_path)
@@ -557,8 +594,11 @@ def run(args: argparse.Namespace) -> int:
             return rc
     else:
         if args.next_stage == "release":
+            # 此處已可斷言 not args.repo_path——帶 --repo-path 的組合在前置檢查即被拒。
             print(NO_CLEANUP_WARNING, file=sys.stderr)
-        write_status_face()
+            write_status_face(NO_REPO_PATH_TRACE_SUFFIX)
+        else:
+            write_status_face()
 
     print(f"[handoff] 已交接 {args.card_id} → {args.to}（狀態={new_status}，SHA={args.source_sha}）")
     return 0
