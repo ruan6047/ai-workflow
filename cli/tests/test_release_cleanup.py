@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -161,6 +162,27 @@ def card_fields(runner: ReleaseGhRunner) -> dict:
     item = find_item_by_card_id(list_items(runner, project), CARD_ID)
     assert item is not None
     return item.fields
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def comparable(text: str) -> str:
+    """把文字化為可比對形式：⭐ **只保留允許的字元**，不是移除禁止的字元。
+
+    ⛔ 前兩輪的修法都是「移除清單」——R2 只比對原始輸出（折行即繞過）、R3 加
+    ``str.split()`` 移除空白（U+200B 即繞過，因為 ``str.split`` 不吃零寬字元）。
+    兩次的 ``root_cause_id`` 相同 ⇒ 形狀錯了不是實例沒抓完：移除清單是**開放集合**，
+    永遠有下一個分隔字元（U+FEFF、ESC、各種 Unicode 空白）。
+
+    ⭐ 本函式改為**封閉集合**：先剝掉 ANSI escape，再只留 ``str.isalnum()`` 為真的
+    字元與底線。CJK 在 Unicode 下 ``isalnum()`` 為真，⇒ 中文全部保留；空白、零寬
+    字元、破折號、標點、控制碼全部落掉。
+
+    ⚠️ 代價講明：破折號等標點也被移除 ⇒ **期待值必須走同一個轉換**，否則含
+    ``——`` 的負向期待永遠不會命中。兩側同轉換是本形狀的必要條件，不是可選的。
+    """
+    return "".join(c for c in _ANSI_RE.sub("", text) if c.isalnum() or c == "_")
 
 
 def card_body(runner: ReleaseGhRunner) -> str:
@@ -386,19 +408,17 @@ def test_cleanup_help_states_the_two_branch_contract(capsys) -> None:
     parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["handoff", "--help"])
-    # ⭐ 必須先正規化折行才能斷言。argparse 走 textwrap，而 textwrap 的
-    # break_long_words 預設為 True ⇒ 中文長串（無 ASCII 空白）**會**被從中間切斷。
-    # ⛔ 直接對格式化輸出做連續字串比對，舊字面只要剛好落在折行處就測不到——
-    # 實測填充 42 個字元即可讓「預設值取代價可回復的那一邊」被折斷、負向斷言通過
-    # （R2-001，查核者構造、PM 以掃填充長度獨立重現）。
-    out = "".join(capsys.readouterr().out.split())
+    # ⭐ 兩側都走 comparable()——封閉集合的比較，見該函式的 docstring。
+    # 這是同族第三輪的形狀修法：R2 用原始字串（折行可繞）、R3 用 str.split()
+    # （U+200B 可繞），兩次 root_cause_id 相同 ⇒ 換形狀而非再補一個要移除的字元。
+    out = comparable(capsys.readouterr().out)
     # ⛔ 被推翻的說法不得出現在使用者看得到的 help 裡
-    assert "預設值取代價可回復的那一邊" not in out
-    assert "預設不清理——刪除不可逆" not in out
+    assert comparable("預設值取代價可回復的那一邊") not in out
+    assert comparable("預設不清理——刪除不可逆") not in out
     # ⭐ 兩分支契約必須講明
-    assert "兩分支契約" in out
-    assert "illegal_terminal_before_cleanup" in out
-    assert "收尾清理未執行" in out
+    assert comparable("兩分支契約") in out
+    assert comparable("illegal_terminal_before_cleanup") in out
+    assert comparable("收尾清理未執行") in out
 
 
 def test_non_release_stages_are_untouched_by_the_refusal(env: Env) -> None:
