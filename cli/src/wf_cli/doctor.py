@@ -150,6 +150,7 @@ class DoctorReport:
     cleanup_preview_enabled: bool = False
     #: `#62` 之前措辭的既存授權留痕。預設 `not_scanned`——呼叫端沒給卡面時，
     #: 報告要說「沒掃」，不能讓空清單被讀成「都乾淨」。
+    brief_drift: "BriefDriftReport" = field(default_factory=lambda: BriefDriftReport())
     legacy_authority_notes: "LegacyAuthorityNoteReport" = field(
         default_factory=lambda: LegacyAuthorityNoteReport()
     )
@@ -223,6 +224,30 @@ class DoctorReport:
                     + " 步）不寫狀態面，未完成不阻擋 release"
                 )
             lines.append("")
+        bd = self.brief_drift
+        lines.append("## 5.5 卡片簡介：雙居所漂移與缺簡介（canonical §6.3；唯讀、⛔ 不擋任何動詞）")
+        if bd.status == "not_scanned":
+            lines.append(
+                "（未掃描：本次未取得卡面。**這不等於沒有**——要掃描請加"
+                " `--legacy-authority-notes --owner <o> --project <n>`，本節與該旗標共用卡面。）"
+            )
+        else:
+            lines.append(f"已掃描 {bd.scanned_cards} 張卡。")
+            if bd.findings:
+                lines.append(f"- **雙居所漂移 {len(bd.findings)} 張**（body 為權威、欄位是恆等導出）：")
+                for f_ in bd.findings:
+                    lines.append(f"  - {f_.card_id}：{f_.reason}")
+            else:
+                lines.append("- 雙居所漂移：無")
+            if bd.missing:
+                lines.append(
+                    f"- ⚠️ **缺簡介 {len(bd.missing)} 張**（canonical §6.3「每張卡必有簡介」）"
+                    "——⛔ 這不阻擋任何動詞，是待補清單："
+                )
+                lines.append("  " + "、".join(bd.missing[:20]) + ("…" if len(bd.missing) > 20 else ""))
+            else:
+                lines.append("- 缺簡介：無")
+        lines.append("")
         legacy = self.legacy_authority_notes
         lines.append("## 6. 既存授權留痕的措辭（#62 之前；唯讀，doctor 不改任何卡面）")
         if legacy.status == "not_scanned":
@@ -699,7 +724,8 @@ def _parse_iso(value: str | None) -> datetime | None:
 #: 它比對的是字串在不在、不是條文說了什麼。射程也只涵蓋本檔與 `test_doctor.py`；
 #: `docs/`、`cleanup.py`、`handoff_cmd.py` 等處的手寫引用不在守衛內，仍會靜默腐爛。
 #: 結論：把失準從「必然靜默」降到「多數會轉紅」，**不是**降到不可能。
-from .brief import drifted as brief_drifted  # noqa: E402  （放在常數區前會與既有排序衝突）
+from .brief import drifted as brief_drifted  # noqa: E402
+from .brief import try_parse_block as brief_try_parse  # noqa: E402  （放在常數區前會與既有排序衝突）
 
 CANONICAL_SECTION_HEADING = "## 6. 留痕與交付"
 #: 節次標籤由標題導出，不另寫一個數字——兩處各寫一個編號遲早分岔。
@@ -1251,6 +1277,9 @@ class BriefDriftReport:
     status: str = "not_scanned"
     scanned_cards: int = 0
     findings: list[BriefDriftFinding] = field(default_factory=list)
+    #: ⚠️ 與 findings **分開**（查核 R1-003）：缺簡介是既有卡的常態、⛔ 非阻擋，
+    #: 混在一起會讓真正的漂移淹沒在 188 張卡的雜訊裡。
+    missing: list[str] = field(default_factory=list)
 
 
 def find_brief_drift(card_id: str, body: str, field_value: str | None) -> BriefDriftFinding | None:
@@ -1276,9 +1305,14 @@ def audit_brief_drift(
     values = field_values or {}
     report = BriefDriftReport(status="scanned", scanned_cards=len(card_bodies))
     for card_id in sorted(card_bodies):
-        found = find_brief_drift(card_id, card_bodies[card_id], values.get(card_id))
+        body = card_bodies[card_id]
+        found = find_brief_drift(card_id, body, values.get(card_id))
         if found is not None:
             report.findings.append(found)
+        elif brief_try_parse(body or "") is None and not (values.get(card_id) or "").strip():
+            # 兩居所皆空：⛔ 不是漂移，但**是** canonical §6.3「每張卡必有簡介」的缺口。
+            # 分開列出且非阻擋——A8 逐字要求 doctor 報得出「缺簡介」而不擋任何動詞。
+            report.missing.append(card_id)
     return report
 
 
@@ -1632,6 +1666,7 @@ def run_doctor(
     card_bodies: dict[str, str] | None = None,
     occupancy_prober: OccupancyProber | None = None,
     legacy_authority_card_bodies: dict[str, str] | None = None,
+    brief_field_values: dict[str, str | None] | None = None,
 ) -> DoctorReport:
     repo_root = repo_root.resolve()
     active: list[RegisteredCard] = registry.active if registry else []
@@ -1792,6 +1827,9 @@ def run_doctor(
     #    釋放檢查開始生效，proceed 可能變 blocked）——那是另一張卡的射程。
     #    兩個用途各自帶參數，誰都不會因為對方被接線而改變行為。
     report.legacy_authority_notes = audit_legacy_authority_notes(legacy_authority_card_bodies)
+    report.brief_drift = audit_brief_drift(
+        legacy_authority_card_bodies, brief_field_values
+    )
 
     return report
 

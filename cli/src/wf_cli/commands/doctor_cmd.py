@@ -163,12 +163,22 @@ def run(args: argparse.Namespace) -> int:
     # 明說「未掃描，這不等於沒有」。這條路在接線後仍然是對的行為（網路失敗、權限
     # 不足、Project 讀不到），只是不再是**唯一**會走到的路。
     legacy_bodies: dict[str, str] | None = None
+    brief_values: dict[str, str | None] | None = None
     if args.legacy_authority_notes:
         try:
             proj = resolve_project(default_runner, args.owner, args.project)
+            snapshots = list_items(default_runner, proj)
             legacy_bodies = {
                 item.card_id: item.body
-                for item in list_items(default_runner, proj)
+                for item in snapshots
+                if item.card_id and item.body
+            }
+            # 簡介的**欄位那一半**（canonical §6.3 雙居所）。與 legacy_bodies 同一次
+            # 讀取取得——⚠️ 分兩次讀會讓「body 與欄位」跨了時間，漂移偵測就分不出
+            # 「真的漂移」與「兩次讀之間有人改過」。
+            brief_values = {
+                item.card_id: item.fields.get("簡介")
+                for item in snapshots
                 if item.card_id and item.body
             }
         except Exception as exc:  # noqa: BLE001 - 任何讀取失敗都退回「未掃描」
@@ -186,6 +196,7 @@ def run(args: argparse.Namespace) -> int:
         main_ref=args.main_ref,
         cleanup_preview=args.cleanup_preview,
         legacy_authority_card_bodies=legacy_bodies,
+        brief_field_values=brief_values,
     )
     # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
     # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。

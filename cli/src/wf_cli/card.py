@@ -665,7 +665,17 @@ def amend_brief(body: str, new_value: str) -> tuple[str, str | None]:
         start = end = None
     if start is not None and end is not None:
         parsed = try_parse_brief(body)
-        old = parsed.text if parsed else None
+        if parsed is None:
+            # ⛔ **fail-closed**（查核 R1-004）：區段在、但解析不出來，代表哨兵已被
+            # 破壞或內容被手改過。此時覆蓋會讓舊內容永久消失，而 Log 會錯記成
+            # 「原本沒有」——⚠️ **資料遺失加上留痕說謊**，兩者疊加。
+            # ⇒ 插入通道只給「確實沒有簡介區段」的卡；壞掉的區段須人工先修。
+            raise AmendError(
+                f"`{BRIEF_SECTION_HEADING}` 區段存在但解析不出簡介"
+                "（哨兵可能被破壞或內容被手改）。⛔ 拒絕覆蓋——覆蓋會讓舊內容永久消失，"
+                "且 Log 會把它記成「原本沒有」。請先人工修復該區段的哨兵，或整段刪除後再重寫。"
+            )
+        old = parsed.text
         block = render_brief_block(Brief(text=new_value)).splitlines()
         lines[start:end] = block + [""]
     else:

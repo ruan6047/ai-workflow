@@ -220,3 +220,41 @@ def test_maintenance_states_are_still_absent_from_delivery_status() -> None:
     joined = "".join(options)
     assert "運行中" not in joined
     assert "失效" not in joined
+
+
+# ---------------------------------------------------------------- 一次一張
+
+
+def test_no_bulk_or_autogenerate_path_exists() -> None:
+    """⛔ 回填必須一張一張人工看（需求方 2026-08-25 裁定，issuecomment-5398180153）。
+
+    ⚠️ 條文層的「不得批次」沒有機械執行者，⇒ 這裡把它釘成測試：任何新增的
+    批次旗標或自動生成路徑都會讓它轉紅。
+
+    ⭐ 理由不是偏好而是量測：aiwf#128 的研究顯示關鍵字重疊抓得到的是**命名相似**，
+    而命名相似的那些不是缺陷 ⇒ 從核心痛點機械導出的「簡介」會複製其詞彙分佈，
+    而 canonical §6.3 逐字「⛔ 它不是摘要」。機械產物必然是摘要。
+    """
+    from wf_cli.cli import build_parser
+
+    parser = build_parser()
+    subs = parser._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
+    banned = ("--brief-all", "--brief-bulk", "--backfill-brief", "--generate-brief", "--auto-brief")
+    for verb in ("open", "amend"):
+        opts = {o for a in subs[verb]._actions for o in (a.option_strings or [])}
+        assert "--brief" in opts, f"{verb} 應有 --brief"
+        for bad in banned:
+            assert bad not in opts, f"{verb} 不得有批次／自動生成旗標 {bad}"
+
+
+def test_brief_shape_check_cannot_tell_a_routing_signal_from_a_summary() -> None:
+    """⚠️ 釘住本卡形狀驗證的**上限**，⛔ 不讓後人以為它擋得住敷衍。
+
+    兩個標記都在、但內容是摘要而非路由訊號的簡介，機械上必然通過。
+    ⇒ 「寫的人有沒有真的讀懂那張卡」沒有機械檢查擋得住；那是人工回填的殘餘風險，
+    已記於 issuecomment-5398180153。
+    """
+    summary_not_routing = (
+        f"這張卡在講 wfcli 的欄位。{brief.MARKER_WHEN}：不知道。{brief.MARKER_NON_SCOPE}不知道。"
+    )
+    brief.Brief(text=summary_not_routing)  # ⛔ 通過——這正是本測試要記錄的事實
