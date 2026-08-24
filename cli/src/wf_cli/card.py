@@ -679,9 +679,18 @@ def amend_brief(body: str, new_value: str) -> tuple[str, str | None]:
         block = render_brief_block(Brief(text=new_value)).splitlines()
         lines[start:end] = block + [""]
     else:
-        pain_start, _ = _locate_section(lines, _CORE_PAIN_HEADING)
+        # 插入位置：第一個 ``## `` 章節之前。⛔ **不能只認 ``## 核心痛點``**——
+        # 實測 61 張活卡中有 24 張（39%）沒有該章節（MIG1 一次性遷移卡用
+        # ``## Spec``／``## 現況摘要``），只認它會讓那 24 張永遠補不了簡介，
+        # 而本函式的存在理由正是給既有卡一條通道（查核 V5 以 cpbl#53 抓到）。
+        # ⚠️ 找不到任何 ``## `` 章節時附在 head 末端——那種 body 已經不是卡片
+        # 範本的形狀，但補簡介仍不該因此失敗。
+        first_section = next(
+            (i for i, line in enumerate(lines) if line.startswith("## ")),
+            len(lines),
+        )
         block = render_brief_block(Brief(text=new_value)).splitlines()
-        lines[pain_start:pain_start] = block + [""]
+        lines[first_section:first_section] = block + [""]
     new_head = "\n".join(lines)
     return (new_head + ("\n" + tail if tail else "\n"), old)
 

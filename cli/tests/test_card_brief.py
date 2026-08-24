@@ -228,8 +228,12 @@ def test_maintenance_states_are_still_absent_from_delivery_status() -> None:
 def test_no_bulk_or_autogenerate_path_exists() -> None:
     """⛔ 回填必須一張一張人工看（需求方 2026-08-25 裁定，issuecomment-5398180153）。
 
-    ⚠️ 條文層的「不得批次」沒有機械執行者，⇒ 這裡把它釘成測試：任何新增的
-    批次旗標或自動生成路徑都會讓它轉紅。
+    ⚠️ 條文層的「不得批次」沒有機械執行者，⇒ 這裡把它釘成測試。
+
+    ⛔ **但本檢查的範圍有限，不得讀成完整保證**（查核 R2 逐字指出）：它只攔得下
+    ``open``／``amend`` 上這五個**具名**旗標。攔不到的有三類——新增的子命令、
+    不同拼字的旗標、以及藏在既有 ``--brief`` 之後的自動生成。⇒ 它是**封閉集合的
+    逐字比對**，而繞過封閉集合正是本 repo 已付過代價的形狀。
 
     ⭐ 理由不是偏好而是量測：aiwf#128 的研究顯示關鍵字重疊抓得到的是**命名相似**，
     而命名相似的那些不是缺陷 ⇒ 從核心痛點機械導出的「簡介」會複製其詞彙分佈，
@@ -258,3 +262,23 @@ def test_brief_shape_check_cannot_tell_a_routing_signal_from_a_summary() -> None
         f"這張卡在講 wfcli 的欄位。{brief.MARKER_WHEN}：不知道。{brief.MARKER_NON_SCOPE}不知道。"
     )
     brief.Brief(text=summary_not_routing)  # ⛔ 通過——這正是本測試要記錄的事實
+
+
+def test_insert_works_on_cards_without_a_core_pain_section() -> None:
+    """⭐ 插入錨點是「第一個 ``## `` 章節之前」，⛔ 不是「``## 核心痛點`` 之前」。
+
+    實測 61 張活卡中有 **24 張（39%）** 沒有 ``## 核心痛點``——MIG1 一次性遷移卡用
+    ``## Spec``／``## 現況摘要``。只認核心痛點會讓那 24 張永遠補不了簡介，而
+    ``amend_brief`` 的存在理由正是給既有卡一條通道。
+    ⚠️ 這個缺陷是查核 V5 要求「拿三張**真實**既有卡驗」時才浮出來的——
+    ⛔ 自己造的樣本永遠有核心痛點章節，測不出它。
+    """
+    mig_shaped = (
+        "- 需求：ruan6047\n\n## Spec\n\n- x\n\n## 現況摘要\n\n- y\n\n## Log\n\n- z\n"
+    )
+    assert "## 核心痛點" not in mig_shaped
+    new_body, old = amend_brief(mig_shaped, GOOD)
+    assert old is None
+    assert brief.parse_block(new_body).text == GOOD
+    # 簡介必須排在第一個既有章節之前，⛔ 不得落到 Log 裡
+    assert new_body.index(brief.SECTION_HEADING) < new_body.index("## Spec")
