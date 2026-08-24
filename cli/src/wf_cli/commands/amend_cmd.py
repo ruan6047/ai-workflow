@@ -261,6 +261,7 @@ from ..gh import default_runner
 from ..project import (
     add_issue_comment,
     ensure_fields,
+    list_fields,
     find_item_by_card_id,
     list_items,
     resolve_project,
@@ -697,7 +698,18 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     )
     runner = default_runner
     project = resolve_project(runner, target.owner, target.project)
-    fields = ensure_fields(runner, target.owner, target.project)
+    # ⛔ **dry-run 必須在任何可能遠端寫入之前分流**（查核 R3-001）。
+    # ensure_fields 是冪等的、但**不是唯讀的**：缺欄位時它會 project field-create。
+    # ⇒ 在欄位尚未建立的 Project 上，`amend --dry-run` 會**先把欄位建出來**，
+    # 違反它自己「未寫入任何狀態」的承諾，也違反本卡 A5 的時序裁定
+    # （欄位須在查核 APPROVE 之後才由 PM 建立）。
+    # ⚠️ 這是既有缺陷、非本卡引入，但本卡的 A5 使它從理論風險變成會實際發生的事。
+    # fields 在 dry-run 的返回點之前完全沒被使用，故唯讀路徑不會少任何東西。
+    fields = (
+        list_fields(runner, target.owner, target.project)
+        if args.dry_run
+        else ensure_fields(runner, target.owner, target.project)
+    )
 
     items = list_items(runner, project)
     item = find_item_by_card_id(items, args.card_id)

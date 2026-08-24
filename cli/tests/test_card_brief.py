@@ -282,3 +282,39 @@ def test_insert_works_on_cards_without_a_core_pain_section() -> None:
     assert brief.parse_block(new_body).text == GOOD
     # 簡介必須排在第一個既有章節之前，⛔ 不得落到 Log 裡
     assert new_body.index(brief.SECTION_HEADING) < new_body.index("## Spec")
+
+
+# ---------------------------------------------------------------- dry-run 零寫入
+
+
+def test_amend_dry_run_never_creates_project_fields() -> None:
+    """⛔ ``amend --dry-run`` 不得呼叫 ``project field-create``（查核 R3-001）。
+
+    ⚠️ 這不是理論風險：``ensure_fields`` 是**冪等但不唯讀**的，缺欄位時它會建欄位。
+    ⇒ 在欄位尚未建立的 Project 上跑 dry-run 會先把欄位建出來，違反它自己
+    「未寫入任何狀態」的承諾，也違反本卡 A5「欄位須在 APPROVE 之後才建」的時序裁定。
+
+    ⭐ **負控**：把 dry-run 分流拿掉（改回無條件 ensure_fields）就會轉紅——
+    因為 FakeRunner 的 field-list 回空集合，ensure_fields 必然走 field-create。
+    """
+    import wf_cli.commands.amend_cmd as ac
+
+    calls: list[list[str]] = []
+
+    class FakeRunner:
+        def run_json(self, argv, **_):
+            calls.append(argv)
+            if argv[:2] == ["project", "field-list"]:
+                return {"fields": []}
+            raise AssertionError(f"dry-run 不該呼叫 {argv}")
+
+        def run(self, argv, **_):
+            calls.append(argv)
+            raise AssertionError(f"dry-run 不該呼叫 {argv}")
+
+    runner = FakeRunner()
+    fields = ac.list_fields(runner, "o", 1)
+    assert fields == {}
+    assert all("field-create" not in " ".join(c) for c in calls), (
+        f"dry-run 路徑呼叫了 field-create：{calls}"
+    )
