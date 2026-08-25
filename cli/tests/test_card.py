@@ -1338,3 +1338,84 @@ def test_restore_header_refuses_unusable_requester_values(bad):
     with pytest.raises(AmendError):
         restore_migration_header(_real_migration_card(), requested_by=bad,
                                  planned_by="x", initiative="—", spec_baseline="—")
+
+
+# ---------------------------------------------------------------------------
+# R1 查核（GPT-5@Codex）的兩個 blocking finding。
+# ⚠️ 樣本逐字取自查核者給的重現方式，⛔ 不改寫、⛔ 不自造更容易通過的版本。
+# ---------------------------------------------------------------------------
+
+
+def test_drop_stale_refuses_a_sibling_heading_that_merely_shares_the_prefix():
+    """R1-01：`## 資源宣告備註` ⛔ 不是資源宣告區段。
+
+    查核者逐字：「用過寬的 `startswith` 判定標題。實測正常資源宣告旁有
+    `## 資源宣告備註` 時，指令會把備註誤認為殘留區段並刪除。」
+    ⇒ 修法是把標題判準抽成 `_heading_hit` 兩處共用，⛔ 不是在原處補 if。
+    """
+    from wf_cli.card import AmendError, drop_sentinel_less_resource_section
+
+    body = _card(
+        "## 資源宣告\n" + _WRAPPED + "\n\n"
+        "## 資源宣告備註\n\n這段是人寫的說明，⛔ 不是殘留區段。"
+    )
+    with pytest.raises(AmendError):
+        drop_sentinel_less_resource_section(body)
+
+
+def test_drop_stale_still_works_on_the_real_dual_heading_shape():
+    """⭐ 負控：收窄之後，**真正**的雙標題（帶括號補述）仍須被處理。
+
+    ⛔ 只驗「誤刪被擋」是零資訊——那用「永遠拒絕」也能通過。
+    """
+    from wf_cli.card import drop_sentinel_less_resource_section
+
+    body = _card(_SUFFIXED + "\n" + _RAW_JSON + "\n\n## 資源宣告\n" + _WRAPPED)
+    new_body, removed = drop_sentinel_less_resource_section(body)
+    assert _SUFFIXED not in new_body
+    assert "## 資源宣告" in new_body
+    assert removed
+
+
+@pytest.mark.parametrize(
+    "field, kwargs",
+    [
+        ("initiative", {"initiative": "A\n## Log\n\n- 偽造", "spec_baseline": "—"}),
+        ("spec_baseline", {"initiative": "—", "spec_baseline": "B\n## Log\n\n- 偽造"}),
+        ("initiative", {"initiative": "A\u3000B", "spec_baseline": "—"}),
+        ("spec_baseline", {"initiative": "—", "spec_baseline": "A\u3000B"}),
+    ],
+)
+def test_restore_header_refuses_newline_injection_in_the_other_two_fields(field, kwargs):
+    """R1-02：`initiative`／`spec_baseline` 也會被寫進標頭行 ⇒ 同樣要驗。
+
+    查核者逐字：「兩者可注入換行，實測會接受並寫出兩個 `## Log`，破壞後續解析
+    與 append-only 留痕。」⚠️ 那個狀態＝ `aiwf#15`——`split_at_log` 拋錯 ⇒
+    該卡**永久無法以 wfcli 修改**，而 A13 已實測它既無自動修法也無可用人工程序。
+    ⛔ 原本只驗 requested_by／planned_by，是漏了一整類輸入。
+    """
+    from wf_cli.card import AmendError, restore_migration_header
+
+    with pytest.raises(AmendError):
+        restore_migration_header(
+            _real_migration_card(), requested_by="ruan6047", planned_by="x", **kwargs
+        )
+
+
+def test_restore_header_still_accepts_the_real_values_used_in_production():
+    """⭐ 負控：收窄之後，第四段實際寫過的 40 張的值仍須通過。
+
+    ⛔ 只驗「注入被擋」是零資訊。這裡取真實用過的值（含帶括號的規劃者、
+    反引號包住的 SHA）。
+    """
+    from wf_cli.card import restore_migration_header
+
+    new_body, _ = restore_migration_header(
+        _real_migration_card(),
+        requested_by="ruan6047",
+        planned_by="Claude Fable 5@Claude Code（PM 祕書，三問經需求方批註）",
+        initiative="INIT-OFFICIAL-DATA1",
+        spec_baseline="`2f52562f575412a0a39b515a4436edd2831b2f65`",
+    )
+    assert new_body.split("\n## Log")[0].count("## Log") == 0
+    assert new_body.count("\n## Log") == 1

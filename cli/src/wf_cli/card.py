@@ -512,6 +512,21 @@ def _join(head: str, tail: str) -> str:
     return f"{head.rstrip()}\n\n{tail.strip()}\n" if tail else f"{head.rstrip()}\n"
 
 
+def _heading_hit(line: str, heading: str, *, allow_suffix: bool) -> bool:
+    """該行是不是 ``heading`` 這個章節的標題。**唯一判準，⛔ 不得在別處另寫一份。**
+
+    ⚠️ ``allow_suffix`` 放寬的是**帶括號補述**（``<heading>（…）``），⛔ **不是任意前綴**。
+    這個分界是 R1-01 的成因：``drop_sentinel_less_resource_section`` 原本自己寫了一份
+    裸 ``startswith(_RESOURCE_HEADING)``，於是 ``## 資源宣告備註`` 也被當成資源宣告區段
+    ——查核者實測它連同人寫的說明**一起被靜默刪除**。⇒ 判準抽成一份、兩處共用，
+    ⛔ 不是在原處補一個 if：同族第三次的教訓是「每個新呼叫端都自己重寫一份謂詞」。
+    """
+    stripped = line.strip()
+    if stripped == heading:
+        return True
+    return allow_suffix and stripped.startswith(heading + "（")
+
+
 def _locate_section(
     lines: list[str], heading: str, *, allow_suffix: bool = False
 ) -> tuple[int, int]:
@@ -526,13 +541,7 @@ def _locate_section(
     真區段前插一個帶後綴的假區段、或兩種標題並存，都會讓命中數變 2 而被拒。
     """
 
-    def _hit(line: str) -> bool:
-        stripped = line.strip()
-        if stripped == heading:
-            return True
-        return allow_suffix and stripped.startswith(heading + "（")
-
-    starts = [i for i, line in enumerate(lines) if _hit(line)]
+    starts = [i for i, line in enumerate(lines) if _heading_hit(line, heading, allow_suffix=allow_suffix)]
     if len(starts) != 1:
         raise AmendError(
             f"章節 `{heading}` 在 Log 之前出現 {len(starts)} 次，必須恰好 1 次才能安全替換"
@@ -688,7 +697,10 @@ def drop_sentinel_less_resource_section(body: str) -> tuple[str, str]:
     """
     head, tail = split_at_log(body)
     lines = head.splitlines()
-    starts = [i for i, line in enumerate(lines) if line.strip().startswith(_RESOURCE_HEADING)]
+    starts = [
+        i for i, line in enumerate(lines)
+        if _heading_hit(line, _RESOURCE_HEADING, allow_suffix=True)
+    ]
     if len(starts) != 2:
         raise AmendError(
             f"本操作只處理「恰好 2 個資源宣告標題」的卡，實際 {len(starts)} 個；拒絕猜測"
@@ -745,11 +757,24 @@ def restore_migration_header(
 
     回傳 ``(新 body, 插入內容原文)``。
     """
-    for label, value in (("需求", requested_by), ("規劃", planned_by)):
-        if not (value or "").strip():
+    # ⚠️ **四個欄位全部要驗，⛔ 不只前兩個。** R1-02：原本只驗 requested_by／planned_by，
+    # 而 initiative／spec_baseline 同樣會被寫進標頭行 ⇒ 注入換行即在 head 裡多出一個
+    # ``## Log``，`split_at_log` 當場拋錯 ⇒ 該卡**永久無法以 wfcli 修改**（＝ ``aiwf#15``
+    # 那個狀態，實測既無自動修法也無可用的人工程序）。⛔ 這不是想不到，是漏了一整類輸入。
+    for label, value, required in (
+        ("需求", requested_by, True),
+        ("規劃", planned_by, True),
+        ("Initiative", initiative, False),
+        ("spec 基線", spec_baseline, False),
+    ):
+        text = value or ""
+        if required and not text.strip():
             raise AmendError(f"`{label}` 值為空；⛔ 拒絕寫入佔位身分（它會成為授權基準）")
-        if "\u3000" in value or "\n" in value or "\r" in value:
-            raise AmendError(f"`{label}` 值含分隔用全形空格或換行：{value!r}；⛔ 會破壞標頭行解析")
+        if any(ch in text for ch in ("\u3000", "\n", "\r")):
+            raise AmendError(
+                f"`{label}` 值含分隔用全形空格或換行：{text!r}；⛔ 會破壞標頭行解析"
+                "（換行更會在 head 裡多出一個 `## Log`，使該卡永久無法以 wfcli 修改）"
+            )
 
     head, tail = split_at_log(body)
     lines = head.splitlines()
