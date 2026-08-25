@@ -354,6 +354,14 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | §4.6 守衛覆蓋 | `card.py` → `find_conflicts` | `待需求方裁定`：開卡時是否應做互斥比對（現況只有 assign 擋） |
 | §4.7 事件無 writer（後續卡新增） | `escalation-resolution`，及其取值 `fresh-ruling`／`carried-forward`／`continue-same-executor` | `補寫入者`。**writer 今天不存在**——`commands/checkpoint_cmd.py:261` 與 `validation.py:827` 兩處自陳「尚未實作」，故三個取值同族一起缺，writer 落地時一併消失。補在 `WF-22-CLI4` 或另開卡由需求方裁定。⚠️ 同節的 `structurally-vacuous` 判 `ok` 是**字面碰撞**（見 §4.7 末段），不是本節已實作的證據 |
 | 過抽（非契約符號） | `ubuntu-latest`、`update-branch`、`🔴紅線`、`⚪一般`、`→merge`、`→查核前`、`↔執行者`、`card_field` 的 `Log`／`目標`／`需求方`／`範圍` | `過抽`：抽取規則的已知代價，不須處置 |
+
+⚠️ **`card_field/Log` 於 2026-08-25 由 `write-only` 變成不再是缺口，已自處置表移除。**
+⛔ **那不代表 Log 真的取得了讀取者**——判定是 `writers and readers → ok`，而新的「reader」是
+`WF-CARD-BODY-BUDGET1` 在 `amend_cmd._largest_field_hint` 裡以 `body.partition("\n## Log")`
+切出 Log 區段來估算大小。⇒ 那是**本節所述過抽的又一個實例**：命中的是碼裡的同名字面，
+⛔ 不是 initiative 卡面上的那個 `Log` 欄位。移除該列只是讓表與機械導出的結果一致，
+⛔ 不得讀成「該缺口已被修復」。
+
 | 列舉值非事件 | `data-migration`、`authoritative-artifact`、`change-executor` | `過抽`：皆有讀取者，判定為 `read-only` 屬正常 |
 | 刻意 fail-closed | `spec-narrowed`、`instruction-omitted` | `已知限制`：`checkpoint_cmd` 明寫「保留旗標，一律拒收」，兩個 defer cause 在本 repo 皆不可用 |
 
@@ -365,7 +373,6 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "guard/cli/src/wf_cli/card.py→brief": "validate_shape",
     "guard/cli/src/wf_cli/commands/amend_cmd.py→brief": "validate_shape",
     "card_field/Discovery": "absent",
-    "card_field/Log": "write-only",
     "card_field/Merge SHA": "absent",
     "card_field/PR": "mention-only",
     "card_field/依賴與子卡": "absent",

@@ -1676,3 +1676,314 @@ def test_amend_restore_header_refuses_a_card_that_already_has_it(fake_runner):
     assert rc != 0
     after = find_item_by_card_id(list_items(fake_runner, project), "MIG-HEADER-OK").body
     assert after == before
+
+
+# ---------------------------------------------------------------------------
+# WF-CARD-BODY-BUDGET1：Log 成本 O(1) 化 ＋ 卡面容量預算
+#
+# ⚠️ 這些測試必須真的走到**指紋**路徑。先前一版用
+# `runner.run_json(["api","graphql",...])`，`FakeGhRunner` 認不得 ⇒ 拋錯 ⇒ 被
+# `_prior_revision_recoverable` 的 except 吞掉 ⇒ 一律回傳 False ⇒ **全部測試都走全文
+# 退路、指紋路徑一次都不會被跑到**。那是「守衛在測試裡從不執行」，⛔ 不得再發生。
+# 下面每一支都斷言「Log 裡有沒有 sha256:」，正向與負向各自釘住一條路徑。
+# ---------------------------------------------------------------------------
+
+
+def _budget_card(fake_runner, card_id="BUDGET-CARD"):
+    run_cli(_open_argv(card_id, **{"--repo": ASSIGN_REPO}))
+    project = resolve_project(fake_runner, "acme", 1)
+    return project, find_item_by_card_id(list_items(fake_runner, project), card_id)
+
+
+def test_log_records_fingerprints_not_full_text_when_a_revision_exists(fake_runner):
+    """V1：有前一版時，Log 記指紋、⛔ 不含舊值任何一段連續 20 字元。"""
+    project, _ = _budget_card(fake_runner)
+    marker = "這段舊驗收條文長到足以逐字比對" * 2
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-CARD",
+             "--reason", "先放一段可辨識的舊值", "--acceptance", marker])
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-CARD",
+             "--reason", "改掉它，這次應記指紋", "--acceptance", "新的驗收"])
+    body = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-CARD").body
+    log = body.split("\n## Log", 1)[1]
+    last = log.strip().splitlines()[-1]
+    assert "sha256:" in last, f"沒走到指紋路徑：{last[:200]}"
+    assert marker[:20] not in last, "舊值全文仍留在最後一筆 Log"
+
+
+def test_first_write_falls_back_to_full_text(fake_runner):
+    """V4：`totalCount == 0`（首寫）平台無前一版 ⇒ 必須寫全文。"""
+    project, _ = _budget_card(fake_runner, "BUDGET-FIRST")
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-FIRST",
+             "--reason", "首寫", "--acceptance", "只有這一條"])
+    body = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-FIRST").body
+    last = body.split("\n## Log", 1)[1].strip().splitlines()[-1]
+    assert "sha256:" not in last
+    assert "totalCount=0" in last, f"未載明退回全文的理由：{last[:200]}"
+
+
+def test_unavailable_revision_content_falls_back_to_full_text(fake_runner):
+    """⭐ 第三條退路：平台記了版本但內容取回 null ⇒ 仍須寫全文。
+
+    ⚠️ 這條是本卡執行期新增的。A9 的實測只把已驗證區間由 39 版推到 50 版
+    （`aiwf#16`，50/50 全數可取），⛔ 沒有證明無上限、⛔ 沒有官方保證、
+    >39 版的樣本只有 1 個、最舊僅回溯 8 天。⇒ 設計必須對「取不到」fail-safe。
+    """
+    project, _ = _budget_card(fake_runner, "BUDGET-NULL")
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-NULL",
+             "--reason", "建立一版", "--acceptance", "第一版"])
+    fake_runner.revision_content_unavailable = True
+    try:
+        run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-NULL",
+                 "--reason", "內容取不到時應退回全文", "--acceptance", "第二版"])
+    finally:
+        fake_runner.revision_content_unavailable = False
+    last = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-NULL").body
+    last = last.split("\n## Log", 1)[1].strip().splitlines()[-1]
+    assert "sha256:" not in last
+    assert "取回為 null" in last, f"未載明退回全文的理由：{last[:200]}"
+
+
+def test_non_body_sourced_old_value_is_always_written_in_full(fake_runner):
+    """⭐ 第四條退路：舊值不是取自 body 者一律寫全文。
+
+    `userContentEdits` 保存的是**前一版 body**。雙面不同步自癒時，舊值只存在於
+    Project 欄位、**從來沒出現在任何一版 body 裡** ⇒ 指紋不可還原。
+    ⇒ 旗標**預設 False**，body 來源者才 opt-in：日後新增非 body 來源而忘了標記時，
+    退路是「多寫全文」⛔ 不是「靜默丟資料」。
+
+    ⚠️ **本測試在自審時被換掉。** 原版只斷言一個本機 tuple 的長度與預設值
+    ——把預設改成危險方向（`True`）它照樣全綠 ⇒ **零資訊**。
+    ⭐ 真正的負控是 `test_amend.py::test_stale_project_field_converges_on_rerun`
+    （逐字斷言「原值必須留在 Log」），已實測：把預設改成 `True` 時它轉紅。
+    本測試改為釘住**預設方向本身**在原始碼裡的字面，讓「有人把它改回 True」
+    這件事在本檔也留下一道明示的檢查。
+    """
+    from pathlib import Path
+
+    from wf_cli.commands import amend_cmd
+
+    source = Path(amend_cmd.__file__).read_text(encoding="utf-8")
+    assert "else False" in source and "body_sourced = entry[4] if len(entry) > 4 else False" in source, (
+        "body_sourced 的預設必須是 False（寫全文）。"
+        "⛔ 改成 True 會讓非 body 來源的舊值被指紋化而永久不可還原；"
+        "端到端負控見 test_amend.py::test_stale_project_field_converges_on_rerun。"
+    )
+    assert hasattr(amend_cmd, "_fingerprint")
+
+
+def test_budget_line_is_printed_on_every_write(fake_runner, capsys):
+    """V7：預算行的四個數字。"""
+    _budget_card(fake_runner, "BUDGET-LINE")
+    capsys.readouterr()
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-LINE",
+             "--reason", "看預算行", "--acceptance", "一條"])
+    out = capsys.readouterr().out
+    assert "卡面預算：" in out
+    for token in ("本次 +", "寫入後 ", "上限 129,486", "餘裕 ", "還能改 "):
+        assert token in out, f"預算行缺 {token!r}：{out}"
+
+
+def test_budget_line_is_printed_on_dry_run_too(fake_runner, capsys):
+    """V7：`--dry-run` 也要印（A4 逐字），且要說明這次會用哪種記法。"""
+    _budget_card(fake_runner, "BUDGET-DRY")
+    capsys.readouterr()
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-DRY",
+             "--reason", "dry-run 也要有", "--acceptance", "一條", "--dry-run"])
+    out = capsys.readouterr().out
+    assert "卡面預算：" in out
+    assert "Log 記法：" in out
+
+
+def test_hard_line_refuses_and_leaves_the_body_untouched(fake_runner, capsys):
+    """V5：寫入後會超過上限 ⇒ rc≠0、body 逐位元未變、訊息指出最大可壓縮章節。"""
+    project, _ = _budget_card(fake_runner, "BUDGET-HARD")
+    before = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-HARD").body
+    capsys.readouterr()
+    rc = run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-HARD",
+                  "--reason", "超大寫入", "--acceptance", "撐" * 70_000])
+    assert rc != 0
+    after = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-HARD").body
+    assert after == before, "拒絕時必須零寫入"
+    err = capsys.readouterr().err
+    assert "超過上限" in err
+    assert "最大的可壓縮章節" in err
+
+
+def test_soft_threshold_warns_but_passes(fake_runner, capsys):
+    """V6：餘裕低於軟門檻時**警告但放行**——⛔ 擋了會讓人學會繞過。"""
+    from wf_cli.commands.amend_cmd import BODY_LIMIT, BODY_SOFT_MARGIN
+
+    project, item = _budget_card(fake_runner, "BUDGET-SOFT")
+    # 先寫一次建立平台版本，⇒ 第二次走指紋路徑、Log 成本 O(1)，
+    # 大小才由驗收欄本身決定。⛔ 不寫死魔術數字：由 BODY_LIMIT 推算落點。
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SOFT",
+             "--reason", "建立一版", "--acceptance", "短"])
+    item = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-SOFT")
+    base = len(item.body)  # ⚠️ 字元，⛔ 不是位元組
+    # 目標：寫入後落在 (BODY_LIMIT - BODY_SOFT_MARGIN, BODY_LIMIT) 之間。
+    target = BODY_LIMIT - BODY_SOFT_MARGIN // 2
+    padding = "撐" * max(1, target - base - 600)
+    capsys.readouterr()
+    rc = run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SOFT",
+                  "--reason", "逼近但不超過", "--acceptance", padding])
+    assert rc == 0, "軟門檻不得阻擋"
+    err = capsys.readouterr().err
+    assert "警告" in err and "本次仍放行" in err
+    body = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-SOFT").body
+    assert "撐" * 100 in body, "放行卻沒寫進去"
+
+
+def test_body_limit_is_the_measured_value_not_the_documented_one():
+    """A5：⛔ 不得寫 65,536。"""
+    from wf_cli.commands.amend_cmd import BODY_LIMIT
+
+    assert BODY_LIMIT == 129_486
+    assert BODY_LIMIT != 65_536
+
+
+def test_fingerprint_is_full_length_sha256_with_byte_count():
+    """A1：⛔ 不截短——碰撞成本必須留在密碼學等級。"""
+    import hashlib
+
+    from wf_cli.commands.amend_cmd import _fingerprint
+
+    text = "測試值"
+    fp = _fingerprint(text)
+    assert hashlib.sha256(text.encode()).hexdigest() in fp
+    assert f"({len(text.encode())} bytes)" in fp
+
+
+def test_hard_line_tells_a_shrinking_repair_that_the_direction_is_right(fake_runner, capsys):
+    """⭐ 自審抓到：**已經**超上限的卡在做壓縮修復時，訊息不能叫它「請先壓縮」。
+
+    `aiwf#105` 曾是 129,651 位元組。若它用 `amend` 一次縮不到上限以下，
+    原本的訊息會給出它正在執行的那個指示 ⇒ ⛔ 零幫助。
+    ⇒ `cost < 0`（body 變小）與 `cost >= 0`（撐大）給的下一步完全不同。
+    ⚠️ 兩者都仍 rc≠0：body 超過上限時 GitHub 本來就會拒收——這裡擋的是白跑一趟。
+
+    情境構造：`## 驗證` 單獨就超過上限（⇒ 怎麼壓 `## 驗收條件` 都回不到線下），
+    而 `## 驗收條件` 有可觀大小（⇒ 換成小值時 body 確實變小）。
+    """
+    import re
+
+    from wf_cli.commands.amend_cmd import BODY_LIMIT
+
+    project, _ = _budget_card(fake_runner, "BUDGET-SHRINK")
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SHRINK",
+             "--reason", "建立一版", "--acceptance", "短"])
+    item = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-SHRINK")
+
+    # 直接把 body 灌成「已超限」的事故狀態：驗證 > 上限、驗收條件另有 30,000 位元組。
+    head, _, log = item.body.partition("\n## Log")
+    head = re.sub(r"## 驗收條件\n.*?(?=\n## )", "## 驗收條件\n\n- [ ] " + "甲" * 10_000, head, flags=re.DOTALL)
+    head = re.sub(r"## 驗證\n.*$", "## 驗證\n\n- [ ] " + "乙" * (BODY_LIMIT + 500), head, flags=re.DOTALL)
+    over = head + "\n## Log" + log
+    assert len(over) > BODY_LIMIT, "構造失敗：卡沒有超過上限"
+    fake_runner.issues[item.issue_url]["body"] = over
+    for it in fake_runner.items.values():
+        if it.get("issue_url") == item.issue_url:
+            it["body"] = over
+
+    capsys.readouterr()
+    rc = run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SHRINK",
+                  "--reason", "壓縮修復：把驗收條件縮成一行", "--acceptance", "壓縮後的一行"])
+    # ⚠️ 只能取一次——第二次 readouterr() 拿到的是清空後的新捕獲。
+    captured = capsys.readouterr()
+    err = captured.err
+    assert rc != 0, "驗證欄單獨就超限，⇒ 這次不可能回到線下"
+    assert "方向對了、幅度不夠" in err, f"縮小中的修復收到錯誤指引：{err[:400]}"
+    assert "請先把該章節的原文封存成留言" not in err
+
+
+def test_draft_issue_card_always_falls_back_to_full_text(fake_runner):
+    """A2(a)：`DraftIssue` 型別上**沒有** `userContentEdits` ⇒ 平台零保存 ⇒ 必須寫全文。
+
+    ⚠️ 2026-08-25 對真實 GraphQL schema 實測：
+    `{ __type(name:"DraftIssue"){ fields{name} } }` 回
+    `assignees body bodyHTML bodyText createdAt creator id projectV2Items projectsV2 title updatedAt`
+    ——⛔ 無 `userContentEdits`。⇒ 對 draft 卡記指紋是**不可逆損失**。
+
+    ⭐ A2 逐字要求「兩條各須有獨立測試」。自審發現 (b) 有、(a) 沒有——本檔原有的
+    四處 `DraftIssue` 全屬 `assign` 的 repo 判定，⛔ 與本卡無關。
+    """
+    run_cli(_open_argv("DRAFT-BUDGET"))  # 沒有 --repo ＝ DraftIssue
+    project = resolve_project(fake_runner, "acme", 1)
+    run_cli(["amend", *BASE_TARGET, "DRAFT-BUDGET",
+             "--reason", "draft 卡必須寫全文", "--acceptance", "可辨識的驗收原文"])
+    body = find_item_by_card_id(list_items(fake_runner, project), "DRAFT-BUDGET").body
+    last = body.split("\n## Log", 1)[1].strip().splitlines()[-1]
+    assert "sha256:" not in last, f"draft 卡竟走了指紋路徑：{last[:200]}"
+    assert "content_type=DraftIssue" in last, f"未載明退回全文的理由：{last[:200]}"
+
+
+def test_fingerprint_path_never_says_the_full_text_is_in_the_log(fake_runner, capsys):
+    """R1-001（`GPT-5@Codex` 2026-08-26，major／blocking）。
+
+    `_short()` 原本無條件輸出「全文 N 字，**見 Log**」，而指紋路徑的 Log
+    **只有 sha256、沒有全文** ⇒ 同一次輸出會同時出現「Log 記法：指紋」與
+    「見 Log」，後者是**錯誤的還原指引**。
+
+    查核者逐字要求的回歸：「建立可還原版本後，以**超過 `_short` 門檻**的舊值
+    執行 `amend`／`dry-run`，斷言輸出不含「見 Log」且明示平台版本還原路徑。」
+    """
+    _budget_card(fake_runner, "SHORT-WHERE")
+    long_old = "確認訊息一致性的長字串" * 40          # 遠超過 _short 的 80/100 門檻
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "SHORT-WHERE",
+             "--reason", "建立一版可還原的前一版", "--acceptance", long_old])
+    capsys.readouterr()
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "SHORT-WHERE",
+             "--reason", "這次應走指紋路徑", "--acceptance", "新的短驗收"])
+    out = capsys.readouterr().out
+    assert "Log 記法" not in out or "指紋" in out
+    assert "見 Log" not in out, f"指紋路徑仍宣稱全文在 Log：{out}"
+    assert "見平台前一版" in out, f"未明示平台版本還原路徑：{out}"
+
+
+def test_full_text_path_still_says_the_log(fake_runner, capsys):
+    """⭐ 負控：走**全文**退路時「見 Log」是**對的**，⛔ 不得一併刪掉。
+
+    ⛔ 只驗「指紋路徑不說見 Log」是零資訊——把 `where` 寫死成
+    「見平台前一版」也能讓那支測試全綠，而那對全文退路是錯的指引。
+    """
+    _budget_card(fake_runner, "SHORT-WHERE-FULL")
+    capsys.readouterr()
+    # 首寫 ⇒ totalCount==0 ⇒ 走全文退路
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "SHORT-WHERE-FULL",
+             "--reason", "首寫應走全文", "--acceptance", "確認訊息一致性的長字串" * 40])
+    out = capsys.readouterr().out
+    assert "見 Log" in out, f"全文退路卻沒指向 Log：{out}"
+    assert "見平台前一版" not in out
+
+
+def test_fold_docstring_no_longer_claims_the_log_is_the_only_recovery_point():
+    """R1-001 的第二半：`_fold()` 的 docstring 逐字寫「Log 是唯一還原點」，
+    而那正是本卡推翻的前提——⛔ 改了行為卻沒改它。
+    """
+    from wf_cli.commands.amend_cmd import _fold
+
+    doc = _fold.__doc__ or ""
+    assert "Log 是唯一還原點。" not in doc, "過期前提仍留在 docstring"
+    assert "userContentEdits" in doc, "未說明真正的還原點"
+    assert "不截斷" in doc, "⛔ 不得連同仍然成立的部分一起刪掉"
+
+
+def test_no_user_facing_text_still_claims_the_log_holds_the_full_old_value():
+    """⭐ 自審（R2 送審前）：R1-001 的同族還有兩處，查核者沒點到。
+
+    - `add_parser` 的 help 逐字「原值寫入 Log」
+    - 模組 docstring 逐字「唯一還原點，摘要不能取代全文」
+
+    ⇒ 掃全檔的**使用者可見字串**，斷言沒有任何一處無條件宣稱全文在 Log。
+    ⛔ 註解與 docstring 裡「解釋這個前提已被推翻」的敘述不算違規——
+    判準是**是否作為指引輸出給使用者**。
+    """
+    import inspect
+
+    from wf_cli.commands import amend_cmd
+
+    src = inspect.getsource(amend_cmd)
+    banned = ["原值寫入 Log", "唯一還原點，摘要不能取代全文"]
+    hits = [b for b in banned if b in src]
+    assert not hits, f"仍有過期的還原指引：{hits}"
+    # ⭐ 負控：確認掃描抓得到東西——這兩句必須存在，否則本測試是零資訊。
+    assert "見平台前一版" in src and "原值已完整寫入 Log" in src

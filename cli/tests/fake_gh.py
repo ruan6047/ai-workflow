@@ -10,6 +10,7 @@ live smoke run）驗證；這裡只保證「CLI 組裝出的呼叫序列邏輯�
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from wf_cli.gh import GhRunner
@@ -41,6 +42,11 @@ class FakeGhRunner(GhRunner):
         self._seq = 0
         self._issue_seq = 0
         self.graphql_calls: list[str] = []
+        #: 測試旋鈕：設成 True 時 `userContentEdits` 的 node 回 `diff: None`
+        #: ——模擬「平台記了版本但內容拿不到」，⇒ 呼叫端必須退回寫全文。
+        #: ⚠️ 這條退路是必要的：A9 的實測只把已驗證區間由 39 版推到 50 版
+        #: （`aiwf#16`），⛔ 沒有證明無上限、⛔ 也沒有官方保證。
+        self.revision_content_unavailable = False
 
     def _next(self, prefix: str) -> str:
         self._seq += 1
@@ -214,6 +220,10 @@ class FakeGhRunner(GhRunner):
             number = int(args[2])
             url = f"https://github.com/{repo}/issues/{number}"
             if "--body" in flags:
+                # ⭐ 每次改 body 都留一版——這是真實 `userContentEdits` 的語意
+                # （2026-08-25 對 aiwf#16 實測：totalCount 50、first:100 全數取回、
+                # 每個 node 的 diff 都是**該版的完整 body**、⛔ 不是 diff）。
+                self.issues[url].setdefault("revisions", []).append(self.issues[url]["body"])
                 self.issues[url]["body"] = flags["--body"]
                 for item in self.items.values():
                     if item.get("issue_url") == url:
@@ -237,6 +247,31 @@ class FakeGhRunner(GhRunner):
                 "data": {
                     "updateProjectV2ItemFieldValue": {
                         "projectV2Item": {"id": variables["itemId"]}
+                    }
+                }
+            }
+
+        if "userContentEdits" in query:
+            # 形狀：{repository(owner:"o",name:"n"){issue(number:N){userContentEdits(last:1){...}}}}
+            m = re.search(r'owner:"([^"]+)",name:"([^"]+)"\)\{issue\(number:(\d+)\)', query)
+            if not m:
+                raise AssertionError(f"FakeGhRunner: 認不得的 userContentEdits 查詢：{query[:120]}")
+            owner, name, number = m.group(1), m.group(2), int(m.group(3))
+            url = f"https://github.com/{owner}/{name}/issues/{number}"
+            issue = self.issues.get(url)
+            if issue is None:
+                raise AssertionError(f"FakeGhRunner: 查不存在的 issue 版本 {url}")
+            revs = issue.get("revisions", [])
+            nodes = [
+                {"diff": None if self.revision_content_unavailable else r}
+                for r in revs[-1:]
+            ]
+            return {
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "userContentEdits": {"totalCount": len(revs), "nodes": nodes}
+                        }
                     }
                 }
             }
