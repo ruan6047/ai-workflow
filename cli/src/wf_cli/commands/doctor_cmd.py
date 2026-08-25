@@ -17,9 +17,15 @@ from ..doctor import (
     run_doctor,
 )
 from ..gh import default_runner
-from ..project import find_item_by_card_id, list_items, resolve_project
+from ..project import FIELD_SPECS, find_item_by_card_id, list_items, resolve_project
 from ..registry import load_tasks_md_registry
 from ..validation import ValidationError, validate_source_sha
+
+#: `--conformance` 的舊名。`--legacy-authority-notes` 當初只掛舊措辭授權留痕一項，
+#: 後來簡介漂移、事後符合性重驗、欄位層對帳、狀態面漂移都掛在同一個 if 底下，而它的
+#: help 一個字沒提那些 ⇒ 旗標名已經在說謊。改名為 `--conformance`（實查 CI／腳本／文件
+#: 對舊名 0 命中），舊名保留為 alias 以免弄壞任何未被搜到的呼叫端。
+DEPRECATED_CONFORMANCE_ALIAS = "--legacy-authority-notes"
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -49,10 +55,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help="檢查 --commit-range 內每筆 commit 的 §6 來歷 trailer 完整性（唯讀；不阻擋任何 push）",
     )
     p.add_argument(
-        "--legacy-authority-notes",
+        "--conformance",
+        DEPRECATED_CONFORMANCE_ALIAS,
+        dest="conformance",
         action="store_true",
-        help="掃描 Project 全部卡面，列出使用 #62 之前措辭的 amend 授權留痕（唯讀，"
-        "需 --owner／--project）。報的是留痕強度不足，不是授權無效；既存事件不得改寫",
+        help="對 Project 全部既有卡重跑現行的欄位與格式檢查（canonical §5.1.2），並一併"
+        "輸出簡介漂移、狀態面漂移、欄位層對帳與舊措辭授權留痕（唯讀，需 --owner／"
+        f"--project）。⛔ 不自動修復、⛔ 不阻擋任何動詞。{DEPRECATED_CONFORMANCE_ALIAS}"
+        " 是本旗標的舊名，仍可用",
     )
     p.add_argument(
         "--commit-range",
@@ -118,14 +128,14 @@ def run(args: argparse.Namespace) -> int:
     if args.commit_trailers and not args.commit_range:
         print("[doctor] --commit-trailers 缺必要旗標：--commit-range", file=sys.stderr)
         return 2
-    if args.legacy_authority_notes:
+    if args.conformance:
         missing = [
             flag for flag, value in (("--owner", args.owner), ("--project", args.project))
             if not value
         ]
         if missing:
             print(
-                f"[doctor] --legacy-authority-notes 缺必要旗標：{', '.join(missing)}",
+                f"[doctor] --conformance 缺必要旗標：{', '.join(missing)}",
                 file=sys.stderr,
             )
             return 2
@@ -164,7 +174,8 @@ def run(args: argparse.Namespace) -> int:
     # 不足、Project 讀不到），只是不再是**唯一**會走到的路。
     legacy_bodies: dict[str, str] | None = None
     brief_values: dict[str, str | None] | None = None
-    if args.legacy_authority_notes:
+    project_field_values: dict[str, dict] | None = None
+    if args.conformance:
         try:
             proj = resolve_project(default_runner, args.owner, args.project)
             snapshots = list_items(default_runner, proj)
@@ -177,14 +188,20 @@ def run(args: argparse.Namespace) -> int:
             # 讀取取得——⚠️ 分兩次讀會讓「body 與欄位」跨了時間，漂移偵測就分不出
             # 「真的漂移」與「兩次讀之間有人改過」。
             brief_values = {
-                item.card_id: item.fields.get("簡介")
+                item.card_id: (getattr(item, "fields", None) or {}).get("簡介")
+                for item in snapshots
+                if item.card_id and item.body
+            }
+            # 事後符合性重驗與欄位層對帳要的是**整份欄位值**，⚠️ 同樣來自這一次讀取。
+            project_field_values = {
+                item.card_id: dict(getattr(item, "fields", None) or {})
                 for item in snapshots
                 if item.card_id and item.body
             }
         except Exception as exc:  # noqa: BLE001 - 任何讀取失敗都退回「未掃描」
             print(
                 f"[doctor] 取不到 Project 卡面（{type(exc).__name__}: {exc}）；"
-                "舊措辭授權留痕一節維持「未掃描」——這不等於沒有",
+                "事後符合性重驗與相關各節維持「未掃描」——這不等於沒有",
                 file=sys.stderr,
             )
 
@@ -197,6 +214,14 @@ def run(args: argparse.Namespace) -> int:
         cleanup_preview=args.cleanup_preview,
         legacy_authority_card_bodies=legacy_bodies,
         brief_field_values=brief_values,
+        project_field_values=project_field_values,
+        declared_project_fields=tuple(FIELD_SPECS),
+        # ⛔ **卡的 Issue createdAt 今天取不到**（阻塞發現，非疏漏）。取值序的第 2 順位
+        # 要它，而唯一合規的取得方式是擴 `project.py` 的 `_LIST_ITEMS_QUERY`
+        # ——那個檔**不在本卡的資源宣告**內，依 canonical §3.2 執行者不得自行擴權；
+        # 而第二次抓取被本卡驗收明文禁止（會讓 body 與欄位跨時間）。
+        # ⇒ 取不到 open 事件時刻的卡一律落 `undecidable`，⛔ 不猜、⛔ 不改判成指控。
+        issue_created_at=None,
     )
     # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
     # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。
