@@ -275,9 +275,14 @@ def test_declaration_heading_returns_the_short_form_when_that_is_what_is_there()
 
 
 def test_suffixed_decoy_before_the_real_section_still_rejects():
-    # 真區段前插一個帶後綴的假區段 → 命中 2 次 → 「恰好 1 次」不變量擋下。
-    body = _body(SUFFIXED + "\n<!-- resource-claims:begin -->\nHIJACK\n",
-                 "## 資源宣告\n" + _PAYLOAD)
+    # 真區段**前**插一個帶後綴的假區段 → 命中 2 次 → 「恰好 1 次」不變量擋下。
+    #
+    # ⚠️ 假區段的 payload 必須是**合法宣告**（原本寫 `HIJACK`，⛔ 那是零資訊）：
+    # 內容非法的話，關掉「恰好 1 次」之後解析仍會在哨兵／JSON 層失敗，
+    # ⇒ 測試照樣綠、但通過的理由不是本測試宣稱的那一個。變異檢驗當場抓到。
+    # 合法 payload 讓「拒收」的唯一可能理由就是命中數。
+    hijacked = _PAYLOAD.replace("file:a.py", "file:HIJACKED.py")
+    body = _body(SUFFIXED + "\n" + hijacked, "## 資源宣告\n" + _PAYLOAD)
     with pytest.raises(ResourceDeclarationError):
         parse_block(body)
 
