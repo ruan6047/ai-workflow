@@ -2038,6 +2038,10 @@ class ConformanceReport:
     #: `accept_as_legacy` 的 epoch 其殘餘**不逐張列**（需求方已裁定不追溯），只留摘要。
     #: 放進 `routine_gaps` 而非 findings，是為了讓它不進待辦、也不從報告上消失。
     accepted_as_legacy: list[str] = field(default_factory=list)
+    #: 本次掃描有沒有拿到卡的 Issue `createdAt`。⭐ **這決定第 5 類是否構造上可達**，
+    #: 見 `render_conformance` 的零命中歸因段——⛔ 不得讓一個永遠是 0 的桶看起來像
+    #: 「掃過而乾淨」。
+    created_at_available: bool = False
 
     @property
     def routine_gaps(self) -> Sequence[str]:
@@ -2155,7 +2159,11 @@ def audit_conformance(
         return ConformanceReport(status="not_scanned")
     values = field_values or {}
     created = issue_created_at or {}
-    report = ConformanceReport(status="scanned", scanned_cards=len(card_bodies))
+    report = ConformanceReport(
+        status="scanned",
+        scanned_cards=len(card_bodies),
+        created_at_available=any(v for v in created.values()),
+    )
     legacy_counts: Counter[str] = Counter()
     for card_id in sorted(card_bodies):
         card_fields = values.get(card_id) or {}
@@ -2386,6 +2394,17 @@ def render_conformance(report: ConformanceReport) -> str:
         "- ⚠️ 前兩類是**本工具的侷限**，⛔ 不是對卡或對人的指控："
         f"{CAUSE_TOOL_CANNOT_READ}／{CAUSE_UNDECIDABLE}。"
     )
+    if not report.created_at_available:
+        # ⭐ 零命中要說得出「什麼結果會推翻它」。第 5 類今天**構造上到不了**：
+        # 取不到 Issue createdAt 時，唯一能給出存在時刻的來源是 Log 的 `open` 事件，
+        # 而那筆事件本身就是通道證據 ⇒ 凡是判得出時刻的卡必然 channel_evidenced=True，
+        # 第 4 步就攔下了。⇒ 這個 0 是「機制沒啟用」，⛔ 不是「掃過而沒有」。
+        lines.append(
+            f"- ⛔ **`{CAUSE_CHANNEL_BYPASSED}` 今天構造上不可達**（本次未取得 Issue "
+            "createdAt）：能給出存在時刻的只剩 Log 的 `open` 事件，而它本身就是通道證據 "
+            "⇒ 判得出時刻的卡必然在前一類被攔下。這個 0 是**機制未啟用**，"
+            "⛔ 不是「掃過而沒有」。要讓它變成真的觀測，須先補上 createdAt 來源。"
+        )
     # 逐規則摘要先於逐張清單：`migrate` 的規則會逐張列出（V5），一條規則就可能吃掉
     # 兩百行；沒有摘要行的話讀者得捲到底才知道哪一條規則在痛。
     per_rule = Counter(f.rule_id for f in report.findings)

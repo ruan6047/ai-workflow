@@ -2990,3 +2990,29 @@ def test_reachability_states_that_it_only_covers_the_card_face_gate():
     assert "只測**卡面定位**那一關" in text
     assert "--ruling-url" in text
     assert "⛔ 不等於「這個動詞現在就能成功」" in text
+
+
+def test_a_structurally_unreachable_cause_is_declared_not_shown_as_a_clean_zero():
+    """⭐ 零命中要說得出「什麼結果會推翻它」。
+
+    取不到 Issue `createdAt` 時，唯一能給出存在時刻的來源是 Log 的 `open` 事件，
+    而**那筆事件本身就是通道證據** ⇒ 凡是判得出時刻的卡必然在第 4 類被攔下，
+    第 5 類（`channel_bypassed`）**構造上到不了**。⇒ 這個 0 是「機制未啟用」，
+    ⛔ 不是「掃過而沒有」，報告必須自己講出這件事。
+
+    **突變檢驗**：拿掉 `render_conformance` 的該段、或把 `created_at_available`
+    改成恆真，本測試轉紅。
+    """
+    bodies = {"CARD-A": _conformant_body(_EARLY_OPEN, brief=False)}
+    fields = {"CARD-A": {"服務的原始目標": "有"}}
+
+    without = audit_conformance(bodies, fields, None)
+    assert without.created_at_available is False
+    text = render_conformance(without)
+    assert f"`{CAUSE_CHANNEL_BYPASSED}` 今天構造上不可達" in text
+    assert "⛔ 不是「掃過而沒有」" in text
+
+    # 補上 createdAt 之後，該段必須消失——它宣稱的是「今天」的狀態，⛔ 不是永久事實。
+    with_created = audit_conformance(bodies, fields, {"CARD-A": "2026-08-01T09:00:00+08:00"})
+    assert with_created.created_at_available is True
+    assert "構造上不可達" not in render_conformance(with_created)
