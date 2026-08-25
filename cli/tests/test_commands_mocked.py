@@ -1851,3 +1851,45 @@ def test_fingerprint_is_full_length_sha256_with_byte_count():
     fp = _fingerprint(text)
     assert hashlib.sha256(text.encode()).hexdigest() in fp
     assert f"({len(text.encode())} bytes)" in fp
+
+
+def test_hard_line_tells_a_shrinking_repair_that_the_direction_is_right(fake_runner, capsys):
+    """⭐ 自審抓到：**已經**超上限的卡在做壓縮修復時，訊息不能叫它「請先壓縮」。
+
+    `aiwf#105` 曾是 129,651 位元組。若它用 `amend` 一次縮不到上限以下，
+    原本的訊息會給出它正在執行的那個指示 ⇒ ⛔ 零幫助。
+    ⇒ `cost < 0`（body 變小）與 `cost >= 0`（撐大）給的下一步完全不同。
+    ⚠️ 兩者都仍 rc≠0：body 超過上限時 GitHub 本來就會拒收——這裡擋的是白跑一趟。
+
+    情境構造：`## 驗證` 單獨就超過上限（⇒ 怎麼壓 `## 驗收條件` 都回不到線下），
+    而 `## 驗收條件` 有可觀大小（⇒ 換成小值時 body 確實變小）。
+    """
+    import re
+
+    from wf_cli.commands.amend_cmd import BODY_LIMIT
+
+    project, _ = _budget_card(fake_runner, "BUDGET-SHRINK")
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SHRINK",
+             "--reason", "建立一版", "--acceptance", "短"])
+    item = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-SHRINK")
+
+    # 直接把 body 灌成「已超限」的事故狀態：驗證 > 上限、驗收條件另有 30,000 位元組。
+    head, _, log = item.body.partition("\n## Log")
+    head = re.sub(r"## 驗收條件\n.*?(?=\n## )", "## 驗收條件\n\n- [ ] " + "甲" * 10_000, head, flags=re.DOTALL)
+    head = re.sub(r"## 驗證\n.*$", "## 驗證\n\n- [ ] " + "乙" * (BODY_LIMIT // 3 + 500), head, flags=re.DOTALL)
+    over = head + "\n## Log" + log
+    assert len(over.encode("utf-8")) > BODY_LIMIT, "構造失敗：卡沒有超過上限"
+    fake_runner.issues[item.issue_url]["body"] = over
+    for it in fake_runner.items.values():
+        if it.get("issue_url") == item.issue_url:
+            it["body"] = over
+
+    capsys.readouterr()
+    rc = run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SHRINK",
+                  "--reason", "壓縮修復：把驗收條件縮成一行", "--acceptance", "壓縮後的一行"])
+    # ⚠️ 只能取一次——第二次 readouterr() 拿到的是清空後的新捕獲。
+    captured = capsys.readouterr()
+    err = captured.err
+    assert rc != 0, "驗證欄單獨就超限，⇒ 這次不可能回到線下"
+    assert "方向對了、幅度不夠" in err, f"縮小中的修復收到錯誤指引：{err[:400]}"
+    assert "請先把該章節的原文封存成留言" not in err

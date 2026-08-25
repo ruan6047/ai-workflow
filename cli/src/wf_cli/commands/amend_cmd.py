@@ -532,8 +532,9 @@ def _render_budget(body: str, before_len: int) -> tuple[str, int, int]:
         remaining = f"{margin // cost} 次"
     else:
         remaining = "—"
+    delta = f"+{cost:,}" if cost >= 0 else f"{cost:,}"
     line = (
-        f"[amend] 卡面預算：本次 +{cost:,} 位元組／寫入後 {after:,}／"
+        f"[amend] 卡面預算：本次 {delta} 位元組／寫入後 {after:,}／"
         f"上限 {BODY_LIMIT:,}／餘裕 {margin:,}／以本次成本估還能改 {remaining}"
     )
     return line, cost, margin
@@ -1089,12 +1090,29 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     budget_line, _cost, margin = _render_budget(body, len(item.body.encode("utf-8")))
     print(budget_line)
     if margin < 0:
-        print(
-            f"[amend] 拒絕：寫入後 body 會超過上限 {BODY_LIMIT:,} 位元組（超出 {-margin:,}）。"
-            f"最大的可壓縮章節：{_largest_field_hint(body)}。"
-            "⇒ 請先把該章節的原文封存成留言、再以逐條壓縮改寫（⛔ 合併與丟棄不是壓縮）。",
-            file=sys.stderr,
-        )
+        # ⭐ **縮小中的救援與撐大要分流。** 自審抓到：一張**已經**超過上限的卡
+        # （`aiwf#105` 曾是 129,651）做壓縮修復時，若一次沒縮到上限以下，
+        # 原本的訊息會叫它「請先封存再壓縮」——⛔ 而它正在做那件事。
+        # ⇒ 兩種情境給的下一步完全不同，訊息必須分開。
+        #
+        # ⚠️ 兩者都仍 `return 2`：body 超過上限時 GitHub 本來就會拒收，
+        # 放行只會換成一個更難懂的遠端錯誤。⛔ 這裡擋的是「白跑一趟」，不是修復本身。
+        if _cost < 0:
+            print(
+                f"[amend] 拒絕：本次已縮小 {-_cost:,} 位元組，但寫入後仍有 {-margin:,} "
+                f"超過上限 {BODY_LIMIT:,}。⇒ **方向對了、幅度不夠**，請在同一次修訂裡再縮 "
+                f"{-margin:,} 位元組以上。目前最大的章節：{_largest_field_hint(body)}。"
+                "⚠️ 若一次縮不到位，唯一的出路是走 `gh issue edit --body-file` 手動截斷"
+                "（該路徑會抹掉 append-only 的 Log，須先把 Log 全文封存成留言）。",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[amend] 拒絕：寫入後 body 會超過上限 {BODY_LIMIT:,} 位元組（超出 {-margin:,}）。"
+                f"最大的可壓縮章節：{_largest_field_hint(body)}。"
+                "⇒ 請先把該章節的原文封存成留言、再以逐條壓縮改寫（⛔ 合併與丟棄不是壓縮）。",
+                file=sys.stderr,
+            )
         return 2
     if margin < BODY_SOFT_MARGIN:
         print(
