@@ -22,7 +22,7 @@ from .brief import Brief
 from .brief import render_block as render_brief_block
 from .brief import try_parse_block as try_parse_brief
 from .brief import validate_shape as validate_brief_shape
-from .resources import ResourceDeclaration, render_block
+from .resources import CLAIMS_BEGIN_MARKER, ResourceDeclaration, render_block
 
 TIERS = ("T0", "T1", "T2", "T3", "T4")
 
@@ -507,9 +507,27 @@ def _join(head: str, tail: str) -> str:
     return f"{head.rstrip()}\n\n{tail.strip()}\n" if tail else f"{head.rstrip()}\n"
 
 
-def _locate_section(lines: list[str], heading: str) -> tuple[int, int]:
-    """回傳該章節的 [起始標題列, 下一個 ``## `` 標題列或結尾)。標題須唯一。"""
-    starts = [i for i, line in enumerate(lines) if line.strip() == heading]
+def _locate_section(
+    lines: list[str], heading: str, *, allow_suffix: bool = False
+) -> tuple[int, int]:
+    """回傳該章節的 [起始標題列, 下一個 ``## `` 標題列或結尾)。標題須唯一。
+
+    ``allow_suffix`` 讓標題**額外**接受 ``<heading>（…）`` 這種帶括號補述的寫法
+    （WF-RESOURCE-HEADING-SUFFIX1）。⛔ **預設關閉，且只有資源宣告那一個呼叫端打開它**——
+    本函式是泛用的（``## 核心痛點``／``## 驗收條件``／``## 簡介`` 都走它），
+    全域放寬等於為今天不存在的形態開門（實測全母體只有資源宣告有第二種寫法）。
+
+    ⚠️ 「恰好 1 次」的檢查在新謂詞下**一字未動**——它才是擋住 #43 劫持的東西：
+    真區段前插一個帶後綴的假區段、或兩種標題並存，都會讓命中數變 2 而被拒。
+    """
+
+    def _hit(line: str) -> bool:
+        stripped = line.strip()
+        if stripped == heading:
+            return True
+        return allow_suffix and stripped.startswith(heading + "（")
+
+    starts = [i for i, line in enumerate(lines) if _hit(line)]
     if len(starts) != 1:
         raise AmendError(
             f"章節 `{heading}` 在 Log 之前出現 {len(starts)} 次，必須恰好 1 次才能安全替換"
@@ -595,15 +613,77 @@ def amend_spec_baseline(body: str, new_value: str) -> tuple[str, str]:
     return _join("\n".join(lines), tail), old
 
 
+def drop_sentinel_less_resource_section(body: str) -> tuple[str, str]:
+    """刪掉**沒有哨兵**的那個資源宣告區段，前提是另有一個帶哨兵的（WF-RESOURCE-HEADING-SUFFIX1）。
+
+    ⭐ **為什麼需要它**：2026-08-04 遷移當時的做法是「在 head 末端 **append** 一個正規區段」，
+    ⛔ 不是取代殘留（由平台編輯歷史追出：``cpbl#55`` 建卡後四小時那次編輯的 diff）。
+    於是有 6 張卡同時帶著「遷移殘留（無哨兵）」與「正規區段（有哨兵）」兩個標題。
+    那在**逐字相等**比對下是安全的（只命中短標題那一個），⇒ 它們今天解析得動；
+    ⚠️ 但本卡把比對放寬成前綴之後兩個都命中 ⇒ 「恰好 1 次」不變量拒收
+    ⇒ **6 張今天正常的卡會變成解析失敗**。那是**回歸**，⛔ 不是邊界案例。
+
+    ⛔ **刻意做得很窄**：只在「恰好 2 個資源宣告標題、其中恰好 1 個區段含哨兵」時動作，
+    且只刪**無哨兵**的那個。任何其他形狀一律拋錯不猜——本函式是在修別人留下的殘留，
+    ⛔ 不是通用的區段刪除器。
+
+    ⚠️ 內容不會遺失的依據是**逐張比對過的**（6/6）：5 張的殘留 payload 是 ``resources: []``
+    或與正規區段完全相同；1 張（``OPS-CODE-BRANCH-PROTECT1``）多兩個字串，
+    ⛔ 但兩者皆不符 resource grammar（缺 ``file:`` 前綴／根本不是資源）⇒ 機器面本無效力。
+    ⇒ 呼叫端須把被刪區段的原文寫進 Log（本函式第二個回傳值即為此）。
+
+    回傳 ``(新 body, 被刪區段原文)``。
+    """
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.strip().startswith(_RESOURCE_HEADING)]
+    if len(starts) != 2:
+        raise AmendError(
+            f"本操作只處理「恰好 2 個資源宣告標題」的卡，實際 {len(starts)} 個；拒絕猜測"
+        )
+
+    def _seg(i: int) -> tuple[int, int]:
+        end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+        return i, end
+
+    segs = [_seg(i) for i in starts]
+    with_sentinel = [k for k, (a, b) in enumerate(segs) if any(CLAIMS_BEGIN_MARKER in l for l in lines[a:b])]
+    if len(with_sentinel) != 1:
+        raise AmendError(
+            f"兩個資源宣告區段中含哨兵者為 {len(with_sentinel)} 個，必須恰好 1 個；拒絕猜測"
+        )
+    victim = segs[1 - with_sentinel[0]]
+    removed = "\n".join(lines[victim[0]:victim[1]]).strip()
+    kept = lines[:victim[0]] + lines[victim[1]:]
+    # 收掉刪除後可能出現的連續空行，⛔ 不用正規化整份 body（那會動到無關的排版）。
+    while kept and victim[0] < len(kept) and victim[0] > 0 and not kept[victim[0] - 1].strip() and not kept[victim[0]].strip():
+        del kept[victim[0]]
+    return _join("\n".join(kept), tail), " ".join(removed.split())
+
+
 def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     """整份替換「資源宣告」章節；``rendered_block`` 須含標題（``resources.render_block``
     的輸出即是）。回傳 (新 body, 原章節原文)。
     """
     head, tail = split_at_log(body)
     lines = head.splitlines()
-    start, end = _locate_section(lines, _RESOURCE_HEADING)
+    start, end = _locate_section(lines, _RESOURCE_HEADING, allow_suffix=True)
     old_repr = "\n".join(lines[start:end]).strip()
-    new_lines = lines[:start] + rendered_block.splitlines() + [""] + lines[end:]
+    # ⭐ **標題逐字保留，⛔ 不由 ``rendered_block`` 決定**（WF-RESOURCE-HEADING-SUFFIX1）。
+    #
+    # ``resources.render_block`` 的第一行是短標題常數，⇒ 原本整段替換會把 2026-08-04
+    # 遷移卡的後綴（``（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）``）
+    # **靜默吃掉**。而那句後綴不是排版，是「未正式宣告 vs 無資源」這條分界今天的
+    # **唯一載體**——schema 的 ``resources`` 型別是 ``list[str]``，``null`` 被拒、
+    # 缺鍵靜默變 ``[]``，⇒ 機器面表達不出第三個狀態。
+    #
+    # ⭐ 做成**結構性**而非參數：把找到的標題填回去，呼叫端**忘不掉**。
+    # 若改成「由呼叫端傳 heading」，缺陷形態就變成「某個呼叫端沒傳」——
+    # 那正是本卡研究期抓到的原始形態。
+    replacement = rendered_block.splitlines()
+    if replacement:
+        replacement[0] = lines[start]
+    new_lines = lines[:start] + replacement + [""] + lines[end:]
     candidate = _join("\n".join(new_lines), tail)
     if candidate == _join(head, tail):
         raise AmendError("資源宣告與現值相同；拒絕寫入不實的修訂留痕")

@@ -240,6 +240,7 @@ import sys
 import uuid
 
 from ..card import (
+    drop_sentinel_less_resource_section,
     TIERS,
     AmendError,
     RequesterUnparseable,
@@ -394,6 +395,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="偵測到 body 排版損壞而拒絕時，在該 Issue 留言記錄求助（不碰 body、"
         "不改交付狀態），讓人或 AI 接手。stderr 是瞬時的，卡面留言才是持久紀錄",
+    )
+    p.add_argument(
+        "--drop-stale-resource-section",
+        action="store_true",
+        help="一次性結構修復：刪掉**沒有哨兵**的那個資源宣告區段（前提是另有一個帶哨兵的）。"
+        "⚠️ 只處理「恰好 2 個資源宣告標題、其中恰好 1 個含哨兵」的卡，其他形狀一律拒絕不猜。"
+        "⛔ 這條路徑刻意**不走 parse_block**——會走到它的卡正是因為兩個標題而解析失敗的那些",
     )
     p.add_argument(
         "--dry-run",
@@ -673,7 +681,11 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         args.core_pain,
         args.brief,
     ]
-    wants_fields = any(f is not None for f in field_flags) or wants_resources
+    wants_fields = (
+        any(f is not None for f in field_flags)
+        or wants_resources
+        or args.drop_stale_resource_section
+    )
 
     if not wants_fields:
         print("[amend] 拒絕：沒有指定任何要修訂的欄位", file=sys.stderr)
@@ -684,7 +696,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     # 稽核者無從分辨那份 --ruling-url 授權的究竟是哪一項。
     if args.core_pain is not None:
         others = [f for f in field_flags if f is not None and f is not args.core_pain]
-        if others or wants_resources:
+        if others or wants_resources or args.drop_stale_resource_section:
             print(
                 "[amend] 拒絕：--core-pain 不得與其他欄位旗標同一次調用；"
                 "此欄餵給具否決權的 core_pain_resolved，一次調用＝一次治理裁定，"
@@ -781,6 +793,9 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 body, args.verification, preserve_checked=args.preserve_checked
             )
             changes.append(("驗證", old, "；".join(args.verification), None))
+        if args.drop_stale_resource_section:
+            body, removed = drop_sentinel_less_resource_section(body)
+            changes.append(("資源宣告（刪除殘留區段）", removed, "（已刪除）", None))
         if wants_resources:
             current = parse_block(item.body)
             db_scope = args.db_scope if args.db_scope is not None else current.db_scope

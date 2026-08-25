@@ -10,6 +10,7 @@ import pytest
 from wf_cli.card import ROUTING_MARKER
 from wf_cli.cli import build_parser
 from wf_cli.commands import (
+    amend_cmd,
     assign_cmd,
     deploy_declare_cmd,
     deploy_state_cmd,
@@ -62,6 +63,7 @@ def card_repo_dir(tmp_path: Path) -> Path:
 def fake_runner(monkeypatch):
     runner = FakeGhRunner()
     for module in (
+        amend_cmd,
         open_cmd,
         assign_cmd,
         handoff_cmd,
@@ -1574,3 +1576,45 @@ def test_doctor_cli_json_output_is_valid_json_document(sandbox_repo, capsys):
     json_start = out.index("{")
     payload = jsonlib.loads(out[json_start:])
     assert payload["repo_root"] == str(sandbox_repo.resolve())
+
+
+# ---------------------------------------------------------------------------
+# 標題後綴守衛（WF-RESOURCE-HEADING-SUFFIX1；需求方 2026-08-25 於 T3 放行時裁定加入）
+#
+# 2026-08-04 的 state-plane 遷移寫出的標題逐字帶括號補述，而那句補述**不是排版**：
+# 它是「未正式宣告 vs 無資源」這條分界今天的**唯一載體**——schema 的 resources 型別
+# 是 list[str]，`null` 被拒、缺鍵靜默變 []，⇒ 機器面沒有第三個狀態（實測）。
+#
+# ⚠️ 本測試**必須端到端**（amend_cmd → render_block → amend_resource_block）：
+# 缺陷形態是「**呼叫端沒傳 heading**」，只測 render_block 一個函式測不到它。
+# ---------------------------------------------------------------------------
+
+MIGRATION_SUFFIXED_HEADING = (
+    "## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）"
+)
+
+
+def test_amend_resources_preserves_the_migration_heading_suffix_end_to_end(fake_runner):
+    run_cli(_open_argv("SUFFIX-CARD", **{"--repo": ASSIGN_REPO, "--resources": "file:a.py"}))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "SUFFIX-CARD")
+    body = item.body.replace("## 資源宣告", MIGRATION_SUFFIXED_HEADING, 1)
+    set_item_body(
+        fake_runner, item.content_type, item.content_id, project,
+        ASSIGN_REPO, item.issue_number, body,
+    )
+
+    rc = run_cli([
+        "amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "SUFFIX-CARD",
+        "--reason", "換宣告內容，驗標題是否被正規化掉",
+        "--resources", "file:b.py", "--db-scope", "none",
+    ])
+    assert rc == 0
+
+    after = find_item_by_card_id(list_items(fake_runner, project), "SUFFIX-CARD").body
+    head = after.split("\n## Log", 1)[0]
+    headings = [l for l in head.splitlines() if l.startswith("## 資源宣告")]
+    assert headings == [MIGRATION_SUFFIXED_HEADING], f"標題被正規化掉了：{headings}"
+    # ⭐ 這一條是**守衛自己的負控**：若寫入根本沒發生，「標題保留」是零資訊。
+    assert "file:b.py" in after
+    assert "file:a.py" not in head

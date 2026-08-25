@@ -1084,3 +1084,24 @@ def test_now_iso8601_has_timezone_offset():
     ts = now_iso8601()
     assert "T" in ts
     assert ts[-3] == ":" or ts.endswith("Z")  # +08:00 形式
+
+
+# ---------------------------------------------------------------------------
+# 後綴相容只給資源宣告（WF-RESOURCE-HEADING-SUFFIX1）
+# ---------------------------------------------------------------------------
+
+
+def test_locate_section_does_not_widen_other_headings_by_default():
+    """⛔ `_locate_section` 是泛用的（核心痛點／驗收條件／簡介都走它）。
+
+    放寬若做成全域，`## 驗收條件（…）` 這種今天**不存在**的形態也會被接受
+    ——那是為不存在的形態開門。⇒ 預設關閉，只有資源宣告那一個呼叫端打開。
+    """
+    from wf_cli.card import AmendError, _locate_section
+
+    lines = ["## 核心痛點（補述）", "- 內容"]
+    with pytest.raises(AmendError):
+        _locate_section(lines, "## 核心痛點")
+    # 顯式打開才認得（本函式本身有能力，是呼叫端不給）
+    start, end = _locate_section(lines, "## 核心痛點", allow_suffix=True)
+    assert (start, end) == (0, 2)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wf_cli.resources import (
+    declaration_heading,
     ResourceDeclaration,
     ResourceDeclarationError,
     find_conflicts,
@@ -234,3 +235,55 @@ def test_summary_lists_resources_or_notes_empty():
     assert "無共享可寫資源" in empty.summary()
     non_empty = ResourceDeclaration(db_scope="write", resources=["file:a.py"])
     assert "file:a.py" in non_empty.summary()
+
+
+# ---------------------------------------------------------------------------
+# 標題後綴相容（WF-RESOURCE-HEADING-SUFFIX1）
+#
+# 2026-08-04 的 state-plane 遷移把補述寫進標題行，而本模組原以逐字相等定位
+# ⇒ 那批卡的 amend --resources 可達 0/33（實測）。放寬為「相等或以 `## 資源宣告（` 起始」。
+#
+# ⚠️ 擋住 #43 劫持的**不是**兩層定位本身，是「恰好 1 次」那條不變量——放寬後
+# 攻擊樣本反而讓命中數變 2 而被拒。下面兩支就是在守那條不變量。
+# ---------------------------------------------------------------------------
+
+SUFFIXED = "## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）"
+_PAYLOAD = (
+    "<!-- resource-claims:begin -->\n```json\n"
+    '{"db_scope": "none", "resources": ["file:a.py"]}\n'
+    "```\n<!-- resource-claims:end -->\n"
+)
+
+
+def _body(*sections: str) -> str:
+    return "- 需求：x　規劃：y\n\n" + "\n".join(sections) + "\n\n## Log\n\n- x\n"
+
+
+def test_suffixed_heading_locates_the_section():
+    decl = parse_block(_body(SUFFIXED + "\n" + _PAYLOAD))
+    assert decl.resources == ["file:a.py"]
+
+
+def test_declaration_heading_returns_the_suffix_verbatim():
+    body = _body(SUFFIXED + "\n" + _PAYLOAD)
+    assert declaration_heading(body) == SUFFIXED
+
+
+def test_declaration_heading_returns_the_short_form_when_that_is_what_is_there():
+    body = _body("## 資源宣告\n" + _PAYLOAD)
+    assert declaration_heading(body) == "## 資源宣告"
+
+
+def test_suffixed_decoy_before_the_real_section_still_rejects():
+    # 真區段前插一個帶後綴的假區段 → 命中 2 次 → 「恰好 1 次」不變量擋下。
+    body = _body(SUFFIXED + "\n<!-- resource-claims:begin -->\nHIJACK\n",
+                 "## 資源宣告\n" + _PAYLOAD)
+    with pytest.raises(ResourceDeclarationError):
+        parse_block(body)
+
+
+def test_both_heading_forms_present_rejects_instead_of_taking_one():
+    # 兩種標題並存（實測母體有 6 張）→ 放寬後命中 2 次 → 仍拒收，⛔ 不靜默取其一。
+    body = _body("## 資源宣告\n" + _PAYLOAD, SUFFIXED + "\n" + _PAYLOAD)
+    with pytest.raises(ResourceDeclarationError):
+        parse_block(body)

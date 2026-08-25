@@ -51,6 +51,11 @@ _LOG_HEADING = "## Log"
 _BEGIN = "<!-- resource-claims:begin -->"
 _END = "<!-- resource-claims:end -->"
 
+#: 公開別名，供 ``card`` 判斷某個區段裡有沒有哨兵（比照 ``brief`` 的
+#: ``BRIEF_SECTION_HEADING_ALIAS``）。⛔ 不讓 ``card`` 自己寫一份字面——
+#: 兩份字面就是兩個事實來源，而本模組是哨兵語法的持有者。
+CLAIMS_BEGIN_MARKER = _BEGIN
+
 _BLOCK_RE = re.compile(
     re.escape(_BEGIN) + r"\s*```json\s*(?P<json>.*?)```\s*" + re.escape(_END),
     re.DOTALL,
@@ -133,6 +138,42 @@ def _split_at_log(body: str) -> tuple[str, str]:
     return "\n".join(lines[: idx[0]]), "\n".join(lines[idx[0] :])
 
 
+#: ⭐ **後綴相容只給「資源宣告」這一個標題**（WF-RESOURCE-HEADING-SUFFIX1）。
+#:
+#: 2026-08-04 的 state-plane 遷移寫出的標題逐字是
+#: ``## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）``，
+#: 而本模組原本以逐字相等定位 ⇒ 那批卡的 ``amend --resources`` 可達 0/33（實測）。
+#:
+#: ⛔ **不放寬到其他標題**：``## 驗收條件（…）`` 這種後綴今天不存在（實測全母體
+#: ``^##\s*資源宣告.*$`` 相異寫法恰 2 種、``^#+.*資源.*$`` 無其他同義標題），
+#: 放寬它等於為不存在的形態開門。
+#:
+#: ⚠️ **「恰好 1 次」的不變量在新謂詞下仍是唯一的劫持防線**：真區段前插一個帶後綴的
+#: 假區段會讓命中數變 2 而被拒；兩種標題並存同樣命中 2 次而被拒（#43 的兩層定位不因此失效）。
+def _heading_matches(line: str) -> bool:
+    """該行是不是資源宣告的標題（相等，或以 ``## 資源宣告（`` 起始）。"""
+    stripped = line.strip()
+    return stripped == _SECTION_HEADING or stripped.startswith(_SECTION_HEADING + "（")
+
+
+def declaration_heading(body: str) -> str:
+    """回傳卡面實際使用的資源宣告標題**逐字**（含可能的後綴）。
+
+    ⭐ 存在的理由：``_declaration_section`` 只回區段**內文**，⇒ 呼叫端拿不回標題，
+    而後綴今天是「未正式宣告 vs 無資源」這條分界的**唯一載體**（schema 的
+    ``resources`` 型別是 ``list[str]``，``null`` 被拒、缺鍵靜默變 ``[]``）。
+    ⇒ 需要一條讀得回標題的路，否則任何重寫都會靜默把它正規化掉。
+    """
+    head, _ = _split_at_log(body or "")
+    lines = head.splitlines()
+    starts = [i for i, line in enumerate(lines) if _heading_matches(line)]
+    if len(starts) != 1:
+        raise ResourceDeclarationError(
+            f"body 的 Log 之前有 {len(starts)} 個資源宣告標題，必須恰好 1 個"
+        )
+    return lines[starts[0]].strip()
+
+
 def _declaration_section(body: str) -> str:
     """回傳 ``## 資源宣告`` 標題行**之後、下一個 ``## `` 標題之前**的區段內文。
 
@@ -141,7 +182,7 @@ def _declaration_section(body: str) -> str:
     """
     head, tail = _split_at_log(body)
     lines = head.splitlines()
-    starts = [i for i, line in enumerate(lines) if line.strip() == _SECTION_HEADING]
+    starts = [i for i, line in enumerate(lines) if _heading_matches(line)]
     if len(starts) > 1:
         raise ResourceDeclarationError(
             f"body 的 Log 之前有 {len(starts)} 個 `{_SECTION_HEADING}` 標題，"
@@ -252,6 +293,8 @@ def find_conflicts(
 
 
 __all__ = [
+    "CLAIMS_BEGIN_MARKER",
+    "declaration_heading",
     "DB_SCOPES",
     "ResourceDeclaration",
     "ResourceDeclarationError",
