@@ -1084,3 +1084,394 @@ def test_now_iso8601_has_timezone_offset():
     ts = now_iso8601()
     assert "T" in ts
     assert ts[-3] == ":" or ts.endswith("Z")  # +08:00 形式
+
+
+# ---------------------------------------------------------------------------
+# 後綴相容只給資源宣告（WF-RESOURCE-HEADING-SUFFIX1）
+# ---------------------------------------------------------------------------
+
+
+def test_locate_section_only_widens_to_registered_variants():
+    """⛔ `_locate_section` 是泛用的（核心痛點／驗收條件／簡介都走它）。
+
+    ⚠️ **本測試在 R2 自審時被改強。** 原本的契約是「``allow_known_variants``
+    可接受任意 ``<heading>（…）``，只是預設關閉」——那是**開放集合**，
+    而查核者 R1-01 與後續自審各抓到一個冒名者（``## 資源宣告備註``、
+    ``## 資源宣告（人工備註）``）。⇒ 現行契約是**封閉集合**：
+    只接受 ``_HEADING_VARIANTS`` 登記過的逐字值，⛔ 沒登記的一律不中，
+    即使旗標打開、即使長得像補述。
+    """
+    from wf_cli.card import AmendError, _locate_section
+
+    lines = ["## 核心痛點（補述）", "- 內容"]
+    with pytest.raises(AmendError):
+        _locate_section(lines, "## 核心痛點")
+    # ⭐ 打開旗標**也不中**——`## 核心痛點` 沒有登記任何變體。
+    with pytest.raises(AmendError):
+        _locate_section(lines, "## 核心痛點", allow_known_variants=True)
+
+
+# ---------------------------------------------------------------------------
+# 一次性結構修復：補哨兵與刪殘留（WF-RESOURCE-HEADING-SUFFIX1 第一／二段）
+#
+# 兩支都刻意做得很窄——它們是在修別人留下的殘留，⛔ 不是通用的區段編輯器。
+# 形狀不符一律拋錯不猜，下面每一支「拒絕」測試守的就是那條。
+# ---------------------------------------------------------------------------
+
+_SUFFIXED = "## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）"
+_RAW_JSON = '```json\n{\n  "db_scope": "none",\n  "resources": [\n    "file:a.py"\n  ]\n}\n```'
+_WRAPPED = (
+    "<!-- resource-claims:begin -->\n"
+    '```json\n{"db_scope": "none", "resources": []}\n```\n'
+    "<!-- resource-claims:end -->"
+)
+
+
+def _card(*blocks: str) -> str:
+    return "- 需求：x　規劃：y\n\n" + "\n\n".join(blocks) + "\n\n## Log\n\n- 舊事件\n"
+
+
+def test_adopt_sentinels_preserves_the_payload_verbatim():
+    """⭐ 這是第二段的核心不變量：內容**逐字**保留。
+
+    實測母體 33 張中有 3 張帶真實資源清單，⇒ 若改成「寫入一份新的空宣告」
+    就會把它們抹掉，並把「未正式宣告」偽造成「已確認無資源」——
+    那是 `aiwf#31` §3.2 逐字禁止的轉譯。
+    """
+    from wf_cli.card import adopt_resource_sentinels
+    from wf_cli.resources import parse_block
+
+    body = _card(_SUFFIXED + "\n" + _RAW_JSON)
+    new_body, old = adopt_resource_sentinels(body)
+    assert parse_block(new_body).resources == ["file:a.py"]
+    # 原 fence 內容逐行仍在（只是外面多了兩行哨兵）
+    for line in _RAW_JSON.splitlines():
+        assert line in new_body
+    assert "file:a.py" in old  # 原區段原文有回傳，供 Log 留痕
+
+
+def test_adopt_sentinels_keeps_the_heading_and_trailing_marker():
+    from wf_cli.card import adopt_resource_sentinels
+
+    marker = "<!-- state-plane-mig1:card_id=X -->"
+    body = _card(_SUFFIXED + "\n" + _RAW_JSON + "\n\n" + marker)
+    new_body, _ = adopt_resource_sentinels(body)
+    assert _SUFFIXED in new_body
+    assert marker in new_body
+
+
+def test_adopt_sentinels_refuses_when_already_wrapped():
+    from wf_cli.card import AmendError, adopt_resource_sentinels
+
+    with pytest.raises(AmendError):
+        adopt_resource_sentinels(_card("## 資源宣告\n" + _WRAPPED))
+
+
+def test_adopt_sentinels_refuses_when_the_fence_count_is_not_one():
+    from wf_cli.card import AmendError, adopt_resource_sentinels
+
+    with pytest.raises(AmendError):  # 0 個
+        adopt_resource_sentinels(_card(_SUFFIXED + "\n（未正式宣告）"))
+    with pytest.raises(AmendError):  # 2 個
+        adopt_resource_sentinels(_card(_SUFFIXED + "\n" + _RAW_JSON + "\n" + _RAW_JSON))
+
+
+def test_drop_stale_section_removes_only_the_sentinel_less_one():
+    from wf_cli.card import drop_sentinel_less_resource_section
+    from wf_cli.resources import parse_block
+
+    body = _card(_SUFFIXED + "\n" + _RAW_JSON, "## 資源宣告\n" + _WRAPPED)
+    new_body, removed = drop_sentinel_less_resource_section(body)
+    assert _SUFFIXED not in new_body          # 殘留被刪
+    assert "## 資源宣告" in new_body           # 正規區段留著
+    assert parse_block(new_body).resources == []
+    assert "file:a.py" in removed              # 被刪原文有回傳 ⇒ Log 留得下
+    assert "舊事件" in new_body                # ⛔ Log 未被動到
+
+
+def test_drop_stale_section_refuses_when_shape_is_not_exactly_two_headings():
+    from wf_cli.card import AmendError, drop_sentinel_less_resource_section
+
+    with pytest.raises(AmendError):  # 只有 1 個
+        drop_sentinel_less_resource_section(_card("## 資源宣告\n" + _WRAPPED))
+
+
+def test_drop_stale_section_refuses_when_both_or_neither_has_sentinels():
+    from wf_cli.card import AmendError, drop_sentinel_less_resource_section
+
+    with pytest.raises(AmendError):  # 兩個都有哨兵 → 分不出誰是殘留
+        drop_sentinel_less_resource_section(
+            _card(_SUFFIXED + "\n" + _WRAPPED, "## 資源宣告\n" + _WRAPPED)
+        )
+    with pytest.raises(AmendError):  # 兩個都沒有 → 同上
+        drop_sentinel_less_resource_section(
+            _card(_SUFFIXED + "\n" + _RAW_JSON, "## 資源宣告\n" + _RAW_JSON)
+        )
+
+
+# ---------------------------------------------------------------------------
+# WF-RESOURCE-HEADING-SUFFIX1 第四段：遷移卡標頭復原
+#
+# ⚠️ 樣本一律取**真實既有卡面**（`cpbl#57` 於 2026-08-25 的 body，逐字），
+# ⛔ 不用 `render_issue_body` 造樣本——自造樣本必然帶著範本該有的每個章節，
+# ⇒ 拿它測「處理既有資料的路徑」是零資訊。這是同族第四次（`aiwf#31`／`#105`／`#134`）。
+# ---------------------------------------------------------------------------
+
+_REAL_MIGRATION_HEAD = '> 遷移自 `docs/tasks/INGEST-POSTGAME-FINALIZE1.md`（baseline `2f52562f575412a0a39b515a4436edd2831b2f65`，OPS-STATE-PLANE-MIG1 Task 2 一次性遷移；結構凍結 `a04a862`）。\n>\n> **cutover 已完成（2026-08-04，終筆 `8271d7c`）：本 Issue＋Project #4 即作業狀態唯一事實來源**；\n> events.jsonl 已封存唯讀。下方「現況摘要」為遷移當下快照，現行狀態以 Project 欄位與本 Issue 留言為準。\n> 派工時由 PM 補資源宣告區塊（canonical v2 §4.4）。\n\n## Spec\n- [`docs/tasks/INGEST-POSTGAME-FINALIZE1.md`](https://github.com/ruan6047/cpbl-analytics/blob/2f52562f575412a0a39b515a4436edd2831b2f65/docs/tasks/INGEST-POSTGAME-FINALIZE1.md)（baseline SHA `2f52562f575412a0a39b515a4436edd2831b2f65`）\n\n## 現況摘要（遷移當下，來自 Ledger @ `2f52562f575412a0a39b515a4436edd2831b2f65`）\n- Initiative：—\n- 級別：T3\n- 功能：依官方可用性補齊完賽資料\n- owner：待指派\n- 分支／worktree：—\n- iteration：0\n- 交付狀態：📥Backlog\n- 部署狀態：⏸未部署\n- 最後交接：2026-08-03T01:04:14+08:00\n\n## 新制欄位\n- 服務的原始目標：未填寫（本卡於新制欄位定案前建立，2026-08-04）\n- 鏈深：未分類（決議 5 剛定案，尚未逐卡分類；非 0）\n\n## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）\n```json\n{\n  "db_scope": "write",\n  "resources": []\n}\n```\n\n<!-- state-plane-mig1:card_id=INGEST-POSTGAME-FINALIZE1 -->\n'
+
+
+def _real_migration_card(log: str = "\n\n## Log\n\n- 2026-08-04T00:00:00+08:00 open by wf-cli。") -> str:
+    return _REAL_MIGRATION_HEAD + log
+
+
+def test_restore_header_on_a_real_migration_card_makes_the_two_lines_parse():
+    """⭐ 真正的判準不是「有插入文字」，是**既有 parser 讀得到**。"""
+    from wf_cli.card import _SPEC_BASELINE_RE, parse_requested_by, restore_migration_header
+
+    new_body, inserted = restore_migration_header(
+        _real_migration_card(),
+        requested_by="ruan6047",
+        planned_by="本卡 spec",
+        initiative="—",
+        spec_baseline="`2f52562f575412a0a39b515a4436edd2831b2f65`",
+    )
+    assert parse_requested_by(new_body) == "ruan6047"
+    # `規劃` 沒有專屬 parser，⇒ 直接驗標頭行逐字（分隔字元是全形空格 U+3000）。
+    assert "- 需求：ruan6047\u3000規劃：本卡 spec" in new_body
+    hits = [l for l in new_body.splitlines() if _SPEC_BASELINE_RE.match(l.strip())]
+    assert len(hits) == 1
+    assert "ruan6047" in inserted
+
+
+def test_restore_header_adds_the_three_sections_exactly_once_each():
+    from wf_cli.card import restore_migration_header
+
+    new_body, _ = restore_migration_header(
+        _real_migration_card(), requested_by="ruan6047", planned_by="x",
+        initiative="—", spec_baseline="—",
+    )
+    lines = [l.strip() for l in new_body.split("\n## Log")[0].splitlines()]
+    for heading in ("## 核心痛點", "## 驗收條件", "## 驗證"):
+        assert lines.count(heading) == 1, heading
+
+
+def test_restore_header_does_not_invent_content():
+    """⛔ 補結構**不得產生內容**——補完後三個章節必須是空的。
+
+    ⇒ 事後掃描仍會把這些卡報成「缺核心痛點／缺驗收」，那是**對的**結果。
+    若這條斷言鬆掉，代表本函式偷偷替需求方寫了痛點。
+    """
+    import re
+
+    from wf_cli.card import restore_migration_header
+
+    new_body, _ = restore_migration_header(
+        _real_migration_card(), requested_by="ruan6047", planned_by="x",
+        initiative="—", spec_baseline="—",
+    )
+    head = new_body.split("\n## Log")[0]
+    for heading in ("## 核心痛點", "## 驗收條件", "## 驗證"):
+        after = head.split(heading, 1)[1]
+        body_of_section = after.split("## ", 1)[0]
+        assert body_of_section.strip() == "", f"{heading} 不是空的：{body_of_section!r}"
+    assert not re.search(r"- \*\*痛點\*\*：", head)
+    assert not re.search(r"^- \[[ xX]\] ", head, re.M)
+
+
+def test_restore_header_preserves_the_original_body_verbatim():
+    """⭐ 除了插入的行以外，原卡面必須**逐行**不變（含遷移 blockquote 與既有章節）。"""
+    from wf_cli.card import restore_migration_header
+
+    original = _real_migration_card()
+    new_body, _ = restore_migration_header(
+        original, requested_by="ruan6047", planned_by="x",
+        initiative="—", spec_baseline="—",
+    )
+    inserted = {
+        "- 需求：ruan6047　規劃：x",
+        "- Initiative：—　spec 基線：—",
+        "## 核心痛點",
+        "## 驗收條件",
+        "## 驗證",
+    }
+    kept = [l for l in new_body.splitlines() if l.strip() and l not in inserted]
+    orig = [l for l in original.splitlines() if l.strip()]
+    assert kept == orig
+
+
+def test_restore_header_refuses_when_only_the_requester_line_exists():
+    """⛔ 負控，且**逐道守衛隔離**。
+
+    ⚠️ 這支測試原本兩行都放，⇒ 關掉「已有需求行」守衛後第二道照樣攔下、測試仍綠
+    ——變異檢驗當場抓到它是零資訊。現在每支只放**一行**，各自釘住一道守衛。
+    """
+    from wf_cli.card import AmendError, restore_migration_header
+
+    only_requester = "- 需求：ruan6047　規劃：—\n\n## Log\n\n- x"
+    with pytest.raises(AmendError) as e:
+        restore_migration_header(only_requester, requested_by="a", planned_by="b",
+                                 initiative="—", spec_baseline="—")
+    assert "需求" in str(e.value)
+
+
+def test_restore_header_refuses_when_only_the_baseline_line_exists():
+    from wf_cli.card import AmendError, restore_migration_header
+
+    only_baseline = "- Initiative：—　spec 基線：—\n\n## Log\n\n- x"
+    with pytest.raises(AmendError) as e:
+        restore_migration_header(only_baseline, requested_by="a", planned_by="b",
+                                 initiative="—", spec_baseline="—")
+    assert "spec 基線" in str(e.value)
+
+
+def test_restore_header_refuses_when_a_target_section_already_exists():
+    from wf_cli.card import AmendError, restore_migration_header
+
+    partial = _REAL_MIGRATION_HEAD + "\n\n## 驗收條件\n\n- [ ] x\n\n## Log\n\n- y"
+    with pytest.raises(AmendError) as e:
+        restore_migration_header(partial, requested_by="a", planned_by="b",
+                                 initiative="—", spec_baseline="—")
+    assert "驗收條件" in str(e.value)
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "ruan6047\u3000後綴", "ruan\n6047"])
+def test_restore_header_refuses_unusable_requester_values(bad):
+    """⚠️ `需求` 會成為 --ruling-url 的授權基準 ⇒ 空值或含分隔字元一律硬拒。"""
+    from wf_cli.card import AmendError, restore_migration_header
+
+    with pytest.raises(AmendError):
+        restore_migration_header(_real_migration_card(), requested_by=bad,
+                                 planned_by="x", initiative="—", spec_baseline="—")
+
+
+# ---------------------------------------------------------------------------
+# R1 查核（GPT-5@Codex）的兩個 blocking finding。
+# ⚠️ 樣本逐字取自查核者給的重現方式，⛔ 不改寫、⛔ 不自造更容易通過的版本。
+# ---------------------------------------------------------------------------
+
+
+def test_drop_stale_refuses_a_sibling_heading_that_merely_shares_the_prefix():
+    """R1-01：`## 資源宣告備註` ⛔ 不是資源宣告區段。
+
+    查核者逐字：「用過寬的 `startswith` 判定標題。實測正常資源宣告旁有
+    `## 資源宣告備註` 時，指令會把備註誤認為殘留區段並刪除。」
+    ⇒ 修法是把標題判準抽成 `_heading_hit` 兩處共用，⛔ 不是在原處補 if。
+    """
+    from wf_cli.card import AmendError, drop_sentinel_less_resource_section
+
+    body = _card(
+        "## 資源宣告\n" + _WRAPPED + "\n\n"
+        "## 資源宣告備註\n\n這段是人寫的說明，⛔ 不是殘留區段。"
+    )
+    with pytest.raises(AmendError):
+        drop_sentinel_less_resource_section(body)
+
+
+def test_drop_stale_still_works_on_the_real_dual_heading_shape():
+    """⭐ 負控：收窄之後，**真正**的雙標題（帶括號補述）仍須被處理。
+
+    ⛔ 只驗「誤刪被擋」是零資訊——那用「永遠拒絕」也能通過。
+    """
+    from wf_cli.card import drop_sentinel_less_resource_section
+
+    body = _card(_SUFFIXED + "\n" + _RAW_JSON + "\n\n## 資源宣告\n" + _WRAPPED)
+    new_body, removed = drop_sentinel_less_resource_section(body)
+    assert _SUFFIXED not in new_body
+    assert "## 資源宣告" in new_body
+    assert removed
+
+
+@pytest.mark.parametrize(
+    "field, kwargs",
+    [
+        ("initiative", {"initiative": "A\n## Log\n\n- 偽造", "spec_baseline": "—"}),
+        ("spec_baseline", {"initiative": "—", "spec_baseline": "B\n## Log\n\n- 偽造"}),
+        ("initiative", {"initiative": "A\u3000B", "spec_baseline": "—"}),
+        ("spec_baseline", {"initiative": "—", "spec_baseline": "A\u3000B"}),
+    ],
+)
+def test_restore_header_refuses_newline_injection_in_the_other_two_fields(field, kwargs):
+    """R1-02：`initiative`／`spec_baseline` 也會被寫進標頭行 ⇒ 同樣要驗。
+
+    查核者逐字：「兩者可注入換行，實測會接受並寫出兩個 `## Log`，破壞後續解析
+    與 append-only 留痕。」⚠️ 那個狀態＝ `aiwf#15`——`split_at_log` 拋錯 ⇒
+    該卡**永久無法以 wfcli 修改**，而 A13 已實測它既無自動修法也無可用人工程序。
+    ⛔ 原本只驗 requested_by／planned_by，是漏了一整類輸入。
+    """
+    from wf_cli.card import AmendError, restore_migration_header
+
+    with pytest.raises(AmendError):
+        restore_migration_header(
+            _real_migration_card(), requested_by="ruan6047", planned_by="x", **kwargs
+        )
+
+
+def test_restore_header_still_accepts_the_real_values_used_in_production():
+    """⭐ 負控：收窄之後，第四段實際寫過的 40 張的值仍須通過。
+
+    ⛔ 只驗「注入被擋」是零資訊。這裡取真實用過的值（含帶括號的規劃者、
+    反引號包住的 SHA）。
+    """
+    from wf_cli.card import restore_migration_header
+
+    new_body, _ = restore_migration_header(
+        _real_migration_card(),
+        requested_by="ruan6047",
+        planned_by="Claude Fable 5@Claude Code（PM 祕書，三問經需求方批註）",
+        initiative="INIT-OFFICIAL-DATA1",
+        spec_baseline="`2f52562f575412a0a39b515a4436edd2831b2f65`",
+    )
+    assert new_body.split("\n## Log")[0].count("## Log") == 0
+    assert new_body.count("\n## Log") == 1
+
+
+# ---------------------------------------------------------------------------
+# 自審（R2 送審前）：R1-01 的修法只關了一半。
+# 查核者的案例是**無括號**的 `## 資源宣告備註`；補完之後
+# `## 資源宣告（人工備註）` **仍會被誤認並靜默刪除**——前綴樣式是開放集合。
+# ⇒ 收成封閉集合的逐字黃金值（實測全母體 194 張只有 1 種後綴寫法、33 次）。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "impostor",
+    [
+        "## 資源宣告備註",                    # 查核者 R1-01 的原案例
+        "## 資源宣告（備註）",                # ⭐ 自審抓到：修完仍中
+        "## 資源宣告（人工說明，⛔ 不是宣告）",
+        "## 資源宣告(半形括號)",
+        "## 資源宣告 補充",
+        "## 資源宣告：說明",
+    ],
+)
+def test_heading_hit_rejects_every_impostor_heading(impostor):
+    from wf_cli.card import _RESOURCE_HEADING, _heading_hit
+
+    assert not _heading_hit(impostor, _RESOURCE_HEADING, allow_known_variants=True)
+
+
+@pytest.mark.parametrize("golden", ["## 資源宣告", _SUFFIXED])
+def test_heading_hit_accepts_exactly_the_two_golden_values(golden):
+    from wf_cli.card import _RESOURCE_HEADING, _heading_hit
+
+    assert _heading_hit(golden, _RESOURCE_HEADING, allow_known_variants=True)
+
+
+def test_the_golden_variants_come_from_one_place():
+    """⛔ 兩個模組不得各存一份字面值——那正是 R1-01 的成因。"""
+    from wf_cli.card import _HEADING_VARIANTS, _RESOURCE_HEADING
+    from wf_cli.resources import SECTION_HEADING_VARIANTS
+
+    assert _HEADING_VARIANTS[_RESOURCE_HEADING] is SECTION_HEADING_VARIANTS
+
+
+def test_drop_stale_refuses_a_parenthesised_impostor():
+    """⭐ 端到端：帶括號的冒名章節連同人寫內容都不得被刪。"""
+    from wf_cli.card import AmendError, drop_sentinel_less_resource_section
+
+    body = _card(
+        "## 資源宣告\n" + _WRAPPED + "\n\n"
+        "## 資源宣告（人工備註，⛔ 不是宣告）\n\n這段是人寫的。"
+    )
+    with pytest.raises(AmendError):
+        drop_sentinel_less_resource_section(body)
