@@ -11,7 +11,9 @@ tier 開卡時填錯——這些都是常態，但 CLI 沒有入口，於是每�
 四條紅線：
 
 - **原值必留且不得截斷**：每個被改欄位 append 一行 Log，完整記下原值與理由。Log 是
-  唯一還原點，摘要不能取代全文（R1-01）；主控台輸出才做可讀性截斷。
+  還原點之一，摘要不能取代它（R1-01）；主控台輸出才做可讀性截斷。
+  ⚠️ WF-CARD-BODY-BUDGET1 之後，走指紋路徑時 Log 記 sha256、全文在平台前一版；
+  ⛔ 「Log 是唯一還原點」已不再成立，見 `_fold` 與 `_prior_revision_recoverable`。
 - **不動 Log**：修訂只作用於 `## Log` 之前。排版壞到無法安全定位 Log 時一律拒絕，
   不提供修復模式——見下方「為什麼沒有排版修復」。
 - **半寫入可偵測且可自癒**：`級別` 先寫並讀回驗證，再寫 body。若 body 寫入失敗導致
@@ -321,7 +323,11 @@ AUTHORITY_NOTE_TEMPLATE = (
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
-        "amend", help="開卡後修訂卡面：spec 基線／驗收／驗證／資源宣告／級別（原值寫入 Log）"
+        "amend",
+        help="開卡後修訂卡面：spec 基線／驗收／驗證／資源宣告／級別。"
+        "⚠️ 舊值的還原位置**視路徑而定**：平台留有前一版且舊值取自 body 時，Log 只記 sha256 指紋、"
+        "全文由 `userContentEdits` 前一版取回；其餘四種情形（DraftIssue／首寫／版本內容取不到／"
+        "舊值非 body 來源）Log 記全文。⛔ 本 help 先前只寫「進 Log」，那對指紋路徑是錯的指引。",
     )
     add_target_args(p)
     p.add_argument("card_id")
@@ -453,7 +459,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _fold(text: str) -> str:
-    """Log 是單行條目，原值摺成一行——但**不截斷**：Log 是唯一還原點。"""
+    """Log 是單行條目，值摺成一行——但**不截斷**。
+
+    ⚠️ **原 docstring 逐字寫「Log 是唯一還原點」，該前提已被本卡推翻**：
+    GitHub `userContentEdits` 對每次 body 編輯保存**逐位元相同的完整前一版**
+    （2026-08-25 實測：`#105` 截斷前後 sha256 相符；`#16` 50 版全數可取）。
+    ⇒ 舊值改記指紋、由平台版本還原（見 `_prior_revision_recoverable` 的四條退路）。
+    ⛔ **不截斷**這一點仍然成立：走全文退路時 Log 就是唯一還原點。
+    """
     return " ".join(str(text).split())
 
 
@@ -564,10 +577,29 @@ def _largest_field_hint(body: str) -> str:
     return top
 
 
-def _short(text: str, limit: int = 100) -> str:
-    """只給主控台看的可讀摘要；永遠不進 Log。"""
+def _where_for(entry: tuple, *, recoverable: bool) -> tuple[str, str]:
+    """回傳該筆變更 (舊值, 新值) 各自的**還原位置**措辭（R1-001）。
+
+    ⭐ 判準與 Log 寫入端**共用同一個表達式**（`recoverable and body_sourced`），
+    ⛔ 不各寫一份——那正是本 repo 反覆踩到的「每個呼叫端自己重寫一份謂詞」。
+    """
+    body_sourced = entry[4] if len(entry) > 4 else False
+    if recoverable and body_sourced:
+        # 指紋路徑：Log 只有 sha256。舊值在平台前一版，新值就在正上方的欄位裡。
+        return "見平台前一版", "見上方欄位"
+    return "見 Log", "見 Log"
+
+
+def _short(text: str, limit: int = 100, *, where: str = "見 Log") -> str:
+    """只給主控台看的可讀摘要；永遠不進 Log。
+
+    ⚠️ `where` **必須反映該次實際走的路徑**（R1-001，`GPT-5@Codex` 2026-08-26）。
+    原版無條件寫「見 Log」，而指紋路徑的 Log **只有 sha256、沒有全文**
+    ⇒ 同一次輸出會同時出現「Log 記法：指紋」與「全文 N 字，見 Log」，
+    後者是**錯誤的還原指引**。⛔ 呼叫端不得沿用預設值而不判斷。
+    """
     folded = _fold(text)
-    return folded if len(folded) <= limit else folded[:limit] + f"…（全文 {len(folded)} 字，見 Log）"
+    return folded if len(folded) <= limit else folded[:limit] + f"…（全文 {len(folded)} 字，{where}）"
 
 
 # 排版損壞沒有自動修復（見 README「為什麼沒有排版修復」）。但「沒有自動修復」不等於
@@ -1143,7 +1175,8 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         print(f"[amend] dry-run（未寫入任何狀態）：{args.card_id} 將修訂 {len(changes)} 個欄位")
         for entry in changes:
             field_name, old, new, note = entry[:4]
-            print(f"  - {field_name}：「{_short(old)}」→「{_short(new)}」")
+            w_old, w_new = _where_for(entry, recoverable=recoverable)
+            print(f"  - {field_name}：「{_short(old, where=w_old)}」→「{_short(new, where=w_new)}」")
             if note:
                 print(f"    授權：{_short(note)}")
         return 0
@@ -1221,7 +1254,8 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     print(f"[amend] 已修訂 {args.card_id}（op {op_id}，{len(changes)} 個欄位，{provenance}）")
     for entry in changes:
         field_name, old, new, note = entry[:4]
-        print(f"  - {field_name}：「{_short(old, 80)}」→「{_short(new, 80)}」")
+        w_old, w_new = _where_for(entry, recoverable=recoverable)
+        print(f"  - {field_name}：「{_short(old, 80, where=w_old)}」→「{_short(new, 80, where=w_new)}」")
         if note:
             print(f"    授權：{_short(note, 80)}")
     return 0

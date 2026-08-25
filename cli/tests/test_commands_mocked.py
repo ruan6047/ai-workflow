@@ -1914,3 +1914,77 @@ def test_draft_issue_card_always_falls_back_to_full_text(fake_runner):
     last = body.split("\n## Log", 1)[1].strip().splitlines()[-1]
     assert "sha256:" not in last, f"draft 卡竟走了指紋路徑：{last[:200]}"
     assert "content_type=DraftIssue" in last, f"未載明退回全文的理由：{last[:200]}"
+
+
+def test_fingerprint_path_never_says_the_full_text_is_in_the_log(fake_runner, capsys):
+    """R1-001（`GPT-5@Codex` 2026-08-26，major／blocking）。
+
+    `_short()` 原本無條件輸出「全文 N 字，**見 Log**」，而指紋路徑的 Log
+    **只有 sha256、沒有全文** ⇒ 同一次輸出會同時出現「Log 記法：指紋」與
+    「見 Log」，後者是**錯誤的還原指引**。
+
+    查核者逐字要求的回歸：「建立可還原版本後，以**超過 `_short` 門檻**的舊值
+    執行 `amend`／`dry-run`，斷言輸出不含「見 Log」且明示平台版本還原路徑。」
+    """
+    _budget_card(fake_runner, "SHORT-WHERE")
+    long_old = "確認訊息一致性的長字串" * 40          # 遠超過 _short 的 80/100 門檻
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "SHORT-WHERE",
+             "--reason", "建立一版可還原的前一版", "--acceptance", long_old])
+    capsys.readouterr()
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "SHORT-WHERE",
+             "--reason", "這次應走指紋路徑", "--acceptance", "新的短驗收"])
+    out = capsys.readouterr().out
+    assert "Log 記法" not in out or "指紋" in out
+    assert "見 Log" not in out, f"指紋路徑仍宣稱全文在 Log：{out}"
+    assert "見平台前一版" in out, f"未明示平台版本還原路徑：{out}"
+
+
+def test_full_text_path_still_says_the_log(fake_runner, capsys):
+    """⭐ 負控：走**全文**退路時「見 Log」是**對的**，⛔ 不得一併刪掉。
+
+    ⛔ 只驗「指紋路徑不說見 Log」是零資訊——把 `where` 寫死成
+    「見平台前一版」也能讓那支測試全綠，而那對全文退路是錯的指引。
+    """
+    _budget_card(fake_runner, "SHORT-WHERE-FULL")
+    capsys.readouterr()
+    # 首寫 ⇒ totalCount==0 ⇒ 走全文退路
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "SHORT-WHERE-FULL",
+             "--reason", "首寫應走全文", "--acceptance", "確認訊息一致性的長字串" * 40])
+    out = capsys.readouterr().out
+    assert "見 Log" in out, f"全文退路卻沒指向 Log：{out}"
+    assert "見平台前一版" not in out
+
+
+def test_fold_docstring_no_longer_claims_the_log_is_the_only_recovery_point():
+    """R1-001 的第二半：`_fold()` 的 docstring 逐字寫「Log 是唯一還原點」，
+    而那正是本卡推翻的前提——⛔ 改了行為卻沒改它。
+    """
+    from wf_cli.commands.amend_cmd import _fold
+
+    doc = _fold.__doc__ or ""
+    assert "Log 是唯一還原點。" not in doc, "過期前提仍留在 docstring"
+    assert "userContentEdits" in doc, "未說明真正的還原點"
+    assert "不截斷" in doc, "⛔ 不得連同仍然成立的部分一起刪掉"
+
+
+def test_no_user_facing_text_still_claims_the_log_holds_the_full_old_value():
+    """⭐ 自審（R2 送審前）：R1-001 的同族還有兩處，查核者沒點到。
+
+    - `add_parser` 的 help 逐字「原值寫入 Log」
+    - 模組 docstring 逐字「唯一還原點，摘要不能取代全文」
+
+    ⇒ 掃全檔的**使用者可見字串**，斷言沒有任何一處無條件宣稱全文在 Log。
+    ⛔ 註解與 docstring 裡「解釋這個前提已被推翻」的敘述不算違規——
+    判準是**是否作為指引輸出給使用者**。
+    """
+    import inspect
+
+    from wf_cli.commands import amend_cmd
+
+    src = inspect.getsource(amend_cmd)
+    banned = ["原值寫入 Log", "唯一還原點，摘要不能取代全文"]
+    hits = [b for b in banned if b in src]
+    assert not hits, f"仍有過期的還原指引：{hits}"
+    # ⭐ 負控：確認掃描抓得到東西——這兩句必須存在，否則本測試是零資訊。
+    assert "見平台前一版" in src and "原值已完整寫入 Log" in src
+
