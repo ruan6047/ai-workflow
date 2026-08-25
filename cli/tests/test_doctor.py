@@ -495,7 +495,7 @@ def test_doctor_rejects_invalid_source_sha_instead_of_reporting_unobservable(bad
         repo_root=str(tmp_path), registry="none", review_channel=True,
         repo="acme/x", issue_number=1, card_id="CARD-A", source_sha=bad_sha,
         owner="acme", project=1,
-        legacy_authority_notes=False,
+        conformance=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=False, strict=False,
@@ -563,7 +563,7 @@ def test_json_mode_sends_human_report_to_stderr(tmp_path, capsys, monkeypatch):
         repo_root=str(tmp_path), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=False,
-        legacy_authority_notes=False,
+        conformance=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
@@ -950,7 +950,7 @@ def test_cleanup_preview_json_payload_carries_previews(sandbox_repo, tmp_path, c
         repo_root=str(sandbox_repo), registry="none", review_channel=False,
         repo=None, issue_number=None, card_id=None, source_sha=None,
         owner=None, project=None, cleanup_preview=True,
-        legacy_authority_notes=False,
+        conformance=False,
         commit_trailers=False, commit_range=None,
         trailer_epoch=TRAILER_GUARD_EPOCH, require_planned_by=False,
         main_ref="main", lease_ttl_hours=48.0, json=True, strict=False,
@@ -1276,7 +1276,7 @@ def _trailer_args(repo, **overrides):
         "repo_root": str(repo), "registry": "none", "review_channel": False,
         "repo": None, "issue_number": None, "card_id": None, "source_sha": None,
         "owner": None, "project": None, "cleanup_preview": False,
-        "legacy_authority_notes": False,
+        "conformance": False,
         "commit_trailers": True, "commit_range": "main",
         "trailer_epoch": "none", "require_planned_by": False,
         "main_ref": "main", "lease_ttl_hours": 48.0, "json": False, "strict": False,
@@ -1517,7 +1517,7 @@ def _doctor_args(repo, **overrides):
         "repo_root": str(repo), "registry": "none", "review_channel": False,
         "repo": None, "issue_number": None, "card_id": None, "source_sha": None,
         "owner": None, "project": None, "cleanup_preview": False,
-        "legacy_authority_notes": False,
+        "conformance": False,
         "commit_trailers": False, "commit_range": None,
         "trailer_epoch": "none", "require_planned_by": False,
         "main_ref": "main", "lease_ttl_hours": 48.0, "json": False, "strict": False,
@@ -1531,13 +1531,22 @@ def _patch_project(monkeypatch, bodies):
     from wf_cli.commands import doctor_cmd
 
     class _Item:
-        def __init__(self, card_id, body):
+        """`ItemSnapshot` 的最小替身。⚠️ **必須有 `fields`**——真實快照有，替身沒有的話
+        `doctor_cmd` 讀欄位時會拋 AttributeError 而被那個寬鬆 except 吞掉，測試看起來
+        全綠但走的是「讀取失敗」那條路，等於在測一個不存在的世界。"""
+
+        def __init__(self, card_id, body, fields=None):
             self.card_id, self.body = card_id, body
+            self.fields = dict(fields or {})
 
     monkeypatch.setattr(doctor_cmd, "resolve_project", lambda *a, **k: {"id": "P"})
     monkeypatch.setattr(
         doctor_cmd, "list_items",
-        lambda *a, **k: [_Item(cid, b) for cid, b in bodies.items()],
+        lambda *a, **k: [
+            _Item(cid, b if isinstance(b, str) else b["body"],
+                  None if isinstance(b, str) else b.get("fields"))
+            for cid, b in bodies.items()
+        ],
     )
     return doctor_cmd
 
@@ -1550,7 +1559,7 @@ def test_cli_flag_actually_scans_and_reports(sandbox_repo, monkeypatch, capsys):
     """
     doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
     rc = doctor_cmd.run(
-        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+        _doctor_args(sandbox_repo, conformance=True, owner="acme", project=4)
     )
     assert rc == 0
     out = capsys.readouterr().out
@@ -1574,7 +1583,7 @@ def test_cli_without_the_flag_stays_not_scanned(sandbox_repo, capsys):
 def test_cli_flag_requires_owner_and_project(sandbox_repo, capsys):
     from wf_cli.commands import doctor_cmd
 
-    assert doctor_cmd.run(_doctor_args(sandbox_repo, legacy_authority_notes=True)) == 2
+    assert doctor_cmd.run(_doctor_args(sandbox_repo, conformance=True)) == 2
     err = capsys.readouterr().err
     assert "--owner" in err and "--project" in err
 
@@ -1588,7 +1597,7 @@ def test_cli_keeps_not_scanned_when_card_fetch_fails(sandbox_repo, monkeypatch, 
 
     monkeypatch.setattr(doctor_cmd, "resolve_project", _boom)
     rc = doctor_cmd.run(
-        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+        _doctor_args(sandbox_repo, conformance=True, owner="acme", project=4)
     )
     assert rc == 0, "抓取失敗不該讓整個 doctor 中止"
     captured = capsys.readouterr()
@@ -1601,7 +1610,7 @@ def test_legacy_notes_never_affect_strict_exit_code(sandbox_repo, monkeypatch, c
     doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
     rc = doctor_cmd.run(
         _doctor_args(
-            sandbox_repo, legacy_authority_notes=True, owner="acme", project=4,
+            sandbox_repo, conformance=True, owner="acme", project=4,
             registry="none", strict=True,
         )
     )
@@ -1627,7 +1636,7 @@ def test_cli_does_not_feed_cleanup_guard_when_scanning_legacy_notes(sandbox_repo
     _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
     monkeypatch.setattr(doctor_cmd, "run_doctor", _spy)
     doctor_cmd.run(
-        _doctor_args(sandbox_repo, legacy_authority_notes=True, owner="acme", project=4)
+        _doctor_args(sandbox_repo, conformance=True, owner="acme", project=4)
     )
     assert seen.get("card_bodies") is None, "cleanup guard 的 card_bodies 不得被順手填上"
     assert seen.get("legacy_authority_card_bodies") == {
@@ -1642,7 +1651,7 @@ def test_cli_json_payload_carries_legacy_authority_notes(sandbox_repo, monkeypat
     doctor_cmd = _patch_project(monkeypatch, {"CARD1": _amend_line("166322be", _OLD_NOTE)})
     assert doctor_cmd.run(
         _doctor_args(
-            sandbox_repo, legacy_authority_notes=True, owner="acme", project=4, json=True
+            sandbox_repo, conformance=True, owner="acme", project=4, json=True
         )
     ) == 0
     payload = jsonlib.loads(capsys.readouterr().out)["legacy_authority_notes"]
@@ -2296,3 +2305,673 @@ def test_canonical_citations_do_not_regrow_line_numbers():
 # `cli/tests/test_canonical_citation_scan.py`，射程是 `git ls-files` 全部。
 # 判準本身沒變（仍是「剪掉指名來源檔的引用之後還剩不剩冒號數字」），只是不再由
 # 一份人維護的清單決定掃誰。
+
+
+# --------------------------------------------------------------------------
+# 事後符合性重驗（WF-POSTHOC-CONFORMANCE1，canonical §5.1.2）
+# --------------------------------------------------------------------------
+#
+# ⚠️ 本組的 fixture 一律沿用**真實卡面的形狀**：標頭兩行（`- 需求：…　規劃：…` 與
+# `- Initiative：…　spec 基線：…`）、`<!-- wf-routing:v1 -->` 標記、`## 核心痛點`
+# 章節、資源宣告哨兵、`## Log`。實測 199 張活卡中相當比例缺其中某一項，⇒ 缺哪一項
+# 是本檢查要判的東西本身，fixture 偏離真實形狀會讓測試測到一個不存在的世界。
+
+from wf_cli.doctor import (
+    CAUSE_CHANNEL_BYPASSED,
+    CAUSE_DISPOSITIONS,
+    CAUSE_RULE_CHANGED,
+    CAUSE_TOOL_CANNOT_READ,
+    CAUSE_UNDECIDABLE,
+    CAUSE_WRITER_NONCONFORMANT,
+    CONFORMANCE_CAUSES,
+    CONFORMANCE_RULES,
+    CREATED_AT_TRUSTED_FROM,
+    DISPOSITION_ACCEPT_AS_LEGACY,
+    DISPOSITION_MIGRATE,
+    EXISTENCE_FROM_ISSUE,
+    EXISTENCE_FROM_LOG,
+    EXISTENCE_UNKNOWN,
+    FIELD_DECLARED_UNUSED,
+    FIELD_ORPHAN_VALUED,
+    PROJECT_BUILTIN_FIELDS,
+    RULE_EPOCH_BY_ID,
+    STATE_FACE_DRIFT_EPOCH,
+    VERB_AMEND_BRIEF,
+    VERB_AMEND_CORE_PAIN,
+    VERB_AMEND_RESOURCES,
+    VERB_AMEND_SPEC_BASELINE,
+    VERB_APPEND_ONLY,
+    VERB_ASSIGN,
+    ExistenceTime,
+    attribute_cause,
+    audit_conformance,
+    audit_field_surface,
+    audit_reachability,
+    audit_state_face_drift_batch,
+    evaluate_card_conformance,
+    existence_time_of,
+    has_channel_evidence,
+    predates_rule,
+    probe_reachability,
+    render_conformance,
+    render_reachability,
+    scan_envelope,
+)
+
+_ROUTING = "<!-- wf-routing:v1 -->"
+_RESOURCES = (
+    "## 資源宣告\n<!-- resource-claims:begin -->\n```json\n"
+    '{\n  "db_scope": "none",\n  "resources": []\n}\n'
+    "```\n<!-- resource-claims:end -->\n"
+)
+
+
+def _conformant_body(*log_lines: str, pain: str = "x", brief: bool = True) -> str:
+    """一張各項齊備的卡面（形狀取自 `card.render_issue_body` 的實際輸出）。"""
+    head = (
+        "- 需求：ruan6047　規劃：PM\n"
+        f"{_ROUTING}\n"
+        "- 執行：待指派　查核：待指派\n"
+        "- Initiative：—　spec 基線：—\n"
+        "- DB：db_scope=none\n"
+        "- 服務的原始目標：讓事後重驗有東西可驗\n\n"
+    )
+    if brief:
+        head += (
+            "## 簡介\n<!-- card-brief:begin -->\n"
+            "做什麼：測試用卡。適用時機：跑本組測試時。⛔ 非射程：其他。\n"
+            "<!-- card-brief:end -->\n\n"
+        )
+    head += f"## 核心痛點\n\n- **痛點**：{pain}\n\n{_RESOURCES}\n"
+    log = "\n".join(f"- {line}" for line in log_lines)
+    return head + f"## Log\n\n{log}\n"
+
+
+#: 一筆晚於全部 rule epoch 的 open 事件（2026-08-26）。
+_LATE_OPEN = "2026-08-26T09:00:00+08:00 open by wf-cli；owner 待指派；iteration 0。"
+#: 一筆早於全部 rule epoch 的 open 事件（2026-08-01）。
+_EARLY_OPEN = "2026-08-01T09:00:00+08:00 open by wf-cli；owner 待指派；iteration 0。"
+
+
+def test_five_causes_are_a_closed_ordered_set_with_a_disposition_each():
+    """值域恰五類、順序即判準順序，且每一類都說得出處置。
+
+    **突變檢驗**：增刪任一類、或調換 `CONFORMANCE_CAUSES` 的順序，本測試轉紅。
+    """
+    assert CONFORMANCE_CAUSES == (
+        CAUSE_TOOL_CANNOT_READ,
+        CAUSE_UNDECIDABLE,
+        CAUSE_RULE_CHANGED,
+        CAUSE_WRITER_NONCONFORMANT,
+        CAUSE_CHANNEL_BYPASSED,
+    )
+    assert set(CAUSE_DISPOSITIONS) == set(CONFORMANCE_CAUSES), "每一類都要有處置文案"
+    # 前兩類是我們自己的侷限，⛔ 不得寫成對人的指控。
+    for limitation in (CAUSE_TOOL_CANNOT_READ, CAUSE_UNDECIDABLE):
+        assert "⛔ 不" in CAUSE_DISPOSITIONS[limitation]
+
+
+def test_tool_cannot_read_outranks_every_accusation():
+    """⭐ **順序的變異檢驗**：讀不到的卡永遠先落 `tool_cannot_read`。
+
+    這張卡同時滿足後面兩類的全部前提（晚於 epoch、有通道留痕）。判準順序若把
+    `tool_cannot_read` 從第一順位移到最後，它會改被報成 `writer_nonconformant`
+    ——也就是把「我們的解析器讀不到」講成「寫入端做錯了」。
+
+    **突變檢驗**：把 `attribute_cause` 的 `if not tool_readable` 那段移到函式最後，
+    本測試轉紅（第一個 assert）。⛔ 只跑正確順序是零資訊，故第二個 assert 逐字給出
+    移位後的答案，證明兩者真的不同。
+    """
+    late = ExistenceTime("2026-08-26T09:00:00+08:00", EXISTENCE_FROM_LOG)
+    epoch = RULE_EPOCH_BY_ID["core_pain_present"].epoch
+    assert attribute_cause(
+        tool_readable=False, existence=late, epoch=epoch, channel_evidenced=True
+    ) == CAUSE_TOOL_CANNOT_READ
+    # 同一張卡，只把「讀得到」這件事翻過來 → 落到指控那一側。
+    assert attribute_cause(
+        tool_readable=True, existence=late, epoch=epoch, channel_evidenced=True
+    ) == CAUSE_WRITER_NONCONFORMANT
+
+
+def test_undecidable_outranks_accusation_when_the_card_has_no_time():
+    """取不到建立時刻時落 `undecidable`，⛔ 不猜、⛔ 不落到指控那兩類。"""
+    unknown = ExistenceTime(None, EXISTENCE_UNKNOWN)
+    for channel in (True, False):
+        assert attribute_cause(
+            tool_readable=True,
+            existence=unknown,
+            epoch=RULE_EPOCH_BY_ID["brief_present"].epoch,
+            channel_evidenced=channel,
+        ) == CAUSE_UNDECIDABLE
+
+
+def test_writer_nonconformant_and_channel_bypassed_split_on_channel_evidence():
+    """後兩類互斥且窮盡：走到第 4 步時，卡要嘛有通道留痕、要嘛沒有。"""
+    late = ExistenceTime("2026-08-26T09:00:00+08:00", EXISTENCE_FROM_LOG)
+    epoch = RULE_EPOCH_BY_ID["brief_present"].epoch
+    assert attribute_cause(
+        tool_readable=True, existence=late, epoch=epoch, channel_evidenced=True
+    ) == CAUSE_WRITER_NONCONFORMANT
+    assert attribute_cause(
+        tool_readable=True, existence=late, epoch=epoch, channel_evidenced=False
+    ) == CAUSE_CHANNEL_BYPASSED
+
+
+def test_channel_bypassed_branch_is_reachable_on_a_constructed_card():
+    """⭐ 母體實測 **0 筆**，⇒ 不構造就永遠測不到這條分支是否可達。
+
+    形狀：卡晚於規則、卡面有 `## Log` 區段但裡頭一筆通道事件都沒有（欄位被手搬）。
+    ⛔ 「掃到 0 筆」與「這條分支根本走不到」在輸出上長得一樣，本測試把兩者分開。
+    """
+    hand_moved = _conformant_body(
+        "2026-08-26T09:00:00+08:00 手動更新交付狀態（無對應動詞）。", brief=False
+    )
+    assert has_channel_evidence(hand_moved) is False
+    findings = evaluate_card_conformance(
+        "CARD-HAND",
+        hand_moved,
+        service_goal="有",
+        issue_created_at="2026-08-26T08:00:00+08:00",
+    )
+    assert [f.rule_id for f in findings] == ["brief_present"]
+    assert findings[0].cause == CAUSE_CHANNEL_BYPASSED
+
+
+def test_existence_time_prefers_the_log_open_event_over_issue_created_at():
+    body = _conformant_body(_EARLY_OPEN)
+    got = existence_time_of(body, "2026-08-04T12:00:00+08:00")
+    assert (got.value, got.source) == ("2026-08-01T09:00:00+08:00", EXISTENCE_FROM_LOG)
+
+
+def test_existence_time_falls_back_to_created_at_then_to_unknown():
+    without_open = _conformant_body(
+        "2026-08-20T09:00:00+08:00 handoff by wf-cli → owner X；iteration 0；SHA "
+        + "a" * 40
+        + "；證據 y。"
+    )
+    fallback = existence_time_of(without_open, "2026-08-20T08:00:00+08:00")
+    assert (fallback.value, fallback.source) == (
+        "2026-08-20T08:00:00+08:00",
+        EXISTENCE_FROM_ISSUE,
+    )
+    assert existence_time_of(without_open, None).source == EXISTENCE_UNKNOWN
+
+
+def test_created_at_cannot_judge_epochs_before_the_state_plane_cutover():
+    """⭐ createdAt 退路的**邊界**（⛔ 只驗 happy path 是零資訊）。
+
+    2026-08-04 遷移卡的 Issue 建立於遷移當天，而它承載的工作早於它 ⇒ 拿它去比
+    cutover 之前落地的規則，必然把整批遷移卡判成「晚於規則卻仍不合規」。本測試
+    釘住那條界線：**同一張卡、同一個時刻**，只換 `source` 就換答案。
+    """
+    migrated = ExistenceTime("2026-08-04T14:00:00+08:00", EXISTENCE_FROM_ISSUE)
+    before_cutover = RULE_EPOCH_BY_ID["core_pain_present"].epoch  # 2026-08-04T22:53:12
+    assert before_cutover < CREATED_AT_TRUSTED_FROM, "夾具前提：該 epoch 早於 cutover"
+    assert predates_rule(migrated, before_cutover) is None, "⛔ 不得用 createdAt 判定"
+    # 同一個時刻若來自 Log 的 open 事件（可信），就判得出來。
+    from_log = ExistenceTime("2026-08-04T14:00:00+08:00", EXISTENCE_FROM_LOG)
+    assert predates_rule(from_log, before_cutover) is True
+    # 而 cutover 之後的規則，createdAt 仍然是有效答案 —— ⛔ 不是一律作廢。
+    after_cutover = RULE_EPOCH_BY_ID["brief_present"].epoch
+    assert predates_rule(migrated, after_cutover) is True
+
+
+def test_migration_card_lands_on_undecidable_not_on_an_accusation():
+    """把上一條接到端到端：只有 createdAt 的遷移卡 → `undecidable`，⛔ 非指控。"""
+    migrated = _conformant_body(
+        "2026-08-04T14:00:00+08:00 migrated by OPS-STATE-PLANE-MIG1。",
+        pain="",
+        brief=False,
+    )
+    findings = evaluate_card_conformance(
+        "MIG-CARD", migrated, service_goal="有", issue_created_at="2026-08-04T14:00:00+08:00"
+    )
+    core_pain = [f for f in findings if f.rule_id == "core_pain_present"]
+    assert len(core_pain) == 1
+    assert core_pain[0].cause == CAUSE_UNDECIDABLE
+    assert core_pain[0].created_at_source == EXISTENCE_FROM_ISSUE
+
+
+def test_every_rule_epoch_declares_a_disposition_and_a_full_timestamp():
+    """⭐ epoch 必須是**完整 ISO-8601 時刻**、disposition 必須是宣告過的兩個值之一。
+
+    日期粒度不夠：路由行的規則卡是 13:01:38，而本檢查比對的標記字面由同日 18:29:56
+    引入，晚 5.5 小時；用日期比會多判 5 張。
+
+    **突變檢驗**：把任一條的 `epoch` 截成 `YYYY-MM-DD`，或把 `disposition` 改成
+    第三個值，本測試轉紅。
+    """
+    assert CONFORMANCE_RULES, "清冊不得為空——空清冊是一個永遠不會響的偵測器"
+    for rule in CONFORMANCE_RULES:
+        assert rule.disposition in (DISPOSITION_MIGRATE, DISPOSITION_ACCEPT_AS_LEGACY)
+        assert _parse_iso_or_none(rule.epoch) is not None, f"{rule.rule_id} 的 epoch 不可解析"
+        assert len(rule.epoch) >= len("2026-08-04T22:53:12+08:00"), (
+            f"{rule.rule_id} 的 epoch 只有日期粒度"
+        )
+        assert rule.artifact and rule.requirement
+    assert len({r.rule_id for r in CONFORMANCE_RULES}) == len(CONFORMANCE_RULES)
+
+
+def _parse_iso_or_none(value):
+    from wf_cli.doctor import _parse_iso
+
+    return _parse_iso(value)
+
+
+def test_accept_as_legacy_only_gets_a_summary_line_while_migrate_is_itemized():
+    """⭐ disposition 的兩個取值各驗一次，並**對照**兩份輸出。
+
+    `migrate` 的殘餘逐張列出（那是待辦）；`accept_as_legacy` 的只有一行摘要
+    （需求方已裁定不追溯，逐張列會製造一個永遠清不掉的池）。
+    """
+    # 缺路由標記（accept_as_legacy）＋缺簡介（migrate）的兩張早期卡。
+    bodies = {
+        cid: _conformant_body(_EARLY_OPEN, brief=False).replace(_ROUTING + "\n", "")
+        for cid in ("CARD-A", "CARD-B")
+    }
+    report = audit_conformance(bodies, {cid: {"服務的原始目標": "有"} for cid in bodies})
+    itemized = {(f.card_id, f.rule_id) for f in report.findings}
+    assert itemized == {
+        ("CARD-A", "brief_present"),
+        ("CARD-B", "brief_present"),
+    }, "migrate 的殘餘要逐張；accept_as_legacy 的⛔ 不得出現在 findings"
+    assert len(report.accepted_as_legacy) == 1
+    summary = report.accepted_as_legacy[0]
+    assert "routing_marker_present" in summary and "2 張殘餘" in summary
+    text = render_conformance(report)
+    assert "CARD-A" in text and "CARD-B" in text  # migrate：逐張
+    assert text.count("routing_marker_present") == 1  # accept_as_legacy：只有摘要那一行
+
+
+def test_conformance_reports_not_scanned_rather_than_clean_when_given_nothing():
+    """⛔ 沒掃不得被讀成乾淨——這是本檔三個既有掃描共用的立場。"""
+    for empty in (None, {}):
+        report = audit_conformance(empty)
+        assert (report.status, report.findings) == ("not_scanned", [])
+        assert "未掃描" in render_conformance(report) and "這不等於沒有" in render_conformance(report)
+
+
+def test_zero_findings_for_a_rule_is_reported_as_scanned_not_silent():
+    """⭐ 「掃過而零命中」必須印出來。
+
+    一條規則零命中有兩種可能：真的沒有，或這條規則構造上不會響。輸出上長得一樣，
+    ⇒ 報告要逐規則給數字，讓讀者至少看得到它被跑過。
+    """
+    body = _conformant_body(_LATE_OPEN)
+    report = audit_conformance({"CARD-OK": body}, {"CARD-OK": {"服務的原始目標": "有"}})
+    assert report.findings == []
+    text = render_conformance(report)
+    for rule in CONFORMANCE_RULES:
+        if rule.disposition == DISPOSITION_MIGRATE:
+            assert f"`{rule.rule_id}`" in text
+    assert "⛔ 這不等於此規則不會響" in text
+
+
+def test_conformance_finding_carries_both_timestamps_for_git_archaeology():
+    """`writer_nonconformant` 追得下去的唯一依據是兩個時刻。
+
+    狀態面沒有工具版本可查（`pyproject` 的 version 凍在 0.1.0、`wfcli` 無 `--version`、
+    Log 行只寫 `by wf-cli`）⇒ 接手的人只能拿 rule_epoch 與卡的建立時刻做 commit 時序
+    考古。兩者缺一，這一類就只是一句沒有下文的指控。
+    """
+    late = _conformant_body(_LATE_OPEN, brief=False)
+    findings = evaluate_card_conformance("CARD-LATE", late, service_goal="有")
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.cause == CAUSE_WRITER_NONCONFORMANT
+    assert finding.rule_epoch == RULE_EPOCH_BY_ID["brief_present"].epoch
+    assert finding.card_created_at == "2026-08-26T09:00:00+08:00"
+    assert finding.created_at_source == EXISTENCE_FROM_LOG
+
+
+def test_core_pain_is_read_from_the_section_not_from_the_log_echo():
+    """⛔ 判準只看 `## Log` **之前**的章節。
+
+    真實形狀：handoff／review 事件的證據欄是**多行自由文字**，實務上會整段引用卡面
+    ——包含 `## 核心痛點` 標題行與它底下的 `- **痛點**：`。一張**根本沒有**該章節的卡，
+    若判準對全文搜尋，就會讀到 Log 裡的歷史回音而被判成合規：那是假陰性，而假陰性正是
+    「偵測器永遠不會響」的那一半。
+
+    **突變檢驗**：把 `_core_pain_value` 裡的 `split_at_log` 拿掉、改對全文 splitlines，
+    本測試轉紅（第一個 assert 會變成空 findings）。
+
+    第二個 assert 釘的是另一件事：**單行**的 amend 回音（`原值「- **痛點**：…」`）
+    同樣不得被當成現值——那條由章節切界承接。
+    """
+    quoted_section = (
+        "2026-08-20T09:00:00+08:00 handoff by wf-cli → owner X；iteration 1；SHA "
+        + "a" * 40
+        + "；證據 交付時的卡面原文如下：\n\n## 核心痛點\n\n- **痛點**：Log 裡的歷史回音\n"
+    )
+    no_section = (
+        "- 需求：ruan6047　規劃：PM\n"
+        f"{_ROUTING}\n"
+        "- Initiative：—　spec 基線：—\n"
+        "- 服務的原始目標：有\n\n"
+        f"{_RESOURCES}\n"
+        f"## Log\n\n- {_EARLY_OPEN}\n- {quoted_section}\n"
+    )
+    assert "## 核心痛點" in no_section, "夾具前提：字面確實出現在 Log 內"
+    findings = evaluate_card_conformance("CARD-ECHO", no_section, service_goal="有")
+    assert "core_pain_present" in [f.rule_id for f in findings], (
+        "Log 內的章節回音⛔ 不得讓一張缺痛點的卡看起來合規"
+    )
+
+    single_line_echo = _conformant_body(
+        _EARLY_OPEN,
+        "2026-08-02T09:00:00+08:00 amend by wf-cli（op deadbeef）→ 核心痛點："
+        "原值「- **痛點**：舊的痛點原文」。",
+        pain="",
+    )
+    assert "core_pain_present" in [
+        f.rule_id
+        for f in evaluate_card_conformance("CARD-ECHO2", single_line_echo, service_goal="有")
+    ]
+
+
+def test_conformance_never_blocks_and_says_so_in_the_report():
+    """⛔ 事後重驗非阻擋：它是唯讀報告，⛔ 不得讓既有卡因 canonical 改版而動不了。"""
+    broken = "沒有任何章節的卡面"
+    findings = evaluate_card_conformance("CARD-BROKEN", broken)
+    assert findings, "壞掉的卡要被報出來"
+    assert {f.cause for f in findings} == {CAUSE_TOOL_CANNOT_READ} or {
+        f.cause for f in findings
+    } == {CAUSE_UNDECIDABLE}
+    report = audit_conformance({"CARD-BROKEN": broken})
+    assert "⛔ 本節不修復、不阻擋" in render_conformance(report)
+
+
+# ---- 欄位層對帳 ----------------------------------------------------------
+
+
+def test_field_surface_reports_orphan_valued_fields_in_its_own_section():
+    """⭐ 孤兒欄位是**狀態面本身**的形狀問題 ⇒ 一個欄位一筆，⛔ 不是 41 張卡各一筆。"""
+    values = {
+        f"CARD-{i}": {"卡ID": f"CARD-{i}", "分支／worktree": "b @ /w", "Title": "t"}
+        for i in range(41)
+    }
+    report = audit_field_surface(values, ("卡ID", "分支worktree"))
+    orphans = [f for f in report.findings if f.kind == FIELD_ORPHAN_VALUED]
+    assert [(f.field_name, f.cards_with_value) for f in orphans] == [("分支／worktree", 41)]
+    assert "Title" in PROJECT_BUILTIN_FIELDS and "Title" not in {
+        f.field_name for f in report.findings
+    }, "GitHub 內建欄位⛔ 不得被報成孤兒"
+
+
+def test_field_surface_declared_but_unused_branch_is_reachable():
+    """⭐ **負控**：(ii) 分支實測母體為 0，⇒ 不構造就永遠測不到。"""
+    report = audit_field_surface({"CARD-1": {"卡ID": "CARD-1"}}, ("卡ID", "從沒人填過的欄位"))
+    unused = [f for f in report.findings if f.kind == FIELD_DECLARED_UNUSED]
+    assert [f.field_name for f in unused] == ["從沒人填過的欄位"]
+
+
+def test_field_surface_treats_blank_values_as_absent():
+    """空字串不算「有值」——否則佔位符會讓孤兒欄位看起來還活著。"""
+    report = audit_field_surface({"C": {"孤兒": "   ", "卡ID": "C"}}, ("卡ID",))
+    assert report.findings == []
+
+
+def test_field_surface_not_scanned_is_not_clean():
+    assert audit_field_surface(None, ("卡ID",)).status == "not_scanned"
+    assert audit_field_surface({}, ("卡ID",)).status == "not_scanned"
+
+
+# ---- 狀態面漂移的接線與依歸因分流的處置文案 ------------------------------
+
+
+def test_state_face_drift_batch_attributes_only_drift_and_keeps_all_verdicts():
+    early = _drift_body(
+        "2026-08-01T09:00:00+08:00 open by wf-cli；owner 待指派；iteration 0。"
+    )
+    late = _drift_body(
+        "2026-08-26T09:00:00+08:00 open by wf-cli；owner 待指派；iteration 0。"
+    )
+    report = audit_state_face_drift_batch(
+        {"OLD": early, "NEW": late, "OK": early},
+        {"OLD": "📥Backlog", "NEW": "📥Backlog", "OK": "💡需求"},
+    )
+    assert report.scanned_cards == 3 and len(report.verdicts) == 3
+    assert {f.card_id for f in report.findings} == {"OLD", "NEW"}, "只有 drift 算 finding"
+    assert report.causes == {"OLD": CAUSE_RULE_CHANGED, "NEW": CAUSE_WRITER_NONCONFORMANT}
+    assert STATE_FACE_DRIFT_EPOCH.startswith("2026-08-19T")
+
+
+def test_drift_disposition_text_branches_on_cause():
+    """⭐ 對 `rule_changed` 輸出「補跑動詞、勿手動搬看板」是**錯誤的指控**。
+
+    **突變檢驗**：把 `render_state_face_drift` 改回無條件輸出同一句處置，
+    本測試轉紅（第二個 assert）。
+    """
+    early = _drift_body(
+        "2026-08-01T09:00:00+08:00 open by wf-cli；owner 待指派；iteration 0。"
+    )
+    findings = [audit_state_face_drift("OLD", early, "📥Backlog")]
+    accusing = "勿手動搬看板"
+    with_cause = render_state_face_drift(findings, {"OLD": CAUSE_RULE_CHANGED})
+    assert CAUSE_DISPOSITIONS[CAUSE_RULE_CHANGED] in with_cause
+    assert accusing not in with_cause, "rule_changed 不得被指控成手動搬看板"
+    bypassed = render_state_face_drift(findings, {"OLD": CAUSE_CHANNEL_BYPASSED})
+    assert accusing in bypassed, "真的沒有留痕時，那句處置才是對的"
+    # 沒有歸因就沒有下處置的依據 ⇒ 只印觀測。
+    assert "處置：" not in render_state_face_drift(findings)
+
+
+def test_drift_render_keeps_the_stats_line_and_the_enforcement_caveat():
+    """A9 的保留項：統計行與「偵測不等於強制」段⛔ 不得在改寫中掉了。"""
+    findings = [
+        audit_state_face_drift("C1", _drift_body(_OPEN_LINE), "💡需求"),
+        audit_state_face_drift("C2", _drift_body(_OPEN_LINE), "📥Backlog"),
+        audit_state_face_drift("C3", _drift_body(_OPEN_LINE, _ASSIGN_LINE, _HANDOFF_LINE), "🔍待查核"),
+    ]
+    text = render_state_face_drift(findings, {"C2": CAUSE_RULE_CHANGED})
+    assert "一致 1／漂移 1／不判定 1（不判定佔比 33%）" in text
+    assert "偵測不等於強制" in text and "#48" in text
+
+
+# ---- 共用信封 ------------------------------------------------------------
+
+
+def test_scan_envelope_reads_only_the_shared_shape():
+    """信封只讀 `status`／`scanned_cards`／`findings`／`routine_gaps`，⛔ 不讀內部欄位。"""
+    report = audit_conformance(
+        {"CARD-A": _conformant_body(_EARLY_OPEN, brief=False).replace(_ROUTING + "\n", "")},
+        {"CARD-A": {"服務的原始目標": "有"}},
+    )
+    envelope = scan_envelope("conformance", report, enters_backlog=True)
+    assert (envelope.kind, envelope.status, envelope.scanned_cards) == (
+        "conformance", "scanned", 1,
+    )
+    assert envelope.findings == 1 and envelope.routine_gaps == 1
+    assert "計入待辦" in envelope.render_line()
+
+
+def test_legacy_authority_notes_never_enter_the_backlog():
+    """⚠️ 它報的是**留痕強度不足，不是授權無效** ⇒ 那些行⛔ 不進待辦。
+
+    既存事件 append-only、明令不得追溯改寫 ⇒ 把它們算進待辦等於製造一個永遠清不掉
+    的池，與本卡要消滅的形態同構。
+
+    **突變檢驗**：把 `scan_envelopes` 裡它的 `enters_backlog` 改成 True，本測試轉紅。
+    """
+    report = DoctorReport(repo_root="/x", generated_at="t", registry_sources=[])
+    by_kind = {e.kind: e for e in report.scan_envelopes()}
+    assert set(by_kind) == {
+        "reachability", "conformance", "brief_drift", "state_face_drift",
+        "legacy_authority_notes",
+    }
+    assert by_kind["legacy_authority_notes"].enters_backlog is False
+    assert all(
+        by_kind[kind].enters_backlog
+        for kind in ("reachability", "conformance", "brief_drift", "state_face_drift")
+    )
+
+
+def test_all_four_scans_default_to_not_scanned():
+    """四個掃描的預設都必須是 `not_scanned`，⛔ 不得讓空清單被讀成「都乾淨」。"""
+    report = DoctorReport(repo_root="/x", generated_at="t", registry_sources=[])
+    assert all(e.status == "not_scanned" for e in report.scan_envelopes())
+    assert all("未掃描" in e.render_line() for e in report.scan_envelopes())
+
+
+# ---- CLI 接線 ------------------------------------------------------------
+
+
+def _conformance_args(repo, **kw):
+    kw.setdefault("conformance", True)
+    kw.setdefault("owner", "acme")
+    kw.setdefault("project", 4)
+    return _doctor_args(repo, **kw)
+
+
+def test_cli_conformance_flag_scans_and_reports(sandbox_repo, monkeypatch, capsys):
+    """⚠️ 本組要擋的是「測試綠但 CLI 跑不到」——`audit_state_face_drift` 自 2026-08-19
+    起就存在，生產碼卻**零呼叫端**，測試一路全綠。
+
+    **突變檢驗**：把 `doctor_cmd` 傳給 `run_doctor` 的 `project_field_values` 改成
+    不傳，本測試轉紅。
+    """
+    body = _conformant_body(_EARLY_OPEN, brief=False)
+    doctor_cmd = _patch_project(
+        monkeypatch,
+        {"CARD1": {"body": body, "fields": {"卡ID": "CARD1", "服務的原始目標": "有",
+                                            "交付狀態": "📥Backlog", "分支／worktree": "b @ /w"}}},
+    )
+    assert doctor_cmd.run(_conformance_args(sandbox_repo)) == 0
+    out = capsys.readouterr().out
+    assert "事後符合性重驗" in out and "已對 1 張卡重跑" in out
+    assert "brief_present" in out and CAUSE_RULE_CHANGED in out
+    assert "分支／worktree" in out, "欄位層對帳要真的拿到欄位值"
+    assert "狀態面漂移對帳" in out, "state_face_drift 必須真的被接上"
+    assert "已對 1 張卡探測" in out, "可達性必須真的拿到卡面（⛔ 不得停在 not_scanned）"
+    assert "卡面掃描面總表" in out
+
+
+def test_cli_deprecated_alias_still_works(sandbox_repo, monkeypatch, capsys):
+    """舊名保留為 alias——改名⛔ 不得弄壞任何沒被搜到的呼叫端。"""
+    from wf_cli.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["doctor", str(sandbox_repo), "--legacy-authority-notes", "--owner", "a", "--project", "4"]
+    )
+    assert args.conformance is True
+    assert parser.parse_args(["doctor", str(sandbox_repo), "--conformance",
+                              "--owner", "a", "--project", "4"]).conformance is True
+
+
+def test_cli_conformance_does_not_feed_the_cleanup_guard(sandbox_repo, monkeypatch):
+    """⛔ 接線不得順手改變 `--cleanup-preview` 的判定（`card_bodies` 是另一個消費者）。"""
+    from wf_cli.commands import doctor_cmd
+
+    seen = {}
+
+    def _spy(repo_root, registry=None, **kw):
+        seen.update(kw)
+        return run_doctor(repo_root, registry, **kw)
+
+    _patch_project(
+        monkeypatch,
+        {"CARD1": {"body": _conformant_body(_EARLY_OPEN), "fields": {"卡ID": "CARD1"}}},
+    )
+    monkeypatch.setattr(doctor_cmd, "run_doctor", _spy)
+    doctor_cmd.run(_conformance_args(sandbox_repo))
+    assert seen.get("card_bodies") is None, "cleanup guard 的 card_bodies 不得被順手填上"
+    assert set(seen.get("project_field_values") or {}) == {"CARD1"}
+
+
+def test_cli_json_payload_carries_the_new_scans(sandbox_repo, monkeypatch, capsys):
+    """機器消費端要讀得到；只有人類可讀那份等於沒有對外提供。"""
+    import json as jsonlib
+
+    doctor_cmd = _patch_project(
+        monkeypatch,
+        {"CARD1": {"body": _conformant_body(_EARLY_OPEN, brief=False),
+                   "fields": {"卡ID": "CARD1", "服務的原始目標": "有", "交付狀態": "📥Backlog"}}},
+    )
+    assert doctor_cmd.run(_conformance_args(sandbox_repo, json=True)) == 0
+    payload = jsonlib.loads(capsys.readouterr().out)
+    assert payload["conformance"]["status"] == "scanned"
+    assert [f["rule_id"] for f in payload["conformance"]["findings"]] == ["brief_present"]
+    assert payload["conformance"]["findings"][0]["cause"] == CAUSE_RULE_CHANGED
+    assert payload["field_surface"]["status"] == "scanned"
+    assert payload["state_face_drift"]["status"] == "scanned"
+    assert payload["reachability"]["status"] == "scanned"
+
+
+def test_cli_conformance_stays_out_of_strict_exit_code(sandbox_repo, monkeypatch, capsys):
+    """⛔ **非阻擋**：既有卡不合規⛔ 不得讓 doctor 以非 0 收場。
+
+    那些卡的不合規多半是規則變更的殘餘（`rule_changed`），把它算進 exit code 等於
+    讓 CI 從此恆紅且無人能立刻修好——「偵測器調成永遠會響」與「永遠不會響」同樣沒用。
+    """
+    doctor_cmd = _patch_project(
+        monkeypatch,
+        {"CARD1": {"body": _conformant_body(_EARLY_OPEN, brief=False),
+                   "fields": {"卡ID": "CARD1", "服務的原始目標": "有"}}},
+    )
+    rc = doctor_cmd.run(_conformance_args(sandbox_repo, registry="none", strict=True))
+    assert "不合規 1 筆" in capsys.readouterr().out, "夾具必須真的有 finding"
+    assert rc == 0
+
+
+# ---- 寫入通道可達性（⭐ 先於合規性） --------------------------------------
+
+
+def test_reachability_is_per_verb_not_a_binary_property_of_the_card():
+    """⭐ 「這張卡改不改得動」不是一個布林值。
+
+    真實形狀（2026-08-04 遷移卡）：資源宣告讀不到 ⇒ `assign` 拒絕派工，但
+    `handoff`／`review`／`checkpoint`／`deploy-*` 只做 `append_log_line`，照樣打得到。
+    ⇒ 報告必須說得出**哪個動詞**打不到——兩者的處置完全不同。
+
+    **突變檢驗**：把 `probe_reachability` 改成「任一探針失敗即整張卡不可達」而不記
+    逐動詞，本測試轉紅（第二、三個 assert）。
+    """
+    body = _conformant_body(_EARLY_OPEN).replace(_RESOURCES, "")
+    finding = probe_reachability("CARD-NO-RES", body, "💡需求")
+    assert finding is not None
+    assert VERB_ASSIGN in finding.unreachable_for
+    assert VERB_AMEND_RESOURCES in finding.unreachable_for
+    assert VERB_APPEND_ONLY in finding.reachable_for, "append-only 那一族⛔ 不受影響"
+    assert VERB_AMEND_BRIEF in finding.reachable_for
+
+
+def test_reachability_does_not_false_positive_on_a_healthy_card():
+    """⛔ 只驗不可達那側是零資訊：一張齊備的卡必須全部動詞皆可達。"""
+    assert probe_reachability("CARD-OK", _conformant_body(_EARLY_OPEN)) is None
+
+
+def test_reachability_probes_are_zero_write_and_leave_the_body_untouched():
+    """探針呼叫的是回傳新字串的純函式 ⇒ 逐位元不動原 body。"""
+    body = _conformant_body(_EARLY_OPEN)
+    before = body
+    probe_reachability("CARD-OK", body)
+    assert body == before
+
+
+def test_reachability_catches_the_literal_backslash_n_before_the_log_heading():
+    """真實個案：`## Log` 前面是**字面的**反斜線-n ⇒ `split_at_log` 拒絕整張卡。
+
+    這張卡於 2026-08-09 由開卡動詞寫入，⛔ 至今沒有任何東西發現它。
+    """
+    broken = _conformant_body(_EARLY_OPEN).replace("\n## Log", "\\n## Log")
+    finding = probe_reachability("CARD-BROKEN-LOG", broken, "🏁完成")
+    assert finding is not None
+    assert VERB_AMEND_CORE_PAIN in finding.unreachable_for
+    assert VERB_AMEND_SPEC_BASELINE in finding.unreachable_for
+
+
+def test_reachability_zero_findings_is_reported_as_scanned_not_as_silence():
+    """⛔ 「零筆」與「沒掃」在輸出上不得長得一樣。"""
+    scanned = audit_reachability({"CARD-OK": _conformant_body(_EARLY_OPEN)})
+    assert (scanned.status, scanned.findings) == ("scanned", [])
+    text = render_reachability(scanned)
+    assert "全部動詞對全部卡皆可達" in text and "⛔ 不是沒掃" in text
+    assert "未掃描" in render_reachability(audit_reachability(None))
+
+
+def test_reachability_is_rendered_before_conformance():
+    """⭐ 先分可達性、再談合規性——打不到的卡，其他不合規項在通道修好前修不了。"""
+    report = DoctorReport(repo_root="/x", generated_at="t", registry_sources=[])
+    text = report.render_text()
+    assert text.index("寫入通道可達性") < text.index("事後符合性重驗")
