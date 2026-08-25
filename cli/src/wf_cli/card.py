@@ -22,7 +22,12 @@ from .brief import Brief
 from .brief import render_block as render_brief_block
 from .brief import try_parse_block as try_parse_brief
 from .brief import validate_shape as validate_brief_shape
-from .resources import CLAIMS_BEGIN_MARKER, ResourceDeclaration, render_block
+from .resources import (
+    CLAIMS_BEGIN_MARKER,
+    CLAIMS_END_MARKER,
+    ResourceDeclaration,
+    render_block,
+)
 
 TIERS = ("T0", "T1", "T2", "T3", "T4")
 
@@ -611,6 +616,53 @@ def amend_spec_baseline(body: str, new_value: str) -> tuple[str, str]:
         raise AmendError("spec 基線與現值相同；拒絕寫入不實的修訂留痕")
     lines[hits[0]] = f"- Initiative：{match.group('init')}　spec 基線：{new_value}"
     return _join("\n".join(lines), tail), old
+
+
+def adopt_resource_sentinels(body: str) -> tuple[str, str]:
+    """把既有的資源宣告 三重反引號 json 區塊包進哨兵（WF-RESOURCE-HEADING-SUFFIX1 第二段）。
+
+    ⭐ **不是「填空骨架」**：實測那 33 張遷移卡的區段**已經有合法的 JSON 宣告**
+    （30 張 ``resources: []``、3 張帶真實清單），⛔ 缺的只有 begin/end 哨兵。
+    ⇒ 本函式**逐字保留原 payload**，只在 fence 前後各插一行 ⇒ ⛔ 不發明、也不丟資訊。
+    （若改成寫入一份新的空宣告，就會把 3 張已有清單的卡的內容抹掉，
+    也會把「未正式宣告」偽造成「已確認無資源」——那正是 ``aiwf#31`` §3.2 禁止的轉譯。）
+
+    ⛔ 刻意做得很窄，任一不成立即拋錯不猜：
+    區段必須**恰好 1 個**、⛔ 尚未有哨兵、區段內**恰好 1 個** 三重反引號 json 圍籬。
+
+    ⚠️ 包完之後仍可能解析失敗——payload 本身若含不合 grammar 的 token
+    （實測有 1 張把卡 ID 寫進 resources），失敗會**從哨兵層位移到 grammar 層**。
+    ⇒ 那是進展也是誠實的結果，⛔ 不該由本函式代為「修正」內容。
+
+    回傳 ``(新 body, 原區段原文)``。
+    """
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+    start, end = _locate_section(lines, _RESOURCE_HEADING, allow_suffix=True)
+    seg = lines[start:end]
+    if any(CLAIMS_BEGIN_MARKER in line for line in seg):
+        raise AmendError("該區段已有 resource-claims 哨兵；本操作只處理缺哨兵的卡")
+    fences = [k for k, line in enumerate(seg) if line.strip() == "```json"]
+    if len(fences) != 1:
+        raise AmendError(
+            f"區段內有 {len(fences)} 個 ```json 圍籬，必須恰好 1 個；拒絕猜測要包哪一個"
+        )
+    open_at = fences[0]
+    close_at = next(
+        (k for k in range(open_at + 1, len(seg)) if seg[k].strip() == "```"), None
+    )
+    if close_at is None:
+        raise AmendError("區段內的 ```json 圍籬沒有對應的收尾 ```；拒絕修訂")
+    old_repr = "\n".join(seg).strip()
+    wrapped = (
+        seg[:open_at]
+        + [CLAIMS_BEGIN_MARKER]
+        + seg[open_at : close_at + 1]
+        + [CLAIMS_END_MARKER]
+        + seg[close_at + 1 :]
+    )
+    new_lines = lines[:start] + wrapped + lines[end:]
+    return _join("\n".join(new_lines), tail), " ".join(old_repr.split())
 
 
 def drop_sentinel_less_resource_section(body: str) -> tuple[str, str]:

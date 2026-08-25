@@ -55,6 +55,7 @@ _END = "<!-- resource-claims:end -->"
 #: ``BRIEF_SECTION_HEADING_ALIAS``）。⛔ 不讓 ``card`` 自己寫一份字面——
 #: 兩份字面就是兩個事實來源，而本模組是哨兵語法的持有者。
 CLAIMS_BEGIN_MARKER = _BEGIN
+CLAIMS_END_MARKER = _END
 
 _BLOCK_RE = re.compile(
     re.escape(_BEGIN) + r"\s*```json\s*(?P<json>.*?)```\s*" + re.escape(_END),
@@ -294,6 +295,7 @@ def find_conflicts(
 
 __all__ = [
     "CLAIMS_BEGIN_MARKER",
+    "CLAIMS_END_MARKER",
     "declaration_heading",
     "DB_SCOPES",
     "ResourceDeclaration",

@@ -240,6 +240,7 @@ import sys
 import uuid
 
 from ..card import (
+    adopt_resource_sentinels,
     drop_sentinel_less_resource_section,
     TIERS,
     AmendError,
@@ -395,6 +396,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="偵測到 body 排版損壞而拒絕時，在該 Issue 留言記錄求助（不碰 body、"
         "不改交付狀態），讓人或 AI 接手。stderr 是瞬時的，卡面留言才是持久紀錄",
+    )
+    p.add_argument(
+        "--adopt-resource-sentinels",
+        action="store_true",
+        help="一次性結構修復：把既有的資源宣告 JSON 區塊包進 resource-claims 哨兵。"
+        "⭐ **逐字保留原 payload**，⛔ 不發明也不清空——那 33 張遷移卡的宣告內容本來就在，缺的只有哨兵。"
+        "⚠️ 包完後仍可能因 payload 本身不合 schema（如 db_scope: null）而解析失敗，"
+        "那是失敗層級由「缺哨兵」位移到「內容」，⛔ 本旗標不代為修正內容",
     )
     p.add_argument(
         "--drop-stale-resource-section",
@@ -685,6 +694,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         any(f is not None for f in field_flags)
         or wants_resources
         or args.drop_stale_resource_section
+        or args.adopt_resource_sentinels
     )
 
     if not wants_fields:
@@ -696,7 +706,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     # 稽核者無從分辨那份 --ruling-url 授權的究竟是哪一項。
     if args.core_pain is not None:
         others = [f for f in field_flags if f is not None and f is not args.core_pain]
-        if others or wants_resources or args.drop_stale_resource_section:
+        if (
+            others
+            or wants_resources
+            or args.drop_stale_resource_section
+            or args.adopt_resource_sentinels
+        ):
             print(
                 "[amend] 拒絕：--core-pain 不得與其他欄位旗標同一次調用；"
                 "此欄餵給具否決權的 core_pain_resolved，一次調用＝一次治理裁定，"
@@ -793,6 +808,9 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 body, args.verification, preserve_checked=args.preserve_checked
             )
             changes.append(("驗證", old, "；".join(args.verification), None))
+        if args.adopt_resource_sentinels:
+            body, old_seg = adopt_resource_sentinels(body)
+            changes.append(("資源宣告（補哨兵）", old_seg, "（已包入 resource-claims 哨兵）", None))
         if args.drop_stale_resource_section:
             body, removed = drop_sentinel_less_resource_section(body)
             changes.append(("資源宣告（刪除殘留區段）", removed, "（已刪除）", None))
