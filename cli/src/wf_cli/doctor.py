@@ -2005,6 +2005,21 @@ CONFORMANCE_RULES: tuple[RuleEpoch, ...] = (
 
 RULE_EPOCH_BY_ID: dict[str, RuleEpoch] = {r.rule_id: r for r in CONFORMANCE_RULES}
 
+#: ⚠️ **已知缺口，逐字寫進輸出而不是只寫進交付報告。**
+#:
+#: canonical §5.1.1 定義了第二判準 `service_goal_still_served`（`服務的原始目標` 是否
+#: 仍被交付服務），而本節重驗的是「這一欄有沒有填」，⛔ **不是**「交付有沒有服務它」
+#: ——後者需要 review schema 的欄位，屬另一張卡（`WF-REVIEW-SERVICE-GOAL1`），其狀態
+#: 為 📥Backlog／未認領。⇒ 在它落地之前，本節對第二判準的涵蓋**只到欄位存在**。
+#:
+#: ⛔ 不把這句話放進報告，等於讓「service_goal_present 0 筆」看起來像第二判準全過。
+CONFORMANCE_KNOWN_GAP = (
+    "- ⚠️ 已知缺口：本節對「服務的原始目標」只驗**欄位有沒有填**，"
+    "⛔ 不驗 canonical §5.1.1 的第二判準（交付是否仍服務該目標）——那需要 review "
+    "結構化輸出增欄位，屬 `WF-REVIEW-SERVICE-GOAL1`（📥Backlog、未認領）。"
+    "⇒ 本節零命中⛔ 不等於第二判準全過。"
+)
+
 
 @dataclass(frozen=True)
 class ConformanceFinding:
@@ -2433,6 +2448,7 @@ def render_conformance(report: ConformanceReport) -> str:
     lines.append(
         "- ⛔ 本節不修復、不阻擋：既有卡不會因 canonical 改版而變得不能 amend 或 handoff。"
     )
+    lines.append(CONFORMANCE_KNOWN_GAP)
     return "\n".join(lines)
 
 
@@ -2900,6 +2916,7 @@ __all__ = [
     "CAUSE_WRITER_NONCONFORMANT",
     "COMMIT_TRAILER_ROOT_CAUSE_ID",
     "CONFORMANCE_CAUSES",
+    "CONFORMANCE_KNOWN_GAP",
     "CONFORMANCE_RULES",
     "CREATED_AT_TRUSTED_FROM",
     "DISPOSITION_ACCEPT_AS_LEGACY",

@@ -3016,3 +3016,24 @@ def test_a_structurally_unreachable_cause_is_declared_not_shown_as_a_clean_zero(
     with_created = audit_conformance(bodies, fields, {"CARD-A": "2026-08-01T09:00:00+08:00"})
     assert with_created.created_at_available is True
     assert "構造上不可達" not in render_conformance(with_created)
+
+
+def test_the_second_criterion_gap_is_named_in_the_output_not_only_in_the_delivery():
+    """⚠️ 「欄位有填」⛔ 不等於「交付仍服務該目標」。
+
+    canonical §5.1.1 的第二判準需要 review 結構化輸出增欄位，屬另一張卡且尚未落地
+    ⇒ 本節對它的涵蓋只到欄位存在。⛔ 不把這句話印出來，`service_goal_present 0 筆`
+    就會看起來像第二判準全過——那正是本卡在治的「宣稱超過證據」。
+
+    **突變檢驗**：把 `CONFORMANCE_KNOWN_GAP` 從 `render_conformance` 拿掉，本測試轉紅。
+    """
+    from wf_cli.doctor import CONFORMANCE_KNOWN_GAP
+
+    report = audit_conformance(
+        {"CARD-A": _conformant_body(_LATE_OPEN)}, {"CARD-A": {"服務的原始目標": "有"}}
+    )
+    assert report.findings == [], "夾具前提：這張卡的該欄有填、零命中"
+    text = render_conformance(report)
+    assert CONFORMANCE_KNOWN_GAP in text
+    assert "WF-REVIEW-SERVICE-GOAL1" in text
+    assert "⛔ 不等於第二判準全過" in text
