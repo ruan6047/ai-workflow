@@ -241,6 +241,7 @@ import uuid
 
 from ..card import (
     adopt_resource_sentinels,
+    restore_migration_header,
     drop_sentinel_less_resource_section,
     TIERS,
     AmendError,
@@ -404,6 +405,36 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "⭐ **逐字保留原 payload**，⛔ 不發明也不清空——那 33 張遷移卡的宣告內容本來就在，缺的只有哨兵。"
         "⚠️ 包完後仍可能因 payload 本身不合 schema（如 db_scope: null）而解析失敗，"
         "那是失敗層級由「缺哨兵」位移到「內容」，⛔ 本旗標不代為修正內容",
+    )
+    p.add_argument(
+        "--restore-migration-header",
+        action="store_true",
+        help="一次性結構修復：為 2026-08-04 遷移卡補回 `- 需求：…　規劃：…` 與 "
+        "`- Initiative：…　spec 基線：…` 兩行標頭，以及 `## 核心痛點`／`## 驗收條件`／`## 驗證` "
+        "三個**空**章節。理由是 canonical §6.4.1（無驗收／驗證章節 ⇒ 構造上離不開規劃），"
+        "⛔ 不是「讓卡變成 wfcli 可達」（實測那批卡對 amend --brief／handoff／review 本來就打得到）。"
+        "⛔ 只補結構不產生內容 ⇒ 補完後事後掃描仍報缺核心痛點／缺驗收，那是對的。"
+        "⚠️ 須搭配 --header-requested-by／--header-planned-by",
+    )
+    p.add_argument(
+        "--header-requested-by",
+        help="--restore-migration-header 用：`需求` 欄的值。⚠️ 這是**一句斷言**⛔ 不是排版——"
+        "它日後是 --ruling-url 精確比對的授權基準。⇒ 須自 cutover 前一版的原始卡面取值，"
+        "並把舊值原文／來源 commit 與 path／正規化規則逐字寫進 --reason。⛔ CLI 不做正規化、不猜身分",
+    )
+    p.add_argument(
+        "--header-planned-by",
+        help="--restore-migration-header 用：`規劃` 欄的值（逐卡不同，須自來源取）",
+    )
+    p.add_argument(
+        "--header-initiative",
+        default="—",
+        help="--restore-migration-header 用：`Initiative` 欄的值（預設 —）",
+    )
+    p.add_argument(
+        "--header-spec-baseline",
+        default="—",
+        help="--restore-migration-header 用：`spec 基線` 欄的值（預設 —）",
     )
     p.add_argument(
         "--drop-stale-resource-section",
@@ -695,6 +726,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         or wants_resources
         or args.drop_stale_resource_section
         or args.adopt_resource_sentinels
+        or args.restore_migration_header
     )
 
     if not wants_fields:
@@ -711,6 +743,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             or wants_resources
             or args.drop_stale_resource_section
             or args.adopt_resource_sentinels
+            or args.restore_migration_header
         ):
             print(
                 "[amend] 拒絕：--core-pain 不得與其他欄位旗標同一次調用；"
@@ -808,6 +841,15 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 body, args.verification, preserve_checked=args.preserve_checked
             )
             changes.append(("驗證", old, "；".join(args.verification), None))
+        if args.restore_migration_header:
+            body, inserted = restore_migration_header(
+                body,
+                requested_by=args.header_requested_by or "",
+                planned_by=args.header_planned_by or "",
+                initiative=args.header_initiative,
+                spec_baseline=args.header_spec_baseline,
+            )
+            changes.append(("卡面標頭（補回遷移缺行）", "（原卡面無標頭行與三章節）", inserted, None))
         if args.adopt_resource_sentinels:
             body, old_seg = adopt_resource_sentinels(body)
             changes.append(("資源宣告（補哨兵）", old_seg, "（已包入 resource-claims 哨兵）", None))

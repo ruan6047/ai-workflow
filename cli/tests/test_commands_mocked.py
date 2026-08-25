@@ -1618,3 +1618,61 @@ def test_amend_resources_preserves_the_migration_heading_suffix_end_to_end(fake_
     # ⭐ 這一條是**守衛自己的負控**：若寫入根本沒發生，「標題保留」是零資訊。
     assert "file:b.py" in after
     assert "file:a.py" not in head
+
+
+def test_amend_restores_the_migration_header_end_to_end(fake_runner):
+    """⭐ 端到端，⛔ 非單元：單元測不到「旗標沒接上 dispatch」這個形態。
+
+    ⚠️ 卡面用的是**真實遷移卡** body（`cpbl#57`，見 tests/test_card.py 的
+    `_REAL_MIGRATION_HEAD`），⛔ 不是 `render_issue_body` 造的——自造樣本必然帶
+    完整章節，測不出這條路徑要處理的形狀。
+    """
+    from tests.test_card import _REAL_MIGRATION_HEAD
+
+    run_cli(_open_argv("MIG-HEADER-CARD", **{"--repo": ASSIGN_REPO}))
+    project = resolve_project(fake_runner, "acme", 1)
+    item = find_item_by_card_id(list_items(fake_runner, project), "MIG-HEADER-CARD")
+    log = item.body.split("\n## Log", 1)[1]
+    migrated = _REAL_MIGRATION_HEAD + "\n\n## Log" + log
+    set_item_body(
+        fake_runner, item.content_type, item.content_id, project,
+        ASSIGN_REPO, item.issue_number, migrated,
+    )
+
+    rc = run_cli([
+        "amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "MIG-HEADER-CARD",
+        "--reason", "第四段：補回標頭；來源 18b71cc5:docs/tasks/X.md，舊值原文 `ruan6047（…）`，"
+                    "正規化規則＝去尾端括號補述、括號原文留在本行",
+        "--restore-migration-header",
+        "--header-requested-by", "ruan6047",
+        "--header-planned-by", "本卡 spec",
+        "--header-spec-baseline", "`2f52562f`",
+    ])
+    assert rc == 0
+
+    after = find_item_by_card_id(list_items(fake_runner, project), "MIG-HEADER-CARD").body
+    head = after.split("\n## Log", 1)[0]
+    assert head.splitlines()[0] == "- 需求：ruan6047\u3000規劃：本卡 spec"
+    for heading in ("## 核心痛點", "## 驗收條件", "## 驗證"):
+        assert [l.strip() for l in head.splitlines()].count(heading) == 1
+    # ⭐ 負控：證明寫入真的發生過，⛔ 否則上面的斷言在「什麼都沒做」時也可能成立。
+    assert "遷移自" in head and "第四段：補回標頭" in after
+    # ⛔ 不得產生內容。
+    assert "- **痛點**：" not in head
+
+
+def test_amend_restore_header_refuses_a_card_that_already_has_it(fake_runner):
+    """⛔ 負控：對正規卡面（open 產生的）必須拒絕，rc != 0 且 body 逐位元不變。"""
+    run_cli(_open_argv("MIG-HEADER-OK", **{"--repo": ASSIGN_REPO}))
+    project = resolve_project(fake_runner, "acme", 1)
+    before = find_item_by_card_id(list_items(fake_runner, project), "MIG-HEADER-OK").body
+
+    rc = run_cli([
+        "amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "MIG-HEADER-OK",
+        "--reason", "應被拒",
+        "--restore-migration-header",
+        "--header-requested-by", "ruan6047", "--header-planned-by", "x",
+    ])
+    assert rc != 0
+    after = find_item_by_card_id(list_items(fake_runner, project), "MIG-HEADER-OK").body
+    assert after == before

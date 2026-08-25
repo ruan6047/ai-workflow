@@ -713,6 +713,79 @@ def drop_sentinel_less_resource_section(body: str) -> tuple[str, str]:
     return _join("\n".join(kept), tail), " ".join(removed.split())
 
 
+_MIGRATION_HEADER_SECTIONS = (_CORE_PAIN_HEADING, _ACCEPTANCE_HEADING, _VERIFICATION_HEADING)
+
+
+def restore_migration_header(
+    body: str,
+    *,
+    requested_by: str,
+    planned_by: str,
+    initiative: str,
+    spec_baseline: str,
+) -> tuple[str, str]:
+    """補回 2026-08-04 遷移卡缺少的 canonical 標頭行與必要空章節（WF-RESOURCE-HEADING-SUFFIX1 第四段）。
+
+    ⭐ **為什麼需要它，⛔ 以及理由不是「讓這些卡變成 wfcli 可達」**：實測那批卡對
+    ``amend --brief``／``handoff``／``review``／``checkpoint``／``deploy-*`` 都打得到。
+    真正的理由是 canonical §6.4.1——它們**沒有** ``## 驗收條件`` 也沒有 ``## 驗證``
+    （``amend --acceptance`` 拒收原文：「章節 ``## 驗收條件`` 在 Log 之前出現 0 次」）
+    ⇒ 「兩欄須於離開規劃前填實」對它們**構造上不可滿足** ⇒ 活卡即使被認領也永遠過不了規劃閘門。
+
+    ⛔ **只補結構與可溯的值，不產生內容。** 章節一律留空 ⇒ 補完之後事後掃描仍會把
+    它們報成「缺核心痛點／缺驗收」，**那是對的**，⛔ 不得視為本操作沒做完。
+
+    ⚠️ ``requested_by`` 是**一句斷言**⛔ 不是排版修復：它日後會成為 ``--ruling-url``
+    精確比對的授權基準。⇒ 呼叫端須自 cutover 前一版的原始卡面取值，並把**舊值原文、
+    來源 commit/path、正規化規則**逐字寫進 Log。本函式**不做正規化**（⛔ 不剝括號、
+    不猜身分）——傳進來什麼就寫什麼，轉換責任留在看得見來源的那一層。
+
+    ⛔ 刻意做得很窄，任一不成立即拋錯不猜：標頭行**必須尚未存在**、三個目標章節
+    **必須都不存在**、``requested_by``／``planned_by`` 不得為空或含分隔用全形空格。
+
+    回傳 ``(新 body, 插入內容原文)``。
+    """
+    for label, value in (("需求", requested_by), ("規劃", planned_by)):
+        if not (value or "").strip():
+            raise AmendError(f"`{label}` 值為空；⛔ 拒絕寫入佔位身分（它會成為授權基準）")
+        if "\u3000" in value or "\n" in value or "\r" in value:
+            raise AmendError(f"`{label}` 值含分隔用全形空格或換行：{value!r}；⛔ 會破壞標頭行解析")
+
+    head, tail = split_at_log(body)
+    lines = head.splitlines()
+
+    existing = [i for i, line in enumerate(lines) if _REQUESTED_BY_RE.match(line.strip())]
+    if existing:
+        raise AmendError(
+            f"卡面已有 `- 需求：…　規劃：…` 標頭行（{len(existing)} 行）；本操作只處理缺行的遷移卡"
+        )
+    if any(_SPEC_BASELINE_RE.match(line.strip()) for line in lines):
+        raise AmendError("卡面已有 `- Initiative：…　spec 基線：…` 標頭行；拒絕重複插入")
+
+    present = [h for h in _MIGRATION_HEADER_SECTIONS
+               if any(line.strip() == h for line in lines)]
+    if present:
+        raise AmendError(
+            f"卡面已有章節 {present}；本操作只補**全缺**的骨架，⛔ 不與既有章節合併"
+        )
+
+    header = [
+        f"- 需求：{requested_by}　規劃：{planned_by}",
+        f"- Initiative：{initiative or '—'}　spec 基線：{spec_baseline or '—'}",
+        "",
+    ]
+    sections: list[str] = []
+    for h in _MIGRATION_HEADER_SECTIONS:
+        sections += ["", h, ""]
+
+    new_lines = header + lines
+    while new_lines and not new_lines[-1].strip():
+        new_lines.pop()
+    new_lines += sections
+    inserted = "\n".join(header[:2] + [h for h in _MIGRATION_HEADER_SECTIONS])
+    return _join("\n".join(new_lines), tail), " ".join(inserted.split())
+
+
 def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     """整份替換「資源宣告」章節；``rendered_block`` 須含標題（``resources.render_block``
     的輸出即是）。回傳 (新 body, 原章節原文)。

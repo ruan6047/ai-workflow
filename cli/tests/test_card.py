@@ -1203,3 +1203,138 @@ def test_drop_stale_section_refuses_when_both_or_neither_has_sentinels():
         drop_sentinel_less_resource_section(
             _card(_SUFFIXED + "\n" + _RAW_JSON, "## 資源宣告\n" + _RAW_JSON)
         )
+
+
+# ---------------------------------------------------------------------------
+# WF-RESOURCE-HEADING-SUFFIX1 第四段：遷移卡標頭復原
+#
+# ⚠️ 樣本一律取**真實既有卡面**（`cpbl#57` 於 2026-08-25 的 body，逐字），
+# ⛔ 不用 `render_issue_body` 造樣本——自造樣本必然帶著範本該有的每個章節，
+# ⇒ 拿它測「處理既有資料的路徑」是零資訊。這是同族第四次（`aiwf#31`／`#105`／`#134`）。
+# ---------------------------------------------------------------------------
+
+_REAL_MIGRATION_HEAD = '> 遷移自 `docs/tasks/INGEST-POSTGAME-FINALIZE1.md`（baseline `2f52562f575412a0a39b515a4436edd2831b2f65`，OPS-STATE-PLANE-MIG1 Task 2 一次性遷移；結構凍結 `a04a862`）。\n>\n> **cutover 已完成（2026-08-04，終筆 `8271d7c`）：本 Issue＋Project #4 即作業狀態唯一事實來源**；\n> events.jsonl 已封存唯讀。下方「現況摘要」為遷移當下快照，現行狀態以 Project 欄位與本 Issue 留言為準。\n> 派工時由 PM 補資源宣告區塊（canonical v2 §4.4）。\n\n## Spec\n- [`docs/tasks/INGEST-POSTGAME-FINALIZE1.md`](https://github.com/ruan6047/cpbl-analytics/blob/2f52562f575412a0a39b515a4436edd2831b2f65/docs/tasks/INGEST-POSTGAME-FINALIZE1.md)（baseline SHA `2f52562f575412a0a39b515a4436edd2831b2f65`）\n\n## 現況摘要（遷移當下，來自 Ledger @ `2f52562f575412a0a39b515a4436edd2831b2f65`）\n- Initiative：—\n- 級別：T3\n- 功能：依官方可用性補齊完賽資料\n- owner：待指派\n- 分支／worktree：—\n- iteration：0\n- 交付狀態：📥Backlog\n- 部署狀態：⏸未部署\n- 最後交接：2026-08-03T01:04:14+08:00\n\n## 新制欄位\n- 服務的原始目標：未填寫（本卡於新制欄位定案前建立，2026-08-04）\n- 鏈深：未分類（決議 5 剛定案，尚未逐卡分類；非 0）\n\n## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）\n```json\n{\n  "db_scope": "write",\n  "resources": []\n}\n```\n\n<!-- state-plane-mig1:card_id=INGEST-POSTGAME-FINALIZE1 -->\n'
+
+
+def _real_migration_card(log: str = "\n\n## Log\n\n- 2026-08-04T00:00:00+08:00 open by wf-cli。") -> str:
+    return _REAL_MIGRATION_HEAD + log
+
+
+def test_restore_header_on_a_real_migration_card_makes_the_two_lines_parse():
+    """⭐ 真正的判準不是「有插入文字」，是**既有 parser 讀得到**。"""
+    from wf_cli.card import _SPEC_BASELINE_RE, parse_requested_by, restore_migration_header
+
+    new_body, inserted = restore_migration_header(
+        _real_migration_card(),
+        requested_by="ruan6047",
+        planned_by="本卡 spec",
+        initiative="—",
+        spec_baseline="`2f52562f575412a0a39b515a4436edd2831b2f65`",
+    )
+    assert parse_requested_by(new_body) == "ruan6047"
+    # `規劃` 沒有專屬 parser，⇒ 直接驗標頭行逐字（分隔字元是全形空格 U+3000）。
+    assert "- 需求：ruan6047\u3000規劃：本卡 spec" in new_body
+    hits = [l for l in new_body.splitlines() if _SPEC_BASELINE_RE.match(l.strip())]
+    assert len(hits) == 1
+    assert "ruan6047" in inserted
+
+
+def test_restore_header_adds_the_three_sections_exactly_once_each():
+    from wf_cli.card import restore_migration_header
+
+    new_body, _ = restore_migration_header(
+        _real_migration_card(), requested_by="ruan6047", planned_by="x",
+        initiative="—", spec_baseline="—",
+    )
+    lines = [l.strip() for l in new_body.split("\n## Log")[0].splitlines()]
+    for heading in ("## 核心痛點", "## 驗收條件", "## 驗證"):
+        assert lines.count(heading) == 1, heading
+
+
+def test_restore_header_does_not_invent_content():
+    """⛔ 補結構**不得產生內容**——補完後三個章節必須是空的。
+
+    ⇒ 事後掃描仍會把這些卡報成「缺核心痛點／缺驗收」，那是**對的**結果。
+    若這條斷言鬆掉，代表本函式偷偷替需求方寫了痛點。
+    """
+    import re
+
+    from wf_cli.card import restore_migration_header
+
+    new_body, _ = restore_migration_header(
+        _real_migration_card(), requested_by="ruan6047", planned_by="x",
+        initiative="—", spec_baseline="—",
+    )
+    head = new_body.split("\n## Log")[0]
+    for heading in ("## 核心痛點", "## 驗收條件", "## 驗證"):
+        after = head.split(heading, 1)[1]
+        body_of_section = after.split("## ", 1)[0]
+        assert body_of_section.strip() == "", f"{heading} 不是空的：{body_of_section!r}"
+    assert not re.search(r"- \*\*痛點\*\*：", head)
+    assert not re.search(r"^- \[[ xX]\] ", head, re.M)
+
+
+def test_restore_header_preserves_the_original_body_verbatim():
+    """⭐ 除了插入的行以外，原卡面必須**逐行**不變（含遷移 blockquote 與既有章節）。"""
+    from wf_cli.card import restore_migration_header
+
+    original = _real_migration_card()
+    new_body, _ = restore_migration_header(
+        original, requested_by="ruan6047", planned_by="x",
+        initiative="—", spec_baseline="—",
+    )
+    inserted = {
+        "- 需求：ruan6047　規劃：x",
+        "- Initiative：—　spec 基線：—",
+        "## 核心痛點",
+        "## 驗收條件",
+        "## 驗證",
+    }
+    kept = [l for l in new_body.splitlines() if l.strip() and l not in inserted]
+    orig = [l for l in original.splitlines() if l.strip()]
+    assert kept == orig
+
+
+def test_restore_header_refuses_when_only_the_requester_line_exists():
+    """⛔ 負控，且**逐道守衛隔離**。
+
+    ⚠️ 這支測試原本兩行都放，⇒ 關掉「已有需求行」守衛後第二道照樣攔下、測試仍綠
+    ——變異檢驗當場抓到它是零資訊。現在每支只放**一行**，各自釘住一道守衛。
+    """
+    from wf_cli.card import AmendError, restore_migration_header
+
+    only_requester = "- 需求：ruan6047　規劃：—\n\n## Log\n\n- x"
+    with pytest.raises(AmendError) as e:
+        restore_migration_header(only_requester, requested_by="a", planned_by="b",
+                                 initiative="—", spec_baseline="—")
+    assert "需求" in str(e.value)
+
+
+def test_restore_header_refuses_when_only_the_baseline_line_exists():
+    from wf_cli.card import AmendError, restore_migration_header
+
+    only_baseline = "- Initiative：—　spec 基線：—\n\n## Log\n\n- x"
+    with pytest.raises(AmendError) as e:
+        restore_migration_header(only_baseline, requested_by="a", planned_by="b",
+                                 initiative="—", spec_baseline="—")
+    assert "spec 基線" in str(e.value)
+
+
+def test_restore_header_refuses_when_a_target_section_already_exists():
+    from wf_cli.card import AmendError, restore_migration_header
+
+    partial = _REAL_MIGRATION_HEAD + "\n\n## 驗收條件\n\n- [ ] x\n\n## Log\n\n- y"
+    with pytest.raises(AmendError) as e:
+        restore_migration_header(partial, requested_by="a", planned_by="b",
+                                 initiative="—", spec_baseline="—")
+    assert "驗收條件" in str(e.value)
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "ruan6047\u3000後綴", "ruan\n6047"])
+def test_restore_header_refuses_unusable_requester_values(bad):
+    """⚠️ `需求` 會成為 --ruling-url 的授權基準 ⇒ 空值或含分隔字元一律硬拒。"""
+    from wf_cli.card import AmendError, restore_migration_header
+
+    with pytest.raises(AmendError):
+        restore_migration_header(_real_migration_card(), requested_by=bad,
+                                 planned_by="x", initiative="—", spec_baseline="—")
