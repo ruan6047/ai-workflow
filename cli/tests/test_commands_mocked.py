@@ -1819,10 +1819,10 @@ def test_soft_threshold_warns_but_passes(fake_runner, capsys):
     run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SOFT",
              "--reason", "建立一版", "--acceptance", "短"])
     item = find_item_by_card_id(list_items(fake_runner, project), "BUDGET-SOFT")
-    base = len(item.body.encode("utf-8"))
+    base = len(item.body)  # ⚠️ 字元，⛔ 不是位元組
     # 目標：寫入後落在 (BODY_LIMIT - BODY_SOFT_MARGIN, BODY_LIMIT) 之間。
     target = BODY_LIMIT - BODY_SOFT_MARGIN // 2
-    padding = "撐" * max(1, (target - base - 600) // 3)
+    padding = "撐" * max(1, target - base - 600)
     capsys.readouterr()
     rc = run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "BUDGET-SOFT",
                   "--reason", "逼近但不超過", "--acceptance", padding])
@@ -1876,9 +1876,9 @@ def test_hard_line_tells_a_shrinking_repair_that_the_direction_is_right(fake_run
     # 直接把 body 灌成「已超限」的事故狀態：驗證 > 上限、驗收條件另有 30,000 位元組。
     head, _, log = item.body.partition("\n## Log")
     head = re.sub(r"## 驗收條件\n.*?(?=\n## )", "## 驗收條件\n\n- [ ] " + "甲" * 10_000, head, flags=re.DOTALL)
-    head = re.sub(r"## 驗證\n.*$", "## 驗證\n\n- [ ] " + "乙" * (BODY_LIMIT // 3 + 500), head, flags=re.DOTALL)
+    head = re.sub(r"## 驗證\n.*$", "## 驗證\n\n- [ ] " + "乙" * (BODY_LIMIT + 500), head, flags=re.DOTALL)
     over = head + "\n## Log" + log
-    assert len(over.encode("utf-8")) > BODY_LIMIT, "構造失敗：卡沒有超過上限"
+    assert len(over) > BODY_LIMIT, "構造失敗：卡沒有超過上限"
     fake_runner.issues[item.issue_url]["body"] = over
     for it in fake_runner.items.values():
         if it.get("issue_url") == item.issue_url:
@@ -1893,3 +1893,24 @@ def test_hard_line_tells_a_shrinking_repair_that_the_direction_is_right(fake_run
     assert rc != 0, "驗證欄單獨就超限，⇒ 這次不可能回到線下"
     assert "方向對了、幅度不夠" in err, f"縮小中的修復收到錯誤指引：{err[:400]}"
     assert "請先把該章節的原文封存成留言" not in err
+
+
+def test_draft_issue_card_always_falls_back_to_full_text(fake_runner):
+    """A2(a)：`DraftIssue` 型別上**沒有** `userContentEdits` ⇒ 平台零保存 ⇒ 必須寫全文。
+
+    ⚠️ 2026-08-25 對真實 GraphQL schema 實測：
+    `{ __type(name:"DraftIssue"){ fields{name} } }` 回
+    `assignees body bodyHTML bodyText createdAt creator id projectV2Items projectsV2 title updatedAt`
+    ——⛔ 無 `userContentEdits`。⇒ 對 draft 卡記指紋是**不可逆損失**。
+
+    ⭐ A2 逐字要求「兩條各須有獨立測試」。自審發現 (b) 有、(a) 沒有——本檔原有的
+    四處 `DraftIssue` 全屬 `assign` 的 repo 判定，⛔ 與本卡無關。
+    """
+    run_cli(_open_argv("DRAFT-BUDGET"))  # 沒有 --repo ＝ DraftIssue
+    project = resolve_project(fake_runner, "acme", 1)
+    run_cli(["amend", *BASE_TARGET, "DRAFT-BUDGET",
+             "--reason", "draft 卡必須寫全文", "--acceptance", "可辨識的驗收原文"])
+    body = find_item_by_card_id(list_items(fake_runner, project), "DRAFT-BUDGET").body
+    last = body.split("\n## Log", 1)[1].strip().splitlines()[-1]
+    assert "sha256:" not in last, f"draft 卡竟走了指紋路徑：{last[:200]}"
+    assert "content_type=DraftIssue" in last, f"未載明退回全文的理由：{last[:200]}"

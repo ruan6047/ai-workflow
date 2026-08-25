@@ -457,10 +457,19 @@ def _fold(text: str) -> str:
     return " ".join(str(text).split())
 
 
-#: GitHub issue body 的硬上限。**實測值**，⛔ 不是文件所載的 65,536。
+#: GitHub issue body 的硬上限，單位是**字元**（Unicode code point），⛔ **不是位元組**。
 #:
-#: 2026-08-25 於 `ruan6047/ai-workflow#105` 實測：body 129,651 位元組時**讀得到但寫不進去**，
-#: 截斷後 22,368 恢復可寫 ⇒ 上限落在 (129,486, ~130,018) 之間。本常數取**下界**。
+#: 2026-08-25 於 `ruan6047/ai-workflow#105` 實測：body **129,651 字元**時讀得到但寫不進去，
+#: 截斷後恢復可寫 ⇒ 上限落在 (129,486, ~130,018) 字元之間。本常數取**下界**。
+#: ⛔ 不是文件常引的 65,536。
+#:
+#: ⚠️ **單位是字元這件事是 V8 用真實卡抓到的，⛔ 不是推導出來的。**
+#: 第一版把量到的 129,651 當成位元組，而碼裡用 `len(body.encode())` ⇒ 對中文卡面
+#: （1 字 ≈ 3 位元組）守衛會**提早約 3 倍觸發**。反例是 `aiwf#130`：
+#: 字元 74,894／位元組 156,942，🏁完成且真實存在於 GitHub 上——⇒ 上限若真是
+#: 129,486 **位元組**，那張卡不可能存在。而截斷前的 `#105` 是字元 129,651／位元組 262,130。
+#: ⛔ 所有 mock 測試都用 ASCII，構造上碰不到這個差異。
+#:
 #: ⚠️ 這是黑箱量測、⛔ 沒有官方文件保證；GitHub 若調整上限，此處要重新量。
 BODY_LIMIT = 129_486
 
@@ -523,18 +532,20 @@ def _prior_revision_recoverable(runner, item) -> tuple[bool, str]:
 
 def _render_budget(body: str, before_len: int) -> tuple[str, int, int]:
     """回傳 (預算行, 本次成本, 餘裕)。⭐ 零額外 API——完整新 body 此刻已在手上。"""
-    after = len(body.encode("utf-8"))
+    after = len(body)  # ⚠️ 字元，⛔ 不是位元組——見 BODY_LIMIT 的註解
     cost = after - before_len
     margin = BODY_LIMIT - after
-    if margin < 0:
-        remaining = "0 次（已超過上限）"
+    if margin <= 0:
+        # A4 逐字「⛔ 無資料時印「—」不印 0」。超過上限時「還能改幾次」沒有意義，
+        # ⇒ 同樣印「—」，⛔ 不印 0——0 會被讀成「剛好用完」而不是「不適用」。
+        remaining = f"—（已超過上限 {-margin:,}）"
     elif cost > 0:
         remaining = f"{margin // cost} 次"
     else:
         remaining = "—"
     delta = f"+{cost:,}" if cost >= 0 else f"{cost:,}"
     line = (
-        f"[amend] 卡面預算：本次 {delta} 位元組／寫入後 {after:,}／"
+        f"[amend] 卡面預算：本次 {delta} 字元／寫入後 {after:,}／"
         f"上限 {BODY_LIMIT:,}／餘裕 {margin:,}／以本次成本估還能改 {remaining}"
     )
     return line, cost, margin
@@ -543,13 +554,13 @@ def _render_budget(body: str, before_len: int) -> tuple[str, int, int]:
 def _largest_field_hint(body: str) -> str:
     """硬線拒絕時指出**最大的可壓縮章節**，⛔ 不只說「太長了」。"""
     head, _, log = body.partition("\n## Log")
-    parts: list[tuple[int, str]] = [(len(log.encode("utf-8")), "## Log")]
+    parts: list[tuple[int, str]] = [(len(log), "## Log")]
     for name in ("## 驗收條件", "## 驗證", "## 核心痛點", "## 簡介"):
         if name in head:
             seg = head.split(name, 1)[1].split("\n## ", 1)[0]
-            parts.append((len(seg.encode("utf-8")), name))
+            parts.append((len(seg), name))
     parts.sort(reverse=True)
-    top = "、".join(f"{n}（{sz:,} 位元組）" for sz, n in parts[:3])
+    top = "、".join(f"{n}（{sz:,} 字元）" for sz, n in parts[:3])
     return top
 
 
@@ -1087,9 +1098,9 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         )
 
     # ---- 卡面容量預算（A4–A6）。⭐ 零額外 API：完整新 body 此刻已在手上 ----
-    budget_line, _cost, margin = _render_budget(body, len(item.body.encode("utf-8")))
+    budget_line, _cost, margin = _render_budget(body, len(item.body))
     print(budget_line)
-    if margin < 0:
+    if margin <= 0:
         # ⭐ **縮小中的救援與撐大要分流。** 自審抓到：一張**已經**超過上限的卡
         # （`aiwf#105` 曾是 129,651）做壓縮修復時，若一次沒縮到上限以下，
         # 原本的訊息會叫它「請先封存再壓縮」——⛔ 而它正在做那件事。
@@ -1099,24 +1110,28 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         # 放行只會換成一個更難懂的遠端錯誤。⛔ 這裡擋的是「白跑一趟」，不是修復本身。
         if _cost < 0:
             print(
-                f"[amend] 拒絕：本次已縮小 {-_cost:,} 位元組，但寫入後仍有 {-margin:,} "
+                f"[amend] 拒絕：本次已縮小 {-_cost:,} 字元，但寫入後仍有 {-margin:,} "
                 f"超過上限 {BODY_LIMIT:,}。⇒ **方向對了、幅度不夠**，請在同一次修訂裡再縮 "
-                f"{-margin:,} 位元組以上。目前最大的章節：{_largest_field_hint(body)}。"
+                f"{-margin:,} 字元以上。目前最大的章節：{_largest_field_hint(body)}。"
                 "⚠️ 若一次縮不到位，唯一的出路是走 `gh issue edit --body-file` 手動截斷"
                 "（該路徑會抹掉 append-only 的 Log，須先把 Log 全文封存成留言）。",
                 file=sys.stderr,
             )
         else:
             print(
-                f"[amend] 拒絕：寫入後 body 會超過上限 {BODY_LIMIT:,} 位元組（超出 {-margin:,}）。"
+                f"[amend] 拒絕：寫入後 body 會超過上限 {BODY_LIMIT:,} 字元（超出 {-margin:,}）。"
                 f"最大的可壓縮章節：{_largest_field_hint(body)}。"
-                "⇒ 請先把該章節的原文封存成留言、再以逐條壓縮改寫（⛔ 合併與丟棄不是壓縮）。",
+                "⇒ 請先把該章節的原文封存成留言、再以逐條壓縮改寫（⛔ 合併與丟棄不是壓縮）。"
+                "⚠️ 若卡面**已經**在上限之上、壓縮改寫本身也寫不進去，唯一的出路是走 "
+                "`gh issue edit --body-file` 手動截斷——該路徑會抹掉 append-only 的 Log，"
+                "須先把 Log 全文封存成留言。（`aiwf#105` 2026-08-25 即循此救回："
+                "三則留言封存 33 事件 Log，截斷後平台 userContentEdits 仍留有逐位元相同的截斷前 body。）",
                 file=sys.stderr,
             )
         return 2
     if margin < BODY_SOFT_MARGIN:
         print(
-            f"[amend] ⚠️ 警告：餘裕僅 {margin:,} 位元組（軟門檻 {BODY_SOFT_MARGIN:,}）。"
+            f"[amend] ⚠️ 警告：餘裕僅 {margin:,} 字元（軟門檻 {BODY_SOFT_MARGIN:,}）。"
             f"最大的可壓縮章節：{_largest_field_hint(body)}。**本次仍放行**。",
             file=sys.stderr,
         )
