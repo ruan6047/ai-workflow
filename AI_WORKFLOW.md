@@ -159,7 +159,7 @@ awk 段是排除本節自身，否則本表的說明文字會被自己算進去�
 | 4 | §0.1 結案不可由角色直接設定 | ⚠️ 僅事後偵測：`cleanup.py:1600`。逃生門 `handoff_cmd.py:511` 敞開 | 見該節逐字說明 |
 | 5 | §6.3 parser 須沿用 `resources.py` 哨兵、不得自寫 markdown 解析 | ✅ **有**：`brief.py:70` `_reuse_probe()` 於模組載入時檢查（`WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1`） | 自寫解析會與資源宣告的哨兵漂移，兩居所偵測失效 |
 | 5b | §6.4 不得據 5 族樣本宣稱「其餘各屬一階段」 | ⛔ 無。承接者＝查核者人工審 | 6 個零命中族被硬派階段，該印時不印 |
-| 5c | §6.3 每張卡必有簡介 | ⚠️ **通道有、守衛無**：`open --brief`／`amend --brief` 已落地（`WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1`），但 `--brief` 可選且 `validation.py` 不驗。承接者＝`WF-CARD-BRIEF-BACKFILL1`（回填） | 條文寫了而多數卡沒照——**11/201**（2026-08-26 以 `brief.parse_block` 逐張量），⛔ 含本卡自己 |
+| 5c | §6.3 每張卡必有簡介 | ⚠️ **通道有、守衛無**：`open --brief`／`amend --brief` 已落地（`WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1`），但 `--brief` 可選且 `validation.py` 不驗。承接者＝`WF-CARD-BRIEF-BACKFILL1`（回填） | 條文寫了而多數卡沒照，⛔ 含本卡自己。⚠️ **本格刻意不記數字**——它每天在變（`bc5bcbb` 寫下的 198/8 在兩小時內即成 201/11），改記量法：以 `wf_cli.brief.parse_block` 對 `list_items` 逐張試解析 |
 | 5d | §6.4.1 驗收條件須於離開規劃前填實 | ⛔ 無。承接者＝查核者人工審 | 重演 aiwf#129 R1-002：帶佔位符送審 |
 | 6 | §6.4.2 未驗清單每項須標明驗不了的原因 | ⛔ 無。承接者＝查核者人工審 | 重演 `aiwf#129` R2：寫下「未驗」而其實兩分鐘可驗 |
 | 7 | §6.4.2 標不出原因者不得列入 | ⛔ 無，同上 | 同上 |
@@ -381,7 +381,7 @@ flowchart LR
 `core_pain_resolved` 並列。值域語意與填答者比照第一判準；填 `no` 或 `unsure` 時須說明
 交付與原始目標的落差。⚠️ ⛔ **本節只定義，實作屬子卡。**
 
-⚠️ 未驗：`服務的原始目標` 亦可被 `amend` 修改（`amend_cmd.py` 有一處）。若它同樣漂移，
+⛔ **已驗為假**（2026-08-26，`WF-MARKER-WRITE-BOUNDARY1` 第三輪）：`amend` **改不了**這一欄——`amend_cmd.py` 的 22 個旗標中沒有一個對應這一欄，全檔對 `service_goal`（含連字號變體）零命中。⇒ 該欄只在 `open` 寫得進去，**寫入後即不可改**。若它同樣漂移，
 檢查它一樣擋不住——**本卡未查該欄的歷史 amend 次數**，⇒ 該檢查的有效性未經證實。
 
 #### 5.1.2 卡是否仍合乎現行規範（WF-STAGE-STATE-TWO-AXIS1）
