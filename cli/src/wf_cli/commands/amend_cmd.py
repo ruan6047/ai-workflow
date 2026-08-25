@@ -236,6 +236,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import hashlib
 import sys
 import uuid
 
@@ -454,6 +455,101 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 def _fold(text: str) -> str:
     """Log 是單行條目，原值摺成一行——但**不截斷**：Log 是唯一還原點。"""
     return " ".join(str(text).split())
+
+
+#: GitHub issue body 的硬上限。**實測值**，⛔ 不是文件所載的 65,536。
+#:
+#: 2026-08-25 於 `ruan6047/ai-workflow#105` 實測：body 129,651 位元組時**讀得到但寫不進去**，
+#: 截斷後 22,368 恢復可寫 ⇒ 上限落在 (129,486, ~130,018) 之間。本常數取**下界**。
+#: ⚠️ 這是黑箱量測、⛔ 沒有官方文件保證；GitHub 若調整上限，此處要重新量。
+BODY_LIMIT = 129_486
+
+#: 軟門檻：餘裕低於此值時警告但**放行**。⛔ 不擋，因為擋了會讓人學會繞過。
+BODY_SOFT_MARGIN = 20_000
+
+
+def _fingerprint(text: str) -> str:
+    """欄位值的指紋：sha256 全長 ＋ 位元組數。
+
+    ⭐ 比存全文**更強**：全文自己不能證明自己沒被改，指紋可以。
+    ⛔ 不截斷成短 hash——碰撞成本必須留在密碼學等級。
+    """
+    raw = (text or "").encode("utf-8")
+    return f"sha256:{hashlib.sha256(raw).hexdigest()} ({len(raw)} bytes)"
+
+
+def _prior_revision_recoverable(runner, item) -> tuple[bool, str]:
+    """**實查**該卡的前一版是否真的取得回。回傳 (可取得, 理由)。
+
+    ⛔ **必須實查，不得由 ``--repo`` 是否給定或卡片來源推定**（A3）。三條退路：
+
+    1. ``content_type != "Issue"`` —— GraphQL schema 上 ``DraftIssue`` **沒有**
+       ``userContentEdits`` 欄位（2026-08-25 實測），⇒ 平台零保存。
+    2. ``totalCount == 0`` —— 首寫，平台沒有前一版（33 張抽樣中 9 張如此）。
+    3. 最新一版的 ``diff`` 取回為 ``None`` —— 平台記了但內容拿不到。
+
+    ⚠️ 第 3 條是本卡執行期新增的：A9 的實測只把已驗證區間由 39 版推到 50 版
+    （`aiwf#16`，50/50 全數可取），⛔ **沒有證明無上限**，⛔ 也沒有官方保證，
+    且 >39 版的樣本只有 1 個、最舊僅回溯 8 天。⇒ 設計必須對「取不到」fail-safe，
+    ⛔ 不得因為那一輪結果而省掉實查。
+    """
+    if item.content_type != "Issue":
+        return False, f"content_type={item.content_type}（平台無 userContentEdits）"
+    if not item.issue_url:
+        return False, "缺 issue_url，無法查詢版本"
+    parts = item.issue_url.split("/")
+    owner, name = parts[3], parts[4]
+    query = (
+        f'{{repository(owner:"{owner}",name:"{name}")'
+        f"{{issue(number:{item.issue_number})"
+        "{userContentEdits(last:1){totalCount nodes{diff}}}}}"
+    )
+    # ⚠️ **必須走 ``runner.graphql``**，⛔ 不是 ``run_json(["api","graphql",...])``。
+    # 後者在 ``FakeGhRunner`` 上認不得 ⇒ 會拋錯 ⇒ 被下面的 except 吞掉 ⇒ 回傳 False
+    # ⇒ **所有 mocked 測試都走全文退路、指紋路徑一次都不會被跑到**。
+    # 那是「守衛在測試裡從不執行」的形態，⛔ 本卡不得留下它。
+    try:
+        data = runner.graphql(query)
+        edits = data["data"]["repository"]["issue"]["userContentEdits"]
+    except Exception as exc:  # noqa: BLE001 —— 任何查詢失敗一律退回全文，⛔ 不猜
+        return False, f"版本查詢失敗（{exc}）"
+    if not edits or edits.get("totalCount", 0) == 0:
+        return False, "totalCount=0（首寫，平台無前一版）"
+    nodes = edits.get("nodes") or []
+    if not nodes or nodes[-1].get("diff") is None:
+        return False, "最新一版的內容取回為 null"
+    return True, f"totalCount={edits['totalCount']}，最新一版可取得"
+
+
+def _render_budget(body: str, before_len: int) -> tuple[str, int, int]:
+    """回傳 (預算行, 本次成本, 餘裕)。⭐ 零額外 API——完整新 body 此刻已在手上。"""
+    after = len(body.encode("utf-8"))
+    cost = after - before_len
+    margin = BODY_LIMIT - after
+    if margin < 0:
+        remaining = "0 次（已超過上限）"
+    elif cost > 0:
+        remaining = f"{margin // cost} 次"
+    else:
+        remaining = "—"
+    line = (
+        f"[amend] 卡面預算：本次 +{cost:,} 位元組／寫入後 {after:,}／"
+        f"上限 {BODY_LIMIT:,}／餘裕 {margin:,}／以本次成本估還能改 {remaining}"
+    )
+    return line, cost, margin
+
+
+def _largest_field_hint(body: str) -> str:
+    """硬線拒絕時指出**最大的可壓縮章節**，⛔ 不只說「太長了」。"""
+    head, _, log = body.partition("\n## Log")
+    parts: list[tuple[int, str]] = [(len(log.encode("utf-8")), "## Log")]
+    for name in ("## 驗收條件", "## 驗證", "## 核心痛點", "## 簡介"):
+        if name in head:
+            seg = head.split(name, 1)[1].split("\n## ", 1)[0]
+            parts.append((len(seg.encode("utf-8")), name))
+    parts.sort(reverse=True)
+    top = "、".join(f"{n}（{sz:,} 位元組）" for sz, n in parts[:3])
+    return top
 
 
 def _short(text: str, limit: int = 100) -> str:
@@ -817,17 +913,17 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     try:
         if args.spec_baseline is not None:
             body, old = amend_spec_baseline(body, args.spec_baseline)
-            changes.append(("spec 基線", old, args.spec_baseline, None))
+            changes.append(("spec 基線", old, args.spec_baseline, None, True))
         if args.initiative is not None:
             body, old = amend_initiative(body, args.initiative)
-            changes.append(("Initiative", old, args.initiative, None))
+            changes.append(("Initiative", old, args.initiative, None, True))
             pending_field_writes["Initiative"] = args.initiative
         if args.core_pain is not None:
             body, old = amend_core_pain(body, args.core_pain)
-            changes.append(("核心痛點", old, args.core_pain, ruling_note))
+            changes.append(("核心痛點", old, args.core_pain, ruling_note, True))
         if args.brief is not None:
             body, old = amend_brief(body, args.brief)
-            changes.append(("簡介", old or "（原本沒有）", args.brief, None))
+            changes.append(("簡介", old or "（原本沒有）", args.brief, None, True))
             # ⚠️ 欄位是 body 的恆等導出，故排進 pending_field_writes——指令層在 body
             # 寫成功後才寫欄位，並由 doctor 的漂移偵測抓「body 已更新、欄位過期」。
             pending_field_writes["簡介"] = args.brief
@@ -835,12 +931,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             body, old = amend_acceptance(
                 body, args.acceptance, preserve_checked=args.preserve_checked
             )
-            changes.append(("驗收條件", old, "；".join(args.acceptance), None))
+            changes.append(("驗收條件", old, "；".join(args.acceptance), None, True))
         if args.verification is not None:
             body, old = amend_verification(
                 body, args.verification, preserve_checked=args.preserve_checked
             )
-            changes.append(("驗證", old, "；".join(args.verification), None))
+            changes.append(("驗證", old, "；".join(args.verification), None, True))
         if args.restore_migration_header:
             body, inserted = restore_migration_header(
                 body,
@@ -849,13 +945,13 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 initiative=args.header_initiative,
                 spec_baseline=args.header_spec_baseline,
             )
-            changes.append(("卡面標頭（補回遷移缺行）", "（原卡面無標頭行與三章節）", inserted, None))
+            changes.append(("卡面標頭（補回遷移缺行）", "（原卡面無標頭行與三章節）", inserted, None, True))
         if args.adopt_resource_sentinels:
             body, old_seg = adopt_resource_sentinels(body)
-            changes.append(("資源宣告（補哨兵）", old_seg, "（已包入 resource-claims 哨兵）", None))
+            changes.append(("資源宣告（補哨兵）", old_seg, "（已包入 resource-claims 哨兵）", None, True))
         if args.drop_stale_resource_section:
             body, removed = drop_sentinel_less_resource_section(body)
-            changes.append(("資源宣告（刪除殘留區段）", removed, "（已刪除）", None))
+            changes.append(("資源宣告（刪除殘留區段）", removed, "（已刪除）", None, True))
         if wants_resources:
             current = parse_block(item.body)
             db_scope = args.db_scope if args.db_scope is not None else current.db_scope
@@ -870,7 +966,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             if decl != current:
                 # 一般路徑：body 與 Project 欄位都要更新。
                 body, old = amend_resource_block(body, render_block(decl))
-                changes.append(("資源宣告", old, summary, None))
+                changes.append(("資源宣告", old, summary, None, True))
                 pending_field_writes["資源宣告"] = summary
             elif current_field != summary:
                 # body 已是目標值但 Project 欄位過期——這正是先前「只寫 body」
@@ -950,18 +1046,70 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             label = "級別（降級）" if is_tier_downgrade(old_tier, args.tier) else "級別"
             changes.append((label, old_tier or "（未設定）", args.tier, ruling_note))
 
+    # ⭐ **Log 的成本從 O(2×欄位大小) 降為 O(1)**（本卡 A1）。
+    #
+    # `_fold` 的 docstring 原本寫「Log 是唯一還原點」——2026-08-25 實測推翻：GitHub
+    # `userContentEdits` 對每次 body 編輯保存**逐位元相同**的完整前一版（`#105` 截斷前後
+    # sha256 相符；`#16` 50 版全數可取）。而**新值**更是冗餘的——它就在正上方的欄位裡。
+    # ⇒ 兩者都改記指紋：指紋比全文**更強**（全文不能證明自己沒被改）。
+    #
+    # ⚠️ **代價明說**：Log 由自足變成依賴平台。任何離線讀 Log 的流程（匯出、封存、
+    # repo 遷移）只會拿到指紋 ⇒ 遷離 GitHub 前須先全量匯出版本。⛔ 這不是零成本。
+    #
+    # ⛔ 三條退路一律寫全文，且**實查**而非推定（A2／A3）：見 `_prior_revision_recoverable`。
+    recoverable, why = _prior_revision_recoverable(runner, item)
     timestamp = now_iso8601()
-    for field_name, old, new, note in changes:
+    for entry in changes:
+        field_name, old, new, note = entry[:4]
+        # ⭐ **預設 False（寫全文）**，`body` 來源者才 opt-in。
+        #
+        # ⚠️ 方向是刻意的：`userContentEdits` 保存的是**前一版 body**。若某筆變更的舊值
+        # 取自別處（Project 欄位、或操作者宣告的字串），它**從來沒出現在任何一版 body 裡**
+        # ⇒ 指紋不可還原、⛔ 那是靜默的資料損失。既有測試
+        # `test_stale_project_field_converges_on_rerun` 正是這種：雙面不同步自癒時，
+        # 舊值 `file:docs/only-one-file.md` 只存在於 Project 欄位。
+        # ⇒ 預設若設 True，日後新增一個非 body 來源而忘了標記就會靜默丟資料。
+        body_sourced = entry[4] if len(entry) > 4 else False
         authority = f"；授權 {_fold(note)}" if note else ""
+        if recoverable and body_sourced:
+            values = (
+                f"原值指紋 {_fingerprint(old)} → 新值指紋 {_fingerprint(new)}"
+                f"（現值見上方欄位；原值見平台 userContentEdits 前一版）"
+            )
+        else:
+            reason_full = why if not recoverable else "舊值來源非 body，平台版本救不回"
+            values = f"原值「{_fold(old)}」→ 新值「{_fold(new)}」（⚠️ 全文：{reason_full}）"
         body = append_log_line(
             body,
             f"{timestamp} amend by wf-cli（op {op_id}）→ {field_name}："
-            f"原值「{_fold(old)}」→ 新值「{_fold(new)}」；理由 {_fold(args.reason)}{authority}。",
+            f"{values}；理由 {_fold(args.reason)}{authority}。",
+        )
+
+    # ---- 卡面容量預算（A4–A6）。⭐ 零額外 API：完整新 body 此刻已在手上 ----
+    budget_line, _cost, margin = _render_budget(body, len(item.body.encode("utf-8")))
+    print(budget_line)
+    if margin < 0:
+        print(
+            f"[amend] 拒絕：寫入後 body 會超過上限 {BODY_LIMIT:,} 位元組（超出 {-margin:,}）。"
+            f"最大的可壓縮章節：{_largest_field_hint(body)}。"
+            "⇒ 請先把該章節的原文封存成留言、再以逐條壓縮改寫（⛔ 合併與丟棄不是壓縮）。",
+            file=sys.stderr,
+        )
+        return 2
+    if margin < BODY_SOFT_MARGIN:
+        print(
+            f"[amend] ⚠️ 警告：餘裕僅 {margin:,} 位元組（軟門檻 {BODY_SOFT_MARGIN:,}）。"
+            f"最大的可壓縮章節：{_largest_field_hint(body)}。**本次仍放行**。",
+            file=sys.stderr,
         )
 
     if args.dry_run:
+        # A4 逐字要求 `--dry-run` 也印預算行——它上面已經印過（在 Log 組裝之後），
+        # 這裡不重印，只補上 Log 記法的說明，讓 dry-run 看得出這次會不會寫全文。
+        print(f"[amend] Log 記法：{'指紋' if recoverable else '全文'}（{why}）")
         print(f"[amend] dry-run（未寫入任何狀態）：{args.card_id} 將修訂 {len(changes)} 個欄位")
-        for field_name, old, new, note in changes:
+        for entry in changes:
+            field_name, old, new, note = entry[:4]
             print(f"  - {field_name}：「{_short(old)}」→「{_short(new)}」")
             if note:
                 print(f"    授權：{_short(note)}")
@@ -1036,8 +1184,10 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             )
             return 7
 
-    print(f"[amend] 已修訂 {args.card_id}（op {op_id}，{len(changes)} 個欄位，原值已完整寫入 Log）")
-    for field_name, old, new, note in changes:
+    provenance = "原值指紋已寫入 Log（原文見平台前一版）" if recoverable else "原值已完整寫入 Log"
+    print(f"[amend] 已修訂 {args.card_id}（op {op_id}，{len(changes)} 個欄位，{provenance}）")
+    for entry in changes:
+        field_name, old, new, note = entry[:4]
         print(f"  - {field_name}：「{_short(old, 80)}」→「{_short(new, 80)}」")
         if note:
             print(f"    授權：{_short(note, 80)}")
