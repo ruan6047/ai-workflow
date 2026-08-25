@@ -1987,4 +1987,3 @@ def test_no_user_facing_text_still_claims_the_log_holds_the_full_old_value():
     assert not hits, f"仍有過期的還原指引：{hits}"
     # ⭐ 負控：確認掃描抓得到東西——這兩句必須存在，否則本測試是零資訊。
     assert "見平台前一版" in src and "原值已完整寫入 Log" in src
-
