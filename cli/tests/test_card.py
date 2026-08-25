@@ -1091,20 +1091,24 @@ def test_now_iso8601_has_timezone_offset():
 # ---------------------------------------------------------------------------
 
 
-def test_locate_section_does_not_widen_other_headings_by_default():
+def test_locate_section_only_widens_to_registered_variants():
     """⛔ `_locate_section` 是泛用的（核心痛點／驗收條件／簡介都走它）。
 
-    放寬若做成全域，`## 驗收條件（…）` 這種今天**不存在**的形態也會被接受
-    ——那是為不存在的形態開門。⇒ 預設關閉，只有資源宣告那一個呼叫端打開。
+    ⚠️ **本測試在 R2 自審時被改強。** 原本的契約是「``allow_known_variants``
+    可接受任意 ``<heading>（…）``，只是預設關閉」——那是**開放集合**，
+    而查核者 R1-01 與後續自審各抓到一個冒名者（``## 資源宣告備註``、
+    ``## 資源宣告（人工備註）``）。⇒ 現行契約是**封閉集合**：
+    只接受 ``_HEADING_VARIANTS`` 登記過的逐字值，⛔ 沒登記的一律不中，
+    即使旗標打開、即使長得像補述。
     """
     from wf_cli.card import AmendError, _locate_section
 
     lines = ["## 核心痛點（補述）", "- 內容"]
     with pytest.raises(AmendError):
         _locate_section(lines, "## 核心痛點")
-    # 顯式打開才認得（本函式本身有能力，是呼叫端不給）
-    start, end = _locate_section(lines, "## 核心痛點", allow_suffix=True)
-    assert (start, end) == (0, 2)
+    # ⭐ 打開旗標**也不中**——`## 核心痛點` 沒有登記任何變體。
+    with pytest.raises(AmendError):
+        _locate_section(lines, "## 核心痛點", allow_known_variants=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1419,3 +1423,55 @@ def test_restore_header_still_accepts_the_real_values_used_in_production():
     )
     assert new_body.split("\n## Log")[0].count("## Log") == 0
     assert new_body.count("\n## Log") == 1
+
+
+# ---------------------------------------------------------------------------
+# 自審（R2 送審前）：R1-01 的修法只關了一半。
+# 查核者的案例是**無括號**的 `## 資源宣告備註`；補完之後
+# `## 資源宣告（人工備註）` **仍會被誤認並靜默刪除**——前綴樣式是開放集合。
+# ⇒ 收成封閉集合的逐字黃金值（實測全母體 194 張只有 1 種後綴寫法、33 次）。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "impostor",
+    [
+        "## 資源宣告備註",                    # 查核者 R1-01 的原案例
+        "## 資源宣告（備註）",                # ⭐ 自審抓到：修完仍中
+        "## 資源宣告（人工說明，⛔ 不是宣告）",
+        "## 資源宣告(半形括號)",
+        "## 資源宣告 補充",
+        "## 資源宣告：說明",
+    ],
+)
+def test_heading_hit_rejects_every_impostor_heading(impostor):
+    from wf_cli.card import _RESOURCE_HEADING, _heading_hit
+
+    assert not _heading_hit(impostor, _RESOURCE_HEADING, allow_known_variants=True)
+
+
+@pytest.mark.parametrize("golden", ["## 資源宣告", _SUFFIXED])
+def test_heading_hit_accepts_exactly_the_two_golden_values(golden):
+    from wf_cli.card import _RESOURCE_HEADING, _heading_hit
+
+    assert _heading_hit(golden, _RESOURCE_HEADING, allow_known_variants=True)
+
+
+def test_the_golden_variants_come_from_one_place():
+    """⛔ 兩個模組不得各存一份字面值——那正是 R1-01 的成因。"""
+    from wf_cli.card import _HEADING_VARIANTS, _RESOURCE_HEADING
+    from wf_cli.resources import SECTION_HEADING_VARIANTS
+
+    assert _HEADING_VARIANTS[_RESOURCE_HEADING] is SECTION_HEADING_VARIANTS
+
+
+def test_drop_stale_refuses_a_parenthesised_impostor():
+    """⭐ 端到端：帶括號的冒名章節連同人寫內容都不得被刪。"""
+    from wf_cli.card import AmendError, drop_sentinel_less_resource_section
+
+    body = _card(
+        "## 資源宣告\n" + _WRAPPED + "\n\n"
+        "## 資源宣告（人工備註，⛔ 不是宣告）\n\n這段是人寫的。"
+    )
+    with pytest.raises(AmendError):
+        drop_sentinel_less_resource_section(body)

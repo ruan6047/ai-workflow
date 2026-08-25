@@ -151,10 +151,28 @@ def _split_at_log(body: str) -> tuple[str, str]:
 #:
 #: ⚠️ **「恰好 1 次」的不變量在新謂詞下仍是唯一的劫持防線**：真區段前插一個帶後綴的
 #: 假區段會讓命中數變 2 而被拒；兩種標題並存同樣命中 2 次而被拒（#43 的兩層定位不因此失效）。
+#: 2026-08-04 一次性遷移產生的資源宣告標題，**逐字**。
+#:
+#: ⭐ 這是**封閉集合的黃金值，⛔ 不是前綴樣式**。原本寫成 ``startswith(_SECTION_HEADING + "（")``
+#: ——查核者 R1-01 抓到 ``## 資源宣告備註`` 會被誤認；自審再抓到補完之後
+#: ``## 資源宣告（人工備註）`` **仍會被誤認並靜默刪除**。⇒ 前綴樣式是**開放集合**，
+#: 每補一個反例就露出下一個。而這個後綴是遷移的歷史產物、⛔ 不是擴充點：
+#: 全母體 194 張實測**只有這 1 種寫法、33 次**。⇒ 收成逐字比對。
+#:
+#: ⚠️ 代價說明：日後若真出現另一種合法後綴，解析會**找不到區段而拒收**（fail-closed）
+#: ⇒ 該加就加進本常數，⛔ 不要改回前綴比對。
+MIGRATION_SECTION_HEADING = (
+    "## 資源宣告（機器可讀；`null`／`[]` 代表未正式宣告，不代表無資源）"
+)
+
+#: 資源宣告標題的**全部**合法寫法。⛔ 判定一律用本集合，不得在呼叫端另寫謂詞。
+SECTION_HEADING_VARIANTS = (_SECTION_HEADING, MIGRATION_SECTION_HEADING)
+
+
 def _heading_matches(line: str) -> bool:
     """該行是不是資源宣告的標題（相等，或以 ``## 資源宣告（`` 起始）。"""
     stripped = line.strip()
-    return stripped == _SECTION_HEADING or stripped.startswith(_SECTION_HEADING + "（")
+    return stripped in SECTION_HEADING_VARIANTS
 
 
 def declaration_heading(body: str) -> str:
@@ -296,10 +314,12 @@ def find_conflicts(
 __all__ = [
     "CLAIMS_BEGIN_MARKER",
     "CLAIMS_END_MARKER",
-    "declaration_heading",
     "DB_SCOPES",
+    "MIGRATION_SECTION_HEADING",
+    "SECTION_HEADING_VARIANTS",
     "ResourceDeclaration",
     "ResourceDeclarationError",
+    "declaration_heading",
     "find_conflicts",
     "parse_block",
     "render_block",

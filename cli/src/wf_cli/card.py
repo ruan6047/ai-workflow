@@ -25,6 +25,7 @@ from .brief import validate_shape as validate_brief_shape
 from .resources import (
     CLAIMS_BEGIN_MARKER,
     CLAIMS_END_MARKER,
+    SECTION_HEADING_VARIANTS,
     ResourceDeclaration,
     render_block,
 )
@@ -512,10 +513,18 @@ def _join(head: str, tail: str) -> str:
     return f"{head.rstrip()}\n\n{tail.strip()}\n" if tail else f"{head.rstrip()}\n"
 
 
-def _heading_hit(line: str, heading: str, *, allow_suffix: bool) -> bool:
+#: 各章節標題**全部**的合法寫法（封閉集合）。⛔ 只有資源宣告有第二種寫法，
+#: 且它是 2026-08-04 遷移的歷史產物、⛔ 不是擴充點——來源是 ``resources`` 的
+#: ``SECTION_HEADING_VARIANTS``，⛔ 本檔不另存一份字面值。
+_HEADING_VARIANTS: dict[str, tuple[str, ...]] = {
+    _RESOURCE_HEADING: SECTION_HEADING_VARIANTS,
+}
+
+
+def _heading_hit(line: str, heading: str, *, allow_known_variants: bool) -> bool:
     """該行是不是 ``heading`` 這個章節的標題。**唯一判準，⛔ 不得在別處另寫一份。**
 
-    ⚠️ ``allow_suffix`` 放寬的是**帶括號補述**（``<heading>（…）``），⛔ **不是任意前綴**。
+    ⚠️ ``allow_known_variants`` 放寬的是**帶括號補述**（``<heading>（…）``），⛔ **不是任意前綴**。
     這個分界是 R1-01 的成因：``drop_sentinel_less_resource_section`` 原本自己寫了一份
     裸 ``startswith(_RESOURCE_HEADING)``，於是 ``## 資源宣告備註`` 也被當成資源宣告區段
     ——查核者實測它連同人寫的說明**一起被靜默刪除**。⇒ 判準抽成一份、兩處共用，
@@ -524,15 +533,17 @@ def _heading_hit(line: str, heading: str, *, allow_suffix: bool) -> bool:
     stripped = line.strip()
     if stripped == heading:
         return True
-    return allow_suffix and stripped.startswith(heading + "（")
+    if not allow_known_variants:
+        return False
+    return stripped in _HEADING_VARIANTS.get(heading, ())
 
 
 def _locate_section(
-    lines: list[str], heading: str, *, allow_suffix: bool = False
+    lines: list[str], heading: str, *, allow_known_variants: bool = False
 ) -> tuple[int, int]:
     """回傳該章節的 [起始標題列, 下一個 ``## `` 標題列或結尾)。標題須唯一。
 
-    ``allow_suffix`` 讓標題**額外**接受 ``<heading>（…）`` 這種帶括號補述的寫法
+    ``allow_known_variants`` 讓標題**額外**接受 ``<heading>（…）`` 這種帶括號補述的寫法
     （WF-RESOURCE-HEADING-SUFFIX1）。⛔ **預設關閉，且只有資源宣告那一個呼叫端打開它**——
     本函式是泛用的（``## 核心痛點``／``## 驗收條件``／``## 簡介`` 都走它），
     全域放寬等於為今天不存在的形態開門（實測全母體只有資源宣告有第二種寫法）。
@@ -541,7 +552,7 @@ def _locate_section(
     真區段前插一個帶後綴的假區段、或兩種標題並存，都會讓命中數變 2 而被拒。
     """
 
-    starts = [i for i, line in enumerate(lines) if _heading_hit(line, heading, allow_suffix=allow_suffix)]
+    starts = [i for i, line in enumerate(lines) if _heading_hit(line, heading, allow_known_variants=allow_known_variants)]
     if len(starts) != 1:
         raise AmendError(
             f"章節 `{heading}` 在 Log 之前出現 {len(starts)} 次，必須恰好 1 次才能安全替換"
@@ -647,7 +658,7 @@ def adopt_resource_sentinels(body: str) -> tuple[str, str]:
     """
     head, tail = split_at_log(body)
     lines = head.splitlines()
-    start, end = _locate_section(lines, _RESOURCE_HEADING, allow_suffix=True)
+    start, end = _locate_section(lines, _RESOURCE_HEADING, allow_known_variants=True)
     seg = lines[start:end]
     if any(CLAIMS_BEGIN_MARKER in line for line in seg):
         raise AmendError("該區段已有 resource-claims 哨兵；本操作只處理缺哨兵的卡")
@@ -699,7 +710,7 @@ def drop_sentinel_less_resource_section(body: str) -> tuple[str, str]:
     lines = head.splitlines()
     starts = [
         i for i, line in enumerate(lines)
-        if _heading_hit(line, _RESOURCE_HEADING, allow_suffix=True)
+        if _heading_hit(line, _RESOURCE_HEADING, allow_known_variants=True)
     ]
     if len(starts) != 2:
         raise AmendError(
@@ -817,7 +828,7 @@ def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     """
     head, tail = split_at_log(body)
     lines = head.splitlines()
-    start, end = _locate_section(lines, _RESOURCE_HEADING, allow_suffix=True)
+    start, end = _locate_section(lines, _RESOURCE_HEADING, allow_known_variants=True)
     old_repr = "\n".join(lines[start:end]).strip()
     # ⭐ **標題逐字保留，⛔ 不由 ``rendered_block`` 決定**（WF-RESOURCE-HEADING-SUFFIX1）。
     #
