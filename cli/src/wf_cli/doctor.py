@@ -2194,6 +2194,17 @@ def audit_conformance(
 # `card.append_log_line`），⛔ 不在這裡另寫一份判準。理由是同源：另寫一份，稽核與守衛
 # 就會對「這張卡改不改得動」給出兩個不同答案，而那正是本檔要消滅的形態。
 # 這些函式**只回傳新字串、不寫任何東西**，⇒ 探針零寫入。
+#
+# ⛔ **射程明說：本節只測「卡面定位」這一關。** 指令層在它**之前**還有別的閘門，
+# 實跑時可能先被那些拒收，⇒ 拒收原文與本節給的理由**不必然相同**：
+#
+#   - `assign`：能力層級比對（`compare_capability_to_card`）與跨 repo 歸屬，排在
+#     資源交集檢查之後，但本探針只跑 `parse_block` 那一關；
+#   - `amend --core-pain`：`--ruling-url` 授權閘門排在定位之前——實測 `ML-FIELD-OF1`
+#     的 `--dry-run` 先被授權閘門拒收，⛔ 不是被本節給的錨點理由拒收。
+#
+# ⇒ 「打得到」在本節的意思是**卡面這一關過得了**，⛔ 不是「這個動詞現在就能成功」。
+# 反向則是可靠的：本節說打不到，該動詞就一定過不了（定位失敗無退路）。
 
 #: 探針用的替代值。⚠️ 必須與任何真實現值不同——`amend_*` 對「與現值相同」是硬拒，
 #: 撞上會讓一張其實改得動的卡被誤報成不可達。
@@ -2241,6 +2252,16 @@ def _build_reachability_probes() -> tuple[tuple[str, Any], ...]:
         (VERB_AMEND_BRIEF, lambda body: amend_brief(body, _PROBE_BRIEF)),
         (VERB_APPEND_ONLY, lambda body: append_log_line(body, f"- {_PROBE_TOKEN}")),
     )
+
+
+#: 報告裡一定要印的射程界線。⛔ 兩條返回路徑都要印——只在「有 findings」時印，
+#: 等於一份乾淨的報告會把「全部可達」講得比實際更滿。
+_REACHABILITY_SCOPE_CAVEAT = (
+    "- ⛔ 射程：本節只測**卡面定位**那一關。指令層在它之前另有閘門"
+    "（`assign` 的能力層級／跨 repo 歸屬、`amend --core-pain` 的 `--ruling-url` 授權），"
+    "⇒ 實跑的拒收原文可能與此處不同。「打得到」＝卡面這關過得了，"
+    "⛔ 不等於「這個動詞現在就能成功」。"
+)
 
 
 @dataclass(frozen=True)
@@ -2322,6 +2343,7 @@ def render_reachability(report: ReachabilityReport) -> str:
             "- 全部動詞對全部卡皆可達。⚠️ 這是**掃過**的結果，⛔ 不是沒掃——"
             "探針逐動詞實跑寫入端自己的純函式，零寫入。"
         )
+        lines.append(_REACHABILITY_SCOPE_CAVEAT)
         return "\n".join(lines)
     blocked = Counter(v for f in report.findings for v in f.unreachable_for)
     for verb, count in blocked.most_common():
@@ -2336,6 +2358,7 @@ def render_reachability(report: ReachabilityReport) -> str:
         "- ⭐ 可達性先於合規性：這些卡的其他不合規項在通道修好之前**修不了**，"
         "⛔ 不要把它們讀成可以動手的待辦。"
     )
+    lines.append(_REACHABILITY_SCOPE_CAVEAT)
     return "\n".join(lines)
 
 

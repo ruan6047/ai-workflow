@@ -2975,3 +2975,18 @@ def test_reachability_is_rendered_before_conformance():
     report = DoctorReport(repo_root="/x", generated_at="t", registry_sources=[])
     text = report.render_text()
     assert text.index("寫入通道可達性") < text.index("事後符合性重驗")
+
+
+def test_reachability_states_that_it_only_covers_the_card_face_gate():
+    """⛔ 不得過度宣稱：指令層在卡面定位**之前**還有閘門。
+
+    實測：`ML-FIELD-OF1` 的 `amend --core-pain --dry-run` 先被 `--ruling-url` 授權閘門
+    拒收，⛔ 不是被本節給的錨點理由拒收。⇒ 「打得到」＝卡面這關過得了，⛔ 不等於
+    「這個動詞現在就能成功」；報告必須自己說出這條界線。
+
+    **突變檢驗**：把 `render_reachability` 的射程那行刪掉，本測試轉紅。
+    """
+    text = render_reachability(audit_reachability({"C": _conformant_body(_EARLY_OPEN)}))
+    assert "只測**卡面定位**那一關" in text
+    assert "--ruling-url" in text
+    assert "⛔ 不等於「這個動詞現在就能成功」" in text
