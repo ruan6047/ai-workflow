@@ -17,12 +17,73 @@ import pytest
 from wf_cli import pitfalls
 from wf_cli.cli import build_parser
 from wf_cli.commands import assign_cmd, handoff_cmd, open_cmd
-from wf_cli.project import FIELD_SPECS, list_items, resolve_project
+from wf_cli.project import (
+    FIELD_SPECS,
+    ProjectError,
+    find_item_by_card_id,
+    list_items,
+    resolve_project,
+)
 
 from .fake_gh import FakeGhRunner
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CANONICAL = _REPO_ROOT / "AI_WORKFLOW.md"
+
+
+# ---- 既有測試的共用配件（本卡新增的必要前提改變了它們的契約）--------------
+
+
+def with_pitfall_report(argv: list[str], card_id: str) -> list[str]:
+    """把「離開現階段的族清冊回應」補進一組 ``handoff`` argv。
+
+    ⚠️ **為什麼既有測試需要這個。** 本卡在 ``handoff`` 的前置段加了一道必要前提，
+    於是「這組 argv 回 0」這個契約對**所有**既有呼叫點都變了。那不是新測試該去的
+    地方（新測試在本檔下半），是既有測試要適應的新前提。
+
+    ⛔ **不塞固定字串。** 清冊由 :func:`pitfalls.report_template` 依**離開階段**
+    導出，而離開階段是**卡此刻的狀態**決定的、不是呼叫端寫得死的：
+    ``test_handoff_log_line_never_carries_the_status_it_wrote`` 連跑六次 handoff，
+    第 6 圈離開的是 ``執行``（13 族），其餘五圈離開 ``需求``／``研究``／``規劃``
+    （各 8 族）。任何一個固定字串都會讓另一半的呼叫點轉紅。
+
+    ``handoff_cmd.default_runner`` **就是這道指令待會要問的那個 runner**（三個測試
+    檔的 fixture 都 monkeypatch 它）⇒ 這裡算出的格數與閘門看到的必然一致。
+
+    ⚠️ **驗不到什麼（明說）**：本函式與產線共用同一個 :func:`
+    pitfalls.resolve_departing_phase`，所以它對「離開階段判得對不對」是**零資訊**
+    的——⛔ 不得把靠它變綠的那 33 條讀成閘門的守衛。閘門本身由本檔下半的端到端
+    條目驗，清冊來源由上半的互含測試驗。這裡只負責讓既有測試繼續驗它們原本在驗
+    的東西（iteration／狀態轉換／收尾清理／owner 快照）。
+
+    三種情況原樣回傳（此時閘門構造上也不會要求報告，⇒ 不是放水）：
+    呼叫端已自備 ``--pitfall-report``、卡不存在（``handoff`` 先回 rc=3）、
+    離開階段判不出來（閘門走明文豁免那條分流）。
+    """
+    if "--pitfall-report" in argv:
+        return argv
+
+    runner = handoff_cmd.default_runner
+    owner = argv[argv.index("--owner") + 1]
+    number = int(argv[argv.index("--project") + 1])
+    try:
+        project = resolve_project(runner, owner, number)
+    except ProjectError:
+        return argv
+
+    item = find_item_by_card_id(list_items(runner, project), card_id)
+    if item is None:
+        return argv
+
+    resolution = pitfalls.resolve_departing_phase(
+        item.text("階段"),
+        item.fields.get("交付狀態"),
+        handoff_cmd.STAGE_STATUS,
+        handoff_cmd.STAGE_PHASE,
+    )
+    if resolution.phase is None:
+        return argv
+    return [*argv, "--pitfall-report", pitfalls.report_template(resolution.phase)]
 
 #: 踩坑清單那一節的標題**逐字**。標題被改寫時下面的擷取會拿不到節，測試轉紅
 #: ——那是要的：族清冊的來源不見了，碼側的清冊就沒有對照面。
