@@ -825,8 +825,10 @@ def run(args: argparse.Namespace) -> int:
         #     管 gh 側。`cleanup.execute_closeout_transition` 的 git 動作（分支刪除、
         #     worktree 移除、push）不經過這裡，那 11 條**沒有一條**是靠證明 git 側
         #     沒寫而消掉的。⛔ 也不得推出「ensure_fields 已是唯讀」——它不是。
-        # (d) ⚠️ 代價：`write_status_face` 被呼叫兩次時會查兩次欄位（`_release_with_cleanup`
-        #     的正常路徑只呼叫一次）。`ensure_fields` 冪等，重複呼叫不改變遠端狀態。
+        # (d) ⚠️ 代價：**今天是零**——本 closure 每輪至多被呼叫一次（三個呼叫點互斥：
+        #     release 無 repo_path、非 release、以及 `_release_with_cleanup` 的 effect
+        #     writer），⇒ 欄位查詢次數與搬動前相同。若日後有人讓它一輪呼叫兩次，
+        #     會多發一次欄位查詢；`ensure_fields` 冪等，重複呼叫不改變遠端狀態。
         fields = ensure_fields(runner, target.owner, target.project)
         set_field_value(runner, project, item.item_id, fields["owner"], args.to)
         set_field_value(runner, project, item.item_id, fields["交付狀態"], new_status)
