@@ -734,11 +734,16 @@ def test_missing_report_makes_no_gh_write_call_at_all(logging_runner, capsys):
     assert logging_runner.not_declared_read_only() == [], (
         f"閘門之前出現非唯讀呼叫：{logging_runner.not_declared_read_only()}"
     )
-    # 白名單不是恆真的裝飾：這趟真的兩種唯讀呼叫都用到了。
-    assert ["project", "view", "1", "--owner", "acme", "--format", "json"] in (
-        logging_runner.calls
-    )
-    assert any(c[:2] == ["api", "graphql"] for c in logging_runner.calls)
+    # ⭐ 白名單只說「沒有壞的」，⛔ 說不出「有哪些」。這一行把呼叫序列**逐筆釘死**
+    # 成兩筆，正是 `handoff_cmd` 閘門旁那句就地註解——「只送出過 `gh project view`
+    # 與批次讀 items 的 GraphQL query 兩種唯讀呼叫」——的機械驗證。⚠️ 注意
+    # ``project field-list`` 也在白名單上，⇒ 沒有這一行的話，`ensure_fields`
+    # 只搬走一半（例如只留 `list_fields`）仍會全綠，而那句註解就又變成假的。
+    shapes = [
+        ("api", "graphql") if call[:2] == ["api", "graphql"] else tuple(call[:2])
+        for call in logging_runner.calls
+    ]
+    assert shapes == [("project", "view"), ("api", "graphql")], shapes
 
 
 def test_a_valid_report_still_creates_the_missing_field(logging_runner):
