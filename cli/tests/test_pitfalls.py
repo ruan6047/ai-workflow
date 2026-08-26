@@ -9,14 +9,17 @@ repo 競爭最激烈的檔；新測試開新檔是本卡驗收條逐字要求的
 
 from __future__ import annotations
 
+import copy
 import re
 from pathlib import Path
 
 import pytest
 from wf_cli import pitfalls
 from wf_cli.cli import build_parser
-from wf_cli.commands import handoff_cmd
-from wf_cli.project import FIELD_SPECS
+from wf_cli.commands import assign_cmd, handoff_cmd, open_cmd
+from wf_cli.project import FIELD_SPECS, list_items, resolve_project
+
+from .fake_gh import FakeGhRunner
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CANONICAL = _REPO_ROOT / "AI_WORKFLOW.md"
@@ -324,3 +327,200 @@ def test_the_refusal_message_prints_a_usable_template():
     assert "測試用依據" in msg
     # ⛔ 拒收訊息必須自陳它驗不到什麼，否則會被讀成比實際更強。
     assert "分不出認真讀過與隨手打一行" in msg
+
+
+# ---- 端到端：閘門掛在寫入之前 -------------------------------------------
+
+
+@pytest.fixture
+def runner(monkeypatch):
+    fake = FakeGhRunner()
+    for module in (open_cmd, assign_cmd, handoff_cmd):
+        monkeypatch.setattr(module, "default_runner", fake)
+    return fake
+
+
+_TARGET = ["--owner", "acme", "--project", "1"]
+
+
+def _run(argv: list[str]) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+def _open(card_id: str, **overrides) -> int:
+    defaults = {
+        "--feature": "示範功能", "--tier": "T3", "--db-scope": "none",
+        "--core-pain": "痛點文字", "--service-goal": "服務的原始目標文字",
+        "--exec-capability": "主力型", "--exec-capability-reason": "跨模組改動",
+        "--review-capability": "主力型", "--review-capability-reason": "一般 review 即可",
+    }
+    defaults.update(overrides)
+    argv = ["open", *_TARGET, card_id]
+    for k, v in defaults.items():
+        if isinstance(v, bool):
+            if v:
+                argv.append(k)
+        else:
+            argv += [k, v]
+    return _run(argv)
+
+
+def _handoff(card_id: str, sha: str, **overrides) -> int:
+    defaults = {
+        "--to": "查核者", "--next-stage": "review",
+        "--source-sha": sha, "--evidence": "pytest 全綠",
+    }
+    defaults.update(overrides)
+    argv = ["handoff", *_TARGET, card_id]
+    for k, v in defaults.items():
+        argv += [k, v]
+    return _run(argv)
+
+
+def _only_item(runner: FakeGhRunner):
+    return list_items(runner, resolve_project(runner, "acme", 1))[0]
+
+
+def test_missing_report_refuses_with_zero_writes(runner, capsys):
+    """⭐ 缺報告 ⇒ rc≠0，且**卡片 body 與所有欄位逐位元未變**。
+
+    「零寫入」不用散文宣稱：整個 fake 狀態面深拷貝前後直接比對，任何一格被動到
+    都會紅——比只看 body 或只看某幾個欄位嚴格。
+    """
+    assert _open("PITFALL-E2E1") == 0
+    before = copy.deepcopy(runner.items)
+    capsys.readouterr()
+
+    rc = _handoff("PITFALL-E2E1", "a" * 40)
+
+    assert rc == 2
+    assert runner.items == before, "拒收路徑上狀態面必須一個字都沒寫"
+    err = capsys.readouterr().err
+    assert "須附踩坑族清冊回應" in err
+    assert "狀態面一個字都沒寫" in err
+    for name in pitfalls.roster_for("需求"):
+        assert name in err
+
+
+def test_a_valid_report_lets_the_handoff_through_and_lands_in_the_log(runner):
+    """合格報告必須寫得進去（負控），且留痕帶**離開側**階段。"""
+    assert _open("PITFALL-E2E2") == 0
+    rc = _handoff(
+        "PITFALL-E2E2", "b" * 40,
+        **{"--pitfall-report": pitfalls.report_template("需求")},
+    )
+    assert rc == 0
+    item = _only_item(runner)
+    assert item.fields["交付狀態"] == "🔍待查核"
+
+    line = [ln for ln in item.body.splitlines() if "iteration" in ln][-1]
+    assert f"；{handoff_cmd.PHASE_LOG_LABEL} 需求；" in line, line
+    assert "踩坑回應 8 族" in line, line
+    # A5 的位置要求：階段段落在「證據」之前。
+    assert line.index(handoff_cmd.PHASE_LOG_LABEL) < line.index("證據"), line
+
+
+def test_the_report_can_be_read_from_a_file(runner, tmp_path):
+    assert _open("PITFALL-E2E3") == 0
+    path = tmp_path / "report.txt"
+    path.write_text(pitfalls.report_template("需求"), encoding="utf-8")
+    assert _handoff(
+        "PITFALL-E2E3", "c" * 40, **{"--pitfall-report": f"@{path}"}
+    ) == 0
+
+
+def test_a_short_report_is_refused_with_zero_writes(runner, capsys):
+    assert _open("PITFALL-E2E4") == 0
+    roster = pitfalls.roster_for("需求")
+    short = "\n".join(f"{n}：已檢查" for n in roster[:-1])
+    before = copy.deepcopy(runner.items)
+    capsys.readouterr()
+
+    assert _handoff("PITFALL-E2E4", "d" * 40, **{"--pitfall-report": short}) == 2
+    assert runner.items == before
+    assert "缺 1 族未回答" in capsys.readouterr().err
+
+
+def test_an_undeterminable_departing_phase_is_exempted_out_loud(runner, capsys):
+    """⚠️ 這是一個**真實的口**，不是「檢查通過了」。
+
+    把交付狀態改成沒有反函數的值就繞得過去——本測試把那條路走給人看，並要求
+    它在 stderr 上自己承認。⛔ 不得把它讀成「這裡有檢查」。
+    """
+    # 造出**界線前既有卡**的形狀：階段欄無值（該欄是後來才加的，既有卡一片空白）
+    # ＋交付狀態落在沒有反函數的那一格。⚠️ 這裡直接改 fake 的狀態面而不是走
+    # ``wfcli``——因為 ``open`` 今天就會把階段寫成「需求」，走指令造不出既有卡的
+    # 形狀，而既有卡才是這條分流真正要處理的母體。
+    assert _open("PITFALL-E2E5") == 0
+    raw = next(iter(runner.items.values()))
+    raw["fields"].pop("階段", None)
+    raw["fields"]["交付狀態"] = "📥Backlog"
+    item = _only_item(runner)
+    assert item.text("階段") is None
+    capsys.readouterr()
+
+    rc = _handoff("PITFALL-E2E5", "f" * 40, **{"--next-stage": "review"})
+    assert rc == 0, "判不出階段時明文豁免（A4 允許的兩條之一）"
+    err = capsys.readouterr().err
+    assert "判不出正在離開哪個階段" in err
+    assert "這條路上沒有檢查" in err
+
+    line = [ln for ln in _only_item(runner).body.splitlines() if "iteration" in ln][-1]
+    assert handoff_cmd.PHASE_UNDECIDABLE_MARK in line, line
+    assert "豁免" in line, line
+
+
+def test_before_the_epoch_no_report_is_required(runner, capsys, monkeypatch):
+    """界線之前不要求。⚠️ 時戳釘死成常數，⛔ 不取「現在」——以牆上時鐘分流的
+    判定會在某個午夜自己由綠轉紅（本 repo 已經被咬過一次）。"""
+    assert _open("PITFALL-E2E6") == 0
+    monkeypatch.setattr(handoff_cmd, "now_iso8601", lambda: "2020-01-01T00:00:00+08:00")
+    capsys.readouterr()
+
+    assert _handoff("PITFALL-E2E6", "0" * 40) == 0
+    err = capsys.readouterr().err
+    assert "早於踩坑閘門界線" in err
+    assert "界線是分流輔助，不是安全邊界" in err
+
+
+def test_a_malformed_timestamp_requires_the_report_rather_than_exempting(runner):
+    """界線解析不了時 fail 的方向是**要求**，不是豁免。"""
+    assert _open("PITFALL-E2E7") == 0
+    assert handoff_cmd._before_epoch("不是時戳", pitfalls.PITFALL_GATE_EPOCH) is False
+
+
+def test_a_stale_stage_field_is_reported_not_silently_preferred(runner, capsys):
+    """⭐ 實測缺陷：``assign`` 只寫交付狀態、不寫階段欄 ⇒ 兩軸會對不上。
+
+    掃描全 Project 時，兩個來源都判得出來的卡有 6 張、其中 **2 張不一致**，兩張
+    都是「被指派執行、階段欄仍停在研究」。本條把那個形狀釘住：工具**不偷偷改判**
+    （哪一軸權威是條文問題），但必須把分歧印出來。
+    """
+    assert _open("PITFALL-E2E9") == 0
+    raw = next(iter(runner.items.values()))
+    raw["fields"]["階段"] = "研究"
+    raw["fields"]["交付狀態"] = "🔨執行中"
+    capsys.readouterr()
+
+    rc = _handoff(
+        "PITFALL-E2E9", "8" * 40,
+        **{"--pitfall-report": pitfalls.report_template("研究")},
+    )
+    assert rc == 0, "以階段欄為準 ⇒ 要的是研究的 8 族"
+    err = capsys.readouterr().err
+    assert "階段欄說「研究」" in err and "反推出「執行」" in err, err
+    assert "assign 只寫交付狀態" in err
+
+
+def test_the_gate_runs_after_the_existing_preflight_refusals(runner, capsys):
+    """既有拒收路徑的退出碼不得被本閘門搶走。
+
+    ⭐ 這條是**位置**的守衛：閘門若擺到既有檢查之前，同一個錯誤會換一個 rc
+    回報，而那些 rc 已經被別的測試依賴。這裡拿部署閘門（rc=4）當代表。
+    """
+    assert _open("PITFALL-E2E8", **{"--needs-deploy": True}) == 0
+    capsys.readouterr()
+    rc = _handoff("PITFALL-E2E8", "9" * 40, **{"--next-stage": "release"})
+    assert rc == 4, "部署閘門的 rc=4 必須先於踩坑閘門的 rc=2"
