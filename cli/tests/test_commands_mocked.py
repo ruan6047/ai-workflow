@@ -511,10 +511,27 @@ def test_assign_deviation_without_reason_is_refused_before_any_mutation(
 ):
     # 情形 2：不符且未給理由 → fail-closed 拒絕。
     #
-    # 保證的**精確範圍**：拒絕路徑不發生任何 mutation 呼叫。注意 assign 在能力檢查
-    # 之前會呼叫 ensure_fields，那是冪等的欄位 schema 準備——本測試在欄位已存在的
-    # project 上跑，故連 field-create 都不該發生；但「絕對零寫入」不是本指令在所有
-    # 情境下的保證（全新 project 會先建欄位），因此不用那個更強的詞。
+    # 保證的**精確範圍**：這一條 rc=2 路徑上不發生任何 mutation 呼叫。
+    #
+    # (a) 現在的順序：能力閘門的 `return 2`（`assign_cmd.py`，`compare_capability_to_card`
+    #     之後那條）排在 `ensure_fields` **之前**——連同跨 repo 歸屬、本機觀測、資源
+    #     交集，四道閘門全部在它前面（實測：`ensure_fields` 之前有 6 條非 0 return）。
+    #     ⚠️ 本段原文逐字寫「assign 在能力檢查**之前**會呼叫 ensure_fields」，那是
+    #     `aiwf#154` 把呼叫點往後搬**之前**的事實，⛔ 今天已為假，故重寫。
+    # (b) 為什麼刻意搬：`ensure_fields` 不是唯讀的——缺凍結欄位就送
+    #     `gh project field-create`。擺在閘門前，被拒收的 assign 仍會先改掉 Project
+    #     的欄位定義，而那幾道閘門的就地註解逐字寫著「拒絕時必須零寫入」。
+    # (c) ⛔ 不得由這條測試推出上面那個順序成立。本測試先跑 `_open_argv` 才跑 assign
+    #     ⇒ 它跑在**欄位已存在**的 project 上，`ensure_fields` 排在閘門前或後，
+    #     `field-create` 都不會發生 ⇒ 本測試對「呼叫時點」是**零資訊**的。
+    #     ⚠️ 實測（把 `ensure_fields` 搬回能力閘門之前，只跑本條）：**本條的斷言
+    #     仍然 `1 passed`**，⛔ 一個字都沒紅；轉紅的是 `tests/conftest.py` 的
+    #     gate-guard（該次行程退出碼 1，且 pytest 摘要行照印 passed）。
+    #     ⇒ 順序不變式由 gate-guard ＋ `tests/test_gate_before_write.py` 的黃金值
+    #     守，⛔ 不是這裡；同一次實測整套跑得 `('assign', 2): 3, ('assign', 4): 1,
+    #     ('assign', 5): 3, ('assign', 6): 1`，與未搬動基線 `b169c242` 的 assign
+    #     四格逐格相同。
+    # (d) ⛔ 也不得推出「ensure_fields 已經是唯讀的」——它不是，只是被搬到閘門之後。
     run_cli(_open_argv("DEV-FAIL1", **{"--exec-capability": "主力型"}))
     project = resolve_project(fake_runner, "acme", 1)
     before = find_item_by_card_id(list_items(fake_runner, project), "DEV-FAIL1")
