@@ -164,6 +164,7 @@ local telemetry 另以同一 envelope 記錄 `resource-acquired | resource-relea
 | # | 從 → 到 | 唯一合法動詞 | 前提檢查 | 機械執行者（指到符號） | 誠實邊界 |
 |---:|---|---|---|---|---|
 | 1 | （無）→ `💡需求` | `wfcli open` | ⛔ 無（新卡無前身） | ⚠️ 有的是**單一寫入路徑**不是前提檢查：值來自 `card.py` 的 dataclass 預設 `delivery_status: str = "💡需求"`，`open` 無 `--status` 旋鈕（`open_cmd.py` 的 `values["交付狀態"] = card.delivery_status`） | 「寫不出別的值」**只對 `open` 這個入口成立**；卡開完的下一秒 `assign --status`／`handoff --status` 就能改成任何 Project 既有選項 |
+| 1b | 任意 → `💡需求`（**退回需求方裁決**） | `handoff --next-stage requirement` | ⛔ 無 | ⛔ **無**：與第 2、3、6、7 列同一個 `else: new_status = STAGE_STATUS[args.next_stage]`，**不讀現值** | ⭐ 這條真的被走過——本卡自己 2026-08-22 即以此被退回（Log 逐字「退回 💡需求」）。⚠️ 它可以**跨階退回**（canonical §0.1 舉的 `cpbl#162` 逐字「退回需求方裁決」跨三階），⛔ 而留痕不記進入側狀態 ⇒ 事後看不出退到哪一格 |
 | 2 | 任意 → `🔬研究中` | `handoff --next-stage research` | ⛔ 無 | ⛔ **無**：`handoff_cmd.run` 末尾的 `else: new_status = STAGE_STATUS[args.next_stage]`，**不讀現值** | 需求方 2026-08-22「高複雜或影響較大的卡必跑 `🔬研究中`」在此**無執行者**，見表六第 1 列 |
 | 3 | 任意 → `🧭規劃中` | `handoff --next-stage planning` | ⛔ 無 | ⛔ **無**：同上 `else` 分支 | canonical §3 的三個 Gate（Discovery／Design／Plan）今天**都沒有動詞** ⇒ 轉進這一格⛔ 不蘊含任何 Gate 事實 |
 | 4 | `🧭規劃中` → `📥Backlog`（**T2／T3／T4，及級別讀不到／為空／語彙外者**） | `handoff --next-stage backlog` | ✅ 當下交付狀態必須逐字為 `🧭規劃中`（`BACKLOG_REQUIRED_PRIOR_STATUS`） | ✅ **有**：`handoff_cmd.py` 的 `if current_status != BACKLOG_REQUIRED_PRIOR_STATUS:` → `return 4` | ⛔ 只證明**狀態面說**它來自規劃，不證明規劃做過（`🧭規劃中` 本身也寫得進 `--status`）；且它**管不住級別本身**——`amend --tier` 改成 T1 就掉到第 5 列 |
@@ -176,6 +177,7 @@ local telemetry 另以同一 envelope 記錄 `resource-acquired | resource-relea
 | 11 | `✅通過` → `📦已合併` | ⛔ **無動詞** | — | ⛔ **無** | 只有 `assign --status`／`handoff --status` 寫得進去。canonical §4.4 明訂「現役的定義含 `📦已合併`」「停在 `📦已合併` 不收尾＝假活卡」，而**它是怎麼被寫進去的，工具帳上分不出來**（若是看板 UI 直接改欄位即違反 §4.3 紅線）——已登記於 `docs/CONTRACT_TOOL_RECONCILE.md` §4.1，待需求方裁定 |
 | 12 | `📦已合併` → `🏁完成` | `handoff --next-stage release --cleanup --repo-path <路徑>` | ✅ 兩道，⚠️ **但都不是前身狀態檢查** | ✅ (a) 部署閘門：`handoff_cmd.py` 的 `if deployment_status not in (None, "—不適用", "✅已驗證"): ... return 4`；(b) 收尾守衛：終態由 `cleanup.execute_closeout_transition` 在清理**確實完成後**才呼叫 `write_release_terminal` ⇒「終態先於清理」在這條路徑上**寫不出來**（`_CallbackEffectWriter` 的 docstring 逐字：不是靠呼叫端自律） | ⛔ **不檢查前身是否為 `📦已合併`**——任何狀態都 release 得出去。另有兩分支契約：帶 `--repo-path` 卻不帶 `--cleanup` 一律 `rc=2`（`REPO_PATH_WITHOUT_CLEANUP_REFUSAL`）；不帶 `--repo-path` 則放行並把「收尾清理未執行」寫進 Log（`NO_REPO_PATH_TRACE_SUFFIX`） |
 | 13 | 任意 → `⏸阻塞` | ⛔ **無動詞** | — | ⛔ **無** | 只有 `--status` 自由文字。canonical §5 末段要求「`⏸阻塞` 必填 owner、原因、等待對象與解除條件」——⛔ **那四個必填今天沒有任何地方可以驗**，因為沒有專責動詞。TTL 見表三 |
+| 13b | 任意 → `🛑已停止`（撤卡／停止） | ⛔ **無動詞** | — | ⛔ **無** | 只有 `--status` 自由文字。canonical §0 逐字「`🛑已停止` **必填決策與原因後封存**」——⛔ 那兩個必填一樣沒有地方可以驗。⚠️ 它是 `TERMINAL_STATUSES` 的成員 ⇒ 一旦寫入，`assign` 的資源交集檢查會把這張卡**整張跳過**（`for other in items:` 迴圈裡的 `continue`），它宣告的資源即刻視為釋放 |
 | 14 | 任意 → `🚨已升級` | ⛔ **無動詞** | — | ⛔ **無** | `checkpoint --decision escalate` **不改交付狀態**，只印一行提示要人手打 `handoff --status 🚨已升級`（`checkpoint_cmd.py` 逐字：「本指令不改交付狀態」）⇒ **「該不該升級」與「卡真的變成已升級」之間沒有機械連線** |
 | 15 | `🚨已升級` → `🔨執行中`（解除） | ⛔ **無動詞** | — | ⛔ **無** | `escalation-resolution` 是 `templates/review-escalation.md` §4 已裁定的**獨立事件型別**，其 writer **未實作**（`validation.validate_checkpoint_input` 對 `escalation_resolution` 鍵 fail-closed 拒收並逐字說明）。⇒ 在它落地前，事件流上該區間**恆為升級中** |
 | 16 | `🏁完成`／`🛑已停止` → `🔨執行中`（**終態被拉回**） | `assign` | ⛔ **無** | ⛔ **無**：`TERMINAL_STATUSES`（`assign_cmd.py`）只在資源交集迴圈 `for other in items:` 裡的 `if (other.delivery_status or "") in TERMINAL_STATUSES: continue` 被讀——那是在掃**別張卡**。**本卡自己的終態一個字都不讀** ⇒ `rc=0`、無警告 | Discovery 實驗 F（2026-08-22）。⛔ 本卡不修（非射程），承接者未指名，見表六第 3 列 |
@@ -183,11 +185,36 @@ local telemetry 另以同一 envelope 記錄 `resource-acquired | resource-relea
 | 18 | 任意 → `⏳待執行`／`🚧進行中`（**廢止值**） | `--status` 自由文字 | ⛔ 無 | ⛔ **無** | canonical §0 逐字「新寫入不得用」，而兩個值仍在 `project.FIELD_SPECS` 的選項列舉裡 ⇒ `--status` 寫得進去。⚠️ SINGLE_SELECT 的選項一經建立，`ensure_fields` 對已存在欄位「原樣保留」⇒ **移不掉**，只能靠條文 |
 
 > (a) **第 18 列刻意保留在表內，而它描述的是一個被禁止的轉移。**
-> (b) 為什麼：本表若只列「允許的」，讀者無從分辨「沒列到」與「列了但擋不住」。第 11、13、
-> 14、15、16、17、18 這七列全是**寫得出來但沒有執行者**的格子——它們不在表內，這張表就會
+> (b) 為什麼：本表若只列「允許的」，讀者無從分辨「沒列到」與「列了但擋不住」。第 11、13、13b、
+> 14、15、16、17、18 這八列全是**寫得出來但沒有執行者**的格子——它們不在表內，這張表就會
 > 變成「看起來完備」的東西。
 > (c) ⛔ **不得由「它在表內」推出「它是合法轉移」**：合法性看「唯一合法動詞」欄，執行力看
 > 「機械執行者」欄，兩欄各自獨立。
+
+> ⭐ **表一的窮舉性是跑出來的，⛔ 不是人工宣稱的。** 值域由 `import` 取得而非手打；
+> 複驗（2026-08-26 實跑，結果為「未涵蓋 0 個狀態、0 個 next-stage」）：
+>
+> ```bash
+> python3 - <<'EOF'
+> import re, sys, pathlib
+> sys.path.insert(0, "cli/src")
+> from wf_cli.project import FIELD_SPECS
+> doc = pathlib.Path("templates/control-plane-contract.md").read_text(encoding="utf-8")
+> # 標題以行首錨定：本區塊自己也寫了「表一／表二」字樣，但它們前面有 `> `，
+> # 故不是行首命中 ⇒ 自指不會把切片截斷。⭐ 自指命中是可見的，⛔ 不是被偷偷排除的。
+> lo = re.search(r'(?m)^#### 表一：', doc).start()
+> hi = re.search(r'(?m)^#### 表二：', doc).start()
+> t = doc[lo:hi]
+> print("未涵蓋的狀態:", [x for x in FIELD_SPECS["交付狀態"][1] if x not in t])
+> print("未涵蓋的 next-stage:", [g for g in
+>       ("requirement","research","planning","backlog","implementation","review","release")
+>       if f"--next-stage {g}" not in t])
+> EOF
+> ```
+>
+> ⛔ **不得由「窮舉」推出「完備」**：本表窮舉的是**值域**（每個狀態至少出現在一列），
+> ⛔ 不是**狀態對**（15×15 的組合）。後者絕大多數今天由第 17 列那一格逃生門統包，
+> 逐對展開只會得到 200 多列同樣寫著「⛔ 無」的東西。
 
 #### 表二：Gate／preflight 退回
 
