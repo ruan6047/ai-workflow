@@ -677,7 +677,11 @@ def run(args: argparse.Namespace) -> int:
     )
     runner = default_runner
     project = resolve_project(runner, target.owner, target.project)
-    fields = ensure_fields(runner, target.owner, target.project)
+    # ⚠️ 這裡**刻意只解析 project、不呼叫 `ensure_fields`**。`ensure_fields` 不是
+    # 唯讀的：缺哪個凍結欄位就送一次 `gh project field-create`
+    # （`project.ensure_fields`）。它被搬到踩坑閘門之後，理由與可推不可推的界線
+    # 寫在那個呼叫點旁邊（見下方 `fields = ensure_fields(...)`）。
+    # ⛔ 不得由「這行不見了」推出欄位不會被建立——它只是往後挪了。
 
     items = list_items(runner, project)
     item = find_item_by_card_id(items, args.card_id)
@@ -757,15 +761,45 @@ def run(args: argparse.Namespace) -> int:
 
     ts = now_iso8601()
 
-    # ⭐ 離開閘門：**擺在所有既有前置檢查之後、所有寫入之前**。
+    # ⭐ 離開閘門：**擺在所有既有前置檢查之後、本函式任何會改變世界的動作之前**。
     #
     # 擺在後面不是隨意：既有那幾道（部署閘門 rc=4、Backlog 前身狀態 rc=4、
     # source_sha 不存在 rc=2…）各自有已被依賴的退出碼，插在它們前面會讓同一個
-    # 錯誤換一個 rc 回報。擺在最後一道之後、第一次 `set_field_value` 之前，
-    # 「缺報告即 rc≠0 且零寫入」與既有退出碼語意兩者同時成立。
+    # 錯誤換一個 rc 回報。
+    #
+    # ⭐ **這一行之後才有第一個會改變世界的動作**，且那是一個封閉集合：
+    # `ensure_fields`（`gh project field-create`）、`set_field_value`、
+    # `set_item_body`、`_release_with_cleanup` 的 `issue close` 與收尾清理的 git
+    # 動作——全部在下面。⇒ `gate.rc != 0` 那條路上本指令只送出過
+    # `gh project view` 與批次讀 items 的 GraphQL query 兩種唯讀呼叫。
+    #
+    # ⚠️ **這句話一度是假的，而假的正是這段註解本身。** R1-001：`ensure_fields`
+    # 原本在 `resolve_project` 旁邊，它並非唯讀——缺凍結欄位就會建欄位，於是少一
+    # 個欄位的 Project 在「缺報告 rc=2」路上會先被改掉欄位定義。⇒ 現在由
+    # `test_missing_report_makes_no_gh_write_call_at_all` 以**唯讀呼叫白名單**
+    # 釘住：任何不在白名單上的 gh 呼叫都會讓那條轉紅。
+    #
+    # ⛔ **不得由這段推出**：(1) `ensure_fields` 是唯讀的——它不是；(2) 其他指令
+    # 也有同樣保證——`assign`／`open` 仍刻意在前置段呼叫 `ensure_fields`；
+    # (3) 閘門通過代表內容被驗過——CLI 只驗窮舉性、值域與非空；(4) 這裡沒有繞道
+    # ——離開階段判不出來時是**明文豁免**，見 `_pitfall_gate` docstring 第 2 點。
     gate = _pitfall_gate(args, item, ts)
     if gate.rc != 0:
         return gate.rc
+
+    # ⭐ 欄位 schema 的準備**刻意擺在閘門之後**（R1-001 的修法）。
+    #
+    # (a) 刻意如此：讀起來像「為什麼不跟 `resolve_project` 放一起」，答案是不能。
+    # (b) 為什麼：`ensure_fields` 會送 `field-create`，擺在閘門前會讓拒收路徑先
+    #     改掉 Project 的欄位定義。擺在這裡是唯一能同時成立的位置——閘門之前零
+    #     寫入，而下面第一個 `set_field_value` 之前欄位必然存在。**閘門讀不到的
+    #     東西不在這裡**：`_pitfall_gate` 只吃 `item`（`list_items` 給的欄位
+    #     **值**），⛔ 不吃 `fields`（欄位**定義**）。
+    # (c) ⛔ 不得由此推出「所有 gh 寫入都可以往後搬」：能搬的唯一理由是 `resolve_project`
+    #     到本行之間對 `fields` 這個名字的讀取次數是 0（AST 可證，見交付報告），
+    #     別的呼叫點沒有這個性質。
+    fields = ensure_fields(runner, target.owner, target.project)
+
     trace = f"；{PHASE_LOG_LABEL} {gate.phase_mark}"
     if gate.report_mark:
         trace += f"；{gate.report_mark}"

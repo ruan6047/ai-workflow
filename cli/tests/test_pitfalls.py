@@ -444,20 +444,114 @@ def _only_item(runner: FakeGhRunner):
     return list_items(runner, resolve_project(runner, "acme", 1))[0]
 
 
-def test_missing_report_refuses_with_zero_writes(runner, capsys):
-    """⭐ 缺報告 ⇒ rc≠0，且**卡片 body 與所有欄位逐位元未變**。
+#: ``FakeGhRunner`` 上**不屬於世界狀態**的屬性：它們只記「問過什麼」／是測試旋鈕，
+#: 被動到不代表遠端被改。⛔ 這是唯一的例外清單，其餘一律納入比對。
+_NON_WORLD_ATTRS = frozenset({"graphql_calls", "calls", "revision_content_unavailable"})
 
-    「零寫入」不用散文宣稱：整個 fake 狀態面深拷貝前後直接比對，任何一格被動到
-    都會紅——比只看 body 或只看某幾個欄位嚴格。
+
+def _world(runner: FakeGhRunner) -> dict:
+    """整個 fake 世界的深拷貝快照（items ＋ **projects 的欄位定義** ＋ issues ＋ 序號）。
+
+    ⭐ **刻意由 ``vars()`` 取全部屬性再扣掉明列的例外，⛔ 不是列舉「要比對哪幾格」。**
+    查核 R1-001 的漏檢成因正是那種開放集合：舊斷言只深拷 ``runner.items``，於是
+    ``ensure_fields`` 改掉 ``runner.projects[...]["fields"]``（欄位**定義**）時，
+    比對面上完全看不見。封閉集合的好處是預設方向反過來——`FakeGhRunner` 之後長出
+    任何新的狀態屬性都自動被納入，要排除得有人明寫進 ``_NON_WORLD_ATTRS``。
+
+    ``_seq``／``_issue_seq`` 也在比對範圍內，而且它們是很靈敏的哨兵：`_next()` 只
+    在「建立了什麼」時才被呼叫，⇒ 拒收路徑上序號一動就代表有東西被配置出來。
+    """
+    return {
+        key: copy.deepcopy(value)
+        for key, value in vars(runner).items()
+        if key not in _NON_WORLD_ATTRS
+    }
+
+
+#: **唯讀** gh 子命令的白名單（封閉集合）。
+#:
+#: ⛔ 刻意不寫成「哪些會寫」的黑名單——`test_commands_mocked._RecordingRunner.MUTATING`
+#: 就是黑名單形狀，而 R1-001 恰好是它擋不住的那一類：`field-create` 明明列在黑名單
+#: 裡，卻沒有人想到 `ensure_fields` 會在前置段送出它，於是探針從沒對準過那條路。
+#: 白名單反過來：**沒被明文宣告成唯讀的一切都算違規**，新增的 gh 動詞預設轉紅。
+_READ_ONLY_GH: frozenset[tuple[str, ...]] = frozenset(
+    {("project", "view"), ("project", "field-list")}
+)
+
+
+class CallLoggingRunner(FakeGhRunner):
+    """記下每一次 gh 呼叫的 ``FakeGhRunner``。
+
+    ``run_json`` 沒有被覆寫，它在 ``GhRunner`` 裡是走 ``self.execute``——⇒ 覆寫
+    ``execute`` 與 ``graphql`` 兩支就覆蓋了全部出口。⚠️ ``FakeGhRunner`` 覆寫了
+    ``graphql``，因此 GraphQL 呼叫**不會**經過 ``execute``，兩支都要掛。
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[list[str]] = []
+
+    def execute(self, args, input: str | None = None) -> str:  # type: ignore[override]
+        self.calls.append(list(args))
+        return super().execute(args, input)
+
+    def graphql(self, query: str, **variables: str) -> dict:  # type: ignore[override]
+        self.calls.append(["api", "graphql", query])
+        return super().graphql(query, **variables)
+
+    def not_declared_read_only(self) -> list[list[str]]:
+        """回傳所有**沒被宣告成唯讀**的呼叫。空 list ＝ 這條路上一次寫入都沒有。"""
+        offenders: list[list[str]] = []
+        for call in self.calls:
+            if call[:2] == ["api", "graphql"]:
+                if "mutation" in call[2]:
+                    offenders.append(["api", "graphql", "<mutation>"])
+                continue
+            if tuple(call[:2]) not in _READ_ONLY_GH:
+                offenders.append(call)
+        return offenders
+
+
+@pytest.fixture
+def logging_runner(monkeypatch):
+    fake = CallLoggingRunner()
+    for module in (open_cmd, assign_cmd, handoff_cmd):
+        monkeypatch.setattr(module, "default_runner", fake)
+    return fake
+
+
+def _forget_field(runner: FakeGhRunner, name: str) -> None:
+    """讓 Project 退回到**沒有這個凍結欄位**的樣子（欄位定義與所有 item 值一起拿掉）。
+
+    模擬的是真實母體，不是人造病例：``FIELD_SPECS`` 會長新欄位（``階段`` 就是最近
+    才加的那個），早於它建立的 Project 與卡就是這個形狀，而 ``ensure_fields`` 存在
+    的理由正是補上它們。
+
+    ⚠️ item 值要一起拿掉：``FakeGhRunner`` 的批次讀取會拿欄位名回查欄位型別，留著
+    孤兒值會在**讀取端**就 KeyError——那是測試替身的假象，不是產線行為，會把測試
+    引到另一條錯誤路徑上去（「複驗要用會通過的樣本」）。
+    """
+    runner.projects[("acme", 1)]["fields"].pop(name, None)
+    for raw in runner.items.values():
+        raw["fields"].pop(name, None)
+
+
+def test_missing_report_refuses_with_zero_writes(runner, capsys):
+    """⭐ 缺報告 ⇒ rc≠0，且**整個 fake 世界逐位元未變**。
+
+    「零寫入」不用散文宣稱：快照走 :func:`_world`（含 Project 的欄位定義），
+    任何一格被動到都會紅。⚠️ 本條的 Project 欄位是齊的，⇒ 它對 R1-001 那條路
+    **沒有鑑別力**（欄位不缺時 ``ensure_fields`` 本來就不會建東西）；有鑑別力的
+    是下面 ``test_missing_report_leaves_the_project_field_schema_untouched``。
     """
     assert _open("PITFALL-E2E1") == 0
-    before = copy.deepcopy(runner.items)
+    before = _world(runner)
     capsys.readouterr()
 
     rc = _handoff("PITFALL-E2E1", "a" * 40)
 
     assert rc == 2
-    assert runner.items == before, "拒收路徑上狀態面必須一個字都沒寫"
+    assert _world(runner) == before, "拒收路徑上狀態面必須一個字都沒寫"
     err = capsys.readouterr().err
     assert "須附踩坑族清冊回應" in err
     assert "狀態面一個字都沒寫" in err
@@ -496,11 +590,11 @@ def test_a_short_report_is_refused_with_zero_writes(runner, capsys):
     assert _open("PITFALL-E2E4") == 0
     roster = pitfalls.roster_for("需求")
     short = "\n".join(f"{n}：已檢查" for n in roster[:-1])
-    before = copy.deepcopy(runner.items)
+    before = _world(runner)
     capsys.readouterr()
 
     assert _handoff("PITFALL-E2E4", "d" * 40, **{"--pitfall-report": short}) == 2
-    assert runner.items == before
+    assert _world(runner) == before
     assert "缺 1 族未回答" in capsys.readouterr().err
 
 
@@ -585,3 +679,87 @@ def test_the_gate_runs_after_the_existing_preflight_refusals(runner, capsys):
     capsys.readouterr()
     rc = _handoff("PITFALL-E2E8", "9" * 40, **{"--next-stage": "release"})
     assert rc == 4, "部署閘門的 rc=4 必須先於踩坑閘門的 rc=2"
+
+
+# ---- R1-001：閘門之前連 Project 的**欄位定義**都不准被動 -----------------
+#
+# 查核以「空欄位 Project」探針重現：`handoff` 回 rc=2，但 `field_created_before_gate
+# =True`、`project_state_unchanged=False`。成因是 `ensure_fields` 並非唯讀（缺凍結
+# 欄位就送 `gh project field-create`），而它原本擺在 `resolve_project` 旁邊——閘門
+# 之前。下面三條分別是：正向（缺欄位＋缺報告 ⇒ 零寫入）、負控（缺欄位＋合格報告
+# ⇒ 欄位確實被建）、以及呼叫面的獨立佐證。
+
+
+def test_missing_report_leaves_the_project_field_schema_untouched(logging_runner, capsys):
+    """⭐ **正向**：Project 少一個凍結欄位 ＋ 缺報告 ⇒ rc≠0 且欄位 schema 逐位元不變。
+
+    這是 R1-001 的回歸條。⛔ 斷言不只比 ``runner.items``——那正是漏檢的成因；
+    :func:`_world` 把 ``runner.projects`` 的欄位定義一起納入比對。
+    """
+    assert _open("PITFALL-FIELD1") == 0
+    _forget_field(logging_runner, "階段")
+    assert "階段" not in logging_runner.projects[("acme", 1)]["fields"], (
+        "前提沒成立就不是這條測試要驗的世界"
+    )
+    before = _world(logging_runner)
+    capsys.readouterr()
+
+    rc = _handoff("PITFALL-FIELD1", "1" * 40)
+
+    assert rc == 2
+    assert "階段" not in logging_runner.projects[("acme", 1)]["fields"], (
+        "拒收路徑上建了欄位＝R1-001 復發"
+    )
+    assert _world(logging_runner) == before, "欄位定義／items／序號都必須逐位元不變"
+    assert "須附踩坑族清冊回應" in capsys.readouterr().err
+
+
+def test_missing_report_makes_no_gh_write_call_at_all(logging_runner, capsys):
+    """⭐ 同一條路的**呼叫面**佐證：整趟只送出被明文宣告成唯讀的 gh 呼叫。
+
+    狀態比對過不了「寫進去又改回來」那關，呼叫紀錄過得了；反過來呼叫紀錄過不了
+    「白名單漏列了某個其實會寫的動詞」，狀態比對過得了。⇒ 兩條一起才是證據。
+
+    ⛔ 這條**不宣稱** wfcli 全指令零寫入——`assign`／`open` 仍刻意在前置段呼叫
+    `ensure_fields`（見 ``test_commands_mocked`` 對 assign 的同型註記）。
+    """
+    assert _open("PITFALL-FIELD3") == 0
+    _forget_field(logging_runner, "階段")
+    logging_runner.calls.clear()
+    capsys.readouterr()
+
+    assert _handoff("PITFALL-FIELD3", "3" * 40) == 2
+
+    assert logging_runner.calls, "代理沒攔到任何呼叫的話，下一句斷言是空的"
+    assert logging_runner.not_declared_read_only() == [], (
+        f"閘門之前出現非唯讀呼叫：{logging_runner.not_declared_read_only()}"
+    )
+    # 白名單不是恆真的裝飾：這趟真的兩種唯讀呼叫都用到了。
+    assert ["project", "view", "1", "--owner", "acme", "--format", "json"] in (
+        logging_runner.calls
+    )
+    assert any(c[:2] == ["api", "graphql"] for c in logging_runner.calls)
+
+
+def test_a_valid_report_still_creates_the_missing_field(logging_runner):
+    """⭐ **負控**：缺欄位 ＋ 合格報告 ⇒ rc=0 且那個欄位**確實被建出來**。
+
+    沒有這條的話，「正向那條變綠」與「`ensure_fields` 整個被弄丟」在觀測面上長得
+    一模一樣。⇒ 這裡不只看欄位定義出現，還要求值真的寫得進去（`write_status_face`
+    的 ``"階段" in fields`` 分支若拿到舊的 fields 就會靜靜跳過）。
+    """
+    assert _open("PITFALL-FIELD2") == 0
+    _forget_field(logging_runner, "階段")
+
+    rc = _handoff(
+        "PITFALL-FIELD2", "2" * 40,
+        **{"--pitfall-report": pitfalls.report_template("需求")},
+    )
+
+    assert rc == 0
+    assert "階段" in logging_runner.projects[("acme", 1)]["fields"], (
+        "閘門過了卻沒補欄位＝ensure_fields 被搬丟了"
+    )
+    item = _only_item(logging_runner)
+    assert item.fields["階段"] == handoff_cmd.STAGE_PHASE["review"]
+    assert item.fields["交付狀態"] == handoff_cmd.STAGE_STATUS["review"]
