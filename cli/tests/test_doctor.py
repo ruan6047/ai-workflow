@@ -2356,6 +2356,7 @@ from wf_cli.doctor import (
     render_conformance,
     render_reachability,
     scan_envelope,
+    tool_can_read,
 )
 
 _ROUTING = "<!-- wf-routing:v1 -->"
@@ -2993,15 +2994,20 @@ def test_reachability_states_that_it_only_covers_the_card_face_gate():
 
 
 def test_a_structurally_unreachable_cause_is_declared_not_shown_as_a_clean_zero():
-    """⭐ 零命中要說得出「什麼結果會推翻它」。
+    """⭐ 零命中要說得出「什麼結果會推翻它」，而第 5 類的 0 有**兩種**成因。
 
-    取不到 Issue `createdAt` 時，唯一能給出存在時刻的來源是 Log 的 `open` 事件，
+    成因甲（createdAt 取不到）：唯一能給出存在時刻的來源是 Log 的 `open` 事件，
     而**那筆事件本身就是通道證據** ⇒ 凡是判得出時刻的卡必然在第 4 類被攔下，
-    第 5 類（`channel_bypassed`）**構造上到不了**。⇒ 這個 0 是「機制未啟用」，
-    ⛔ 不是「掃過而沒有」，報告必須自己講出這件事。
+    第 5 類（`channel_bypassed`）**構造上到不了**。這個 0 是「機制未啟用」。
 
-    **突變檢驗**：拿掉 `render_conformance` 的該段、或把 `created_at_available`
-    改成恆真，本測試轉紅。
+    成因乙（createdAt 已接上、候選母體為空）：機制啟用了，但沒有任何一張卡同時
+    「讀得動」且「無通道留痕」⇒ 0 是**算術結果**。⛔ 這兩種 0 在計數行上長得一模一樣，
+    報告必須分得出來——本測試逐字釘住兩段文案**互斥**。
+
+    **突變檢驗**：
+    - 把 `created_at_available` 改成恆假 → 第二段 assert 轉紅（會印出成因甲的文案）；
+    - 改成恆真 → 第一段轉紅；
+    - 刪掉 `render_conformance` 的 `elif` 分支 → 第二段的「候選母體」assert 轉紅。
     """
     bodies = {"CARD-A": _conformant_body(_EARLY_OPEN, brief=False)}
     fields = {"CARD-A": {"服務的原始目標": "有"}}
@@ -3011,11 +3017,93 @@ def test_a_structurally_unreachable_cause_is_declared_not_shown_as_a_clean_zero(
     text = render_conformance(without)
     assert f"`{CAUSE_CHANNEL_BYPASSED}` 今天構造上不可達" in text
     assert "⛔ 不是「掃過而沒有」" in text
+    # ⛔ 成因甲的文案出現時，成因乙的那段**不得**同時出現：兩者對同一個 0 給出不同解釋。
+    assert "候選母體" not in text
 
-    # 補上 createdAt 之後，該段必須消失——它宣稱的是「今天」的狀態，⛔ 不是永久事實。
+    # 補上 createdAt 之後，成因甲那段必須消失——它宣稱的是「今天」的狀態，⛔ 不是永久事實。
     with_created = audit_conformance(bodies, fields, {"CARD-A": "2026-08-01T09:00:00+08:00"})
     assert with_created.created_at_available is True
-    assert "構造上不可達" not in render_conformance(with_created)
+    after = render_conformance(with_created)
+    assert "構造上不可達" not in after
+    # ⭐ 消失≠可以沉默：接上之後 0 仍是 0，報告必須改講**候選母體**多大。
+    assert "候選母體" in after and "＝ 0 張" in after
+
+
+def test_the_zero_bucket_reports_its_candidate_population_not_just_the_zero():
+    """⭐ 「0 out of 0」與「0 out of 1」是兩個不同的結論，計數行只印得出一個 0。
+
+    2026-08-26 實測母體：203 張卡裡 202 張有通道留痕，剩下那 1 張
+    （`WF-REVIEW-EVENT-MARKER-CONTRACT1`）`## Log` 前是字面反斜線-n ⇒ 解析不動，
+    在第 1 步就被 `tool_cannot_read` 攔下 ⇒ **候選母體 0 張**。若只印「0 筆」，
+    讀者會讀成「查過 200 張都沒問題」。
+
+    **突變檢驗**：把 `audit_conformance` 的候選母體條件從
+    `tool_can_read(body) and not has_channel_evidence(body)` 改成只留後半，
+    候選母體變 2 而非 1，第三個 assert 轉紅。
+    """
+    hand_moved = _conformant_body(
+        "2026-08-26T09:00:00+08:00 手動更新交付狀態（無對應動詞）。", brief=False
+    )
+    broken = _conformant_body(_LATE_OPEN, brief=False).replace("\n## Log", "\\n## Log")
+    # 夾具前提逐字驗過，⛔ 不假設：一張讀得動而無通道、一張讀不動而也無通道。
+    assert (tool_can_read(hand_moved), has_channel_evidence(hand_moved)) == (True, False)
+    assert (tool_can_read(broken), has_channel_evidence(broken)) == (False, False)
+
+    bodies = {"CARD-HAND": hand_moved, "CARD-BROKEN": broken}
+    fields = {c: {"服務的原始目標": "有"} for c in bodies}
+    # 型別逐字寫出：`dict` 是**不變**的，`dict[str, str]` 不可指派給
+    # `dict[str, str | None]`——真實呼叫端（`doctor_cmd`）傳的正是後者（讀不到的卡是 None）。
+    created: dict[str, str | None] = {
+        "CARD-HAND": "2026-08-26T08:00:00+08:00", "CARD-BROKEN": "2026-08-26T08:00:00+08:00"
+    }
+    report = audit_conformance(bodies, fields, created)
+
+    assert report.channel_bypass_candidates == 1, "讀不動的那張⛔ 不算候選——它在第 1 步就被攔下"
+    # 候選母體非空且真的命中 ⇒ 這一次的輸出不得再說「算術結果」。
+    assert report.by_cause()[CAUSE_CHANNEL_BYPASSED] == 1
+    text = render_conformance(report)
+    assert "候選母體" not in text, "非零命中時不印零命中歸因段"
+
+    # 只留讀不動的那張：候選母體 0、桶也是 0 ⇒ 必須說出「算術結果」。
+    only_broken = audit_conformance(
+        {"CARD-BROKEN": broken}, {"CARD-BROKEN": {"服務的原始目標": "有"}},
+        {"CARD-BROKEN": "2026-08-26T08:00:00+08:00"},
+    )
+    assert only_broken.channel_bypass_candidates == 0
+    empty_text = render_conformance(only_broken)
+    assert "＝ 0 張" in empty_text and "算術結果" in empty_text
+
+    # 候選母體非空、桶仍是 0（該卡在其他規則上全合規）⇒ 這才是「真的掃過而沒有」。
+    clean = _conformant_body("2026-08-26T09:00:00+08:00 手動更新交付狀態（無對應動詞）。")
+    observed = audit_conformance(
+        {"CARD-CLEAN": clean}, {"CARD-CLEAN": {"服務的原始目標": "有"}},
+        {"CARD-CLEAN": "2026-08-26T08:00:00+08:00"},
+    )
+    assert (observed.channel_bypass_candidates, observed.findings) == (1, [])
+    assert "真的掃過而沒有" in render_conformance(observed)
+
+
+def test_tool_can_read_is_one_definition_shared_by_attribution_and_candidates():
+    """⭐ 歸因與候選母體問的是同一個問題，⛔ 不得各持一份判準。
+
+    各寫一份就會出現「歸因說讀得到、候選母體說讀不到」的自我矛盾，而稽核器自我矛盾
+    正是本檔要治的形態。
+
+    **突變檢驗**：把 `evaluate_card_conformance` 的 `tool_can_read(body)` 換回內嵌的
+    try/except（形狀相同故仍會通過），但把 `tool_can_read` 的回傳反過來 ⇒ 本測試轉紅
+    （兩處會給出相反答案）。
+    """
+    broken = _conformant_body(_LATE_OPEN, brief=False).replace("\n## Log", "\\n## Log")
+    findings = evaluate_card_conformance(
+        "CARD-BROKEN", broken, service_goal="有", issue_created_at="2026-08-26T08:00:00+08:00"
+    )
+    assert findings and {f.cause for f in findings} == {CAUSE_TOOL_CANNOT_READ}
+    assert tool_can_read(broken) is False
+    # 同一張卡在候選母體那一側也必須算「讀不動」。
+    report = audit_conformance(
+        {"CARD-BROKEN": broken}, {"CARD-BROKEN": {"服務的原始目標": "有"}}, {"CARD-BROKEN": "z"}
+    )
+    assert report.channel_bypass_candidates == 0
 
 
 def test_the_second_criterion_gap_is_named_in_the_output_not_only_in_the_delivery():

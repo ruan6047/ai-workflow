@@ -1903,6 +1903,20 @@ def predates_rule(existence: ExistenceTime, epoch: str) -> bool | None:
     return when < epoch_dt
 
 
+def tool_can_read(body: str) -> bool:
+    """本工具的解析器定不定得住這張卡（`## Log` 切點唯一）。
+
+    ⭐ 抽成具名函式而不是各處 try/except：`attribute_cause` 的第 1 順位與
+    `channel_bypass_candidates` 的候選母體都要問同一個問題，兩處各寫一份就會出現
+    「歸因說讀得到、候選母體說讀不到」這種自我矛盾——而稽核器自我矛盾正是本檔要治的形態。
+    """
+    try:
+        split_at_log(body or "")
+    except AmendError:
+        return False
+    return True
+
+
 def has_channel_evidence(body: str) -> bool:
     """卡面 Log 是否留有任一正規寫入通道的事件。"""
     events, _ = parse_log_events(body or "")
@@ -2053,10 +2067,18 @@ class ConformanceReport:
     #: `accept_as_legacy` 的 epoch 其殘餘**不逐張列**（需求方已裁定不追溯），只留摘要。
     #: 放進 `routine_gaps` 而非 findings，是為了讓它不進待辦、也不從報告上消失。
     accepted_as_legacy: list[str] = field(default_factory=list)
-    #: 本次掃描有沒有拿到卡的 Issue `createdAt`。⭐ **這決定第 5 類是否構造上可達**，
+    #: 本次掃描有沒有拿到卡的 Issue `createdAt`。⭐ **這決定第 5 類的零是哪一種零**，
     #: 見 `render_conformance` 的零命中歸因段——⛔ 不得讓一個永遠是 0 的桶看起來像
     #: 「掃過而乾淨」。
     created_at_available: bool = False
+    #: 第 5 類（`channel_bypassed`）的**候選母體大小**＝本次掃到、且同時滿足
+    #: 「解析得動」與「完全沒有通道留痕」的卡數。⭐ 它是該桶計數的**上界**。
+    #:
+    #: ⛔ 沒有這個數，`channel_bypassed 0` 讀起來像「查過 200 張都沒問題」；實際上
+    #: 2026-08-26 的實測是**候選母體 0 張**（202/203 有通道留痕，剩下那 1 張解析不動
+    #: ⇒ 在第 1 步就被 `tool_cannot_read` 攔下）。「0 out of 0」與「0 out of 200」是
+    #: 兩個完全不同的結論，報告必須分得出來。
+    channel_bypass_candidates: int = 0
 
     @property
     def routine_gaps(self) -> Sequence[str]:
@@ -2113,11 +2135,7 @@ def evaluate_card_conformance(
     ⛔ 不修任何東西、⛔ 不拋例外：讀不到的卡回 `tool_cannot_read` 的 findings，
     因為「工具讀不到」本身就是要被報出來的結果，不是讓稽核中斷的理由。
     """
-    try:
-        split_at_log(body or "")
-        tool_readable = True
-    except AmendError:
-        tool_readable = False
+    tool_readable = tool_can_read(body)
 
     existence = existence_time_of(body, issue_created_at)
     channel = has_channel_evidence(body)
@@ -2178,6 +2196,13 @@ def audit_conformance(
         status="scanned",
         scanned_cards=len(card_bodies),
         created_at_available=any(v for v in created.values()),
+        # 第 5 類的上界。⚠️ 兩個條件缺一不可：讀不動的卡在第 1 步就被攔下（不是候選），
+        # 有通道留痕的卡在第 4 步被攔下（也不是候選）。
+        channel_bypass_candidates=sum(
+            1
+            for body in card_bodies.values()
+            if tool_can_read(body) and not has_channel_evidence(body)
+        ),
     )
     legacy_counts: Counter[str] = Counter()
     for card_id in sorted(card_bodies):
@@ -2409,16 +2434,31 @@ def render_conformance(report: ConformanceReport) -> str:
         "- ⚠️ 前兩類是**本工具的侷限**，⛔ 不是對卡或對人的指控："
         f"{CAUSE_TOOL_CANNOT_READ}／{CAUSE_UNDECIDABLE}。"
     )
+    # ⭐ 零命中要說得出「什麼結果會推翻它」。第 5 類的 0 有**兩種完全不同的成因**，
+    # 而它們在計數上長得一模一樣 ⇒ 逐字分開講，⛔ 不讓讀者自己猜是哪一種。
     if not report.created_at_available:
-        # ⭐ 零命中要說得出「什麼結果會推翻它」。第 5 類今天**構造上到不了**：
-        # 取不到 Issue createdAt 時，唯一能給出存在時刻的來源是 Log 的 `open` 事件，
-        # 而那筆事件本身就是通道證據 ⇒ 凡是判得出時刻的卡必然 channel_evidenced=True，
-        # 第 4 步就攔下了。⇒ 這個 0 是「機制沒啟用」，⛔ 不是「掃過而沒有」。
+        # 成因甲：取不到 Issue createdAt 時，唯一能給出存在時刻的來源是 Log 的 `open`
+        # 事件，而那筆事件本身就是通道證據 ⇒ 凡是判得出時刻的卡必然 channel_evidenced
+        # =True，第 4 步就攔下了。⇒ 這個 0 是「機制沒啟用」，⛔ 不是「掃過而沒有」。
         lines.append(
             f"- ⛔ **`{CAUSE_CHANNEL_BYPASSED}` 今天構造上不可達**（本次未取得 Issue "
             "createdAt）：能給出存在時刻的只剩 Log 的 `open` 事件，而它本身就是通道證據 "
             "⇒ 判得出時刻的卡必然在前一類被攔下。這個 0 是**機制未啟用**，"
             "⛔ 不是「掃過而沒有」。要讓它變成真的觀測，須先補上 createdAt 來源。"
+        )
+    elif counts[CAUSE_CHANNEL_BYPASSED] == 0:
+        # 成因乙：機制已啟用，但**候選母體**可能本來就是空的。「0 out of 0」與
+        # 「0 out of 200」是兩個不同的結論，計數行卻只印得出一個 0。
+        candidates = report.channel_bypass_candidates
+        lines.append(
+            f"- `{CAUSE_CHANNEL_BYPASSED}` 0 筆，其**候選母體**（讀得動且完全無通道"
+            f"留痕的卡）＝ {candidates} 張／共 {report.scanned_cards} 張。"
+            + (
+                "⇒ 候選母體為空，本次的 0 是**算術結果**，⛔ 不是「查過 N 張都沒問題」。"
+                "要推翻它：出現一張解析得動、卻連一筆 wfcli 事件都沒有的卡。"
+                if candidates == 0
+                else "⇒ 候選母體非空而仍是 0，這是**真的掃過而沒有**。"
+            )
         )
     # 逐規則摘要先於逐張清單：`migrate` 的規則會逐張列出（V5），一條規則就可能吃掉
     # 兩百行；沒有摘要行的話讀者得捲到底才知道哪一條規則在痛。
@@ -2995,4 +3035,5 @@ __all__ = [
     "run_doctor",
     "scan_envelope",
     "severed_declared_keys",
+    "tool_can_read",
 ]
