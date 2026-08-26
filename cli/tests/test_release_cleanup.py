@@ -42,6 +42,7 @@ from wf_cli.project import (
 
 from .conftest import git
 from .fake_gh import FakeGhRunner
+from .test_pitfalls import with_pitfall_report
 
 CARD_ID = "WF-RELEASE-SANDBOX1"
 BRANCH = "claude/WF-RELEASE-SANDBOX1"
@@ -126,6 +127,14 @@ def _open_argv(card_id: str) -> list[str]:
 
 
 def handoff_argv(card_id: str, sha: str, **overrides) -> list[str]:
+    """⚠️ 末行的 ``with_pitfall_report`` 是 WF-STAGE-PITFALL-LIST1 加的必要前提。
+
+    ``handoff`` 現在要求一份「離開現階段的族清冊回應」才肯寫任何一格。本檔的卡在
+    ``env`` fixture 走完 ``open``＋``assign`` 之後停在 ``需求``；跑過一次 release
+    之後階段會變成 ``部署`` ⇒ 同一個 helper 在同一個測試裡的兩次呼叫可能要不同的
+    清冊。因此由 ``pitfalls.report_template()`` 依卡此刻的狀態導出，⛔ 不塞固定
+    字串。
+    """
     defaults: dict[str, object] = {
         "--to": "封存",
         "--next-stage": "release",
@@ -139,7 +148,7 @@ def handoff_argv(card_id: str, sha: str, **overrides) -> list[str]:
                 argv.append(key)
         else:
             argv += [key, str(value)]
-    return argv
+    return with_pitfall_report(argv, card_id)
 
 
 def local_branch_exists(repo: Path, branch: str = BRANCH) -> bool:

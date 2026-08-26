@@ -113,12 +113,19 @@ Issue 不關，**只記錄本次實際動作與阻擋原因**。守衛擋下、�
    級別本身。
 
 3. **被否決的候選 A——「Log 內須有 planning 階段的事件」**（卡面舉的例）：**機械上做不到。**
-   ``handoff`` 的 Log 行只記 owner／iteration／SHA／證據，**不記 ``--next-stage`` 也不記
-   ``--status``**（`doctor.HANDOFF_STAGE_EXPECTED_STATUS` 上方的長註解逐條寫明，並把後果
-   釘成 `doctor.UNDECIDABLE_HANDOFF`）。因此 ``handoff --next-stage planning`` 留下的行與
-   ``--next-stage review`` 留下的行**逐位元組相同**。照這條做，檢查會退化成「Log 裡有任何一
-   筆 handoff」——那才是恆真的裝飾。要讓它成立必須改 handoff 的留痕格式與 doctor 的推導語意，
+   ``handoff`` 的 Log 行**不記 ``--next-stage`` 也不記 ``--status``**
+   （`doctor.HANDOFF_STAGE_EXPECTED_STATUS` 上方的長註解逐條寫明，並把後果釘成
+   `doctor.UNDECIDABLE_HANDOFF`）。照這條做，檢查會退化成「Log 裡有任何一筆 handoff」
+   ——那才是恆真的裝飾。要讓它成立必須改 handoff 的留痕格式與 doctor 的推導語意，
    兩者都在本卡射程外。
+
+   ⚠️ **本段的舉例已由 WF-STAGE-PITFALL-LIST1 部分改寫，結論未變。** 該卡在 Log 行加了
+   ``；階段 <離開側>`` 與踩坑回應摘要，所以「``--next-stage planning`` 與 ``review`` 留下
+   的行逐位元組相同」這個**舉例**不再成立（兩者離開側不同時字串就不同）。但**推導不出
+   寫入的狀態**這個結論仍然成立、且是機械可驗的：記的是離開側，而本次寫進去的是進入側，
+   兩者不互推。⇒ ``doctor.UNDECIDABLE_HANDOFF`` 的判定未變（實測 175 張真實卡、721 行
+   留痕，判定欄零變動）。⚠️ ``doctor.py`` 那句「只記 owner／iteration／SHA／證據」的**列舉**
+   因此變得不完整（結論仍為真）；本卡不得改該檔，缺口已寫入交付報告的阻塞發現。
 
 4. **被否決的候選 B——「需求方批註放行」**（canonical §3.1 T3 列的字面）：**在本 repo 恆真，
    故明文不實作。** ``docs/ROADMAP.md`` §1：人類、PM、執行者、查核者共用同一個 GitHub 帳號
@@ -159,9 +166,11 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
-from .. import git_ops
+from .. import git_ops, pitfalls
 from ..card import TIERS, append_log_line, now_iso8601, parse_branch_worktree
 from ..cleanup import (
     SUBSEQUENT_OBLIGATION_STEPS,
@@ -273,6 +282,24 @@ NO_REPO_PATH_TRACE_SUFFIX = (
     "；⚠️ 未帶 --cleanup 且未帶 --repo-path，收尾清理未執行"
     "（worktree、本地分支、遠端分支皆未處理），狀態面已寫終態"
 )
+
+#: 判不出離開階段時，階段在 Log 行裡的渲染。⛔ 不留白：留白與「這個欄位還沒
+#: 上線」在事後長得一模一樣，而這兩者的處置完全不同。
+PHASE_UNDECIDABLE_MARK = "不可判定"
+
+#: Log 行記的是**離開哪個階段**，⛔ 不是要進入哪個階段。兩個理由：
+#:
+#: 1. **踩坑報告的歸屬在離開那一側。** 報告回答的是「離開這個階段時該檢查什麼」，
+#:    不記下來就無法事後判斷某次回應屬於哪一份清冊，也就統計不出退化門檻。
+#: 2. **記進入側會讓一個既有前提在別的模組裡靜默失真。** ``STAGE_PHASE`` 在六個
+#:    鍵上是單射，記下進入階段等於讓 ``--next-stage`` 變得可反推——而 ``doctor``
+#:    的狀態面漂移推導以「``handoff`` 的留痕反推不出狀態」為前提，那個前提寫在
+#:    ``doctor.py`` 的長註解裡。本卡不得改該檔 ⇒ 不製造需要改它的漂移。
+#:
+#: 形狀（``；<欄位> <值>；`` 置於 ``；證據`` 之前）比照 ``assign`` 的既有 Log 行。
+#: ⚠️ 標籤逐字取 ``階段``（卡面驗收條的字面），值恆為**離開側**——這一點只有本
+#: 註解與 ``test_pitfalls.py`` 釘得住，讀留痕的人請以此為準。
+PHASE_LOG_LABEL = "階段"
 
 
 class _CallbackEffectWriter:
@@ -444,6 +471,126 @@ def _record_actions_without_terminal(
     return True
 
 
+@dataclass(frozen=True)
+class PitfallGateResult:
+    """離開閘門的判定。``rc`` 非 0 時呼叫端必須**在任何寫入之前** return 它。"""
+
+    rc: int
+    #: 進 Log 行的階段值（離開側；判不出來時為 `PHASE_UNDECIDABLE_MARK`）。
+    phase_mark: str
+    #: 進 Log 行的踩坑段落（已檢查／不適用／發現的格數摘要，或豁免的理由）。
+    report_mark: str
+
+
+def _read_pitfall_report(raw: str | None) -> str | None:
+    """``--pitfall-report`` 的取值：``@<路徑>`` 讀檔，其餘原樣。
+
+    留這個口是因為報告是**多行**的，而多行字串在各家 shell 裡的轉義各不相同——
+    逼人把清冊擠成一行會直接把「每族恰好一列」這個形狀弄丟。⛔ 讀不到檔案時
+    回 ``None``（當成沒給），拒收訊息會把樣板印出來。
+    """
+    if raw is None:
+        return None
+    if raw.startswith("@"):
+        try:
+            return Path(raw[1:]).read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"[handoff] 讀不到 --pitfall-report 指定的檔案：{exc}", file=sys.stderr)
+            return None
+    return raw
+
+
+def _pitfall_gate(args: argparse.Namespace, item: ItemSnapshot, ts: str) -> PitfallGateResult:
+    """離開現階段的族清冊閘門。**在任何狀態面寫入之前**跑，缺報告即 rc≠0。
+
+    三條分流，每一條都會在 stderr 說明它走了哪一條——**豁免不得是靜默的**，
+    否則「這次為什麼沒被要求」在事後看不出來。
+
+    1. **界線之前**（`pitfalls.PITFALL_GATE_EPOCH`）：不要求。界線的理由與它的
+       誠實邊界寫在該常數旁。
+    2. **離開階段判不出來**：**明文豁免，不 fail closed**。理由是這條路上
+       fail closed 會擋在一個**操作者補不了**的東西上——清冊的格數由階段決定，
+       而 ``📥Backlog``／``📦已合併``／``⏸阻塞`` 沒有反函數，CLI 自己都算不出
+       正確格數，卻要求對方交一份格數正確的報告，那是不可能的要求不是閘門。
+       ⚠️ **這是一個真實的口**：把交付狀態改成沒有反函數的值就繞得過去。⛔ 不得
+       把它讀成「這裡有檢查」。要收窄它得先讓階段欄有覆蓋率，那不在本卡射程。
+    3. **其餘**：要求一份合格報告，否則 rc=2、狀態面一個字都不寫。
+    """
+    resolution = pitfalls.resolve_departing_phase(
+        item.text("階段"), item.fields.get("交付狀態"), STAGE_STATUS, STAGE_PHASE
+    )
+
+    # ⚠️ **兩個來源不一致時要說出來。** 階段欄今天只有 `open`（一律寫「需求」）
+    # 與本指令兩個 writer；``assign`` 把卡推進 🔨執行中 時**不碰階段欄** ⇒ 被指派
+    # 執行的卡，階段欄會停在上一次 handoff 寫下的值。實測（本卡交付附掃描輸出）
+    # 兩個來源可比對的卡裡有兩張不一致，兩張都是這個形狀。
+    #
+    # ⛔ 這裡**不自行改判**：哪一軸是權威是條文問題不是工具問題，工具偷偷選一邊
+    # 會讓「清冊格數為什麼是這個數」變得不可預測。⇒ 照條文以階段欄為準，但把
+    # 分歧印出來，讓操作者當下就看得見自己可能在回答錯誤階段的清冊。
+    if resolution.source == "field":
+        from_status = pitfalls.status_to_phase(STAGE_STATUS, STAGE_PHASE).get(
+            (item.fields.get("交付狀態") or "").strip()
+        )
+        if from_status is not None and from_status != resolution.phase:
+            print(
+                f"[handoff] 警示：階段欄說「{resolution.phase}」，交付狀態"
+                f"「{item.fields.get('交付狀態')}」卻反推出「{from_status}」。"
+                "本次以階段欄為準（兩軸的第一軸是階段欄），但兩者不一致代表其中一面"
+                "已過期——最常見的成因是 assign 只寫交付狀態、不寫階段欄。",
+                file=sys.stderr,
+            )
+
+    if _before_epoch(ts, pitfalls.PITFALL_GATE_EPOCH):
+        print(
+            f"[handoff] 注意：本次時戳 {ts} 早於踩坑閘門界線 "
+            f"{pitfalls.PITFALL_GATE_EPOCH}，**未要求踩坑族清冊回應**"
+            "（界線是分流輔助，不是安全邊界）",
+            file=sys.stderr,
+        )
+        return PitfallGateResult(0, resolution.phase or PHASE_UNDECIDABLE_MARK, "踩坑回應 界線前豁免")
+
+    if resolution.phase is None:
+        print(
+            f"[handoff] 注意：判不出正在離開哪個階段，**本次未要求踩坑族清冊回應**"
+            f"（{resolution.basis}）。⛔ 這不是『檢查通過了』，是這條路上沒有檢查。",
+            file=sys.stderr,
+        )
+        return PitfallGateResult(0, PHASE_UNDECIDABLE_MARK, "踩坑回應 豁免（離開階段不可判定）")
+
+    phase = resolution.phase
+    text = _read_pitfall_report(getattr(args, "pitfall_report", None))
+    if text is None:
+        print(pitfalls.refusal_message(phase, resolution.basis), file=sys.stderr)
+        return PitfallGateResult(2, phase, "")
+
+    parsed = pitfalls.parse_report(text, pitfalls.roster_for(phase))
+    if not parsed.ok:
+        print(pitfalls.refusal_message(phase, resolution.basis, parsed.errors), file=sys.stderr)
+        return PitfallGateResult(2, phase, "")
+
+    counts = parsed.counts()
+    print(
+        f"[handoff] 踩坑族清冊（離開「{phase}」，{len(parsed.rows)} 族）已收下："
+        f"已檢查 {counts['checked']}／不適用 {counts['not_applicable']}"
+        f"／發現 {counts['found']}。⛔ CLI 只驗窮舉性、值域與非空，"
+        "**分不出認真讀過與隨手打一行**；內容由檢閱那一環判。"
+    )
+    return PitfallGateResult(0, phase, parsed.digest())
+
+
+def _before_epoch(ts: str, epoch: str) -> bool:
+    """本次時戳是否早於界線。**解析失敗時回 False**（＝照樣要求報告）。
+
+    fail closed 的方向在這裡是「要求」而不是「豁免」：時戳是本模組自己產生的
+    完整 ISO-8601，解析不了代表產生端壞了，那種情況下放寬閘門沒有道理。
+    """
+    try:
+        return datetime.fromisoformat(ts) < datetime.fromisoformat(epoch)
+    except ValueError:
+        return False
+
+
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("handoff", help="交接：狀態轉換＋source SHA＋證據欄必填")
     add_target_args(p)
@@ -476,6 +623,15 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "製造 illegal_terminal_before_cleanup）；沒給 --repo-path 才放行，且會把"
         "「收尾清理未執行」寫進卡上留痕。⛔ 舊說法「預設不清理較安全」已被推翻——"
         "不可逆的那一半早被 AUTHORITY_BY_PROOF 以證明分級中和。需搭配 --repo-path",
+    )
+    p.add_argument(
+        "--pitfall-report",
+        default=None,
+        help="離開現階段的踩坑族清冊回應：每族恰好一行「族名：值」，值三選一"
+        "（已檢查／不適用：<原因>／發現：<處置>）。以 @<路徑> 開頭則讀檔"
+        "（報告是多行的，逼成一行會弄丟「每族恰好一列」的形狀）。"
+        "缺報告或格數不符時本指令 rc≠0 且狀態面一個字都不寫。"
+        "⛔ 通過本閘門不代表內容被驗過——CLI 只驗窮舉性、值域與非空。",
     )
     p.add_argument(
         "--iteration",
@@ -521,7 +677,11 @@ def run(args: argparse.Namespace) -> int:
     )
     runner = default_runner
     project = resolve_project(runner, target.owner, target.project)
-    fields = ensure_fields(runner, target.owner, target.project)
+    # ⚠️ 這裡**刻意只解析 project、不呼叫 `ensure_fields`**。`ensure_fields` 不是
+    # 唯讀的：缺哪個凍結欄位就送一次 `gh project field-create`
+    # （`project.ensure_fields`）。它被搬到踩坑閘門之後，理由與可推不可推的界線
+    # 寫在那個呼叫點旁邊（見下方 `fields = ensure_fields(...)`）。
+    # ⛔ 不得由「這行不見了」推出欄位不會被建立——它只是往後挪了。
 
     items = list_items(runner, project)
     item = find_item_by_card_id(items, args.card_id)
@@ -601,6 +761,49 @@ def run(args: argparse.Namespace) -> int:
 
     ts = now_iso8601()
 
+    # ⭐ 離開閘門：**擺在所有既有前置檢查之後、本函式任何會改變世界的動作之前**。
+    #
+    # 擺在後面不是隨意：既有那幾道（部署閘門 rc=4、Backlog 前身狀態 rc=4、
+    # source_sha 不存在 rc=2…）各自有已被依賴的退出碼，插在它們前面會讓同一個
+    # 錯誤換一個 rc 回報。
+    #
+    # ⭐ **這一行之後才有第一個會改變世界的動作**，且那是一個封閉集合：
+    # `ensure_fields`（`gh project field-create`）、`set_field_value`、
+    # `set_item_body`、`_release_with_cleanup` 的 `issue close` 與收尾清理的 git
+    # 動作——全部在下面。⇒ `gate.rc != 0` 那條路上本指令只送出過
+    # `gh project view` 與批次讀 items 的 GraphQL query 兩種唯讀呼叫。
+    #
+    # ⚠️ **這句話一度是假的，而假的正是這段註解本身。** R1-001：`ensure_fields`
+    # 原本在 `resolve_project` 旁邊，它並非唯讀——缺凍結欄位就會建欄位，於是少一
+    # 個欄位的 Project 在「缺報告 rc=2」路上會先被改掉欄位定義。⇒ 現在由
+    # `test_missing_report_makes_no_gh_write_call_at_all` 以**唯讀呼叫白名單**
+    # 釘住：任何不在白名單上的 gh 呼叫都會讓那條轉紅。
+    #
+    # ⛔ **不得由這段推出**：(1) `ensure_fields` 是唯讀的——它不是；(2) 其他指令
+    # 也有同樣保證——`assign`／`open` 仍刻意在前置段呼叫 `ensure_fields`；
+    # (3) 閘門通過代表內容被驗過——CLI 只驗窮舉性、值域與非空；(4) 這裡沒有繞道
+    # ——離開階段判不出來時是**明文豁免**，見 `_pitfall_gate` docstring 第 2 點。
+    gate = _pitfall_gate(args, item, ts)
+    if gate.rc != 0:
+        return gate.rc
+
+    # ⭐ 欄位 schema 的準備**刻意擺在閘門之後**（R1-001 的修法）。
+    #
+    # (a) 刻意如此：讀起來像「為什麼不跟 `resolve_project` 放一起」，答案是不能。
+    # (b) 為什麼：`ensure_fields` 會送 `field-create`，擺在閘門前會讓拒收路徑先
+    #     改掉 Project 的欄位定義。擺在這裡是唯一能同時成立的位置——閘門之前零
+    #     寫入，而下面第一個 `set_field_value` 之前欄位必然存在。**閘門讀不到的
+    #     東西不在這裡**：`_pitfall_gate` 只吃 `item`（`list_items` 給的欄位
+    #     **值**），⛔ 不吃 `fields`（欄位**定義**）。
+    # (c) ⛔ 不得由此推出「所有 gh 寫入都可以往後搬」：能搬的唯一理由是 `resolve_project`
+    #     到本行之間對 `fields` 這個名字的讀取次數是 0（AST 可證，見交付報告），
+    #     別的呼叫點沒有這個性質。
+    fields = ensure_fields(runner, target.owner, target.project)
+
+    trace = f"；{PHASE_LOG_LABEL} {gate.phase_mark}"
+    if gate.report_mark:
+        trace += f"；{gate.report_mark}"
+
     def append_card_log(entry: str) -> None:
         """往卡片的 ``## Log`` 附加一行（append-only）。**只碰 body，不碰任何欄位。**
 
@@ -627,7 +830,7 @@ def run(args: argparse.Namespace) -> int:
 
         append_card_log(
             f"handoff by wf-cli → owner {args.to}；iteration {new_iteration}；"
-            f"SHA {args.source_sha}；證據 {args.evidence}{cleanup_note}。"
+            f"SHA {args.source_sha}{trace}；證據 {args.evidence}{cleanup_note}。"
         )
 
     if args.cleanup:
