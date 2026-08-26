@@ -260,8 +260,10 @@ def list_fields(
       複驗方式：``gh project field-list 4 --owner ruan6047 --format json -L 100`` 與
       ``gh api graphql`` 跑 ``_LIST_FIELDS_QUERY``，兩份輸出比對。
     - **成本（已量）**：舊路徑 **102 點／4.45 秒**，本路徑 ``project view`` 2 點
-      ＋ 本查詢 1 點 ＝ **3 點／約 1.9 秒**。102 點是 gh CLI 自己的結構常數——它查
-      欄位時順便抓 100 個 item × 100 個 fieldValue，與 Project 規模無關。
+      ＋ 本查詢 1 點 ＝ **3 點／約 1.9 秒**。102 點與 Project 規模無關——同日對
+      **0 個 item** 的拋棄式 Project 量到的也是 102 點（對照：203 個 item 的 #4 同樣
+      102 點）⇒ 它是 gh CLI 查詢組裝的結構常數。⛔ 更細的根因（gh 把 ``firstItems``
+      寫死）取自卡面 A7 的引述，**未**由本卡讀 gh 原始碼複驗。
     - ⛔ **不得由上述推出「對 organization 擁有的 Project 也等價」**：量測環境
       （``ruan6047``）名下沒有 organization，``gh`` 實測回 ``organization: null``，
       **無樣本可驗**。已知的形狀差異只在「怎麼拿到 project id」那一步（``gh project
@@ -303,8 +305,9 @@ def ensure_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldM
         #
         # 為什麼安全：`created` 為假 ⇒ 上面的迴圈一次 `field-create` 都沒送出 ⇒
         # 在第一次查詢與這個 return 之間，**本函式對遠端沒有任何寫入**，重查只會
-        # 拿到同一份東西。（成本：舊碼的第二次查詢是 102 點／約 4.4 秒，佔一次寫入
-        # 動詞總成本的 94%。）
+        # 拿到同一份東西。（成本，2026-08-26 對 Project #4 實測：舊路徑一次
+        # `gh project field-list` 是 102 點／4.45 秒，`ensure_fields` 因此固定付兩次；
+        # 換成原生查詢＋本分支後，零建立整支 **3 點／約 1.9 秒**，連續三次量測皆 3 點。）
         #
         # ⛔ **不得由這個分支推出「ensure_fields 對併發是安全的」**：本函式沒有任何
         # project 層的鎖，另一個 process 仍可能在兩次查詢之間動欄位。但那在舊碼下
