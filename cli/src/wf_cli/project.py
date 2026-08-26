@@ -117,6 +117,18 @@ class ItemSnapshot:
     issue_number: int | None = None
     issue_url: str | None = None
     content_id: str | None = None  # DraftIssue 自己的節點 ID（``DI_...``）；見 set_item_body
+    #: 卡**內容**（Issue／DraftIssue）的建立時刻，GitHub 回的是 UTC（``...Z``）。
+    #:
+    #: ⚠️ 取的是 ``content.createdAt`` 而**不是** ``ProjectV2Item.createdAt``（item 進看板
+    #: 那一刻）。兩者實測差距 ≤ 3 秒（全 203 筆，content 恆 ≤ item，無反向），⇒ 選它不是
+    #: 為了精度，而是為了**方向**：消費端 `doctor.predates_rule` 用它答「這張卡早於規則
+    #: 嗎」，估得太晚會把卡推進「晚於規則卻不合規」＝對寫入端的指控。content 是兩者中
+    #: 較早的那個，⇒ 錯的方向落在無指控的那一側。
+    #:
+    #: ⛔ 這**不是**「工作發生的時刻」：2026-08-04 狀態面遷移的卡，其 Issue 建立於遷移
+    #: 當天而非當初開卡時。該限制由 `doctor.CREATED_AT_TRUSTED_FROM` 施加，⛔ 不在此處
+    #: 預先過濾——本模組只負責忠實回報來源值。
+    created_at: str | None = None
     fields: dict[str, Any] = dc_field(default_factory=dict)
 
     def text(self, name: str) -> str | None:
@@ -351,8 +363,8 @@ query($projectId: ID!, $after: String) {
           id
           content {
             __typename
-            ... on DraftIssue { id title body }
-            ... on Issue { title body number url state }
+            ... on DraftIssue { id title body createdAt }
+            ... on Issue { title body number url state createdAt }
           }
           fieldValues(first: 50) {
             nodes {
@@ -411,6 +423,10 @@ def list_items(runner: GhRunner, project: ProjectMeta) -> list[ItemSnapshot]:
                     issue_number=content.get("number"),
                     issue_url=content.get("url"),
                     content_id=content.get("id") if ctype == "DraftIssue" else None,
+                    #: ⚠️ 兩個 content 片段都要 `createdAt`，⛔ 不能只掛在 `Issue` 上——
+                    #: 看板現存 1 張 DraftIssue，只掛 Issue 會讓它靜默回 None 而落
+                    #: `undecidable`，看起來與「這張卡真的判不出時刻」一模一樣。
+                    created_at=content.get("createdAt"),
                     fields=fields,
                 )
             )
