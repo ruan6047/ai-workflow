@@ -3106,6 +3106,75 @@ def test_tool_can_read_is_one_definition_shared_by_attribution_and_candidates():
     assert report.channel_bypass_candidates == 0
 
 
+class _QueryHonouringRunner:
+    """只回**查詢真的要了**的欄位的假 runner。
+
+    ⭐ 一個無條件回 `createdAt` 的假物件在這裡是**零資訊**：把 `createdAt` 從
+    `_LIST_ITEMS_QUERY` 刪掉，測試照樣綠。⇒ 本替身逐字檢查兩個 content 片段裡有沒有
+    `createdAt`，沒要就不給——這樣「查詢文字」才真的被釘住。
+
+    ⚠️ 本測試放在 `test_doctor.py` 而不是 `test_project_mocked.py`：驗的是**事後符合性
+    重驗的取值序第 2 順位供應鏈**，且 `tests/fake_gh.py` 不在本卡資源宣告內。
+    """
+
+    def __init__(self, issue_created: str, draft_created: str) -> None:
+        self.issue_created, self.draft_created = issue_created, draft_created
+
+    @staticmethod
+    def _fragment(query: str, typename: str) -> str:
+        start = query.index(f"... on {typename} {{")
+        return query[start : query.index("}", start)]
+
+    def graphql(self, query: str, **variables: str) -> dict:
+        issue = {"__typename": "Issue", "title": "t", "body": "b", "number": 7, "url": "u"}
+        draft = {"__typename": "DraftIssue", "id": "DI_1", "title": "t", "body": "b"}
+        if "createdAt" in self._fragment(query, "Issue"):
+            issue["createdAt"] = self.issue_created
+        if "createdAt" in self._fragment(query, "DraftIssue"):
+            draft["createdAt"] = self.draft_created
+        nodes = [
+            {"id": "PVTI_1", "content": issue, "fieldValues": {"nodes": []}},
+            {"id": "PVTI_2", "content": draft, "fieldValues": {"nodes": []}},
+        ]
+        return {
+            "data": {
+                "node": {
+                    "items": {
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": nodes,
+                    }
+                }
+            }
+        }
+
+
+def test_list_items_surfaces_created_at_for_both_content_types():
+    """取值序第 2 順位的供應鏈：`ItemSnapshot.created_at` 必須對 Issue 與 DraftIssue 都有值。
+
+    ⚠️ 只把 `createdAt` 掛在 `Issue` 片段上會讓看板現存的那 1 張 DraftIssue 靜默回
+    `None` ⇒ 落 `undecidable`，看起來與「這張卡真的判不出時刻」一模一樣。
+
+    **突變檢驗**：從 `_LIST_ITEMS_QUERY` 的任一 content 片段刪掉 `createdAt`，
+    對應的 assert 轉紅（替身只回查詢真的要了的欄位）。
+    """
+    from wf_cli.project import ProjectMeta, list_items
+
+    runner = _QueryHonouringRunner("2026-08-04T14:20:17Z", "2026-08-20T01:02:03Z")
+    project = ProjectMeta(id="PVT_1", owner="o", number=4, url="https://example/4")
+    items = list_items(runner, project)  # type: ignore[arg-type]
+
+    by_type = {i.content_type: i for i in items}
+    assert by_type["Issue"].created_at == "2026-08-04T14:20:17Z"
+    assert by_type["DraftIssue"].created_at == "2026-08-20T01:02:03Z"
+    # GitHub 回的是 UTC（`...Z`）；下游 `predates_rule` 用 `datetime.fromisoformat`
+    # 與 `CREATED_AT_TRUSTED_FROM`（+08:00）比較 ⇒ 兩個 aware 時刻可直接比，⛔ 不需另做轉換。
+    from datetime import datetime
+
+    assert datetime.fromisoformat(by_type["Issue"].created_at) < datetime.fromisoformat(
+        CREATED_AT_TRUSTED_FROM
+    )
+
+
 def test_the_second_criterion_gap_is_named_in_the_output_not_only_in_the_delivery():
     """⚠️ 「欄位有填」⛔ 不等於「交付仍服務該目標」。
 
