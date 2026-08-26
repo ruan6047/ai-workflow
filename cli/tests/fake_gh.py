@@ -102,6 +102,11 @@ class FakeGhRunner(GhRunner):
             )
 
         if args[:2] == ["project", "field-list"]:
+            # ⚠️ **刻意留著，雖然 project.py 已經不再走這條**（`list_fields` 改用原生
+            # GraphQL，見 `_LIST_FIELDS_QUERY`）。理由：本分支是「gh 的欄位輸出長怎樣」
+            # 的可執行規格，`graphql` 那邊新增的欄位定義分支就是照著它做的，兩者形狀
+            # 必須一致。⛔ 不得由「沒有 src 呼叫它」推出「可以刪」——刪掉等於刪掉
+            # 等價性的參照物。
             number, owner = args[2], flags["--owner"]
             proj = self._ensure_project(owner, number)
             fields = []
@@ -271,6 +276,37 @@ class FakeGhRunner(GhRunner):
                     "repository": {
                         "issue": {
                             "userContentEdits": {"totalCount": len(revs), "nodes": nodes}
+                        }
+                    }
+                }
+            }
+
+        if "ProjectV2SingleSelectField" in query:  # 欄位**定義**查詢（project.list_fields）
+            # ⛔ 這個判別字串刻意選 `ProjectV2SingleSelectField`：它只出現在欄位定義
+            # 查詢裡。items 查詢用的是 `ProjectV2ItemFieldSingleSelectValue`，⚠️ 兩者
+            # 看起來很像但**互不為子字串**（Item／Value 夾在中間），故不會誤配。
+            #
+            # 回傳形狀與上面 `project field-list` 分支**必須一致**（同一組 id／name／
+            # 型別／option），只是換成 GraphQL 的外殼：`type` -> `__typename`。
+            project_id = variables["projectId"]
+            owner_number = next(k for k, v in self.projects.items() if v["id"] == project_id)
+            proj = self.projects[owner_number]
+            field_nodes = []
+            for name, f in proj["fields"].items():
+                node: dict[str, Any] = {
+                    "__typename": f["gh_type"], "id": f["id"], "name": name
+                }
+                if f["options"]:
+                    node["options"] = f["options"]
+                field_nodes.append(node)
+            # 單頁：本替身的 project 欄位數遠少於 100。分頁迴圈本身由
+            # `tests/test_project_mocked.py` 的兩頁 stub 驗證，不在這裡混進來。
+            return {
+                "data": {
+                    "node": {
+                        "fields": {
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": field_nodes,
                         }
                     }
                 }
