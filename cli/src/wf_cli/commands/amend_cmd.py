@@ -248,6 +248,7 @@ from ..card import (
     drop_sentinel_less_resource_section,
     TIERS,
     AmendError,
+    MarkerWriteBoundaryError,
     RequesterUnparseable,
     amend_acceptance,
     amend_brief,
@@ -656,6 +657,19 @@ _LAYOUT_RUNBOOK = """
 
 
 def _is_layout_failure(exc: Exception) -> bool:
+    """這個拒收是不是「**卡面上已經壞掉的 body**」，⛔ 不是「你送進來的值有問題」。
+
+    ⭐ **型別先行的那一行是刻意的，⛔ 不是防禦性冗餘**（WF-MARKER-WRITE-BOUNDARY1）：
+    (a) 現在的行為：``MarkerWriteBoundaryError`` 一律**不**算排版損壞。
+    (b) 為什麼：寫入邊界守衛的訊息會轉述讀取端的原始錯誤，而那段原文就含
+        ``個 `## Log` 標題`` 這串字面 ⇒ 純字面判斷會對一張**完好**的卡印出
+        ``_LAYOUT_RUNBOOK``，教使用者去 ``gh issue edit`` 手改 body。那是把
+        「請你改值」誤導成「請你動卡面」，⛔ 而動卡面正是本 repo 要消滅的繞道。
+    (c) ⛔ **不得推出**「所以可以把守衛的訊息改成避開那兩串字面」——訊息裡引述讀取端
+        的真實錯誤對使用者是必要資訊；分辨責任歸屬是**型別**的工作，⛔ 不是措辭的工作。
+    """
+    if isinstance(exc, MarkerWriteBoundaryError):
+        return False
     return any(marker in str(exc) for marker in _LAYOUT_MARKERS)
 
 

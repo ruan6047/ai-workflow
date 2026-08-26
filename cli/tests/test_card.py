@@ -18,6 +18,7 @@ from wf_cli.card import (
     AmendError,
     CapabilityComparison,
     Card,
+    MarkerWriteBoundaryError,
     _routing_line_candidates,
     amend_acceptance,
     amend_spec_baseline,
@@ -530,11 +531,10 @@ LEGACY_WITH_SECTIONS = (
     [
         (amend_acceptance, [f"驗收要求卡面帶 {ROUTING_MARKER} 標記"]),
         (amend_acceptance, [ROUTING_MARKER]),
-        (amend_acceptance, [f"前段\n{ROUTING_MARKER}\n後段"]),
         (amend_verification, [f"驗證卡面含 {ROUTING_MARKER}"]),
         (amend_verification, [ROUTING_MARKER]),
     ],
-    ids=["驗收含marker", "驗收整項是marker", "驗收內嵌換行", "驗證含marker", "驗證整項是marker"],
+    ids=["驗收含marker", "驗收整項是marker", "驗證含marker", "驗證整項是marker"],
 )
 def test_amend_cannot_promote_a_legacy_card_by_writing_the_marker(amend_fn, items):
     # R4-001 指定回歸：舊卡經 amend 寫入該字串後，仍須判 absent。
@@ -547,6 +547,21 @@ def test_amend_cannot_promote_a_legacy_card_by_writing_the_marker(amend_fn, item
     c = compare_capability_to_card(amended, "主力型")
     assert c.outcome == CAPABILITY_BASELINE_ABSENT  # 但那不是宣告
     assert "卡面無建議層級" in c.log_fragment("舊卡無基線")
+
+
+def test_marker_with_embedded_newline_is_now_rejected_at_the_write_boundary():
+    """R4-001 的第五格（``前段\\n<marker>\\n後段``）改由**寫入端**擋，⛔ 不再靠讀取端判 absent。
+
+    ⭐ 這格原本與上面四格同一份參數化，斷言「寫得進去、但讀取端仍判 absent」。
+    WF-MARKER-WRITE-BOUNDARY1 上線後它**根本寫不進去**——那個值是單一驗收項，寫進去
+    之後 ``_read_checklist`` 只讀得回 ``前段``（靜默截斷）⇒ 往返比對當場拒收。
+    ⇒ 保證只有變強：R4-001 要的「不得被提升為新制」仍成立，且多了一條「不得寫入」。
+    ⛔ 不得把本格改回「接受並檢查 absent」——那等於接受一個自己讀不回的值。
+    """
+    before = LEGACY_WITH_SECTIONS
+    with pytest.raises(MarkerWriteBoundaryError):
+        amend_acceptance(before, [f"前段\n{ROUTING_MARKER}\n後段"])
+    assert before == LEGACY_WITH_SECTIONS  # 純函式，來源逐位元未變
 
 
 @pytest.mark.parametrize(

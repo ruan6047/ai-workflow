@@ -12,9 +12,13 @@ Issue/Project）：
 
 from __future__ import annotations
 
+import importlib
+import inspect
+import pkgutil
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 
 from .brief import BRIEF_SECTION_HEADING_ALIAS as BRIEF_SECTION_HEADING
@@ -29,6 +33,7 @@ from .resources import (
     ResourceDeclaration,
     render_block,
 )
+from .resources import parse_block as parse_resource_block
 
 TIERS = ("T0", "T1", "T2", "T3", "T4")
 
@@ -336,6 +341,23 @@ class Card:
             # 直接建構 Card（測試／未來呼叫端）時的防線；CLI 路徑應該在到達這裡
             # 之前就已經被 validate_chain_depth 攔下並回報 ValidationError。
             raise ValueError(chain_depth_violation_message(self.chain_depth))
+        # ⭐ **刻意行為：Card 建構就跑一次寫入邊界守衛，⛔ 不是等到 render 才跑。**
+        #
+        # (a) 現在的行為：建構一個「渲染出來會讓讀取端讀不回」的 Card 當場失敗。
+        # (b) 為什麼在這裡：``templates/handoff-contract.md`` §3.2 規則二要求拒收發生在
+        #     **任何遠端寫入之前**。``commands/open_cmd.py`` 的呼叫順序是
+        #     ``Card(...)`` → ``resolve_project`` → ``ensure_fields``（會 field-create，
+        #     是遠端寫入）→ ``render_issue_body`` → ``create_repo_issue``。⇒ 只掛在
+        #     ``render_issue_body`` 上會讓拒收晚於 ``ensure_fields`` 的副作用；掛在這裡
+        #     才是「零遠端寫入的拒絕」，與同檔 ``validate_routing_names`` 的防線同構。
+        # (c) ⛔ **不得由此推出「render_issue_body 不必再驗」**：Card 是可變的
+        #     dataclass，建構後改欄位再 render 完全合法 ⇒ 序列化端必須自己也驗一次。
+        #     兩層共用同一份判準函式（§3.2 規則二的參考形狀），⛔ 不得只做一半。
+        # (d) ⛔ 也不得由此推出「open 的拒收是乾淨的」——本例外是 ``cli.py``
+        #     ``KNOWN_ERRORS`` 不收的 ``ValueError``，在 ``open`` 路徑上會以 traceback
+        #     收場（rc=1）。那是**已登記的阻塞發現**，須改 ``open_cmd.py``／``cli.py``
+        #     才能修，而本卡未宣告該二檔（見 WF-MARKER-WRITE-BOUNDARY1 A10）。
+        enforce_card_render_boundary(self)
 
     @property
     def branch_worktree(self) -> str:
@@ -417,7 +439,25 @@ def render_spec_markdown(c: Card) -> str:
 
 
 def render_issue_body(c: Card) -> str:
-    """GitHub Issue／draft item body（含資源宣告 fenced JSON 區塊與 Log 章節）。"""
+    """GitHub Issue／draft item body（含資源宣告 fenced JSON 區塊與 Log 章節）。
+
+    ⭐ **輸出在回傳前先過寫入邊界守衛**（WF-MARKER-WRITE-BOUNDARY1 A5：``open`` 才是
+    主破口，14 個旗標裡 9 個寫得出一張永久不可 amend 的卡）。判準見
+    :func:`enforce_write_boundary`。
+    """
+    now = now_iso8601()
+    body = _render_issue_body(c, now)
+    enforce_card_render_boundary(c, now=now, rendered=body)
+    return body
+
+
+def _render_issue_body(c: Card, now: str) -> str:
+    """純範本渲染，⛔ 不含守衛。
+
+    ⭐ **刻意把時戳提成參數，⛔ 不是為了可測性**：守衛要拿「同一張卡、同一個時戳、
+    但自由文字只壓掉分行結構」的渲染當差分基線（見 :func:`_line_flattened_card`）。
+    時戳若由本函式各自取，兩次渲染會在 Log 行差一個時間，差分就多一個與值無關的變因。
+    """
     acceptance = "\n".join(f"- [ ] {line}" for line in c.acceptance)
     verification = "\n".join(f"- [ ] {line}" for line in c.verification)
     resource_block = render_block(c.resources)
@@ -444,7 +484,7 @@ def render_issue_body(c: Card) -> str:
 
 ## Log
 
-- {now_iso8601()} open by {c.planned_by}；owner {c.owner}；iteration {c.iteration}。
+- {now} open by {c.planned_by}；owner {c.owner}；iteration {c.iteration}。
 """
 
 
@@ -486,6 +526,359 @@ _SPEC_BASELINE_RE = re.compile(r"^- Initiative：(?P<init>.*)　spec 基線：(?
 _CHECKBOX_RE = re.compile(r"^- \[(?P<state>[ xX])\] (?P<text>.*)$")
 _CORE_PAIN_RE = re.compile(r"^- \*\*痛點\*\*：(?P<pain>.*)$")
 _REQUESTED_BY_RE = re.compile(r"^- 需求：(?P<requested>.*?)　規劃：(?P<planned>.*)$")
+
+
+# ==========================================================================
+# 寫入邊界守衛（WF-MARKER-WRITE-BOUNDARY1）
+# ==========================================================================
+#
+# 規範依據：``templates/handoff-contract.md`` §3.2，其機械形式逐字為
+# 「**序列化成功 ⟹ 解析成功，且回傳逐字相同的值。**」本段是該句在卡面 body 上的
+# 機械執行者（§3.2 末段要求每個格式「指名自己的執行者所在的檔與行」——就是這裡）。
+#
+# ⭐ **判準只有兩條性質，⛔ 零列舉**：
+#
+#   (1) **差分結構探測**：同一組讀取路徑在寫入前後各跑一次。寫入前讀得回、寫入後
+#       讀不回 ⇒ 拒收。
+#   (2) **值往返逐位元比對**：讀取端讀回的值必須 ``==`` 寫進去的值。
+#
+# ⭐ **兩條必須並用，⛔ 缺一不可**（各自抓不到對方那類）：
+#
+#   * 結構破壞（例：值裡的分行字元讓 ``## Log`` 多長出一個）——(1) 抓得到，
+#     (2) 也常抓得到但不保證。
+#   * **靜默截斷**（例：``--brief`` 的值行內提及 ``<!-- card-brief:end -->``，
+#     寫 56 字讀回 23 字、⛔ 全程無錯誤）——(1) **抓 0**（每條讀取路徑都照樣讀得回，
+#     只是讀回的東西變短了），只有 (2) 抓得到。
+#
+# ⛔ **本段刻意不定義「marker」、不定義「分界字元」、不定義「哪些案子算違規」。**
+# 那三樣都是開放集合，本 repo 已在讀取端被同一個形狀打穿三次（R3-001／R4-001／
+# R1-02，見 ``_routing_line_candidates`` 上方那段）。分行字元的涵蓋範圍由
+# ``str.splitlines()`` **自身**導出——因為讀取路徑本來就是用它切行的，⛔ 不另存一份
+# 字元清單，也就沒有「下一次再補一類」。
+#
+# ⚠️ **涵蓋宣稱的界線（⛔ 不得放大）**：
+#
+#   * 本守衛涵蓋的是 :func:`body_read_paths` **當次導出命中的那組讀取路徑**，
+#     ⛔ **不宣稱涵蓋全部讀取端**。導出結果對偵測條件敏感（放寬條件會使命中數變動），
+#     故清單由程式導出、⛔ 不手打。
+#   * 兩條性質是**單欄位**性質。⛔ **不涵蓋跨欄位不變量**——即「每個欄位各自都讀得回，
+#     但欄位之間的自洽檢查在讀取端退回它」那一類（§3.2 逐字舉的實例：``v2`` marker
+#     的 ``card_id`` 字母集允許尾綴 ``-``，而 ``event=review`` 的三欄自洽檢查會退回）。
+#     該類須另有承接者，見卡面 V7。
+
+
+_READ_PATHS: tuple[tuple[str, Callable[[str], object]], ...] | None = None
+
+
+class MarkerWriteBoundaryError(AmendError):
+    """寫入邊界拒收：值寫得進去，但寫進去之後讀取端讀不回來。
+
+    ⭐ **刻意獨立成一個型別，⛔ 不只是為了分類**：``commands/amend_cmd.py`` 的
+    ``_is_layout_failure`` 以**訊息字面**判斷「body 排版已損壞」，而本例外的訊息
+    必然轉述讀取端的原始錯誤（其中就含 ``個 `## Log` 標題`` 這串字面）⇒ 純字面判斷
+    會把「卡面完好、是你送進來的值有問題」誤印成教人去 ``gh issue edit`` 手修 body 的
+    runbook。⇒ 該處改以**型別**先行排除本例外（見 ``amend_cmd._is_layout_failure``）。
+    ⛔ **不得改用「避開那兩串字面」的措辭來繞過**——那是把型別問題藏進文案，下一個
+    改訊息的人會再踩一次。
+    """
+
+
+def body_read_paths() -> tuple[tuple[str, Callable[[str], object]], ...]:
+    """導出本進程可見的**卡面讀取路徑**集合（(限定名, 函式) 依名排序）。
+
+    ⭐ **這是偵測器的定義，⛔ 不是一份手打清單。** 命中條件逐字為：``wf_cli`` 套件內、
+    模組層級定義（``fn.__module__`` 等於該模組本身，排除 re-export）、第一個參數名為
+    ``body``、且其餘參數**全部有預設值或是 ``*args``／``**kwargs``**（＝可以只餵一個
+    body 呼叫）的函式。
+
+    ⚠️ **對偵測條件敏感是已知性質，⛔ 不是缺陷**：放寬或收緊條件會讓命中集變動。
+    正因如此，任何涵蓋宣稱都必須寫成「本函式當次導出的那組」，⛔ 不得寫成「全部讀取端」。
+    測試對本函式的輸出做的是**性質檢查**（幾個必須在裡面的成員），⛔ 不是逐字釘死整份
+    清單——釘死等於把「清單」偷渡回來。
+
+    ⚠️ **刻意延遲導出並快取**：``wf_cli.commands.*`` 反向 import 本模組，模組載入期
+    走訪會迴圈。第一次呼叫必然發生在寫入動詞執行期，此時本模組已完成載入。
+    """
+    global _READ_PATHS
+    if _READ_PATHS is not None:
+        return _READ_PATHS
+    package = importlib.import_module(__package__)
+    found: list[tuple[str, Callable[[str], object]]] = []
+    for info in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+        module = _import_or_none(info.name)
+        if module is None:
+            continue
+        for name, fn in vars(module).items():
+            if not inspect.isfunction(fn) or fn.__module__ != module.__name__:
+                continue
+            params = list(inspect.signature(fn).parameters.values())
+            if not params or params[0].name != "body":
+                continue
+            if any(
+                p.default is inspect.Parameter.empty
+                and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+                for p in params[1:]
+            ):
+                continue
+            found.append((f"{module.__name__}.{name}", fn))
+    _READ_PATHS = tuple(sorted(found, key=lambda pair: pair[0]))
+    return _READ_PATHS
+
+
+def _import_or_none(name: str):
+    """匯入失敗的模組**不該讓寫入動詞掛掉**——導出少一條讀取路徑只是涵蓋變窄，
+    ⛔ 而讓 ``open``／``amend`` 因為某個無關模組壞掉就整個不能用，是把守衛變成故障源。
+    """
+    try:
+        return importlib.import_module(name)
+    except Exception:
+        return None
+
+
+def _reads_back(fn: Callable[[str], object], body: str) -> Exception | None:
+    """跑一次讀取路徑；回傳 ``None`` 代表讀得回，回傳例外代表讀不回。
+
+    「讀得回」的定義刻意寬到只有一條：**沒有拋例外**。回傳 ``None``／空值都算讀得回
+    ——那是讀取路徑自己的 fail-open 設計（例如 ``brief.try_parse_block``），⛔ 本守衛
+    不代它判斷，否則就變成第二個猜測層。值層面的損失由性質 (2) 負責。
+    """
+    try:
+        fn(body)
+    except Exception as exc:  # 任何例外都算「讀不回」
+        return exc
+    return None
+
+
+def _clip(value: object, limit: int = 160) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else f"{text[:limit]}…（全長 {len(text)}）"
+
+
+def enforce_write_boundary(
+    baseline: str,
+    candidate: str,
+    *,
+    roundtrip: Sequence[tuple[str, object, Callable[[str], object]]] = (),
+    where: str,
+) -> None:
+    """A1 的兩條性質。任一不成立即 :class:`MarkerWriteBoundaryError`，⛔ 不做正規化。
+
+    ``baseline`` 是「同一次寫入、但值不帶分行結構」的那個 body：``amend`` 用寫入前的原
+    body，``open`` 用 :func:`_line_flattened_card` 的渲染。⭐ 兩者的共同性質是**與這次
+    寫入的值無關**，差分因此只歸因到值。
+
+    ⛔ **不得改成「把值正規化後寫入」**：§3.2 規則二逐字禁止以正規化代替拒收
+    （把換行摺成空白、把連續空白壓成一個都是靜默改變值，其危害與寫得出讀不回同級）。
+    """
+    broken: list[tuple[str, Exception]] = []
+    for name, fn in body_read_paths():
+        if _reads_back(fn, baseline) is not None:
+            continue
+        exc = _reads_back(fn, candidate)
+        if exc is not None:
+            broken.append((name, exc))
+    if broken:
+        # ⭐ **列出全部失敗的讀取路徑，⛔ 不只第一個**：導出集合依名排序，只報第一個
+        # 會挑到字母序最前的那條（實測是本檔自己的私有 helper），對被擋的人幾乎沒有
+        # 資訊。⛔ 不得為了訊息短而改回只報一條。
+        names = "、".join(f"`{n}`" for n, _ in broken)
+        raise MarkerWriteBoundaryError(
+            f"寫入邊界拒收（未寫入任何狀態）：{where}的值寫進去之後，下列 {len(broken)} "
+            f"條讀取路徑就讀不回卡面了（寫入前都讀得回）：{names}。"
+            f"首個失敗原因：{broken[0][1]}。"
+            "⇒ 值裡含有會改變卡面結構的內容（任何 `str.splitlines()` 認得的分行字元、"
+            "或會讓某個區段標題／哨兵獨立成行的片段都屬之）。"
+            "⚠️ 卡面本身沒有損壞、本次也未改動它；請改寫該值後重試。"
+        )
+    for label, written, reader in roundtrip:
+        try:
+            got = reader(candidate)
+        except Exception as exc:  # 讀不回同樣是往返失敗
+            raise MarkerWriteBoundaryError(
+                f"寫入邊界拒收（未寫入任何狀態）：{where}的「{label}」寫進去之後讀不回來"
+                f"（讀取端錯誤：{exc}）。⚠️ 卡面本身沒有損壞、本次也未改動它。"
+            ) from exc
+        if got != written:
+            raise MarkerWriteBoundaryError(
+                f"寫入邊界拒收（未寫入任何狀態）：{where}的「{label}」寫入值與讀回值不同"
+                f"——寫入 {_clip(written)}，讀回 {_clip(got)}。"
+                "⇒ 值的一部分被卡面結構吃掉了（靜默截斷），寫入端不得接受一個自己讀不回的值。"
+                "⚠️ 卡面本身沒有損壞、本次也未改動它；請改寫該值後重試。"
+            )
+
+
+# --------------------------------------------------------------------------
+# 往返比對用的讀取端（性質 (2)）
+# --------------------------------------------------------------------------
+#
+# ⭐ 這些讀回器**重用本檔既有的定位謂詞**（``_REQUESTED_BY_RE``／``_SPEC_BASELINE_RE``／
+# ``_CORE_PAIN_RE``／``_locate_section``／``_read_checklist``／``try_parse_brief``），
+# ⛔ 不另寫一份解析。理由是 R1-01 的教訓逐字：「每個新呼叫端都自己重寫一份謂詞」是本檔
+# 已經犯過的形狀；§3.2 規則三也逐字要求「解析側須走真正會跑的那條路徑」。
+
+
+def _head_lines(body: str) -> list[str]:
+    return split_at_log(body)[0].splitlines()
+
+
+def _sole_match(body: str, pattern: re.Pattern[str]) -> re.Match[str] | None:
+    hits = [m for m in (pattern.match(line) for line in _head_lines(body)) if m]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _read_requested(body: str) -> str | None:
+    m = _sole_match(body, _REQUESTED_BY_RE)
+    return m.group("requested") if m else None
+
+
+def _read_planned(body: str) -> str | None:
+    m = _sole_match(body, _REQUESTED_BY_RE)
+    return m.group("planned") if m else None
+
+
+def _read_initiative(body: str) -> str | None:
+    m = _sole_match(body, _SPEC_BASELINE_RE)
+    return m.group("init") if m else None
+
+
+def _read_spec_baseline(body: str) -> str | None:
+    m = _sole_match(body, _SPEC_BASELINE_RE)
+    return m.group("base") if m else None
+
+
+def _read_prefixed_header(body: str, prefix: str) -> str | None:
+    hits = [line[len(prefix):] for line in _head_lines(body) if line.startswith(prefix)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _read_routing_group(body: str, group: str) -> str | None:
+    m = _sole_match(body, _ROUTING_PARSE_RE)
+    return m.group(group) if m else None
+
+
+def _read_core_pain(body: str) -> str | None:
+    lines = _head_lines(body)
+    try:
+        start, end = _locate_section(lines, _CORE_PAIN_HEADING)
+    except AmendError:
+        return None
+    hits = [m for m in (_CORE_PAIN_RE.match(lines[i].strip()) for i in range(start + 1, end)) if m]
+    return hits[0].group("pain") if len(hits) == 1 else None
+
+
+def _read_checklist_texts(body: str, heading: str) -> list[str] | None:
+    lines = _head_lines(body)
+    try:
+        start, end = _locate_section(lines, heading)
+    except AmendError:
+        return None
+    return [text for _, text in _read_checklist(lines[start + 1 : end])]
+
+
+def _read_brief_text(body: str) -> str | None:
+    parsed = try_parse_brief(body)
+    return parsed.text if parsed else None
+
+
+def _flatten_line_structure(value: str) -> str:
+    """把一個值**自身的分行結構**壓平，其餘逐字保留。
+
+    ⭐ 涵蓋範圍由 ``str.splitlines()`` **自身**導出（A8）：⛔ 這裡沒有任何字元清單，
+    也就沒有「下一次再補一類」。CRLF 這種雙字元序列同樣由 ``splitlines`` 處理。
+    """
+    return "".join(value.splitlines())
+
+
+def _line_flattened_card(c: Card) -> Card:
+    """同一張卡，但每個自由文字欄位**只**被壓掉自身的分行結構。
+
+    ⭐ **為什麼基線是「壓平」而不是「換成惰性 token」**（這一格踩過一次，就地留證）：
+    最初的寫法是把所有字串換成固定 token，結果 ``parse_requested_by`` 對 token
+    ``'WFINERT'`` 讀得回、對真實預設值 ``'—'`` 卻**依設計** fail closed（它拒絕佔位身分）
+    ⇒ 差分把一個**語意**拒絕誤判成結構破壞，每一張沒填需求方的新卡都會被擋。
+    ⇒ 基線必須與候選**只差在分行結構**，語意逐字相同，差分才只歸因到結構。
+
+    ⛔ 刻意用 ``object.__new__`` 繞過 ``__post_init__``：本複本只是渲染基線、⛔ 從不
+    寫出去，而再跑一次驗證會遞迴回本守衛。
+    ⛔ 也刻意**不列舉欄位名**——欄位由 ``dataclasses.fields`` 導出。新增欄位自動納入基線，
+    ⛔ 不需要有人記得回來改這裡。
+    ⚠️ ``None`` 保留 ``None``：``brief``／``initiative`` 為 ``None`` 時範本渲染的結構本來
+    就不同，換成字串會讓基線與候選在**與值無關**的地方分岔。
+
+    ⚠️ **已知界線，⛔ 不得放大宣稱**：本基線抓的是「值自身的分行結構」造成的破壞。
+    一個**不含任何分行字元**卻仍獨立成行的值（例如 ``--brief`` 的整個值就是 ``## Log``，
+    由哨兵區塊把它放到自己那一行）在基線與候選中形狀相同 ⇒ 性質 (1) 抓 0，
+    改由性質 (2) 抓（實測 ``try_parse_brief`` 讀回 ``None`` ≠ 寫入值）。⇒ 兩條並用不是修辭。
+    """
+    clone = object.__new__(Card)
+    clone.__dict__.update(vars(c))
+    for f in fields(Card):
+        value = getattr(clone, f.name)
+        if isinstance(value, str):
+            setattr(clone, f.name, _flatten_line_structure(value))
+        elif isinstance(value, list):
+            setattr(
+                clone,
+                f.name,
+                [_flatten_line_structure(v) if isinstance(v, str) else v for v in value],
+            )
+    decl = object.__new__(ResourceDeclaration)
+    decl.__dict__.update(vars(c.resources))
+    decl.db_scope = _flatten_line_structure(c.resources.db_scope)
+    decl.resources = [_flatten_line_structure(r) for r in c.resources.resources]
+    clone.resources = decl
+    return clone
+
+
+def enforce_card_render_boundary(
+    c: Card, *, now: str | None = None, rendered: str | None = None
+) -> None:
+    """對 ``render_issue_body`` 的輸出套用兩條性質（A5：``open`` 是主破口）。
+
+    ``now``／``rendered`` 可注入，是為了讓 :func:`render_issue_body` 不必渲染兩次、
+    且基線與候選共用同一個時戳（見 :func:`_render_issue_body`）。
+
+    ⚠️ **名字用 ``enforce_`` 不用 ``validate_`` 是刻意的，且有一個必須揭露的副作用**：
+    (a) 語意上它與 :func:`enforce_write_boundary` 同族——渲染、差分、往返比對，⛔ 不是
+        同檔 ``validate_routing_field`` 那種純謂詞。
+    (b) ⚠️ **副作用（⛔ 不得當成沒有）**：``scripts/contract_tool_reconcile.py`` 以
+        ``^_?(validate|check|verify|find_conflicts|assert)`` 認「守衛」，⇒ 叫
+        ``validate_*`` 會讓「守衛覆蓋缺口」表中 ``assign_cmd→card`` 那一列的
+        **未跑的守衛**欄多出本函式，使 ``--check`` 判 rc=1，而該處置登記在
+        ``docs/CONTRACT_TOOL_RECONCILE.md``——**本卡未宣告該檔**（A10）。
+    (c) ⛔ **不得由此推出「本函式不是守衛」**：它是。上面那條只說明命名選擇同時避開了
+        一個授權邊界，⛔ 不是主張對帳工具看不到它是對的。若日後宣告了該檔，改名並補
+        登記那一列即可。
+    """
+    stamp = now if now is not None else now_iso8601()
+    candidate = rendered if rendered is not None else _render_issue_body(c, stamp)
+    baseline = _render_issue_body(_line_flattened_card(c), stamp)
+    checks: list[tuple[str, object, Callable[[str], object]]] = [
+        ("需求", c.requested_by, _read_requested),
+        ("規劃", c.planned_by, _read_planned),
+        ("Initiative", c.initiative or "—", _read_initiative),
+        ("spec 基線", c.spec_baseline, _read_spec_baseline),
+        ("DB", f"db_scope={c.db_scope}", lambda b: _read_prefixed_header(b, "- DB：")),
+        ("服務的原始目標", c.service_goal, lambda b: _read_prefixed_header(b, "- 服務的原始目標：")),
+        ("執行", c.executor, lambda b: _read_routing_group(b, "executor")),
+        ("執行建議層級", c.executor_capability, lambda b: _read_routing_group(b, "exec_tier")),
+        ("執行能力層級理由", c.executor_capability_reason, lambda b: _read_routing_group(b, "exec_reason")),
+        ("查核", c.reviewer, lambda b: _read_routing_group(b, "reviewer")),
+        ("查核建議層級", c.reviewer_capability, lambda b: _read_routing_group(b, "rev_tier")),
+        ("查核能力層級理由", c.reviewer_capability_reason, lambda b: _read_routing_group(b, "rev_reason")),
+        ("核心痛點", c.core_pain, _read_core_pain),
+        ("驗收條件", list(c.acceptance), lambda b: _read_checklist_texts(b, _ACCEPTANCE_HEADING)),
+        ("驗證", list(c.verification), lambda b: _read_checklist_texts(b, _VERIFICATION_HEADING)),
+        ("資源宣告", c.resources, lambda b: parse_resource_block(b)),
+    ]
+    if c.brief:
+        checks.append(("簡介", c.brief, _read_brief_text))
+    # ⚠️ **刻意登記的涵蓋落差**：``owner``／``iteration`` 只出現在 Log 行，而 Log 是
+    # append-only 留痕、本檔沒有「讀回單一 Log 欄位」的路徑 ⇒ 它們**只由性質 (1)
+    # 涵蓋**（例如 owner 裡塞進一個 ``## Log`` 會讓 ``split_at_log`` 讀不回，當場拒收）。
+    # ⛔ 不得由此推出「Log 行的值有往返保證」。``feature`` 進的是 Issue 標題不是 body，
+    # 不在本守衛管轄內。
+    enforce_write_boundary(baseline, candidate, roundtrip=checks, where="open 渲染")
 
 
 def split_at_log(body: str) -> tuple[str, str]:
@@ -592,7 +985,14 @@ def _amend_checklist(
     if rendered == [line.strip() for line in lines[start + 1 : end] if line.strip()]:
         raise AmendError(f"`{heading}` 的新內容與現值相同；拒絕寫入不實的修訂留痕")
     new_lines = lines[: start + 1] + ["", *rendered, ""] + lines[end:]
-    return _join("\n".join(new_lines), tail), old_repr
+    candidate = _join("\n".join(new_lines), tail)
+    enforce_write_boundary(
+        body,
+        candidate,
+        roundtrip=[(heading, list(new_items), lambda b: _read_checklist_texts(b, heading))],
+        where=f"`{heading}`",
+    )
+    return candidate, old_repr
 
 
 def amend_acceptance(
@@ -635,7 +1035,14 @@ def amend_spec_baseline(body: str, new_value: str) -> tuple[str, str]:
     if old.strip() == new_value.strip():
         raise AmendError("spec 基線與現值相同；拒絕寫入不實的修訂留痕")
     lines[hits[0]] = f"- Initiative：{match.group('init')}　spec 基線：{new_value}"
-    return _join("\n".join(lines), tail), old
+    candidate = _join("\n".join(lines), tail)
+    enforce_write_boundary(
+        body,
+        candidate,
+        roundtrip=[("spec 基線", new_value, _read_spec_baseline)],
+        where="`spec 基線`",
+    )
+    return candidate, old
 
 
 def adopt_resource_sentinels(body: str) -> tuple[str, str]:
@@ -819,7 +1226,19 @@ def restore_migration_header(
         new_lines.pop()
     new_lines += sections
     inserted = "\n".join(header[:2] + [h for h in _MIGRATION_HEADER_SECTIONS])
-    return _join("\n".join(new_lines), tail), " ".join(inserted.split())
+    candidate = _join("\n".join(new_lines), tail)
+    enforce_write_boundary(
+        body,
+        candidate,
+        roundtrip=[
+            ("需求", requested_by, _read_requested),
+            ("規劃", planned_by, _read_planned),
+            ("Initiative", initiative or "—", _read_initiative),
+            ("spec 基線", spec_baseline or "—", _read_spec_baseline),
+        ],
+        where="`遷移標頭`",
+    )
+    return candidate, " ".join(inserted.split())
 
 
 def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
@@ -848,6 +1267,27 @@ def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     candidate = _join("\n".join(new_lines), tail)
     if candidate == _join(head, tail):
         raise AmendError("資源宣告與現值相同；拒絕寫入不實的修訂留痕")
+    # ⚠️ 資源宣告的值有 grammar（``_RESOURCE_PREFIX_RE``），但 grammar 的 ``.`` **不排除**
+    # U+2028／U+2029，而 ``json.dumps(ensure_ascii=False)`` 也**不逃脫**它們
+    # ⇒ ``file:x<U+2028>## Log`` 這種值過得了 grammar、寫進去卻讓卡面多出一個 ``## Log``。
+    # ⛔ 不在 grammar 上補字元清單（那是列舉法）；由本守衛以結構差分擋。
+    # ⚠️ **期望值本身可能解析不出來**（就地留註）：``rendered_block`` 是「即將寫進去的
+    # 那一段」，值把它自己弄壞時 ``parse_block`` 會拋 ``ResourceDeclarationError``。
+    # ⇒ 那不是呼叫端的 bug，正是「寫得出、讀不回」的最純粹形態，故轉成寫入邊界拒收。
+    # ⛔ 不得改成「解析不出來就跳過往返比對」——那會把最嚴重的一格變成免驗的一格。
+    try:
+        expected = parse_resource_block(rendered_block)
+    except Exception as exc:  # 期望值自己解析不回來 ⇒ 就是本守衛要擋的那件事
+        raise MarkerWriteBoundaryError(
+            f"寫入邊界拒收（未寫入任何狀態）：`資源宣告`即將寫入的區塊自己就解析不回來"
+            f"（讀取端錯誤：{exc}）。⚠️ 卡面本身沒有損壞、本次也未改動它。"
+        ) from exc
+    enforce_write_boundary(
+        body,
+        candidate,
+        roundtrip=[("資源宣告", expected, parse_resource_block)],
+        where="`資源宣告`",
+    )
     return candidate, " ".join(old_repr.split())
 
 
@@ -878,7 +1318,14 @@ def amend_initiative(body: str, new_value: str) -> tuple[str, str]:
     if old.strip() == new_value.strip():
         raise AmendError("Initiative 與現值相同；拒絕寫入不實的修訂留痕")
     lines[hits[0]] = f"- Initiative：{new_value}　spec 基線：{match.group('base')}"
-    return _join("\n".join(lines), tail), old
+    candidate = _join("\n".join(lines), tail)
+    enforce_write_boundary(
+        body,
+        candidate,
+        roundtrip=[("Initiative", new_value, _read_initiative)],
+        where="`Initiative`",
+    )
+    return candidate, old
 
 
 def amend_brief(body: str, new_value: str) -> tuple[str, str | None]:
@@ -933,7 +1380,17 @@ def amend_brief(body: str, new_value: str) -> tuple[str, str | None]:
         block = render_brief_block(Brief(text=new_value)).splitlines()
         lines[first_section:first_section] = block + [""]
     new_head = "\n".join(lines)
-    return (new_head + ("\n" + tail if tail else "\n"), old)
+    candidate = new_head + ("\n" + tail if tail else "\n")
+    # ⭐ 這一格是「兩條性質必須並用」的**實證來源**：``--brief`` 的值行內提及
+    # ``<!-- card-brief:end -->`` 時，每一條讀取路徑都照樣讀得回（性質 (1) 抓 0），
+    # 但 ``try_parse_brief`` 讀回的是被哨兵截斷後的前半段 ⇒ 只有性質 (2) 抓得到。
+    enforce_write_boundary(
+        body,
+        candidate,
+        roundtrip=[("簡介", new_value, _read_brief_text)],
+        where="`簡介`",
+    )
+    return (candidate, old)
 
 
 def amend_core_pain(body: str, new_value: str) -> tuple[str, str]:
@@ -967,7 +1424,14 @@ def amend_core_pain(body: str, new_value: str) -> tuple[str, str]:
     if old.strip() == new_value.strip():
         raise AmendError("核心痛點與現值相同；拒絕寫入不實的修訂留痕")
     lines[hits[0]] = f"- **痛點**：{new_value}"
-    return _join("\n".join(lines), tail), old
+    candidate = _join("\n".join(lines), tail)
+    enforce_write_boundary(
+        body,
+        candidate,
+        roundtrip=[("核心痛點", new_value, _read_core_pain)],
+        where="`核心痛點`",
+    )
+    return candidate, old
 
 
 class RequesterUnparseable(AmendError):
