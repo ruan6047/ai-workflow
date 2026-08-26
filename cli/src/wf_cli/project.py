@@ -7,10 +7,10 @@
 - 資源宣告：TEXT（人類可讀摘要）＋ body fenced JSON 區塊（機器解析，見 resources.py）
 - 其餘：TEXT／NUMBER／SINGLE_SELECT
 
-``gh project field-list`` 不會回報 TEXT/NUMBER/DATE 的實際資料型別（三者的
-GraphQL ``__typename`` 皆是通用的 ``ProjectV2Field``，見手動驗證紀錄）；
+欄位查詢**不會**回報 TEXT/NUMBER/DATE 的實際資料型別（三者的 GraphQL
+``__typename`` 皆是通用的 ``ProjectV2Field``，見手動驗證紀錄）；
 因此欄位的「寫入時該用哪個 gh flag」由本模組的 ``FIELD_SPECS``（我方定義並建立的
-凍結 schema）決定，不做執行期型別 introspection——field-list／GraphQL 查詢只用來
+凍結 schema）決定，不做執行期型別 introspection——欄位查詢只用來
 取得每個 project 實際的 field id／option id（這兩者會隨 project 而異，無法寫死）。
 """
 
@@ -161,16 +161,44 @@ def resolve_project(runner: GhRunner, owner: str, number: int) -> ProjectMeta:
     )
 
 
-def list_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldMeta]:
-    data = runner.run_json(
-        ["project", "field-list", str(number), "--owner", owner, "--format", "json", "-L", "100"]
-    )
+#: 欄位定義查詢。``node(id:)`` 而**不是** ``user(login:).projectV2(number:)``：後者要求
+#: 呼叫端先知道擁有者是 user 還是 organization（兩個不同的 root field），而 node id 是
+#: 不透明的、對兩者同形——代價是要先有 project id（見 ``list_fields`` 的 ``project_id``）。
+#: ⛔ 本字串內不得出現 "mutation" 字樣：測試的寫入偵測代理
+#: （``tests/test_commands_mocked.py`` 的 ``_RecordingRunner.mutations``）以
+#: ``"mutation" in query`` 判定一次 GraphQL 呼叫是不是寫入，寫進註解會讓這支唯讀查詢
+#: 被記成寫入，把「拒絕路徑零寫入」那批斷言變成假紅。
+_LIST_FIELDS_QUERY = """
+query($projectId: ID!, $after: String) {
+  node(id: $projectId) {
+    ... on ProjectV2 {
+      fields(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          __typename
+          ... on ProjectV2FieldCommon { id name }
+          ... on ProjectV2SingleSelectField { options { id name } }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def _field_metas(raw_fields: list[dict[str, Any]]) -> dict[str, FieldMeta]:
+    """把「欄位定義的原始列表」轉成 ``name -> FieldMeta``。
+
+    每一筆的形狀是 ``{"id", "name", "type"}``（＋single select 才有的 ``"options"``），
+    也就是 ``gh project field-list --format json`` 的 ``fields`` 元素形狀。⭐ 刻意獨立成
+    一支：等價性論證因此只需要證明**輸入的原始列表**相同，不必主張兩條解析路徑等價。
+    """
     out: dict[str, FieldMeta] = {}
-    for f in (data or {}).get("fields", []):
+    for f in raw_fields:
         name = f["name"]
         spec = FIELD_SPECS.get(name)
         # Project 內建 Status 不在我方凍結 custom-field schema，卻同樣是 single
-        # select。保留 GitHub 回傳的型別，才能以 item-value mutation 安全寫它，
+        # select。保留 GitHub 回傳的型別，才能以 item-value 寫入安全地寫它，
         # 而不是把內建欄位誤當 TEXT 或嘗試建立同名 custom field。
         ftype: FieldType = (
             spec[0]
@@ -182,9 +210,83 @@ def list_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldMet
     return out
 
 
+def _fetch_field_nodes(runner: GhRunner, project_id: str) -> list[dict[str, Any]]:
+    """以原生 GraphQL 取回全部欄位定義，正規化成 ``field-list`` 的元素形狀。
+
+    分頁：``fields`` 單頁上限 100，超過時 ``pageInfo.hasNextPage`` 為真、以
+    ``endCursor`` 續取。⚠️ 真實環境測不到這條——本 repo 的 Project #4 只有 29 欄，
+    要造一個 >100 欄的 Project 才會踩到；故分頁由 ``tests/test_project_mocked.py`` 的
+    兩頁 stub 驗證，⛔ 未在真實 API 上跑過。
+    """
+    nodes: list[dict[str, Any]] = []
+    after: str | None = None
+    while True:
+        variables = {"projectId": project_id}
+        if after:
+            # ⚠️ 只在有 cursor 時才帶：``GhRunner.graphql`` 一律以 ``-f`` 傳字串，
+            # 空字串會變成 ``after: ""`` 而不是 ``null``（同 list_items 的既有作法）。
+            variables["after"] = after
+        result = runner.graphql(_LIST_FIELDS_QUERY, **variables)
+        page = ((result.get("data") or {}).get("node") or {}).get("fields", {})
+        for raw in page.get("nodes", []):
+            entry: dict[str, Any] = {
+                "id": raw["id"],
+                "name": raw["name"],
+                # ``__typename`` 就是 gh 在 ``field-list --format json`` 的 ``type`` 欄
+                # 填的那個字串（2026-08-26 對 Project #4 全 29 欄逐位元核對過）。
+                "type": raw["__typename"],
+            }
+            if raw.get("options"):
+                entry["options"] = raw["options"]
+            nodes.append(entry)
+        page_info = page.get("pageInfo", {})
+        if page_info.get("hasNextPage"):
+            after = page_info.get("endCursor")
+        else:
+            break
+    return nodes
+
+
+def list_fields(
+    runner: GhRunner, owner: str, number: int, project_id: str | None = None
+) -> dict[str, FieldMeta]:
+    """讀 project 的欄位定義（name -> FieldMeta）。
+
+    **刻意不用 ``gh project field-list``**，理由是成本、不是正確性：
+
+    - **等價性（已證）**：2026-08-26 對真實 Project #4 同時取兩邊，把 gh 的
+      ``fields`` 元素與本查詢正規化後的元素做**順序敏感、含 option id 與 option 順序**
+      的逐位元比對 ⇒ 全等（29 欄 × (id, name, type) ＋ 38 個 option 的 (id, name)）。
+      複驗方式：``gh project field-list 4 --owner ruan6047 --format json -L 100`` 與
+      ``gh api graphql`` 跑 ``_LIST_FIELDS_QUERY``，兩份輸出比對。
+    - **成本（已量）**：舊路徑 **102 點／4.45 秒**，本路徑 ``project view`` 2 點
+      ＋ 本查詢 1 點 ＝ **3 點／約 1.9 秒**。102 點與 Project 規模無關——同日對
+      **0 個 item** 的拋棄式 Project 量到的也是 102 點（對照：203 個 item 的 #4 同樣
+      102 點）⇒ 它是 gh CLI 查詢組裝的結構常數。⛔ 更細的根因（gh 把 ``firstItems``
+      寫死）取自卡面 A7 的引述，**未**由本卡讀 gh 原始碼複驗。
+    - ⛔ **不得由上述推出「對 organization 擁有的 Project 也等價」**：量測環境
+      （``ruan6047``）名下沒有 organization，``gh`` 實測回 ``organization: null``，
+      **無樣本可驗**。已知的形狀差異只在「怎麼拿到 project id」那一步（``gh project
+      view`` 對兩者都可用），而本查詢從 node id 出發、對 owner 型別不敏感——但那是
+      推論，⛔ 不是量測。
+
+    ``project_id`` 省略時內部 ``resolve_project``，讓既有呼叫點一行不改。
+    ⚠️ 這使 ``deploy-declare``／``deploy-state``／``amend`` 每次多發一次
+    ``gh project view``（2 點）——它們在上一行已經 resolve 過，卻無法把 id 傳進來。
+    這是**刻意付的**：本卡的射程明文禁止改 ``ensure_fields`` 以外的呼叫點
+    （驗收 A4／A8）。⛔ 不得由此推出「多這一次呼叫是必要的」——它純粹是射程邊界，
+    把 ``project_id=project.id`` 補進那三個呼叫點即可消除。
+    """
+    if project_id is None:
+        project_id = resolve_project(runner, owner, number).id
+    return _field_metas(_fetch_field_nodes(runner, project_id))
+
+
 def ensure_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldMeta]:
     """冪等：缺哪個凍結欄位就建哪個，已存在的原樣保留（含既有 option id）。"""
-    existing = list_fields(runner, owner, number)
+    project_id = resolve_project(runner, owner, number).id
+    existing = list_fields(runner, owner, number, project_id=project_id)
+    created = False
     for name, (ftype, options) in FIELD_SPECS.items():
         if name in existing:
             continue
@@ -197,7 +299,25 @@ def ensure_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldM
             assert options is not None
             args += ["--single-select-options", ",".join(options)]
         runner.execute(args)
-    return list_fields(runner, owner, number)
+        created = True
+    if not created:
+        # ⭐ **刻意如此**：一個欄位都沒建時直接回傳第一次查詢的結果，不再查第二次。
+        #
+        # 為什麼安全：`created` 為假 ⇒ 上面的迴圈一次 `field-create` 都沒送出 ⇒
+        # 在第一次查詢與這個 return 之間，**本函式對遠端沒有任何寫入**，重查只會
+        # 拿到同一份東西。（成本，2026-08-26 對 Project #4 實測：舊路徑一次
+        # `gh project field-list` 是 102 點／4.45 秒，`ensure_fields` 因此固定付兩次；
+        # 換成原生查詢＋本分支後，零建立整支 **3 點／約 1.9 秒**，連續三次量測皆 3 點。）
+        #
+        # ⛔ **不得由這個分支推出「ensure_fields 對併發是安全的」**：本函式沒有任何
+        # project 層的鎖，另一個 process 仍可能在兩次查詢之間動欄位。但那在舊碼下
+        # 同樣沒有保證——舊碼的第二次查詢只是「另一個時刻的快照」，不是防線；讀到
+        # 哪一版取決於時序。真正的缺口與該用什麼鎖，見
+        # `docs/WF_EVENT_IDEMPOTENCY1.md` §7.1／§2.2，⛔ 本卡不處理。
+        return existing
+    # 有建立時才重查：`field-create` 的回傳沒有被解析併入（那是被否決的 C3 方案），
+    # 故新欄位的 id／option id 只能靠重讀取得。
+    return list_fields(runner, owner, number, project_id=project_id)
 
 
 def create_draft_item(runner: GhRunner, owner: str, number: int, title: str, body: str) -> str:
