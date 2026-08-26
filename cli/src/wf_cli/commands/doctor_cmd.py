@@ -175,6 +175,7 @@ def run(args: argparse.Namespace) -> int:
     legacy_bodies: dict[str, str] | None = None
     brief_values: dict[str, str | None] | None = None
     project_field_values: dict[str, dict] | None = None
+    issue_created_at: dict[str, str | None] | None = None
     if args.conformance:
         try:
             proj = resolve_project(default_runner, args.owner, args.project)
@@ -198,6 +199,17 @@ def run(args: argparse.Namespace) -> int:
                 for item in snapshots
                 if item.card_id and item.body
             }
+            # 存在時刻取值序的**第 2 順位**（第 1 是卡面 Log 的 `open` 事件）。
+            # ⚠️ 同樣來自這一次讀取——⛔ 不另發一次查詢，理由與 brief_values 那段相同。
+            #
+            # ⭐ 這一條接上之前，`channel_bypassed` 那一類在真實母體上**構造上不可達**：
+            # 唯一能給出存在時刻的來源是 Log 的 `open` 事件，而那筆事件本身就是通道證據
+            # ⇒ 判得出時刻的卡必然在前一類被攔下。接上後它才變成真的觀測。
+            issue_created_at = {
+                item.card_id: getattr(item, "created_at", None)
+                for item in snapshots
+                if item.card_id and item.body
+            }
         except Exception as exc:  # noqa: BLE001 - 任何讀取失敗都退回「未掃描」
             print(
                 f"[doctor] 取不到 Project 卡面（{type(exc).__name__}: {exc}）；"
@@ -216,12 +228,10 @@ def run(args: argparse.Namespace) -> int:
         brief_field_values=brief_values,
         project_field_values=project_field_values,
         declared_project_fields=tuple(FIELD_SPECS),
-        # ⛔ **卡的 Issue createdAt 今天取不到**（阻塞發現，非疏漏）。取值序的第 2 順位
-        # 要它，而唯一合規的取得方式是擴 `project.py` 的 `_LIST_ITEMS_QUERY`
-        # ——那個檔**不在本卡的資源宣告**內，依 canonical §3.2 執行者不得自行擴權；
-        # 而第二次抓取被本卡驗收明文禁止（會讓 body 與欄位跨時間）。
-        # ⇒ 取不到 open 事件時刻的卡一律落 `undecidable`，⛔ 不猜、⛔ 不改判成指控。
-        issue_created_at=None,
+        # 取值序第 2 順位的來源（`ItemSnapshot.created_at`，與上面各項同一次讀取）。
+        # ⚠️ 仍可能是 None：`--conformance` 未指定、或 Project 讀取失敗 ⇒ 該情形下
+        # 取不到 open 事件時刻的卡一律落 `undecidable`，⛔ 不猜、⛔ 不改判成指控。
+        issue_created_at=issue_created_at,
     )
     # --json 時人類可讀報告改走 stderr：先前兩者都印到 stdout，整體輸出不是合法
     # JSON（`| jq .` 直接 parse error），機器消費端因此拿不到 review_channel。

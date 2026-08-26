@@ -1533,18 +1533,25 @@ def _patch_project(monkeypatch, bodies):
     class _Item:
         """`ItemSnapshot` 的最小替身。⚠️ **必須有 `fields`**——真實快照有，替身沒有的話
         `doctor_cmd` 讀欄位時會拋 AttributeError 而被那個寬鬆 except 吞掉，測試看起來
-        全綠但走的是「讀取失敗」那條路，等於在測一個不存在的世界。"""
+        全綠但走的是「讀取失敗」那條路，等於在測一個不存在的世界。
 
-        def __init__(self, card_id, body, fields=None):
+        `created_at` 同理，且它的預設**刻意是 None**：真實快照對每張卡都有值，但
+        `doctor_cmd` 讀它走的是 `getattr(..., None)`；預設給 None 才能讓「沒指定
+        createdAt 的既有測試」繼續走接線前那條路，⛔ 不讓一個未經指定的值默默改變它們。
+        """
+
+        def __init__(self, card_id, body, fields=None, created_at=None):
             self.card_id, self.body = card_id, body
             self.fields = dict(fields or {})
+            self.created_at = created_at
 
     monkeypatch.setattr(doctor_cmd, "resolve_project", lambda *a, **k: {"id": "P"})
     monkeypatch.setattr(
         doctor_cmd, "list_items",
         lambda *a, **k: [
             _Item(cid, b if isinstance(b, str) else b["body"],
-                  None if isinstance(b, str) else b.get("fields"))
+                  None if isinstance(b, str) else b.get("fields"),
+                  None if isinstance(b, str) else b.get("created_at"))
             for cid, b in bodies.items()
         ],
     )
@@ -1567,6 +1574,52 @@ def test_cli_flag_actually_scans_and_reports(sandbox_repo, monkeypatch, capsys):
     assert "CARD1" in out and "166322be" in out
     assert LEGACY_AUTHORITY_NOTE_EXPLANATION in out
     assert "未掃描" not in out
+
+
+def test_cli_feeds_created_at_into_the_conformance_scan(sandbox_repo, monkeypatch, capsys):
+    """⚠️ 本組要擋的是「純函式接了、CLI 沒接」。
+
+    取值序第 2 順位在 `doctor_cmd` 這一層有可能被漏掉（接線前它逐字傳 `None`）。
+    判準取**輸出文案**而非內部旗標：createdAt 有接上時，第 5 類的零命中歸因段會從
+    「構造上不可達」換成「候選母體」那一段；⛔ 兩者互斥，故文案就是接沒接上的證據。
+
+    **突變檢驗**：把 `doctor_cmd` 的 `issue_created_at=issue_created_at` 改回
+    `issue_created_at=None`，第一個 assert 轉紅（該卡會落回 `undecidable`）。
+    """
+    # 夾具：**沒有** open 事件（⇒ createdAt 是唯一時刻來源）、有 handoff（⇒ 有通道留痕）、
+    # 缺簡介（⇒ 對 `brief_present` 不合規，而該 epoch 晚於 CREATED_AT_TRUSTED_FROM，
+    # createdAt 這條退路在該區間可用）。前提逐字驗過，⛔ 不假設。
+    body = _conformant_body(
+        "2026-08-20T09:00:00+08:00 handoff by wf-cli → owner X；iteration 1；SHA "
+        + "a" * 40 + "；證據 y。",
+        brief=False,
+    )
+    assert existence_time_of(body, None).source == EXISTENCE_UNKNOWN
+    assert has_channel_evidence(body) is True
+
+    doctor_cmd = _patch_project(
+        monkeypatch,
+        {"CARD1": {"body": body, "fields": {"服務的原始目標": "有"},
+                   "created_at": "2026-08-26T01:00:00Z"}},
+    )
+    assert doctor_cmd.run(
+        _doctor_args(sandbox_repo, conformance=True, owner="acme", project=4)
+    ) == 0
+    out = capsys.readouterr().out
+    # 判得出時刻 ⇒ 落到「晚於規則且留痕完整」那一類，⛔ 不再是「本工具判不出」。
+    assert f"**{CAUSE_WRITER_NONCONFORMANT}（1 筆）**" in out
+    assert "構造上不可達" not in out and "候選母體" in out
+
+    # 同一張卡、只把 createdAt 拿掉 ⇒ 逐字換回另一個結論。⛔ 只跑一個方向是零資訊。
+    doctor_cmd = _patch_project(
+        monkeypatch, {"CARD1": {"body": body, "fields": {"服務的原始目標": "有"}}}
+    )
+    assert doctor_cmd.run(
+        _doctor_args(sandbox_repo, conformance=True, owner="acme", project=4)
+    ) == 0
+    back = capsys.readouterr().out
+    assert f"**{CAUSE_UNDECIDABLE}（1 筆）**" in back
+    assert "構造上不可達" in back
 
 
 def test_cli_without_the_flag_stays_not_scanned(sandbox_repo, capsys):
