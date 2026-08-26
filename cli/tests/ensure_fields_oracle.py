@@ -99,7 +99,8 @@ def _count_field_creates(runner: Any) -> tuple[Any, list[list[str]]]:
     created: list[list[str]] = []
     original = runner.execute
 
-    def counting(args, input=None):  # noqa: A002 - 對齊被包裝方法的參數名
+    def counting(args, input=None):
+        # 參數名 `input` 是刻意的：它要能替換 `GhRunner.execute`，簽章必須逐字對齊。
         argv = list(args)
         if argv[:2] == ["project", "field-create"]:
             created.append(argv)
@@ -121,14 +122,17 @@ def _wrapper(runner, owner, number, *args, **kwargs):
     STATS.calls += 1
     try:
         original_execute, created = _count_field_creates(runner)
-    except Exception:  # pragma: no cover - runner 不允許設屬性時退回不記帳
+    except (AttributeError, TypeError):  # pragma: no cover - runner 不讓設屬性時不記帳
         original_execute, created = None, []
+    # ⛔ 不用 `except ...: raise`：原函式拋出的任何東西都要原樣往上傳，而這裡只是要
+    # 記一筆「這一次判不了」。用旗標＋finally 表達，語意一樣而且不吞任何例外。
+    completed = False
     try:
         result = _ORIG(runner, owner, number, *args, **kwargs)
-    except Exception:
-        STATS.unverifiable += 1
-        raise
+        completed = True
     finally:
+        if not completed:
+            STATS.unverifiable += 1
         if original_execute is not None:
             _restore_execute(runner, original_execute)
 
@@ -141,7 +145,9 @@ def _wrapper(runner, owner, number, *args, **kwargs):
     _REENTRANT = True
     try:
         fresh = project.list_fields(runner, owner, number)
-    except Exception as exc:  # 驗證讀取本身失敗 ⇒ 這一次判不了，⛔ 不算通過
+    # ⭐ 這裡**必須**接得很寬：驗證讀取跑在各式各樣的測試替身上，失敗方式無法窮舉。
+    # 接窄一點的代價是預言自己把測試打紅，而那與「被測程式錯了」看起來一模一樣。
+    except Exception as exc:  # noqa: BLE001 - 理由見上一行；⛔ 不算 PASS，另記一欄
         STATS.unverifiable += 1
         print(f"[oracle] 驗證讀取失敗（判不了，非 PASS）：{exc!r}", file=sys.stderr)
         return result
@@ -161,14 +167,14 @@ def _wrapper(runner, owner, number, *args, **kwargs):
 
 def _install() -> None:
     for name, mod in list(sys.modules.items()):
-        if mod is None:
+        # ⛔ 用 `__dict__` 而不是 `getattr`：後者會觸發模組層的 `__getattr__`（惰性
+        # import 的套件常有），掃描一輪就可能把無關的模組拉進來或直接拋錯。
+        # `__dict__` 只看「這個模組自己已經綁了什麼名字」，正好就是我們要換的東西。
+        namespace = getattr(mod, "__dict__", None)
+        if not isinstance(namespace, dict):
             continue
-        try:
-            current = getattr(mod, "ensure_fields", None)
-        except Exception:  # pragma: no cover - 有些模組的 __getattr__ 會炸
-            continue
-        if current is _ORIG:
-            setattr(mod, "ensure_fields", _wrapper)
+        if namespace.get("ensure_fields") is _ORIG:
+            namespace["ensure_fields"] = _wrapper
             STATS.patched_modules.append(name)
 
 
