@@ -242,7 +242,6 @@ def run(args: argparse.Namespace) -> int:
     )
     runner = default_runner
     project = resolve_project(runner, target.owner, target.project)
-    fields = ensure_fields(runner, target.owner, target.project)
 
     existing = list_items(runner, project)
     if find_item_by_card_id(existing, card.card_id):
@@ -251,6 +250,20 @@ def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 3
+
+    # ⭐ 欄位 schema 的準備**刻意擺在「卡ID 已存在」那道拒收之後**。
+    #
+    # (a) 刻意如此：讀起來像「為什麼不跟 `resolve_project` 放一起」，答案是不能。
+    # (b) 為什麼：`ensure_fields` 不是唯讀的——缺哪個凍結欄位就送一次
+    #     `gh project field-create`。擺在拒收之前，「卡ID 已存在 ⇒ rc=3」這條路
+    #     就會先改掉 Project 的欄位定義，而模組頂端逐字寫著「副作用先於驗證是本
+    #     repo 明令要消滅的形狀」。
+    # (c) ⛔ **也不得再往後搬**：它必須留在 `create_repo_issue` **之前**。
+    #     反過來（先建 Issue 再 ensure_fields）會把失敗面換成「Issue 建了、欄位
+    #     炸了」——一張沒有任何欄位值的孤兒卡，那比現在糟。這一行的位置是
+    #     「拒收之後、第一次寫入之前」這個區間裡唯一的落點。
+    # (d) ⛔ 不得由這行的位置推出「ensure_fields 是唯讀的」——它不是，只是往後挪了。
+    fields = ensure_fields(runner, target.owner, target.project)
 
     body = render_issue_body(card)
     title = f"{card.card_id} {card.feature}"
