@@ -2,7 +2,16 @@
 
 **用法（opt-in，⛔ 預設不載入）**：
 
-    cd cli && uv run pytest -q -p tests.ensure_fields_oracle
+    cd cli && uv run python -m pytest -q -p tests.ensure_fields_oracle
+
+⚠️ **`python -m` 那段是必要的，⛔ 不是贅字。** `uv run pytest` 直接起 console script，
+而 pytest 在載入 ``-p`` 外掛時**尚未**把專案根放進 ``sys.path`` ⇒ 乾淨副本會得
+``ModuleNotFoundError: No module named 'tests'``、rc=1。``python -m`` 會先把 cwd 放進
+``sys.path`` 才交給 pytest。⛔ **不得由這段推出**：(1) 這是 pytest 的 bug——它是
+``-p`` 的既定載入時序；(2) ``PYTHONPATH=.`` 是等價的推薦寫法——它可行但把可重跑性
+綁在呼叫者的環境變數上，本檔的用法段要能被逐字複製貼上。
+⭐ 本行的兩種形式皆經實測（2026-08-26，清 ``__pycache__`` 後）：文件原形 rc=1、
+本形式 rc=0 且觸發 475 次、比對不一致 0、1226 passed。
 
 做的事：把每一個模組裡 ``ensure_fields`` 這個名字綁到一層包裝上。包裝在原函式回傳
 R 之後，**立刻**重讀一次 ``list_fields`` 得 F，並以順序敏感的逐欄位比對斷言
