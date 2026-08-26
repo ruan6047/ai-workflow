@@ -185,6 +185,7 @@ def list_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldMet
 def ensure_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldMeta]:
     """冪等：缺哪個凍結欄位就建哪個，已存在的原樣保留（含既有 option id）。"""
     existing = list_fields(runner, owner, number)
+    created = False
     for name, (ftype, options) in FIELD_SPECS.items():
         if name in existing:
             continue
@@ -197,6 +198,23 @@ def ensure_fields(runner: GhRunner, owner: str, number: int) -> dict[str, FieldM
             assert options is not None
             args += ["--single-select-options", ",".join(options)]
         runner.execute(args)
+        created = True
+    if not created:
+        # ⭐ **刻意如此**：一個欄位都沒建時直接回傳第一次查詢的結果，不再查第二次。
+        #
+        # 為什麼安全：`created` 為假 ⇒ 上面的迴圈一次 `field-create` 都沒送出 ⇒
+        # 在第一次查詢與這個 return 之間，**本函式對遠端沒有任何寫入**，重查只會
+        # 拿到同一份東西。（成本：第二次查詢實測 102 點／約 4.4 秒，佔一次寫入
+        # 動詞總成本的 94%。）
+        #
+        # ⛔ **不得由這個分支推出「ensure_fields 對併發是安全的」**：本函式沒有任何
+        # project 層的鎖，另一個 process 仍可能在兩次查詢之間動欄位。但那在舊碼下
+        # 同樣沒有保證——舊碼的第二次查詢只是「另一個時刻的快照」，不是防線；讀到
+        # 哪一版取決於時序。真正的缺口與該用什麼鎖，見
+        # `docs/WF_EVENT_IDEMPOTENCY1.md` §7.1／§2.2，⛔ 本卡不處理。
+        return existing
+    # 有建立時才重查：`field-create` 的回傳沒有被解析併入（那是被否決的 C3 方案），
+    # 故新欄位的 id／option id 只能靠重讀取得。
     return list_fields(runner, owner, number)
 
 
