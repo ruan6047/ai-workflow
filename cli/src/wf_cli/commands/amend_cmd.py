@@ -267,7 +267,6 @@ from ..gh import default_runner
 from ..project import (
     add_issue_comment,
     ensure_fields,
-    list_fields,
     find_item_by_card_id,
     list_items,
     resolve_project,
@@ -898,18 +897,24 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     )
     runner = default_runner
     project = resolve_project(runner, target.owner, target.project)
-    # ⛔ **dry-run 必須在任何可能遠端寫入之前分流**（查核 R3-001）。
-    # ensure_fields 是冪等的、但**不是唯讀的**：缺欄位時它會 project field-create。
-    # ⇒ 在欄位尚未建立的 Project 上，`amend --dry-run` 會**先把欄位建出來**，
-    # 違反它自己「未寫入任何狀態」的承諾，也違反本卡 A5 的時序裁定
-    # （欄位須在查核 APPROVE 之後才由 PM 建立）。
-    # ⚠️ 這是既有缺陷、非本卡引入，但本卡的 A5 使它從理論風險變成會實際發生的事。
-    # fields 在 dry-run 的返回點之前完全沒被使用，故唯讀路徑不會少任何東西。
-    fields = (
-        list_fields(runner, target.owner, target.project)
-        if args.dry_run
-        else ensure_fields(runner, target.owner, target.project)
-    )
+    # ⭐ 這裡**刻意只解析 project、不取欄位定義**。
+    #
+    # (a) 刻意如此：原本這裡有一行 `fields = list_fields(...) if dry_run else
+    #     ensure_fields(...)`——那個三元式是為了讓 `--dry-run` 不要建欄位而加的
+    #     （查核 R3-001）。現在整行拿掉，改由下面**兩個受條件保護的呼叫點**各自取。
+    # (b) 為什麼：`ensure_fields` 不是唯讀的（缺欄位就送 `gh project field-create`），
+    #     而 `fields` 這個名字在本函式裡**只**被兩個分支讀到——`fields["級別"]`（級別
+    #     欄先寫那條）與 `fields[field_name]`（body 之後補寫雙居所欄位那條）。
+    #     擺在這裡，中間所有拒收（找不到卡 rc=3、缺授權 rc=2、body 超上限 rc=2、
+    #     body 被他人改動 rc=6…）都會先改掉 Project 的欄位定義。
+    # (c) ⛔ **兩個順帶的行為改變，不得靜默**：
+    #     - `--dry-run` 從此**不再發任何欄位查詢**（原本走 `list_fields`）。它本來
+    #       就沒用到回傳值，⇒ 唯讀路徑不少任何東西，但少了一次 API 呼叫。
+    #     - `list_fields` 的 import 因此變成未使用，已一併移除。
+    # (d) ⛔ 不得由此推出「amend 的拒收路徑零欄位寫入」：`tier_needs_field_write`
+    #     為真時，級別欄的 `set_field_value` 讀回失敗仍會 rc=5，而 `ensure_fields`
+    #     在它前一行——那是「閘門後、寫入前」的必要位置，⛔ 不是閘門前的寫入。
+    #     逐字登記見 `cli/tests/test_gate_before_write.py` 的 `FROZEN`。
 
     items = list_items(runner, project)
     item = find_item_by_card_id(items, args.card_id)
@@ -1185,6 +1190,8 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     # （body 未動、無半寫入）；而「欄位成功、body 失敗」留下的不一致，由下一次
     # 同樣的 amend 依 _tier_change_logged 偵測並只補寫 Log 自癒。
     if tier_needs_field_write:
+        # 第一個受條件保護的取值點：只有真的要寫級別欄時才準備欄位 schema。
+        fields = ensure_fields(runner, target.owner, target.project)
         set_field_value(runner, project, item.item_id, fields["級別"], args.tier)
         after = find_item_by_card_id(list_items(runner, project), args.card_id)
         actual_tier = after.text("級別") if after else None
@@ -1229,6 +1236,10 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     # 那種由操作者宣告的補救。這是取捨不是解法：雙居所欄位沒有任何順序能同時
     # 做到首寫自描述與崩潰不留不一致。
     if pending_field_writes:
+        # 第二個受條件保護的取值點。⚠️ 這裡已經在 `set_item_body` 之後 ⇒ 本輪早就
+        # 寫過東西了，`ensure_fields` 排在它後面，⛔ 不落在「閘門前」那個區間。
+        # ⛔ 不得為了「省一次呼叫」把這兩個取值點合併回函式頂端——那正是本卡拆開它的原因。
+        fields = ensure_fields(runner, target.owner, target.project)
         stale: list[str] = []
         for field_name, value in pending_field_writes.items():
             set_field_value(runner, project, item.item_id, fields[field_name], value)

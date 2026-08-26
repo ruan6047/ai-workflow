@@ -275,7 +275,6 @@ def run(args: argparse.Namespace) -> int:
 
     runner = default_runner
     project = resolve_project(runner, target.owner, target.project)
-    fields = ensure_fields(runner, target.owner, target.project)
 
     items = list_items(runner, project)
     item = find_item_by_card_id(items, args.card_id)
@@ -332,6 +331,22 @@ def run(args: argparse.Namespace) -> int:
             for error in exc.errors:
                 print(f"  - {error}", file=sys.stderr)
             return 2
+
+    # ⭐ 欄位 schema 的準備**刻意擺在上面全部拒收之後**（缺 repo rc=2／找不到卡 rc=3／
+    # draft item rc=2／去重與 checkpoint rc=2／marked_by 身分 rc=2），而不是跟
+    # `resolve_project` 放一起。
+    #
+    # (a) 刻意如此。
+    # (b) 為什麼：`ensure_fields` 不是唯讀的——缺凍結欄位就送 `gh project field-create`。
+    #     上面那幾條的就地訊息逐字寫著「未寫入任何遠端狀態」；擺在它們之前，那句話
+    #     對缺欄位的 Project 就是假的。本行的位置是「最後一道拒收之後、第一次寫入
+    #     （`add_issue_comment`）之前」，⇒ 兩邊的保證同時成立。
+    # (c) ⛔ 不得再往後搬到 `add_issue_comment` 之後：先留言、後翻狀態的順序是刻意的
+    #     （反過來留言失敗會留下沒有裁決全文的 ✅通過），而欄位定義必須在
+    #     `set_field_value` 之前就緒 ⇒ 本行只能在這兩者之間。
+    # (d) ⛔ 不得由此推出「ensure_fields 已是唯讀」——它不是，只是往後挪了。
+    fields = ensure_fields(runner, target.owner, target.project)
+
     marks = build_accepted_marks(
         report.findings,
         overrides,

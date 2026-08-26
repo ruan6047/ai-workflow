@@ -167,7 +167,6 @@ def run(args: argparse.Namespace) -> int:
     )
     runner = default_runner
     project = resolve_project(runner, target.owner, target.project)
-    fields = ensure_fields(runner, target.owner, target.project)
 
     items = list_items(runner, project)
     item = find_item_by_card_id(items, args.card_id)
@@ -250,6 +249,22 @@ def run(args: argparse.Namespace) -> int:
         return 4
 
     branch_worktree = format_branch_worktree(args.branch, args.worktree)
+    # ⭐ 欄位 schema 的準備**刻意擺在上面全部四道閘門之後**（能力／跨 repo 歸屬／
+    # 本機觀測／資源交集），而不是跟 `resolve_project` 放一起。
+    #
+    # (a) 刻意如此。
+    # (b) 為什麼：`ensure_fields` 不是唯讀的——缺凍結欄位就送 `gh project field-create`。
+    #     擺在閘門前，被拒收的 assign（rc=2／4／5／6）仍會先改掉 Project 的欄位定義，
+    #     而那幾道閘門的就地註解逐字寫著「拒絕時必須零寫入」。
+    #     ⚠️ 這個位置**不是**因為有人主張早建欄位有好處：實查，它原本在
+    #     `resolve_project` 旁邊只是沿用 2026-08-04 五動詞的建檔樣板，**沒有任何
+    #     決策紀錄**；`test_commands_mocked.py` 那段常被引作理由的註解，主詞是
+    #     「該測試的保證範圍與用詞強度」，⛔ 全段沒有一句主張早建欄位有好處。
+    # (c) ⛔ 不得由此推出「所有 gh 寫入都可以往後搬」：能搬的唯一理由是
+    #     `resolve_project` 到本行之間對 `fields` 這個名字的讀取次數是 0
+    #     ——上面四道閘門吃的是 `item`（欄位**值**），⛔ 不吃欄位**定義**。
+    #     ⛔ 也不得推出「ensure_fields 已是唯讀」——它不是，只是往後挪了。
+    fields = ensure_fields(runner, target.owner, target.project)
     set_field_value(runner, project, item.item_id, fields["owner"], args.assignee)
     set_field_value(runner, project, item.item_id, fields["分支worktree"], branch_worktree)
     set_field_value(runner, project, item.item_id, fields["交付狀態"], args.status)

@@ -720,8 +720,25 @@ def test_missing_report_makes_no_gh_write_call_at_all(logging_runner, capsys):
     狀態比對過不了「寫進去又改回來」那關，呼叫紀錄過得了；反過來呼叫紀錄過不了
     「白名單漏列了某個其實會寫的動詞」，狀態比對過得了。⇒ 兩條一起才是證據。
 
-    ⛔ 這條**不宣稱** wfcli 全指令零寫入——`assign`／`open` 仍刻意在前置段呼叫
-    `ensure_fields`（見 ``test_commands_mocked`` 對 assign 的同型註記）。
+    ⛔ 這條**不宣稱** wfcli 全指令零寫入。
+
+    ⚠️ 原文的理由逐字寫「`assign`／`open` **仍刻意**在前置段呼叫 `ensure_fields`」
+    ——`aiwf#154` 把五個命令模組的呼叫點全搬到各自的拒收之後，該前提⛔ 已為假
+    （實測：`open` 的 `ensure_fields` 之前有 5 條非 0 return、`assign` 有 6 條）。
+    故理由重寫如下：
+
+    (a) 現在的順序：那五個動詞的 `ensure_fields` 都排在自己那幾道拒收**之後**。
+    (b) 為什麼本條仍不宣稱零寫入——理由是**射程**而不是順序：本條只觀測
+        `handoff` 缺報告那一條路的呼叫序列，⛔ 對其他動詞、其他路徑、成功路徑
+        零資訊。
+    (c) ⛔ 不得由此推出「`ensure_fields` 已是唯讀」——它不是，缺凍結欄位仍送
+        `gh project field-create`，只是被搬到閘門之後。
+    (d) ⛔ 更不得推出「拒收路徑已全面零寫入」：跨動詞的順序不變式由
+        ``tests/conftest.py`` 的 gate-guard 守，而它今天仍帶著逐字登記的殘餘
+        ``FROZEN = {("amend", 5): 2}``——那是**觀測面的盲點清單**，⛔ 不是
+        「已驗證安全」清單（見 ``test_gate_before_write.FROZEN_WHY``）。
+
+    同型的更正見 ``test_commands_mocked`` 對 assign 那條的就地註記。
     """
     assert _open("PITFALL-FIELD3") == 0
     _forget_field(logging_runner, "階段")

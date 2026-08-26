@@ -679,8 +679,11 @@ def run(args: argparse.Namespace) -> int:
     project = resolve_project(runner, target.owner, target.project)
     # ⚠️ 這裡**刻意只解析 project、不呼叫 `ensure_fields`**。`ensure_fields` 不是
     # 唯讀的：缺哪個凍結欄位就送一次 `gh project field-create`
-    # （`project.ensure_fields`）。它被搬到踩坑閘門之後，理由與可推不可推的界線
-    # 寫在那個呼叫點旁邊（見下方 `fields = ensure_fields(...)`）。
+    # （`project.ensure_fields`）。它被搬進 `write_status_face` 這個 closure，理由與
+    # 可推不可推的界線寫在那個呼叫點旁邊（見下方 `def write_status_face`）。
+    # ⚠️ R1-001 當初只把它搬到踩坑閘門之後，那修好了「缺報告 rc=2」一條；
+    # `_release_with_cleanup` 內另外十一條 rc≠0 的拒收仍排在那個位置之後 ⇒ 搬進
+    # closure 才把它們一起收掉。
     # ⛔ 不得由「這行不見了」推出欄位不會被建立——它只是往後挪了。
 
     items = list_items(runner, project)
@@ -780,25 +783,15 @@ def run(args: argparse.Namespace) -> int:
     # 釘住：任何不在白名單上的 gh 呼叫都會讓那條轉紅。
     #
     # ⛔ **不得由這段推出**：(1) `ensure_fields` 是唯讀的——它不是；(2) 其他指令
-    # 也有同樣保證——`assign`／`open` 仍刻意在前置段呼叫 `ensure_fields`；
+    # 也有同樣保證——`assign`／`open`／`review` 各自把 `ensure_fields` 搬到自己**最後
+    # 一道拒收之後**（`WF-ENSURE-FIELDS-READONLY-BY-DEFAULT1`），但那是四個各自
+    # 為政的位置，⛔ 不是函式本身的性質；`amend` 還有兩條殘餘（見
+    # `cli/tests/test_gate_before_write.py` 的 `FROZEN`）；
     # (3) 閘門通過代表內容被驗過——CLI 只驗窮舉性、值域與非空；(4) 這裡沒有繞道
     # ——離開階段判不出來時是**明文豁免**，見 `_pitfall_gate` docstring 第 2 點。
     gate = _pitfall_gate(args, item, ts)
     if gate.rc != 0:
         return gate.rc
-
-    # ⭐ 欄位 schema 的準備**刻意擺在閘門之後**（R1-001 的修法）。
-    #
-    # (a) 刻意如此：讀起來像「為什麼不跟 `resolve_project` 放一起」，答案是不能。
-    # (b) 為什麼：`ensure_fields` 會送 `field-create`，擺在閘門前會讓拒收路徑先
-    #     改掉 Project 的欄位定義。擺在這裡是唯一能同時成立的位置——閘門之前零
-    #     寫入，而下面第一個 `set_field_value` 之前欄位必然存在。**閘門讀不到的
-    #     東西不在這裡**：`_pitfall_gate` 只吃 `item`（`list_items` 給的欄位
-    #     **值**），⛔ 不吃 `fields`（欄位**定義**）。
-    # (c) ⛔ 不得由此推出「所有 gh 寫入都可以往後搬」：能搬的唯一理由是 `resolve_project`
-    #     到本行之間對 `fields` 這個名字的讀取次數是 0（AST 可證，見交付報告），
-    #     別的呼叫點沒有這個性質。
-    fields = ensure_fields(runner, target.owner, target.project)
 
     trace = f"；{PHASE_LOG_LABEL} {gate.phase_mark}"
     if gate.report_mark:
@@ -818,6 +811,25 @@ def run(args: argparse.Namespace) -> int:
         )
 
     def write_status_face(cleanup_note: str = "") -> None:
+        # ⭐ 欄位 schema 的準備**刻意擺在這個 closure 裡面**，而不是在上面的閘門之後。
+        #
+        # (a) 刻意如此：R1-001 的修法把它從 `resolve_project` 旁邊搬到踩坑閘門之後，
+        #     那修好了「缺報告 rc=2」那一條；但 `_release_with_cleanup` 內還有**十一條**
+        #     rc≠0 的拒收排在那個位置之後（rc=2×1、rc=5×10：分支欄無法解析、未 commit、
+        #     分支未合併、Issue 狀態讀不到、清理回報成功卻沒完成…），它們一樣會先建欄位。
+        # (b) 為什麼是這裡：`fields` 這個名字在整個 `run()` 裡**只**被本 closure 讀到
+        #     （AST 與實跑皆可證）⇒ 把 `ensure_fields` 整支搬進來，它就只在「真的要寫
+        #     狀態面」的那一刻才發生，上面所有拒收路徑自然零欄位寫入。實測：那 11 條
+        #     全部消失。
+        # (c) ⛔ 不得由此推出「handoff --cleanup 的拒收路徑零寫入」——本 closure 只
+        #     管 gh 側。`cleanup.execute_closeout_transition` 的 git 動作（分支刪除、
+        #     worktree 移除、push）不經過這裡，那 11 條**沒有一條**是靠證明 git 側
+        #     沒寫而消掉的。⛔ 也不得推出「ensure_fields 已是唯讀」——它不是。
+        # (d) ⚠️ 代價：**今天是零**——本 closure 每輪至多被呼叫一次（三個呼叫點互斥：
+        #     release 無 repo_path、非 release、以及 `_release_with_cleanup` 的 effect
+        #     writer），⇒ 欄位查詢次數與搬動前相同。若日後有人讓它一輪呼叫兩次，
+        #     會多發一次欄位查詢；`ensure_fields` 冪等，重複呼叫不改變遠端狀態。
+        fields = ensure_fields(runner, target.owner, target.project)
         set_field_value(runner, project, item.item_id, fields["owner"], args.to)
         set_field_value(runner, project, item.item_id, fields["交付狀態"], new_status)
         set_field_value(runner, project, item.item_id, fields["最後交接"], ts)
