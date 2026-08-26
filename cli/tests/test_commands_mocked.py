@@ -36,6 +36,7 @@ from wf_cli.project import (
 from .conftest import git
 from .fake_gh import FakeGhRunner
 from .test_card import ROUTING_LINE_RE
+from .test_pitfalls import with_pitfall_report
 
 #: 跨 repo 歸屬閘門（#57）接上之後，assign 的卡必須是**真 Issue**（卡的 repo 只認
 #: Issue URL），而 ``--worktree`` 必須落在可判定的 repo 上。本檔原本全用 DraftIssue ＋
@@ -913,6 +914,13 @@ def test_assign_registers_the_worktree_source_repo_flag():
 
 
 def _handoff_argv(card_id: str, sha: str, **overrides) -> list[str]:
+    """⚠️ 末行的 ``with_pitfall_report`` 是 WF-STAGE-PITFALL-LIST1 加的必要前提。
+
+    ``handoff`` 現在要求一份「離開現階段的族清冊回應」才肯寫任何一格；清冊格數由
+    **離開階段**決定，⛔ 不是常數——本檔的 ``test_handoff_log_line_never_carries_
+    the_status_it_wrote`` 連跑六圈，第 6 圈離開 ``執行`` 要 13 族、其餘圈要 8 族。
+    ⇒ 由 ``pitfalls.report_template()`` 依卡此刻的狀態導出，⛔ 不塞固定字串。
+    """
     defaults = {
         "--to": "查核者",
         "--next-stage": "review",
@@ -923,7 +931,7 @@ def _handoff_argv(card_id: str, sha: str, **overrides) -> list[str]:
     argv = ["handoff", *BASE_TARGET, card_id]
     for k, v in defaults.items():
         argv += [k, v]
-    return argv
+    return with_pitfall_report(argv, card_id)
 
 
 def test_handoff_rejects_invalid_sha(fake_runner):

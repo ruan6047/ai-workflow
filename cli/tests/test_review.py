@@ -40,6 +40,7 @@ from .test_checkpoint import (  # noqa: F401  （simulated_preflight_writer 以 
     inject_counted_attempt,
     simulated_preflight_writer,
 )
+from .test_pitfalls import with_pitfall_report
 
 BASE_TARGET = ["--owner", "acme", "--project", "1"]
 REPO = "acme/demo"
@@ -211,12 +212,17 @@ def test_valid_approve_writes_comment_and_flips_status(fake_runner, tmp_path, ca
 def test_valid_approve_does_not_touch_iteration_or_owner(fake_runner, tmp_path):
     """iteration 由 handoff 獨占（WF-22-CLI2）；review 併動會讓一次退回被記兩次。"""
     open_card("ITER-CARD1", runner=fake_runner)
+    # ⚠️ ``with_pitfall_report`` 是 WF-STAGE-PITFALL-LIST1 加的必要前提：``handoff``
+    # 要有一份離開現階段的族清冊回應才肯寫任何一格。清冊由該階段導出，⛔ 不塞字串。
     run_cli(
-        [
-            "handoff", *BASE_TARGET, "--repo", REPO, "ITER-CARD1",
-            "--to", "查核者", "--next-stage", "review",
-            "--source-sha", SHA, "--evidence", "pytest 全綠",
-        ]
+        with_pitfall_report(
+            [
+                "handoff", *BASE_TARGET, "--repo", REPO, "ITER-CARD1",
+                "--to", "查核者", "--next-stage", "review",
+                "--source-sha", SHA, "--evidence", "pytest 全綠",
+            ],
+            "ITER-CARD1",
+        )
     )
     before = card_item(fake_runner, "ITER-CARD1")
     assert before.fields["iteration"] == 0
@@ -1188,19 +1194,27 @@ def test_owner_snapshot_records_the_reviewer_not_the_executor_under_the_dispatch
     這一條就是本欄不足以直接支撐該款的機械證據。
     """
     open_card("OWNER-CARD1", runner=fake_runner)
+    # ⚠️ 兩次呼叫要的**不是同一份清冊**：第一次離開 ``需求``（8 族），而它把階段推到
+    # ``執行``，於是第二次離開 ``執行``（13 族）。⇒ 逐次由該階段導出，⛔ 不塞字串。
     run_cli(
-        [
-            "handoff", *BASE_TARGET, "--repo", REPO, "OWNER-CARD1",
-            "--to", "執行者A", "--next-stage", "implementation",
-            "--source-sha", SHA, "--evidence", "開工",
-        ]
+        with_pitfall_report(
+            [
+                "handoff", *BASE_TARGET, "--repo", REPO, "OWNER-CARD1",
+                "--to", "執行者A", "--next-stage", "implementation",
+                "--source-sha", SHA, "--evidence", "開工",
+            ],
+            "OWNER-CARD1",
+        )
     )
     run_cli(
-        [
-            "handoff", *BASE_TARGET, "--repo", REPO, "OWNER-CARD1",
-            "--to", "查核者B", "--next-stage", "review",
-            "--source-sha", SHA, "--evidence", "pytest 全綠",
-        ]
+        with_pitfall_report(
+            [
+                "handoff", *BASE_TARGET, "--repo", REPO, "OWNER-CARD1",
+                "--to", "查核者B", "--next-stage", "review",
+                "--source-sha", SHA, "--evidence", "pytest 全綠",
+            ],
+            "OWNER-CARD1",
+        )
     )
     assert _counting_review(tmp_path, "OWNER-CARD1", SHA, "OWNER-CARD1-R1-01") == 0
 
