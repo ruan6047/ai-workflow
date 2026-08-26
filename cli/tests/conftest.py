@@ -222,6 +222,8 @@ _VIOLATIONS: list[int] = [0]
 _OBSERVED: dict[tuple[str, int], int] = {}
 _DETAIL: dict[tuple[str, int], list[tuple[str, tuple[str, ...]]]] = {}
 _INSTALLED: list[bool] = [False]
+#: 動詞模組表，由 `_install_guard` 填、`_install_ef_wrappers` 讀。
+_CMD_MODS: dict[str, object] = {}
 _REPORTED: list[bool] = [False]  # terminal summary 已經印過完整裁決了嗎
 
 
@@ -241,6 +243,12 @@ def _record_gh(argv: list[str]) -> None:
     _EVENTS.append(("EFW:" if _IN_EF[0] else "W:") + label)
 
 
+#: 掛在本守衛的 ensure_fields 包裝上的記號，用來判斷「這個綁定已經被包過了」。
+#: ⛔ 不能改用 ``is`` 比對一個記下來的函式物件：那是本守衛一度**靜默弄壞
+#: ``tests/ensure_fields_oracle.py``** 的成因，見 `_install_ef_wrappers` 的說明。
+_EF_MARK = "_gate_guard_ef_wrapper"
+
+
 def _wrap_ensure_fields(orig):
     @functools.wraps(orig)
     def wrapped(*a, **k):
@@ -253,7 +261,35 @@ def _wrap_ensure_fields(orig):
             return orig(*a, **k)
         finally:
             _IN_EF[0] -= 1
+
+    setattr(wrapped, _EF_MARK, True)
     return wrapped
+
+
+def _install_ef_wrappers() -> None:
+    """把 ``ensure_fields`` 的每一個綁定包起來。**冪等**，由 ``pytest_runtest_setup``
+    以 ``trylast`` 反覆呼叫。
+
+    ⚠️ **為什麼是 setup 期而不是 configure 期，而且必須 trylast**（實測踩過）：
+    ``tests/ensure_fields_oracle.py`` 是本 repo 的 opt-in 差分預言（``-p`` 開啟），
+    它以 ``namespace.get("ensure_fields") is _ORIG`` 判斷「這個綁定還是原函式嗎」，
+    只在成立時才換上自己的包裝。⇒ 本守衛若在 ``pytest_configure`` 先把綁定換掉，
+    預言器**一個模組都掛不上**，卻仍照常印出「比對不一致次數: 0」——
+    實測 `-p tests.ensure_fields_oracle` 由「482 次觸發／11 個模組」變成
+    **「0 次觸發／0 個模組」**，那是一份**看起來像通過的空報告**。
+
+    改法：本守衛延到 ``pytest_runtest_setup`` 且 ``trylast``（conftest 的 hook 預設
+    比 ``-p`` 外掛先跑，故非 trylast 不可），⇒ 順序變成 預言器先掛、本守衛掛在它
+    外面，兩者同時成立。冪等靠 ``_EF_MARK`` 記號，⛔ 不靠 ``is`` 比對——預言器
+    每次 setup 都會重掃，用 ``is`` 會每輪多疊一層。
+    """
+    from wf_cli import project as project_mod
+
+    for holder in (project_mod, *_CMD_MODS.values()):
+        current = holder.__dict__.get("ensure_fields")
+        if current is None or getattr(current, _EF_MARK, False):
+            continue
+        holder.ensure_fields = _wrap_ensure_fields(current)
 
 
 def _wrap_verb(orig, verb: str):
@@ -292,21 +328,17 @@ def _wrap_verb(orig, verb: str):
 def _install_guard() -> None:
     from importlib import import_module
 
-    from wf_cli import project as project_mod
     from wf_cli.cli import build_parser
     from wf_cli.commands import COMMAND_MODULES
 
     from .fake_gh import FakeGhRunner
 
     mods = {name: import_module(f"wf_cli.commands.{name}") for name in COMMAND_MODULES}
+    _CMD_MODS.update(mods)
 
-    # (1) ensure_fields：本體 ＋ 每一個 `from ..project import ensure_fields` 的綁定。
-    orig_ef = project_mod.ensure_fields
-    wrapped_ef = _wrap_ensure_fields(orig_ef)
-    project_mod.ensure_fields = wrapped_ef
-    for mod in mods.values():
-        if getattr(mod, "ensure_fields", None) is orig_ef:
-            mod.ensure_fields = wrapped_ef
+    # (1) ensure_fields 的綁定**刻意不在這裡換**——見 `_install_ef_wrappers` 的說明：
+    #     在 configure 期換掉會讓 `tests/ensure_fields_oracle.py` 一個模組都掛不上，
+    #     而它仍會印出一份看起來像通過的空報告。
 
     # (2) gh 出口：execute 與 graphql 兩支都要掛。run_json 在 GhRunner 裡走
     #     self.execute，但 FakeGhRunner **覆寫了 graphql** ⇒ GraphQL 不經過 execute。
@@ -344,6 +376,21 @@ def _install_guard() -> None:
 
 def pytest_configure(config) -> None:
     _install_guard()
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_finish(session):
+    # 與 `ensure_fields_oracle` 同一組安裝時機（收集完成 ＋ 每次 setup 補掃）：
+    # 測試模組的 `from ..project import ensure_fields` 綁定是在收集期才存在的，
+    # 只掛 setup 期會讓「第一個測試的 fixture 階段」跑在沒有 EF 觀測的世界裡。
+    _install_ef_wrappers()
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_setup(item):
+    # trylast 是**必要的**，⛔ 不是保險：conftest 的 hook 預設比 `-p` 外掛先跑，
+    # 而本守衛必須掛在 `ensure_fields_oracle` 的包裝**外面**才不會把它擠掉。
+    _install_ef_wrappers()
 
 
 @pytest.hookimpl(hookwrapper=True)
