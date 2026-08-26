@@ -26,6 +26,21 @@
 
 ⚠️ 另一個消費者（``aiwf#122`` 的修復代理）與本腳本並行 ⇒ 任何量測都要跑控制組：
 量測前後各取一次 ``used``，中間**不做任何事**，差值須為 0。
+
+⛔ **``used`` 只在同一個視窗內單調遞增**（查核 R1-06）
+--------------------------------------------------
+
+本模組曾宣稱「用 ``used`` 差值就能避開 ``remaining`` 跨重置 [reset] 的負成本」。
+**那個前提是錯的**：視窗一翻，``remaining`` 跳回 5000、``used`` 同樣跳回 0，兩者
+一起說謊。跨視窗的 ``after - before`` 有兩種壞法，⛔ **後者比前者危險**：
+
+  1. **負值**（4990 → 7 ⇒ −4983）：荒謬到一眼看得出來。
+  2. **看起來正常的正值**（10 → 50，但 50 屬於**下一個**視窗）⇒ 差值 +40 非負、
+     單調、量級合理，**沒有任何算術性質抓得到它**。只有 ``resetAt`` 抓得到。
+
+⇒ ``account_delta()`` 一律先比 ``resetAt``，再比是否倒退；兩者任一不成立就判
+**不可用**（回 ``None`` 而不是回一個數）。⛔ 不得為了「有個數字好填」而回退成
+「取 abs」「取 max(0, …)」或「跨視窗就補上 limit」——補值等於拿猜的當量測。
 """
 
 from __future__ import annotations
@@ -33,6 +48,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from dataclasses import dataclass
 
 _QUERY = "{ rateLimit { limit cost remaining used resetAt } }"
 
@@ -54,7 +70,13 @@ def sample(n: int = 3) -> list[dict]:
 
 
 def used(n: int = 1) -> int:
-    """已用點數。⭐ n>1 時取 max（單調遞增量，取 max 即最新）。"""
+    """已用點數。n>1 時取 max。
+
+    ⛔ **不得拿兩次本函式的回傳值相減當成本**（查核 R1-06 就是這樣壞掉的）：
+    裸 ``int`` 把 ``resetAt`` 丟掉了，⇒ 呼叫端無從判斷兩次取樣是不是同一個視窗。
+    要算差值一律走 ``account_delta(probe(), probe())``。
+    ⚠️ 連 ``n>1 取 max`` 也只在同一視窗內成立——跨視窗時「較大的那個」是**舊的**。
+    """
     return max(s["used"] for s in sample(n))
 
 
@@ -70,13 +92,61 @@ def reset_epoch() -> int:
     return int(datetime.datetime.fromisoformat(iso).timestamp())
 
 
-def control(label: str = "") -> tuple[int, int, bool]:
-    """控制組：什麼都不做的前後量測，差值須為 0。回傳 (前, 後, 是否通過)。"""
-    a = used()
-    b = used()
-    ok = a == b
+@dataclass(frozen=True)
+class AccountDelta:
+    """兩次 ``rateLimit`` 取樣之間的**帳號層** ``used`` 差值判定。
+
+    ⛔ 這是**帳號層觀測**，不是任何一支腳本自己的成本：同一把 token 的所有消費者
+    （並行的代理、編輯器外掛、``gh`` 的其他呼叫）都記在同一本帳上。要「本腳本自己的
+    成本」得用各 GraphQL 回應自報的 ``rateLimit.cost``（見
+    ``snapshot_population._CostAccountingRunner``）。
+    """
+
+    usable: bool
+    delta: int | None
+    reason: str
+
+
+def account_delta(before: dict, after: dict) -> AccountDelta:
+    """判定 ``after["used"] - before["used"]`` 可不可用。⛔ 不可用時回 ``delta=None``。
+
+    (a) 現在的行為：``resetAt`` 不同、或缺 ``resetAt``、或 ``used`` 倒退，一律判
+        ``usable=False`` 且 **不回任何數字**。
+    (b) 為什麼：``used`` 的單調性只在同一個視窗內成立（見模組 docstring）。跨視窗的
+        差值可能是負的（一眼看得出來），也可能是**看起來完全正常的正值**——後者只有
+        ``resetAt`` 抓得到，所以視窗比對是這裡的主判準，倒退檢查只是第二道網。
+    (c) ⛔ 不得由 ``usable=True`` 推出「這段期間只有本腳本在消費」——那要靠控制組，
+        而控制組也只證明「取樣的那一瞬間沒有他人」，⛔ 不證明整段量測期間都沒有。
+    """
+    b_reset, a_reset = before.get("resetAt"), after.get("resetAt")
+    if b_reset is None or a_reset is None:
+        return AccountDelta(False, None, "取樣缺 resetAt，無從判定是否同一視窗")
+    if b_reset != a_reset:
+        return AccountDelta(False, None, f"跨越 reset 視窗（{b_reset} → {a_reset}）")
+    if after["used"] < before["used"]:
+        # 同視窗內倒退在文件上不該發生；真的發生代表取樣或端點有鬼 ⇒ 一樣不給數字。
+        return AccountDelta(
+            False, None, f"同視窗內 used 倒退（{before['used']} → {after['used']}）"
+        )
+    return AccountDelta(True, after["used"] - before["used"], f"同一視窗（{a_reset}）且未倒退")
+
+
+def control(label: str = "") -> tuple[dict, dict, bool]:
+    """控制組：什麼都不做的前後量測，差值須為 0。回傳 (前取樣, 後取樣, 是否通過)。
+
+    ⚠️ 回傳的是**整份取樣**（含 ``resetAt``）而不是 ``int``：呼叫端要拿 ``resetAt``
+    去判視窗，只回 ``used`` 會把 R1-06 的洞原封不動搬到呼叫端。
+    """
+    a = probe()
+    b = probe()
+    d = account_delta(a, b)
+    ok = d.usable and d.delta == 0
+    if d.usable:
+        detail = f"used {a['used']} → {b['used']}　差 {d.delta}"
+    else:
+        detail = f"used {a['used']} → {b['used']}　差值不可用（{d.reason}）"
     print(
-        f"  控制組{(' ' + label) if label else ''}：used {a} → {b}　差 {b - a}　"
+        f"  控制組{(' ' + label) if label else ''}：{detail}　"
         f"{'✅ 通過' if ok else '⛔ 不通過（有並行消費者或跨越重置）'}"
     )
     return a, b, ok
