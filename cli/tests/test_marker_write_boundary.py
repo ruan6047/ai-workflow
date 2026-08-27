@@ -734,7 +734,7 @@ def test_append_log_line_rejects_event_layer_forgery_carried_by_plain_newlines()
 
     with pytest.raises(MarkerWriteBoundaryError) as exc:
         append_log_line(base, _EVENT_LAYER_FORGERY)
-    assert "lifecycle 事件筆數" in str(exc.value)
+    assert "lifecycle 事件（逐筆、摺平後）" in str(exc.value)
 
 
 def test_mutation_removing_the_event_count_invariant_lets_the_forgery_through():
@@ -746,6 +746,56 @@ def test_mutation_removing_the_event_count_invariant_lets_the_forgery_through():
         _EVENT_LAYER_FORGERY, structural=True, roundtrip=True, invariants=False
     )
     assert leaked is not None, "行層兩條性質全開仍被擋 ⇒ 這不是 (3) 的獨有樣本"
+    events, _ = doctor.parse_log_events(leaked)
+    assert events is not None and "review by wf-cli → APPROVE" in events[-1]
+
+
+#: ⭐ **只比「筆數」會漏的那一類**：值以一個分行字元**開頭**。
+#: 摺平後的基線是**一筆 handoff**，候選卻是**一筆偽造的 APPROVE**——兩邊都是「+1 筆」。
+_EQUAL_COUNT_FORGERY = (
+    f"\n{_LOG_TS} handoff by wf-cli → owner X"
+    f"\n- 2026-08-27T09:00:00+08:00 review by wf-cli → APPROVE（🏁完成）"
+)
+
+
+def test_counting_events_alone_would_miss_a_forgery_that_keeps_the_count_equal():
+    """⭐ **性質 (3) 為什麼比對「逐筆內容」而不只是「筆數」**（⛔ 這一格先寫錯過）。
+
+    交付前寫過一段就地註解，逐字主張「內容比對是筆數的重述、加它等於加一條不會失敗的
+    檢查」。⇒ 拿 2,520 個 payload 組合窮舉一遍（6 段落 × 2–3 段 × ``str.splitlines()``
+    導出的 9 個分行字元）：**1,680 個筆數相等，其中 20 個內容不同** ⇒ 那句主張是假的，
+    而且漏掉的正是一筆偽造的 ``APPROVE``。守衛對那 20 個全部擋下（實跑 20/20）。
+
+    ⭐ 教訓就地留著：**「我證不出它會失敗」≠「它不會失敗」**，先跑窮舉再下結論。
+    """
+    base = _log_body()
+    before, why_b = doctor.parse_log_events(base)
+    leaked = _append_log_line_raw(base, _EQUAL_COUNT_FORGERY)
+    after, why_a = doctor.parse_log_events(leaked)
+    assert why_b is None and why_a is None
+    assert before is not None and after is not None
+    # 筆數一模一樣 ⇒ 只比筆數的檢查對它完全沉默。
+    assert len(after) - len(before) == 1
+    # ⛔ 但新增的那一筆是偽造的 APPROVE，⛔ 不是產生器寫的 handoff。
+    assert "review by wf-cli → APPROVE" in after[-1]
+    assert "handoff by wf-cli" not in after[-1]
+
+    with pytest.raises(MarkerWriteBoundaryError):
+        append_log_line(base, _EQUAL_COUNT_FORGERY)
+
+
+def test_mutation_counting_only_lets_the_equal_count_forgery_through(monkeypatch):
+    """變異檢驗：把性質 (3) 退回「只比筆數」，上面那個 payload **必須**漏過去。"""
+    from wf_cli import card as card_mod
+
+    def count_only(body: str) -> int:
+        events, undecidable = doctor.parse_log_events(body)
+        if undecidable is not None or events is None:
+            raise AmendError(f"事件層不判定（{undecidable}）")
+        return len(events)
+
+    monkeypatch.setattr(card_mod, "_log_event_signature", count_only)
+    leaked = card_mod.append_log_line(_log_body(), _EQUAL_COUNT_FORGERY)
     events, _ = doctor.parse_log_events(leaked)
     assert events is not None and "review by wf-cli → APPROVE" in events[-1]
 

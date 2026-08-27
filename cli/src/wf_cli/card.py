@@ -560,14 +560,14 @@ def append_log_line(body: str, line: str) -> str:
     ⭐ **事件層偽造由性質 (3) 擋（2026-08-27 依查核 R2-01 補上）**，⛔ 不是靠禁 ``\\n``：
     (a) 現在的行為：普通 ``\\n`` **仍然寫得進去**（多段落續行是 ``doctor.parse_log_events``
         明文支援的形狀，``handoff --evidence`` 的多段落證據靠它）；被擋的是「同一次附加
-        在事件層被讀成不只一筆」。
-    (b) 為什麼判準是筆數而不是字元：禁 ``\\n`` 會擋掉合法的多段落證據，那是以拒收代替
-        設計；而筆數由**真正的讀取端**（``parse_log_events``）自己導出 ⇒ 零列舉、
-        ⛔ 不定義字元、⛔ 不定義 marker。合法多段落仍只增加一筆，偽造案例會增加兩筆
-        （實測：一次 ``handoff`` 被解析成 ``open``／``handoff``／偽造 ``APPROVE`` 共 3 筆）。
-    (c) ⛔ **不得由此推出「事件內容有保證」**——本條只比對筆數。內容相等**不是**可加的
-        第二道檢查：合法多段落證據的最後一筆事件，在 baseline（已摺平）與 candidate
-        （帶續行）之間內容必然不同，比內容會退回它。
+        在事件層被讀成的那組事件，與它不帶分行結構時被讀成的那組不同」。
+    (b) 為什麼判準是事件層的導出量而不是字元：禁 ``\\n`` 會擋掉合法的多段落證據，那是
+        以拒收代替設計；而事件由**真正的讀取端**（``parse_log_events``）自己切 ⇒ 零列舉、
+        ⛔ 不定義字元、⛔ 不定義 marker。實測：一次 ``handoff`` 被解析成 ``open``／
+        ``handoff``／偽造 ``APPROVE`` 共 3 筆，而合法多段落仍只增加一筆。
+    (c) ⛔ **不得由此推出「事件的語意可信」**——本條比對的是那組事件在「有／無分行結構」
+        兩種寫法下是否相同，⛔ 不判斷任何一筆事件說的是不是真的。詳見
+        :func:`_log_event_signature` 的三段說明（含「只比筆數會漏」的窮舉反例）。
     """
     entry = f"- {line}"
     candidate = _append_log_line_raw(body, line)
@@ -595,23 +595,36 @@ def append_log_line(body: str, line: str) -> str:
         baseline,
         candidate,
         roundtrip=checks,
-        invariants=[(f"`{_LOG_HEADING}` 的 lifecycle 事件筆數", _log_event_count)],
+        invariants=[
+            (f"`{_LOG_HEADING}` 的 lifecycle 事件（逐筆、摺平後）", _log_event_signature)
+        ],
         where=f"`{_LOG_HEADING}` 附加行",
     )
     return candidate
 
 
-def _log_event_count(body: str) -> int:
-    """性質 (3) 對 Log 的導出量：``## Log`` 區段裡的 lifecycle 事件筆數。
+def _log_event_signature(body: str) -> tuple[str, ...]:
+    """性質 (3) 對 Log 的導出量：``## Log`` 的 lifecycle 事件**逐筆、各自摺平**。
 
     ⭐ **走 ``doctor.parse_log_events`` 這條真正的讀取路徑，⛔ 不另寫一份事件切分**
     （§3.2 規則三逐字：「解析側須走真正會跑的那條路徑」）。它就是把偽造 ``APPROVE``
     讀成一筆真事件的那個消費者，⇒ 判準必須由它自己導出。
 
-    ⚠️ **不判定一律拋，⛔ 不回 0**：``parse_log_events`` 的不判定是 fail-soft 的
+    ⭐ **為什麼是「逐筆內容」而不只是「筆數」**（⛔ 這一格我先寫錯過，就地留證）：
+    (a) 現在的行為：回傳每一筆事件**摺掉自身分行結構**後的字串序列。
+    (b) 為什麼：只比筆數會漏。實跑窮舉 2,520 個 payload 組合，其中 1,680 個「筆數相等」，
+        而**其中 20 個內容不同**——最短的反例是值以一個分行字元開頭：
+        ``sep + "<ts> handoff …" + sep + "- <ts> review … APPROVE"``。摺平後的基線是
+        **一筆 handoff**，候選卻是**一筆偽造的 APPROVE**，兩邊都是「+1 筆」⇒ 筆數檢查
+        對它完全沉默。⇒ 「內容比對是筆數的重述」是**假的**，我原本那麼寫是錯的。
+    (c) ⛔ **不得改成比對「未摺平」的事件內容**：合法的多段落 ``--evidence`` 會讓最後一筆
+        事件在基線（已摺平）與候選（帶續行）之間逐位元不同，未摺平的比對會退回它。
+        摺平**只作用在比對上**，⛔ 不改寫任何寫進去的值（§3.2 規則二禁止的是後者）。
+
+    ⚠️ **不判定一律拋，⛔ 不回空序列**：``parse_log_events`` 的不判定是 fail-soft 的
     ``(None, 原因)``，⛔ **不拋例外** ⇒ 性質 (1) 的 ``_reads_back``（只認例外）對它
     **結構性看不見**。轉成例外之後，「寫入前導得出、寫入後不判定」才會落在
-    :func:`enforce_write_boundary` 的拒收側；回 0 會讓「不判定」與「真的零筆」撞在
+    :func:`enforce_write_boundary` 的拒收側；回空序列會讓「不判定」與「真的零筆」撞在
     同一個值上，那是把兩件事讀成一件。
 
     ⚠️ **刻意延遲 import**：``wf_cli.doctor`` 反向 import 本模組，模組載入期會迴圈。
@@ -622,7 +635,7 @@ def _log_event_count(body: str) -> int:
     events, undecidable = parse_log_events(body)
     if undecidable is not None or events is None:
         raise AmendError(f"事件層不判定（{undecidable}）")
-    return len(events)
+    return tuple(_flatten_line_structure(event) for event in events)
 
 
 # --------------------------------------------------------------------------
@@ -810,9 +823,10 @@ def enforce_write_boundary(
         一次寫入解讀成**更多筆語意單位**——``doctor.parse_log_events`` 對含普通 ``\\n``
         的 Log 值就是如此（實測：一次 ``handoff`` 被解析成 ``open``／``handoff``／偽造
         ``APPROVE`` 共 3 筆）。⇒ 那是**事件層**的偽造，行層兩條性質對它結構性沉默。
-    (c) ⛔ **不得由此推出「導出量相等 ⇒ 事件內容可信」**：本條只比對導出量。⛔ 也不得
-        改成比對事件**內容**——合法的多段落 ``--evidence`` 會讓最後一筆事件的內容在
-        baseline（已摺平）與 candidate（帶續行）之間必然不同，內容相等會退回它。
+    (c) ⛔ **不得由此推出「導出量相等 ⇒ 那些事件說的是真的」**：本條只問「同一次寫入在
+        帶／不帶分行結構兩種寫法下，導出量是否相同」，⛔ 不判斷任何一筆事件的語意。
+        ⚠️ 導出量**必須對值自身的分行結構不敏感**（例如事件層那條先逐筆摺平再比），
+        否則合法的多段落 ``--evidence`` 會被退回——那是本機制唯一的偽陽性來源。
 
     ⛔ **不得改成「把值正規化後寫入」**：§3.2 規則二逐字禁止以正規化代替拒收
     （把換行摺成空白、把連續空白壓成一個都是靜默改變值，其危害與寫得出讀不回同級）。
