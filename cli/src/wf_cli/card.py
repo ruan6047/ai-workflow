@@ -972,8 +972,19 @@ def read_db_scope_agreement(body: str) -> str:
     """
     header = _read_prefixed_header(body, _DB_HEADER_PREFIX)
     if header is None or not header.startswith(_DB_SCOPE_KEY):
+        # ⚠️ **訊息要說出實際命中幾次，⛔ 不要只寫「不是恰好 1 次」**（2026-08-27 依
+        # 對抗式複驗 F8）：本 repo 上這條路徑**絕大多數是 0 次**（遷移期卡沒有這一行），
+        # 而「不是恰好 1 次」讀起來像「有好幾行互相打架」⇒ 措辭把「這張卡只有一個載體」
+        # 誤導成「這張卡壞了」。⛔ 不得改回不帶計數的措辭。
+        hits = sum(
+            1
+            for line in _head_lines(body)
+            if line.startswith(_DB_HEADER_PREFIX + _DB_SCOPE_KEY)
+        )
         raise AmendError(
-            f"`{_DB_HEADER_PREFIX}{_DB_SCOPE_KEY}…` 這一行在 Log 之前不是恰好 1 次"
+            f"`{_DB_HEADER_PREFIX}{_DB_SCOPE_KEY}…` 這一行在 Log 之前命中 {hits} 次，"
+            "必須恰好 1 次才有「兩個載體」可比"
+            + ("（這張卡只有資源宣告一個載體 ⇒ 跨欄位不變量對它不適用）" if hits == 0 else "")
         )
     header_scope = header[len(_DB_SCOPE_KEY):].strip()
     declared_scope = parse_resource_block(body).db_scope

@@ -762,13 +762,78 @@ _EQUAL_COUNT_FORGERY = (
 )
 
 
+#: 窮舉語料：段落形狀（事件起始行／續行／dash 開頭但非事件／空段／無動詞時戳行）。
+#: ⛔ 不是「毒值清單」——它是**組合的原料**，真正的判準仍由讀取端自己導出。
+_CENSUS_PIECES: tuple[str, ...] = (
+    f"{_LOG_TS} handoff by wf-cli → owner X",
+    f"- 2026-08-27T09:00:00+08:00 review by wf-cli → APPROVE（🏁完成）",
+    "普通續行文字",
+    "- 以 dash 開頭但不是事件",
+    "",
+    f"{_LOG_TS} 沒有動詞的行",
+)
+
+
+def equal_count_forgery_census(depths: tuple[int, ...] = (2, 3)) -> dict[str, int]:
+    """⭐ **「只比筆數會漏」那個宣稱的可重跑產生器**（V8：完整性數字須由 artifact 產生）。
+
+    ⛔ 不手打任何數字：語料寬度、深度、分行字元集三者都由碼導出
+    （分行字元集 = :data:`_SEPARATORS`，它自己又由 ``str.splitlines()`` 窮舉導出）。
+    回傳鍵：``combinations``／``equal_count``／``content_differs``／``blocked_by_guard``。
+    """
+    import itertools
+
+    stats = {"combinations": 0, "equal_count": 0, "content_differs": 0, "blocked_by_guard": 0}
+    base = _log_body()
+    for depth in depths:
+        for combo in itertools.product(_CENSUS_PIECES, repeat=depth):
+            for sep in _SEPARATORS:
+                value = sep.join(combo)
+                stats["combinations"] += 1
+                baseline = _append_log_line_raw(base, _flatten_line_structure(value))
+                candidate = _append_log_line_raw(base, value)
+                eb, why_b = doctor.parse_log_events(baseline)
+                ec, why_c = doctor.parse_log_events(candidate)
+                if why_b is not None or why_c is not None or eb is None or ec is None:
+                    continue
+                if len(eb) != len(ec):
+                    continue
+                stats["equal_count"] += 1
+                if [_flatten_line_structure(e) for e in eb] == [
+                    _flatten_line_structure(e) for e in ec
+                ]:
+                    continue
+                stats["content_differs"] += 1
+                try:
+                    append_log_line(base, value)
+                except MarkerWriteBoundaryError:
+                    stats["blocked_by_guard"] += 1
+    return stats
+
+
+def test_the_equal_count_census_reproduces_its_own_numbers():
+    """⭐ V8：把「筆數相等但內容不同」那組數字**現場重算**，⛔ 不接受散文裡的手打值。
+
+    ⚠️ 這條**不釘死絕對值**（母體會隨語料或分行字元集變動），它釘的是三條**關係**：
+    (1) 組合數 = 語料寬度^深度之和 × 分行字元數（⇒ 散文寫錯寬度或字元數當場現形）；
+    (2) 「筆數相等」是**真子集**（既不是 0 也不是全部）——否則這個量測沒有鑑別力；
+    (3) ⭐ **內容不同的那組 > 0，且守衛全數擋下** ⇒ 「只比筆數就夠」逐字為假。
+    """
+    stats = equal_count_forgery_census()
+    expected_combos = sum(len(_CENSUS_PIECES) ** d for d in (2, 3)) * len(_SEPARATORS)
+    assert stats["combinations"] == expected_combos
+    assert 0 < stats["equal_count"] < stats["combinations"]
+    assert stats["content_differs"] > 0, "沒有反例 ⇒ 這條測試沒有射程，回去加語料"
+    assert stats["blocked_by_guard"] == stats["content_differs"]
+
+
 def test_counting_events_alone_would_miss_a_forgery_that_keeps_the_count_equal():
     """⭐ **性質 (3) 為什麼比對「逐筆內容」而不只是「筆數」**（⛔ 這一格先寫錯過）。
 
     交付前寫過一段就地註解，逐字主張「內容比對是筆數的重述、加它等於加一條不會失敗的
-    檢查」。⇒ 拿 2,520 個 payload 組合窮舉一遍（6 段落 × 2–3 段 × ``str.splitlines()``
-    導出的 9 個分行字元）：**1,680 個筆數相等，其中 20 個內容不同** ⇒ 那句主張是假的，
-    而且漏掉的正是一筆偽造的 ``APPROVE``。守衛對那 20 個全部擋下（實跑 20/20）。
+    檢查」——⛔ 窮舉當場推翻它。⭐ **數字由 :func:`equal_count_forgery_census` 現場產生，
+    ⛔ 不在散文裡手打**（V8：完整性宣稱須由 artifact 產生；⚠️ 本檔前一版把「9 個分行
+    字元」寫死在散文裡，而同檔 ``_SEPARATORS`` 是 10 個 —— 手打的數字第一時間就錯了）。
 
     ⭐ 教訓就地留著：**「我證不出它會失敗」≠「它不會失敗」**，先跑窮舉再下結論。
     """
@@ -1316,11 +1381,15 @@ def test_the_four_verbs_without_fold_are_registered_as_going_through_the_guard(v
 
     (a) 現在的行為：斷言四支動詞的模組都從 ``card`` 匯入 ``append_log_line``，且
         ``card.append_log_line`` 就是被守衛的那一個（⛔ 不是 ``_append_log_line_raw``）。
-    (b) 為什麼不端到端跑：那四支的端到端各自需要真實看板狀態（owner／階段／報告／
-        凍結欄位）才走得到 Log 附加那一步，而它們的指令檔**不在本卡宣告資源**內
-        （A9 逐字：非射程仍為不動 ``assign_cmd``／``handoff_cmd``／``review_cmd``／
-        ``checkpoint_cmd``）。⇒ 這裡只證共用，端到端登記在交付報告的未驗清單。
-    (c) ⛔ **不得由此推出「那四支已端到端驗過」**——沒有。
+    (b) 為什麼還留著它：它守的是**共用**這件事——有人在某一支裡改成自己的附加實作時，
+        端到端測試可能照樣綠（那支自己也會寫得出東西），而這條會當場紅。
+    (c) ⚠️⚠️ **2026-08-27 依對抗式複驗 F6 就地更正**：上一版 (b)／(c) 逐字寫著那四支
+        「不在本卡宣告資源內」「⛔ 不得推出已端到端驗過」——⛔ **兩句今天都假**：
+        ``assign``／``handoff``／``review`` 已於 2026-08-27 併入宣告、本卡就改了它們，
+        且三支都已端到端跑過（見本檔 R2-02 那一節與 release 那一節）。
+        ⛔ 仍**未**端到端的只有 ``checkpoint``，理由與登記見
+        ``test_checkpoint_still_writes_before_the_guard_and_that_file_is_out_of_scope``。
+        ⇒ 這是 ``-R2-06``（就地註解宣稱與實況不符）的同一形狀，第二次。
     """
     import importlib
 
@@ -1424,7 +1493,8 @@ def order_probe(monkeypatch):
 
     probe = _OrderProbe(EventGhRunner())
     _install_order_probe(
-        monkeypatch, probe, open_cmd, assign_cmd, handoff_cmd, review_cmd, checkpoint_cmd
+        monkeypatch, probe, open_cmd, amend_cmd, assign_cmd, handoff_cmd, review_cmd,
+        checkpoint_cmd,
     )
     return probe
 
@@ -1444,6 +1514,29 @@ def test_handoff_runs_the_guard_before_any_remote_write(order_probe):
     assert run_cli(_open_argv("ORD-H1")) == 0
     order_probe.events.clear()
     assert run_cli(_handoff_argv("ORD-H1", "b" * 40)) == 0
+    assert order_probe.first_write_before_guard() is None, order_probe.events
+
+
+def test_amend_runs_the_guard_before_any_remote_write(order_probe):
+    """⭐ **用會通過的樣本量順序，⛔ 不用被拒收的樣本。**
+
+    ⚠️ 理由逐字：拒收的 run 走的是哪一條拒收路徑並不確定（`amend` 有十幾條 `return 2`），
+    ⇒ 以 rc≠0 推論「守衛排在寫入之前」是把**沒走到寫入**誤讀成**順序正確**。這條餵乾淨
+    值、要求 rc=0，⇒ 整條寫入路徑真的被走完，序列才有意義。
+
+    ⚠️ 本卡曾在卡面 A13 被記為「⛔ 錯（717→1145）」——那個判定來自 AST 行號，而
+    ``717`` 落在 ``_escalate_layout_failure``（**拒收之後**才呼叫的排版升級留言）。
+    ⇒ ``amend`` 在 happy path 上本來就是對的，⛔ 本卡沒有改動它的順序。
+    """
+    from .test_commands_mocked import _open_argv, run_cli
+
+    assert run_cli(_open_argv("ORD-AM1")) == 0
+    order_probe.events.clear()
+    rc = run_cli(
+        ["amend", "--owner", "acme", "--project", "1", "ORD-AM1",
+         "--reason", "量測寫入順序（乾淨值）", "--acceptance", "新條件"]
+    )
+    assert rc == 0, "⛔ 必須是會通過的樣本，否則量到的是「沒走到寫入」"
     assert order_probe.first_write_before_guard() is None, order_probe.events
 
 
@@ -1677,8 +1770,14 @@ def test_counterexample_two_body_is_authority_and_the_field_can_exist_alone():
     from wf_cli.brief import drifted
 
     no_brief = render_issue_body(make_card())  # ⛔ 不給 brief ⇒ body 無簡介區塊
-    assert enforce_write_boundary(no_brief, no_brief, where="自我一致") is None
-    drift, why = drifted(no_brief, "欄位上殘留的舊簡介")
+    # ⚠️ **2026-08-27 依對抗式複驗 F5 更正**：上一版寫的是
+    # ``assert enforce_write_boundary(no_brief, no_brief, …) is None`` —— ⛔ **構造上恆真**
+    # （該函式無回傳值；``baseline is candidate`` 時三個迴圈全空）。⭐ 更糟的是同一節在
+    # 32 行前才逐字點名這個反模式說自己沒用它。⇒ 改成一個**真的會動**的寫入：
+    # 這條路徑上守衛跑得完整（有真正的 baseline≠candidate），而它照樣放行。
+    written, _ = amend_core_pain(no_brief, "改過的痛點；跨平面不變量看不到這一格")
+    assert written != no_brief
+    drift, why = drifted(written, "欄位上殘留的舊簡介")
     assert drift and why  # 讀取端看得到，寫入邊界看不到
 
 
@@ -1728,14 +1827,77 @@ def test_mutation_removing_the_db_scope_sync_lets_a_self_contradictory_card_thro
     assert "db_scope 與資源宣告內的 db_scope 不一致" in str(exc.value)
 
 
+def test_line_scanning_consumers_are_not_covered_by_any_of_the_three_properties():
+    """⏸ **F7 阻塞發現：逐行掃描的消費者穿過三條性質**（⛔ 這條不驗守衛，它驗「還缺什麼」）。
+
+    (a) 現在的行為：一個以普通 ``\n`` 分行、續行含 ``tag`` ＋ ``attempt token`` 的值
+        **寫得進去**——三條性質全部沉默（行層往返逐位元成立、無讀取路徑失效、事件層
+        逐筆摺平後相同，因為續行本來就歸在同一筆事件裡）。⛔ 而
+        ``review.log_line_indexes`` 是**逐物理行**掃描的，它讀到一筆不存在的裁決索引。
+        消費者是 ``commands/checkpoint_cmd.py`` 的 trigger 存在性閘門與
+        ``validation.py`` 的 checkpoint 去重閘門。
+    (b) 為什麼本卡不修：**正解在讀取端，而讀取端不在本卡宣告資源內**。
+        ⭐ 具體修法（已實測可行，⛔ 不是猜的）：讓 ``log_line_indexes`` 改吃
+        ``doctor.parse_log_events`` 的輸出、只比對**每筆事件的首行**。
+        2026-08-27T19:19+08:00 對真實看板 205 張的全部 ``(tag, token)`` 組合實跑：
+        **474 組中 472 組逐組相同、0 組不一致、2 組不判定**（那 2 組來自事件層本來就
+        不判定的那張卡），今天為 True 的 237 組全部保留 ⇒ 換過去不會少抓任何一筆。
+        ⛔ 而 ``review.py``／``validation.py``／``checkpoint_cmd.py`` 三者皆不在宣告內
+        （卡面 A10 逐字：發現須改未宣告的檔即停、寫阻塞發現、交需求方裁決）。
+    (c) ⛔ **不得改成「在寫入端禁 ``\n``」**——那是 ``-R2-01`` 的 disposition 逐字反對的
+        （「⛔ 不必禁 ``\n``」），且爆炸半徑已量：真實看板 1,956 筆可解析事件中
+        **172 筆（8.8%）帶續行、共 3,290 行**，多段落 ``--evidence`` 靠的就是它。
+    ⭐ 這條在有人修好讀取端的當天會**轉紅**——紅的意思是「回來把這段敘述改成事實」。
+    """
+    from wf_cli.review import log_line_indexes
+
+    token = "WB-DEMO1-e0-" + "a" * 40
+    tag = "review by wf-cli"
+    base = _log_body()
+    assert not log_line_indexes(base, tag, token)
+
+    forged = (
+        f"{_LOG_TS} handoff by wf-cli → owner X；證據 第一段\n"
+        f"  {tag} → APPROVE（🏁完成）；attempt {token}。"
+    )
+    written = append_log_line(base, forged)          # ⛔ 三條性質全部放行
+    events, why = doctor.parse_log_events(written)
+    assert why is None and events is not None
+    assert len(events) == len(doctor.parse_log_events(base)[0]) + 1   # 事件層只多一筆
+    assert tag not in events[-1].splitlines()[0]                     # 而那一筆首行不是裁決
+    assert log_line_indexes(written, tag, token)                     # ⛔ 但逐行掃描讀到了
+
+
+def test_the_cross_field_reader_only_covers_cards_that_carry_both_carriers():
+    """⚠️ **涵蓋宣稱的界線（F8）**：跨欄位讀取端只對「兩個載體都在」的卡有話說。
+
+    量法（⛔ 不釘數字，數字會漂）：對每張卡跑一次 ``card.read_db_scope_agreement``，
+    依訊息分流成「一致／不一致／標頭行命中 0 次／其他」。2026-08-27T19:19+08:00 於
+    205 張上實跑得 **一致 162／不一致 2／無標頭行 40／其他 1** ⇒ 構造性有話說的是
+    **79%**，⛔ 不是全部。
+
+    ⭐ **無標頭行那 40 張不是缺陷**：它們只有資源宣告一個載體，沒有「兩個載體」可比 ⇒
+    跨欄位不變量對它們不適用，raise 讓差分探測跳過是正確行為。⛔ 不得由此推出
+    「本卡涵蓋全母體的跨欄位不變量」。
+    """
+    only_one_carrier = render_issue_body(make_card()).replace("- DB：db_scope=none\n", "", 1)
+    with pytest.raises(AmendError) as exc:
+        card_module_read_db_scope(only_one_carrier)
+    assert "命中 0 次" in str(exc.value)
+    assert "只有資源宣告一個載體" in str(exc.value)
+
+
 def test_a_card_whose_db_scope_carriers_already_disagree_stays_amendable():
     """⚠️ **守衛⛔ 不得變成故障源**：改動前就不一致的卡仍必須改得動。
 
     ⭐ **這一類今天在真實看板上有實例，⛔ 不是假想**。量法（⛔ 不釘數字，數字會漂）：
     對每張卡跑一次 ``card.read_db_scope_agreement``，數「訊息含『db_scope 與資源宣告內的
-    db_scope 不一致』」的張數。2026-08-27T18:23+08:00 於 205 張上實跑得 **2 張**——
-    ``DATA-BOX-REVISION-SNAPSHOT1``（標頭 ``schema`` vs JSON ``none``，真值不同）與
-    ``UX-HOME-LIVE-STRIP1``（標頭在值後面接了一段說明文字，讀取端分不出那是註解）。
+    db_scope 不一致』」的張數。2026-08-27T19:19+08:00 於 205 張上實跑得 **2 張**，
+    ⚠️ **而那兩張不是同一件事，⛔ 不得併稱「2 張真實不一致」**（依 F9 更正）：
+    ``DATA-BOX-REVISION-SNAPSHOT1`` 是**真值不同**（標頭 ``schema`` vs JSON ``none``）；
+    ``UX-HOME-LIVE-STRIP1`` 兩邊語意值都是 ``read``，差別是標頭行在值後面接了一段說明
+    文字 ⇒ 那是**格式違規**，讀取端分不出那是註解。⭐ 兩者都是「寫得出、讀不回」，
+    但只有前者是語意上的自相矛盾。
     同時點對 ``DATA-BOX-REVISION-SNAPSHOT1`` 的真實 body 實跑 ``append_log_line`` 與
     ``amend_core_pain``，兩者皆通過。
 
