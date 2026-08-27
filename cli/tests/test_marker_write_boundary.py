@@ -909,7 +909,7 @@ def test_owner_damage_is_caught_by_both_properties_not_only_the_differential():
         別人的往返讀回器；一個不碰 ``## Log`` 的 owner 值（例如塞進一行
         ``- 需求：…``，那是 Log 區、讀取端本來就不看）今天兩條性質都抓不到。
     """
-    poisoned = {"owner": "小明 ## Log 尾"}
+    poisoned = {"owner": "小明\u2028## Log\u2028尾"}
     with pytest.raises(MarkerWriteBoundaryError):
         make_card(**poisoned)
     # 往返讀回器**單獨**就抓得到（無差分探測）。
@@ -1203,26 +1203,54 @@ def test_open_rejection_through_cli_main_never_escapes_as_a_traceback(runner, ca
     assert "Traceback" not in capsys.readouterr().err
 
 
-def test_the_four_log_verbs_rejection_is_not_yet_clean_at_the_cli_layer():
-    """⏸ **把阻塞發現釘成可執行的紀錄**（⛔ 這條不驗守衛，它驗「還缺什麼」）。
+def test_the_log_verbs_rejection_is_clean_at_the_cli_layer():
+    """R2-03（``rejection-not-clean-traceback-escapes``）已閉合：``cli.main`` 收得住它。
 
-    (a) 現在的行為：``card.MarkerWriteBoundaryError`` 不在 ``cli.KNOWN_ERRORS`` 內
-        ⇒ ``assign``／``handoff``／``review``／``checkpoint`` 在守衛拒收時經 ``cli.main``
-        會以 traceback、rc=1 收場。``open`` 不在此列——它自己接住並回 rc=2。
-    (b) 為什麼沒補：補法是把該型別加進那個 tuple（一行），但
-        ``cli/tests/test_cli_registry.py`` 的 ``EXPECTED_KNOWN_ERRORS`` 是凍結基線，
-        同一次改動必須連它一起改，而**該檔不在本卡宣告資源**內（A10 逐字：發現須改
-        未宣告的檔即停）。
-    (c) ⛔ **不得由此推出「那四支沒有守衛」**——值一樣寫不進去（見上一條），
-        缺的只是訊息與退出碼的乾淨度。
-    ⭐ 這條在有人補上那一行的當天會**轉紅**——那是刻意的：紅的意思是「回來把這段
-    敘述改成事實」，⛔ 不是「有人弄壞了」。
+    ⚠️ **父類刻意不收**：``card.AmendError`` 留在 ``KNOWN_ERRORS`` 之外——
+    ``tests/test_amend.py`` 有一條深層性質靠「model 層是獨立防線」成立，收父類會吞掉它。
+    ⇒ 這裡兩個方向都要斷言，否則「收了型別」與「收了整個 ValueError 家族」在觀測面
+    上長得一樣。
     """
     from wf_cli import card as card_mod
     from wf_cli import cli as cli_mod
 
-    assert card_mod.MarkerWriteBoundaryError not in cli_mod.KNOWN_ERRORS
-    assert not issubclass(card_mod.MarkerWriteBoundaryError, tuple(cli_mod.KNOWN_ERRORS))
+    assert card_mod.MarkerWriteBoundaryError in cli_mod.KNOWN_ERRORS
+    assert card_mod.AmendError not in cli_mod.KNOWN_ERRORS
+    assert not issubclass(ValueError, tuple(cli_mod.KNOWN_ERRORS))
+
+
+def test_a_log_verb_write_boundary_rejection_exits_two_without_a_traceback(
+    order_probe, capsys
+):
+    """⭐ **端到端**：真的把毒值餵給 ``assign``，經 ``cli.main`` 必須 rc=2 且無 traceback。
+
+    ⛔ 型別在不在 tuple 裡是**結構**，這條量的是**行為**——上一輪的教訓逐字是
+    「以 stack trace 收場的 fail-closed 不算乾淨拒絕」。
+    並一併驗 R2-02：這條拒收路徑上一次遠端寫入都沒有。
+    """
+    from .test_commands_mocked import _assign_argv, _open_for_assign, run_cli
+
+    assert run_cli(_open_for_assign("ORD-CLEAN1", **{"--exec-capability": "主力型"})) == 0
+    order_probe.events.clear()
+    capsys.readouterr()
+    rc = cli_main(
+        _assign_argv(
+            "ORD-CLEAN1",
+            "某模型@某工具",
+            "b",
+            "/w",
+            actual_capability="高階型",
+            # ⚠️ 分行字元逐字寫成 escape，⛔ 不留看不見的字元在原始碼裡：
+            #    看不見的 U+2028 正是本卡在治的東西，把它藏進源碼等於留一個
+            #    下一個人讀不出來的樣本。
+            deviation_reason="理由\u2028## Log\u2028- 偽造",
+        )
+    )
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "Traceback" not in err
+    assert "寫入邊界拒收（未寫入任何狀態）" in err
+    assert [e for e in order_probe.events if e.startswith("W:")] == [], order_probe.events
 
 
 @pytest.mark.parametrize(
@@ -1650,7 +1678,7 @@ def test_roundtrip_reader_reads_what_the_amend_path_reads():
 
 
 def test_flatten_only_removes_line_structure():
-    assert _flatten_line_structure("a b\nc") == "abc"
+    assert _flatten_line_structure("a\u2028b\nc") == "abc"
     assert _flatten_line_structure("## Log") == "## Log"
 
 

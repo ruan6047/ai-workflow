@@ -353,12 +353,16 @@ class Card:
         # (c) ⛔ **不得由此推出「render_issue_body 不必再驗」**：Card 是可變的
         #     dataclass，建構後改欄位再 render 完全合法 ⇒ 序列化端必須自己也驗一次。
         #     兩層共用同一份判準函式（§3.2 規則二的參考形狀），⛔ 不得只做一半。
-        # (d) ⚠️ **拒收的乾淨化不在這裡，⛔ 但它已經完成**（2026-08-27 依查核 R1-03）：
-        #     本例外從這裡拋出後，由 ``commands/open_cmd.py`` 包住本建構的 ``except``
-        #     印 ``[open] 拒絕：…`` 回 rc=2，並由 ``cli.KNOWN_ERRORS`` 收底
-        #     （``assign``／``handoff``／``review``／``checkpoint`` 走 ``append_log_line``
-        #     那條路徑也由該處收）。⛔ 不得由此推出「所以這裡可以自己 print 或 sys.exit」
-        #     ——model 層拋型別、指令層決定訊息與退出碼，是 §3.2 逐字的參考形狀。
+        # (d) ⚠️ **拒收的乾淨化不在這裡**：本例外從這裡拋出後，由 ``commands/open_cmd.py``
+        #     包住本建構的 ``except`` 印 ``[open] 拒絕：…`` 回 rc=2；``assign``／``handoff``／
+        #     ``review``／``checkpoint`` 走 ``append_log_line`` 那條路徑則由
+        #     ``cli.KNOWN_ERRORS`` 收成 ``[wfcli] 錯誤：…`` ＋ rc=2。
+        #     ⚠️ **2026-08-27 依查核 R2-06 更正本段**：上一版逐字寫著「並由
+        #     ``cli.KNOWN_ERRORS`` 收底」，⛔ 而當時 ``MarkerWriteBoundaryError`` 根本不在
+        #     那個 tuple 裡（那四支仍會 traceback／rc=1）——**就地註解宣稱了一個尚未交付
+        #     的能力**。今天那一行已補上，本段才成立；⛔ 不得再把「打算做」寫成「已經有」。
+        #     ⛔ 也不得由此推出「所以這裡可以自己 print 或 sys.exit」——model 層拋型別、
+        #     指令層決定訊息與退出碼，是 §3.2 逐字的參考形狀。
         enforce_card_render_boundary(self)
 
     @property
@@ -720,6 +724,15 @@ def body_read_paths() -> tuple[tuple[str, Callable[[str], object]], ...]:
     global _READ_PATHS
     if _READ_PATHS is not None:
         return _READ_PATHS
+    # ⚠️ **``__package__`` 的靜態型別是 ``str | None``，本行刻意不加 None 分支**
+    # （IDE 診斷 ``reportArgumentType``，⛔ 非 CI；本 repo 的 required check 只有 ``tests``）：
+    # (a) 現在的行為：直接把 ``__package__`` 餵給 ``import_module``。
+    # (b) 為什麼：本模組是 ``wf_cli`` **套件內**的模組，``__package__`` 在構造上恆為
+    #     ``"wf_cli"``；``None`` 只出現在頂層腳本（``__name__ == "__main__"`` 且非 ``-m``），
+    #     而本函式只在寫入動詞執行期被呼叫，那時本模組必然是被 import 進來的。
+    # (c) ⛔ **不得為了讓 linter 閉嘴而加一個永不執行的 fallback 分支**——那會製造一段
+    #     沒有任何測試走得到的碼，正是本 repo 已經登記過的「零資訊」形狀。真要動，
+    #     正解是讓型別檢查器認得這個前提（``assert``／``cast``），⛔ 不是新增行為分支。
     package = importlib.import_module(__package__)
     found: list[tuple[str, Callable[[str], object]]] = []
     for info in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
