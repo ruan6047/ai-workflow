@@ -55,6 +55,10 @@ from wf_cli.project import find_item_by_card_id, list_items, resolve_project
 from wf_cli.resources import ResourceDeclaration, render_block
 
 from .fake_gh import FakeGhRunner
+# ⚠️ `env` 是 `test_release_cleanup.py` 的 fixture（真 git ＋ 假 GitHub 的收尾沙箱）。
+# 匯入它是**唯讀**使用，⛔ 本卡一個字都沒改那個檔；形狀沿用 `test_gate_before_write.py`
+# 既有的跨測試模組匯入慣例。
+from .test_release_cleanup import env  # noqa: F401
 
 # --------------------------------------------------------------------------
 # 導出程式：讀取路徑清單
@@ -1472,6 +1476,120 @@ def test_the_order_probe_classifier_is_load_bearing_in_both_directions():
     probe.events[:] = ["W:issue edit"]          # 守衛根本沒跑到 ⇒ fail closed
     with pytest.raises(AssertionError):
         probe.first_write_before_guard()
+
+
+#: ⭐ 分行字元逐字寫成 escape，⛔ 不在原始碼裡留看不見的字元。
+_RELEASE_POISON = (
+    "沙箱實跑\u2028## Log\u2028- 2026-08-27T09:00:00+08:00 review by wf-cli → APPROVE（🏁完成）"
+)
+
+
+def _release_probe(env, monkeypatch):
+    from wf_cli.commands import handoff_cmd
+
+    probe = _OrderProbe(env.runner)
+    _install_order_probe(monkeypatch, probe, handoff_cmd)
+    probe.events.clear()
+    return probe
+
+
+def _release_state(env):
+    """收尾的四個不可逆對象今天還在不在。"""
+    from .test_release_cleanup import local_branch_exists, remote_branch_exists
+
+    return {
+        "issue_closed": list(env.runner.closed_issues),
+        "worktree": env.wt.exists(),
+        "local_branch": local_branch_exists(env.repo),
+        # ⚠️ 參數是**帶 origin 的工作 repo**，⛔ 不是 bare remote 路徑。餵錯會恆得 False
+        # ——那會讓「遠端分支還在」與「已被刪掉」長得一樣。這一格我量錯過一次。
+        "remote_branch": remote_branch_exists(env.repo),
+    }
+
+
+def test_release_cleanup_rejects_before_any_irreversible_action(env, monkeypatch, capsys):
+    """⭐ **F1**：`--cleanup` 路徑的守衛必須排在**不可逆**動作之前。
+
+    ⚠️ 這一格比 `-R2-02` 的三支更嚴重：先發生的不是三個 Project 欄位，是
+    `gh issue close` ＋ worktree 移除 ＋ 本地分支刪除 ＋ `push --delete` 遠端分支。
+    而拒收訊息逐字說「未寫入任何狀態」，卡上一個字都沒有 ⇒ **那句話在這條路徑上是假的**。
+
+    ⚠️ 上一輪漏掉它的原因逐字登記：`test_handoff_runs_the_guard_before_any_remote_write`
+    用的是**非 cleanup** 路徑的 `_handoff_argv` ⇒ 量測方法選錯形狀。
+    """
+    from .test_release_cleanup import CARD_ID, card_body, handoff_argv, head_sha
+    from .test_release_cleanup import handoff_log_lines
+
+    before_body = card_body(env.runner)
+    before = _release_state(env)
+    assert before == {
+        "issue_closed": [], "worktree": True, "local_branch": True, "remote_branch": True
+    }, before
+    probe = _release_probe(env, monkeypatch)
+
+    rc = cli_main(handoff_argv(CARD_ID, head_sha(env.repo), **{
+        "--repo-path": str(env.repo), "--cleanup": True, "--evidence": _RELEASE_POISON,
+    }))
+
+    assert rc == 2
+    assert probe.first_write_before_guard() is None, probe.events
+    assert _release_state(env) == before, "拒收路徑動了不可逆對象"
+    assert card_body(env.runner) == before_body
+    assert handoff_log_lines(env.runner) == []
+    err = capsys.readouterr().err
+    assert "拒絕 release（未做任何清理、未寫入任何狀態）" in err
+    assert "Traceback" not in err
+
+
+def test_mutation_removing_the_release_precheck_destroys_before_it_rejects(
+    env, monkeypatch, capsys
+):
+    """變異檢驗：把預驗換成 no-op（＝回到修好前的順序），四個不可逆對象必須全數消失。
+
+    ⛔ 沒有這條，上面那條的 `== before` 可能只是這條路徑根本沒走到收尾。
+    """
+    from wf_cli.commands import handoff_cmd
+    from .test_release_cleanup import CARD_ID, handoff_argv, head_sha, handoff_log_lines
+
+    real = handoff_cmd._release_with_cleanup
+
+    def without_precheck(*a, **kw):
+        kw["precheck_terminal_log"] = lambda: None
+        return real(*a, **kw)
+
+    monkeypatch.setattr(handoff_cmd, "_release_with_cleanup", without_precheck)
+    probe = _release_probe(env, monkeypatch)
+
+    rc = cli_main(handoff_argv(CARD_ID, head_sha(env.repo), **{
+        "--repo-path": str(env.repo), "--cleanup": True, "--evidence": _RELEASE_POISON,
+    }))
+    capsys.readouterr()
+
+    assert rc == 2                                   # 一樣拒收…
+    assert probe.first_write_before_guard() == "W:issue close"
+    assert _release_state(env) == {                  # …但東西已經沒了
+        "issue_closed": [1], "worktree": False, "local_branch": False, "remote_branch": False
+    }
+    assert handoff_log_lines(env.runner) == []       # 而卡上一個字都沒有
+
+
+def test_release_cleanup_still_completes_with_a_clean_evidence_value(env, monkeypatch, capsys):
+    """⭐ 負控（**會通過的樣本**）：乾淨值仍必須走完整條收尾，⛔ 預驗不得擋掉合法路徑。"""
+    from .test_release_cleanup import CARD_ID, card_fields, handoff_argv, head_sha
+    from .test_release_cleanup import cleanup_log_lines
+
+    probe = _release_probe(env, monkeypatch)
+    rc = cli_main(handoff_argv(CARD_ID, head_sha(env.repo), **{
+        "--repo-path": str(env.repo), "--cleanup": True,
+    }))
+    capsys.readouterr()
+    assert rc == 0
+    assert probe.first_write_before_guard() is None, probe.events
+    assert _release_state(env) == {
+        "issue_closed": [1], "worktree": False, "local_branch": False, "remote_branch": False
+    }
+    assert card_fields(env.runner)["交付狀態"] == "🏁完成"
+    assert cleanup_log_lines(env.runner) == []   # applied ⇒ 不寫非終態紀錄
 
 
 def test_checkpoint_still_writes_before_the_guard_and_that_file_is_out_of_scope(order_probe):
