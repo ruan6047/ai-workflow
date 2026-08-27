@@ -73,8 +73,9 @@ r"""合格指標的目標存在性掃描器（WF-CANONICAL-SELF-STALENESS1）。
 - **副檔名必須是本 repo 既有的副檔名。** 指向 repo 裡不存在的檔案類型（例如一個
   沒有任何同型檔案的副檔名）的指標會被當成雜訊放掉。這個過濾器擋掉的 token 每次
   都印出計數，``--all`` 逐筆列出，⛔ 不靜默。
-- **只看 ``git ls-files``**：未追蹤檔、非 UTF-8 檔不在射程。讀不到的檔列進
-  ``unreadable`` 並由測試斷言為空，⛔ 不靜默略過。
+- **只看 ``git ls-files``**：未追蹤檔不在射程。被追蹤但讀不到的檔（非 UTF-8、
+  I/O 失敗）列進 ``unreadable``、由測試斷言為空，**並讓 CLI 回非零**——「掃不到」
+  與「掃過而乾淨」在退出碼上必須不同，⛔ 不靜默略過。
 - **不驗指得對不對。** 目標行非空即算過；那一行講的是不是引用者說的那件事，本腳本
   沒有意見。
 
@@ -85,6 +86,8 @@ r"""合格指標的目標存在性掃描器（WF-CANONICAL-SELF-STALENESS1）。
   檢查，判定不成立。
 - **豁免不是垃圾桶**：某個豁免條目拿掉之後輸出沒有多出對應的紅 → 那是死條目。
 - **k=0 純度**：``--census`` 在當下的樹上出現任何一筆 k=0 誤綁 → 形態選錯。
+- **讀不到不得回綠**：有被追蹤檔進了 ``unreadable`` 而 CLI 仍回 0 → 射程缺口被綠燈
+  蓋住，判定不成立。
 
 用法::
 
@@ -626,11 +629,17 @@ def main(argv: list[str] | None = None) -> int:
         print("⛔ 這些豁免項已無命中，是死條目，請刪除或重新裁決：")
         for key in dead:
             print(f"  {key[0]}　{key[2]}　sha256 {key[1][:12]}…")
+    if report.unreadable:
+        print()
+        print("⛔ 有被追蹤檔讀不到 ⇒ 那幾份檔**完全沒有被掃過**，本次判定不涵蓋它們。")
+        print("「掃不到」與「掃過而乾淨」在退出碼上必須不同，否則綠燈會蓋住射程缺口。")
     if report.blocking:
         print()
         print("指名來源檔的行號會隨那個檔插行而靜默失準——")
         print("改成「符號名或該行的實際字面」，或把行號更新到它今天真的在的位置。")
-    return 1 if (report.blocking or dead) else 0
+    # ⚠️ ``unreadable`` 也算紅：讀不到的檔是**射程缺口**，⛔ 不是「掃過而乾淨」。
+    # 人手執行必須與 CI 的真實樹測試同樣 fail-closed，否則 CLI 會印出「未掃描」卻回 0。
+    return 1 if (report.blocking or dead or report.unreadable) else 0
 
 
 if __name__ == "__main__":

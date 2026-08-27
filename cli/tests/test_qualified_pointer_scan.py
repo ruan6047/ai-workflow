@@ -285,6 +285,44 @@ def test_a_file_that_cannot_be_decoded_is_reported_not_silently_skipped(tmp_path
     assert report.scanned_files == len(qps.tracked_files(tmp_path)) == 2
 
 
+def test_the_cli_exits_nonzero_when_a_tracked_file_could_not_be_read(
+    tmp_path, capsys, monkeypatch
+):
+    """⭐ **「掃不到」與「掃過而乾淨」的退出碼必須不同**（`aiwf#146` R1-003）。
+
+    原本 ``unreadable`` 只由真實樹測試斷言為空，而 ``main()`` 不看它 ⇒ CLI 會逐字印出
+    「讀不到，未掃描」**卻回 0**。人手執行因此拿到一個綠燈，而那個綠燈蓋住的是**射程
+    缺口**：那幾份檔根本沒被掃過。
+
+    ⚠️ **本測試是差分的，這樣才殺得掉變異。** 兩棵樹只差一份讀不到的檔：對照組必須
+    rc=0、實驗組必須 rc=1。並先斷言實驗組的 ``blocking`` 與 ``dead_exemptions`` 都是空的
+    ⇒ **rc=1 的唯一來源只可能是 ``unreadable``**。若有人把 ``report.unreadable`` 從
+    ``main()`` 的退出碼運算式裡拿掉，本測試立刻轉紅。
+    """
+    # ⚠️ 合成樹上真實的豁免簿必然全是死條目（它們指的是本 repo 的檔）⇒ 那會讓 rc=1
+    # 有第二個來源、差分因此測不出東西。清空它，讓 ``unreadable`` 是唯一的變因。
+    monkeypatch.setitem(qps.__dict__, "EXEMPTIONS", {})
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "real.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
+    # 對照組：同一棵樹，沒有讀不到的檔。
+    assert qps.main(["--root", str(tmp_path)]) == 0
+    capsys.readouterr()
+
+    # 實驗組：只多一份被追蹤但不是 UTF-8 的檔。
+    (tmp_path / "BLOB.md").write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+
+    report = qps.scan_repo(tmp_path)
+    assert report.blocking == () and report.dead_exemptions == ()
+    assert report.unreadable == ("BLOB.md",)
+
+    assert qps.main(["--root", str(tmp_path)]) == 1
+    assert "BLOB.md" in capsys.readouterr().out
+
+
 def test_untracked_files_are_out_of_scope(tmp_path):
     """明說射程邊界：``git ls-files`` 看不到未追蹤檔，所以掃描器也看不到。
 
