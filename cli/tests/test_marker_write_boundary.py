@@ -1314,13 +1314,17 @@ def test_counterexample_two_body_is_authority_and_the_field_can_exist_alone():
     assert drift and why  # 讀取端看得到，寫入邊界看不到
 
 
-def test_counterexample_three_two_db_scopes_can_disagree_on_one_card():
-    """反例 3（**在真實卡面形狀上構造**）：標頭行的 ``db_scope`` 與資源宣告 JSON 的
-    ``db_scope`` 可以互相矛盾，而兩條性質各自都成立。
+def test_counterexample_three_db_scope_carriers_now_stay_in_sync():
+    """反例 3 **已於本卡兌現**（2026-08-27 需求方裁定甲案：跨欄位不變量併入 ``#141``）。
 
-    ``amend_resource_block`` 的往返比對只問「寫進去的宣告 == 讀回的宣告」，⛔ 不問
-    「它與標頭行那一格是否一致」。⇒ 寫得出一張自相矛盾的卡；退回它的是**讀取端**的
-    ``Card.__post_init__``（逐字「db_scope 與資源宣告內的 db_scope 不一致」）。
+    改動前：``amend_resource_block`` 只改資源宣告 JSON，⛔ 從不碰 ``- DB：db_scope=…``
+    標頭行 ⇒ **官方寫入路徑自己**就會產出一張 ``Card.__post_init__`` 讀不回的卡（逐字
+    「db_scope 與資源宣告內的 db_scope 不一致」）。⭐ 那是**今天在本 repo 有實例**的
+    跨欄位反例，⛔ 不是為了兌現而構造出來的重現。
+
+    改動後兩件事同時成立，⛔ 缺一都不算修好：
+    (1) 兩個載體同步 ⇒ 合法的 ``--db-scope`` 修訂仍然寫得進去（⛔ 不是靠拒收達成的）。
+    (2) 產出的卡面被 ``Card`` 這個真正的消費者收得回去。
     """
     from wf_cli.resources import parse_block
 
@@ -1328,10 +1332,41 @@ def test_counterexample_three_two_db_scopes_can_disagree_on_one_card():
     new_body, _ = amend_resource_block(
         body, render_block(ResourceDeclaration(db_scope="write", resources=["file:x.py"]))
     )
-    assert "- DB：db_scope=none" in new_body      # 標頭行沒動
-    assert parse_block(new_body).db_scope == "write"  # JSON 已改 ⇒ 兩者矛盾
-    with pytest.raises(ValueError):               # 消費者在讀取端退回
-        make_card(db_scope="none", resources=parse_block(new_body))
+    assert "- DB：db_scope=write" in new_body           # 標頭行跟著改了
+    assert parse_block(new_body).db_scope == "write"    # JSON 也是 ⇒ 兩者一致
+    # 消費者收得回去（改動前這一行會 ValueError）。
+    make_card(db_scope="write", resources=parse_block(new_body))
+
+
+def test_mutation_removing_the_db_scope_sync_lets_a_self_contradictory_card_through(
+    monkeypatch,
+):
+    """⭐ **變異檢驗：拿掉同步，跨欄位讀取路徑必須當場把它擋下來。**
+
+    這是 :func:`wf_cli.card.read_db_scope_agreement` 今天**唯一**的紅樣本，⛔ 而那正是
+    它該有的樣子：同步修好之後，合法路徑不再產生矛盾，於是能讓它變紅的只剩「有人把
+    修法拿掉」或「有人新增一個忘了同步的寫入點」。⛔ 不得因為「平常不會紅」就刪掉它
+    ——刪掉之後下一個新寫入點會靜默地把反例 3 帶回來。
+    """
+    from wf_cli import card as card_mod
+
+    monkeypatch.setattr(card_mod, "_sync_db_scope_header", lambda lines, *_: lines)
+    body = render_issue_body(make_card(db_scope="none"))
+    with pytest.raises(MarkerWriteBoundaryError) as exc:
+        amend_resource_block(
+            body, render_block(ResourceDeclaration(db_scope="write", resources=["file:x.py"]))
+        )
+    assert "read_db_scope_agreement" in str(exc.value)
+    assert "db_scope 與資源宣告內的 db_scope 不一致" in str(exc.value)
+
+
+def test_the_cross_field_reader_is_derived_into_the_read_path_set():
+    """⭐ 跨欄位讀取端**是被導出的**，⛔ 不是在某個 amend 函式裡手接的。
+
+    ⇒ 每一個走 :func:`enforce_write_boundary` 的寫入點自動涵蓋它；新增寫入點的人
+    忘不掉。⛔ 不得由此推出「跨欄位不變量已全面涵蓋」——見同節另兩個反例的登記。
+    """
+    assert "wf_cli.card.read_db_scope_agreement" in {n for n, _ in body_read_paths()}
 
 
 def test_differential_probe_does_not_protect_a_path_already_broken_before_the_write():

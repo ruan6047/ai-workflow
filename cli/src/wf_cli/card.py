@@ -322,9 +322,9 @@ class Card:
         if self.resources.db_scope != self.db_scope:
             # db_scope 是資源宣告的一部分，這裡保留獨立欄位方便 CLI 參數化，
             # 但兩者必須一致，不允許卡面文字與機器可讀宣告各說各話。
+            # ⚠️ 訊息與 body 讀取端（read_db_scope_agreement）共用同一份，⛔ 不重打。
             raise ValueError(
-                "db_scope 與資源宣告內的 db_scope 不一致："
-                f"{self.db_scope!r} vs {self.resources.db_scope!r}"
+                db_scope_disagreement_message(self.db_scope, self.resources.db_scope)
             )
         validate_capability_routing(
             executor_capability=self.executor_capability,
@@ -820,8 +820,9 @@ def enforce_write_boundary(
             f"寫入邊界拒收（未寫入任何狀態）：{where}的值寫進去之後，下列 {len(broken)} "
             f"條讀取路徑就讀不回卡面了（寫入前都讀得回）：{names}。"
             f"首個失敗原因：{broken[0][1]}。"
-            "⇒ 值裡含有會改變卡面結構的內容（任何 `str.splitlines()` 認得的分行字元、"
-            "或會讓某個區段標題／哨兵獨立成行的片段都屬之）。"
+            "⇒ 兩種可能：值裡含有會改變卡面結構的內容（任何 `str.splitlines()` 認得的"
+            "分行字元、或會讓某個區段標題／哨兵獨立成行的片段都屬之），"
+            "或值本身與卡面另一個欄位互相矛盾（跨欄位不變量）。⚠️ 上面那個原因就寫著是哪一種。"
             "⚠️ 卡面本身沒有損壞、本次也未改動它；請改寫該值後重試。"
         )
     for label, written, reader in roundtrip:
@@ -904,6 +905,54 @@ def _read_spec_baseline(body: str) -> str | None:
 def _read_prefixed_header(body: str, prefix: str) -> str | None:
     hits = [line[len(prefix):] for line in _head_lines(body) if line.startswith(prefix)]
     return hits[0] if len(hits) == 1 else None
+
+
+_DB_HEADER_PREFIX = "- DB："
+_DB_SCOPE_KEY = "db_scope="
+
+
+def db_scope_disagreement_message(header_scope: str, declared_scope: str) -> str:
+    """標頭行與資源宣告 JSON 對 ``db_scope`` 各說各話時的拒絕訊息。
+
+    ``Card.__post_init__``（model 層）與 :func:`read_db_scope_agreement`（body 讀取端）
+    共用同一段文字，⛔ 兩處措辭不得各自漂移——那正是本 repo 已經犯過的形狀。
+    """
+    return (
+        "db_scope 與資源宣告內的 db_scope 不一致："
+        f"{header_scope!r} vs {declared_scope!r}"
+    )
+
+
+def read_db_scope_agreement(body: str) -> str:
+    """**跨欄位不變量的讀取端**：``- DB：db_scope=…`` 標頭行與資源宣告 JSON 必須同值。
+
+    ⭐ **刻意做成一條 body 讀取路徑，⛔ 不是在某個 amend 函式裡加一段檢查**
+    （2026-08-27 依需求方裁定甲案，R2-04／V7(c)）：
+    (a) 現在的行為：本函式簽章是 ``(body) -> str`` ⇒ :func:`body_read_paths` 的導出
+        條件當場命中它，於是**每一個**走 :func:`enforce_write_boundary` 的寫入點
+        （``open`` 渲染、每一支 ``amend``、``## Log`` 附加）自動套上性質 (1) 的差分。
+    (b) 為什麼是結構性而非逐點：逐點加檢查的缺陷形態是「某個呼叫端沒加」——那是本卡
+        核心痛點的同一族（「三次都是逐個 marker、在讀取端修」）。做成讀取路徑，
+        新增寫入點的人**忘不掉**。
+    (c) ⛔ **不得由此推出「跨欄位不變量已全面涵蓋」**：本函式只涵蓋 ``db_scope`` 這一
+        對載體——那是今日**本 repo 唯一能以碼重現**的同平面跨欄位反例。另兩個反例
+        （``card_id`` 尾綴、Project「簡介」欄 vs body 簡介區塊）逐字登記於
+        ``tests/test_marker_write_boundary.py`` 的「V7 跨欄位／跨平面」一節，含各自
+        「今日無實例」或「本平面看不到」的量法。
+
+    ⚠️ 讀不回（缺標頭行、資源宣告解析不了）一律拋：那讓「寫入前就讀不回」的卡落進
+    差分探測的跳過側（只罰迴歸、⛔ 不罰既有損壞），⛔ 而不是被當成「一致」放行。
+    """
+    header = _read_prefixed_header(body, _DB_HEADER_PREFIX)
+    if header is None or not header.startswith(_DB_SCOPE_KEY):
+        raise AmendError(
+            f"`{_DB_HEADER_PREFIX}{_DB_SCOPE_KEY}…` 這一行在 Log 之前不是恰好 1 次"
+        )
+    header_scope = header[len(_DB_SCOPE_KEY):].strip()
+    declared_scope = parse_resource_block(body).db_scope
+    if header_scope != declared_scope:
+        raise AmendError(db_scope_disagreement_message(header_scope, declared_scope))
+    return header_scope
 
 
 def _read_routing_group(body: str, group: str) -> str | None:
@@ -1396,6 +1445,28 @@ def restore_migration_header(
     return candidate, " ".join(inserted.split())
 
 
+def _sync_db_scope_header(head_lines: list[str], body: str, rendered_block: str) -> list[str]:
+    """把 ``- DB：db_scope=…`` 標頭行同步成 ``rendered_block`` 宣告的值。
+
+    **只在改動前兩個載體一致時才動**；任一邊解析不出來、標頭行不是恰好一行、或改動前
+    就已經不一致，一律原樣回傳（理由見呼叫點的 (d)）。
+    """
+    try:
+        old_scope = parse_resource_block(body).db_scope
+        new_scope = parse_resource_block(rendered_block).db_scope
+    except Exception:  # noqa: BLE001 - 解析不出來就沒有「兩者一致」可言
+        return head_lines
+    if old_scope == new_scope:
+        return head_lines
+    prefix = _DB_HEADER_PREFIX + _DB_SCOPE_KEY
+    hits = [i for i, line in enumerate(head_lines) if line.startswith(prefix)]
+    if len(hits) != 1 or head_lines[hits[0]][len(prefix):].strip() != old_scope:
+        return head_lines
+    synced = list(head_lines)
+    synced[hits[0]] = f"{prefix}{new_scope}"
+    return synced
+
+
 def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     """整份替換「資源宣告」章節；``rendered_block`` 須含標題（``resources.render_block``
     的輸出即是）。回傳 (新 body, 原章節原文)。
@@ -1419,6 +1490,26 @@ def amend_resource_block(body: str, rendered_block: str) -> tuple[str, str]:
     if replacement:
         replacement[0] = lines[start]
     new_lines = lines[:start] + replacement + [""] + lines[end:]
+    # ⭐ **標頭行的 db_scope 跟著一起改，⛔ 不是「順手美化」**（2026-08-27，需求方裁定
+    # 甲案把跨欄位不變量併入本卡後補上）。
+    #
+    # (a) 現在的行為：``db_scope`` 有兩個載體（``- DB：db_scope=…`` 標頭行、資源宣告
+    #     JSON），本函式改後者時把前者一起改。
+    # (b) 為什麼非改不可：改動前 ``wfcli amend --db-scope`` **只改 JSON 與 Project 欄位**，
+    #     ⛔ 從不碰標頭行 ⇒ 官方寫入路徑自己就會產出一張 ``Card.__post_init__`` 讀不回的卡
+    #     （逐字「db_scope 與資源宣告內的 db_scope 不一致」）。那正是 §3.2 指名的
+    #     「寫得出、讀不回」跨欄位類別，且它**今天在本 repo 有實例**，⛔ 不是構造出來的。
+    #     ⇒ 不修它，:func:`read_db_scope_agreement` 就會把這條合法路徑整條擋死。
+    # (c) ⛔ **不得由此推出「這是以正規化代替拒收」**（§3.2 規則二禁止的那件事）：規則二
+    #     禁的是**改寫使用者送進來的值**。這裡沒有任何值被改寫——``--db-scope read`` 這個
+    #     值被逐字寫進兩個載體，因為兩者表達的是**同一個事實**。留痕也沒有缺口：標頭行
+    #     的舊值在同步前**必然等於**舊 JSON 的 ``db_scope``（那是同步的前提條件），而舊
+    #     JSON 整段已被呼叫端寫進 Log 的原值欄。
+    # (d) ⛔ **也不得推出「它會修好既有不一致的卡」**——刻意不修：改動前兩個載體就已經
+    #     各說各話時本函式**不動標頭行**（見 :func:`_sync_db_scope_header`），因為那時
+    #     「哪一個才是真的」沒有證據，替它選一個等於無痕覆寫。那類卡落在差分探測的
+    #     「寫入前就讀不回 ⇒ 跳過」側，治它是 ``aiwf#138`` 的射程。
+    new_lines = _sync_db_scope_header(new_lines, body, rendered_block)
     candidate = _join("\n".join(new_lines), tail)
     if candidate == _join(head, tail):
         raise AmendError("資源宣告與現值相同；拒絕寫入不實的修訂留痕")
