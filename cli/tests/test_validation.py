@@ -1010,7 +1010,7 @@ def test_unavailable_block_stamps_the_binding_and_omits_the_two_asserting_keys()
 
 
 def test_written_block_asserts_preflight_passed_true_as_a_literal():
-    """§5:168 把該欄釘為字面 true；依據成立時寫出來的事件必須逐字如此。"""
+    """§5「Adapter 必填欄位」把該欄釘為字面 true；依據成立時寫出來的事件必須逐字如此。"""
     report = _report(findings=[_finding()])
     block = render_escalation_facts_block(
         attempt=f"CARD-A-e0-{SHA_A}",
@@ -1227,7 +1227,7 @@ _MUTANTS = [
     (
         "無依據時仍寫出 preflight_passed: true（R1-01 的偽造，換個位置回來）",
         "wf_cli/review.py",
-        '    if asserted:\n        # §5:168 的字面 true，且**只在依據成立時**才寫得出來。\n        lines.append("preflight_passed: true")',
+        '    if asserted:\n        # §5「Adapter 必填欄位」的字面 true，且**只在依據成立時**才寫得出來。\n        lines.append("preflight_passed: true")',
         '    if True:\n        lines.append("preflight_passed: true")',
         (
             "r = report()\n"

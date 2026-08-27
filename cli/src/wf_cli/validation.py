@@ -644,7 +644,7 @@ def derive_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
 
     * R1-01：``preflight_passed`` 預設 ``true``——無依據卻以事實的語氣寫進事件流。
     * R2-01：改成「寫入者具結 ``true``」，而具結只驗非空字串——打字即依據。
-    * R3-01：改成三值 ``unknown``／``unavailable``——擴充了 §5:168 釘死為字面 ``true``
+    * R3-01：改成三值 ``unknown``／``unavailable``——擴充了 §5「Adapter 必填欄位」釘死為字面 ``true``
       的欄位；前三輪都在換一個值，沒有動「要不要寫」。
     * R4-01：改成「缺依據就不寫」，但把「有沒有依據」交給一個**讀留言內文**的讀取器
       （``review.preflight_basis_from_body``），於是任意四欄 YAML 即可解鎖，``event_url``
@@ -659,7 +659,7 @@ def derive_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
     故採本 repo 既有的處置形態（ai-workflow#39 §5 第 7 款面對恆真授權款時的作法）：**不寫出
     一條看似有檢查的條文，改把恆虛性導出成事件上的一個欄位**。代價明說且寫在事件裡：
     escalation 自動計數在承接卡落地前不可用（**包括本卡自己的三振門檻**），且該事件缺
-    §5:168 的 ``preflight_passed: true``，是一則不完整的 review event。
+    §5「Adapter 必填欄位」的 ``preflight_passed: true``，是一則不完整的 review event。
 
     **本函式刻意不掃留言**（``comments`` 不在簽章上）：能被留言影響的依據就不是導出值。
     """

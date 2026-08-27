@@ -949,7 +949,7 @@ def test_accepted_defaults_to_true_without_any_flag_and_counts_is_derived(fake_r
     assert "counting_eligible: true" in body
     assert "counts_toward_escalation: true" in body
     assert "counts_toward_escalation true" in card_item(fake_runner, "ACC-CARD1").body
-    assert "preflight_passed: true" in body  # §5:168 的字面 true，由 preflight event 支撐
+    assert "preflight_passed: true" in body  # §5「Adapter 必填欄位」的字面 true，由 preflight event 支撐
 
 
 def test_non_counting_finding_class_does_not_consume_escalation_quota(fake_runner, tmp_path):

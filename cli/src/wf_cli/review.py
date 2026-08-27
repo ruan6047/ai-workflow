@@ -546,7 +546,7 @@ def render_verdict_comment(
             "**也不寫** `counts_toward_escalation`，改以 `escalation_account: not-asserted` "
             "顯式宣告「不對 escalation 帳作任何斷言」。這不是把那個布林欄位擴充成三值"
             "（`unknown`／`unavailable` 仍為禁止），是不對它斷言。⚠️ 因此本事件是一則"
-            "**缺 §5:168 `preflight_passed: true` 的不完整 review event**；此落差刻意不藏，"
+            "**缺 §5「Adapter 必填欄位」 `preflight_passed: true` 的不完整 review event**；此落差刻意不藏，"
             "應登記於 `docs/CONSUMER_CONFORMANCE.md`。"
         ),
         (
@@ -869,7 +869,7 @@ def derive_counts_toward_escalation(
 
     R3-01 的修法（第三次同根因，也是第一次動「要不要寫」而不是「寫什麼值」）：
     前三輪都在調整這個函式的**回傳值**（預設 ``true`` → 具結 ``true`` → ``unavailable``），
-    而 §5:168 的 review event schema 把 ``preflight_passed`` 釘死為字面 ``true``
+    而 §5「Adapter 必填欄位」的 review event schema 把 ``preflight_passed`` 釘死為字面 ``true``
     ——不是 ``<boolean>``，與同區塊的 ``escalation_epoch: <integer>``、
     ``counts_toward_escalation: <boolean derived from §3>`` 對照即知。**斷不出 ``true``
     的 review event 根本不是合格的 review event**，§1 也明文 preflight 缺口不得建立
@@ -883,7 +883,8 @@ def derive_counts_toward_escalation(
     if preflight is None or not preflight.established:
         raise ValueError(
             "derive_counts_toward_escalation 在 preflight 未成立時被呼叫；"
-            "缺依據的 review event 不該被建立（review-escalation.md §1／§5:168）"
+            "缺依據的 review event 不該被建立"
+            "（review-escalation.md §1／§5「Adapter 必填欄位」的 `preflight_passed: true`）"
         )
     not_accepted = {fid for fid, mark in marks.items() if not mark.accepted}
     return counting_clauses_2_to_4(report, not_accepted)
@@ -932,7 +933,7 @@ def render_escalation_facts_block(
     ``preflight_basis_binding`` **一律寫出**，值由 ``derive_preflight_basis_binding``
     導出、呼叫端塞不進來：
 
-    - ``event-verified``：依據成立。寫 ``preflight_passed: true``（§5:168 的字面值）、
+    - ``event-verified``：依據成立。寫 ``preflight_passed: true``（§5「Adapter 必填欄位」的字面值）、
       ``escalation_account: asserted`` 與布林 ``counts_toward_escalation``。
     - ``structurally-unavailable``：依據在本 repo 結構上不可得。**``preflight_passed`` 與
       ``counts_toward_escalation`` 兩個鍵都不寫**，改寫 ``escalation_account: not-asserted``。
@@ -969,6 +970,22 @@ def render_escalation_facts_block(
             "preflight 依據為 structurally-unavailable 卻提供了 counts_toward_escalation；"
             "無依據不得斷言帳（WF-22-CLI4：R1 預設 true／R2 具結 true 的同一個形狀）"
         )
+    # ── 引用 `review-escalation.md` 的錨點形態（DOC-STALE-FILE-LINE-POINTERS1）────────
+    #
+    # (a) **現在的行為**：本檔（與 `validation.py`／`review_cmd.py`／兩支測試）一律以
+    #     `§5「Adapter 必填欄位」` ＋ 逐字片段 `preflight_passed: true` 指認，
+    #     ⛔ 不寫 `§N:M`。節標題與該片段在目標檔各恰一次命中。
+    # (b) **為什麼**：舊寫法是**節次夾行號**（節號後面直接接一個行號），而那個行號今日
+    #     指到**空行**——真實內容早就往後移了；它從 2026-08-12 起就是空的，而掃描器一路
+    #     回 0。⚠️ **回 0 的成因要說準**：掃描器的 regex **看得見**這個形態，⛔ 看不見
+    #     的是「它指向哪個檔」——這行前面沒有檔名，回看窗綁不到目標，於是被標成
+    #     `UNBOUND` 而 `UNBOUND` 不在壞指標集合裡，命中就這樣被丟掉。⇒ 病灶在**綁定器
+    #     把綁不到當成沒問題**，⛔ 不是「少了一條 regex」。
+    # (c) ⛔ **不得推出**「掃描回 0 就代表沒有壞指標」——對這一族，那個 0 沒有鑑別力；
+    #     也 ⛔ 不得再寫任何**不含路徑**的行號指法（節次夾行號、「第 N 行」都算）。
+    #     ⛔ 連在解釋為什麼不該寫的註解裡也不得舉實例——寫回去它就又是一個抓不到的
+    #     壞指標（本註解初稿就犯過這一條，當場改掉）。
+    #     ⚠️ 本註解 ⛔ 不宣稱已建守衛：建守衛屬 `aiwf#146`，⛔ 不在本卡射程。
     lines = [
         "```yaml",
         f"{FACTS_BLOCK_KEY}: {BLOCK_VERSION}",
@@ -976,7 +993,7 @@ def render_escalation_facts_block(
         f"escalation_epoch: {escalation_epoch}",
     ]
     if asserted:
-        # §5:168 的字面 true，且**只在依據成立時**才寫得出來。
+        # §5「Adapter 必填欄位」的字面 true，且**只在依據成立時**才寫得出來。
         lines.append("preflight_passed: true")
     lines += [
         f"review_result: {report.review_result}",
@@ -1136,7 +1153,7 @@ def escalation_facts_from_body(body: str) -> EscalationFacts | None:
             owner_field_at_verdict_write=_owner_snapshot(data),
             preflight_basis_binding=binding,
         )
-    # asserted：§5:168 的字面 true 與嚴格布林 counts 缺一不可。
+    # asserted：§5「Adapter 必填欄位」的字面 true 與嚴格布林 counts 缺一不可。
     if str(data.get("preflight_passed") or "").strip() != "true" or counts is None:
         return None
     return EscalationFacts(
