@@ -353,10 +353,12 @@ class Card:
         # (c) ⛔ **不得由此推出「render_issue_body 不必再驗」**：Card 是可變的
         #     dataclass，建構後改欄位再 render 完全合法 ⇒ 序列化端必須自己也驗一次。
         #     兩層共用同一份判準函式（§3.2 規則二的參考形狀），⛔ 不得只做一半。
-        # (d) ⛔ 也不得由此推出「open 的拒收是乾淨的」——本例外是 ``cli.py``
-        #     ``KNOWN_ERRORS`` 不收的 ``ValueError``，在 ``open`` 路徑上會以 traceback
-        #     收場（rc=1）。那是**已登記的阻塞發現**，須改 ``open_cmd.py``／``cli.py``
-        #     才能修，而本卡未宣告該二檔（見 WF-MARKER-WRITE-BOUNDARY1 A10）。
+        # (d) ⚠️ **拒收的乾淨化不在這裡，⛔ 但它已經完成**（2026-08-27 依查核 R1-03）：
+        #     本例外從這裡拋出後，由 ``commands/open_cmd.py`` 包住本建構的 ``except``
+        #     印 ``[open] 拒絕：…`` 回 rc=2，並由 ``cli.KNOWN_ERRORS`` 收底
+        #     （``assign``／``handoff``／``review``／``checkpoint`` 走 ``append_log_line``
+        #     那條路徑也由該處收）。⛔ 不得由此推出「所以這裡可以自己 print 或 sys.exit」
+        #     ——model 層拋型別、指令層決定訊息與退出碼，是 §3.2 逐字的參考形狀。
         enforce_card_render_boundary(self)
 
     @property
@@ -491,16 +493,99 @@ def _render_issue_body(c: Card, now: str) -> str:
 _LOG_HEADING = "## Log"
 
 
-def append_log_line(body: str, line: str) -> str:
-    """在 body 的 ``## Log`` 區段末端附加一行；沒有該區段就新增一個到 body 尾端。
+def _append_log_line_raw(body: str, line: str) -> str:
+    """純附加，⛔ 不含守衛。
 
-    這是 Issue／draft item body 版的 append-only 留痕，對齊
-    ``templates/tasks-card.md`` 既有 Log 慣例（不可覆寫歷史，只能加行）。
+    ⭐ **刻意與 :func:`append_log_line` 分開，⛔ 不是為了可測性**：
+    (a) 現在的行為：本函式無條件附加，任何值都寫得出去。
+    (b) 為什麼：守衛要拿「同一次附加、但值只被壓掉**自身**分行結構」的 body 當差分
+        基線（與 :func:`_line_flattened_card` 對 ``open`` 做的事同構）。基線與候選只差
+        在值的分行結構，差分才只歸因到那件事，⛔ 不會把「附加動作本身」算成破壞。
+    (c) ⛔ **不得由此推出「這是可以直接用的附加函式」**：模組外的呼叫端一律走
+        :func:`append_log_line`。本函式無守衛，直接用等於把 P0 的破口原樣搬回來。
     """
     entry = f"- {line}"
     if _LOG_HEADING in body:
         return body.rstrip("\n") + f"\n{entry}\n"
     return body.rstrip("\n") + f"\n\n{_LOG_HEADING}\n\n{entry}\n"
+
+
+def _read_appended_log_entry(body: str, line_count: int) -> str:
+    """讀回 ``## Log`` 區段末端 ``line_count`` 個**讀取端所見的行**，以 ``\\n`` 重組。
+
+    ⭐ **這是性質 (2) 對 Log 行的讀回器，⛔ 不是另寫一份解析**：切段重用
+    :func:`split_at_log`（body 已壞時它 fail closed 直接拋），切行重用 ``str.splitlines()``
+    ——那正是**每一條**讀取路徑看「行」的方式。⇒ 「寫進去的那一段」與「讀取端看得到的
+    那幾行」之間只要有任何不一致，就會在呼叫端的 ``!=`` 上現形。
+
+    ⚠️ **刻意不採用事件層讀回器（``doctor.parse_log_events``），⛔ 不是沒想到**：
+    (a) 現在的行為：本函式在**行**的層次比對，⛔ 不在事件層。
+    (b) 為什麼：``doctor`` 的可達性探針逐字呼叫 ``append_log_line(body, f"- {TOKEN}")``
+        ——那個值沒有時戳，事件層讀回器會判「寫了一筆、讀回零筆」而拒收，於是**每一張
+        卡**都被報成 append-only 動詞不可達；同一個讀回器也會退回合法的多段落
+        ``--evidence``，因為續行是 ``parse_log_events`` 明文支援的形狀。
+    (c) ⛔ **不得由此推出「事件層的往返有保證」**——沒有。已登記的未涵蓋類別見
+        :func:`append_log_line` 末段。
+    """
+    _, log_section = split_at_log(body)
+    lines = log_section.splitlines()
+    if line_count <= 0 or len(lines) < line_count:
+        raise AmendError(
+            f"`## Log` 區段只有 {len(lines)} 行，讀不回剛附加的 {line_count} 行"
+        )
+    return "\n".join(lines[len(lines) - line_count :])
+
+
+def append_log_line(body: str, line: str) -> str:
+    """在 body 的 ``## Log`` 區段末端附加一行；沒有該區段就新增一個到 body 尾端。
+
+    這是 Issue／draft item body 版的 append-only 留痕，對齊
+    ``templates/tasks-card.md`` 既有 Log 慣例（不可覆寫歷史，只能加行）。
+
+    ⭐ **輸出在回傳前先過寫入邊界守衛的兩條性質**（WF-MARKER-WRITE-BOUNDARY1 A9，
+    2026-08-27 依查核 R1-01／R1-02 補上）。⚠️ 為什麼它非在這裡不可：
+    ``assign``／``handoff``／``review``／``checkpoint`` 四支動詞把使用者提供的自由文字
+    **原樣**交給本函式（⛔ 四支都沒有 ``amend_cmd`` 的 ``_fold``），實測注入一個 U+2028
+    即可讓卡面長出第二個 ``## Log``，``split_at_log`` 與 ``parse_requested_by`` 兩條讀取
+    路徑當場失效 ⇒ 那張卡**永久失去 wfcli 可修改性**——那就是本卡的核心痛點本身。
+
+    ⛔ **不得改成「把值摺平後寫入」**（``amend_cmd._fold`` 那種 ``" ".join(text.split())``）：
+    ``templates/handoff-contract.md`` §3.2 規則二逐字禁止「以正規化代替拒收」。摺平會
+    靜默改變值，其危害與寫得出讀不回同級。
+
+    ⚠️⚠️ **已登記的未涵蓋類別（⛔ 不得當成有保證）**：值裡的**普通 ``\\n``** 不被拒收，
+    因為多段落續行是 ``doctor.parse_log_events`` 明文支援的形狀（``handoff --evidence``
+    的多段落證據靠它）。⇒ 一個以 ``\\n`` 分行、且該行恰好長得像 ``- <ISO 時戳> <動詞>``
+    的值，會被**事件層**讀成多出來的一筆 lifecycle 事件——本函式的兩條性質對它沉默
+    （行層往返逐位元成立、無讀取路徑失效）。那是**事件層**的偽造平面，⛔ 不是本卡的
+    「卡面讀不回」平面；本卡逐字不宣稱涵蓋它。
+    """
+    entry = f"- {line}"
+    candidate = _append_log_line_raw(body, line)
+    # 基線：同一次附加，但值只被壓掉自身的分行結構（⇒ 差分只歸因到那件事）。
+    baseline_entry = f"- {_flatten_line_structure(line)}"
+    baseline = _append_log_line_raw(body, _flatten_line_structure(line))
+    reader = lambda b: _read_appended_log_entry(b, len(entry.splitlines()))  # noqa: E731
+
+    # ⭐ **往返比對先過一道「寫入前讀得回嗎」的閘門，⛔ 不是無條件套用**：
+    # (a) 現在的行為：基線上讀不回（＝這張卡在本次寫入**之前**就已經壞了）時，跳過
+    #     性質 (2)，只留性質 (1)。
+    # (b) 為什麼：差分探測逐字是「寫入前讀得回、寫入後讀不回 ⇒ 拒收」——**只罰迴歸、
+    #     ⛔ 不罰既有損壞**。往返比對若無條件套用，就會對每一張既有損壞的卡（例如
+    #     `aiwf#15`）連 ``handoff``／``review`` 的合法留痕都拒收，把守衛變成故障源；
+    #     而「修好已壞的卡」逐字是本卡的非射程。
+    # (c) ⛔ **不得由此推出「那些卡受保護」**——它們不受保護，見卡面 V4 的預壞控制組。
+    checks: list[tuple[str, object, Callable[[str], object]]] = []
+    try:
+        if _read_appended_log_entry(baseline, len(baseline_entry.splitlines())) == baseline_entry:
+            checks.append((f"`{_LOG_HEADING}` 附加行", entry, reader))
+    except Exception:  # noqa: BLE001 - 寫入前就讀不回 ⇒ 依 (b) 跳過性質 (2)
+        pass
+
+    enforce_write_boundary(
+        baseline, candidate, roundtrip=checks, where=f"`{_LOG_HEADING}` 附加行"
+    )
+    return candidate
 
 
 # --------------------------------------------------------------------------

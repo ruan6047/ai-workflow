@@ -29,6 +29,7 @@ from wf_cli.card import (
     AmendError,
     Card,
     MarkerWriteBoundaryError,
+    _append_log_line_raw,
     _flatten_line_structure,
     _read_brief_text,
     _read_checklist_texts,
@@ -39,6 +40,7 @@ from wf_cli.card import (
     amend_resource_block,
     amend_spec_baseline,
     amend_verification,
+    append_log_line,
     body_read_paths,
     enforce_write_boundary,
     parse_requested_by,
@@ -46,6 +48,7 @@ from wf_cli.card import (
     restore_migration_header,
     split_at_log,
 )
+from wf_cli import doctor
 from wf_cli.cli import build_parser
 from wf_cli.commands import amend_cmd, open_cmd
 from wf_cli.project import find_item_by_card_id, list_items, resolve_project
@@ -237,6 +240,138 @@ def test_resource_grammar_hole_is_blocked_at_the_write_boundary():
     decl = ResourceDeclaration(db_scope="none", resources=["file:x\u2028## Log\u2028y"])
     with pytest.raises(MarkerWriteBoundaryError):
         amend_resource_block(CLEAN_BODY, render_block(decl))
+
+
+# --------------------------------------------------------------------------
+# P0：``card.append_log_line``（A9，2026-08-27 依查核 R1-01／R1-02 補）
+# --------------------------------------------------------------------------
+#
+# ⚠️ 這一族**不是**「多加幾個動詞」：``assign``／``handoff``／``review``／``checkpoint``
+# 把使用者提供的自由文字**原樣**交給 ``append_log_line``（⛔ 四支都沒有 ``amend_cmd``
+# 的 ``_fold``），而在本卡 R1 交付時該函式**完全沒有守衛** ⇒ 注入一個 U+2028 即可讓
+# 一張真實卡片永久失去 wfcli 可修改性。那就是本卡的核心痛點本身。
+
+_LOG_TS = "2026-08-27T01:00:00+08:00"
+
+
+def _log_body(entries: tuple[str, ...] = ("2026-08-27T00:00:00+08:00 open by PM；owner 待指派；iteration 0。",)) -> str:
+    body = CLEAN_BODY
+    for entry in entries:
+        body = _append_log_line_raw(body, entry)
+    return body
+
+
+@pytest.mark.parametrize("sep", _SEPARATORS, ids=[hex(ord(c)) for c in _SEPARATORS])
+def test_every_derived_separator_is_blocked_on_the_append_log_path(sep):
+    before = CLEAN_BODY
+    with pytest.raises(MarkerWriteBoundaryError):
+        append_log_line(before, f"{_LOG_TS} handoff by X；evidence{sep}## Log{sep}- 偽造")
+    assert before == CLEAN_BODY  # 純函式：來源逐位元未變
+
+
+def test_append_log_line_forged_event_is_caught_only_by_the_roundtrip():
+    """⭐ ``append_log_line`` 上「兩條性質必須並用」的實證。
+
+    這個值**不製造**第二個 ``## Log``——每一條讀取路徑都照樣讀得回 ⇒ 性質 (1) 命中 0。
+    但它用 U+2028 讓自己在讀取端裂成兩行，第二行長得像一筆 ``review`` lifecycle 事件
+    ⇒ 寫進去一段、讀回來兩行，性質 (2) 逐位元比對命中。
+    """
+    forged = (
+        f"{_LOG_TS} handoff by X；evidence\u2028"
+        "- 2026-08-27T09:00:00+08:00 review by wf-cli → APPROVE（🏁完成）"
+    )
+    base = _log_body()
+    leaked = _append_log_line_raw(base, forged)          # 無守衛版本：寫得出去
+    assert readable_by(base) - readable_by(leaked) == set()  # 性質 (1) 抓 0
+    with pytest.raises(MarkerWriteBoundaryError):        # 性質 (2) 抓得到
+        append_log_line(base, forged)
+
+
+def test_append_log_line_rejects_crlf():
+    """⚠️ **刻意登記的行為改變**：CRLF 現在被拒收。
+
+    (a) 現在的行為：``\r\n`` 在讀取端被 ``splitlines()`` 看成分行、``\r`` 消失
+        ⇒ 讀回值 ≠ 寫入值 ⇒ 拒收。
+    (b) 為什麼不改成正規化（把 CRLF 換成 LF 再寫）：§3.2 規則二逐字禁止「以正規化
+        代替拒收」。讀回來的不是寫進去的那個，就是拒收。
+    (c) ⛔ **不得由此推出「多行證據被禁了」**——普通 ``\n`` 續行照常寫得進去，
+        見下一條負控。
+    """
+    with pytest.raises(MarkerWriteBoundaryError):
+        append_log_line(_log_body(), f"{_LOG_TS} handoff；evidence\r\n第二段")
+
+
+def test_append_log_line_still_writes_multiline_evidence():
+    """負控：多段落 ``--evidence``（``\n`` 續行）是 ``parse_log_events`` 明文支援的
+    形狀，⛔ 守衛不得擋它。"""
+    entry = f"{_LOG_TS} handoff by X；evidence 見下\n  第二段：量法與指令\n  第三段：SHA"
+    written = append_log_line(_log_body(), entry)
+    events, why = doctor.parse_log_events(written)
+    assert why is None and events is not None
+    assert events[-1].splitlines()[0].startswith("handoff by X")
+    assert len(events[-1].splitlines()) == 3   # 續行歸入同一筆事件
+
+
+def test_append_log_line_still_writes_the_doctor_reachability_probe_value():
+    """負控（**真實呼叫端**，⛔ 非自造）：``doctor`` 的可達性探針逐字餵
+    ``f"- {_PROBE_TOKEN}"``——沒有時戳、開頭還多一個 ``- ``。它必須照樣寫得進去，
+    否則全母體每一張卡都會被誤報成 append-only 動詞不可達。"""
+    from wf_cli.doctor import _PROBE_TOKEN
+
+    written = append_log_line(_log_body(), f"- {_PROBE_TOKEN}")
+    assert written.rstrip("\n").endswith(f"- - {_PROBE_TOKEN}")
+
+
+def test_append_log_line_still_writes_inline_mentions():
+    """負控：行內提及 ``## Log``／``<!-- card-brief:end -->`` 不獨立成行 ⇒ 放行。"""
+    for text in ("提到 ## Log 這個字樣", "提到 <!-- card-brief:end --> 這個哨兵"):
+        assert append_log_line(_log_body(), f"{_LOG_TS} amend by wf-cli；理由 {text}")
+
+
+def test_append_log_line_does_not_punish_a_body_broken_before_the_write():
+    """⚠️ **預壞控制組**（V4 的分母排除規則在 ``append_log_line`` 上的對應）。
+
+    差分探測逐字是「**寫入前讀得回**、寫入後讀不回 ⇒ 拒收」——只罰迴歸，⛔ 不罰既有
+    損壞。一張本來就有兩個 ``## Log`` 的卡（`aiwf#15` 的形態）仍必須寫得進 Log 留痕，
+    否則守衛會讓每一張已壞的卡連 ``handoff``／``review`` 都做不了，把自己變成故障源。
+    ⛔ **不得由此推出「那些卡受保護」**——它們不受保護，這正是 `aiwf#138` 的射程。
+    """
+    already_broken = _log_body() + "\n## Log\n\n- 第二個區段\n"
+    with pytest.raises(AmendError):
+        split_at_log(already_broken)                      # 寫入前就讀不回
+    assert append_log_line(already_broken, f"{_LOG_TS} review by wf-cli → APPROVE（🏁完成）")
+
+
+def _append_log_with(value: str, *, structural: bool, roundtrip: bool) -> str | None:
+    """以「只開其中一條性質」的守衛重跑一次 ``append_log_line``；被拒回 ``None``。"""
+    from wf_cli import card as card_mod
+
+    real, partial = _guard_with(structural, roundtrip)
+    card_mod.enforce_write_boundary = partial
+    try:
+        return card_mod.append_log_line(_log_body(), value)
+    except MarkerWriteBoundaryError:
+        return None
+    finally:
+        card_mod.enforce_write_boundary = real
+
+
+def test_mutation_on_the_append_path_shows_each_property_carries_a_distinct_class():
+    """變異檢驗（V3）在 ``append_log_line`` 上的對應：兩條性質各自承重一類。"""
+    structural = f"{_LOG_TS} handoff；evidence\u2028## Log\u2028- 偽造"
+    forged = (
+        f"{_LOG_TS} handoff by X；evidence\u2028"
+        "- 2026-08-27T09:00:00+08:00 review by wf-cli → APPROVE（🏁完成）"
+    )
+    # 結構破壞：拿掉差分探測後，往返比對仍抓得到（兩條都抓得到的那類）。
+    assert _append_log_with(structural, structural=True, roundtrip=True) is None
+    assert _append_log_with(structural, structural=True, roundtrip=False) is None
+    # 偽造事件行：只有往返比對抓得到 ⇒ 拿掉它就漏。
+    assert _append_log_with(forged, structural=True, roundtrip=True) is None
+    leaked = _append_log_with(forged, structural=True, roundtrip=False)
+    assert leaked is not None, "只留差分探測時仍被擋 ⇒ 樣本不是 (2) 的獨有樣本"
+    events, _ = doctor.parse_log_events(leaked)
+    assert events is not None and "review by wf-cli → APPROVE" in events[-1]
 
 
 # --------------------------------------------------------------------------
