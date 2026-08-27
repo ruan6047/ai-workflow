@@ -1168,7 +1168,7 @@ def test_fourth_review_is_refused_until_the_third_checkpoint_exists(fake_runner,
 
 
 def test_unreadable_marker_makes_the_account_unknown_and_blocks_the_write(fake_runner, tmp_path, capsys):
-    """未知不得推定為不計數（review-escalation.md:276）。"""
+    """未知不得推定為不計數（語意見 review-escalation.md §5「cutover 前歷史事件維持原貌」）。"""
     open_card("UNK-CARD1", runner=fake_runner)
     item = card_item(fake_runner, "UNK-CARD1")
     fake_runner.execute(
@@ -1189,7 +1189,8 @@ def test_owner_snapshot_records_the_reviewer_not_the_executor_under_the_dispatch
     """快照的可信度邊界，以實跑釘住而不是只寫在註解裡。
 
     `handoff --next-stage review --to <查核者>` 會把 Project 的 owner 欄改成查核者
-    （handoff_cmd.py:136），而裁決是在那之後寫的。所以這個時點快照**通常是查核者**，
+    （`handoff_cmd.run.write_status_face` 逐字 `fields["owner"], args.to`），而裁決是
+    在那之後寫的。所以這個時點快照**通常是查核者**，
     不是產出 source_sha 的執行者——`review-escalation.md` §5 第 3 款要比對的卻是後者。
     這一條就是本欄不足以直接支撐該款的機械證據。
     """

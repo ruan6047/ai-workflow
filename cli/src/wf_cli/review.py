@@ -460,7 +460,7 @@ def render_verdict_comment(
     ``accepted_marks`` 未給時以 ``default_accepted_marks`` 推導（全部 ``accepted=true``，
     見該函式對不對稱 fail-closed 的說明）；``counts_toward_escalation`` 一律由
     ``derive_counts_toward_escalation`` 依 §3 算出，**不接受呼叫端傳值**——它是投影，
-    不是輸入（review-escalation.md:276）。
+    不是輸入（review-escalation.md §5「是 adapter 依結構化欄位算出的投影」）。
     """
     review_attempt_id = attempt_id(card_id, escalation_epoch, source_sha)
     marks = dict(accepted_marks or default_accepted_marks(report.findings))
@@ -859,7 +859,7 @@ def derive_counts_toward_escalation(
     marks: Mapping[str, AcceptedMark],
     preflight: PreflightBasis | None = None,
 ) -> bool:
-    """§3 的四款推導；``review-escalation.md:276``：這是投影，不得由 reviewer 自填。
+    """§3 的四款推導；``review-escalation.md`` §5 逐字「不得由 reviewer 以自由文字自行宣告」。
 
     **第 1 款（preflight 已通過且 review 有效）不再由事件型別本身承擔。** 先前這裡寫
     著「有一則 review event 存在即蘊含第 1 款」，並讓 ``preflight_passed`` 預設為
@@ -1076,8 +1076,8 @@ def escalation_facts_from_body(body: str) -> EscalationFacts | None:
     """自一則 review event 留言讀回 escalation 帳事實；欄位讀不齊一律回 None。
 
     回 None 代表「**未知**」而不是「不計數」——呼叫端（``validation`` 的閘門）必須
-    據此 fail-closed。這正是 review-escalation.md:276 的 cutover 語意：baseline 之前
-    的 attempt 沒有 counts 事實，不得推定為不計數。
+    據此 fail-closed。這是 review-escalation.md §5「cutover 前歷史事件維持原貌」的
+    語意推論（⛔ 非逐字）：baseline 之前的 attempt 沒有 counts 事實，不得推定為不計數。
 
     ``escalation_account: not-asserted`` 是**另一回事**：它是一則讀得懂的事件，明說自己
     不對帳作斷言（``preflight_basis_binding: structurally-unavailable``）。它回傳
@@ -1250,7 +1250,8 @@ def render_contract_baseline_comment(
     rationale: str,
     timestamp: str,
 ) -> str:
-    """渲染 ``contract-baseline`` one-shot cutover 事件（review-escalation.md:276）。"""
+    """渲染 ``contract-baseline`` one-shot cutover 事件
+    （``review-escalation.md`` §5「該 marker 為 one-shot cutover」）。"""
     return "\n".join(
         [
             f"## Contract baseline：{card_id}",

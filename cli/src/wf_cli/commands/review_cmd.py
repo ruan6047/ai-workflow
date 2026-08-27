@@ -55,7 +55,7 @@ preflight pass event writer，也沒有該事件的可驗證格式，故該款�
    對重複 attempt 判 ``marker_quarantined``，而該隔離的解除表示法未定義（#30）。
 2. **帳可重建**：cutover（``contract-baseline``）之後的留痕若有讀不懂的 marker，或
    review event 缺結構化 counts 事實，一律拒絕；**未知不得推定為不計數**
-   （review-escalation.md:276）。
+   （語意見 review-escalation.md §5「cutover 前歷史事件維持原貌」）。
 3. **checkpoint 漏建**：上一個可計數 attempt 序位 ≥3 卻找不到對應 checkpoint 即拒。
 """
 

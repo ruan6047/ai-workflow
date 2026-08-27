@@ -437,7 +437,8 @@ def test_escalation_facts_round_trip_through_the_rendered_comment():
 
 
 def test_a_review_event_without_the_facts_block_is_unknown_not_non_counting():
-    """review-escalation.md:276 的 cutover 語意：baseline 之前一律未知。"""
+    """cutover 語意：baseline 之前一律未知（語意見 review-escalation.md §5
+    「cutover 前歷史事件維持原貌」）。"""
     legacy = {
         "body": (
             "<!-- " + _MARKER_V1 + f" card_id=CARD-A source_sha={SHA_A} "
