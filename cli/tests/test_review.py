@@ -14,6 +14,7 @@ import json as jsonlib
 import os
 import re
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 import warnings
@@ -1638,8 +1639,12 @@ def test_the_live_board_events_still_carry_the_frozen_block_version():
                 continue
             try:
                 block = find_block_by_key(body, FACTS_BLOCK_KEY)
-            except ReviewParseError:
-                continue
+            except ReviewParseError as exc:
+                url = comment.get("html_url") or "（無 URL）"
+                raise AssertionError(
+                    f"{slug} 的既有事件 {url} 含 {FACTS_BLOCK_KEY} 區塊卻無法解析 ⇒ "
+                    "它不能被排出母體；既有事件讀不懂時必須 fail closed"
+                ) from exc
             if block is not None:
                 corpus.append((slug, comment.get("html_url") or "", body, block))
 
@@ -1695,3 +1700,30 @@ def test_the_live_board_events_still_carry_the_frozen_block_version():
         f"換掉 BLOCK_VERSION 之後仍有 {len(still)}/{len(corpus)} 則既有事件讀得回："
         f"{still[:5]} ⇒ 有一條讀取路徑沒有走版本檢查"
     )
+
+
+def test_live_board_detector_rejects_malformed_facts_alongside_a_valid_event(monkeypatch):
+    """一筆正常事件不得掩蓋同 repo 另一筆讀不懂的 facts 區塊。"""
+    from wf_cli.doctor import _EVENT_PREFIX
+
+    valid = _EVENT_PREFIX + "\n" + _facts_block_bodies()[0]
+    malformed = "\n".join(
+        [
+            _EVENT_PREFIX,
+            "```yaml",
+            f"{FACTS_BLOCK_KEY}: {review_mod.BLOCK_VERSION}",
+            f"{FACTS_BLOCK_KEY}: {review_mod.BLOCK_VERSION}",
+            "```",
+        ]
+    )
+    comments = [
+        {"html_url": "https://example.invalid/valid", "body": valid},
+        {"html_url": "https://example.invalid/malformed", "body": malformed},
+    ]
+    monkeypatch.setenv(_LIVE_BOARD_OPT_IN, "1")
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "_board_repos", lambda: ("example/board",))
+    monkeypatch.setattr(module, "_fetch_issue_comments", lambda slug: comments)
+
+    with pytest.raises(AssertionError, match="example.invalid/malformed"):
+        test_the_live_board_events_still_carry_the_frozen_block_version()
