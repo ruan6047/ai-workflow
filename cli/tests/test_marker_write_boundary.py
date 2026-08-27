@@ -49,7 +49,7 @@ from wf_cli.card import (
     split_at_log,
 )
 from wf_cli import doctor
-from wf_cli.cli import build_parser
+from wf_cli.cli import build_parser, main as cli_main
 from wf_cli.commands import amend_cmd, open_cmd
 from wf_cli.project import find_item_by_card_id, list_items, resolve_project
 from wf_cli.resources import ResourceDeclaration, render_block
@@ -752,38 +752,86 @@ def test_amend_e2e_rejects_and_leaves_body_bit_identical(opened, capsys):
     assert "本指令刻意不自動修" not in err
 
 
-def test_open_e2e_rejects_before_any_remote_write(runner, capsys):
-    """``open`` 是主破口。⚠️ **拒收目前不乾淨**——見下方 xfail 的那條。"""
-    with pytest.raises(MarkerWriteBoundaryError):
-        _run(
-            ["open", *_TARGET, "WB-E2E2",
-             "--feature", "示範", "--tier", "T1", "--db-scope", "none",
-             "--core-pain", "痛點", "--service-goal", "目標\u2028## Log",
-             "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
-             "--review-capability", "主力型", "--review-capability-reason", "一般 review"]
-        )
+_OPEN_POISONED = [
+    "--feature", "示範", "--tier", "T1", "--db-scope", "none",
+    "--core-pain", "痛點", "--service-goal", "目標\u2028## Log",
+    "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
+    "--review-capability", "主力型", "--review-capability-reason", "一般 review",
+]
+
+
+def test_open_e2e_rejects_cleanly_before_any_remote_write(runner, capsys):
+    """``open`` 是主破口（14 個旗標裡 9 個寫得出永久不可 amend 的卡）。
+
+    ⭐ 這條同時是 §3.2 規則二的三個要件：**任何遠端寫入之前**、**可辨識訊息**、
+    **非零退出碼**。⛔ ``pytest.raises`` 不再是通過條件——以例外收場的 fail-closed
+    正是規則二逐字不接受的那種（「以 stack trace 收場的 fail-closed 不算乾淨拒絕」）。
+    """
+    rc = _run(["open", *_TARGET, "WB-E2E2", *_OPEN_POISONED])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert err.startswith("[open] 拒絕：")
+    assert "寫入邊界拒收（未寫入任何狀態）" in err
+    assert "Traceback" not in err
     # 零遠端寫入：連 project 都沒被解析出來過。
     assert runner.projects == {}
     assert runner.items == {}
 
 
-@pytest.mark.xfail(
-    reason=(
-        "⏸ 已登記的阻塞發現：open 路徑的拒收會以 traceback 收場（rc=1），"
-        "§3.2 規則二逐字要求乾淨拒絕。修法須把 card 的例外接進 cli.KNOWN_ERRORS "
-        "或在 open_cmd 包一層 try——⛔ 兩檔皆非本卡宣告資源（A10），交需求方裁決。"
-    ),
-    strict=True,
-)
-def test_open_rejection_is_clean_exit_two():
-    rc = _run(
-        ["open", *_TARGET, "WB-E2E3",
-         "--feature", "示範", "--tier", "T1", "--db-scope", "none",
-         "--core-pain", "痛點", "--service-goal", "目標\u2028## Log",
-         "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
-         "--review-capability", "主力型", "--review-capability-reason", "一般 review"]
-    )
+def test_open_rejection_through_cli_main_never_escapes_as_a_traceback(runner, capsys):
+    """⭐ **經 ``cli.main`` 的那條路徑另外驗一次，⛔ 不是重複**：``_run`` 直接呼叫
+    ``args.func``，繞過 ``cli.KNOWN_ERRORS``。使用者實際跑的是 ``main``，而本卡的
+    第二道乾淨化（``KNOWN_ERRORS``）只在那條路徑上生效。
+    """
+    rc = cli_main(["open", *_TARGET, "WB-E2E3", *_OPEN_POISONED])
     assert rc == 2
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_the_four_log_verbs_rejection_is_not_yet_clean_at_the_cli_layer():
+    """⏸ **把阻塞發現釘成可執行的紀錄**（⛔ 這條不驗守衛，它驗「還缺什麼」）。
+
+    (a) 現在的行為：``card.MarkerWriteBoundaryError`` 不在 ``cli.KNOWN_ERRORS`` 內
+        ⇒ ``assign``／``handoff``／``review``／``checkpoint`` 在守衛拒收時經 ``cli.main``
+        會以 traceback、rc=1 收場。``open`` 不在此列——它自己接住並回 rc=2。
+    (b) 為什麼沒補：補法是把該型別加進那個 tuple（一行），但
+        ``cli/tests/test_cli_registry.py`` 的 ``EXPECTED_KNOWN_ERRORS`` 是凍結基線，
+        同一次改動必須連它一起改，而**該檔不在本卡宣告資源**內（A10 逐字：發現須改
+        未宣告的檔即停）。
+    (c) ⛔ **不得由此推出「那四支沒有守衛」**——值一樣寫不進去（見上一條），
+        缺的只是訊息與退出碼的乾淨度。
+    ⭐ 這條在有人補上那一行的當天會**轉紅**——那是刻意的：紅的意思是「回來把這段
+    敘述改成事實」，⛔ 不是「有人弄壞了」。
+    """
+    from wf_cli import card as card_mod
+    from wf_cli import cli as cli_mod
+
+    assert card_mod.MarkerWriteBoundaryError not in cli_mod.KNOWN_ERRORS
+    assert not issubclass(card_mod.MarkerWriteBoundaryError, tuple(cli_mod.KNOWN_ERRORS))
+
+
+@pytest.mark.parametrize(
+    "verb",
+    ["assign", "handoff", "review", "checkpoint"],
+)
+def test_the_four_verbs_without_fold_are_registered_as_going_through_the_guard(verb):
+    """⛔ **這條不跑那四支指令，它釘的是「它們共用同一個被守衛的函式」。**
+
+    (a) 現在的行為：斷言四支動詞的模組都從 ``card`` 匯入 ``append_log_line``，且
+        ``card.append_log_line`` 就是被守衛的那一個（⛔ 不是 ``_append_log_line_raw``）。
+    (b) 為什麼不端到端跑：那四支的端到端各自需要真實看板狀態（owner／階段／報告／
+        凍結欄位）才走得到 Log 附加那一步，而它們的指令檔**不在本卡宣告資源**內
+        （A9 逐字：非射程仍為不動 ``assign_cmd``／``handoff_cmd``／``review_cmd``／
+        ``checkpoint_cmd``）。⇒ 這裡只證共用，端到端登記在交付報告的未驗清單。
+    (c) ⛔ **不得由此推出「那四支已端到端驗過」**——沒有。
+    """
+    import importlib
+
+    module = importlib.import_module(f"wf_cli.commands.{verb}_cmd")
+    from wf_cli import card as card_mod
+
+    assert module.append_log_line is card_mod.append_log_line
+    assert card_mod.append_log_line is not card_mod._append_log_line_raw
 
 
 # --------------------------------------------------------------------------
