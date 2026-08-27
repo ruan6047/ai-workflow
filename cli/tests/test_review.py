@@ -6,12 +6,23 @@
 
 from __future__ import annotations
 
+import ast
+import collections
+import contextlib
 import io
 import json as jsonlib
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+import warnings
 from pathlib import Path
 
 import pytest
 
+from wf_cli import review as review_mod
 from wf_cli.cli import build_parser
 from wf_cli.commands import checkpoint_cmd, handoff_cmd, open_cmd, review_cmd
 from wf_cli.project import (
@@ -1224,3 +1235,495 @@ def test_owner_snapshot_records_the_reviewer_not_the_executor_under_the_dispatch
     assert "執行者A" not in body
     # 留言散文必須把這個可信度邊界寫給人看，不能只有機器讀得到。
     assert "不是該 attempt 全程的 owner" in body
+
+
+# ===========================================================================
+# WF-BLOCK-VERSION-REGRESSION1（aiwf#161）：升版 ⇒ 既有事件全部讀不回
+# ===========================================================================
+#
+# **守的是什麼**：`review.BLOCK_VERSION` 由數種結構化區塊共用（數目由下方 AST
+# 導出，⛔ 不寫死），而已落地的事件留言是**不可變**的——其版本字面永遠停在寫入
+# 當下的值。把常數改成別的值，讀取端就對**每一則**既有事件回「讀不懂」，而
+# `validation` 的閘門把「讀不懂」當 fail-closed，於是整批卡當場停機。
+#
+# ⛔ **本節不實作、也不主張任何升版路徑**，⛔ 也不指名由哪張卡承接。它只讓「升版」
+# 這件事在 CI 上**會紅**，並在紅的時候印出「既有事件不會跟著升版」這句話。
+
+#: 已寫進 timeline 的事件所**凍結**的區塊版本字面。
+#:
+#: ⭐ **刻意不由 `review.BLOCK_VERSION` 導出。** 導出就會跟著升版一起變，於是這條
+#: 測試永遠綠——那是零資訊。它是逐字黃金值：升版時本節必須紅。
+#:
+#: ⚠️ **把這個值跟著改大，不會讓任何一則既有事件變得讀得回。** 既有留言是不可變的，
+#: 它們的版本字面停在寫入當下。改這裡只是把偵測器關掉；活看板那一條
+#: （`test_the_live_board_events_still_carry_the_frozen_block_version`）就是為了讓
+#: 這個關法在 CI 上仍然會紅而存在的。
+_FROZEN_BLOCK_VERSION_IN_WRITTEN_EVENTS = "v1"
+
+#: 變異用的探針值。值本身沒有語意，只要求「不等於 `BLOCK_VERSION`」。
+_PROBE_BLOCK_VERSION = "v-probe-not-a-real-version"
+
+#: AST 面的識別後綴：`review.py` 的區塊鍵常數一律以此結尾。
+_BLOCK_KEY_SUFFIX = "_BLOCK_KEY"
+
+
+def _nodes_with_enclosing_function(tree: ast.AST):
+    """走訪 AST，逐一回傳 `(節點, 外圍函式名堆疊)`。"""
+
+    def walk(node, stack):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                yield from walk(child, (*stack, child.name))
+            else:
+                yield child, stack
+                yield from walk(child, stack)
+
+    yield from walk(tree, ())
+
+
+def _block_version_sites() -> tuple[dict[str, tuple], dict[str, tuple]]:
+    """由 `review.py` 的 AST 導出「誰比對 `BLOCK_VERSION`」與「誰寫出它」。
+
+    ⛔ **不得改成手打清單。** 判準是**節點形態**：
+      * 讀取端 ＝ 含 `BLOCK_VERSION` 的 `ast.Compare`（⛔ 不篩運算子——今天三處裡
+        有兩處是 `!=`、一處是 `==`，只認 `!=` 會靜默漏掉 `body_has_contract_baseline`）；
+      * 寫入端 ＝ 含 `BLOCK_VERSION` 的 f-string（`ast.JoinedStr`）。
+
+    每一處必須恰好引用一個 `*_BLOCK_KEY` 常數，且必須有外圍函式——判不出來一律
+    硬紅（fail closed），⛔ 不猜。回傳的兩個 dict 以**區塊鍵字串**為鍵。
+    """
+    tree = ast.parse(Path(review_mod.__file__).read_text(encoding="utf-8"))
+    readers: dict[str, tuple] = {}
+    writers: dict[str, tuple] = {}
+    for node, stack in _nodes_with_enclosing_function(tree):
+        if isinstance(node, ast.Compare):
+            bucket, kind = readers, "讀取端比較"
+        elif isinstance(node, ast.JoinedStr):
+            bucket, kind = writers, "寫入端 f-string"
+        else:
+            continue
+        names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+        if "BLOCK_VERSION" not in names:
+            continue
+        keys = sorted(n for n in names if n.endswith(_BLOCK_KEY_SUFFIX))
+        assert len(keys) == 1, (
+            f"review.py:{node.lineno} 的{kind}引用了 {len(keys)} 個 {_BLOCK_KEY_SUFFIX} "
+            f"常數（{keys}）⇒ 對不到唯一的區塊鍵，判不了，fail closed"
+        )
+        assert stack, f"review.py:{node.lineno} 的{kind}不在任何函式內 ⇒ 找不到讀寫入口"
+        key = getattr(review_mod, keys[0])
+        assert key not in bucket, (
+            f"區塊鍵 {key!r} 有多於一處{kind}（review.py:{node.lineno}）⇒ "
+            "本節的語料對應是一對一的，多出來的那處不在射程內，先來這裡登記"
+        )
+        bucket[key] = (keys[0], stack[-1], node.lineno)
+    assert readers, (
+        "AST 掃不到任何一處與 BLOCK_VERSION 的比較 ⇒ 本節在檢查一個不存在的東西，"
+        "fail closed（可能是 review.py 改寫了比對形態，判準須跟著改）"
+    )
+    return readers, writers
+
+
+@contextlib.contextmanager
+def _block_version_is(value: str):
+    """暫時把 `review.BLOCK_VERSION` 換成 `value`（模組層屬性，讀取端呼叫時才取）。"""
+    original = review_mod.BLOCK_VERSION
+    review_mod.BLOCK_VERSION = value
+    try:
+        yield
+    finally:
+        review_mod.BLOCK_VERSION = original
+
+
+def _facts_block_bodies() -> tuple[str, ...]:
+    """`wf_escalation_facts` 語料：由產線 renderer 產出，⛔ 非手打 YAML。
+
+    兩種形狀都取：`not-asserted`（今日產線唯一走得到的那支）與 `asserted`
+    （模擬承接卡落地後的世界，見 `PreflightBasis` 的說明）。
+    """
+    report = review_mod.ReviewReport(
+        review_result=review_mod.REVIEW_RESULTS[0],
+        core_pain_resolved=review_mod.CORE_PAIN_VALUES[0],
+        self_run=(),
+        findings=(),
+    )
+    attempt = review_mod.attempt_id("BV-REGRESSION1", 0, "b" * 40)
+    return (
+        review_mod.render_escalation_facts_block(
+            attempt=attempt,
+            escalation_epoch=0,
+            report=report,
+            marks={},
+            counts_toward_escalation=None,
+        ),
+        review_mod.render_escalation_facts_block(
+            attempt=attempt,
+            escalation_epoch=0,
+            report=report,
+            marks={},
+            counts_toward_escalation=True,
+            preflight=review_mod.PreflightBasis(
+                basis="event-verified",
+                source_event="https://example.invalid/preflight-pass-event",
+                summary="測試語料；產線沒有任何輸入抵達得了這裡",
+            ),
+        ),
+    )
+
+
+def _checkpoint_block_bodies() -> tuple[str, ...]:
+    """`wf_escalation_checkpoint` 語料：由產線 renderer 產出。
+
+    ⚠️ 這一種區塊在活看板上**今天一則都沒有**（2026-08-27 實測 0 則）⇒ 只靠活看板
+    導出語料會讓 `checkpoint_facts_from_body` 那一處比較**完全不在射程內**，
+    移除它測試也不會紅。這就是本節的語料必須由 renderer 產生、⛔ 不能只取活看板的
+    原因；⭐ 這一段是「涵蓋面」的實質，⛔ 不是形式。
+    """
+    return (
+        review_mod.render_checkpoint_comment(
+            card_id="BV-REGRESSION1",
+            escalation_epoch=0,
+            trigger_attempt_id=review_mod.attempt_id("BV-REGRESSION1", 0, "b" * 40),
+            unique_attempt_count=1,
+            checkpoint_decision=review_mod.CHECKPOINT_DECISIONS[0],
+            checkpoint_rationale="語料由產線 renderer 產生。",
+            written_by="wf-cli tests",
+            timestamp="2020-01-01T00:00:00+08:00",
+        ),
+    )
+
+
+def _baseline_block_bodies() -> tuple[str, ...]:
+    """`wf_contract_baseline` 語料：由產線 renderer 產出。"""
+    return (
+        review_mod.render_contract_baseline_comment(
+            card_id="BV-REGRESSION1",
+            declared_by="wf-cli tests",
+            rationale="語料由產線 renderer 產生。",
+            timestamp="2020-01-01T00:00:00+08:00",
+        ),
+    )
+
+
+#: 區塊鍵 → 語料工廠。⛔ 鍵不手打字面，一律取 `review` 的常數。
+#:
+#: ⚠️ **這張表不決定涵蓋面，AST 才決定**：下方測試會比對它的鍵集合與 AST 導出的
+#: 讀取端／寫入端鍵集合是否**三者相等**。日後新增第四種區塊而沒有來這裡補語料，
+#: 那條比對就會紅——這正是 A2 要的「不得把 3 寫死」。
+_CORPUS_FACTORIES = {
+    review_mod.FACTS_BLOCK_KEY: _facts_block_bodies,
+    review_mod.CHECKPOINT_BLOCK_KEY: _checkpoint_block_bodies,
+    review_mod.BASELINE_BLOCK_KEY: _baseline_block_bodies,
+}
+
+
+def _readable(reader, body: str) -> bool:
+    """讀得回嗎。三個讀取端回傳型別不同（dataclass／dataclass／bool），統一成布林。"""
+    return bool(reader(body))
+
+
+def test_bumping_block_version_makes_every_already_written_event_unreadable():
+    """升版 `review.BLOCK_VERSION` ⇒ 已寫進 timeline 的事件**全部**讀不回。
+
+    ## 母體怎麼來、為什麼不釘數字（⚠️ 這一段是交付的一部分，⛔ 不是註解裝飾）
+
+    **母體不是一個數字，是一組關係。** 本節的語料由兩層導出，兩層都在**跑的當下**
+    重算，⛔ 沒有任何一處把母體大小寫成常數：
+
+    1. **有幾種區塊受 `BLOCK_VERSION` 管**：由 `review.py` 的 AST 導出
+       （`_block_version_sites`），⛔ 不手打、⛔ 不寫死數目。今天是三種；日後多一種
+       而沒有人來補語料，`_CORPUS_FACTORIES` 的鍵集合比對就會紅。
+    2. **每一種區塊的事件長什麼樣**：由**產線 renderer 本人**在跑的當下渲染
+       （`_CORPUS_FACTORIES`），⛔ 不手打 YAML。渲染時把 `BLOCK_VERSION` 暫時換成
+       `_FROZEN_BLOCK_VERSION_IN_WRITTEN_EVENTS`，也就是**模擬「當年寫下這些事件時
+       常數是什麼」**——既有留言不可變，它們的版本字面就是停在那個值。
+
+    **為什麼不釘數字。** 活看板上的事件則數每天都在變（每一輪查核就多一則），把
+    「111 則」這種當日快照寫進斷言，只會讓這條測試在某個與 `BLOCK_VERSION` 完全無關
+    的日子紅掉，然後被人調大——那是把偵測器訓練成雜訊。**這條測試斷言的是關係，不是
+    規模**：不論母體是 1 則還是 10,000 則，「現況全數讀得回」與「換掉常數後一則都讀
+    不回」這兩條關係都必須同時成立；母體為空時第三條斷言會硬紅，⛔ 不讓前兩條變成
+    空真。
+
+    ## ⛔ 這條測試不涵蓋什麼
+
+    * ⛔ **不驗**既有事件的**內容**正確性（那是 `aiwf#138` 的射程）——它只驗
+      「版本不符時讀不回」。
+    * ⛔ **不驗**升版之後的遷移路徑：本 repo 今日**沒有** v2 實作，本節也不提供。
+    * ⛔ **不驗** `_CORPUS_FACTORIES` 以外的讀取端；涵蓋面恰好等於 AST 導出的那幾處。
+    * ⛔ 綠燈**不得**被讀成「相容性已保證」。它只說：今天這幾處讀取端與這些語料在
+      同一個版本上；⛔ 沒有任何東西保證別台機器上的那份 `wfcli` 也在同一版。
+    """
+    readers, writers = _block_version_sites()
+    assert set(readers) == set(writers), (
+        f"讀取端區塊鍵 {sorted(readers)} 與寫入端 {sorted(writers)} 不相等 ⇒ 有一種區塊"
+        "只讀不寫或只寫不讀，本節建不出它的語料，fail closed"
+    )
+    assert set(readers) == set(_CORPUS_FACTORIES), (
+        f"AST 導出的區塊鍵 {sorted(readers)} 與語料工廠 {sorted(_CORPUS_FACTORIES)} 不相等。"
+        "⇒ 若你剛新增了一種受 BLOCK_VERSION 管的區塊，請來 _CORPUS_FACTORIES 補上它的"
+        "語料工廠；⛔ 不要把這條比對刪掉——它就是「不得把種數寫死」的那個機械執行者"
+    )
+
+    # 語料在「當年的常數」下渲染：模擬不可變的既有事件。
+    with _block_version_is(_FROZEN_BLOCK_VERSION_IN_WRITTEN_EVENTS):
+        corpus = {key: factory() for key, factory in _CORPUS_FACTORIES.items()}
+
+    total = sum(len(bodies) for bodies in corpus.values())
+    assert total > 0, "語料母體為空 ⇒ 下面兩條關係都會是空真，fail closed"
+    for key, bodies in corpus.items():
+        assert bodies, f"區塊 {key!r} 的語料為空 ⇒ 它那一處比較不在射程內，fail closed"
+
+    # 關係一：現況下每一則既有事件都讀得回。
+    unreadable = [
+        (key, body)
+        for key, bodies in corpus.items()
+        for body in bodies
+        if not _readable(getattr(review_mod, readers[key][1]), body)
+    ]
+    assert not unreadable, (
+        f"{len(unreadable)}/{total} 則既有形狀的事件讀不回了。\n"
+        f"⇒ 若你剛把 review.BLOCK_VERSION 由 "
+        f"{_FROZEN_BLOCK_VERSION_IN_WRITTEN_EVENTS!r} 改成 {review_mod.BLOCK_VERSION!r}："
+        "**既有事件不會跟著升版**。它們是不可變留言，版本字面停在寫入當下；升版後"
+        "每一則都會被讀成「讀不懂」，而閘門把讀不懂當 fail-closed ⇒ 整批卡停機。\n"
+        "⇒ 正解是先落地一個同時認舊版與新版的讀取端（⛔ 本節不指名由誰做），⛔ 不是把本節的"
+        "黃金值一起改大——那只是把偵測器關掉。\n"
+        f"讀不回的區塊：{sorted({key for key, _ in unreadable})}"
+    )
+
+    # 關係二：把常數換成別的值之後，一則都讀不回。
+    with _block_version_is(_PROBE_BLOCK_VERSION):
+        still_readable = [
+            (key, readers[key][2])
+            for key, bodies in corpus.items()
+            for body in bodies
+            if _readable(getattr(review_mod, readers[key][1]), body)
+        ]
+    assert not still_readable, (
+        f"換掉 BLOCK_VERSION 之後仍有 {len(still_readable)}/{total} 則讀得回："
+        f"{sorted(set(still_readable))}\n"
+        "⇒ 那條讀取路徑**沒有走版本檢查**（比較被移除或被繞過）。這正是本節的負控："
+        "它紅代表守衛不在，⛔ 不是語料壞了"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 活看板那一條：讓「連黃金值一起改大」這個關法也會紅
+# ---------------------------------------------------------------------------
+#
+# ⚠️ 上面那條測試有一個明確的關法：把 `BLOCK_VERSION` 與
+# `_FROZEN_BLOCK_VERSION_IN_WRITTEN_EVENTS` **一起**改大，它就回綠——而真實看板上
+# 那批不可變事件仍然讀不回。⛔ 純離線的檢查對這個關法**無能為力**：既有事件在 repo
+# 之外，樹裡沒有任何東西知道它們的版本字面。
+#
+# 這條測試就是那個缺口的處置：**在跑的當下**把活看板上的既有事件抓下來，斷言它們
+# 仍然全數讀得回、且其版本字面仍等於上面那個黃金值。
+#
+# ⚠️ **它是盡力而為的，⛔ 不是不變式**：抓不到（離線、逾時、被匿名額度擋下）就
+# `skip`，⛔ 不 fail——否則 GitHub 打噴嚏就會讓 CI 紅，而「紅得沒道理」訓練出來的
+# 是「紅了先重跑」。⇒ 涵蓋宣稱逐字收窄為：**上面那條是不變式，這一條是偵測器。**
+
+#: 只在 CI 或明確 opt-in 時打網路。理由：本地 `pytest` 一天要跑幾十次，匿名額度是
+#: 每小時 60 次／每個 IP，而本檢查一次要用掉數次 ⇒ 掛在每次本地跑上會把額度燒光，
+#: 且讓一套原本不連網的測試變成連網的。CI 是它該跑的地方（GitHub Actions 恆設 `CI`）。
+_LIVE_BOARD_OPT_IN = "WF_LIVE_BOARD_CORPUS"
+
+
+def _origin_repo_slug() -> str | None:
+    """本 repo 在 GitHub 上的 `owner/name`。⛔ 不寫死字面。"""
+    slug = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if slug:
+        return slug
+    try:
+        url = subprocess.run(
+            ["git", "-C", str(Path(review_mod.__file__).resolve().parent), "remote", "get-url", "origin"],
+            capture_output=True, text=True, check=True, timeout=30,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", url)
+    return match.group(1) if match else None
+
+
+#: 看板橫跨的 repo，**明文列舉**。
+#:
+#: ⚠️ 這個集合**導不出來**：卡分佈在哪些 repo 是治理事實，樹裡沒有任何檔案記載它
+#: （`origin` 只知道自己）。曾經只取 `origin`，於是另一個 repo 上的同型不可變事件
+#: 整批不在母體內——離線層**替代不了**它們，因為那些事件在 repo 之外。
+#:
+#: ⛔ **這不是母體大小。** 母體是每個 repo 上真正抓到的事件則數，那個數字仍然不進
+#: 任何斷言（見上方測試 docstring 的漂移聲明）。這裡列的是「要去哪裡取」。
+#: ⇒ 新增 repo 時來這裡加一行；⛔ 不要改回只看 `origin`。
+_LISTED_BOARD_REPOS: tuple[str, ...] = (
+    "ruan6047/ai-workflow",
+    "ruan6047/cpbl-analytics",
+)
+
+
+def _board_repos() -> tuple[str, ...]:
+    """要取語料的 repo 清單 ＝ 明文列舉 ∪ 機械導出的 `origin`（去重、保序）。
+
+    取聯集而不是二選一：明文那份可能忘了加，`origin` 那份可能不在明文裡，
+    兩邊都納入的方向只會讓母體變大，⛔ 不會讓它靜默變小。
+    """
+    origin = _origin_repo_slug()
+    return tuple(dict.fromkeys([*_LISTED_BOARD_REPOS, *([origin] if origin else [])]))
+
+
+def _fetch_issue_comments(slug: str) -> list[dict]:
+    """抓 repo 的全部 issue 留言（匿名 REST；這些 repo 為 public）。"""
+    out: list[dict] = []
+    for page in range(1, 51):
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{slug}/issues/comments?per_page=100&page={page}",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "wf-cli-tests/block-version-regression",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            batch = jsonlib.loads(response.read().decode("utf-8"))
+        out.extend(batch)
+        if len(batch) < 100:
+            break
+    return out
+
+
+def test_the_live_board_events_still_carry_the_frozen_block_version():
+    """活看板上的既有事件，其版本字面仍等於本檔凍結的黃金值。
+
+    ## 母體怎麼來（⛔ 同樣不釘數字）
+
+    母體 ＝ **跑的當下**自 `_board_repos()` 的每一個 repo 的 issue 留言裡導出的
+    「帶事件 marker 前綴、且含 `wf_escalation_facts` 區塊」那一批。前綴取 `doctor`
+    的產線常數，⛔ 不手打；則數每天都在變（同一個 repo 一個晚上就從 62 變成 64），
+    ⛔ 不進斷言，只在失敗訊息裡當**當次紀錄**印出來。**斷言的是關係不是規模**：
+    全數讀得回、版本字面全等於黃金值、換掉常數後一則都讀不回、母體非空。
+
+    ## ⚠️ 部分可達時的行為：以抓得到的那些做斷言，⛔ 不整條放掉
+
+    匿名額度是 60 次/小時/IP 而 runner IP 共用 ⇒ 「一個 repo 抓得到、另一個被擋」
+    是會發生的。此時**仍對抓得到的那些斷言**，並把抓不到的那些以 `UserWarning`
+    ＋ stdout 逐字標明（pytest 的 warnings summary 在 `-q` 下仍會印）。
+    ⛔ 只有**全部**都抓不到才 skip——那時沒有任何母體可斷言。
+
+    ## ⛔ 這條測試不涵蓋什麼
+
+    * ⛔ 抓不到就 skip，所以它是**偵測器**不是不變式；⛔ 綠燈不得被讀成「已保證」。
+    * ⛔ 只看 `wf_escalation_facts`：另兩種區塊今天在看板上分別是 0 則與極少數，
+      涵蓋由上面那條離線測試承擔。
+    * ⛔ 只看 `_board_repos()` 列到的 repo。沒列到的 repo 上的事件不在母體內，而
+      本測試**看不出**有沒有漏列——那是治理事實，⛔ 不是它判得出來的東西。
+    """
+    if not (os.environ.get("CI") or os.environ.get(_LIVE_BOARD_OPT_IN)):
+        pytest.skip(f"未設 CI 或 {_LIVE_BOARD_OPT_IN}：本地預設不打網路（見上方說明）")
+    repos = _board_repos()
+    assert repos, "導不出任何 repo ⇒ 沒有母體可取，fail closed"
+
+    from wf_cli.doctor import _EVENT_PREFIX  # 產線常數，⛔ 不手打前綴字面
+
+    fetched: dict[str, int] = {}
+    unreachable: list[tuple[str, str]] = []
+    corpus: list[tuple[str, str, str, dict]] = []   # (repo, url, body, block)
+    for slug in repos:
+        try:
+            comments = _fetch_issue_comments(slug)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            unreachable.append((slug, f"{type(exc).__name__}: {exc}"))
+            continue
+        fetched[slug] = len(comments)
+        for comment in comments:
+            body = comment.get("body") or ""
+            if _EVENT_PREFIX not in body:
+                continue
+            try:
+                block = find_block_by_key(body, FACTS_BLOCK_KEY)
+            except ReviewParseError as exc:
+                url = comment.get("html_url") or "（無 URL）"
+                raise AssertionError(
+                    f"{slug} 的既有事件 {url} 含 {FACTS_BLOCK_KEY} 區塊卻無法解析 ⇒ "
+                    "它不能被排出母體；既有事件讀不懂時必須 fail closed"
+                ) from exc
+            if block is not None:
+                corpus.append((slug, comment.get("html_url") or "", body, block))
+
+    if unreachable:
+        # ⛔ 不 skip、⛔ 不 fail：以抓得到的那些斷言，但被略過的那些必須看得見。
+        notice = "⚠️ 本輪未取到、其事件⛔不在母體內的 repo：" + "；".join(
+            f"{slug}（{reason}）" for slug, reason in unreachable
+        ) + f"　｜　本輪實際取到並斷言的 repo：{sorted(fetched) or '（無）'}"
+        warnings.warn(notice, stacklevel=1)
+        print(notice)
+
+    if not fetched:
+        pytest.skip(
+            "全部 repo 都取不到 ⇒ 沒有任何母體可斷言，偵測器本輪不跑："
+            + "；".join(f"{slug}（{reason}）" for slug, reason in unreachable)
+        )
+
+    per_repo = collections.Counter(slug for slug, _, _, _ in corpus)
+    assert corpus, (
+        f"取到了 {sorted(fetched)} 卻導不出任何一則含 {FACTS_BLOCK_KEY} 區塊的事件 ⇒ 母體為空，"
+        f"下面的斷言會變成空真，fail closed。（當次紀錄：留言則數 {dict(fetched)}）"
+    )
+    empty = [slug for slug in fetched if per_repo[slug] == 0]
+    assert not empty, (
+        f"這些 repo 取到了留言卻一則事件都導不出來：{empty}（當次紀錄：留言則數 "
+        f"{dict(fetched)}、事件則數 {dict(per_repo)}）\n"
+        "⇒ 母體**靜默變小**了：可能是該 repo 的事件形態改了，也可能是它本來就不該在"
+        f"清單裡。⛔ 不要直接把它從 {_LISTED_BOARD_REPOS!r} 刪掉了事，先判是哪一種"
+    )
+
+    drifted = [
+        (url, str(block.get(FACTS_BLOCK_KEY)).strip())
+        for _, url, _, block in corpus
+        if str(block.get(FACTS_BLOCK_KEY)).strip() != _FROZEN_BLOCK_VERSION_IN_WRITTEN_EVENTS
+    ]
+    assert not drifted, (
+        f"{len(drifted)}/{len(corpus)} 則既有事件的版本字面不等於本檔凍結的 "
+        f"{_FROZEN_BLOCK_VERSION_IN_WRITTEN_EVENTS!r}：{drifted[:5]}\n"
+        "⇒ 若你剛把 BLOCK_VERSION 與本檔黃金值「一起」改大：那批舊事件沒有跟著改，"
+        "現在它們讀不回了。⛔ 這條比對就是為了讓那個關法紅在這裡\n"
+        f"（當次紀錄：逐 repo 事件則數 {dict(per_repo)}）"
+    )
+
+    unreadable = [url for _, url, body, _ in corpus if not review_mod.escalation_facts_from_body(body)]
+    assert not unreadable, (
+        f"{len(unreadable)}/{len(corpus)} 則既有事件讀不回：{unreadable[:5]}"
+        f"（當次紀錄：逐 repo 事件則數 {dict(per_repo)}）"
+    )
+
+    with _block_version_is(_PROBE_BLOCK_VERSION):
+        still = [url for _, url, body, _ in corpus if review_mod.escalation_facts_from_body(body)]
+    assert not still, (
+        f"換掉 BLOCK_VERSION 之後仍有 {len(still)}/{len(corpus)} 則既有事件讀得回："
+        f"{still[:5]} ⇒ 有一條讀取路徑沒有走版本檢查"
+    )
+
+
+def test_live_board_detector_rejects_malformed_facts_alongside_a_valid_event(monkeypatch):
+    """一筆正常事件不得掩蓋同 repo 另一筆讀不懂的 facts 區塊。"""
+    from wf_cli.doctor import _EVENT_PREFIX
+
+    valid = _EVENT_PREFIX + "\n" + _facts_block_bodies()[0]
+    malformed = "\n".join(
+        [
+            _EVENT_PREFIX,
+            "```yaml",
+            f"{FACTS_BLOCK_KEY}: {review_mod.BLOCK_VERSION}",
+            f"{FACTS_BLOCK_KEY}: {review_mod.BLOCK_VERSION}",
+            "```",
+        ]
+    )
+    comments = [
+        {"html_url": "https://example.invalid/valid", "body": valid},
+        {"html_url": "https://example.invalid/malformed", "body": malformed},
+    ]
+    monkeypatch.setenv(_LIVE_BOARD_OPT_IN, "1")
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "_board_repos", lambda: ("example/board",))
+    monkeypatch.setattr(module, "_fetch_issue_comments", lambda slug: comments)
+
+    with pytest.raises(AssertionError, match="example.invalid/malformed"):
+        test_the_live_board_events_still_carry_the_frozen_block_version()
