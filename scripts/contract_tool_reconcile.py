@@ -168,6 +168,10 @@ KIND_FIELD = "card_field"
 class DocHit:
     path: str
     line: int
+    #: 命中所在的**節標題逐字文字**（不含 ``#``）。渲染錨點用這個，⛔ 不用 ``line``。
+    #: ``line`` 保留是因為它是抽取當下唯一的順序資訊（排序、同節內去重都要它），
+    #: 但它**不進任何人讀得到的輸出**——見 ``_doc_anchor`` 的就地說明。
+    section: str = ""
 
 
 @dataclass
@@ -179,6 +183,41 @@ class ContractSymbol:
 
 def _line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
+
+
+_MD_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+
+
+def _heading_index(text: str) -> list[tuple[int, int, str]]:
+    """(起行, 階層, 標題逐字文字)，⛔ 不含 ``#`` 與尾端空白。"""
+    out: list[tuple[int, int, str]] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        m = _MD_HEADING.match(line)
+        if m:
+            out.append((lineno, len(m.group(1)), m.group(2)))
+    return out
+
+
+def _section_label(text: str, lineno: int) -> str:
+    """命中行往上最近的標題；⛔ 標題文字在該檔重複時，往上接一層唯一的祖先。
+
+    **這是刻意的**：錨點的用途是「讀者拿去 ``grep`` 一次就命中」，所以它必須在該檔內
+    唯一。重複標題確實存在（量法：對 ``contract_docs()`` 回傳的每一份檔跑 ``_heading_index``
+    再對標題文字計數，>1 者即是；⛔ 不在此記當下的筆數——那個數字會腐爛）。這種標題退回
+    ``祖 › 子`` 複合形式；⛔ 不得退回行號或序數（``裁定 (第 2 處)`` 這種 grep 得到 2 次，
+    等於沒有解決唯一性）。全檔無標題時回空字串，渲染端印 ``(檔首)``。
+    """
+    headings = _heading_index(text)
+    prior = [h for h in headings if h[0] <= lineno]
+    if not prior:
+        return ""
+    start, level, title = prior[-1]
+    if sum(1 for _, _, t in headings if t == title) == 1:
+        return title
+    for h_line, h_level, h_title in reversed(prior[:-1]):
+        if h_level < level and sum(1 for _, _, t in headings if t == h_title) == 1:
+            return f"{h_title} › {title}"
+    return title
 
 
 def _add(bucket: dict[tuple[str, str], ContractSymbol], kind: str, name: str, hit: DocHit) -> None:
@@ -193,7 +232,8 @@ def extract_events(docs: list[Path], root: Path) -> dict[tuple[str, str], Contra
         text = path.read_text(encoding="utf-8")
         rel = str(path.relative_to(root))
         for m in _KEBAB_IN_BACKTICKS.finditer(text):
-            _add(out, KIND_EVENT, m.group(1), DocHit(rel, _line_of(text, m.start(1))))
+            ln = _line_of(text, m.start(1))
+            _add(out, KIND_EVENT, m.group(1), DocHit(rel, ln, _section_label(text, ln)))
     return out
 
 
@@ -203,7 +243,8 @@ def extract_delivery_statuses(docs: list[Path], root: Path) -> dict[tuple[str, s
         text = path.read_text(encoding="utf-8")
         rel = str(path.relative_to(root))
         for m in _STATUS_TOKEN.finditer(text):
-            _add(out, KIND_STATUS, m.group(1), DocHit(rel, _line_of(text, m.start(1))))
+            ln = _line_of(text, m.start(1))
+            _add(out, KIND_STATUS, m.group(1), DocHit(rel, ln, _section_label(text, ln)))
     return out
 
 
@@ -217,13 +258,15 @@ def extract_card_fields(templates: list[Path], root: Path) -> dict[tuple[str, st
         for lineno, line in enumerate(header.splitlines(), start=1):
             m = _CARD_FIELD_BULLET.match(line)
             if m:
-                _add(out, KIND_FIELD, m.group(1), DocHit(rel, lineno))
+                _add(out, KIND_FIELD, m.group(1), DocHit(rel, lineno, _section_label(text, lineno)))
             for inline in _CARD_FIELD_INLINE.finditer(line):
-                _add(out, KIND_FIELD, inline.group(1), DocHit(rel, lineno))
+                _add(out, KIND_FIELD, inline.group(1),
+                     DocHit(rel, lineno, _section_label(text, lineno)))
         for lineno, line in enumerate(text.splitlines(), start=1):
             m = _CARD_SECTION.match(line)
             if m:
-                _add(out, KIND_FIELD, m.group(1), DocHit(rel, lineno))
+                _add(out, KIND_FIELD, m.group(1),
+                     DocHit(rel, lineno, _section_label(text, lineno)))
     return out
 
 
@@ -287,6 +330,9 @@ class Occurrence:
     line: int
     role: str
     symbol: str
+    #: 出現位置**所屬的定義**（逐層回溯的 qualname，例：``Card.validate``）。
+    #: 模組層級出現時為空字串。渲染錨點用這個，⛔ 不用 ``line``——理由同 ``DocHit.section``。
+    owner: str = ""
 
 
 @dataclass
@@ -331,6 +377,49 @@ def _iter_functions(tree: ast.AST):
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             yield node
+
+
+def _qualname_spans(tree: ast.AST) -> list[tuple[int, int, str]]:
+    """(起行, 迄行, 逐層回溯的 qualname)。含 ``ClassDef`` 以區分同名方法。
+
+    ⚠️ 起行取 ``node.lineno``＝``def``／``class`` 那一行，**裝飾器行不在區間內**；
+    落在裝飾器上的註解會歸為模組層級。⛔ 不得為了吃進裝飾器而改用
+    ``decorator_list[0].lineno``——那會讓相鄰兩個定義的區間相接，行為更難預期。
+    """
+    spans: list[tuple[int, int, str]] = []
+
+    def walk(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                qual = f"{prefix}{child.name}"
+                spans.append((child.lineno, getattr(child, "end_lineno", None) or child.lineno, qual))
+                walk(child, f"{qual}.")
+            else:
+                walk(child, prefix)
+
+    walk(tree, "")
+    # 模組層級的具名常數（``REVIEW_TYPES = {...}``）也算一個定義：詞彙表型的出現多半落
+    # 在這裡，只回「模組層級」會把 3000 行的檔壓成一個錨點。⛔ 只收 ``tree`` 的直接子節點，
+    # 不遞迴進函式內的區域變數——那會遮蔽函式名，錨點反而變短命。
+    for child in ast.iter_child_nodes(tree):
+        targets: list[ast.AST] = []
+        if isinstance(child, ast.Assign):
+            targets = list(child.targets)
+        elif isinstance(child, ast.AnnAssign):
+            targets = [child.target]
+        names = [t.id for t in targets if isinstance(t, ast.Name)]
+        if len(names) == 1:
+            spans.append((child.lineno, getattr(child, "end_lineno", None) or child.lineno, names[0]))
+    return spans
+
+
+def _owner_at(spans: list[tuple[int, int, str]], lineno: int) -> str:
+    """該行所屬的**最內層**定義；不在任何定義內回空字串。"""
+    best: tuple[int, int, str] | None = None
+    for start, end, qual in spans:
+        if start <= lineno <= end and (best is None or start >= best[0]):
+            best = (start, end, qual)
+    return best[2] if best else ""
 
 
 def _call_name(node: ast.Call) -> str | None:
@@ -590,12 +679,14 @@ def classify_module(
     mod: ModuleIndex, symbols: list[str], connected: set[str]
 ) -> list[Occurrence]:
     docstrings = _docstring_ids(mod.tree)
+    spans = _qualname_spans(mod.tree)
     out: list[Occurrence] = []
 
     for lineno, comment in mod.comments:
         for sym in symbols:
             if _contains_symbol(comment, sym):
-                out.append(Occurrence(mod.rel, lineno, ROLE_COMMENT, sym))
+                out.append(Occurrence(mod.rel, lineno, ROLE_COMMENT, sym,
+                                      _owner_at(spans, lineno)))
 
     # 每個函式節點 → 它所屬的 qualified key（用來判斷有沒有連到狀態面）。
     owner: dict[int, str] = {}
@@ -620,7 +711,9 @@ def classify_module(
                         role = ROLE_WRITE  # 在連到狀態面的函式裡，這個字面進得了狀態面
                     else:
                         role = ROLE_OTHER
-                    out.append(Occurrence(mod.rel, getattr(node, "lineno", 0), role, sym))
+                    lineno = getattr(node, "lineno", 0)
+                    out.append(Occurrence(mod.rel, lineno, role, sym,
+                                          _owner_at(spans, lineno)))
         for child in ast.iter_child_nodes(node):
             visit(child, parents + [node])
 
@@ -1009,10 +1102,10 @@ class Row:
             "kind": self.kind,
             "name": self.name,
             "verdict": self.verdict,
-            "doc_hits": [f"{h.path}:{h.line}" for h in self.doc_hits[:4]],
-            "writers": [f"{o.path}:{o.line}" for o in self.writers[:4]],
-            "readers": [f"{o.path}:{o.line}" for o in self.readers[:4]],
-            "mentions": [f"{o.path}:{o.line}" for o in self.mentions[:4]],
+            "doc_hits": _dedup([_doc_anchor(h) for h in self.doc_hits])[:4],
+            "writers": _dedup([_code_anchor(o) for o in self.writers])[:4],
+            "readers": _dedup([_code_anchor(o) for o in self.readers])[:4],
+            "mentions": _dedup([_code_anchor(o) for o in self.mentions])[:4],
             "notes": self.notes,
         }
 
@@ -1199,10 +1292,62 @@ def all_gap_entries(rec: "Reconciliation") -> dict[str, str]:
     return entries
 
 
+# ── 錨點渲染（DOC-STALE-FILE-LINE-POINTERS1）──────────────────────────────
+#
+# ⛔ **本檔的人讀輸出與 JSON 輸出一律不印行號。** 這是刻意的，理由是實測的：
+# 本檔產生的那張表在 `docs/CONTRACT_TOOL_RECONCILE.md` 裡，2026-08-27 有 15 個
+# `檔案:行` 錨點指到空行；而只要有人合併一張改到被引檔的卡，同一批數字就會再爛一次
+# （aiwf#141 的分支 `ef21098` 實測一輪交付新弄壞 9 筆／碰巧修好 8 筆，**淨值 +1 掩蓋了
+#  17 筆變動**；SHA 釘死是為了讓這組數字可被重跑複驗，⛔ 不是裝飾）。
+# 行號的壽命以「下一次合併」計，符號名與節標題的壽命以「重新命名」計。
+#
+# ⛔ **不得由此推出「行號不可用」**：`DocHit.line`／`Occurrence.line` 仍然是抽取當下的
+# 排序鍵與去重鍵，本檔內部照用；被禁的只有「把它寫進輸出讓別人拿去對」。
+# ⛔ 也不得推出「錨點保證指得到」：符號改名、節標題改寫一樣會失準——差別是那時
+# `grep` 會回 0 個命中（看得出來），而爛掉的行號會回一行別的內容（看不出來）。
+
+
+def _doc_anchor(h: DocHit) -> str:
+    """文件命中 → ``路徑 §節標題``。無標題（檔首）時只回路徑。"""
+    return f"{h.path} §{h.section}" if h.section else f"{h.path} (檔首)"
+
+
+def _code_anchor(o: Occurrence) -> str:
+    """碼命中 → ``路徑::qualname``。模組層級（不在任何 def／class 內）回 ``路徑::<module>``。"""
+    return f"{o.path}::{o.owner}" if o.owner else f"{o.path}::<module>"
+
+
+def _dedup(items: list[str]) -> list[str]:
+    """同一個錨點被多次命中時只留一份，順序照首次出現。
+
+    ⚠️ 於是表上的「…共 N」是**相異錨點數**，⛔ 不是命中次數——換錨點必然帶來的口徑
+    改變，就地寫明以免被讀成數量退步。
+    """
+    out: list[str] = []
+    for i in items:
+        if i not in out:
+            out.append(i)
+    return out
+
+
+def _code_span(item: str) -> str:
+    """把錨點包成 markdown inline code。
+
+    ⚠️ 節標題**本身含反引號**是真實情形（``#### 表五：`🚨已升級` 的決策 owner``），
+    單層 ``` ` ``` 會把 cell 從那裡切斷，讀者拿到的錨點是半截的、grep 必然 0 命中。
+    故圍欄長度由內容決定；``|`` 一律轉義，否則它會被讀成表格分隔。
+    ⛔ 不得改為「把標題裡的反引號拿掉」——那樣錨點就不再逐字等於檔內文字。
+    """
+    runs = [len(m) for m in re.findall(r"`+", item)]
+    fence = "`" * ((max(runs) + 1) if runs else 1)
+    pad = " " if runs else ""
+    return f"{fence}{pad}{item.replace('|', chr(92) + '|')}{pad}{fence}"
+
+
 def _cells(items: list[str], limit: int = 3) -> str:
     if not items:
         return "—"
-    shown = [f"`{i}`" for i in items[:limit]]
+    shown = [_code_span(i) for i in items[:limit]]
     if len(items) > limit:
         shown.append(f"…共 {len(items)}")
     return "<br>".join(shown)
@@ -1236,9 +1381,9 @@ def render_markdown(rec: Reconciliation, shown: list[Row]) -> str:
                 "| `{n}` | {v} | {d} | {w} | {rd} | {no} |".format(
                     n=r.name,
                     v=r.verdict,
-                    d=_cells([f"{h.path}:{h.line}" for h in r.doc_hits]),
-                    w=_cells([f"{o.path}:{o.line}" for o in r.writers]),
-                    rd=_cells([f"{o.path}:{o.line}" for o in r.readers]),
+                    d=_cells(_dedup([_doc_anchor(h) for h in r.doc_hits])),
+                    w=_cells(_dedup([_code_anchor(o) for o in r.writers])),
+                    rd=_cells(_dedup([_code_anchor(o) for o in r.readers])),
                     no="；".join(r.notes) or "—",
                 )
             )

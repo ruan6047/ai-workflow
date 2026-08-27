@@ -53,14 +53,14 @@ flowchart TD
 
 兩階段的分工是硬界線，兩邊都不得越界：
 
-- **階段一只看前綴出現在哪裡，完全不看版本。** 它今天的判準是 `doctor.py:230`–`:247`（全文含前綴 → 首行須為 marker → 全文只能有一處前綴）；[`WF-MARKER-SCOPE-CLEARANCE1`](https://github.com/ruan6047/ai-workflow/issues/30) 會把它收窄成宣告行三分類。**本卡一個字都不動階段一**——那是 #30 的射程，兩張卡同時改同一段是 §4 要處理的事。
+- **階段一只看前綴出現在哪裡，完全不看版本。** 它今天的判準是 `doctor.inspect_event_marker` 的前半段（全文含前綴 → 首行須為 marker → 全文只能有一處前綴，逐字「留言首行是 marker，但另有」那條）；[`WF-MARKER-SCOPE-CLEARANCE1`](https://github.com/ruan6047/ai-workflow/issues/30) 會把它收窄成宣告行三分類。**本卡一個字都不動階段一**——那是 #30 的射程，兩張卡同時改同一段是 §4 要處理的事。
 - **階段二只看版本與鍵，完全不看行的位置。** 它不知道 marker 是在首行還是第三行；那個問題在它被呼叫之前就已經有答案。
 
 這個切分不是排版偏好，它是本卡能同時進行而不與 #30 打架的**唯一**理由：#30 改的是階段一的邊界，本卡改的是階段二的內容，兩者的輸入輸出介面（「一行合格宣告行」）不變。
 
 ### 1.4 cutover：讀取器先行是硬需求，不是最佳實務
 
-現行 `doctor.py:249`–`:251` 對版本不是 `v1` 者一律回「未知或不支援的 marker 版本……只認 v1；不得回退 legacy」，而該回傳值在 `doctor.py:430`–`:432` 被歸進 `quarantine_reasons`，於 `doctor.py:460`–`:462` 讓**整張卡**落 `marker_quarantined`。
+現行 `doctor.inspect_event_marker` 對版本不是 `v1` 者一律回逐字「未知或不支援的 marker 版本：{version}（只認 v1；不得回退 legacy）」，而該回傳值在 `doctor.audit_review_channel` 被歸進 `quarantine_reasons`，於同一函式的 `status="marker_quarantined"` 讓**整張卡**落 `marker_quarantined`。
 
 **因此：第一則寫進任何一張卡的 v2 事件，會讓所有還在跑 v1-only 讀取器的消費者當場停掉那張卡。** 這不是推論，§7 探針的 D8 格就是拿現行 `doctor` 本人對一則合格 v2 marker 實跑的結果。
 
@@ -94,14 +94,14 @@ v2 只加兩個鍵，選取判準是**「不解析 payload 就必須知道」**�
 | 動詞 | 寫入平面 | 今天的識別符 | 讀碼依據 |
 |---|---|---|---|
 | `open` | 建立 Issue | Issue number（GitHub 保證唯一、不重號） | `commands/open_cmd.py` |
-| `assign` | Issue body `## Log` 追加一行 | **無** | `commands/assign_cmd.py:149`–`:155` |
-| `amend` | body Log 一行 ＋（部分路徑）一則留言 | `op <8 位 hex>`，值為 `uuid.uuid4().hex[:8]`（`amend_cmd.py:558`） | `amend_cmd.py:713`–`:716`、`:385` |
-| `handoff` | body Log 一行 | **無** | `commands/handoff_cmd.py:282`–`:287` |
-| `review` | 留言（首行 marker）＋ body Log 索引行 | `wf-review-event:v1` marker | `review.py:456`–`:461`、`review_cmd.py:230`／`:233`–`:244` |
-| `deploy-declare` | 留言 | **無**（`## deployment-declaration` ＋ `- event: …` 散文條列） | `deploy_declare_cmd.py:51`–`:62` |
-| `deploy-state` | 留言 | **無**（同上形態） | `deploy_state_cmd.py:62`–`:76` |
+| `assign` | Issue body `## Log` 追加一行 | **無** | `assign_cmd.run` 的 `log_line = (` 起算那段 |
+| `amend` | body Log 一行 ＋（部分路徑）一則留言 | `op <8 位 hex>`，值為 `uuid.uuid4().hex[:8]`（`amend_cmd.run` 的 `op_id = uuid.uuid4().hex[:8]`） | `amend_cmd.run` 的 `append_log_line(` 呼叫；留言路徑在 `amend_cmd._escalate_layout_failure` |
+| `handoff` | body Log 一行 | **無** | `handoff_cmd.run.append_card_log` |
+| `review` | 留言（首行 marker）＋ body Log 索引行 | `wf-review-event:v1` marker | `review.render_verdict_comment`；寫入端在 `review_cmd.run`（`add_issue_comment(` ＋ 其後的 `log_line = (`） |
+| `deploy-declare` | 留言 | **無**（`## deployment-declaration` ＋ `- event: …` 散文條列） | `deploy_declare_cmd._timeline_comment` |
+| `deploy-state` | 留言 | **無**（同上形態） | `deploy_state_cmd._timeline_comment` |
 
-`amend` 的 `op` 看起來像識別符，但它不是：值是每次執行現取的隨機 UUID 前 8 碼，**不由意圖決定**，因此無法滿足 `WF_EVENT_IDEMPOTENCY1` §3.1 對「重試必須算出同一個鍵」的要求；而且它從未被任何契約定義過，`amend_cmd.py:405`–`:407` 的註解甚至明講不要拿它做完整格式比對。
+`amend` 的 `op` 看起來像識別符，但它不是：值是每次執行現取的隨機 UUID 前 8 碼，**不由意圖決定**，因此無法滿足 `WF_EVENT_IDEMPOTENCY1` §3.1 對「重試必須算出同一個鍵」的要求；而且它從未被任何契約定義過，`amend_cmd._tier_change_logged` 的 docstring 甚至明講逐字「逐行比對且不綁定完整格式」。
 
 `deploy-declare`／`deploy-state` 的留言是最危險的一格：它已經有結構的**外觀**（固定標題 ＋ `- key: value`），但沒有任何一個字元是機器錨點。任何人打一則同樣格式的留言，消費者分不出那是事件還是引用——這正是 `WF-CARD-FIELD-CORRECTION1`（#37）在路由行上修掉的那個病，只是還沒有人在這裡發作。
 
@@ -955,7 +955,7 @@ if __name__ == "__main__":
 | 7 | 「payload 解析失敗不得升級為 per-card 停機」（§3.4） | **無** | — | 消費者可以自行把它接成停機 | **約定** |
 | 8 | A 組「v2 與現行 `doctor` 逐則同判」（§7） | `import wf_cli.doctor`，import 失敗即 `SystemExit(3)` | 探針執行時 | 探針沒被跑就什麼都沒有；本 repo 尚無 CI 跑它 | 探針執行內**強制**；是否被執行是**約定** |
 
-**第 3 條是本輪最大的落差，且它是結構性的**：本卡的寫入集不含 `cli/`，因此「寫入端拒收」這件事本卡在物理上做不到。§6 立下的規則二對本卡自己而言是**待兌現**，不是**已兌現**。#37（`card.py:164`–`:194`，`open_cmd.py:146`）是同一條規則在路由行上已經兌現的存在證明——本卡指的路是走得通的，只是本卡沒有走完它的權限。
+**第 3 條是本輪最大的落差，且它是結構性的**：本卡的寫入集不含 `cli/`，因此「寫入端拒收」這件事本卡在物理上做不到。§6 立下的規則二對本卡自己而言是**待兌現**，不是**已兌現**。#37（`card.validate_routing_names` 與 `card.ROUTING_MARKER`，寫入端 `open_cmd`）是同一條規則在路由行上已經兌現的存在證明——本卡指的路是走得通的，只是本卡沒有走完它的權限。
 
 **第 8 條指名一個沒被關掉的洞**：探針是可重跑的，但本 repo 沒有 CI 跑它。一份不跑的往返測試與沒有往返測試在證據強度上相同。實作卡應把它接進 `cli/tests/`（那時它就有寫入集了）。
 
@@ -963,7 +963,7 @@ if __name__ == "__main__":
 
 1. `doctor` 階段二同時認 v1 與 v2；未知版本的訊息與「marker 寫壞了」分離。**必須先於任何寫入端變更發佈。**
 2. 六個動詞的寫入端改發 v2 marker（`open` 除外），載體一律留言；body `## Log` 保留為索引行。
-3. `serialize_v2()` 等價物進 `wfcli`，含字母集與跨欄位不變量兩層檢查，拒收走乾淨退出碼而非 traceback（`cli.py` 的 `KNOWN_ERRORS` 不收 `ValueError`，見 `card.py:186`–`:189` 的同型說明）。
+3. `serialize_v2()` 等價物進 `wfcli`，含字母集與跨欄位不變量兩層檢查，拒收走乾淨退出碼而非 traceback（`cli.KNOWN_ERRORS` 不收 `ValueError`，見 `card.validate_routing_names` 的同型說明）。
 4. §7 探針接進 `cli/tests/`，A 組與 C 組不得以固定字串斷言代替。
 5. `docs/CONSUMER_CONFORMANCE.md` 同一個 commit 內登記 v2 的實作與落差（該檔由 #30 持有，須協調）。
 6. 前置：#30 先落地（§4.2）。

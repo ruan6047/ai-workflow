@@ -177,13 +177,17 @@ def test_untracked_files_are_out_of_scope(tmp_path):
 # ==========================================================================
 
 
-def test_excluded_paths_are_not_flagged(tmp_path):
+def test_excluded_paths_are_not_flagged(tmp_path, monkeypatch):
     """反方向：排除集內的檔即使有命中也不轉紅。
 
     ⚠️ 用**同一份壞內容**放在被排除的路徑上，確保差別只來自排除集本身，不是內容。
     """
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    excluded_rel = next(iter(ccs.EXCLUSIONS))
+    # ⚠️ 排除主體是**合成的**，⛔ 不是 ``next(iter(ccs.EXCLUSIONS))``：真實排除集現在
+    # 是空的（見該常數的就地說明），而這條測的是**機制**——「在排除集裡的路徑不轉紅」。
+    # 綁真實條目會讓「排除集清空」這個正確結果把測試打成 StopIteration。
+    excluded_rel = "SYNTHETIC_EXCLUDED.md"
+    monkeypatch.setitem(ccs.__dict__, "EXCLUSIONS", {excluded_rel: "合成排除項（僅供本測試）"})
     target = tmp_path / excluded_rel
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(_BAD_CANONICAL_REF, encoding="utf-8")

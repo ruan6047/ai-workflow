@@ -523,8 +523,8 @@ class IssueEventHistory:
     """自 Issue timeline 掃出的 escalation 帳歷史（唯讀投影）。
 
     ``all_attempt_ids`` 涵蓋**整條 timeline**（去重用）；其餘欄位只涵蓋
-    ``contract-baseline`` 事件**之後**的留言——review-escalation.md:276 的 cutover
-    語意：baseline 之前的歷史事件「維持原貌」，不追溯要求補欄。沒有 baseline 時
+    ``contract-baseline`` 事件**之後**的留言——review-escalation.md §5 逐字
+    「cutover 前歷史事件維持原貌」，不追溯要求補欄。沒有 baseline 時
     scope 即全部留言，於是任何一則讀不出帳的舊事件都會讓閘門 fail-closed。
     """
 
@@ -568,7 +568,8 @@ def build_issue_event_history(comments: Sequence[Mapping[str, Any]]) -> IssueEve
                 if found is None or found.attempt_id != attempt:
                     unknown.append(
                         f"attempt {attempt} 的 review event 沒有可讀的 escalation 帳事實"
-                        f"（{url}）；依 review-escalation.md:276 這是**未知**而非「不計數」"
+                        f"（{url}）；依 review-escalation.md §5「cutover 前歷史事件維持原貌」"
+                        f"這是**未知**而非「不計數」"
                     )
                 else:
                     facts.append(found)
@@ -643,7 +644,7 @@ def derive_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
 
     * R1-01：``preflight_passed`` 預設 ``true``——無依據卻以事實的語氣寫進事件流。
     * R2-01：改成「寫入者具結 ``true``」，而具結只驗非空字串——打字即依據。
-    * R3-01：改成三值 ``unknown``／``unavailable``——擴充了 §5:168 釘死為字面 ``true``
+    * R3-01：改成三值 ``unknown``／``unavailable``——擴充了 §5「Adapter 必填欄位」釘死為字面 ``true``
       的欄位；前三輪都在換一個值，沒有動「要不要寫」。
     * R4-01：改成「缺依據就不寫」，但把「有沒有依據」交給一個**讀留言內文**的讀取器
       （``review.preflight_basis_from_body``），於是任意四欄 YAML 即可解鎖，``event_url``
@@ -658,7 +659,7 @@ def derive_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
     故採本 repo 既有的處置形態（ai-workflow#39 §5 第 7 款面對恆真授權款時的作法）：**不寫出
     一條看似有檢查的條文，改把恆虛性導出成事件上的一個欄位**。代價明說且寫在事件裡：
     escalation 自動計數在承接卡落地前不可用（**包括本卡自己的三振門檻**），且該事件缺
-    §5:168 的 ``preflight_passed: true``，是一則不完整的 review event。
+    §5「Adapter 必填欄位」的 ``preflight_passed: true``，是一則不完整的 review event。
 
     **本函式刻意不掃留言**（``comments`` 不在簽章上）：能被留言影響的依據就不是導出值。
     """
@@ -668,9 +669,9 @@ def derive_preflight_basis(*, card_id: str, source_sha: str) -> PreflightBasis:
 def check_attempt_not_duplicated(history: IssueEventHistory, target_attempt_id: str) -> None:
     """寫入前的 ``attempt_id`` 去重（review-escalation.md §3：一個 attempt 一個識別符）。
 
-    必須擋在**寫入前**：``doctor.py:409-415`` 對重複 ``attempt_id`` 判
-    ``marker_quarantined``，而該隔離**沒有解除表示法**（歸 #30），寫下去就是製造一個
-    今天解不開的狀態。
+    必須擋在**寫入前**：``doctor.audit_review_channel`` 逐字「同一 attempt_id 出現」
+    那條隔離理由，對重複 ``attempt_id`` 判 ``marker_quarantined``，而該隔離**沒有解除
+    表示法**（歸 #30），寫下去就是製造一個今天解不開的狀態。
 
     邊界（無機械執行者的部分，誠實寫明）：去重只涵蓋**讀得出 marker** 的既有事件。
     一則受管轄但不合格的 marker 背後若藏著同一個 attempt，本檢查看不見它——那正是
@@ -717,7 +718,7 @@ def check_checkpoint_gate(
                 (
                     f"本 Issue timeline 有 {history.baseline_count} 則 contract-baseline 事件；"
                     "該 marker 是 one-shot cutover，啟用後再次出現必須 fail loud"
-                    "（review-escalation.md:276）"
+                    "（語意見 review-escalation.md §5「該 marker 為 one-shot cutover」）"
                 )
             ]
         )
@@ -727,7 +728,7 @@ def check_checkpoint_gate(
                 "escalation 帳無法自事件流重建，拒絕寫入（不得推定為不計數）："
                 + "；".join(history.unknown_reasons)
                 + "。處置：修好該留痕，或由需求方以 `wfcli contract-baseline` 明示 cutover "
-                "後重試——baseline 之前的事件依 review-escalation.md:276 維持原貌。"
+                "後重試——baseline 之前的事件依 review-escalation.md §5「cutover 前歷史事件維持原貌」。"
             ]
         )
 

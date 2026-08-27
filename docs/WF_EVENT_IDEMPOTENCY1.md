@@ -69,7 +69,7 @@ canonical 同行給出可用的一層：「本機可採**原子目錄鎖**；跨
 
 **鎖不持有任何 lifecycle 狀態。** 它只保護臨界區，不儲存意圖、不記錄進度。這一點必須明確，否則本機鎖會偷偷變成 §5 明文拒絕的本機狀態，違反 canonical `AI_WORKFLOW.md` §4.1「tmux 僅為可選 local adapter」與 §4.3「不得改用聊天、本機檔案或記憶暫代」（#16 §4.1 已詳述該推理，本檔不重述）。鎖目錄 runtime 必須 `.gitignore`。§2.3 允許鎖目錄攜帶**存活性 metadata**，該處另立劃界規則說明它為何不是本機狀態。
 
-> **誠實界線**：跨主機撞號仍只能偵測，不能預防。這與 `wfcli amend` 現行的「重讀比對縮窗、不宣稱 CAS」（`amend_cmd.py:411` 的註解已自承殘餘競態視窗）是同一誠實等級。**但同機這一層已從紀律升格為機制**，而實測中 resume 與人工並行都落在這一層。
+> **誠實界線**：跨主機撞號仍只能偵測，不能預防。這與 `wfcli amend` 現行的「重讀比對縮窗、不宣稱 CAS」（`amend_cmd.run` 逐字「與 set_item_body 之間仍有殘餘競態視窗」的註解已自承）是同一誠實等級。**但同機這一層已從紀律升格為機制**，而實測中 resume 與人工並行都落在這一層。
 
 ### 2.1 臨界區的內容是**固定**的，不是「至少包含」
 
@@ -153,7 +153,7 @@ event_id = uuid5(NS_WFCLI, canonical(target, card_id, verb, args, attempt_salt))
 ```
 
 - `NS_WFCLI`：固定的 UUID namespace 常數，凍結於實作，變更即等同全體事件重新編號。
-- `target`：**`resolve_target()` 解析後**的 `(owner, project, repo)` 三元組，**不是** `--owner`／`--project`／`--repo`／`--config` 四個原始旗標。這個區別是必要的而非潔癖：四個旗標是同一個目標的**四個來源**（`config.py:44`–`:50` 的優先序為 CLI flag > `--config` 檔 > 環境變數），`wfcli handoff --owner ruan6047` 與 `wfcli handoff --config f.json`（`f.json` 內 `owner` 為 `ruan6047`）**產生完全相同的事件**。若以原始旗標入鍵，兩者算出相異的鍵，於是第二次執行寫出重複事件——正是本卡要防的東西。故四個旗標一律**鍵外**（§4.1b），解析後的三元組直接入鍵。`repo` 為 `None`（draft issue 模式）時以零長度表示，與空字串 repo 不同型別故不碰撞。
+- `target`：**`resolve_target()` 解析後**的 `(owner, project, repo)` 三元組，**不是** `--owner`／`--project`／`--repo`／`--config` 四個原始旗標。這個區別是必要的而非潔癖：四個旗標是同一個目標的**四個來源**（`config.py` 模組 docstring 逐字「優先序（高到低）：CLI flag > --config 指定的設定檔 > 環境變數 > 內建預設。」），`wfcli handoff --owner ruan6047` 與 `wfcli handoff --config f.json`（`f.json` 內 `owner` 為 `ruan6047`）**產生完全相同的事件**。若以原始旗標入鍵，兩者算出相異的鍵，於是第二次執行寫出重複事件——正是本卡要防的東西。故四個旗標一律**鍵外**（§4.1b），解析後的三元組直接入鍵。`repo` 為 `None`（draft issue 模式）時以零長度表示，與空字串 repo 不同型別故不碰撞。
 - `args`：該動詞**其餘**的全部使用者輸入，依 §4 逐欄位型別正規化後，以「欄位名 ‖ 長度 ‖ 位元組」串接。**長度前綴不可省**——沒有它，`(a="x", b="yz")` 與 `(a="xy", b="z")` 會串出相同位元組（§4.5 探針末段有可重跑的反例）。
 - `attempt_salt`：**旗標缺席時為零長度**；僅在操作者顯式帶 `--new-attempt <標籤>` 時取該標籤。它與 `args` 各欄位一樣是有型別的輸入，型別＝**嘗試標籤**，canonical bytes 定義見 §4.5，語意見 §5.3。
 - **不含鏈尖端、不含時鐘、不含 `state_version`。**
@@ -194,7 +194,7 @@ event_id = uuid5(NS_WFCLI, canonical(target, card_id, verb, args, attempt_salt))
 
 | 引數 | 對事件內容的實際貢獻 | 處置 |
 |---|---|---|
-| `--worktree`（`assign`，**required**） | `format_branch_worktree(args.branch, args.worktree)`（`card.py:67`–`:70`，純字串內插，無檔案系統存取）→ 逐字寫入 `分支worktree` 欄位（`assign_cmd.py:113`／`:115`） | **記錄型路徑**：以字面字串入鍵 |
+| `--worktree`（`assign`，**required**） | `format_branch_worktree(args.branch, args.worktree)`（`card.format_branch_worktree`，純字串內插，無檔案系統存取）→ 逐字寫入 `分支worktree` 欄位（`assign_cmd.run` 的 `branch_worktree = format_branch_worktree(` 那一段） | **記錄型路徑**：以字面字串入鍵 |
 | `--config`（六個動詞皆有） | 只供給 `resolve_target` 的 `(owner, project, repo)`（`config.py:44`–`:50`），本身不寫入任何欄位 | **鍵外**；解析後三元組入鍵（§3.3） |
 | `--owner`／`--project`／`--repo`（六個動詞皆有） | 與 `--config` 同為目標解析的四個來源之一 | **鍵外**；同上 |
 | `--repo-path`（`handoff`） | 僅唯讀驗證 `source_sha` 該 commit 存在（`handoff_cmd.py:77`–`:78`），不寫入事件內容 | **鍵外** |
@@ -202,7 +202,7 @@ event_id = uuid5(NS_WFCLI, canonical(target, card_id, verb, args, attempt_salt))
 
 `--out-dir`／`--spec-dir`／`repo_root` 分別只存在於 `snapshot`／`open`／`doctor`——`open` 明示不承接（§8），`snapshot`／`doctor` 唯讀且不產生 lifecycle 事件，三者永不進 `event_id`。**這個豁免依據不是假設，是 §4.4 分類器的一條斷言**：任一者若出現在承接動詞上，檢查即紅（負向測試 D）。
 
-**目標解析四旗標的豁免依據同樣經過查證，不是推定**。該豁免只有在「四個旗標對事件內容的影響**全部**經由 `resolve_target` 的回傳值」時才成立——若任一動詞另外直接讀 `args.owner`／`args.repo` 去寫欄位，那條路徑就繞過了鍵。機械核對（`grep -rn "args\.owner\|args\.repo\b\|args\.project\|args\.config" cli/src/wf_cli/commands/`）：六個承接動詞對這四個名字**只有一處出現**，即 `resolve_target(...)` 的引數列（`review_cmd.py:178`–`:179`、`amend_cmd.py:273`–`:274`、`handoff_cmd.py:86`–`:87`、`assign_cmd.py:64`–`:65`、`deploy_declare_cmd.py:70`–`:71`、`deploy_state_cmd.py:86`–`:87`）；其餘直接取用只出現在 `doctor_cmd.py` 與 `snapshot_cmd.py`，兩者皆不承接且唯讀。實作卡須把這條核對一併落為 CI，理由與負向測試 D 相同：**豁免依據是關於碼的事實宣稱，事實會變，宣稱就需要執行者。**
+**目標解析四旗標的豁免依據同樣經過查證，不是推定**。該豁免只有在「四個旗標對事件內容的影響**全部**經由 `resolve_target` 的回傳值」時才成立——若任一動詞另外直接讀 `args.owner`／`args.repo` 去寫欄位，那條路徑就繞過了鍵。機械核對（`grep -rn "args\.owner\|args\.repo\b\|args\.project\|args\.config" cli/src/wf_cli/commands/`）：六個承接動詞對這四個名字**只有一處出現**，即 `resolve_target(...)` 的引數列（六個 `commands/*_cmd.py` 各自的 `run`：`review_cmd`、`amend_cmd`、`handoff_cmd`、`assign_cmd`、`deploy_declare_cmd`、`deploy_state_cmd`，每檔 `resolve_target(` 皆恰一處）；其餘直接取用只出現在 `doctor_cmd.py` 與 `snapshot_cmd.py`，兩者皆不承接且唯讀。實作卡須把這條核對一併落為 CI，理由與負向測試 D 相同：**豁免依據是關於碼的事實宣稱，事實會變，宣稱就需要執行者。**
 
 > **裁定：承接的六個動詞裡，沒有任何一個引數需要檔案系統路徑正規化。** 因此本卡**不定義**、也**不引用**任何 CLI 路徑正規化器；`event_id` 的位元組來源不再有任何一部分取自 #24。
 
@@ -236,7 +236,7 @@ event_id = uuid5(NS_WFCLI, canonical(target, card_id, verb, args, attempt_salt))
 
 - `assign_cmd.py:58` 宣告 `--status`，預設 `🚧進行中`，無 `choices`；`:116` 將其原樣送進 `set_field_value(..., fields["交付狀態"], args.status)`。
 - `handoff_cmd.py:57` 宣告 `--status` 為「覆寫依 next-stage 推導出的交付狀態」，無 `choices`；`:100` 取值後於 `:137` 寫入同一欄位。
-- `amend_cmd.py:88` 的 `--db-scope` 同型：`open` 對 `--db-scope` 宣告了 `choices`，`amend` 沒有。同一個邏輯欄位，兩個動詞的驗證強度不一致。
+- `amend_cmd.add_parser` 的 `--db-scope` 同型：`open` 對 `--db-scope` 宣告了 `choices`，`amend` 沒有。同一個邏輯欄位，兩個動詞的驗證強度不一致。
 
 後果很具體：**以 argparse 宣告為分類鍵的實作，會把 `--status` 判為自由文字**，於是套用 NFC 正規化——而 **NFC 不會移除 `U+FE0F`**。`--status "🚧進行中<U+FE0F>"` 因此會通過，並與不含變體選擇符的同一狀態算出**不同的 `event_id`**。這正是卡面驗證第 2 條要擋的情形，且它會因終端差異而不可重現。
 
@@ -713,7 +713,7 @@ exit=0
 
 **本卡另外指名一條由碼查出的硬約束**，它會直接限制 #16 的選項，因此在這裡先講清楚：
 
-> **既有的審核事件 marker（`v1`）不能直接載 `event_id`。** `templates/handoff-contract.md` §3.1.3 明文：「**鍵集合封閉**：`v1` 只有上列三鍵（`card_id`／`source_sha`／`attempt_id`）。出現任何未定義鍵即依 §3.1.4 處理……**要擴充欄位必須升版本**」，且 `doctor.py:168`–`:171` 的 `_CONFORMANT_MARKER_RE` 以固定順序、單一空白、封閉三鍵的整條 regex 比對，**多一個鍵即不匹配 → 該卡停機**。
+> **既有的審核事件 marker（`v1`）不能直接載 `event_id`。** `templates/handoff-contract.md` §3.1.3 明文：「**鍵集合封閉**：`v1` 只有上列三鍵（`card_id`／`source_sha`／`attempt_id`）。出現任何未定義鍵即依 §3.1.4 處理……**要擴充欄位必須升版本**」，且 `doctor._CONFORMANT_MARKER_RE` 以固定順序、單一空白、封閉三鍵的整條 regex 比對，**多一個鍵即不匹配 → 該卡停機**。
 >
 > 因此「在既有 marker 上加一個 `event_id=` 欄」**不是低成本選項，而是會讓每一張卡當場停機的改動**。要走這條路必須升版本並改契約（紅線 PR）。
 >
@@ -725,7 +725,7 @@ exit=0
 
 步驟 3 命中既有事件時，`wfcli` 以**非零但可辨識的退出碼**結束，**不寫入任何狀態**，訊息明指「已存在，視為重試；若確實要再寫一筆請帶 `--new-attempt <標籤>`」。
 
-**退出碼須全域保留，不可沿用既有碼。** 基線 `7451b72` 的退出碼 `0`–`6` 與 `130` 皆已佔用，且**語意逐指令重疊**——`4` 在 `assign` 是資源宣告衝突（`assign_cmd.py:111`）、在 `review` 是拒收（`review_cmd.py:152`）、在 `handoff` 是狀態守衛（`handoff_cmd.py:109`）、在 `deploy-declare` 是前置狀態不符（`deploy_declare_cmd.py:104`）。腳本要區分「真的失敗」與「已經做過了」，就需要一個**跨動詞語意一致**的碼。
+**退出碼須全域保留，不可沿用既有碼。** 基線 `7451b72` 的退出碼 `0`–`6` 與 `130` 皆已佔用，且**語意逐指令重疊**——`4` 在 `assign` 是資源宣告衝突、在 `review` 是拒收、在 `handoff` 是狀態守衛、在 `deploy-declare` 是前置狀態不符（四處皆為各自 `commands/*_cmd.py` 的 `run` 內 `return 4`）。腳本要區分「真的失敗」與「已經做過了」，就需要一個**跨動詞語意一致**的碼。
 
 > **裁定：保留退出碼 `7` 專用於 `already_exists`，全動詞一致，且不得再賦予其他語意。**
 
@@ -967,17 +967,17 @@ exit=0
 | `deploy-declare` | `add_issue_comment`(:122) → 部署狀態(:134) → Status(:137) | 3 |
 | `deploy-state` | `add_issue_comment`(:141) → 部署狀態(:156) → Status(:157) → owner(:158) → 最後交接(:159) | 5 |
 
-**A 類共 23 個**，可由列舉輸出直接對帳：靜態點 32 − `open` 的 5 個（`:133`／`:148`／`:149`／`:152`／`:171`，不承接）− 其餘四個 `ensure_fields` 呼叫點（`amend:278`／`assign:69`／`handoff:91`／`review:193`）＝ 23，逐動詞加總 3+3+5+4+3+5 亦為 23。數字與前一版一致；改變的是它現在由腳本產生而非人工列出。
+**A 類共 23 個**，可由列舉輸出直接對帳：靜態點 32 − `open` 的 5 個（`open_cmd.run` 內建立遠端物件那串呼叫，不承接）− 其餘四個動詞的 `ensure_fields` 呼叫點（`amend`／`assign`／`handoff`／`review`）＝ 23，逐動詞加總 3+3+5+4+3+5 亦為 23。數字與前一版一致；改變的是它現在由腳本產生而非人工列出。
 
 **B 類：專案層欄位建立前綴**（`ensure_fields`）。前一版對它的三項描述**逐項修正**：
 
 | 前一版的宣稱 | 列舉輸出顯示的事實 | 後果 |
 |---|---|---|
-| 「**所有**寫入動詞共用」 | 呼叫者只有 `amend`(:278)、`assign`(:69)、`handoff`(:91)、`open`(:133)、`review`(:193)。**`deploy-declare` 與 `deploy-state` 不呼叫它**——兩者走唯讀 `list_fields` 並在欄位缺漏時直接失敗（`deploy_declare_cmd.py:79`、`deploy_state_cmd.py:95`） | 「共用前綴」的完整閉包宣稱不成立；deploy-* 的失敗模式與其他四個動詞**不同**（欄位不存在時 deploy-* 直接錯，其他四個會補建），矩陣須分開 |
-| 「**一個**注入點」 | `field-create` 在 `for name, ... in FIELD_SPECS.items()` 迴圈內（`project.py:157`–`:168`），**每個缺欄位一次獨立遠端寫入**。`FIELD_SPECS` 於基線有 **13** 個欄位（機械核對：`uv run python -c "import sys;sys.path.insert(0,'cli/src');from wf_cli.project import FIELD_SPECS;print(len(FIELD_SPECS))"` → `13`）→ 每次呼叫 **0–13** 次寫入，各自可獨立失敗 | 「重試應為無操作」只在**全部 13 次都完成**時成立；中途回應遺失會留下部分建立的欄位集合 |
+| 「**所有**寫入動詞共用」 | 呼叫者只有 `amend`、`assign`、`handoff`、`open`、`review` 五個動詞（呼叫點全部落在各自 `commands/*_cmd.py` 的 `run` 內。量法：對 `cli/src/wf_cli/commands/` 跑 `grep -n 'ensure_fields('` 後逐筆排除註解行——`amend` 有一筆出現在註解裡，⛔ 不得直接用 `grep -c` 的數字）。**`deploy-declare` 與 `deploy-state` 不呼叫它**——兩者走唯讀 `list_fields` 並在欄位缺漏時直接失敗（`deploy_declare_cmd.run`／`deploy_state_cmd.run` 各自唯一的 `list_fields(` 呼叫） | 「共用前綴」的完整閉包宣稱不成立；deploy-* 的失敗模式與其他四個動詞**不同**（欄位不存在時 deploy-* 直接錯，其他四個會補建），矩陣須分開 |
+| 「**一個**注入點」 | `field-create` 在 `project.ensure_fields` 的 `for name, (ftype, options) in FIELD_SPECS.items()` 迴圈內，**每個缺欄位一次獨立遠端寫入**。`FIELD_SPECS` 於基線有 **13** 個欄位（機械核對：`uv run python -c "import sys;sys.path.insert(0,'cli/src');from wf_cli.project import FIELD_SPECS;print(len(FIELD_SPECS))"` → `13`）→ 每次呼叫 **0–13** 次寫入，各自可獨立失敗 | 「重試應為無操作」只在**全部 13 次都完成**時成立；中途回應遺失會留下部分建立的欄位集合 |
 | 「天然冪等」 | 冪等來自 `if name in existing: continue` 的**讀後跳過**，即另一個 read-modify-write。序列重跑下成立；**並行下不成立**——兩個程序可同時讀到「欄位不存在」而各自送出 `field-create` | 需要 §2.2 的 `L_project` 鎖。且該鎖不能是卡層鎖，因為併發的兩張卡屬同一專案 |
 
-另外 `set_item_body` 在 helper 內有**兩條**互斥的寫入路徑（DraftIssue 走 `project item-edit`:318、real issue 走 `issue edit`:322）。單次執行只走一條，故它仍是一個注入點，但**矩陣須覆蓋兩條分支**——只測 real issue 會漏掉 draft item 路徑。
+另外 `set_item_body` 在 helper 內有**兩條**互斥的寫入路徑（`project.set_item_body` 內：DraftIssue 走 `project item-edit`、real issue 走 `issue edit`）。單次執行只走一條，故它仍是一個注入點，但**矩陣須覆蓋兩條分支**——只測 real issue 會漏掉 draft item 路徑。
 
 **注入點總計：A 類 23 個 ＋ B 類 `ensure_fields` 的 0–13 次 field-create（四個承接動詞各一次呼叫）＋ `set_item_body` 的 2 條分支。** 不再宣稱一個整數的「全部注入點數」——因為 B 類的次數依專案既有欄位而變，**把可變的次數寫成固定的 24 正是前一版錯的地方**。
 
@@ -1171,7 +1171,7 @@ print("\n注意：行序 ≠ 執行序（條件分支與提前返回會改變實
 
 **本卡不涵蓋 `open`，且不宣稱任何機制能解決它。**
 
-`open` 是唯一會**建立**遠端物件的動詞（`open_cmd.py:148` `create_repo_issue` → `:149` `add_item_to_project` → `:171` 逐欄寫入）。`create_repo_issue` 成功但回應遺失時：
+`open` 是唯一會**建立**遠端物件的動詞（`open_cmd.run` 內依序 `create_repo_issue(` → `add_item_to_project(` → 逐欄寫入）。`create_repo_issue` 成功但回應遺失時：
 
 - CLI 手上**沒有任何 Issue URL 或 number**，無從回頭讀既有事件流；
 - `event_id` 的材料裡 `card_id` 是使用者給的，**無法反向定位那張已建立的 Issue**。
@@ -1197,7 +1197,7 @@ print("\n注意：行序 ≠ 執行序（條件分支與提前返回會改變實
 | `AI_WORKFLOW.md` §4.1「remote coordination adapter 是唯一 lifecycle event writer」 | **不變**。本設計不新增 writer，只規範既有 writer 的取號與重試行為 |
 | `FIELD_SPECS`（`project.py:28`）為凍結欄位 schema | **引用為枚舉的權威來源**（§4.1），不自訂枚舉清單。§4.3 的裁定是「以該表為分類鍵」，強化而非覆蓋它 |
 | `handoff-contract.md:16` `event_id` 寫為 `<UUID>` | **需修訂**：UUIDv5 仍是合法 UUID，格式相容，但「隨機」的隱含語意須改為「由 §3.3 決定性導出」。此為契約修訂，走紅線 PR |
-| `handoff-contract.md` §3.1.3 審核事件 marker `v1`：**鍵集合封閉**，「要擴充欄位必須升版本」 | **遵守，且據以排除一個選項**（§5.1.1）：`event_id` **不得**以加欄方式搭上 `v1` marker——`doctor.py:168`–`:171` 的整條 regex 多一鍵即不匹配，後果是該卡停機。若回讀契約選擇走 marker，須升版本並改契約（實作卡 D）。本卡不選定表示法，只排除這條會靜默傷卡的捷徑 |
+| `handoff-contract.md` §3.1.3 審核事件 marker `v1`：**鍵集合封閉**，「要擴充欄位必須升版本」 | **遵守，且據以排除一個選項**（§5.1.1）：`event_id` **不得**以加欄方式搭上 `v1` marker——`doctor._CONFORMANT_MARKER_RE` 的整條 regex 多一鍵即不匹配，後果是該卡停機。若回讀契約選擇走 marker，須升版本並改契約（實作卡 D）。本卡不選定表示法，只排除這條會靜默傷卡的捷徑 |
 
 **需要契約修訂的是最後兩列**，其餘皆為補完。第二列是**排除性結論**（指出一條不能走的路），不是本卡要求的修訂——是否真的要升版本，取決於回讀契約最後選了哪種表示法。
 
@@ -1220,7 +1220,7 @@ print("\n注意：行序 ≠ 執行序（條件分支與提前返回會改變實
 
 > **裁定：本卡與 #24 之間，`event_id` 位元組來源方向的相依**已解除**。** §4.1b 已證明承接的六個動詞裡沒有任何引數需要檔案系統路徑正規化，故本卡不引用 #24 的任何正規化產物，也不自訂替代品。
 
-**這不代表兩卡無關**：#24 的資源宣告互斥語意仍然是 `assign` 能不能派工的前置（`assign_cmd.py:91` 的交集檢查），本卡的 §2.2 `L_project` 與 #24 的宣告互斥也解決不同層次的問題（前者是同機程序互斥，後者是卡與卡的資源互斥）。解除的只是**路徑正規化這一條介面**。
+**這不代表兩卡無關**：#24 的資源宣告互斥語意仍然是 `assign` 能不能派工的前置（`assign_cmd.run` 的 `overlap = find_conflicts(` 交集檢查），本卡的 §2.2 `L_project` 與 #24 的宣告互斥也解決不同層次的問題（前者是同機程序互斥，後者是卡與卡的資源互斥）。解除的只是**路徑正規化這一條介面**。
 
 **§4.2 的降級路徑仍然保留且仍然是本卡自己的**：未來若有新引數真的需要檔案系統正規化（今天沒有），它落回「無規範化定義 → 該動詞退出冪等保護 → stderr 明示」。這條路徑不依賴任何外部卡。
 

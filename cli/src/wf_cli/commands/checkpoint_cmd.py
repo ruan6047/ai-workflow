@@ -287,12 +287,12 @@ def run_contract_baseline(args: argparse.Namespace) -> int:
         fetch_issue_comments(runner, target.repo, item.issue_number)
     )
     if history.baseline_count:
-        # review-escalation.md:276：「該 marker 為 one-shot cutover……啟用後再次出現
-        # 必須 fail loud」。
+        # review-escalation.md §5「該 marker 為 one-shot cutover」：逐字「該 marker 為
+        # one-shot cutover……啟用後再次出現必須 fail loud」。
         print(
             f"[contract-baseline] 拒絕：本 Issue 已有 {history.baseline_count} 則 contract-baseline "
             "事件。該 marker 是 one-shot cutover，啟用後再次出現必須 fail loud"
-            "（review-escalation.md:276）。",
+            "（語意見 review-escalation.md §5「該 marker 為 one-shot cutover」）。",
             file=sys.stderr,
         )
         return 2

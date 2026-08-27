@@ -437,7 +437,8 @@ def test_escalation_facts_round_trip_through_the_rendered_comment():
 
 
 def test_a_review_event_without_the_facts_block_is_unknown_not_non_counting():
-    """review-escalation.md:276 的 cutover 語意：baseline 之前一律未知。"""
+    """cutover 語意：baseline 之前一律未知（語意見 review-escalation.md §5
+    「cutover 前歷史事件維持原貌」）。"""
     legacy = {
         "body": (
             "<!-- " + _MARKER_V1 + f" card_id=CARD-A source_sha={SHA_A} "
@@ -1009,7 +1010,7 @@ def test_unavailable_block_stamps_the_binding_and_omits_the_two_asserting_keys()
 
 
 def test_written_block_asserts_preflight_passed_true_as_a_literal():
-    """§5:168 把該欄釘為字面 true；依據成立時寫出來的事件必須逐字如此。"""
+    """§5「Adapter 必填欄位」把該欄釘為字面 true；依據成立時寫出來的事件必須逐字如此。"""
     report = _report(findings=[_finding()])
     block = render_escalation_facts_block(
         attempt=f"CARD-A-e0-{SHA_A}",
@@ -1226,7 +1227,7 @@ _MUTANTS = [
     (
         "無依據時仍寫出 preflight_passed: true（R1-01 的偽造，換個位置回來）",
         "wf_cli/review.py",
-        '    if asserted:\n        # §5:168 的字面 true，且**只在依據成立時**才寫得出來。\n        lines.append("preflight_passed: true")',
+        '    if asserted:\n        # §5「Adapter 必填欄位」的字面 true，且**只在依據成立時**才寫得出來。\n        lines.append("preflight_passed: true")',
         '    if True:\n        lines.append("preflight_passed: true")',
         (
             "r = report()\n"

@@ -40,7 +40,7 @@
 §3 第 1 款（preflight）**不是閘門**，是一個由 writer 加蓋到事件上的導出值
 （``preflight_basis_binding``）。今天恆為 ``structurally-unavailable``：本 repo 沒有受管轄的
 preflight pass event writer，也沒有該事件的可驗證格式，故該款無從成立，本指令寫出的每一則
-裁決都帶 ``escalation_account: not-asserted``（不對帳作斷言），並**缺** §5:168 的
+裁決都帶 ``escalation_account: not-asserted``（不對帳作斷言），並**缺** §5「Adapter 必填欄位」的
 ``preflight_passed: true``——已知且刻意記錄的 schema 落差。
 
 這是 WF-22-CLI4-R4-01 的處置＋需求方 2026-08-12 的裁定：上一輪把「有沒有依據」交給一個讀
@@ -55,7 +55,7 @@ preflight pass event writer，也沒有該事件的可驗證格式，故該款�
    對重複 attempt 判 ``marker_quarantined``，而該隔離的解除表示法未定義（#30）。
 2. **帳可重建**：cutover（``contract-baseline``）之後的留痕若有讀不懂的 marker，或
    review event 缺結構化 counts 事實，一律拒絕；**未知不得推定為不計數**
-   （review-escalation.md:276）。
+   （語意見 review-escalation.md §5「cutover 前歷史事件維持原貌」）。
 3. **checkpoint 漏建**：上一個可計數 attempt 序位 ≥3 卻找不到對應 checkpoint 即拒。
 """
 
@@ -428,7 +428,7 @@ def run(args: argparse.Namespace) -> int:
             "未斷言 attempt。本 repo 沒有受管轄的 preflight pass event writer 與可驗證格式，"
             "故 §3 第 1 款無從成立——自動計數（**含三振門檻**）在承接卡落地前不可用，"
             "請勿把「沒有可計數 attempt」讀成「執行者沒有累計」。"
-            "本事件另缺 review-escalation.md §5:168 的 preflight_passed: true，"
+            "本事件另缺 review-escalation.md §5「Adapter 必填欄位」的 preflight_passed: true，"
             "屬已知且刻意記錄的 schema 落差（登記於 docs/CONSUMER_CONFORMANCE.md）。",
             file=sys.stderr,
         )

@@ -389,7 +389,7 @@ awk 段是排除本節自身，否則本表的說明文字會被自己算進去�
 |---|---|---|---|
 | Discovery Gate | §3、§3.1 | ⛔ 無 | ⛔ **無** |
 | Design Gate | §3 | ⛔ 無 | ⛔ **無，而且連記錄的地方都沒有**：卡面 `Design` 區塊在 `docs/CONTRACT_TOOL_RECONCILE.md` 的卡面欄位表判 `absent`（open 渲染=否、amend 可改=否） |
-| Plan Gate／spec 基線 | §3 | `wfcli contract-baseline` | ⚠️ **部分**：`checkpoint_cmd.run_contract_baseline` 的 `if history.baseline_count:` → `return 2`（one-shot cutover，`review-escalation.md:276`）。⛔ 它擋的是**重複 baseline**，不是「Plan 有沒有做」 |
+| Plan Gate／spec 基線 | §3 | `wfcli contract-baseline` | ⚠️ **部分**：`checkpoint_cmd.run_contract_baseline` 的 `if history.baseline_count:` → `return 2`（one-shot cutover，`review-escalation.md` §5「該 marker 為 one-shot cutover」）。⛔ 它擋的是**重複 baseline**，不是「Plan 有沒有做」 |
 | 規劃閘門三級制 T3 的「需求方批註放行」 | §3.1 | ⛔ 無 | ⛔ **無，且刻意不做**：`docs/ROADMAP.md` §1——本 repo 全部角色共用同一個 GitHub 帳號 `ruan6047`，該節逐字禁止「寫看起來在驗證身分、實際恆真的條文」 |
 | 進 `📥Backlog` 的前身狀態 | §3.1 | `handoff --next-stage backlog` | ✅ **有**（T2 以上）：見表一第 4 列。⛔ T0／T1 無：見表一第 5 列 |
 | review preflight | §3、`review-escalation.md` §3 第 1 款 | `preflight-failed` 事件 | ⛔ **無 writer，且今天結構上不可能有**：`validation.derive_preflight_basis` **恆回** `PREFLIGHT_NOT_ESTABLISHED`（該函式 docstring 逐字寫明本 repo 今天恆為 not-established），成因是沒有受管轄的 preflight pass event writer，且本 repo 唯一可能的通道訊號（留言 author）**無鑑別力**——全部角色共用同一帳號。恆虛性以 `preflight_basis_binding: structurally-unavailable` 加蓋進事件而非拒寫 |
