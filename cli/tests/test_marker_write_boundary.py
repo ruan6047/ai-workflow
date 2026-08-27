@@ -1560,6 +1560,34 @@ def test_mutation_removing_the_db_scope_sync_lets_a_self_contradictory_card_thro
     assert "db_scope 與資源宣告內的 db_scope 不一致" in str(exc.value)
 
 
+def test_a_card_whose_db_scope_carriers_already_disagree_stays_amendable():
+    """⚠️ **守衛⛔ 不得變成故障源**：改動前就不一致的卡仍必須改得動。
+
+    ⭐ **這一類今天在真實看板上有實例，⛔ 不是假想**。量法（⛔ 不釘數字，數字會漂）：
+    對每張卡跑一次 ``card.read_db_scope_agreement``，數「訊息含『db_scope 與資源宣告內的
+    db_scope 不一致』」的張數。2026-08-27T18:23+08:00 於 205 張上實跑得 **2 張**——
+    ``DATA-BOX-REVISION-SNAPSHOT1``（標頭 ``schema`` vs JSON ``none``，真值不同）與
+    ``UX-HOME-LIVE-STRIP1``（標頭在值後面接了一段說明文字，讀取端分不出那是註解）。
+    同時點對 ``DATA-BOX-REVISION-SNAPSHOT1`` 的真實 body 實跑 ``append_log_line`` 與
+    ``amend_core_pain``，兩者皆通過。
+
+    ⛔ **不得由此推出「那兩張受保護」**——它們不受保護，與差分探測的預壞控制組同一條分界。
+    """
+    body = render_issue_body(make_card(db_scope="none"))
+    already = body.replace("- DB：db_scope=none", "- DB：db_scope=write", 1)
+    with pytest.raises(AmendError):
+        card_module_read_db_scope(already)          # 寫入前就讀不回
+    # ⇒ 合法修訂仍寫得進去（差分探測依定義跳過這條路徑）。
+    assert amend_core_pain(already, "改過的痛點")[0] != already
+    assert append_log_line(already, f"{_LOG_TS} review by wf-cli → APPROVE（🏁完成）")
+
+
+def card_module_read_db_scope(body: str) -> str:
+    from wf_cli.card import read_db_scope_agreement
+
+    return read_db_scope_agreement(body)
+
+
 def test_the_cross_field_reader_is_derived_into_the_read_path_set():
     """⭐ 跨欄位讀取端**是被導出的**，⛔ 不是在某個 amend 函式裡手接的。
 
