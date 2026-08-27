@@ -199,7 +199,7 @@ LC_CTYPE="POSIX"    （其餘 LC_* 全為 POSIX）
 是 PM 依 #52 查核者的 disposition 加上去的——**正是 §5 禁止的形狀**（由 disposition
 直接決定開卡與擴大射程）。
 
-⚠️ **#9 的已知不合規**：它寫出的每一則 review event 缺 `review-escalation.md` §5:168 的
+⚠️ **#9 的已知不合規**：它寫出的每一則 review event 缺 `review-escalation.md` §5「Adapter 必填欄位」的
 `preflight_passed: true`。事件、Log、stderr 三面已載明，但 `CONSUMER_CONFORMANCE.md`
 的登記不在其寫入集。依 §4 判準「會不會讓留痕重建不出來」判為**不會**（欄位缺席本身有留痕），
 故驗收，缺登記轉 Backlog。**這是 §4 的第一次套用。**
@@ -316,7 +316,7 @@ Issue 保留其 R1 兩條 finding 的紀錄。
 tip 不是 main 的祖先。PM 自己多驗一次才沒照它的建議刪。**這與 `WF-CLEANUP-SQUASH-AWARE1`（#78）
 是同一類問題的另一面**——一個過寬、一個過嚴。#78 落地時應一併檢視。
 
-**三、`wfcli review` 寫出的每一則事件都缺 `review-escalation.md` §5:168 的 `preflight_passed: true`。**
+**三、`wfcli review` 寫出的每一則事件都缺 `review-escalation.md` §5「Adapter 必填欄位」的 `preflight_passed: true`。**
 這是 #9 裁定的直接後果，事件／Log／stderr 三面已載明，但 `docs/CONSUMER_CONFORMANCE.md`
 的登記**沒做**（不在 #9 的寫入集）。
 

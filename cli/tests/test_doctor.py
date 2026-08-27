@@ -1349,6 +1349,13 @@ def test_rendered_report_refuses_to_claim_it_blocks_anything(sandbox_repo):
 # ⚠️ 誠實界線：真實那四行裡只有兩行帶完整的 `LEGACY_AUTHORITY_NOTE_MARKER`，另兩行
 # 只引到前半句「已逐字核對」。夾具一律用完整 marker，是**刻意取較嚴的情形**——
 # 那才真正考驗位置錨；但因此夾具是照形狀重建的，不是那四行的逐字複本。
+#
+# ⚠️ 夾具原本在這兩處帶 `amend_cmd.py` 的**行號**，2026-08-27 改成免行號的指法。
+# **這是刻意的**：判定只吃 `LEGACY_AUTHORITY_NOTE_MARKER` 與「授權」欄位錨，那個位置
+# 字串在斷言上不承重（把它整段刪掉三條參數化仍全綠）；而它會腐爛——`aiwf#141` 的
+# 分支實測就讓那個行號指到空行。⛔ 不得由此推出「夾具可以隨意改寫」：形狀（沒有
+# 授權欄卻帶著舊 marker 的三種行）必須維持，那才是這三條在測的東西。
+# ⛔ 也不得在本註解裡把舊行號寫回來——寫回來它就又是一個會爛的指標。
 
 _OLD_NOTE = f"（GitHub comment author 已逐字核對，{LEGACY_AUTHORITY_NOTE_MARKER}）"
 _NEW_NOTE = (
@@ -1385,13 +1392,13 @@ def test_new_wording_authority_note_is_not_reported():
     [
         (
             "卡的痛點正文（#62 本人）",
-            f"- **痛點**：amend_cmd.py:507 無條件輸出常數字面「GitHub comment author "
+            f"- **痛點**：`amend_cmd` 的授權欄渲染無條件輸出常數字面「GitHub comment author "
             f"已逐字核對，{LEGACY_AUTHORITY_NOTE_MARKER}」到授權欄。",
         ),
         (
             "--acceptance amend 的原值引用（#62）",
             "- 2026-08-16T10:40:37+08:00 amend by wf-cli（op 05cf6174）→ 驗收條件："
-            f"原值「[ ] 移除 amend_cmd.py:507 那句「…{LEGACY_AUTHORITY_NOTE_MARKER}」」"
+            f"原值「[ ] 移除 `amend_cmd` 授權欄那句「…{LEGACY_AUTHORITY_NOTE_MARKER}」」"
             "→ 新值「[ ] 改寫措辭」；理由 需求方裁定。",
         ),
         (
