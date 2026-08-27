@@ -973,7 +973,7 @@ exit=0
 
 | 前一版的宣稱 | 列舉輸出顯示的事實 | 後果 |
 |---|---|---|
-| 「**所有**寫入動詞共用」 | 呼叫者只有 `amend`、`assign`、`handoff`、`open`、`review` 五個動詞（各自 `commands/*_cmd.py` 的 `run` 內，機械核對：`grep -c 'ensure_fields('` 對 `assign`／`handoff`／`open`／`review` 皆為 1，對 `amend` 為 3——1 個 import ＋ 註解內提及 ＋ 2 個實呼叫）。**`deploy-declare` 與 `deploy-state` 不呼叫它**——兩者走唯讀 `list_fields` 並在欄位缺漏時直接失敗（`deploy_declare_cmd.run`／`deploy_state_cmd.run` 各自唯一的 `list_fields(` 呼叫） | 「共用前綴」的完整閉包宣稱不成立；deploy-* 的失敗模式與其他四個動詞**不同**（欄位不存在時 deploy-* 直接錯，其他四個會補建），矩陣須分開 |
+| 「**所有**寫入動詞共用」 | 呼叫者只有 `amend`、`assign`、`handoff`、`open`、`review` 五個動詞（呼叫點全部落在各自 `commands/*_cmd.py` 的 `run` 內。量法：對 `cli/src/wf_cli/commands/` 跑 `grep -n 'ensure_fields('` 後逐筆排除註解行——`amend` 有一筆出現在註解裡，⛔ 不得直接用 `grep -c` 的數字）。**`deploy-declare` 與 `deploy-state` 不呼叫它**——兩者走唯讀 `list_fields` 並在欄位缺漏時直接失敗（`deploy_declare_cmd.run`／`deploy_state_cmd.run` 各自唯一的 `list_fields(` 呼叫） | 「共用前綴」的完整閉包宣稱不成立；deploy-* 的失敗模式與其他四個動詞**不同**（欄位不存在時 deploy-* 直接錯，其他四個會補建），矩陣須分開 |
 | 「**一個**注入點」 | `field-create` 在 `project.ensure_fields` 的 `for name, (ftype, options) in FIELD_SPECS.items()` 迴圈內，**每個缺欄位一次獨立遠端寫入**。`FIELD_SPECS` 於基線有 **13** 個欄位（機械核對：`uv run python -c "import sys;sys.path.insert(0,'cli/src');from wf_cli.project import FIELD_SPECS;print(len(FIELD_SPECS))"` → `13`）→ 每次呼叫 **0–13** 次寫入，各自可獨立失敗 | 「重試應為無操作」只在**全部 13 次都完成**時成立；中途回應遺失會留下部分建立的欄位集合 |
 | 「天然冪等」 | 冪等來自 `if name in existing: continue` 的**讀後跳過**，即另一個 read-modify-write。序列重跑下成立；**並行下不成立**——兩個程序可同時讀到「欄位不存在」而各自送出 `field-create` | 需要 §2.2 的 `L_project` 鎖。且該鎖不能是卡層鎖，因為併發的兩張卡屬同一專案 |
 
