@@ -182,6 +182,13 @@ def run(args: argparse.Namespace) -> int:
 
     # 規劃期路由的派工端閘門。刻意排在所有 set_field_value 之前：拒絕時必須零寫入，
     # 不能留下「owner 已改、Log 沒有偏離紀錄」的半套狀態。
+    #
+    # ⚠️ **這句紀律的射程逐字是「本檔每一道會 return 非 0 或拋例外的閘門」，⛔ 不只本行
+    # 底下這一道**（2026-08-27 依查核 R2-02 就地更正）：本檔一度自己違反它——
+    # `card.append_log_line` 內含的寫入邊界守衛會拋 `MarkerWriteBoundaryError`，而那次
+    # 呼叫排在三個 `set_field_value` **之後** ⇒ 拒收時三欄已寫。⇒ 新增任何「可能拒絕」
+    # 的步驟時，判準不是「它長不長得像閘門」，而是**它會不會終止本輪**；會，就必須排在
+    # `ensure_fields` 之前。
     comparison = compare_capability_to_card(item.body, args.actual_capability)
     deviation_reason = (args.capability_deviation_reason or "").strip()
     if comparison.requires_reason and not deviation_reason:
@@ -249,6 +256,32 @@ def run(args: argparse.Namespace) -> int:
         return 4
 
     branch_worktree = format_branch_worktree(args.branch, args.worktree)
+
+    # ⭐ **Log 行的組裝與寫入邊界守衛刻意排在所有遠端寫入之前**
+    #    （WF-MARKER-WRITE-BOUNDARY1，2026-08-27 依查核 R2-02
+    #    `guard-runs-after-remote-writes-half-write`）。
+    #
+    # (a) 現在的行為：`append_log_line` 是**純函式**，它內含的寫入邊界守衛在這裡就跑完；
+    #     拒收時本輪一次遠端呼叫都還沒發出。
+    # (b) 為什麼非搬不可：改動前它排在 `ensure_fields` 與三個 `set_field_value` 之後
+    #     ——密封探針實測，守衛拋 `MarkerWriteBoundaryError` 時 body 沒壞，⛔ 但
+    #     owner／分支worktree／交付狀態**三欄已全部寫入** ⇒ 留下「欄位已寫、Log 未寫」
+    #     的半寫狀態。`templates/handoff-contract.md` §3.2 明訂拒收必須發生在**任何**
+    #     遠端寫入之前，而本檔上方四道閘門的就地註解也逐字寫著「拒絕時必須零寫入」
+    #     ——⛔ 同一個檔在這一格違反了它自己寫的紀律。
+    # (c) ⛔ **不得由此推出「assign 的所有拒收路徑都零寫入」**：本段只管 gh 側，且只管
+    #     到 `set_item_body` 為止。`set_item_body` 自己失敗仍會留下「三欄已寫、body 未
+    #     更新」——那一格由重跑收斂，⛔ 不在本次改動的射程內。
+    # ⛔ **也不得把這幾行搬回 `set_field_value` 之後**：搬回去等於把上面 (b) 的半寫狀態
+    #     原樣復原，而它是一個 critical finding，不是風格偏好。
+    log_line = (
+        f"{now_iso8601()} assign by wf-cli → owner {args.assignee}；"
+        f"分支worktree {branch_worktree}；交付狀態 {args.status}；"
+        f"{comparison.log_fragment(deviation_reason)}；"
+        f"{_ownership_log_fragment(ownership, observation)}。"
+    )
+    new_body = append_log_line(item.body, log_line)
+
     # ⭐ 欄位 schema 的準備**刻意擺在上面全部四道閘門之後**（能力／跨 repo 歸屬／
     # 本機觀測／資源交集），而不是跟 `resolve_project` 放一起。
     #
@@ -268,14 +301,6 @@ def run(args: argparse.Namespace) -> int:
     set_field_value(runner, project, item.item_id, fields["owner"], args.assignee)
     set_field_value(runner, project, item.item_id, fields["分支worktree"], branch_worktree)
     set_field_value(runner, project, item.item_id, fields["交付狀態"], args.status)
-
-    log_line = (
-        f"{now_iso8601()} assign by wf-cli → owner {args.assignee}；"
-        f"分支worktree {branch_worktree}；交付狀態 {args.status}；"
-        f"{comparison.log_fragment(deviation_reason)}；"
-        f"{_ownership_log_fragment(ownership, observation)}。"
-    )
-    new_body = append_log_line(item.body, log_line)
     set_item_body(runner, item.content_type, item.content_id, project, target.repo, item.issue_number, new_body)
 
     print(

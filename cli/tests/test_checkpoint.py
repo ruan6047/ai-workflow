@@ -248,7 +248,14 @@ def inject_counted_attempt(runner: EventGhRunner, card_id: str, sha: str, fid: s
     attempt = f"{card_id}-e0-{sha}"
     new_body = (
         item.body.rstrip("\n")
-        + f"\n- 2026-08-12 review by wf-cli → REQUEST_CHANGES；attempt {attempt}。\n"
+        # ⚠️ **時戳必須是完整 ISO-8601，⛔ 不能只寫日期**（2026-08-27 依查核 `-R3-01`）：
+        # `review_cmd` 實際寫的是 `now_iso8601()`，而 `doctor._DRIFT_EVENT_START_RE` 要求
+        # `<date>T<time><tz>` 才算一筆事件的起始行。舊值 `2026-08-12`（無時分秒）**不是**
+        # 合格的事件起始行 ⇒ 它只是「一行長得像索引的文字」。
+        # 改動前 `review.log_line_indexes` 逐物理行掃描，於是這個不合格的樣本照樣通過，
+        # **測試因此比產線寬鬆**；讀取端改成只認事件首行之後它才現形。
+        # ⛔ 不得為了讓測試綠回去而把讀取端放寬——那正是 F7 的破口。
+        + f"\n- 2026-08-12T10:00:00+08:00 review by wf-cli → REQUEST_CHANGES；attempt {attempt}。\n"
     )
     runner.execute(["issue", "edit", str(item.issue_number), "--repo", REPO, "--body", new_body])
     return attempt

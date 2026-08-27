@@ -32,10 +32,15 @@ REGISTRY_SOURCE = COMMANDS_DIR / "__init__.py"
 
 # 錯誤處理契約的凍結基線：只有在**刻意**改 cli.py 的錯誤處理時才該動這份清單。
 # 新增動詞不會碰它，所以它不是新動詞卡的衝突點。
+#
+# ⚠️ 2026-08-27 刻意變更（WF-MARKER-WRITE-BOUNDARY1，查核 R2-03）：新增
+# ``wf_cli.card.MarkerWriteBoundaryError``。⛔ 它的父類 ``card.AmendError`` **刻意不收**
+# ——``tests/test_amend.py`` 有一條深層性質靠「model 層是獨立防線」成立，收父類會吞掉它。
 EXPECTED_KNOWN_ERRORS = (
     "wf_cli.config.ConfigError",
     "wf_cli.gh.GhError",
     "wf_cli.git_ops.GitError",
+    "wf_cli.card.MarkerWriteBoundaryError",
     "wf_cli.project.ProjectError",
     "wf_cli.resources.ResourceDeclarationError",
     "wf_cli.review.ReviewParseError",
