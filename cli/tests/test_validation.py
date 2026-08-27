@@ -521,7 +521,21 @@ def test_gate_requires_both_faces_comment_block_and_log_index():
     with pytest.raises(ValidationError):
         check_checkpoint_gate(history, escalation_epoch=0, card_body=_log())
 
-    card_body = _log() + f"\n- 2026-08-12 checkpoint by wf-cli → trigger {trigger}。"
+    # ⭐ **時戳必須帶時分秒與時區，⛔ 不能只寫日期。**
+    #
+    # (a) 現在的行為：這一行用完整 ISO-8601（`<date>T<time><tz>`），⛔ 不是 `2026-08-12`。
+    # (b) 為什麼：閘門的 Log 面走 `review.log_line_indexes`，而它只認
+    #     `doctor._DRIFT_EVENT_START_RE` 判定為**事件起始行**的那些行——該樣式要求完整
+    #     時戳。產線那一側 `commands/checkpoint_cmd` 寫的是 `card.now_iso8601()`，本來就
+    #     帶時分秒；夾具若用無時分秒的日期，就是**測試比產線寬鬆**：改動前
+    #     `log_line_indexes` 逐物理行掃描，那種不合格的行照樣被當成索引通過。
+    # (c) ⛔ **不得由此推出「所有夾具的時戳都該改成完整 ISO」**——只有**會被
+    #     `_DRIFT_EVENT_START_RE` 讀**的那些行才需要。本檔同一個測試裡的 `_log()` 寫的是
+    #     `review by wf-cli` 標籤，而本閘門查的是 `checkpoint by wf-cli` ⇒ 它**不承重**，
+    #     實測改與不改結果相同，故刻意留著原樣。
+    card_body = _log() + (
+        f"\n- 2026-08-12T10:00:00+08:00 checkpoint by wf-cli → trigger {trigger}。"
+    )
     check_checkpoint_gate(history, escalation_epoch=0, card_body=card_body)
 
 
