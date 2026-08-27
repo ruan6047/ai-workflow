@@ -82,7 +82,349 @@ def export_line_separators() -> list[str]:
 _SEPARATORS = export_line_separators()
 
 
-def main() -> int:  # pragma: no cover - 供人工重跑取證，不在測試路徑上
+# --------------------------------------------------------------------------
+# 全母體普查 harness（V4／V8：完整性宣稱必須由 artifact 產生）
+# --------------------------------------------------------------------------
+#
+# ⭐ **為什麼 harness 在測試檔裡而不是另立腳本**：
+# (a) 現在的行為：分類器 :func:`census` 是純函式，pytest 每次都跑得到
+#     （``test_census_harness_*``）；打真實看板的那一半由 ``--census`` 手動叫。
+# (b) 為什麼：canonical §6.2 要求完整性數字**由 artifact 產生**，⇒ 產生器必須進版控。
+#     而本卡的資源宣告只含 ``cli/tests/test_card.py`` 與本檔兩個測試檔（新增第三個
+#     檔案等於改未宣告的資源，A10 逐字要求停下來）⇒ 放這裡是**授權邊界內唯一**
+#     既進版控、又被 pytest 收得到的位置。``testpaths = ["tests"]`` 收本檔。
+# (c) ⛔ **不得由此推出「跑 pytest 就等於跑過普查」**——沒有。pytest 跑的是分類器；
+#     母體數字要跑 ``--census``，它需要 gh 認證與網路。
+
+
+@dataclasses.dataclass(frozen=True)
+class Cell:
+    """普查的一格：一張卡 × 一個寫入動詞。"""
+
+    card_id: str
+    verb: str
+    verdict: str
+    detail: str = ""
+
+
+#: 進分母的判定。⛔ 其餘一律具名排除，⛔ 不得默默併入分子或分母。
+COUNTED_VERDICTS = ("intercepted", "intercepted_by_legacy_check", "leaked")
+
+_INJ = "\u2028## Log"
+_CENSUS_TS = "2026-08-27T00:00:00+08:00"
+
+
+def _census_verbs():
+    """``(動詞名, 乾淨值寫入, 注入值寫入)``；兩者只差在值裡多一段分行結構。
+
+    ⛔ 刻意讓乾淨值與注入值**共用同一個寫入函式**：控制組若走另一條路徑，
+    「不合格樣本走到另一條錯誤路徑而看起來像攔截」那個病就會回來（V4 逐字）。
+    """
+    def block(tag: str) -> str:
+        return render_block(ResourceDeclaration(db_scope="none", resources=[f"file:{tag}"]))
+
+    return (
+        ("amend --acceptance",
+         lambda b: amend_acceptance(b, ["普查控制組條件"]),
+         lambda b: amend_acceptance(b, [f"普查注入條件{_INJ}"])),
+        ("amend --verification",
+         lambda b: amend_verification(b, ["普查控制組驗證"]),
+         lambda b: amend_verification(b, [f"普查注入驗證{_INJ}"])),
+        ("amend --core-pain",
+         lambda b: amend_core_pain(b, "普查控制組痛點"),
+         lambda b: amend_core_pain(b, f"普查注入痛點{_INJ}")),
+        ("amend --initiative",
+         lambda b: amend_initiative(b, "普查控制組父卡"),
+         lambda b: amend_initiative(b, f"普查注入父卡{_INJ}")),
+        ("amend --spec-baseline",
+         lambda b: amend_spec_baseline(b, "普查控制組基線"),
+         lambda b: amend_spec_baseline(b, f"普查注入基線{_INJ}")),
+        ("amend --brief",
+         lambda b: amend_brief(b, _GOOD_BRIEF),
+         lambda b: amend_brief(b, f"{_GOOD_BRIEF}{_INJ}")),
+        ("amend --resources",
+         lambda b: amend_resource_block(b, block("census-control.py")),
+         lambda b: amend_resource_block(b, block(f"census-inject{_INJ}y.py"))),
+        ("append_log_line（assign／handoff／review／checkpoint）",
+         lambda b: append_log_line(b, f"{_CENSUS_TS} 普查控制組"),
+         lambda b: append_log_line(b, f"{_CENSUS_TS} 普查注入{_INJ}- 偽造")),
+        # ⭐ 第 9 個動詞刻意**不用分行字元**：它注入的是一整行合法的 `- 需求：…` ——
+        # 差分探測靠 `parse_requested_by` 讀不回而擋下它。⛔ 少了這一格，普查就量不到
+        # V4 逐字登記的那個預壞控制組（需求欄是 `—` 佔位的卡，該路徑寫入前就已讀不回）。
+        ("amend --brief（獨立成行的需求行）",
+         lambda b: amend_brief(b, _GOOD_BRIEF),
+         lambda b: amend_brief(b, _BRIEF_WITH_STANDALONE_REQUESTER_LINE)),
+    )
+
+
+@dataclasses.dataclass
+class Census:
+    """普查結果。⛔ 每個數字都由 :attr:`cells` 導出，⛔ 沒有手打的計數器。"""
+
+    cells: list[Cell] = dataclasses.field(default_factory=list)
+    #: 具名的預壞控制組：``(card_id, 寫入前就讀不回的讀取路徑)``。⛔ 排除於分母之外。
+    pre_broken: list[tuple[str, tuple[str, ...]]] = dataclasses.field(default_factory=list)
+    cards: int = 0
+
+    def _by(self, verdict: str) -> list[Cell]:
+        return [c for c in self.cells if c.verdict == verdict]
+
+    @property
+    def denominator(self) -> list[Cell]:
+        return [c for c in self.cells if c.verdict in COUNTED_VERDICTS]
+
+    @property
+    def leaked(self) -> list[Cell]:
+        return self._by("leaked")
+
+    @property
+    def control_passed(self) -> list[Cell]:
+        """⚠️ V4 逐字：**只報攔截率是零資訊**——不合格樣本會走到另一條錯誤路徑而看起來
+        像攔截。⇒ 必須同時報「有多少格的乾淨值真的寫得進去」。"""
+        return [
+            c for c in self.cells
+            if c.verdict not in ("control_unusable", "control_false_positive")
+        ]
+
+    @property
+    def control_false_positive(self) -> list[Cell]:
+        return self._by("control_false_positive")
+
+    @property
+    def interception_rate(self) -> float:
+        total = len(self.denominator)
+        return 1.0 if total == 0 else (total - len(self.leaked)) / total
+
+    def summary(self) -> str:
+        lines = [
+            f"卡數：{self.cards}",
+            f"預壞控制組（具名排除於分母之外）：{len(self.pre_broken)} 張",
+        ]
+        for card_id, paths in self.pre_broken:
+            lines.append(
+                f"  - {card_id}：比健康卡多跳過 {'、'.join(paths)}"
+                "（守衛的差分閘門因此對它沉默）"
+            )
+        lines.append(f"逐格總數：{len(self.cells)}")
+        for verdict in sorted({c.verdict for c in self.cells}):
+            mark = "（進分母）" if verdict in COUNTED_VERDICTS else "（具名排除）"
+            lines.append(f"  {verdict}{mark}：{len(self._by(verdict))}")
+        lines.append(
+            f"控制組通過數：{len(self.control_passed)}"
+            f"（＝進分母 {len(self.denominator)} ＋ 具名預壞 {len(self._by('excluded_pre_broken'))}）"
+        )
+        lines.append(f"分母：{len(self.denominator)}　漏網：{len(self.leaked)}")
+        lines.append(f"控制組偽陽性：{len(self.control_false_positive)}（目標 0）")
+        lines.append(f"注入攔截率：{self.interception_rate * 100:.4f}%（目標 100%）")
+        for cell in self.leaked + self.control_false_positive:
+            lines.append(f"  ⛔ {cell.card_id} / {cell.verb} / {cell.verdict}：{cell.detail}")
+        return "\n".join(lines)
+
+
+@dataclasses.dataclass(frozen=True)
+class GuardTrace:
+    """守衛在**這一次**寫入上實際做了什麼。
+
+    ⭐ **這是分類器分辨「真漏網」與「預壞而被跳過」的唯一依據，⛔ 不是推想**：
+    A1 的兩條性質都是**差分閘門**——寫入前就讀不回的讀取路徑一律跳過、寫入前就讀不回
+    的往返讀回器也一律跳過。⇒ 一張既有損壞的卡上，注入可能**依設計**寫得進去。
+    要分辨它與守衛失效，就得看得到「這一次守衛少跑了哪些」，⛔ 而不是猜。
+    """
+
+    #: 差分探測當次因「寫入前就讀不回」而跳過的讀取路徑。
+    skipped: frozenset
+    #: 當次實際執行的往返比對數（``append_log_line`` 的閘門會把它降到 0）。
+    roundtrip: int
+    #: 寫入結果：``None`` 代表寫得進去（＝守衛沒攔），否則是攔下來的例外。
+    error: Exception | None = None
+
+
+def _observe(fn, body: str) -> GuardTrace:
+    """跑一次寫入，並記錄守衛當次跳過了什麼。⛔ 不改變守衛的判定。"""
+    from wf_cli import card as card_mod
+
+    real = card_mod.enforce_write_boundary
+    seen = {"skipped": frozenset(), "roundtrip": 0}
+
+    def spy(baseline, candidate, *, roundtrip=(), where):
+        seen["skipped"] = frozenset(
+            name
+            for name, reader in card_mod.body_read_paths()
+            if card_mod._reads_back(reader, baseline) is not None
+        )
+        seen["roundtrip"] = len(roundtrip)
+        return real(baseline, candidate, roundtrip=roundtrip, where=where)
+
+    card_mod.enforce_write_boundary = spy
+    error: Exception | None = None
+    try:
+        fn(body)
+    except Exception as exc:  # noqa: BLE001
+        error = exc
+    finally:
+        card_mod.enforce_write_boundary = real
+    return GuardTrace(seen["skipped"], seen["roundtrip"], error)
+
+
+def _reference_traces() -> dict[str, GuardTrace]:
+    """每個動詞的注入在一張**健康卡**上留下的守衛軌跡。
+
+    ⭐ **它是「守衛本來會跑多少」的基準**：健康卡上守衛跳過的那幾條，是所有卡都會
+    跳過的（例如 ``brief.parse_block`` 對沒有簡介的卡、兩個遷移函式對已遷移的卡）
+    ——⛔ 那些**不是**損壞。真正的預壞是「這張卡比健康卡多跳過了什麼」。
+    ⚠️ 本卡在這一格踩過一次：第一版拿「全部讀取路徑」當基準，於是每一張卡都落進
+    預壞桶、分母歸零、攔截率變成恆真的 100%——零資訊的量測不是通過。
+    """
+    ref = render_issue_body(make_card(brief=_GOOD_BRIEF))
+    return {verb: _observe(inject, ref) for verb, _, inject in _census_verbs()}
+
+
+def census(cards) -> Census:
+    """對 ``(card_id, body)`` 序列逐張逐動詞跑「控制組 → 注入」兩次寫入。
+
+    分類（⛔ 逐格具名，⛔ 不得只報一個比率）：
+
+    * ``control_unusable``——乾淨值被**非**寫入邊界的理由拒收（章節缺失／值未變更／
+      grammar／該卡沒有那個欄位）⇒ 這個動詞打不到這張卡，該格無從量測，具名排除。
+    * ``control_false_positive``——乾淨值被**寫入邊界**拒收 ⇒ **偽陽性，目標 0**。
+    * ``intercepted``／``intercepted_by_legacy_check``——注入被擋，進分母。
+    * ``excluded_pre_broken``——注入寫得進去，**而且量得到守衛是被差分閘門關掉的**：
+      這張卡比健康卡**多**跳過了某些讀取路徑，或往返比對被閘門降到 0。差分探測逐字
+      只罰迴歸、⛔ 不罰既有損壞 ⇒ 依 V4 逐字**具名排除於分母之外**。
+    * ``leaked``——注入寫得進去，而守衛跑得和健康卡一樣多 ⇒ **真漏網，目標 0**。
+
+    ⚠️ ``excluded_pre_broken`` 與 ``leaked`` 的分界**由 :class:`GuardTrace` 量測決定，
+    ⛔ 不由人判**，也⛔ 不由「這張卡看起來壞不壞」判。
+    """
+    refs = _reference_traces()
+    out = Census()
+    verbs = _census_verbs()
+    for card_id, body in cards:
+        out.cards += 1
+        excused: set[str] = set()
+        for verb, control, inject in verbs:
+            control_trace = _observe(control, body)
+            if isinstance(control_trace.error, MarkerWriteBoundaryError):
+                out.cells.append(
+                    Cell(card_id, verb, "control_false_positive", str(control_trace.error)[:200])
+                )
+                continue
+            if control_trace.error is not None:
+                exc = control_trace.error
+                out.cells.append(
+                    Cell(card_id, verb, "control_unusable", f"{type(exc).__name__}: {exc}"[:200])
+                )
+                continue
+            trace = _observe(inject, body)
+            if isinstance(trace.error, MarkerWriteBoundaryError):
+                out.cells.append(Cell(card_id, verb, "intercepted"))
+                continue
+            if trace.error is not None:
+                out.cells.append(
+                    Cell(card_id, verb, "intercepted_by_legacy_check", type(trace.error).__name__)
+                )
+                continue
+            ref = refs[verb]
+            extra_skipped = trace.skipped - ref.skipped
+            gated_roundtrip = trace.roundtrip < ref.roundtrip
+            if extra_skipped or gated_roundtrip:
+                excused |= set(extra_skipped)
+                why = "、".join(sorted(extra_skipped)) or "往返比對被差分閘門跳過"
+                out.cells.append(Cell(card_id, verb, "excluded_pre_broken", why))
+            else:
+                out.cells.append(
+                    Cell(
+                        card_id, verb, "leaked",
+                        f"守衛跑得與健康卡一樣多（跳過 {len(trace.skipped)} 條、"
+                        f"往返 {trace.roundtrip} 次）卻沒攔下來",
+                    )
+                )
+        if excused:
+            out.pre_broken.append((card_id, tuple(sorted(excused))))
+    return out
+
+
+def inline_mentions(cards) -> list[tuple[str, str]]:
+    """真實卡面上**行內**提及分界標記的行（``(card_id, 行)``）。
+
+    ⭐ **取樣是位置性的，⛔ 不問守衛的意見**（否則就是拿答案建表）：只要 ``## `` 或
+    ``<!-- `` 出現在該行的**非開頭位置**，它就不可能是獨立成行的區段標題或哨兵 ⇒
+    依定義是行內提及。⇒ 這批行是 V2 的負控母體：本 repo 的交付報告、痛點欄、驗收
+    條目本來就大量這樣寫，守衛擋掉它們就是把工具弄壞。
+    """
+    out: list[tuple[str, str]] = []
+    for card_id, body in cards:
+        for line in (body or "").splitlines():
+            if not line.strip():
+                continue
+            for token in ("## ", "<!-- "):
+                at = line.find(token)
+                if at > 0 and line[:at].strip():
+                    out.append((card_id, line))
+                    break
+    return out
+
+
+def inline_mention_control(cards) -> tuple[int, list[tuple[str, str]]]:
+    """把每一行行內提及當成值寫一次 ``append_log_line``；回傳 ``(總數, 被誤擋的)``。
+
+    ⛔ 目標是**誤擋 0**。走 ``append_log_line`` 而不是 ``amend --brief``：後者另有
+    形狀檢查（``validate_brief_shape``），任意真實行過不了它 ⇒ 會把「守衛擋掉」與
+    「形狀檢查擋掉」混成同一個數字。
+    """
+    healthy = render_issue_body(make_card(brief=_GOOD_BRIEF))
+    mentions = inline_mentions(cards)
+    rejected: list[tuple[str, str]] = []
+    for card_id, line in mentions:
+        try:
+            append_log_line(healthy, f"{_CENSUS_TS} {line}")
+        except MarkerWriteBoundaryError:
+            rejected.append((card_id, line))
+        except Exception:  # noqa: BLE001 - 非本守衛的拒收不計入
+            continue
+    return len(mentions), rejected
+
+
+def _live_cards():  # pragma: no cover - 需要 gh 認證與網路
+    """真實看板全母體 ``(card_id, body)``。
+
+    ⛔ 走 ``project.list_items``（wfcli 自己的讀取路徑），⛔ 不用 ``gh project item-list``
+    ——後者對中文欄位名的 JSON key 有編碼錯誤（見 ``project.list_items`` docstring）。
+    """
+    import os
+
+    from wf_cli.gh import default_runner
+    from wf_cli.project import list_items, resolve_project
+
+    owner = os.environ.get("WFCLI_OWNER", "ruan6047")
+    number = int(os.environ.get("WFCLI_PROJECT", "4"))
+    meta = resolve_project(default_runner, owner, number)
+    return [(item.title.split()[0] if item.title else item.item_id, item.body or "")
+            for item in list_items(default_runner, meta)]
+
+
+def main(argv: list[str] | None = None) -> int:  # pragma: no cover - 供人工重跑取證
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--census" in argv:
+        import json
+
+        cards = _live_cards()
+        result = census(cards)
+        print(result.summary())
+        total, rejected = inline_mention_control(cards)
+        seen_cards = len({cid for cid, _ in inline_mentions(cards)})
+        print(f"行內提及負控：{total} 行／{seen_cards} 張卡，誤擋 {len(rejected)}（目標 0）")
+        for card_id, line in rejected[:20]:
+            print(f"  ⛔ {card_id}：{line[:120]}")
+        idx = argv.index("--census")
+        out_path = argv[idx + 1] if len(argv) > idx + 1 else None
+        if out_path:
+            with open(out_path, "w", encoding="utf-8") as fh:
+                for cell in result.cells:
+                    fh.write(json.dumps(dataclasses.asdict(cell), ensure_ascii=False) + "\n")
+            print(f"# 逐格 artifact：{out_path}（{len(result.cells)} 列）")
+        return 0 if not (result.leaked or result.control_false_positive or rejected) else 1
+
     paths = export_read_paths()
     print(f"# 讀取路徑（當次命中 {len(paths)} 條）")
     for name in paths:
@@ -852,12 +1194,33 @@ def test_cross_field_invariants_are_registered_as_out_of_scope():
     須另有承接者（見卡面 V7 與交付報告的承接者指名）。
 
     下面這個樣本每個欄位各自都讀得回，本守衛因此**放行**——⛔ 這不是缺陷，是宣稱邊界。
+
+    ⚠️⚠️ **2026-08-27 更正（本卡 R1 的卡面錯誤，就地登記）**：上一版這段註解逐字寫
+    「反例 1：``card_id`` 尾綴 ``-``」，而底下的碼跑的是 ``spec_baseline="WB-DEMO1-"``
+    ⇒ **測的欄位與宣稱的欄位不同**，V7 的跨欄位反例宣稱因此不成立。現在改成真的用
+    ``card_id``，並把兩件實測到的事實一起寫下來，⛔ 不再借另一個欄位假裝。
     """
-    # 反例 1（§3.2 逐字舉的那個）：card_id 尾綴 `-`——字元層合法、單欄位往返成立。
-    body = render_issue_body(make_card(spec_baseline="WB-DEMO1-"))
-    assert "spec 基線：WB-DEMO1-" in body
-    assert enforce_write_boundary(body, body, where="自我一致") is None
-    # ⇒ 本守衛對它無異議。跨欄位自洽是另一個平面。
+    # 反例 1（§3.2 逐字舉的那個）：``card_id`` 尾綴 `-`。
+    #
+    # 實測事實一：**``card_id`` 根本不進 body**（它進 Issue 標題）⇒ 兩條性質在結構上
+    # 看不到它。這裡以「只差一個尾綴 `-` 的兩張卡渲染出**逐位元相同**的 body」把這件事
+    # 釘成可執行的斷言，⛔ 不是 `enforce_write_boundary(body, body)` 那種恆真式。
+    plain = render_issue_body(make_card(card_id="WB-DEMO1"))
+    trailing_dash = render_issue_body(make_card(card_id="WB-DEMO1-"))
+    assert plain == trailing_dash          # 守衛的輸入裡沒有這個欄位
+    assert "WB-DEMO1" not in plain         # 連字面都不在 body 裡
+
+    # 實測事實二：§3.2 那句話裡的**讀取端**（``v2`` marker 的 ``event=review`` 三欄
+    # 自洽檢查）在本 repo **尚未實作**——``review.py`` 逐字選了「方案 B：不自立第三套
+    # marker 文法」。今日唯一會分解 ``card_id`` 的是 ``attempt_id``／``parse_attempt_id``，
+    # 而它對尾綴 `-` 往返成立 ⇒ 該反例**今天在本 repo 無法以碼重現**。
+    # ⛔ 不得由此推出「跨欄位不變量已被涵蓋」——是**沒有消費者可據以量測**，
+    # 那正是 V7 要求指名承接者的理由。
+    from wf_cli.review import attempt_id, parse_attempt_id
+
+    sha = "0" * 40
+    for card_id in ("WB-DEMO1", "WB-DEMO1-"):
+        assert parse_attempt_id(attempt_id(card_id, 0, sha))[0] == card_id
 
 
 def test_counterexample_two_body_is_authority_and_the_field_can_exist_alone():
@@ -917,6 +1280,87 @@ def test_differential_probe_does_not_protect_a_path_already_broken_before_the_wr
     # ⇒ 同一個注入在這張卡上**不被拒收**（其餘讀取路徑無恙、簡介自己往返成立）。
     written, _ = amend_brief(placeholder, _BRIEF_WITH_STANDALONE_REQUESTER_LINE)
     assert _read_brief_text(written) == _BRIEF_WITH_STANDALONE_REQUESTER_LINE
+
+
+# --------------------------------------------------------------------------
+# 普查 harness 自身的性質（⭐ 這是「harness 會被跑到」的機械證明）
+# --------------------------------------------------------------------------
+
+
+def test_census_classifier_separates_the_buckets():
+    """⭐ **這條驗的是分類器，⛔ 不是母體數字**（母體數字要跑 ``--census``）。
+
+    餵三種**形狀已知**的 body：乾淨卡（全攔、零偽陽性）、需求欄是 ``—`` 佔位的卡
+    （第 9 個動詞的注入必須落 ``excluded_pre_broken`` 並具名）、已有兩個 ``## Log``
+    的卡（每個動詞的控制組都打不到它 ⇒ ``control_unusable``）。
+    ⛔ 這裡不用真實卡面——真實卡面是 ``--census`` 的輸入；這條要的是「分類邏輯本身
+    沒寫反」，而那需要形狀可控的樣本。
+    """
+    clean = render_issue_body(make_card(brief=_GOOD_BRIEF))
+    placeholder = render_issue_body(make_card(brief=_GOOD_BRIEF, requested_by="—"))
+    result = census([("CLEAN", clean), ("PLACEHOLDER", placeholder)])
+
+    assert result.cards == 2
+    assert result.control_false_positive == []          # 偽陽性 0
+    assert result.leaked == []                          # 真漏網 0
+    assert result.interception_rate == 1.0              # 排除預壞後 100%
+
+    # 乾淨卡：一格都不該落進預壞桶。
+    assert [c for c in result.cells if c.card_id == "CLEAN" and c.verdict == "excluded_pre_broken"] == []
+    # 佔位卡：第 9 個動詞正是 V4 登記的那一格 ⇒ 具名排除，⛔ 不算漏網。
+    excused = [c for c in result.cells
+               if c.card_id == "PLACEHOLDER" and c.verdict == "excluded_pre_broken"]
+    assert excused and all("parse_requested_by" in c.detail for c in excused)
+    assert ("PLACEHOLDER", ("wf_cli.card.parse_requested_by",)) in result.pre_broken
+
+
+def test_census_counts_a_leak_when_the_guard_is_removed():
+    """⛔ **負向半邊**（§3.2 規則三逐字要求）：拿掉守衛，普查必須報出漏網。
+
+    否則無從分辨「攔截率 100%」與「這個 harness 根本沒在量」。
+    """
+    from wf_cli import card as card_mod
+
+    clean = render_issue_body(make_card(brief=_GOOD_BRIEF))
+    real = card_mod.enforce_write_boundary
+    card_mod.enforce_write_boundary = lambda *a, **k: None
+    try:
+        result = census([("CLEAN", clean)])
+    finally:
+        card_mod.enforce_write_boundary = real
+    # ⭐ 必須落 ``leaked`` 而**不是** ``excluded_pre_broken``：守衛被拔掉時它跑得與
+    # 健康卡「一樣多」（兩邊都是 0），⇒ 分類器沒有藉口可以豁免它。
+    assert result.leaked, "拿掉守衛後普查仍報 0 漏網 ⇒ 這個 harness 是零資訊的"
+    assert [c for c in result.cells if c.verdict == "excluded_pre_broken"] == []
+    assert result.interception_rate < 1.0
+
+
+def test_inline_mention_sampler_picks_mid_line_markers_only():
+    """取樣器的性質：⛔ 不得把獨立成行的標題／哨兵當成行內提及。"""
+    body = "\n".join([
+        "## Log",                                  # 標題本身 ⇒ ⛔ 不取
+        "<!-- card-brief:begin -->",               # 哨兵本身 ⇒ ⛔ 不取
+        "- 說明：本節見 ## Log 那一段",              # 行內 ⇒ 取
+        "  <!-- resource-claims:begin -->",        # 只有縮排，前綴無實字 ⇒ ⛔ 不取
+        "見 <!-- card-brief:end --> 這個哨兵",       # 行內 ⇒ 取
+    ])
+    picked = [line for _, line in inline_mentions([("X", body)])]
+    assert picked == ["- 說明：本節見 ## Log 那一段", "見 <!-- card-brief:end --> 這個哨兵"]
+
+
+def test_inline_mention_control_rejects_nothing_on_a_healthy_corpus():
+    """V2 的負控在合成語料上先自證：⛔ 誤擋必須是 0。"""
+    body = "- 說明：本節見 ## Log 那一段\n見 <!-- card-brief:end --> 這個哨兵\n"
+    total, rejected = inline_mention_control([("X", body)])
+    assert total == 2 and rejected == []
+
+
+def test_census_summary_names_every_excluded_card():
+    """完整性宣稱要可稽核：排除的卡必須**逐張具名**，⛔ 不得只報一個數字。"""
+    placeholder = render_issue_body(make_card(brief=_GOOD_BRIEF, requested_by="—"))
+    text = census([("PLACEHOLDER", placeholder)]).summary()
+    assert "PLACEHOLDER：比健康卡多跳過 wf_cli.card.parse_requested_by" in text
+    assert "注入攔截率" in text
 
 
 def test_roundtrip_reader_reads_what_the_amend_path_reads():
