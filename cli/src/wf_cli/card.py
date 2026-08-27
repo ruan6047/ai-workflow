@@ -553,12 +553,17 @@ def append_log_line(body: str, line: str) -> str:
     ``templates/handoff-contract.md`` §3.2 規則二逐字禁止「以正規化代替拒收」。摺平會
     靜默改變值，其危害與寫得出讀不回同級。
 
-    ⚠️⚠️ **已登記的未涵蓋類別（⛔ 不得當成有保證）**：值裡的**普通 ``\\n``** 不被拒收，
-    因為多段落續行是 ``doctor.parse_log_events`` 明文支援的形狀（``handoff --evidence``
-    的多段落證據靠它）。⇒ 一個以 ``\\n`` 分行、且該行恰好長得像 ``- <ISO 時戳> <動詞>``
-    的值，會被**事件層**讀成多出來的一筆 lifecycle 事件——本函式的兩條性質對它沉默
-    （行層往返逐位元成立、無讀取路徑失效）。那是**事件層**的偽造平面，⛔ 不是本卡的
-    「卡面讀不回」平面；本卡逐字不宣稱涵蓋它。
+    ⭐ **事件層偽造由性質 (3) 擋（2026-08-27 依查核 R2-01 補上）**，⛔ 不是靠禁 ``\\n``：
+    (a) 現在的行為：普通 ``\\n`` **仍然寫得進去**（多段落續行是 ``doctor.parse_log_events``
+        明文支援的形狀，``handoff --evidence`` 的多段落證據靠它）；被擋的是「同一次附加
+        在事件層被讀成不只一筆」。
+    (b) 為什麼判準是筆數而不是字元：禁 ``\\n`` 會擋掉合法的多段落證據，那是以拒收代替
+        設計；而筆數由**真正的讀取端**（``parse_log_events``）自己導出 ⇒ 零列舉、
+        ⛔ 不定義字元、⛔ 不定義 marker。合法多段落仍只增加一筆，偽造案例會增加兩筆
+        （實測：一次 ``handoff`` 被解析成 ``open``／``handoff``／偽造 ``APPROVE`` 共 3 筆）。
+    (c) ⛔ **不得由此推出「事件內容有保證」**——本條只比對筆數。內容相等**不是**可加的
+        第二道檢查：合法多段落證據的最後一筆事件，在 baseline（已摺平）與 candidate
+        （帶續行）之間內容必然不同，比內容會退回它。
     """
     entry = f"- {line}"
     candidate = _append_log_line_raw(body, line)
@@ -583,9 +588,37 @@ def append_log_line(body: str, line: str) -> str:
         pass
 
     enforce_write_boundary(
-        baseline, candidate, roundtrip=checks, where=f"`{_LOG_HEADING}` 附加行"
+        baseline,
+        candidate,
+        roundtrip=checks,
+        invariants=[(f"`{_LOG_HEADING}` 的 lifecycle 事件筆數", _log_event_count)],
+        where=f"`{_LOG_HEADING}` 附加行",
     )
     return candidate
+
+
+def _log_event_count(body: str) -> int:
+    """性質 (3) 對 Log 的導出量：``## Log`` 區段裡的 lifecycle 事件筆數。
+
+    ⭐ **走 ``doctor.parse_log_events`` 這條真正的讀取路徑，⛔ 不另寫一份事件切分**
+    （§3.2 規則三逐字：「解析側須走真正會跑的那條路徑」）。它就是把偽造 ``APPROVE``
+    讀成一筆真事件的那個消費者，⇒ 判準必須由它自己導出。
+
+    ⚠️ **不判定一律拋，⛔ 不回 0**：``parse_log_events`` 的不判定是 fail-soft 的
+    ``(None, 原因)``，⛔ **不拋例外** ⇒ 性質 (1) 的 ``_reads_back``（只認例外）對它
+    **結構性看不見**。轉成例外之後，「寫入前導得出、寫入後不判定」才會落在
+    :func:`enforce_write_boundary` 的拒收側；回 0 會讓「不判定」與「真的零筆」撞在
+    同一個值上，那是把兩件事讀成一件。
+
+    ⚠️ **刻意延遲 import**：``wf_cli.doctor`` 反向 import 本模組，模組載入期會迴圈。
+    本函式只在寫入動詞執行期被呼叫，此時兩邊都已載入完成。
+    """
+    from .doctor import parse_log_events
+
+    events, undecidable = parse_log_events(body)
+    if undecidable is not None or events is None:
+        raise AmendError(f"事件層不判定（{undecidable}）")
+    return len(events)
 
 
 # --------------------------------------------------------------------------
@@ -744,13 +777,29 @@ def enforce_write_boundary(
     candidate: str,
     *,
     roundtrip: Sequence[tuple[str, object, Callable[[str], object]]] = (),
+    invariants: Sequence[tuple[str, Callable[[str], object]]] = (),
     where: str,
 ) -> None:
-    """A1 的兩條性質。任一不成立即 :class:`MarkerWriteBoundaryError`，⛔ 不做正規化。
+    """A1 的兩條性質＋性質 (3) 導出量差分。任一不成立即
+    :class:`MarkerWriteBoundaryError`，⛔ 不做正規化。
 
     ``baseline`` 是「同一次寫入、但值不帶分行結構」的那個 body：``amend`` 用寫入前的原
     body，``open`` 用 :func:`_line_flattened_card` 的渲染。⭐ 兩者的共同性質是**與這次
     寫入的值無關**，差分因此只歸因到值。
+
+    ``invariants`` 是**性質 (3)**（2026-08-27 依查核 R2-01 補上）：每一項是
+    ``(標籤, 導出函式)``，要求 ``導出函式(baseline) == 導出函式(candidate)``。
+
+    ⭐ **為什麼它不能由性質 (1)／(2) 涵蓋，⛔ 不是重複**：
+    (a) 現在的行為：性質 (1) 只問「讀取路徑有沒有拋例外」、性質 (2) 只問「這個欄位的值
+        逐位元讀得回嗎」。兩者都在**行**的層次。
+    (b) 為什麼需要第三條：一個讀取端可以**不拋例外、也不改任何單一欄位的值**，卻把同
+        一次寫入解讀成**更多筆語意單位**——``doctor.parse_log_events`` 對含普通 ``\\n``
+        的 Log 值就是如此（實測：一次 ``handoff`` 被解析成 ``open``／``handoff``／偽造
+        ``APPROVE`` 共 3 筆）。⇒ 那是**事件層**的偽造，行層兩條性質對它結構性沉默。
+    (c) ⛔ **不得由此推出「導出量相等 ⇒ 事件內容可信」**：本條只比對導出量。⛔ 也不得
+        改成比對事件**內容**——合法的多段落 ``--evidence`` 會讓最後一筆事件的內容在
+        baseline（已摺平）與 candidate（帶續行）之間必然不同，內容相等會退回它。
 
     ⛔ **不得改成「把值正規化後寫入」**：§3.2 規則二逐字禁止以正規化代替拒收
     （把換行摺成空白、把連續空白壓成一個都是靜默改變值，其危害與寫得出讀不回同級）。
@@ -788,6 +837,27 @@ def enforce_write_boundary(
                 f"寫入邊界拒收（未寫入任何狀態）：{where}的「{label}」寫入值與讀回值不同"
                 f"——寫入 {_clip(written)}，讀回 {_clip(got)}。"
                 "⇒ 值的一部分被卡面結構吃掉了（靜默截斷），寫入端不得接受一個自己讀不回的值。"
+                "⚠️ 卡面本身沒有損壞、本次也未改動它；請改寫該值後重試。"
+            )
+    for label, derive in invariants:
+        try:
+            expected = derive(baseline)
+        except Exception:  # noqa: BLE001 - 寫入前就導不出 ⇒ 只罰迴歸、⛔ 不罰既有損壞
+            continue
+        try:
+            got = derive(candidate)
+        except Exception as exc:  # 寫入前導得出、寫入後導不出 ⇒ 本次寫入弄壞了它
+            raise MarkerWriteBoundaryError(
+                f"寫入邊界拒收（未寫入任何狀態）：{where}的值寫進去之後，"
+                f"「{label}」就導不出來了（讀取端錯誤：{exc}）。"
+                "⚠️ 卡面本身沒有損壞、本次也未改動它；請改寫該值後重試。"
+            ) from exc
+        if got != expected:
+            raise MarkerWriteBoundaryError(
+                f"寫入邊界拒收（未寫入任何狀態）：{where}的值改變了「{label}」"
+                f"——寫入前 {_clip(expected)}，寫入後 {_clip(got)}。"
+                "⇒ 這一次寫入在讀取端被解讀成**不只一件事**（同一段值被切成多筆語意單位），"
+                "而讀取端在結構上分不出哪一筆是產生器寫的、哪一筆是值裡帶進來的。"
                 "⚠️ 卡面本身沒有損壞、本次也未改動它；請改寫該值後重試。"
             )
 

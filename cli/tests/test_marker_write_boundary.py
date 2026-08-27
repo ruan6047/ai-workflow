@@ -246,14 +246,16 @@ def _observe(fn, body: str) -> GuardTrace:
     real = card_mod.enforce_write_boundary
     seen = {"skipped": frozenset(), "roundtrip": 0}
 
-    def spy(baseline, candidate, *, roundtrip=(), where):
+    def spy(baseline, candidate, *, roundtrip=(), invariants=(), where):
         seen["skipped"] = frozenset(
             name
             for name, reader in card_mod.body_read_paths()
             if card_mod._reads_back(reader, baseline) is not None
         )
         seen["roundtrip"] = len(roundtrip)
-        return real(baseline, candidate, roundtrip=roundtrip, where=where)
+        return real(
+            baseline, candidate, roundtrip=roundtrip, invariants=invariants, where=where
+        )
 
     card_mod.enforce_write_boundary = spy
     error: Exception | None = None
@@ -611,12 +613,16 @@ def test_every_derived_separator_is_blocked_on_the_append_log_path(sep):
     assert before == CLEAN_BODY  # 純函式：來源逐位元未變
 
 
-def test_append_log_line_forged_event_is_caught_only_by_the_roundtrip():
-    """⭐ ``append_log_line`` 上「兩條性質必須並用」的實證。
+def test_append_log_line_forged_event_is_missed_by_the_differential_probe():
+    """⭐ ``append_log_line`` 上「性質必須並用」的實證。
 
     這個值**不製造**第二個 ``## Log``——每一條讀取路徑都照樣讀得回 ⇒ 性質 (1) 命中 0。
     但它用 U+2028 讓自己在讀取端裂成兩行，第二行長得像一筆 ``review`` lifecycle 事件
     ⇒ 寫進去一段、讀回來兩行，性質 (2) 逐位元比對命中。
+
+    ⚠️ **2026-08-27 更正函式名與宣稱**：性質 (3) 補上之後，它在事件層**也**看得到這個
+    樣本（``parse_log_events`` 同樣用 ``splitlines()`` 切行）⇒ 原名逐字的「only by the
+    roundtrip」已為假。本條現在只宣稱**差分探測抓不到它**，⛔ 不宣稱只有一條抓得到。
     """
     forged = (
         f"{_LOG_TS} handoff by X；evidence\u2028"
@@ -684,11 +690,13 @@ def test_append_log_line_does_not_punish_a_body_broken_before_the_write():
     assert append_log_line(already_broken, f"{_LOG_TS} review by wf-cli → APPROVE（🏁完成）")
 
 
-def _append_log_with(value: str, *, structural: bool, roundtrip: bool) -> str | None:
-    """以「只開其中一條性質」的守衛重跑一次 ``append_log_line``；被拒回 ``None``。"""
+def _append_log_with(
+    value: str, *, structural: bool, roundtrip: bool, invariants: bool = True
+) -> str | None:
+    """以「只開其中幾條性質」的守衛重跑一次 ``append_log_line``；被拒回 ``None``。"""
     from wf_cli import card as card_mod
 
-    real, partial = _guard_with(structural, roundtrip)
+    real, partial = _guard_with(structural, roundtrip, invariants)
     card_mod.enforce_write_boundary = partial
     try:
         return card_mod.append_log_line(_log_body(), value)
@@ -696,6 +704,61 @@ def _append_log_with(value: str, *, structural: bool, roundtrip: bool) -> str | 
         return None
     finally:
         card_mod.enforce_write_boundary = real
+
+
+#: 查核 R2-01 的**逐字重現**：普通 ``\n`` 分行、後兩行各自長得像一筆 lifecycle 事件。
+#: ⭐ 兩條**行層**性質對它結構性沉默——行層往返逐位元成立、無讀取路徑失效。
+_EVENT_LAYER_FORGERY = (
+    f"{_LOG_TS} handoff by wf-cli → owner X；iteration 1；證據 abc\n"
+    "- 2026-08-27T09:00:00+08:00 open by wf-cli；owner Y；iteration 0。\n"
+    "- 2026-08-27T09:00:01+08:00 review by wf-cli → APPROVE（🏁完成）；查核者 Z。"
+)
+
+
+def test_append_log_line_rejects_event_layer_forgery_carried_by_plain_newlines():
+    """⭐ **性質 (3) 的紅樣本**（查核 R2-01，``root_cause_id``
+    ``event-layer-forgery-not-covered-by-line-layer-roundtrip``）。
+
+    先證**行層兩條性質對它沉默**（⛔ 不是推想，是同一個 payload 實跑）：
+    ``_append_log_line_raw`` 寫得出去、每條讀取路徑照樣讀得回、寫進去那一段逐位元讀得回。
+    再證**事件層**看到的是三筆而不是一筆 ⇒ 性質 (3) 拒收。
+    """
+    base = _log_body()
+    leaked = _append_log_line_raw(base, _EVENT_LAYER_FORGERY)   # 無守衛版本：寫得出去
+    assert readable_by(base) - readable_by(leaked) == set()      # 性質 (1) 抓 0
+    before, why_before = doctor.parse_log_events(base)
+    after, why_after = doctor.parse_log_events(leaked)
+    assert why_before is None and why_after is None
+    assert before is not None and after is not None
+    assert len(after) - len(before) == 3, "樣本必須真的多出兩筆事件，否則這條測試沒有射程"
+
+    with pytest.raises(MarkerWriteBoundaryError) as exc:
+        append_log_line(base, _EVENT_LAYER_FORGERY)
+    assert "lifecycle 事件筆數" in str(exc.value)
+
+
+def test_mutation_removing_the_event_count_invariant_lets_the_forgery_through():
+    """變異檢驗：關掉性質 (3)，同一個 payload **必須**漏過去（否則這條是零資訊的）。
+
+    ⭐ 這同時證明性質 (3) **不是**性質 (1)／(2) 的重述：兩條行層性質全開時它照樣寫得進去。
+    """
+    leaked = _append_log_with(
+        _EVENT_LAYER_FORGERY, structural=True, roundtrip=True, invariants=False
+    )
+    assert leaked is not None, "行層兩條性質全開仍被擋 ⇒ 這不是 (3) 的獨有樣本"
+    events, _ = doctor.parse_log_events(leaked)
+    assert events is not None and "review by wf-cli → APPROVE" in events[-1]
+
+
+def test_the_event_count_invariant_does_not_punish_a_body_broken_before_the_write():
+    """預壞控制組在性質 (3) 上的對應：事件層在寫入**前**就不判定的卡，一律跳過。
+
+    ⛔ 不得由此推出「那些卡受保護」——不受保護，與差分探測同一條分界。
+    """
+    already_broken = _log_body() + "\n## Log\n\n- 第二個區段\n"
+    _, why = doctor.parse_log_events(already_broken)
+    assert why is not None                       # 寫入前事件層就不判定
+    assert append_log_line(already_broken, _EVENT_LAYER_FORGERY)
 
 
 def test_mutation_on_the_append_path_shows_each_property_carries_a_distinct_class():
@@ -708,10 +771,16 @@ def test_mutation_on_the_append_path_shows_each_property_carries_a_distinct_clas
     # 結構破壞：拿掉差分探測後，往返比對仍抓得到（兩條都抓得到的那類）。
     assert _append_log_with(structural, structural=True, roundtrip=True) is None
     assert _append_log_with(structural, structural=True, roundtrip=False) is None
-    # 偽造事件行：只有往返比對抓得到 ⇒ 拿掉它就漏。
+    # 偽造事件行：差分探測抓 0 ⇒ 要漏它必須同時關掉性質 (2) 與 (3)。
+    #
+    # ⚠️ **2026-08-27 更正本條的宣稱**：這個樣本用 U+2028 分行，而 ``parse_log_events``
+    # 也是用 ``splitlines()`` 切行 ⇒ 性質 (3) 在事件層一樣看得到它（1 筆變 2 筆）。
+    # ⇒ 原本「只有往返比對抓得到」逐字為假，⛔ 不是「守衛壞了」。真正只有性質 (2)
+    # 抓得到的類別是**靜默截斷**（見 ``test_inline_sentinel_in_brief_…``）。
     assert _append_log_with(forged, structural=True, roundtrip=True) is None
-    leaked = _append_log_with(forged, structural=True, roundtrip=False)
-    assert leaked is not None, "只留差分探測時仍被擋 ⇒ 樣本不是 (2) 的獨有樣本"
+    assert _append_log_with(forged, structural=True, roundtrip=False) is None  # (3) 接住
+    leaked = _append_log_with(forged, structural=True, roundtrip=False, invariants=False)
+    assert leaked is not None, "只留差分探測時仍被擋 ⇒ 樣本不是 (2)+(3) 的獨有樣本"
     events, _ = doctor.parse_log_events(leaked)
     assert events is not None and "review by wf-cli → APPROVE" in events[-1]
 
@@ -951,8 +1020,8 @@ def test_mutation_removing_the_differential_probe_lets_structural_damage_through
     assert _amend_brief_with(poisoned, structural=True, roundtrip=False) is None
 
 
-def _guard_with(structural: bool, roundtrip: bool):
-    """回傳一個「只開其中一條性質」的 ``enforce_write_boundary`` 替身。
+def _guard_with(structural: bool, roundtrip: bool, invariants: bool = True):
+    """回傳一個「只開其中幾條性質」的 ``enforce_write_boundary`` 替身。
 
     ⭐ **關掉差分探測的做法是把 baseline 換成 candidate，⛔ 不是把 candidate 換成
     baseline**（就地留註，這一格寫反過一次）：
@@ -974,6 +1043,10 @@ def _guard_with(structural: bool, roundtrip: bool):
             baseline if structural else candidate,
             candidate,
             roundtrip=kwargs.get("roundtrip", ()) if roundtrip else (),
+            # ⚠️ 性質 (3) 也必須是**顯式**的一軸，⛔ 不能靠 ``**kwargs`` 默默吃掉它：
+            # 吃掉等於每一個變異案例都在「性質 (3) 已關」的世界裡跑，於是「拿掉它會不會
+            # 漏」這個問題**量不出來**——那正是本檔 (b) 段記的同一個錯。
+            invariants=kwargs.get("invariants", ()) if invariants else (),
             where=kwargs.get("where", ""),
         )
 
