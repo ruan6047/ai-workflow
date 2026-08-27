@@ -670,11 +670,70 @@ def test_cross_field_invariants_are_registered_as_out_of_scope():
 
     下面這個樣本每個欄位各自都讀得回，本守衛因此**放行**——⛔ 這不是缺陷，是宣稱邊界。
     """
-    # card_id 尾綴 `-`：字元層合法、單欄位往返成立。
+    # 反例 1（§3.2 逐字舉的那個）：card_id 尾綴 `-`——字元層合法、單欄位往返成立。
     body = render_issue_body(make_card(spec_baseline="WB-DEMO1-"))
     assert "spec 基線：WB-DEMO1-" in body
     assert enforce_write_boundary(body, body, where="自我一致") is None
     # ⇒ 本守衛對它無異議。跨欄位自洽是另一個平面。
+
+
+def test_counterexample_two_body_is_authority_and_the_field_can_exist_alone():
+    """反例 2（**真實樣本**，⛔ 非自造）：Project「簡介」欄有值、body 卻沒有簡介區塊。
+
+    canonical §6.3：body 哨兵區塊為權威、Project TEXT 欄為**恆等導出** ⇒ 欄位不得單獨
+    存在。2026-08-27 對全母體實跑 ``brief.drifted``，命中真實卡
+    ``WF-RESOURCE-HEADING-SUFFIX1-PROBE-ASSIGN1``（🛑已停止）。
+
+    ⭐ 兩條性質對它**完全沉默**：它們只比對「寫進 body 的值 vs 從 body 讀回的值」，
+    ⛔ 從不看 Project 欄位那個平面。⇒ 跨平面不變量與跨欄位不變量同屬未涵蓋類別。
+    """
+    from wf_cli.brief import drifted
+
+    no_brief = render_issue_body(make_card())  # ⛔ 不給 brief ⇒ body 無簡介區塊
+    assert enforce_write_boundary(no_brief, no_brief, where="自我一致") is None
+    drift, why = drifted(no_brief, "欄位上殘留的舊簡介")
+    assert drift and why  # 讀取端看得到，寫入邊界看不到
+
+
+def test_counterexample_three_two_db_scopes_can_disagree_on_one_card():
+    """反例 3（**在真實卡面形狀上構造**）：標頭行的 ``db_scope`` 與資源宣告 JSON 的
+    ``db_scope`` 可以互相矛盾，而兩條性質各自都成立。
+
+    ``amend_resource_block`` 的往返比對只問「寫進去的宣告 == 讀回的宣告」，⛔ 不問
+    「它與標頭行那一格是否一致」。⇒ 寫得出一張自相矛盾的卡；退回它的是**讀取端**的
+    ``Card.__post_init__``（逐字「db_scope 與資源宣告內的 db_scope 不一致」）。
+    """
+    from wf_cli.resources import parse_block
+
+    body = render_issue_body(make_card(db_scope="none"))
+    new_body, _ = amend_resource_block(
+        body, render_block(ResourceDeclaration(db_scope="write", resources=["file:x.py"]))
+    )
+    assert "- DB：db_scope=none" in new_body      # 標頭行沒動
+    assert parse_block(new_body).db_scope == "write"  # JSON 已改 ⇒ 兩者矛盾
+    with pytest.raises(ValueError):               # 消費者在讀取端退回
+        make_card(db_scope="none", resources=parse_block(new_body))
+
+
+def test_differential_probe_does_not_protect_a_path_already_broken_before_the_write():
+    """⚠️ **登記差分探測自己的涵蓋界線**（V4 全母體實跑逼出來的，⛔ 不是推想）。
+
+    (a) 現在的行為：差分探測逐字是「**寫入前讀得回**、寫入後讀不回 ⇒ 拒收」。⇒ 一條
+        在寫入前**就已經**讀不回的路徑，它一律跳過。
+    (b) 為什麼刻意如此：反過來（不管寫入前狀態、一律要求讀得回）會讓每一張既有損壞的
+        卡連合法修訂都做不了——而「修好已壞的卡」逐字是本卡的非射程。fail-open 的方向
+        選在這裡，是因為另一邊會把守衛變成故障源。
+    (c) ⛔ **不得由此推出「這些卡受保護」**：2026-08-27 對全母體 204 張實跑，
+        ``card.parse_requested_by`` 在 11 張上**寫入前就讀不回**（10 張需求欄是 `—`
+        佔位、1 張 body 已壞）⇒ 對那 11 張，本卡新補的那類注入**寫得進去**。
+        數字會漂，量法是：對每張卡跑一次 ``parse_requested_by``。
+    """
+    placeholder = render_issue_body(make_card(requested_by="—"))
+    with pytest.raises(AmendError):
+        parse_requested_by(placeholder)          # 寫入前就讀不回
+    # ⇒ 同一個注入在這張卡上**不被拒收**（其餘讀取路徑無恙、簡介自己往返成立）。
+    written, _ = amend_brief(placeholder, _BRIEF_WITH_STANDALONE_REQUESTER_LINE)
+    assert _read_brief_text(written) == _BRIEF_WITH_STANDALONE_REQUESTER_LINE
 
 
 def test_roundtrip_reader_reads_what_the_amend_path_reads():
