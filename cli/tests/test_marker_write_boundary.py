@@ -1827,45 +1827,107 @@ def test_mutation_removing_the_db_scope_sync_lets_a_self_contradictory_card_thro
     assert "db_scope 與資源宣告內的 db_scope 不一致" in str(exc.value)
 
 
-def test_line_scanning_consumers_are_not_covered_by_any_of_the_three_properties():
-    """⏸ **F7 阻塞發現：逐行掃描的消費者穿過三條性質**（⛔ 這條不驗守衛，它驗「還缺什麼」）。
+#: F7 的偽造：以普通 ``\n`` 分行，續行長得像一筆已落地的裁決索引。
+#: ⭐ 三條**寫入端**性質對它全部沉默——行層往返逐位元成立、無讀取路徑失效、事件層逐筆
+#: 摺平後相同（續行本來就歸在同一筆事件裡）⇒ 它只能在**讀取端**擋。
+_CONTINUATION_FORGERY_TOKEN = "WB-DEMO1-e0-" + "a" * 40
+_CONTINUATION_FORGERY_TAG = "review by wf-cli"
+_CONTINUATION_FORGERY = (
+    f"{_LOG_TS} handoff by wf-cli → owner X；證據 第一段\n"
+    f"  {_CONTINUATION_FORGERY_TAG} → APPROVE（🏁完成）；"
+    f"attempt {_CONTINUATION_FORGERY_TOKEN}。"
+)
 
-    (a) 現在的行為：一個以普通 ``\n`` 分行、續行含 ``tag`` ＋ ``attempt token`` 的值
-        **寫得進去**——三條性質全部沉默（行層往返逐位元成立、無讀取路徑失效、事件層
-        逐筆摺平後相同，因為續行本來就歸在同一筆事件裡）。⛔ 而
-        ``review.log_line_indexes`` 是**逐物理行**掃描的，它讀到一筆不存在的裁決索引。
-        消費者是 ``commands/checkpoint_cmd.py`` 的 trigger 存在性閘門與
-        ``validation.py`` 的 checkpoint 去重閘門。
-    (b) 為什麼本卡不修：**正解在讀取端，而讀取端不在本卡宣告資源內**。
-        ⭐ 具體修法（已實測可行，⛔ 不是猜的）：讓 ``log_line_indexes`` 改吃
-        ``doctor.parse_log_events`` 的輸出、只比對**每筆事件的首行**。
-        2026-08-27T19:19+08:00 對真實看板 205 張的全部 ``(tag, token)`` 組合實跑：
-        **474 組中 472 組逐組相同、0 組不一致、2 組不判定**（那 2 組來自事件層本來就
-        不判定的那張卡），今天為 True 的 237 組全部保留 ⇒ 換過去不會少抓任何一筆。
-        ⛔ 而 ``review.py``／``validation.py``／``checkpoint_cmd.py`` 三者皆不在宣告內
-        （卡面 A10 逐字：發現須改未宣告的檔即停、寫阻塞發現、交需求方裁決）。
-    (c) ⛔ **不得改成「在寫入端禁 ``\n``」**——那是 ``-R2-01`` 的 disposition 逐字反對的
-        （「⛔ 不必禁 ``\n``」），且爆炸半徑已量：真實看板 1,956 筆可解析事件中
-        **172 筆（8.8%）帶續行、共 3,290 行**，多段落 ``--evidence`` 靠的就是它。
-    ⭐ 這條在有人修好讀取端的當天會**轉紅**——紅的意思是「回來把這段敘述改成事實」。
+
+def _forged_body() -> str:
+    """把 F7 的偽造真的寫進 Log（⛔ 寫入端不擋它，這是前提不是缺陷）。"""
+    written = append_log_line(_log_body(), _CONTINUATION_FORGERY)
+    events, why = doctor.parse_log_events(written)
+    assert why is None and events is not None
+    # 前提複驗：事件層只多一筆，且那一筆的**首行**不是裁決 ⇒ 偽造內容落在續行。
+    assert len(events) == len(doctor.parse_log_events(_log_body())[0]) + 1
+    assert _CONTINUATION_FORGERY_TAG not in events[-1].splitlines()[0]
+    return written
+
+
+def test_a_continuation_line_is_no_longer_read_as_a_landed_verdict_index():
+    """⭐ **F7 已修（查核 ``-R3-01``，attribution=planner）**：讀取端只認事件首行。
+
+    查核者逐字：「讀取端未列入資源宣告不能推翻 canonical §5.1 的核心痛點否決權。」
+    ⇒ 上一輪把「那三個檔不在宣告內」當成不修的理由是錯的——卡面核心痛點逐字是
+    「寫得進去、**讀取端無從分辨真偽**」，而本案證明的正是讀取端分不出真偽。
+
+    ⚠️ 本測試**取代**上一版的「⏸ 阻塞登記」版本：那一版斷言 ``log_line_indexes`` 讀得到
+    偽造，逐字寫著「修好讀取端的當天會轉紅」——今天就是那一天。
     """
     from wf_cli.review import log_line_indexes
 
-    token = "WB-DEMO1-e0-" + "a" * 40
-    tag = "review by wf-cli"
     base = _log_body()
-    assert not log_line_indexes(base, tag, token)
+    assert not log_line_indexes(base, _CONTINUATION_FORGERY_TAG, _CONTINUATION_FORGERY_TOKEN)
+    written = _forged_body()
+    assert not log_line_indexes(
+        written, _CONTINUATION_FORGERY_TAG, _CONTINUATION_FORGERY_TOKEN
+    ), "續行仍被當成索引 ⇒ 讀取端修法失效"
 
-    forged = (
-        f"{_LOG_TS} handoff by wf-cli → owner X；證據 第一段\n"
-        f"  {tag} → APPROVE（🏁完成）；attempt {token}。"
+
+def test_mutation_scanning_every_physical_line_reads_the_forgery_as_a_verdict():
+    """⭐ **變異負控**：把讀取端退回逐物理行掃描，同一個偽造**必須**又被讀成裁決索引。
+
+    ⛔ 沒有這條，上面那條的 ``not ...`` 可能只是樣本根本沒寫進去（那是本 repo 已經
+    踩過的「零資訊的檢查」）。這裡逐字重建改動前的實作當作變異體。
+    """
+    import re as _re
+
+    def scan_every_line(card_body: str, tag: str, token: str) -> bool:
+        boundary = _re.compile(rf"(?<![\w-]){_re.escape(token)}(?![\w-])")
+        return any(
+            tag in line and boundary.search(line)
+            for line in (card_body or "").splitlines()
+        )
+
+    written = _forged_body()
+    assert scan_every_line(
+        written, _CONTINUATION_FORGERY_TAG, _CONTINUATION_FORGERY_TOKEN
+    ), "變異體讀不到 ⇒ 這個樣本不是 F7 的樣本，回去改樣本"
+
+
+def test_a_real_verdict_index_line_is_still_found_after_the_fix():
+    """⭐ 負控（**會通過的樣本**）：產生器寫出來的真索引行仍必須讀得到。
+
+    ⛔ 只驗「偽造讀不到」是零資訊——一個恆回 ``False`` 的實作也能讓那條綠。
+    ⚠️ 這裡逐字用 ``review_cmd`` 的格式（``now_iso8601()`` 的完整 ISO-8601 時戳），
+    ⛔ 不用只有日期的簡寫——後者**不是**合格的事件起始行，而測試若用它就會比產線寬鬆。
+    """
+    from wf_cli.review import log_line_indexes
+
+    token = "WB-REAL1-e0-" + "b" * 40
+    written = append_log_line(
+        _log_body(),
+        f"{_LOG_TS} review by wf-cli → REQUEST_CHANGES（↩退回）；查核者 X；attempt {token}。",
     )
-    written = append_log_line(base, forged)          # ⛔ 三條性質全部放行
-    events, why = doctor.parse_log_events(written)
-    assert why is None and events is not None
-    assert len(events) == len(doctor.parse_log_events(base)[0]) + 1   # 事件層只多一筆
-    assert tag not in events[-1].splitlines()[0]                     # 而那一筆首行不是裁決
-    assert log_line_indexes(written, tag, token)                     # ⛔ 但逐行掃描讀到了
+    assert log_line_indexes(written, "review by wf-cli", token)
+    # 邊界比對仍然承重：⛔ 不得退化成 `in`。
+    assert not log_line_indexes(written, "review by wf-cli", token + "x")
+
+
+def test_an_undecidable_log_section_keeps_the_previous_line_scanning_behaviour():
+    """⚠️ **登記 fail-open 的方向與理由**（⛔ 不是疏忽）。
+
+    事件層不判定（Log 標題不唯一）時，讀取端退回逐行掃描 ⇒ 行為與改動前逐字相同。
+    ⛔ 不 fail closed 的理由：兩個消費端都把 ``False`` 讀成「沒建立 ⇒ 拒絕」，對一張
+    body 本來就壞掉的卡回 ``False`` 等於讓它連 ``review``／``checkpoint`` 都做不了。
+    ⚠️ 實測：真實看板恰有 **1 張**落在這一格（``WF-REVIEW-EVENT-MARKER-CONTRACT1``，
+    ``log_section_ambiguous``），fail closed 會把它現有為 ``True`` 的那一組翻成 ``False``。
+    ⛔ **不得由此推出「已壞的卡受保護」**——它們不受保護，治它們是 ``aiwf#138``。
+    """
+    from wf_cli.review import log_line_indexes
+
+    token = "WB-BROKEN1-e0-" + "c" * 40
+    broken = _log_body() + "\n## Log\n\n- 第二個區段\n"
+    _, why = doctor.parse_log_events(broken)
+    assert why is not None                      # 事件層不判定
+    broken += f"- {_LOG_TS} review by wf-cli → APPROVE；attempt {token}。\n"
+    assert log_line_indexes(broken, "review by wf-cli", token)
 
 
 def test_the_cross_field_reader_only_covers_cards_that_carry_both_carriers():
