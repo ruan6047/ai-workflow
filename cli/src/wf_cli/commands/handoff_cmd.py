@@ -797,18 +797,41 @@ def run(args: argparse.Namespace) -> int:
     if gate.report_mark:
         trace += f"；{gate.report_mark}"
 
+    def prepare_card_log(entry: str) -> str:
+        """**純計算**下一版 body 並過寫入邊界守衛；⛔ 一次遠端呼叫都不發。
+
+        ⭐ **刻意與 :func:`commit_card_body` 分開**（2026-08-27 依查核 R2-02
+        ``guard-runs-after-remote-writes-half-write``）：
+        (a) 現在的行為：``append_log_line`` 內含的守衛在本函式就跑完，拒收時零遠端寫入。
+        (b) 為什麼：``write_status_face`` 原本先寫四到五個欄位、最後才附 Log ⇒ 守衛拒收
+            時 owner／交付狀態／最後交接／iteration 已全部寫入，而 Log 沒有對應事件。
+            §3.2 明訂拒收必須發生在**任何**遠端寫入之前。
+        (c) ⛔ **不得由此推出「handoff 的每條 Log 留痕都在寫入前驗過」**——`_release_with_cleanup`
+            的非終態留痕**構造上做不到**：它記的是 `execute_closeout_transition` 已經
+            做過的動作，內容由那些動作產生 ⇒ 只能後寫。那一格見 ``append_card_log``。
+        """
+        return append_log_line(item.body, f"{ts} {entry}")
+
+    def commit_card_body(new_body: str) -> None:
+        """把算好的 body 寫回去。**只碰 body，不碰任何欄位。**"""
+        set_item_body(
+            runner, item.content_type, item.content_id, project, target.repo,
+            item.issue_number, new_body,
+        )
+
     def append_card_log(entry: str) -> None:
         """往卡片的 ``## Log`` 附加一行（append-only）。**只碰 body，不碰任何欄位。**
 
         從 `write_status_face` 抽出來的，理由不是去重：Log 留痕與狀態面寫入原本綁在
         同一個函式裡，於是「不寫終態」只能連同「不留紀錄」一起做到——那正是 R3-01
         的成因。抽開之後，兩件事可以各自決定要不要發生。
+
+        ⚠️ **本函式的呼叫端在守衛之前就已經寫過遠端狀態，⛔ 且那是不可避免的**：
+        `_record_actions_without_terminal` 記的是收尾轉換**已經做過**的動作（分支刪除、
+        Issue 關閉），內容由那些動作產生 ⇒ 沒有任何順序能讓它在寫入前先驗。⇒ 這一格
+        逐字登記為未涵蓋，⛔ 不得讀成「已驗過」。
         """
-        new_body = append_log_line(item.body, f"{ts} {entry}")
-        set_item_body(
-            runner, item.content_type, item.content_id, project, target.repo,
-            item.issue_number, new_body,
-        )
+        commit_card_body(prepare_card_log(entry))
 
     def write_status_face(cleanup_note: str = "") -> None:
         # ⭐ 欄位 schema 的準備**刻意擺在這個 closure 裡面**，而不是在上面的閘門之後。
@@ -829,6 +852,17 @@ def run(args: argparse.Namespace) -> int:
         #     release 無 repo_path、非 release、以及 `_release_with_cleanup` 的 effect
         #     writer），⇒ 欄位查詢次數與搬動前相同。若日後有人讓它一輪呼叫兩次，
         #     會多發一次欄位查詢；`ensure_fields` 冪等，重複呼叫不改變遠端狀態。
+        #
+        # ⭐ **Log 行的純計算與守衛刻意排在本行之前**（2026-08-27 依查核 R2-02）：
+        # (a) 現在的行為：`prepare_card_log` 先跑，拒收時本 closure 一次遠端呼叫都沒發。
+        # (b) 為什麼：改動前四到五個 `set_field_value` 排在附 Log 之前 ⇒ 守衛拒收時欄位
+        #     已全部寫入、Log 沒有對應事件，`doctor` 的狀態面漂移稽核會報成不一致。
+        # (c) ⛔ 不得由此推出「本 closure 零半寫入」——`commit_card_body` 自己失敗仍會
+        #     留下「欄位已寫、body 未更新」；那一格由重跑收斂，⛔ 不在本次射程。
+        new_body = prepare_card_log(
+            f"handoff by wf-cli → owner {args.to}；iteration {new_iteration}；"
+            f"SHA {args.source_sha}{trace}；證據 {args.evidence}{cleanup_note}。"
+        )
         fields = ensure_fields(runner, target.owner, target.project)
         set_field_value(runner, project, item.item_id, fields["owner"], args.to)
         set_field_value(runner, project, item.item_id, fields["交付狀態"], new_status)
@@ -840,10 +874,7 @@ def run(args: argparse.Namespace) -> int:
         if phase is not None and "階段" in fields:
             set_field_value(runner, project, item.item_id, fields["階段"], phase)
 
-        append_card_log(
-            f"handoff by wf-cli → owner {args.to}；iteration {new_iteration}；"
-            f"SHA {args.source_sha}{trace}；證據 {args.evidence}{cleanup_note}。"
-        )
+        commit_card_body(new_body)
 
     if args.cleanup:
         rc = _release_with_cleanup(

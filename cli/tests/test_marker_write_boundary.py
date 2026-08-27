@@ -1250,7 +1250,179 @@ def test_the_four_verbs_without_fold_are_registered_as_going_through_the_guard(v
 
 
 # --------------------------------------------------------------------------
-# V7 未涵蓋類別：跨欄位不變量（⛔ 逐字登記，⛔ 不宣稱涵蓋）
+# R2-02：守衛必須排在**任何**遠端寫入之前（實跑量測交錯順序）
+# --------------------------------------------------------------------------
+#
+# ⚠️ **判準是實跑的交錯順序，⛔ 不是 AST 的行號先後。** 本輪實測，行號比對在五支動詞
+# 上錯了三支：
+#
+#   * ``amend_cmd``：首個 ``add_issue_comment`` 的行號小於首個 ``append_log_line``，
+#     ⛔ 但那一行在 ``_escalate_layout_failure`` 裡——只有**拒收之後**才呼叫。
+#   * ``handoff_cmd``／``checkpoint_cmd``：行號看起來是 append 先，⛔ 但 handoff 的
+#     ``append_card_log`` 是**定義在前、呼叫在後**的 closure，checkpoint 的
+#     ``_post_event`` 是包了 ``gh issue comment`` 的本地 helper。
+#
+# ⇒ 唯一可信的量法是把守衛與 gh 出口同時掛上探針，跑真動詞，看誰先出現。
+
+_MUTATING_GH: tuple[tuple[str, ...], ...] = (
+    ("project", "item-edit"), ("project", "item-create"), ("project", "item-add"),
+    ("project", "field-create"), ("issue", "create"), ("issue", "edit"),
+    ("issue", "comment"), ("issue", "close"),
+)
+
+
+class _OrderProbe:
+    """記錄「守衛跑了」與「遠端寫入發生了」的**交錯順序**。
+
+    ⛔ 刻意不 import ``test_commands_mocked._RecordingRunner``：那支只回報「有沒有
+    mutation」，本檔要的是**順序**，而順序需要守衛那一側也記事件。
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.events: list[str] = []
+
+    def _record(self, argv: list[str]) -> None:
+        if any(list(argv[: len(m)]) == list(m) for m in _MUTATING_GH):
+            self.events.append("W:" + " ".join(argv[:2]))
+        elif argv[:2] == ["api", "graphql"] and any("mutation" in a for a in argv):
+            self.events.append("W:api graphql <mutation>")
+
+    def execute(self, args, input=None):
+        self._record(list(args))
+        return self.inner.execute(args, input)
+
+    def run_json(self, args):
+        self._record(list(args))
+        return self.inner.run_json(args)
+
+    def graphql(self, query: str, **variables):
+        if "mutation" in query:
+            self.events.append("W:graphql <mutation>")
+        return self.inner.graphql(query, **variables)
+
+    def first_write_before_guard(self) -> str | None:
+        """守衛之前發生的第一次遠端寫入；``None`` 代表守衛排在最前面（＝合格）。
+
+        ⚠️ **先確認守衛真的跑過，再判順序**（⛔ 不是邊掃邊判）：守衛一次都沒跑到時，
+        邊掃邊判會把它報成「有寫入排在守衛之前」——那是一個**看起來像有鑑別力**的
+        錯誤答案，會讓「探針沒掛上」與「順序不合格」長得一樣。
+        """
+        if "GUARD" not in self.events:
+            raise AssertionError(f"這一輪守衛根本沒被跑到，序列={self.events}")
+        for event in self.events[: self.events.index("GUARD")]:
+            if event.startswith("W:"):
+                return event
+        return None
+
+
+def _install_order_probe(monkeypatch, probe: _OrderProbe, *modules) -> None:
+    """把 ``default_runner`` 換成探針，並在每個模組的 ``append_log_line`` 綁定上記號。
+
+    ⚠️ 換的是**模組層屬性**（與 ``tests/conftest.py`` 的 gate-guard 同一種掛法）：那四支
+    都是 ``from ..card import append_log_line`` ⇒ 只換 ``card`` 那一份是換不到的。
+    """
+    for module in modules:
+        monkeypatch.setattr(module, "default_runner", probe, raising=False)
+        real = getattr(module, "append_log_line", None)
+        if real is None:
+            continue  # ``open_cmd`` 不走 Log 附加，只需要換 runner
+        def spy(body, line, _real=real, _probe=probe):
+            _probe.events.append("GUARD")
+            return _real(body, line)
+
+        monkeypatch.setattr(module, "append_log_line", spy)
+
+
+@pytest.fixture
+def order_probe(monkeypatch):
+    from wf_cli.commands import assign_cmd, checkpoint_cmd, handoff_cmd, review_cmd
+
+    from .test_checkpoint import EventGhRunner
+
+    probe = _OrderProbe(EventGhRunner())
+    _install_order_probe(
+        monkeypatch, probe, open_cmd, assign_cmd, handoff_cmd, review_cmd, checkpoint_cmd
+    )
+    return probe
+
+
+def test_assign_runs_the_guard_before_any_remote_write(order_probe):
+    from .test_commands_mocked import _assign_argv, _open_for_assign, run_cli
+
+    assert run_cli(_open_for_assign("ORD-A1", **{"--exec-capability": "主力型"})) == 0
+    order_probe.events.clear()
+    assert run_cli(_assign_argv("ORD-A1", "某模型@某工具", "b", "/w")) == 0
+    assert order_probe.first_write_before_guard() is None, order_probe.events
+
+
+def test_handoff_runs_the_guard_before_any_remote_write(order_probe):
+    from .test_commands_mocked import _handoff_argv, _open_argv, run_cli
+
+    assert run_cli(_open_argv("ORD-H1")) == 0
+    order_probe.events.clear()
+    assert run_cli(_handoff_argv("ORD-H1", "b" * 40)) == 0
+    assert order_probe.first_write_before_guard() is None, order_probe.events
+
+
+def test_review_runs_the_guard_before_any_remote_write(order_probe, tmp_path):
+    from .test_commands_mocked import run_cli
+    from .test_review import APPROVE_REPORT, open_card, review_argv, write_input
+
+    assert open_card("DEMO-CARD1", runner=order_probe) == 0
+    order_probe.events.clear()
+    assert run_cli(review_argv("DEMO-CARD1", write_input(tmp_path, APPROVE_REPORT))) == 0
+    assert order_probe.first_write_before_guard() is None, order_probe.events
+
+
+def test_the_order_probe_classifier_is_load_bearing_in_both_directions():
+    """⭐ **探針本身的判準**：合格／不合格／守衛沒跑到，三種都要分得出來。
+
+    ⛔ 沒有這條，上面三條的 ``is None`` 可能只是探針沒掛上——那正是本 repo 已經踩過的
+    「零資訊的檢查」。⚠️ **真正的承重證據是下面兩個，⛔ 不是本條**：
+    (1) ``test_checkpoint_still_writes_before_the_guard_…``——一支**真動詞**今天就會讓
+        探針指出寫在前的那次留言；
+    (2) 2026-08-27 實跑的變異：把三支動詞的重排逐一還原後，對應的三條當場轉紅，
+        序列逐字為 ``assign=['W:project item-edit'×3, 'GUARD', 'W:issue edit']``、
+        ``review``／``handoff`` 皆為 ``W:issue comment``／欄位寫入在 ``GUARD`` 之前。
+    """
+    probe = _OrderProbe(inner=None)
+    probe.events[:] = ["W:issue comment", "GUARD"]
+    assert probe.first_write_before_guard() == "W:issue comment"
+    probe.events[:] = ["GUARD", "W:issue edit"]
+    assert probe.first_write_before_guard() is None
+    probe.events[:] = ["W:issue edit"]          # 守衛根本沒跑到 ⇒ fail closed
+    with pytest.raises(AssertionError):
+        probe.first_write_before_guard()
+
+
+def test_checkpoint_still_writes_before_the_guard_and_that_file_is_out_of_scope(order_probe):
+    """⏸ **把阻塞發現釘成可執行的紀錄**（⛔ 這條不驗守衛，它驗「還缺什麼」）。
+
+    (a) 現在的行為：``checkpoint`` 的 ``_post_event``（``gh issue comment``）排在
+        ``append_log_line`` **之前** ⇒ 守衛拒收時，板上已經留下一則 checkpoint 事件留言。
+    (b) 為什麼沒修：兩個理由並存，缺一都不足以說明——
+        (1) ``cli/src/wf_cli/commands/checkpoint_cmd.py`` **不在本卡宣告資源**內
+            （卡面 A10 逐字：發現須改未宣告的檔即停、寫阻塞發現、交需求方裁決）；
+        (2) ⭐ 更根本的是**構造上搬不動**：Log 行的內容含 ``留言 {url}``，而 ``url``
+            是那次 ``gh issue comment`` 的回傳值 ⇒ 沒有任何順序能讓完整的 new_body
+            在留言之前就算得出來。修它要另設計（例如先以佔位 URL 預驗一次），
+            那是設計變更，⛔ 不是搬三行。
+    (c) ⛔ **不得由此推出「checkpoint 沒有守衛」**——值一樣寫不進去（``append_log_line``
+        是同一個被守衛的函式），缺的是「拒收時零遠端寫入」那個保證。
+    ⭐ 這條在有人修好它的當天會**轉紅**——那是刻意的：紅的意思是「回來把這段敘述改成
+    事實」，⛔ 不是「有人弄壞了」。
+    """
+    from .test_checkpoint import checkpoint_argv, run_cli, seed_three_counted_attempts
+
+    attempts = seed_three_counted_attempts(order_probe, None, "ORD-CP1")
+    order_probe.events.clear()
+    assert run_cli(checkpoint_argv("ORD-CP1", attempts[2])) == 0
+    assert order_probe.first_write_before_guard() == "W:issue comment", order_probe.events
+
+
+# --------------------------------------------------------------------------
+# V7 跨欄位／跨平面不變量（甲案已兌現一個，另兩個逐字登記為無實例／看不到）
 # --------------------------------------------------------------------------
 
 
