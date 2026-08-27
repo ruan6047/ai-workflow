@@ -259,7 +259,8 @@ Issue 保留其 R1 兩條 finding 的紀錄。
 
 ### 明確不涵蓋
 
-- `§6:222` 的文字**不改**。squash 之後沒有 merge commit 落 main，該條的觸發條件消失，
+- `AI_WORKFLOW.md` §6「留痕與交付」逐字「merge commit、PR 結案紀錄或 B2 權威文件的核可 commit 另必加」的那一條，其**文字不改**。
+  squash 之後沒有 merge commit 落 main，該條的觸發條件消失，
   改文字是解一個已經不會發生的問題。**若日後恢復 merge 合併，該條重新生效。**
 - 本裁定只約束**卡片合併**。分支內部的整合行為不受限。
 

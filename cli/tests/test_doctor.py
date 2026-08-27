@@ -1009,7 +1009,8 @@ def test_shape_merge_without_combined_diff_is_not_an_implementation_commit():
     """乾淨 merge 的 tree 完全由 parent 解釋得出，沒有自己著作的內容。"""
     rec = _rec(parents=("b" * 40, "c" * 40), changed_paths=(), merge_content_paths=())
     assert classify_commit_shape(rec) == "merge_clean"
-    # §6:222 對 merge commit 仍要求 Reviewed-by，但不要求實作三件式。
+    # §6「留痕與交付」逐字「merge commit、PR 結案紀錄或 B2 權威文件的核可 commit 另必加」那一條：
+    # 對 merge commit 仍要求 Reviewed-by，但不要求實作三件式。
     assert required_trailers("merge_clean") == ("Reviewed-by",)
 
 
