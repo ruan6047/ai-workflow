@@ -439,7 +439,6 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 > 錨點漂移不是缺口變化——判定是否變了以 `--check` 的第 3 個方向為準。
 
 <!-- reconcile-generated:begin -->
-
 - 契約側符號總數：**86**（由掃描文件導出，非人工登記）
 - 判定為缺口：**54**
 - 守衛覆蓋缺口：**5**
