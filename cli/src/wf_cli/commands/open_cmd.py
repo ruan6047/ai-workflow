@@ -12,6 +12,7 @@ from pathlib import Path
 from ..card import (
     CAPABILITY_TIERS,
     Card,
+    MarkerWriteBoundaryError,
     render_issue_body,
     render_spec_markdown,
     validate_capability_routing,
@@ -212,30 +213,59 @@ def run(args: argparse.Namespace) -> int:
             print(f"[open] 拒絕：{e}", file=sys.stderr)
         return 2
 
-    card = Card(
-        card_id=args.card_id,
-        feature=args.feature,
-        tier=args.tier,
-        db_scope=args.db_scope,
-        core_pain=args.core_pain,
-        service_goal=args.service_goal,
-        brief=args.brief,
-        resources=decl,
-        executor_capability=args.exec_capability,
-        executor_capability_reason=args.exec_capability_reason,
-        reviewer_capability=args.review_capability,
-        reviewer_capability_reason=args.review_capability_reason,
-        initiative=args.initiative,
-        requested_by=args.requested_by,
-        planned_by=args.planned_by,
-        executor=args.executor,
-        reviewer=args.reviewer,
-        spec_baseline=args.spec_baseline,
-        acceptance=args.acceptance or ["TODO：填入可獨立驗證的條件"],
-        verification=args.verification or ["TODO：填入驗證指令與證據要求"],
-        deployment_status="⏸未部署" if args.needs_deploy else "—不適用",
-        chain_depth=args.chain_depth,
-    )
+    # ⭐ **``Card(...)`` 刻意包進錯誤處理，⛔ 不是防禦性 try**
+    # （WF-MARKER-WRITE-BOUNDARY1，2026-08-27 依查核 R1-03 補上）：
+    #
+    # (a) 現在的行為：``Card.__post_init__`` 的寫入邊界守衛（以及它旁邊那幾道防線）
+    #     拒收時，本指令印 ``[open] 拒絕：…`` 並回 rc=2，與上面兩道前置檢查同形。
+    # (b) 為什麼：``open`` 是本卡量到的**主破口**（14 個旗標裡 9 個寫得出一張永久不可
+    #     amend 的卡），而 ``templates/handoff-contract.md`` §3.2 規則二逐字要求拒收是
+    #     **乾淨的**——「以 stack trace 收場的 fail-closed 不算乾淨拒絕」。原本這一段
+    #     落在上面那個 try 之外，非法輸入得到的是 rc=1 ＋ traceback。
+    #     ``cli.KNOWN_ERRORS`` 另外也收了同一個型別（§3.2 逐字的參考形狀：CLI 層前置
+    #     檢查 ＋ model 層 ``__post_init__`` 防線，兩處共用同一份判準函式）；本層存在
+    #     的意義是給出與其他 open 拒收一致的 ``[open] 拒絕：`` 前綴。
+    # (c) ⛔ **不得由此推出「可以把整段 open 流程包進 try」**：本 try 只包住 ``Card``
+    #     建構這一個**純函式**呼叫，它排在任何遠端寫入之前。包大一點就會把遠端寫入的
+    #     失敗也吞成「拒絕」，而那兩者的處置完全不同。
+    try:
+        card = Card(
+            card_id=args.card_id,
+            feature=args.feature,
+            tier=args.tier,
+            db_scope=args.db_scope,
+            core_pain=args.core_pain,
+            service_goal=args.service_goal,
+            brief=args.brief,
+            resources=decl,
+            executor_capability=args.exec_capability,
+            executor_capability_reason=args.exec_capability_reason,
+            reviewer_capability=args.review_capability,
+            reviewer_capability_reason=args.review_capability_reason,
+            initiative=args.initiative,
+            requested_by=args.requested_by,
+            planned_by=args.planned_by,
+            executor=args.executor,
+            reviewer=args.reviewer,
+            spec_baseline=args.spec_baseline,
+            acceptance=args.acceptance or ["TODO：填入可獨立驗證的條件"],
+            verification=args.verification or ["TODO：填入驗證指令與證據要求"],
+            deployment_status="⏸未部署" if args.needs_deploy else "—不適用",
+            chain_depth=args.chain_depth,
+        )
+    except MarkerWriteBoundaryError as exc:
+        # ⚠️ **刻意只收這一個型別，⛔ 不收父類 ``ValueError``**（就地留註，這一格改窄過一次）：
+        # (a) 現在的行為：``Card.__post_init__`` 其餘的防線（tier／db_scope 不一致／
+        #     路由名字保留字元／chain_depth）仍原樣往上拋。
+        # (b) 為什麼：那幾條在 CLI 層**已經各自有前置檢查**給乾淨訊息，而
+        #     ``tests/test_amend.py::test_open_refuses_an_unreadable_name_before_touching_github``
+        #     刻意停用前置檢查、斷言 ``Card`` 建構仍會拋 ``ValueError`` ——那條測試釘的是
+        #     「model 層是獨立防線」這個深層性質。收父類會把它吞掉，等於用一個新缺陷
+        #     換掉舊缺陷。
+        # (c) ⛔ **不得由此推出「其他 ValueError 的拒收是乾淨的」**：它們的乾淨度來自
+        #     上面那兩道前置檢查，⛔ 不是來自這裡。
+        print(f"[open] 拒絕：{exc}", file=sys.stderr)
+        return 2
 
     target = resolve_target(
         owner=args.owner, project=args.project, repo=args.repo, config=args.config

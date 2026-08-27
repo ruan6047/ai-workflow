@@ -332,21 +332,6 @@ def run(args: argparse.Namespace) -> int:
                 print(f"  - {error}", file=sys.stderr)
             return 2
 
-    # ⭐ 欄位 schema 的準備**刻意擺在上面全部拒收之後**（缺 repo rc=2／找不到卡 rc=3／
-    # draft item rc=2／去重與 checkpoint rc=2／marked_by 身分 rc=2），而不是跟
-    # `resolve_project` 放一起。
-    #
-    # (a) 刻意如此。
-    # (b) 為什麼：`ensure_fields` 不是唯讀的——缺凍結欄位就送 `gh project field-create`。
-    #     上面那幾條的就地訊息逐字寫著「未寫入任何遠端狀態」；擺在它們之前，那句話
-    #     對缺欄位的 Project 就是假的。本行的位置是「最後一道拒收之後、第一次寫入
-    #     （`add_issue_comment`）之前」，⇒ 兩邊的保證同時成立。
-    # (c) ⛔ 不得再往後搬到 `add_issue_comment` 之後：先留言、後翻狀態的順序是刻意的
-    #     （反過來留言失敗會留下沒有裁決全文的 ✅通過），而欄位定義必須在
-    #     `set_field_value` 之前就緒 ⇒ 本行只能在這兩者之間。
-    # (d) ⛔ 不得由此推出「ensure_fields 已是唯讀」——它不是，只是往後挪了。
-    fields = ensure_fields(runner, target.owner, target.project)
-
     marks = build_accepted_marks(
         report.findings,
         overrides,
@@ -374,11 +359,6 @@ def run(args: argparse.Namespace) -> int:
         # 但留住的是「寫裁決那一刻該欄長什麼樣」，不是 attempt 的固有屬性。
         owner_field_at_verdict_write=item.owner_field,
     )
-    # 先留言、後翻狀態：反過來若留言失敗，板上會出現沒有裁決全文的 ✅通過，
-    # 那正是本卡要消滅的「宣稱與證據脫節」。
-    add_issue_comment(runner, target.repo, item.issue_number, comment)
-    set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
-
     binding = derive_preflight_basis_binding(preflight)
     counts = (
         derive_counts_toward_escalation(report, marks, preflight)
@@ -400,7 +380,40 @@ def run(args: argparse.Namespace) -> int:
         f"{counts_text}；"
         f"attempt {target_attempt}。"
     )
+    # ⭐ **本行以上全是純計算，第一次遠端寫入在本行以下**
+    #    （WF-MARKER-WRITE-BOUNDARY1，2026-08-27 依查核 R2-02
+    #    `guard-runs-after-remote-writes-half-write`）。
+    #
+    # (a) 現在的行為：`append_log_line` 內含的寫入邊界守衛在這裡跑完；拒收時本輪一次
+    #     遠端呼叫都還沒發出（裁決留言沒發、交付狀態沒翻、body 沒動）。
+    # (b) 為什麼非搬不可：改動前 `ensure_fields`／`add_issue_comment`／`set_field_value`
+    #     三者都排在本行之前 ⇒ 守衛拒收時，板上已經留下一則裁決留言、交付狀態也已翻，
+    #     ⛔ 而 Log 沒有對應的 `review` 事件。§3.2 明訂拒收必須發生在**任何**遠端寫入
+    #     之前，`doctor` 的狀態面漂移稽核也會把那種卡報成不一致。
+    # (c) ⛔ **不得由此推出「留言與翻狀態的相對順序可以動」**——⛔ 不可以，見下方那段。
+    #     本次只把**整組**遠端寫入往後搬到守衛之後，組內順序逐字不變。
     new_body = append_log_line(item.body, log_line)
+
+    # ⭐ 欄位 schema 的準備**刻意擺在上面全部拒收之後**（缺 repo rc=2／找不到卡 rc=3／
+    # draft item rc=2／去重與 checkpoint rc=2／marked_by 身分 rc=2／⭐ 寫入邊界拒收），
+    # 而不是跟 `resolve_project` 放一起。
+    #
+    # (a) 刻意如此。
+    # (b) 為什麼：`ensure_fields` 不是唯讀的——缺凍結欄位就送 `gh project field-create`。
+    #     上面那幾條的就地訊息逐字寫著「未寫入任何遠端狀態」；擺在它們之前，那句話
+    #     對缺欄位的 Project 就是假的。本行的位置是「最後一道拒收之後、第一次寫入
+    #     （`add_issue_comment`）之前」，⇒ 兩邊的保證同時成立。
+    #     ⚠️ 2026-08-27 更正：「最後一道拒收」現在是**寫入邊界守衛**（在 `append_log_line`
+    #     內），⛔ 不再是 `marked_by` 身分那一條——本行因此連同整組寫入一起往後搬。
+    # (c) ⛔ 不得再往後搬到 `add_issue_comment` 之後：先留言、後翻狀態的順序是刻意的
+    #     （反過來留言失敗會留下沒有裁決全文的 ✅通過），而欄位定義必須在
+    #     `set_field_value` 之前就緒 ⇒ 本行只能在這兩者之間。
+    # (d) ⛔ 不得由此推出「ensure_fields 已是唯讀」——它不是，只是往後挪了。
+    fields = ensure_fields(runner, target.owner, target.project)
+    # 先留言、後翻狀態：反過來若留言失敗，板上會出現沒有裁決全文的 ✅通過，
+    # 那正是本卡要消滅的「宣稱與證據脫節」。
+    add_issue_comment(runner, target.repo, item.issue_number, comment)
+    set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
     set_item_body(
         runner, item.content_type, item.content_id, project, target.repo, item.issue_number, new_body
     )

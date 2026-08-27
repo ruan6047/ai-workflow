@@ -1201,15 +1201,52 @@ def body_has_contract_baseline(body: str) -> bool:
 
 
 def log_line_indexes(card_body: str, tag: str, token: str) -> bool:
-    """Issue body ``## Log`` 是否有**同一行**同時含 ``tag`` 與 ``token`` 的索引行。
+    """Issue body ``## Log`` 是否有**同一筆事件的首行**同時含 ``tag`` 與 ``token``。
 
     ``token`` 以邊界比對，不用 ``in``：``attempt in line`` 會讓 ``…-e0-<sha>`` 命中
     ``…-e0-<sha>x``（doctor 已踩過三次的同一個子字串陷阱）。
+
+    ⭐ **判準是「事件首行」，⛔ 不是「任何一行」**（WF-MARKER-WRITE-BOUNDARY1，
+    2026-08-27 依查核 ``-R3-01`` 修；查核者逐字：「讀取端未列入資源宣告不能推翻
+    canonical §5.1 的核心痛點否決權」）：
+
+    (a) 現在的行為：先以 ``doctor.parse_log_events`` 切出事件，只比對每一筆事件的
+        **首行**。
+    (b) 為什麼：改動前本函式**逐物理行**掃描，於是一個以普通 ``\n`` 分行、續行長得像
+        ``<tag> … {token}`` 的 ``--evidence`` 值就能讓它讀到一筆**不存在的裁決索引**
+        ——而寫入端的三條性質對它全部沉默（行層往返逐位元成立、無讀取路徑失效、事件
+        層逐筆摺平後相同，因為續行本來就歸在同一筆事件裡）。⇒ 那正是本卡核心痛點逐字
+        的「讀取端無從分辨真偽」，⛔ 而它在讀取端才修得掉：寫入端能做的只剩禁 ``\n``，
+        那會擋掉合法的多段落證據（實測真實看板 1,956 筆可解析事件中 172 筆帶續行）。
+    (c) ⛔ **不得由此推出「事件首行不可偽造」**——本函式只保證「續行不會被當成索引」。
+        一筆**自己就是完整事件起始行**的偽造（值以 ``- <ISO 時戳> `` 開頭而多長出一筆
+        事件）由寫入端的性質 (3) 擋，⛔ 不由這裡擋；兩者各守一半。
+
+    ⚠️ **事件層不判定時退回逐行掃描，⛔ 不 fail closed**：
+    (a) 現在的行為：``parse_log_events`` 回不判定（Log 標題不唯一之類）時，行為與改動前
+        逐字相同。
+    (b) 為什麼：兩個消費端（``validation`` 的 checkpoint 去重、``commands/checkpoint_cmd``
+        的 trigger 存在性）都把 ``False`` 讀成「沒建立 ⇒ 拒絕」。對一張 body 本來就壞掉
+        的卡回 ``False``，等於讓它連 ``review``／``checkpoint`` 都做不了——那是把守衛
+        變成故障源，而「修好已壞的卡」逐字是本卡非射程（與寫入端差分探測「只罰迴歸、
+        ⛔ 不罰既有損壞」同一條分界）。⚠️ 實測：真實看板上恰有 **1 張**卡落在這一格
+        （``WF-REVIEW-EVENT-MARKER-CONTRACT1``，``log_section_ambiguous``），fail closed
+        會讓它現有為 ``True`` 的那一組翻成 ``False``。
+    (c) ⛔ **不得由此推出「已壞的卡受保護」**——它們不受保護，治它們是 ``aiwf#138``。
     """
     boundary = re.compile(rf"(?<![\w-]){re.escape(token)}(?![\w-])")
-    return any(
-        tag in line and boundary.search(line) for line in (card_body or "").splitlines()
-    )
+
+    def indexes(line: str) -> bool:
+        return tag in line and boundary.search(line) is not None
+
+    # ⚠️ 延遲 import：``doctor`` 反向 import 本模組（``BASELINE_LOG_TAG`` 等），
+    # 模組載入期直接 import 會迴圈。本函式只在指令執行期被呼叫。
+    from .doctor import parse_log_events
+
+    events, undecidable = parse_log_events(card_body or "")
+    if undecidable is not None or events is None:
+        return any(indexes(line) for line in (card_body or "").splitlines())
+    return any(indexes(lines[0]) for e in events if (lines := e.splitlines()))
 
 
 def render_checkpoint_comment(

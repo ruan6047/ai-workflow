@@ -171,7 +171,13 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import git_ops, pitfalls
-from ..card import TIERS, append_log_line, now_iso8601, parse_branch_worktree
+from ..card import (
+    TIERS,
+    MarkerWriteBoundaryError,
+    append_log_line,
+    now_iso8601,
+    parse_branch_worktree,
+)
 from ..cleanup import (
     SUBSEQUENT_OBLIGATION_STEPS,
     CleanupTarget,
@@ -797,17 +803,60 @@ def run(args: argparse.Namespace) -> int:
     if gate.report_mark:
         trace += f"；{gate.report_mark}"
 
+    def prepare_card_log(entry: str) -> str:
+        """**純計算**下一版 body 並過寫入邊界守衛；⛔ 一次遠端呼叫都不發。
+
+        ⭐ **刻意與 :func:`commit_card_body` 分開**（2026-08-27 依查核 R2-02
+        ``guard-runs-after-remote-writes-half-write``）：
+        (a) 現在的行為：``append_log_line`` 內含的守衛在本函式就跑完，拒收時零遠端寫入。
+        (b) 為什麼：``write_status_face`` 原本先寫四到五個欄位、最後才附 Log ⇒ 守衛拒收
+            時 owner／交付狀態／最後交接／iteration 已全部寫入，而 Log 沒有對應事件。
+            §3.2 明訂拒收必須發生在**任何**遠端寫入之前。
+        (c) ⛔ **不得由此推出「handoff 的每條 Log 留痕都在寫入前驗過」**——`_release_with_cleanup`
+            的非終態留痕**構造上做不到**：它記的是 `execute_closeout_transition` 已經
+            做過的動作，內容由那些動作產生 ⇒ 只能後寫。那一格見 ``append_card_log``。
+        """
+        return append_log_line(item.body, f"{ts} {entry}")
+
+    def commit_card_body(new_body: str) -> None:
+        """把算好的 body 寫回去。**只碰 body，不碰任何欄位。**"""
+        set_item_body(
+            runner, item.content_type, item.content_id, project, target.repo,
+            item.issue_number, new_body,
+        )
+
     def append_card_log(entry: str) -> None:
         """往卡片的 ``## Log`` 附加一行（append-only）。**只碰 body，不碰任何欄位。**
 
         從 `write_status_face` 抽出來的，理由不是去重：Log 留痕與狀態面寫入原本綁在
         同一個函式裡，於是「不寫終態」只能連同「不留紀錄」一起做到——那正是 R3-01
         的成因。抽開之後，兩件事可以各自決定要不要發生。
+
+        ⚠️ **本函式的呼叫端在守衛之前就已經寫過遠端狀態，⛔ 且那是不可避免的**：
+        `_record_actions_without_terminal` 記的是收尾轉換**已經做過**的動作（分支刪除、
+        Issue 關閉），內容由那些動作產生 ⇒ 沒有任何順序能讓它在寫入前先驗。⇒ 這一格
+        逐字登記為未涵蓋，⛔ 不得讀成「已驗過」。
+
+        ⚠️ **這段話的射程只到本函式，⛔ 不涵蓋 `write_status_face`／`write_terminal`**
+        （2026-08-27 依對抗式複驗 F1 就地更正）：終態留痕帶的是 `args.evidence`——
+        **使用者值**，⛔ 不是由已發生動作產生的敘述 ⇒ 它**驗得起來**，而且必須在
+        `execute_closeout_transition` 之前先驗。上一版把兩者混為一談，於是不可逆動作
+        跑在守衛之前。修法見 `_release_with_cleanup` 的 `precheck_terminal_log`。
         """
-        new_body = append_log_line(item.body, f"{ts} {entry}")
-        set_item_body(
-            runner, item.content_type, item.content_id, project, target.repo,
-            item.issue_number, new_body,
+        commit_card_body(prepare_card_log(entry))
+
+    def terminal_log_entry(cleanup_note: str = "") -> str:
+        """終態留痕那一行。**唯一產生點**，⛔ 不得在別處再組一份。
+
+        ⭐ **抽成具名函式不是為了去重，是為了讓它可以在寫入之前先被驗一次**：
+        `--cleanup` 路徑上，`execute_closeout_transition` 會先關 Issue、移除 worktree、
+        刪本地與遠端分支，**之後**才由 effect writer 呼叫 `write_status_face` ⇒ 守衛
+        在那裡才第一次看到 `args.evidence`。有了本函式，`_release_with_cleanup` 才能
+        在動手之前拿同一份值先跑一次守衛（見該函式的 `precheck_terminal_log`）。
+        """
+        return (
+            f"handoff by wf-cli → owner {args.to}；iteration {new_iteration}；"
+            f"SHA {args.source_sha}{trace}；證據 {args.evidence}{cleanup_note}。"
         )
 
     def write_status_face(cleanup_note: str = "") -> None:
@@ -829,6 +878,19 @@ def run(args: argparse.Namespace) -> int:
         #     release 無 repo_path、非 release、以及 `_release_with_cleanup` 的 effect
         #     writer），⇒ 欄位查詢次數與搬動前相同。若日後有人讓它一輪呼叫兩次，
         #     會多發一次欄位查詢；`ensure_fields` 冪等，重複呼叫不改變遠端狀態。
+        #
+        # ⭐ **Log 行的純計算與守衛刻意排在本行之前**（2026-08-27 依查核 R2-02）：
+        # (a) 現在的行為：`prepare_card_log` 先跑，拒收時本 closure 一次遠端呼叫都沒發。
+        # (b) 為什麼：改動前四到五個 `set_field_value` 排在附 Log 之前 ⇒ 守衛拒收時欄位
+        #     已全部寫入、Log 沒有對應事件，`doctor` 的狀態面漂移稽核會報成不一致。
+        # (c) ⛔ 不得由此推出「本 closure 零半寫入」——`commit_card_body` 自己失敗仍會
+        #     留下「欄位已寫、body 未更新」；那一格由重跑收斂，⛔ 不在本次射程。
+        # (d) ⛔⛔ **更不得由此推出「呼叫鏈上零寫入」**（2026-08-27 依 F1 就地更正）：
+        #     上面 (a) 逐字說「拒收時本 closure 一次遠端呼叫都沒發」——那在**本 closure
+        #     內**為真，在 `_release_with_cleanup` 的呼叫鏈上**為假**：effect writer 是在
+        #     `gh issue close` ＋ worktree 移除 ＋ 分支刪除**之後**才呼叫本函式的。
+        #     那條路徑改由 `_release_with_cleanup` 的 `precheck_terminal_log` 先驗。
+        new_body = prepare_card_log(terminal_log_entry(cleanup_note))
         fields = ensure_fields(runner, target.owner, target.project)
         set_field_value(runner, project, item.item_id, fields["owner"], args.to)
         set_field_value(runner, project, item.item_id, fields["交付狀態"], new_status)
@@ -840,14 +902,12 @@ def run(args: argparse.Namespace) -> int:
         if phase is not None and "階段" in fields:
             set_field_value(runner, project, item.item_id, fields["階段"], phase)
 
-        append_card_log(
-            f"handoff by wf-cli → owner {args.to}；iteration {new_iteration}；"
-            f"SHA {args.source_sha}{trace}；證據 {args.evidence}{cleanup_note}。"
-        )
+        commit_card_body(new_body)
 
     if args.cleanup:
         rc = _release_with_cleanup(
-            args, runner, target.repo, item, items, write_status_face, append_card_log
+            args, runner, target.repo, item, items, write_status_face, append_card_log,
+            precheck_terminal_log=lambda: prepare_card_log(terminal_log_entry()),
         )
         if rc != 0:
             return rc
@@ -871,6 +931,8 @@ def _release_with_cleanup(
     items: list[ItemSnapshot],
     write_status_face: Callable[[str], None],
     append_card_log: Callable[[str], None],
+    *,
+    precheck_terminal_log: Callable[[], object],
 ) -> int:
     """release 的守衛化路徑：清理先於狀態面，兩者由同一個 executor 串起來。
 
@@ -904,6 +966,36 @@ def _release_with_cleanup(
                   "無法判斷第 4 步該做什麼；不猜、不動手", file=sys.stderr)
             return 5
         issue_open = state
+
+    # ⭐ **終態留痕的寫入邊界守衛刻意排在 `execute_closeout_transition` 之前**
+    #    （WF-MARKER-WRITE-BOUNDARY1，2026-08-27 依對抗式複驗 F1）。
+    #
+    # (a) 現在的行為：拿與終態那一行**同一份**使用者值（`--to`／`--source-sha`／
+    #     `--evidence`）先純計算一次 `append_log_line`，被守衛擋下就在這裡 `return 2`，
+    #     此刻本輪一次遠端呼叫、一次 git 動作都還沒發生。
+    # (b) 為什麼非在這裡不可，⛔ 而且為什麼「搬順序」解不了：終態留痕由 effect writer
+    #     在收尾**做完之後**呼叫，而收尾做的是 `gh issue close` ＋ worktree 移除 ＋
+    #     本地分支刪除 ＋ `push --delete` 遠端分支——**全部不可逆**。實測（沙箱真 git ＋
+    #     假 GitHub，毒值餵 `--evidence`）：改動前的序列是
+    #     `['W:issue close', 'GUARD']`、`WT_EXISTS=False`、`LOCAL_BRANCH=False`、
+    #     `REMOTE_BRANCH=False`，而拒收訊息逐字說「未寫入任何狀態」、卡上一個字都沒有。
+    #     ⇒ 那句話在這條路徑上是**假的**，且損害不可回復。收尾必須發生在留痕之前
+    #     （那是 R3-01 的既有結論），⇒ 唯一的解是把**驗**與**寫**拆開，先驗後做。
+    # (c) ⛔ **不得由此推出「終態留痕保證寫得進去」**：本次預驗餵的 `cleanup_note` 是
+    #     空字串，⛔ 不是真正的那一段。真正的那一段由 `cleanup.describe_cleanup()`
+    #     從封閉的動作標籤集產生、**不含任何使用者輸入** ⇒ 它不會引入新的結構破壞；
+    #     但這是**推理**不是實測，故真正的守衛仍留在 `write_status_face` 內照跑，
+    #     ⛔ 本預驗不取代它。
+    # ⛔ **也不得把本段刪掉改成「反正後面還會驗一次」**——後面那一次發生在不可逆動作
+    #     之後，它保護的是 body，⛔ 保護不了 worktree 與分支。
+    try:
+        precheck_terminal_log()
+    except MarkerWriteBoundaryError as exc:
+        print(
+            f"[handoff] 拒絕 release（未做任何清理、未寫入任何狀態）：{exc}",
+            file=sys.stderr,
+        )
+        return 2
 
     def close_issue() -> None:
         if item.issue_number is not None and repo:
