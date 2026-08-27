@@ -30,6 +30,7 @@ from wf_cli.card import (
     Card,
     MarkerWriteBoundaryError,
     _flatten_line_structure,
+    _read_brief_text,
     _read_checklist_texts,
     amend_acceptance,
     amend_brief,
@@ -40,6 +41,7 @@ from wf_cli.card import (
     amend_verification,
     body_read_paths,
     enforce_write_boundary,
+    parse_requested_by,
     render_issue_body,
     restore_migration_header,
     split_at_log,
@@ -275,6 +277,103 @@ def test_brief_whose_entire_value_is_a_heading_is_caught_by_roundtrip():
 
 
 # --------------------------------------------------------------------------
+# 性質 (1)：差分結構探測（往返比對抓 0 的那一類）
+# --------------------------------------------------------------------------
+#
+# ⭐ **這一節存在的理由是「兩條必須並用」原本只證了一半**（2026-08-27 補）：
+# 交付當下只有性質 (2) 的獨有樣本（上一節的靜默截斷），性質 (1) 一條都沒有 ⇒ 對
+# ``if broken:`` 做變異時整份測試仍全綠，那條性質在測試集上**不承重**。
+#
+# ⚠️ **它不承重不是因為「沒被跑到」**：實測差分探測在整份測試集內跑了數百次、其中
+# 一百多次真的抓到——只是每一次往返比對也抓得到。⇒ 缺的是**只有它抓得到**的樣本。
+#
+# ⭐ 構造判準（⛔ 不是試出來的，是從兩條性質的定義推出來的）：
+#
+#   * 往返比對讀的是**被寫的那個欄位自己**。單行欄位的讀回器逐行比對 ⇒ 值裡只要有
+#     一個 ``splitlines()`` 分行符，該欄位就讀回截斷值 ⇒ 性質 (2) 必然命中。
+#   * ⇒ 只有性質 (1) 抓得到的值，必須是「**這個欄位自己逐位元讀得回**、卻讓**別的**
+#     讀取路徑讀不回」的值。
+#   * ⇒ 需要一個**多行且逐字讀回**的欄位：``--brief``（哨兵區塊之間的內容原樣讀回），
+#     再讓它注入一行去打壞一條**不在本次往返清單裡**的讀取路徑。
+#
+# ⭐ 選中的靶是 ``card.parse_requested_by``：它是**fail-closed 的授權閘門**（核心痛點
+# 更正、``review-escalation.md`` §4 的 deferred_findings 出口都用它比對需求方身分），
+# 且它對「``- 需求：…　規劃：…`` 命中次數 ≠ 1」拋例外、⛔ 不是回 None。⇒ 打壞它
+# 等於讓那張卡的需求方身分**永久無法機械核對**，與本卡痛點同一族。
+
+
+#: ⚠️ 這個值**每一個字元都合法**，也沒有任何 marker 被「偽造成」別的東西——
+#: 它只是把一句本來就會出現在簡介裡的引用**放到自己那一行**。
+_BRIEF_WITH_STANDALONE_REQUESTER_LINE = (
+    "適用時機：需要說明需求方欄長什麼樣子時。\n"
+    "- 需求：someone　規劃：other\n"
+    "⛔ 非射程：不做別的。"
+)
+
+
+def test_standalone_requester_line_in_brief_is_only_caught_by_the_differential_probe():
+    """⭐ 與上一節對稱的**實證**：這一格往返比對抓 0、差分探測抓得到。
+
+    ⚠️ 斷言刻意分成三段，⛔ 不只斷言「被拒收」——只斷言拒收的話，兩條性質哪一條在
+    承重是看不出來的（那正是本節要補的洞）。
+    """
+    poisoned = _BRIEF_WITH_STANDALONE_REQUESTER_LINE
+    candidate, _ = _brief_body_without_guard(CLEAN_BODY, poisoned)
+
+    # (a) 性質 (1) 命中：寫入前讀得回、寫入後讀不回。
+    lost = readable_by(CLEAN_BODY) - readable_by(candidate)
+    assert "wf_cli.card.parse_requested_by" in lost, (
+        f"差分探測沒抓到；當次少掉的讀取路徑＝{sorted(lost)}"
+    )
+
+    # (b) 性質 (2) **抓 0**：這次寫的欄位自己逐位元讀得回。
+    assert _read_brief_text(candidate) == poisoned
+
+    # (c) 真實路徑（兩條都在）拒收，且訊息指名那條讀取路徑。
+    with pytest.raises(MarkerWriteBoundaryError) as excinfo:
+        amend_brief(CLEAN_BODY, poisoned)
+    assert "wf_cli.card.parse_requested_by" in str(excinfo.value)
+
+
+def test_the_same_sentence_mentioned_inline_still_writes():
+    """負控：同一句話**不獨立成行**時必須寫得進去，且授權閘門仍讀得回。
+
+    ⛔ 沒有這一格，(c) 的拒收可能只是「凡是提到 `- 需求：` 就拒」——那是本卡逐字
+    禁止的字面黑名單，而不是結構判準。
+    """
+    inline = (
+        "適用時機：需要說明需求方欄長什麼樣子時，例如 "
+        "`- 需求：someone　規劃：other` 這一行。⛔ 非射程：不做別的。"
+    )
+    body, _ = amend_brief(CLEAN_BODY, inline)
+    assert _read_brief_text(body) == inline
+    assert parse_requested_by(body) == "ruan6047"
+
+
+def test_owner_damage_is_caught_by_both_properties_not_only_the_differential():
+    """⚠️ **就地更正一個先前寫錯的宣稱**（⛔ 不得再拿 ``owner`` 當「只有 (1) 抓得到」）。
+
+    (a) 現在的事實：``owner`` 確實**沒有專屬的往返讀回器**（它只出現在 Log 行），
+        但把 ``## Log`` 塞進它會讓 ``split_at_log`` 拋錯，而**其餘每一個**往返讀回器
+        都經由 ``_head_lines`` → ``split_at_log`` ⇒ 它們**全部**跟著拋 ⇒ 性質 (2)
+        照樣命中。
+    (b) 為什麼要留這條測試：先前的變異測試以 ``owner`` 為「乾淨樣本」，⇒ 對差分探測
+        做變異時不會轉紅，而那份綠色被讀成「差分探測有承重」。
+    (c) ⛔ **不得由此推出「owner 有往返保證」**：它沒有。它只是**恰好**每次都連坐到
+        別人的往返讀回器；一個不碰 ``## Log`` 的 owner 值（例如塞進一行
+        ``- 需求：…``，那是 Log 區、讀取端本來就不看）今天兩條性質都抓不到。
+    """
+    poisoned = {"owner": "小明 ## Log 尾"}
+    with pytest.raises(MarkerWriteBoundaryError):
+        make_card(**poisoned)
+    # 往返讀回器**單獨**就抓得到（無差分探測）。
+    assert _render_with(poisoned, structural=False, roundtrip=True) is None
+    # 差分探測**單獨**也抓得到（無往返比對）。
+    assert _render_with(poisoned, structural=True, roundtrip=False) is None
+    # ⇒ 這一格是兩條性質的**交集**，⛔ 不是任一條的獨有樣本。
+
+
+# --------------------------------------------------------------------------
 # 逐欄位窮舉：⛔ 欄位清單由 dataclasses.fields 導出，不手打
 # --------------------------------------------------------------------------
 
@@ -352,39 +451,80 @@ def test_clean_values_pass_every_guarded_amend_verb():
 def test_mutation_removing_the_differential_probe_lets_structural_damage_through():
     """變異一：拿掉差分結構探測 ⇒ 結構破壞漏掉。
 
-    ⭐ 取樣刻意選 ``owner``：它只出現在 Log 行，本檔逐字登記過它**沒有往返讀回器**
-    ⇒ 這一格是「只有性質 (1) 抓得到」的乾淨樣本。⛔ 不能拿 acceptance 當樣本——
-    那一格兩條性質都抓得到，變異掉一條也不會轉紅，測不出載重。
+    ⭐ **取樣必須是「只有性質 (1) 抓得到」的那一格**，⛔ 不能拿兩條都抓得到的樣本——
+    那種樣本變異掉一條也不會轉紅，測不出載重。本卡 2026-08-27 在此踩過一次：原樣本
+    用 ``owner``，理由是「它沒有往返讀回器」——⛔ 該理由不成立（見
+    ``test_owner_damage_is_caught_by_both_properties_not_only_the_differential``），
+    ⇒ 對 ``if broken:`` 做變異時整份測試仍全綠。
+
+    現行樣本＝簡介裡多一行獨立成行的 ``- 需求：…　規劃：…``：該欄位自己逐位元讀得回
+    （往返抓 0），而 ``card.parse_requested_by`` 這條 fail-closed 授權閘門讀不回了。
     """
-    poisoned = {"owner": "小明\u2028## Log\u2028尾"}
-    # 兩條都在：拒收（``_render_with`` 把拒收轉成 ``None``）。
-    assert _render_with(poisoned, structural=True, roundtrip=True) is None
+    poisoned = _BRIEF_WITH_STANDALONE_REQUESTER_LINE
+    # 兩條都在：拒收。
+    assert _amend_brief_with(poisoned, structural=True, roundtrip=True) is None
     with pytest.raises(MarkerWriteBoundaryError):
-        make_card(**poisoned)  # 未經變異的真實路徑同樣拒收
-    # 拿掉差分探測：放行，而放行的結果是一張讀不回的卡。
-    leaked = _render_with(poisoned, structural=False, roundtrip=True)
-    assert leaked is not None, "只留往返比對時，結構破壞這一格仍被擋——變異無效"
+        amend_brief(CLEAN_BODY, poisoned)  # 未經變異的真實路徑同樣拒收
+    # 只留往返比對（拿掉差分探測）：放行，而放行的結果是一張授權讀不回的卡。
+    leaked = _amend_brief_with(poisoned, structural=False, roundtrip=True)
+    assert leaked is not None, "只留往返比對時這一格仍被擋 ⇒ 樣本不是 (1) 的獨有樣本"
     with pytest.raises(Exception):
-        split_at_log(leaked)
+        parse_requested_by(leaked)
+    # 對照：只留差分探測時仍被擋 ⇒ 擋它的確實是性質 (1)。
+    assert _amend_brief_with(poisoned, structural=True, roundtrip=False) is None
 
 
-def _render_with(card_kwargs: dict, *, structural: bool, roundtrip: bool) -> str | None:
-    """以「只開其中一條性質」的守衛重跑一次 ``open`` 渲染；被拒回 ``None``。"""
+def _guard_with(structural: bool, roundtrip: bool):
+    """回傳一個「只開其中一條性質」的 ``enforce_write_boundary`` 替身。
+
+    ⭐ **關掉差分探測的做法是把 baseline 換成 candidate，⛔ 不是把 candidate 換成
+    baseline**（就地留註，這一格寫反過一次）：
+
+    (a) 現在的行為：``structural=False`` 時傳 ``(candidate, candidate)`` ⇒ 每條讀取
+        路徑在「寫入前後」讀到的是同一份 body ⇒ 差分恆空，而**往返比對仍看得到真正的
+        candidate**。
+    (b) 為什麼：原寫法傳 ``(baseline, baseline)``，往返讀回器拿到的也是 baseline
+        ⇒ **兩條性質同時被關掉** ⇒ 該變異測試對任何樣本都會綠，是零資訊的變異。
+    (c) ⛔ 不得由此推出「兩種寫法只差在參數順序」：差別是**變異的射程**，寫反了會讓
+        「這條性質承不承重」這個問題本身量不出來。
+    """
     from wf_cli import card as card_mod
 
     real = card_mod.enforce_write_boundary
 
     def partial(baseline, candidate, **kwargs):  # noqa: ANN001
         real(
-            baseline,
-            candidate if structural else baseline,
+            baseline if structural else candidate,
+            candidate,
             roundtrip=kwargs.get("roundtrip", ()) if roundtrip else (),
             where=kwargs.get("where", ""),
         )
 
+    return real, partial
+
+
+def _render_with(card_kwargs: dict, *, structural: bool, roundtrip: bool) -> str | None:
+    """以「只開其中一條性質」的守衛重跑一次 ``open`` 渲染；被拒回 ``None``。"""
+    from wf_cli import card as card_mod
+
+    real, partial = _guard_with(structural, roundtrip)
     card_mod.enforce_write_boundary = partial
     try:
         return render_issue_body(make_card(**card_kwargs))
+    except MarkerWriteBoundaryError:
+        return None
+    finally:
+        card_mod.enforce_write_boundary = real
+
+
+def _amend_brief_with(value: str, *, structural: bool, roundtrip: bool) -> str | None:
+    """以「只開其中一條性質」的守衛重跑一次 ``amend_brief``；被拒回 ``None``。"""
+    from wf_cli import card as card_mod
+
+    real, partial = _guard_with(structural, roundtrip)
+    card_mod.enforce_write_boundary = partial
+    try:
+        return card_mod.amend_brief(CLEAN_BODY, value)[0]
     except MarkerWriteBoundaryError:
         return None
     finally:
