@@ -2,7 +2,7 @@
 """唯讀：抓 Project #4 全母體並落地成 JSON 快照，供後續分析零額外額度重跑。
 
 ⛔ 不寫任何東西到 GitHub。⛔ 不用 ``gh project item-list``（中文欄位 key 編碼壞，
-見 project.py:377）——一律走 ``wf_cli.project.list_items``，使盤點與守衛同源。
+見 ``project.py::list_items``）——一律走 ``wf_cli.project.list_items``，使盤點與守衛同源。
 
 額度量測（查核 R1-06）
 ----------------------
