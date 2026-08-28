@@ -1058,6 +1058,13 @@ def _run_gh_graphql(payload: dict[str, object]) -> dict[str, object]:
 
     刻意**不用** ``gh project item-list``：它對中文欄位名的 JSON key 有編碼錯誤
     （``project.py::list_items`` 已記錄此雷；本檔實測 ``卡ID`` 被輸出成 U+FFFD）。
+
+    ⭐ **改用什麼：就是本函式走的這一條，⛔ 不必去別處找解。** 壞掉的只有
+    ``gh project item-list --format json`` 把欄位名轉成 JSON key 的那一步；
+    ``gh api graphql`` 根本沒有那一步——欄位名是 ``_PROJECT_ITEMS_GQL`` 裡
+    ``field { name }`` 回傳的**值**，由 ``fetch_project_ownership_rows`` 在 Python
+    端自己拿它當 dict 的鍵。同一個 ``卡ID`` 在本路徑實測一字未壞（2026-08-28，
+    Project #4 首頁 50 筆，無任何 U+FFFD）。
     """
     proc = subprocess.run(
         ["gh", "api", "graphql", "--input", "-"],

@@ -167,8 +167,13 @@ def parse_block(body: str) -> Brief:
 def try_parse_block(body: str) -> Brief | None:
     """解析失敗時回 ``None``——供「缺簡介不阻擋任何動詞」的 fail-open 路徑使用。
 
-    ⚠️ 既有卡在簡介欄位上線前一律沒有簡介（canonical §6.3 逐字：今天沒有任何卡
-    符合這一條）。⛔ 不得讓它們因缺欄位而無法 ``amend`` 或 ``handoff``。
+    ⚠️ 缺簡介是**構造上合法**的狀態：``--brief`` 在 ``open``／``amend`` 都只是可選
+    旗標（兩處皆 ``default=None``），``validation.py`` 也完全不驗簡介
+    （canonical §6.3〈卡片簡介〉）。⛔ 不得讓這些卡因缺欄位而無法 ``amend``
+    或 ``handoff``。
+
+    ⛔ 此處刻意只轉述該節的判準、不逐字引它的句子：原先引的那一句已於 2026-08-26
+    被 canonical 自己更正掉，⇒ 逐字轉引等於另立一份會獨立腐爛的副本。
     """
     try:
         return parse_block(body)
