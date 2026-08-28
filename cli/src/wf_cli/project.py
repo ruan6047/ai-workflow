@@ -55,8 +55,25 @@ FIELD_SPECS: dict[str, tuple[FieldType, tuple[str, ...] | None]] = {
     #: 階段（canonical §0.1 兩軸狀態模型的第一軸）。⚠️ **本卡只建欄位、不切換語彙**：
     #: §0.1 逐字「本節定義目標狀態，尚未切換；上方 §0 的單欄序列仍是現行實作」，
     #: 且切換須待 cpbl 相容層（子卡 S2）落地——cpbl 有六個檔綁狀態語彙，而
-    #: roadmap_lines.gate_of 對未知狀態 fail closed，切換那一刻三支腳本會停。
-    #: ⇒ 本欄位建立後暫時無人寫入，交付狀態仍承載階段與狀態兩者。
+    #: roadmap_lines.gate_of 對未知狀態 fail closed（`raise CheckFailed`）⇒ 切換那一刻會停
+    #: 的，是「**讀活看板、且把交付狀態餵進 gate_of**」的消費者。⚠️ **此處刻意記判準、
+    #: ⛔ 不記支數**——支數隨腳本增刪而變，判準不會。依判準逐支查證（cpbl 基線釘死為字面
+    #: `3b470d70`，2026-08-28 實跑）：roadmap_lines.py 讀 `gh project item-list` 的活看板
+    #: ⇒ 命中；state_plane_migrate.py 讀 `git_show(DEFAULT_BASELINE_REF, "docs/TASKS.md")`，
+    #: 那是 2026-08-04 起封存唯讀的凍結檔 ⇒ 看板語彙切換碰不到它；workflow_ledger.py --check
+    #: 今天就已 rc=1（2026-08-15 需求方裁定停用，⛔ 與 gate_of 無關）⇒ ⛔ 不得記為「被切換
+    #: 停掉的」。本句何時再變假：新增任何讀活看板並經 gate_of 的消費者，或
+    #: DEFAULT_BASELINE_REF 由凍結 ref 改指活看板。
+    #: ⇒ 本欄位有兩個 writer：open_cmd 無條件寫「需求」（不在任何 if 之下），
+    #: handoff --next-stage 依 STAGE_PHASE 的六個鍵寫；⛔ assign 不寫它（該分歧的警示就地
+    #: 記在 handoff_cmd._pitfall_gate）。⚠️ **此處刻意記 writer 的符號、⛔ 不記「今天有幾張
+    #: 卡有值」**——覆蓋率每跑一次 handoff 就變，而 writer 集合只隨這三個符號的增刪而變，
+    #: 且每個都 grep 得到唯一命中。本句何時再變假：STAGE_PHASE 增刪鍵、assign 開始寫本欄、
+    #: 或 open 不再無條件寫「需求」。
+    #: ⚠️ 而**交付狀態仍同時承載階段與狀態**：其選項域裡 💡需求／🔬研究中／🧭規劃中 是階段
+    #: 詞、🔍待查核／✅通過 是狀態詞，兩軸尚未分家。本句何時再變假：本檔 FIELD_SPECS
+    #: 的「交付狀態」選項元組移除階段詞——而下一格 ensure_fields 的註記正說明了那為什麼
+    #: 不是改一行就做得到的事。
     "階段": (
         "SINGLE_SELECT",
         # ⛔ **恰好七個，與 canonical §0.1 逐字相同**（查核 R2-001）。
