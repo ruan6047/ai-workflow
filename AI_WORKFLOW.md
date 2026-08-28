@@ -161,7 +161,7 @@ awk 段是排除本節自身，否則本表的說明文字會被自己算進去�
 | 4 | §0.1 結案不可由角色直接設定 | ⚠️ 僅事後偵測：`cleanup.classify_state`。逃生門 `handoff_cmd.py` 的 `if args.status:` 分支敞開 | 見該節逐字說明 |
 | 5 | §6.3 parser 須沿用 `resources.py` 哨兵、不得自寫 markdown 解析 | ✅ **有**：`brief.py` 的 `_reuse_probe()` 於模組載入時檢查（`WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1`） | 自寫解析會與資源宣告的哨兵漂移，兩居所偵測失效 |
 | 5b | §6.4 不得據 5 族樣本宣稱「其餘各屬一階段」 | ⛔ 無。承接者＝查核者人工審 | 6 個零命中族被硬派階段，該印時不印 |
-| 5c | §6.3 每張卡必有簡介 | ⚠️ **通道有、守衛無**：`open --brief`／`amend --brief` 已落地（`WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1`），但 `--brief` 可選且 `validation.py` 不驗。承接者＝`WF-CARD-BRIEF-BACKFILL1`（回填） | 一張沒有簡介的卡，`open` 得出來、`amend`／`handoff` 一路走到終態都不會被擋——⭐ 這是**結構性的**（`--brief` 可選、`brief.try_parse_block` 對解析失敗回 `None` 走 fail-open、`validation.py` 對簡介零命中），⛔ 不是「今天有幾張卡沒寫」。⚠️ **本格刻意不記數字**——⭐ 數字量的是**回填活動**，本欄問的是**邊界外會發生什麼**，兩者正交：回填把每張卡都補齊，`--brief` 仍然是可選的。且它每天在變（`bc5bcbb` 寫下的 198/8 在兩小時內即成 201/11；`54d23e87` 於 2026-08-28T12:59+08:00 以下述量法實測已是 206/208）。本格何時再變假：`--brief` 由可選改為必填，或 `validation.py` 出現以 `brief.parse_block` 為判準的檢查。要現值的量法：以 `wf_cli.brief.parse_block` 對 `list_items` 逐張試解析 |
+| 5c | §6.3 每張卡必有簡介 | ⚠️ **通道有、守衛無**：`open --brief`／`amend --brief` 已落地（`WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1`），但 `--brief` 可選且 `validation.py` 不驗。承接者＝`WF-CARD-BRIEF-BACKFILL1`（回填） | 一張沒有簡介的卡，`open` 得出來、`amend`／`handoff` 一路走到終態都不會被擋。⚠️ **本格刻意不記數字**——⭐ 數字量的是**回填活動**，本欄問的是**邊界外會發生什麼**，兩者正交：回填把每張卡都補齊，`--brief` 仍然是可選的（`bc5bcbb` 寫下的 198/8 兩小時內即成 201/11，正是不記它的理由）。**證偽述詞（封閉）**：`cli/src/wf_cli/` 內出現任何**以「卡面缺簡介」為條件**而使動詞回非零 rc 或拋出未被攔截例外的路徑。⛔ 不以「某個符號有沒有被改」為判準——落點不必在 `validation.py`。今日無此路徑：唯一會因缺簡介拋 `BriefError` 的 `brief.parse_block` 在 `brief.py` 之外**零 importer**，其唯一呼叫點是 `try_parse_block` 自己並 `except BriefError: return None`；其餘消費者非 fail-open（`try_parse_block`／`drifted`）即只在**有給**時驗形狀（`validate_shape`）；`doctor.brief_present` 是事後稽核、`disposition` 為 `migrate`。重新導出見 §6.3 同段的量法 |
 | 5d | §6.4.1 驗收條件須於離開規劃前填實 | ⛔ 無。承接者＝查核者人工審 | 重演 aiwf#129 R1-002：帶佔位符送審 |
 | 6 | §6.4.2 未驗清單每項須標明驗不了的原因 | ⛔ 無。承接者＝查核者人工審 | 重演 `aiwf#129` R2：寫下「未驗」而其實兩分鐘可驗 |
 | 7 | §6.4.2 標不出原因者不得列入 | ⛔ 無，同上 | 同上 |
@@ -765,15 +765,26 @@ CLI 寫狀態」不再構成阻礙——補簡介走 `amend --brief`，⛔ 仍�
 
 ⛔ **但本條仍無機械執行者。** `--brief` 是**可選**旗標（強制必填會讓所有既有卡的動詞失效），
 且 `validation.py` 完全不驗簡介 ⇒ **沒有簡介的卡寫得出來，且一路走到終態不會被任何動詞
-擋下**（`brief.try_parse_block` 對解析失敗回 `None`，該 docstring 逐字寫明那是「缺簡介不
-阻擋任何動詞」的 fail-open 路徑）。⚠️ **此處刻意記「寫得出來」而非比數**——⭐ 比數量的是
-**回填活動**，本節問的是**執行者的有無**，兩者正交：回填把每一張卡都補齊，`--brief` 仍然
-是可選的。且比數每天在變（本句初稿寫下的 198/8 在兩小時內即成 201/11；`54d23e87` 於
-2026-08-28T12:59+08:00 以下述量法實測已是 206/208），⛔ 不該用一個會腐爛的定值當論據。
-**本句何時再變假**：`--brief` 由可選改為必填，或 `validation.py` 出現以 `brief.parse_block`
-為判準的檢查——兩者都是 `cli/src/wf_cli/` 內 `grep` 得到唯一命中的符號改動。要現值：以
-`wf_cli.brief.parse_block` 對 `list_items` 逐張試解析。依 ROADMAP §0 的判準「有機械執行者
-會擋下它」，本條**未達成**。
+擋下**。⚠️ **此處刻意記證偽述詞而非比數**——⭐ 比數量的是**回填活動**，本節問的是**執行者
+的有無**，兩者正交：回填把每一張卡都補齊，`--brief` 仍然是可選的（本句初稿寫下的 198/8
+在兩小時內即成 201/11，正是不記它的理由）。
+
+**證偽述詞（封閉）**：`cli/src/wf_cli/` 內出現任何**以「卡面缺簡介」為條件**而使動詞回非零
+rc 或拋出未被攔截例外的路徑。⛔ 不以「某個具名符號有沒有被改」為判準——落點不必在
+`validation.py`，也不必動 `--brief` 的 argparse 預設：`doctor.brief_present` 今日
+`disposition` 為 `migrate`，一旦執行即為假；而本節下方指名的承接者「新卡的必填時點」，
+最自然的落點是 `open_cmd` 的一個 `if`。
+
+今日無此路徑，鏈條逐段可查：唯一會因缺簡介拋 `BriefError` 的 `brief.parse_block`，在
+`brief.py` 之外**零 importer**，其唯一呼叫點是 `try_parse_block` 自己並
+`except BriefError: return None` ⇒ 缺簡介**到不了**任何拒絕路徑；其餘 `.brief` 消費者非
+fail-open（`try_parse_block`／`drifted`）即只在**有給**簡介時驗形狀（`validate_shape`，
+⛔ 不因缺席觸發）。重新導出的量法：`git grep -n "from \.\+brief import" -- cli/src` 取全部
+importer 逐個判處置（⚠️ 點號寫 `\.\+` 而非 `\.`——`open_cmd` 走 `from ..brief import`，
+只寫一個點會漏掉它，⭐ 本句初稿就是這樣漏的），再加驗哨兵字面（`card-brief:begin`、`## 簡介`）在 `cli/src` 只出現於
+`brief.py` 的常數與各處 docstring ⇒ 無自寫解析繞過本列舉。⚠️ **殘餘**：以別的標記自寫檢查
+會逃過本列舉，⛔ 不宣稱它涵蓋一切。要現值：以 `wf_cli.brief.parse_block` 對 `list_items`
+逐張試解析。依 ROADMAP §0 的判準「有機械執行者會擋下它」，本條**未達成**。
 ⇒ 承接者是**既有卡的補寫**與**新卡的必填時點**，⛔ 不是寫入通道——那一半已經有了。
 
 ⚠️ 本段於 2026-08-26 更正。原文逐字寫「今天沒有任何卡符合這一條」與「沒有寫入通道：

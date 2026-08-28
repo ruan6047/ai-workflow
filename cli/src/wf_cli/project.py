@@ -64,12 +64,16 @@ FIELD_SPECS: dict[str, tuple[FieldType, tuple[str, ...] | None]] = {
     #: 今天就已 rc=1（2026-08-15 需求方裁定停用，⛔ 與 gate_of 無關）⇒ ⛔ 不得記為「被切換
     #: 停掉的」。本句何時再變假：新增任何讀活看板並經 gate_of 的消費者，或
     #: DEFAULT_BASELINE_REF 由凍結 ref 改指活看板。
-    #: ⇒ 本欄位有兩個 writer：open_cmd 無條件寫「需求」（不在任何 if 之下），
-    #: handoff --next-stage 依 STAGE_PHASE 的六個鍵寫；⛔ assign 不寫它（該分歧的警示就地
-    #: 記在 handoff_cmd._pitfall_gate）。⚠️ **此處刻意記 writer 的符號、⛔ 不記「今天有幾張
-    #: 卡有值」**——覆蓋率每跑一次 handoff 就變，而 writer 集合只隨這三個符號的增刪而變，
-    #: 且每個都 grep 得到唯一命中。本句何時再變假：STAGE_PHASE 增刪鍵、assign 開始寫本欄、
-    #: 或 open 不再無條件寫「需求」。
+    #: ⇒ 本欄位今天有 writer，⛔ 不是無人寫入。⚠️ **此處刻意記證偽述詞、⛔ 不記 writer
+    #: 實例清單，也⛔ 不記「今天有幾張卡有值」**——覆蓋率每跑一次 handoff 就變；而列舉
+    #: 實例會漏掉通用機制：amend_cmd 的 pending_field_writes 是 dict 驅動，多一個鍵就是
+    #: 新 writer，且字面 fields["階段"] 連 open_cmd 都掃不到（它走 values 字典）。
+    #: **證偽述詞（封閉）**：set_field_value 是欄位寫入的唯一原語（單一 def、所有欄位寫入
+    #: 都經它）⇒ 任何 writer 必然現身於它的呼叫點；該集合中送進「階段」的成員一旦增減，
+    #: 本句即須重驗。今日成員：open_cmd 經 values 字典無條件寫「需求」、handoff
+    #: --next-stage 依 STAGE_PHASE 的鍵寫；⛔ assign 不寫（分歧警示就地記在
+    #: handoff_cmd._pitfall_gate），⛔ amend_cmd 的 pending_field_writes 今日無此鍵。
+    #: 重新導出的量法：git grep -n "set_field_value(" -- cli/src，逐個看送進去的是哪個欄位。
     #: ⚠️ 而**交付狀態仍同時承載階段與狀態**：其選項域裡 💡需求／🔬研究中／🧭規劃中 是階段
     #: 詞、🔍待查核／✅通過 是狀態詞，兩軸尚未分家。本句何時再變假：本檔 FIELD_SPECS
     #: 的「交付狀態」選項元組移除階段詞——而下一格 ensure_fields 的註記正說明了那為什麼
