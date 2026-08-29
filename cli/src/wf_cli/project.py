@@ -55,8 +55,44 @@ FIELD_SPECS: dict[str, tuple[FieldType, tuple[str, ...] | None]] = {
     #: 階段（canonical §0.1 兩軸狀態模型的第一軸）。⚠️ **本卡只建欄位、不切換語彙**：
     #: §0.1 逐字「本節定義目標狀態，尚未切換；上方 §0 的單欄序列仍是現行實作」，
     #: 且切換須待 cpbl 相容層（子卡 S2）落地——cpbl 有六個檔綁狀態語彙，而
-    #: roadmap_lines.gate_of 對未知狀態 fail closed，切換那一刻三支腳本會停。
-    #: ⇒ 本欄位建立後暫時無人寫入，交付狀態仍承載階段與狀態兩者。
+    #: roadmap_lines.gate_of 對未知狀態 fail closed（`raise CheckFailed`）⇒ 切換那一刻會停
+    #: 的，是「**讀活看板、且把交付狀態餵進 gate_of**」的消費者。⚠️ **此處刻意記判準、
+    #: ⛔ 不記支數**——支數隨腳本增刪而變，判準不會。依判準逐支查證（cpbl 基線釘死為字面
+    #: `3b470d70` ⇒ 結果是**該 SHA 的函數**、⛔ 與哪天跑的無關）：roadmap_lines.py 讀
+    #: `gh project item-list` 的活看板 ⇒ 命中；state_plane_migrate.py 讀的是
+    #: `git_show(DEFAULT_BASELINE_REF, "docs/TASKS.md")`——2026-08-04 起封存唯讀的凍結檔
+    #: ⇒ 看板語彙切換碰不到它；workflow_ledger.py --check
+    #: 今天就已 rc=1（2026-08-15 需求方裁定停用，⛔ 與 gate_of 無關）⇒ ⛔ 不得記為「被切換
+    #: 停掉的」。**重新導出的量法**（同一釘死基線）：`git grep -n gate_of 3b470d70 -- scripts`
+    #: 取用判準者、`git grep -n item-list 3b470d70 -- scripts` 取讀活看板者，兩者的**檔案
+    #: 交集**即候選，再逐支排除讀凍結檔的那些。⚠️⚠️ **它得到的是下界，⛔ 不是封閉集合**：
+    #: 命令可由變數組裝、消費也可經 CI／排程間接發生，字面 grep 對那些寫法是盲的
+    #: ⇒ 本註記只宣稱**至少**這些會停，⛔ 不宣稱僅有這些。⭐ 這正是原文寫「三支」會變假的
+    #: 原因——那是一個**數**，而數要成立得先有封閉集合，這裡沒有。
+    #: 本句何時再變假：(a) 上述交集不再有成員（下界歸零）；或 (b) gate_of 不再 fail closed
+    #: ——這一項⛔ 不用 grep（`raise CheckFailed` 在該檔有數十處、指不到本函式），改用**釘死
+    #: 探針**：`import roadmap_lines; roadmap_lines.gate_of("PROBE", "不存在的狀態")` 應拋
+    #: `CheckFailed`，不拋即為假（2026-08-29 於 `3b470d70` 實跑通過）；或 (c)
+    #: DEFAULT_BASELINE_REF 由凍結 ref 改指活看板。
+    #: ⇒ 本欄位今天有 writer，⛔ 不是無人寫入。⚠️ **此處刻意只記量法、⛔ 不記 writer
+    #: 實例清單，也⛔ 不記「今天有幾張卡有值」**——覆蓋率每跑一次 handoff 就變；而列舉
+    #: 實例會漏掉通用機制：amend_cmd 的 pending_field_writes 是 dict 驅動，多一個鍵就是
+    #: 新 writer，且字面 fields["階段"] 連 open_cmd 都掃不到（它走 values 字典）。
+    #: **重新導出的量法**：`git grep -n '"階段"' -- cli/src ':!cli/src/wf_cli/project.py'`
+    #: （排除本檔——本檔是欄位宣告與本註解自己，⛔ 不是 writer），逐個看該字面有沒有被送進
+    #: 欄位寫入。⚠️⚠️ **它得到的是下界，⛔ 不是封閉集合**：本檔有**兩條互不呼叫的**欄位
+    #: 寫入原語（set_field_value 與 update_item_field_value），且欄位名可經變數或字典鍵
+    #: 間接傳入，字面 grep 對那種寫法是盲的。⭐ 而下界對本句**恰好夠用**——本句宣稱的是
+    #: 「**有** writer」（存在型），下界 ≥ 1 即證成；⛔ 它證不成「**只有**這些 writer」，
+    #: 故本註解⛔ 不作封閉宣稱。⚠️ 前一版曾寫「set_field_value 是欄位寫入的唯一原語」，
+    #: 查核實測 update_item_field_value 另有不經它的呼叫點 ⇒ 那個保證寫下當天即為假。
+    #: ⭐ 錯的是**保證**、⛔ 不是答案：那些呼叫點寫的都不是本欄位。
+    #: 本句何時再變假：上述量法的輸出裡不再有任何一個把「階段」送進欄位寫入的呼叫點
+    #: （即下界歸零）。
+    #: ⚠️ 而**交付狀態仍同時承載階段與狀態**：其選項域裡 💡需求／🔬研究中／🧭規劃中 是階段
+    #: 詞、🔍待查核／✅通過 是狀態詞，兩軸尚未分家。本句何時再變假：本檔 FIELD_SPECS
+    #: 的「交付狀態」選項元組移除階段詞——而下一格 ensure_fields 的註記正說明了那為什麼
+    #: 不是改一行就做得到的事。
     "階段": (
         "SINGLE_SELECT",
         # ⛔ **恰好七個，與 canonical §0.1 逐字相同**（查核 R2-001）。
