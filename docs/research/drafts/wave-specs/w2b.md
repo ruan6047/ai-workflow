@@ -1,6 +1,7 @@
 ---
 card: WF-REDESIGN-W2B
 status: draft-pending-initiative
+replacement_rows: []（機械配套，無取代列）
 ---
 > ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_version: 1
 
