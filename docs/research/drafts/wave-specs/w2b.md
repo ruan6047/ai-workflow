@@ -1,10 +1,12 @@
 ---
 card: WF-REDESIGN-W2B
 status: draft-pending-initiative
-replacement_rows: []（機械配套，無取代列）
+replacement_rows: []
 ---
 > ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_version: 1
 
+
+> replacement_rows 為空的原因：機械配套，無取代列。
 # W2B · 機械配套（T2，依賴 W2A；⛔ 不含規則制定）
 
 **痛點（落差）**：五份交接文件無範本；L0 入口未成形；被守衛釘住的舊模板群（tasks-card 等 6 檔）仍會被誤讀為現行。（stage-rules 與 tier-rules 依 P1-02 丙移入 W2A——規則類⛔ 不在本卡。）
