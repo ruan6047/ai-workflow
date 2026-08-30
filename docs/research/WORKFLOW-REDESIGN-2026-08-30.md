@@ -9,19 +9,19 @@
 | # | 被取代 | 取代者 | 唯一 owner | 狀態 |
 |---|---|---|---|---|
 | 1 | canonical §0 十五值單欄序列（條文） | 本紀錄 §三（8×10），帶「尚未切換」標記 | W2A | 待做 |
-| 2 | 看板實際狀態語彙（15 值） | 8×10 cutover | W3 | 待做 |
+| 2 | 看板實際狀態語彙（15 值） | 8×10 cutover | 切換 Initiative | 待開 |
 | 3 | canonical §1 角色表（7 角色） | 本紀錄 §六（6 角色） | W2A | 待做 |
-| 4 | canonical §0.1 過渡註記 | cutover 後移除 | W3 | 待做 |
+| 4 | canonical §0.1 過渡註記 | cutover 後移除 | 切換 Initiative | 待開 |
 | 5 | aiwf `MODEL_ROUTING.md`「記入 claim 事件」 | assign 旗標＋信封行 | — | ✅ 已完成（9bb9cba） |
-| 6 | cpbl `docs/MODEL_ROUTING.md` 同句 | 同上 | W4 | 待做（需求方裁：cpbl 歸移植） |
-| 7 | `部署狀態` 欄與 `DEPLOYMENT_TRANSITIONS` | 退位成部署階段產出物；強制力移 `stage_next[部署]` | W3 | 待做 |
+| 6 | cpbl `docs/MODEL_ROUTING.md` 同句 | 同上 | 切換 Initiative | 待開 |
+| 7 | `部署狀態` 欄與 `DEPLOYMENT_TRANSITIONS` | 退位成部署階段產出物；強制力移 `stage_next[部署]` | 切換 Initiative | 待開 |
 | 8 | aiwf `TASKS.md` | 墓碑→移除；入口改查詢指令 | — | ✅ 已完成（26ba48d＋9bb9cba） |
-| 9 | cpbl `docs/TASKS.md`＋CLAUDE.md 路由 | 同上 | W4 | 待做（cpbl#176 內容重做） |
-| 10 | `open --spec-dir` | 甲′：規格住卡面＋spec_version | W3 | 待做 |
-| 11 | 57 份 cpbl spec 檔 | 封存 | W4 | 待做 |
+| 9 | cpbl `docs/TASKS.md`＋CLAUDE.md 路由 | 同上 | 切換 Initiative | 待開 |
+| 10 | `open --spec-dir` | 甲′：規格住卡面＋spec_version | 切換 Initiative | 待開 |
+| 11 | 57 份 cpbl spec 檔 | 封存 | 切換 Initiative | 待開 |
 | 12 | `--needs-deploy` 旗標 | 開卡表單「階段計畫」 | W1 | 待做 |
 | 13 | 內建 `Status` 欄 | 已退出 view（✅）；wfcli 寫入移除 | W3 | 部分完成 |
-| 14 | `📥Backlog` 狀態值 | 狀態「待辦」＋待審清單 | W3 | 待做 |
+| 14 | `📥Backlog` 狀態值 | 狀態「待辦」＋待審清單 | 切換 Initiative | 待開 |
 
 ## 二 · 污染符清單（查核者對施工卡 diff 逐字 grep；命中即 finding；⚠️ 下界——抓字面不抓換句話說）
 
@@ -60,7 +60,7 @@
 
 ## 七 · CLI 射程與拆解
 
-印清單＋確認有沒有填＋GitHub 機械操作；⛔ 不判內容。值域降為規範（PM 對照）。拒收點三層：執行者提出→PM 判「訊息有沒有**跑得出**的補救」→⛔ 不可補上呈。`doctor` 抽出成 CI job。卡面機讀改 fenced JSON（併波 3）。實測：57 則拒絕訊息 ≤20 過門檻，≥37 待補＝裁定候選自浮清單。資源檢查：母體改「有分支或 worktree」（29%→88%）、比對改路徑前綴包含（假陰性 7 對＝命中 7 倍）。
+印清單＋確認有沒有填＋GitHub 機械操作；⛔ 不判內容。**增量原則（需求方 2026-08-30 確認）：⛔ 不是不能加、是⛔ 不無限膨脹——動詞新增須需求方裁定；旗標／欄位／資訊輸出走三層評估；「提供資訊」類收錄最寬。**值域降為規範（PM 對照）。拒收點三層：執行者提出→PM 判「訊息有沒有**跑得出**的補救」→⛔ 不可補上呈。`doctor` 抽出成 CI job。卡面機讀改 fenced JSON（併波 3）。實測：57 則拒絕訊息 ≤20 過門檻，≥37 待補＝裁定候選自浮清單。資源檢查：母體改「有分支或 worktree」（29%→88%）、比對改路徑前綴包含（假陰性 7 對＝命中 7 倍）。
 
 ## 八 · 注意事項（63 條定稿，DI 三層：任務→專案→框架；累加⛔ 不覆寫；升遷門檻＝3 張卡）
 
@@ -78,9 +78,21 @@ L0＝canonical §1（波 2 改寫後）＋§2＋專案一分鐘心智模型（~4
 
 ## 十 · 五波實施與執行配置
 
-五波**六卡**：W0 conduct 生效（**T4**——P1-11：conduct 即規則紅線；紅線滿足＝需求方本 session 逐條確認之使用者 sign-off；執行⛔ PM 不可兼）→ W1 清單＋open＋表單（**T3**，⛔ PM 不可兼）→ **W2A canonical 本體＋stage-rules 生效＋tier-rules（T4 紅線，規則類整套跨家族審——P1-02 丙修訂 2026-08-30）** → **W2B 配套：交接範本（含改寫 handoff-contract 系 contract templates）／L0／舊模板清理＋守衛測試（T3——P1-11：contract templates 屬 public contract）** → 波 3 停機：snapshot 補階段+簡介→凍結→改名（`交付狀態`→`狀態`）→160 處遷移＋fenced JSON→換選項 15→10→**157 終態卡封存**→對帳表全數成功才宣告→解凍（T3+）→ 波 4 舊卡版本升級（**T3**——P1-09：欄位值刪除⛔ 不可 git revert、跨 repo、36 卡＋57 檔＋28 宣告，取影響與可逆最高者）。**硬依賴鏈（全長）：W0 → W1 → W2A → W2B → W3 → W4**（前一張終態才可開下一張——P1-03／P1-12 修訂；assign 資源交集檢查為第二道守衛，各卡 file 宣告互不重疊）。
-**波 3 停機序（唯一定義，各處引用⛔ 不得自報步數）**：前置 3 項＝W2B 已終態／snapshot 補欄並當場跑一份／拋棄式 project 實測刪有值選項；停機七步＝①凍結宣告 ②改名（交付狀態→狀態，view filter 同步）③遷移（160 處級，凍結前重量）＋fenced JSON＋5 寫入點改留言 ④選項 15→10 ⑤終態卡封存（157 級，凍結前重量）⑥對帳表 artifact 全數成功 ⑦解凍＋cutover 留痕。父卡跑迴圈⛔ 不做事；子卡只在父卡規劃誕生；父卡⛔ 不宣告 file 資源（⚠️ 皆無機械執行處，靠 PM 紀律＋查核）。
-立即生效（純流程）：丙 授權＋結案報告閘／交付報告缺席＝未完成／三反測／信封／轉移記錄手寫。回滾：唯一通道＝每日 snapshot（⚠️ 現⛔ 不含階段與簡介——**補齊為一切不可逆動作的前置**）。
+**四波五卡（乙′ 解耦定案 2026-08-30）**：W0 conduct 生效（**T4**——conduct 即規則紅線；審核滿足＝需求方本 session 逐條確認之使用者 sign-off；執行⛔ PM 不可兼）→ W1 清單＋open＋表單（**T3**）→ **W2A canonical 本體＋stage-rules 生效＋tier-rules（T4 紅線，跨家族審）** → **W2B 配套：交接範本（含 contract templates 改寫）／L0／舊模板清理（T3）** → **W3′ CLI 內部改造（T3，⛔ 零看板語彙變更、⛔ 零 cpbl 接觸）**：Log→留言、卡面 fenced JSON、doctor 抽出、37 則拒絕訊息、find_conflicts 前綴＋別名、snapshot 補欄。
+**硬依賴鏈：W0 → W1 → W2A → W2B → W3′**（前張終態才可開下張）。本 Initiative 交付＝**框架就緒、⛔ 不切換**——canonical 新 §0 帶「尚未切換」標記，看板續跑 15 值舊語彙。
+
+## 十之二 · 切換 Initiative（待開；本 Initiative 結案條件含其清單項建立）
+
+cutover 與全部不可逆／跨 repo 內容移交於此，屆時與 cpbl 移植同組：
+1. 看板切換：改名（交付狀態→狀態，view filter 同步）→ 選項 15→10 → 終態卡封存（數量屆時 artifact 重量）——凍結宣告含 **Project 寫入全域 freeze**，⛔ 不得以卡序列代替
+2. **P1-20 全文於此生效**：拋棄式 Project 完整 restore rehearsal（item／field／option／view 全涵蓋、逐步 inverse、read-back oracle）；**刪 option 起⛔ 非 rollback＝forward-repair**，凍結前需求方核可計畫與停損點；rehearsal 未實證⛔ 不得進切換步②以後；rehearsal 工具＝拋棄式腳本⛔ 不入 wfcli
+3. cpbl 側：9 檔語彙相容、review_gate_inventory 的留言 Log 缺口、stub 摘要同步、DATABASE_CONTRACT 別名表 cpbl 副本、submodule 指標 bump（現凍結於 f207d2ec——bump 即移植第一步）、cpbl TASKS.md／MODEL_ROUTING 清理（原 W4 項）
+4. 原 W4 全部內容：36 張舊卡逐張處置、57 份 spec 檔封存、13 個 db: 宣告正規化、15 張 write+ 補宣告、舊分支欄刪除——數字開卡時 artifact 重量
+5. deploy-state／deploy-declare 動詞與內建 Status 寫入移除（隨部署狀態欄退位）
+6. **回顧觸發移交於此**：cutover 後第 30 張常態卡結案；fail-safe 2026-10-31 不變——屆時未開切換 Initiative 亦強制檢討
+
+父卡跑迴圈⛔ 不做事；子卡只在父卡規劃誕生；父卡⛔ 不宣告 file 資源（⚠️ 皆無機械執行處，靠 PM 紀律＋查核）。
+立即生效（純流程）：丙 授權＋結案報告閘／交付報告缺席＝未完成／三反測／信封／轉移記錄手寫。回滾：本 Initiative **零不可逆動作**（全部可 git revert）；看板側復原能力歸切換 Initiative 的 restore rehearsal——⛔ 每日 snapshot 只是對帳投影⛔ 非回滾通道（P1-20）。
 
 ## 十一 · 已執行（2026-08-29–30，均回讀驗證）
 
