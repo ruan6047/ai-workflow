@@ -11,12 +11,12 @@ replacement_rows: [1, 3]
 **⛔ 非射程**：不動範本／L0／舊模板清理（W2B）；不切換看板實際語彙（波 3——§0 新文帶「尚未切換」標記，沿 §0.1 先例）；不動 cpbl。
 **階段計畫**：需求 → 規劃 → 執行 → 審核 → 結案。
 **級別依據**：改規則＝AGENTS.md 明文紅線 ⇒ T4。執行 高階型（架構層，AGENTS 路由 Opus／Fable）／查核 高階型＋**跨家族（Codex）**——需求方 2026-08-30 裁定；結案報告閘另經需求方。db-scope none。
-**資源**：file:AI_WORKFLOW.md、file:stage-rules/、file:docs/research/drafts/stage-rules/（來源，move）、file:tier-rules.md
+**資源**（逐檔）：file:AI_WORKFLOW.md、file:tier-rules.md、file:stage-rules/requirement.md、file:stage-rules/research.md、file:stage-rules/planning.md、file:stage-rules/implementation.md、file:stage-rules/review.md、file:stage-rules/deploy.md、file:stage-rules/maintenance.md、file:stage-rules/closeout.md、file:docs/research/drafts/stage-rules/requirement.md、file:docs/research/drafts/stage-rules/research.md、file:docs/research/drafts/stage-rules/planning.md、file:docs/research/drafts/stage-rules/implementation.md、file:docs/research/drafts/stage-rules/review.md、file:docs/research/drafts/stage-rules/deploy.md、file:docs/research/drafts/stage-rules/maintenance.md、file:docs/research/drafts/stage-rules/closeout.md
 **驗收**：
 1. §1 換 6 角色表（需求方／人工查核／PM／第二 PM／執行者／查核者）；§1／§2 移至 §0 前
 2. §0 重寫為 8 階段 × 10 狀態＋轉移 delta 制，全節帶「本節定義目標狀態，尚未切換；cutover＝波 3」標記
 3. 取代清單 **rows 1、3** 的舊文刪除（⛔ 不留屍體；其餘列各歸其 owner 卡，⛔ 不在本卡動）
-4. 決議紀錄 §二 污染符對 diff 逐字 grep 零命中（新規則文脈）；canonical 行號引用守衛綠
-5. 檔頭「短版」等腐爛自述移除或改可驗形式
+4. （P1-16 可執行化）對本卡 merge result 逐字跑 `git diff <開卡時釘之基線SHA>..HEAD -- AI_WORKFLOW.md stage-rules/ | grep -F "<污染符>"`，污染符逐個取決議 §二封閉清單；預期全數零命中，任一命中即紅；唯一豁免＝取代對照句中引號內作為被取代物出現，豁免逐處列於交付報告。canonical 行號引用守衛綠
+5. （P1-16 封閉列舉）腐爛自述三項逐字處置：①檔頭「短版」二字移除（`grep -c 短版 AI_WORKFLOW.md` 預期 0）；②「最後核實：<日期>」形自述零命中（`grep -cE "最後核實" AI_WORKFLOW.md` 預期 0）；③⛔ 不新增任何含總行數的自我描述——交付報告附三條指令實跑輸出
 6. ⭐（丙修訂）8 份 stage-rules 以 move 生效、節號引用對齊新 canonical；tier-rules 框架層檔上線（環境枚舉與別名表移交 DATABASE_CONTRACT）——規則類整套與 canonical 同一輪跨家族審；stage-rules 內容之紅線滿足另含需求方本 session 逐條確認（§八）
 **驗證**：跨家族裁決含身分自述；test_canonical_citation_scan 綠；⭐ 對照決議紀錄逐節核對（查核者實跑取代清單全表）。
