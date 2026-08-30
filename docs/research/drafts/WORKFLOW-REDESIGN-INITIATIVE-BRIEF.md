@@ -36,18 +36,19 @@ description: 五波施工 Initiative 的 discovery brief（WF-19 形式）。開
 
 ## 非目標（⛔）
 
-不擴 CLI 動詞；不批次補寫舊停卡的復活條件；不寫部署／維護階段內容（留空槽）；不動 cpbl 產品卡（波 4 統一版本升級）；不引入 Gherkin／Repository 層（既有定案）；不做全域轉移表（delta 制）；不為個別卡修通則。
+CLI 增量依決議 §七原則（動詞新增須需求方裁定、其餘走三層評估、⛔ 不無限膨脹）；不批次補寫舊停卡的復活條件；不寫部署／維護階段內容（留空槽）；⛔ 本 Initiative 不碰 cpbl（乙′ 解耦；舊卡與移植歸切換 Initiative）；不引入 Gherkin／Repository 層（既有定案）；不做全域轉移表（delta 制）；不為個別卡修通則。
 
-## 拆卡草案（P1 四輪後：五波六卡；硬依賴全長 W0→W1→W2A→W2B→W3→W4）
+## 拆卡定稿（乙′ 解耦：四波五卡，全 aiwf、零不可逆；硬依賴 W0→W1→W2A→W2B→W3′）
 
-| 卡 | 內容 | 級別 | 執行配置 |
+| 卡 | 內容 | 級別 | 配置 |
 |---|---|---|---|
-| W0 | conduct×3＋intake 生效（紅線滿足＝需求方逐條確認之使用者 sign-off） | T4 | 執行⛔ PM 不可兼；查核＝使用者 sign-off |
-| W1 | 清單機制＋open --from-issue＋封 DraftIssue＋表單（fenced JSON） | T3 | PM ⛔ 不可兼；獨立查核 |
-| W2A | canonical 本體＋stage-rules 生效＋tier-rules（規則類整套） | T4 紅線 | 跨家族（Codex）查核 |
-| W2B | 配套：交接範本（含 contract templates 改寫）／L0／舊模板清理＋守衛（依賴 W2A） | T3 | 主力型＋獨立查核；需求方閘門 |
-| W3 | 停機序（決議 §十唯一定義：前置 3＋七步）＋doctor 抽出＋37 則訊息 | T3+ | 跨家族建議 |
-| W4 | 舊卡與 cpbl 移植（欄位值刪除不可逆 ⇒ T3） | T3 | 主力型＋獨立；需求方閘門 |
+| W0 | conduct×3＋intake 生效（sign-off 審） | T4 | 執行⛔ PM 不可兼 |
+| W1 | 清單＋open --from-issue＋表單 | T3 | 獨立查核 |
+| W2A | canonical＋stage-rules＋tier-rules（規則類整套） | T4 紅線 | 跨家族（Codex） |
+| W2B | 交接範本（含 contract templates）／L0／舊模板清理 | T3 | 獨立查核；需求方閘門 |
+| W3′ | CLI 內部：Log→留言（6 寫入點）／fenced JSON／doctor 抽出／37 則訊息／find_conflicts／snapshot | T3 | 獨立查核 |
+
+**⛔ 不在本 Initiative**：看板切換（改名／選項／封存）、P1-20 rehearsal 與 forward-repair、cpbl 全部（9 檔／stub／別名副本／submodule bump／原 W4 舊卡）——移交**切換 Initiative**（決議 §十之二），本卡結案條件含其清單項建立。回顧觸發錨於切換；fail-safe 2026-10-31 不變。
 
 ## 污染防治
 

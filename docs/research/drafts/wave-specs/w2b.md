@@ -15,7 +15,7 @@ replacement_rows: []
 **級別依據**（P1-11 重推）：改寫 dispatch-package 等 contract templates＝public contract ⇒ **T3**。執行 主力型／查核 主力型＋獨立；需求方閘門適用。硬依賴：W2A 終態後才可開工。執行 主力型／查核 主力型。db-scope none。
 **資源**：file:templates/、file:AGENTS.md、file:README.md、file:MODEL_ROUTING.md、file:docs/CONTRACT_TOOL_RECONCILE.md、file:cli/tests/test_contract_tool_reconcile.py
 **驗收**：
-1. （P1-15 封閉 mapping）舊 → 新逐檔對照，各附 falsifier：tasks-card.md → 移除（卡面 fenced JSON 承接）；bug-card.md＋bug-workflow.md → 移除（缺陷走清單＋一般卡）；initiative-card.md → 移除（父卡模型住 stage-rules）；templates/TASKS.md → 移除（state plane）。新五檔：templates/dispatch-package.md（改寫）、templates/review-dispatch.md（新）、templates/delivery-report.md（新）、templates/verdict.md（新）、templates/status-change-ruling.md（新）——各以「檔案存在＋含信封四段標題」為存在性判準
+1. （P1-15 封閉 mapping）舊 → 新逐檔對照，各附 falsifier：tasks-card.md → 移除（卡面 fenced JSON 承接）；bug-card.md＋bug-workflow.md → 移除（缺陷走清單＋一般卡）；initiative-card.md → 移除（父卡模型住 stage-rules）；templates/TASKS.md → 移除（state plane）。新五檔：templates/dispatch-package.md（改寫）、templates/review-dispatch.md（新——派審信封）、templates/delivery-report.md（新）、templates/verdict.md（新）、templates/status-change-ruling.md（新）——各以「檔案存在＋含信封四段標題」為存在性判準。**（P1-15 補）templates/review-prompt.md → 改寫保留**（wfcli review 的結構化輸出契約，碼引用 6 處不動；改寫使其與 verdict.md 分工：前者 schema、後者人讀範本）；被移除各舊檔以 git grep 檔名於 post-image 驗「舊入口零引用」（mapping 文件自身除外）
 2. （P1-19）產出 old→new contract symbol 與守衛涵蓋對照；CONTRACT_TOOL_RECONCILE 的 --check 與其測試套件在 **W2A＋W2B 合併結果**上跑，universe 消失／新增逐項附 disposition，⛔ 不得只改登記讓綠燈恢復
 3. L0 成形：AGENTS／README 指向「canonical 前兩節＋專案心智模型，其餘用查的」
 4. 封閉五檔依 mapping 落地，CI 全綠

@@ -16,7 +16,8 @@ replacement_rows: [1, 3]
 1. §1 換 6 角色表（需求方／人工查核／PM／第二 PM／執行者／查核者）；§1／§2 移至 §0 前
 2. §0 重寫為 8 階段 × 10 狀態＋轉移 delta 制，全節帶「本節定義目標狀態，尚未切換；cutover＝波 3」標記
 3. 取代清單 **rows 1、3** 的舊文刪除（⛔ 不留屍體；其餘列各歸其 owner 卡，⛔ 不在本卡動）
-4. （P1-16 可執行化）對本卡 merge result 逐字跑 `git diff <開卡時釘之基線SHA>..HEAD -- AI_WORKFLOW.md stage-rules/ | grep -F "<污染符>"`，污染符逐個取決議 §二封閉清單；預期全數零命中，任一命中即紅；唯一豁免＝取代對照句中引號內作為被取代物出現，豁免逐處列於交付報告。canonical 行號引用守衛綠
-5. （P1-16 封閉列舉）腐爛自述三項逐字處置：①檔頭「短版」二字移除（`grep -c 短版 AI_WORKFLOW.md` 預期 0）；②「最後核實：<日期>」形自述零命中（`grep -cE "最後核實" AI_WORKFLOW.md` 預期 0）；③⛔ 不新增任何含總行數的自我描述——交付報告附三條指令實跑輸出
+4. （P1-16 修訂：掃 **post-image**⛔ 不掃 diff——被刪舊字面會現身於減行害完成的取代被判紅）對 merge result 逐符跑 `git show HEAD:AI_WORKFLOW.md | grep -Fc "<符>"` 與 `cat stage-rules/*.md | grep -Fc "<符>"`，符逐個取決議 §二封閉清單；預期全數 0；唯一豁免＝取代對照句引號內作為被取代物，豁免逐處列於交付報告。canonical 行號引用守衛綠
+5. （P1-16 三條齊備）①`grep -c 短版 AI_WORKFLOW.md` 預期 0；②`grep -c 最後核實 AI_WORKFLOW.md` 預期 0；③行數自述 `grep -cE "[0-9]{3,} ?行" AI_WORKFLOW.md` 預期 0（反例：「947 行的短版」即命中；豁免面＝表格內合法數據，逐處列出）——三條實跑輸出附交付報告
+7. （R3 過渡橫幅）8 份 stage-rules 檔頂各含一行「⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative」——`grep -l 舊語彙 stage-rules/*.md | wc -l` 預期 8
 6. ⭐（丙修訂）8 份 stage-rules 以 move 生效、節號引用對齊新 canonical；tier-rules 框架層檔上線（環境枚舉與別名表移交 DATABASE_CONTRACT）——規則類整套與 canonical 同一輪跨家族審；stage-rules 內容之紅線滿足另含需求方本 session 逐條確認（§八）
 **驗證**：跨家族裁決含身分自述；test_canonical_citation_scan 綠；⭐ 對照決議紀錄逐節核對（查核者實跑取代清單全表）。
