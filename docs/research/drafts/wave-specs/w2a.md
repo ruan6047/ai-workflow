@@ -1,6 +1,7 @@
 ---
 card: WF-REDESIGN-W2A
 status: draft-pending-initiative
+replacement_rows: [1, 3]
 ---
 > ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_version: 1
 
@@ -14,7 +15,7 @@ status: draft-pending-initiative
 **驗收**：
 1. §1 換 6 角色表（需求方／人工查核／PM／第二 PM／執行者／查核者）；§1／§2 移至 §0 前
 2. §0 重寫為 8 階段 × 10 狀態＋轉移 delta 制，全節帶「本節定義目標狀態，尚未切換；cutover＝波 3」標記
-3. 取代清單所列舊文**刪除**（⛔ 不留屍體；歷史在 git）
+3. 取代清單 **rows 1、3** 的舊文刪除（⛔ 不留屍體；其餘列各歸其 owner 卡，⛔ 不在本卡動）
 4. 決議紀錄 §二 污染符對 diff 逐字 grep 零命中（新規則文脈）；canonical 行號引用守衛綠
 5. 檔頭「短版」等腐爛自述移除或改可驗形式
 6. ⭐（丙修訂）8 份 stage-rules 以 move 生效、節號引用對齊新 canonical；tier-rules 框架層檔上線（環境枚舉與別名表移交 DATABASE_CONTRACT）——規則類整套與 canonical 同一輪跨家族審；stage-rules 內容之紅線滿足另含需求方本 session 逐條確認（§八）
