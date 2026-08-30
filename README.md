@@ -44,7 +44,7 @@ ai-workflow/           # 依檔名排序，與 `ls` 實況一致
 
 ## 快速上手
 新專案採用 → 見 [`ADOPTION.md`](ADOPTION.md)。核心規則 → 見 [`AI_WORKFLOW.md`](AI_WORKFLOW.md)。
-舊版專案升級 → 見 [`MIGRATION.md`](MIGRATION.md)。
+舊版專案升級 → 見 `MIGRATION.md`（已移除，見 git 歷史）。
 
 ## 自我治理 (dogfooding)
-本 repo 也**受自己的機制管理**：改規則＝開分支 `ai/<模型>/<卡ID>` → 獨立審核 → merge main；卡片 log 見 [`TASKS.md`](TASKS.md)。
+本 repo 也**受自己的機制管理**：改規則＝開分支 `ai/<模型>/<卡ID>` → 獨立審核 → merge main；卡片 log 見 `TASKS.md`（已移除，見 git 歷史）。
