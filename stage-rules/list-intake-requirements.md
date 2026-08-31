@@ -1,10 +1,7 @@
 ---
-status: draft-pending-initiative
 name: list-intake-requirements
 description: 提案進待審清單前必須滿足的四項條件。提案者（人或 AI）依此撰寫，PM 依此收或退。PM ⛔ 只判流程、不判內容。
 ---
-
-> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 施工卡（四波五卡）；在此之前⛔ 不得作為現行規則引用。
 
 # 待審清單收件條件
 

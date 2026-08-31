@@ -1,10 +1,7 @@
 ---
-status: draft-pending-initiative
 name: reviewer-conduct
 description: 查核者的職責邊界、紅線與裁決紀律。常為跨實體（Codex／人工），故所有要求逐字寫明⛔ 不依賴慣例。
 ---
-
-> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 施工卡（四波五卡）；在此之前⛔ 不得作為現行規則引用。
 
 # 查核者準則
 

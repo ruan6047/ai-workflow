@@ -75,6 +75,10 @@ def corpus_paths() -> list[Path]:
     paths = [REPO_ROOT / p for p in CORPUS]
     paths += sorted((REPO_ROOT / "docs/research/drafts/wave-specs").glob("*.md"))
     paths += sorted((REPO_ROOT / "docs/research/drafts/stage-rules").glob("*.md"))
+    # 生效後的 stage-rules 住 repo 根（W0 起：conduct 三檔＋收件條件搬出 drafts/）。
+    # 刻意兩個 glob 並存：drafts/ 下仍有未生效的其餘 stage 檔（波 2 才搬），
+    # ⛔ 不得由「根目錄已有 stage-rules」推出 drafts glob 可刪——刪了那些檔就脫離語料。
+    paths += sorted((REPO_ROOT / "stage-rules").glob("*.md"))
     return paths
 
 

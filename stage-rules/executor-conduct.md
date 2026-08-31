@@ -1,10 +1,7 @@
 ---
-status: draft-pending-initiative
 name: executor-conduct
 description: 執行者的職責邊界、紅線與交付紀律。跨階段共通；各階段特有的方向在該階段檔的「分角色」節。
 ---
-
-> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 施工卡（四波五卡）；在此之前⛔ 不得作為現行規則引用。
 
 # 執行者準則
 

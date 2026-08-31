@@ -1,10 +1,7 @@
 ---
-status: draft-pending-initiative
 name: pm-conduct
 description: PM 的職責邊界、紅線與動作前自檢。⛔ 只管流程不判內容；狀態的唯一 writer。跨平台的第二 PM 同樣適用。
 ---
-
-> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 施工卡（四波五卡）；在此之前⛔ 不得作為現行規則引用。
 
 # PM 準則
 
