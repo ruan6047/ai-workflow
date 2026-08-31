@@ -34,12 +34,15 @@ suite（成對測試：真識別子剝除／同形量測必響）釘住每一條
 
 - 行文被改／被刪 ⇒ inventory 條目變**死條目**（load-bearing 檢查，轉紅）。
 - 新增未分類數字 ⇒ unclassified，轉紅。
-- claims 逐 token：每筆 (b) 條目帶 ``claims``（token → reason＋rationale），
-  scanner 驗偵測 token multiset 與 claims **一一相等**——漏一（uncovered）、
-  多一（extra）、同 token 不同語意未分開，均轉紅（R16：行級單一 rationale
-  放行整列 tokens 被裁決退回；需求方 2026-08-31 裁定乙＝逐 token claims）。
-- 唯一判準（四項全零）：``unclassified == 0 && dead_entries == 0 &&
-  uncovered_claims == 0 && extra_claims == 0``。
+- claims 逐 occurrence：每筆 (b) 條目帶 ``claims``（occurrence＋token → reason
+  ＋rationale），scanner 驗 (occurrence, token) 對集一一相等（R16 行級放行被退
+  回；需求方 2026-08-31 裁定乙＝逐 token claims、R17 起綁 occurrence）。
+- **唯一判準（單一 predicate，居所＝``RED_KEYS``／``is_red``）**：
+  ``unclassified == 0 && dead_entries == 0 && invalid_entries == 0 &&
+  claims_mismatch == 0``。``uncovered_claims``／``extra_claims`` 只是 mismatch
+  的**診斷投影**⛔ 不構成判準——同 occurrence 重複 claim 可使兩投影皆零而
+  mismatch 仍在（R19 反例）。module doc、human summary、corpus 測試三處共用
+  此 predicate，⛔ 不得各自另定（R19：三處漂移即本輪 blocking）。
 
 ## 射程
 
@@ -265,7 +268,8 @@ def _entry_schema_errors(entry: dict) -> list[str]:
         if not isinstance(c["rationale"], str) or not c["rationale"].strip() \
                 or c["rationale"].strip() == c["reason"]:
             errs.append(f"claim[{i}] rationale 空缺或自證")
-        if not isinstance(c["occurrence"], int) or c["occurrence"] < 0:
+        if not isinstance(c["occurrence"], int) or isinstance(c["occurrence"], bool) \
+                or c["occurrence"] < 0:
             errs.append(f"claim[{i}] occurrence 非法")
         if not isinstance(c["token"], str) or not c["token"]:
             errs.append(f"claim[{i}] token 非法")
@@ -330,6 +334,14 @@ def scan_corpus() -> dict:
     }
 
 
+# pass/fail 的單一 predicate——module doc、main、corpus 測試三處共用（R19）
+RED_KEYS = ("unclassified", "dead_entries", "invalid_entries", "claims_mismatch")
+
+
+def is_red(result: dict) -> bool:
+    return any(result[k] for k in RED_KEYS)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--file", help="只掃這個檔（自動分類 a/c，資訊性；不套 inventory）")
@@ -337,7 +349,13 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.file:
-        rows = scan_file(Path(args.file), inventory=None, rel=args.file)
+        try:
+            rows = scan_file(Path(args.file), inventory=None, rel=args.file)
+        except OSError as exc:
+            msg = f"{type(exc).__name__}: {exc}"
+            print(json.dumps({"file_error": msg}, ensure_ascii=False)
+                  if args.json else f"[file-error] {msg}")
+            return 1
         bad = [r for r in rows if r["class"] == "unclassified"]
         if args.json:
             print(json.dumps({"rows": rows}, ensure_ascii=False, indent=1))
@@ -347,11 +365,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"unclassified_count={len(bad)}")
         return 1 if bad else 0
 
-    result = scan_corpus()
+    try:
+        result = scan_corpus()
+    except (OSError, json.JSONDecodeError) as exc:
+        # inventory 讀不到／壞 JSON＝守衛自身失效，fail-closed 且證據可讀（⛔ 裸 traceback）
+        msg = {"inventory_error": f"{type(exc).__name__}: {exc}"}
+        print(json.dumps(msg, ensure_ascii=False) if args.json
+              else f"[inventory-error] {msg['inventory_error']}")
+        return 1
     evidence_keys = ("unclassified", "dead_entries", "invalid_entries",
                      "uncovered_claims", "extra_claims", "claims_mismatch")
     if args.json:
-        # 失敗證據契約：四項計數＋逐列 mismatch／invalid 證據全數輸出
+        # 失敗證據契約：RED_KEYS 判準計數＋兩投影＋逐列 mismatch／invalid 證據全數輸出
         payload = {k: result[k] for k in evidence_keys}
         payload["counts"] = {k: len(result[k]) for k in evidence_keys}
         payload["total"] = len(result["rows"])
@@ -368,16 +393,11 @@ def main(argv: list[str] | None = None) -> int:
         for m in result["claims_mismatch"]:
             print(f'[claims-mismatch] {m["path"]}:{m["line"]} '
                   f'uncovered={m["uncovered"]} extra={m["extra"]}')
-        counts = {"total": len(result["rows"]),
-                  "unclassified": len(result["unclassified"]),
-                  "dead_entries": len(result["dead_entries"]),
-                  "invalid_entries": len(result["invalid_entries"]),
-                  "uncovered_claims": len(result["uncovered_claims"]),
-                  "extra_claims": len(result["extra_claims"])}
+        counts = {"total": len(result["rows"])}
+        counts.update({k: len(result[k]) for k in RED_KEYS})
+        counts.update({k: len(result[k]) for k in ("uncovered_claims", "extra_claims")})
         print(json.dumps(counts, ensure_ascii=False))
-    red = (result["unclassified"] or result["dead_entries"]
-           or result["invalid_entries"] or result["claims_mismatch"])
-    return 1 if red else 0
+    return 1 if is_red(result) else 0
 
 
 if __name__ == "__main__":
