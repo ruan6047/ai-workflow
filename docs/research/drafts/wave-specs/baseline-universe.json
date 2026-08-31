@@ -1,0 +1,1930 @@
+{
+ "gap_count": 54,
+ "guard_gaps": [
+  {
+   "detail": "cli/src/wf_cli/card.py import 了 brief.render_block（因此寫得動該份資料），但其呼叫圖到不了 brief 的任一守衛（validate_shape）",
+   "guard": "validate_shape",
+   "module": "brief",
+   "serializer": "render_block",
+   "writer": "cli/src/wf_cli/card.py"
+  },
+  {
+   "detail": "cli/src/wf_cli/card.py import 了 resources.render_block（因此寫得動該份資料），但其呼叫圖到不了 resources 的任一守衛（find_conflicts）",
+   "guard": "find_conflicts",
+   "module": "resources",
+   "serializer": "render_block",
+   "writer": "cli/src/wf_cli/card.py"
+  },
+  {
+   "detail": "cli/src/wf_cli/commands/amend_cmd.py import 了 brief.render_block（因此寫得動該份資料），但其呼叫圖到不了 brief 的任一守衛（validate_shape）",
+   "guard": "validate_shape",
+   "module": "brief",
+   "serializer": "render_block",
+   "writer": "cli/src/wf_cli/commands/amend_cmd.py"
+  },
+  {
+   "detail": "cli/src/wf_cli/commands/amend_cmd.py import 了 resources.render_block（因此寫得動該份資料），但其呼叫圖到不了 resources 的任一守衛（find_conflicts）",
+   "guard": "find_conflicts",
+   "module": "resources",
+   "serializer": "render_block",
+   "writer": "cli/src/wf_cli/commands/amend_cmd.py"
+  },
+  {
+   "detail": "cli/src/wf_cli/commands/assign_cmd.py import 了 card.format_branch_worktree（因此寫得動該份資料），但其呼叫圖到不了 card 的任一守衛（validate_capability_routing／validate_routing_field／validate_routing_names）",
+   "guard": "validate_capability_routing／validate_routing_field／validate_routing_names",
+   "module": "card",
+   "serializer": "format_branch_worktree",
+   "writer": "cli/src/wf_cli/commands/assign_cmd.py"
+  }
+ ],
+ "rows": [
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::_DB_HEADER_PREFIX",
+    "cli/src/wf_cli/card.py::read_db_scope_agreement",
+    "cli/src/wf_cli/card.py::_sync_db_scope_header",
+    "cli/src/wf_cli/card.py::amend_resource_block"
+   ],
+   "name": "DB",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=否",
+    "⚠️ 開卡寫得進、開卡後改不動"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::_KNOWN_HEADER_PREFIXES"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "Design",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "Discovery",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::amend_spec_baseline",
+    "cli/src/wf_cli/card.py::amend_initiative",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>"
+   ],
+   "name": "Initiative",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::_SPEC_BASELINE_RE",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::restore_migration_header",
+    "cli/src/wf_cli/card.py::amend_initiative"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/card.py::amend_spec_baseline",
+    "cli/src/wf_cli/card.py::restore_migration_header"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §Log",
+    "templates/tasks-card.md §Log"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/brief.py::<module>",
+    "cli/src/wf_cli/brief.py::_reuse_probe",
+    "cli/src/wf_cli/brief.py::_brief_section",
+    "cli/src/wf_cli/card.py::<module>"
+   ],
+   "name": "Log",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=否",
+    "⚠️ 開卡寫得進、開卡後改不動",
+    "⚠️ amend 讀它當判準卻改不動它"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "Merge SHA",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/commands/doctor_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/doctor_cmd.py::run",
+    "cli/src/wf_cli/doctor.py::audit_review_channel",
+    "cli/src/wf_cli/doctor.py::CANONICAL_ANCHORS"
+   ],
+   "name": "PR",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::is_owner_assigned",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::parse_requested_by"
+   ],
+   "name": "owner",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/amend_cmd.py::_ISSUECOMMENT_URL_RE",
+    "cli/src/wf_cli/commands/assign_cmd.py::run",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::REQUIRED_FIELDS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::run"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/cleanup.py::_check_foreign_lease",
+    "cli/src/wf_cli/commands/amend_cmd.py::_prior_revision_recoverable"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::amend_spec_baseline",
+    "cli/src/wf_cli/card.py::amend_initiative",
+    "cli/src/wf_cli/card.py::_carries_routing_shape",
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>"
+   ],
+   "name": "spec 基線",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::_SPEC_BASELINE_RE",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::amend_spec_baseline",
+    "cli/src/wf_cli/card.py::restore_migration_header"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/card.py::amend_spec_baseline",
+    "cli/src/wf_cli/card.py::restore_migration_header"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §依賴與子卡"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "依賴與子卡",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::restore_migration_header",
+    "cli/src/wf_cli/card.py::amend_brief",
+    "cli/src/wf_cli/cleanup.py::_execute_closeout",
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>"
+   ],
+   "name": "修復",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::body_read_paths",
+    "cli/src/wf_cli/cleanup.py::<module>",
+    "cli/src/wf_cli/cleanup.py::ACTION_LABELS",
+    "cli/src/wf_cli/cleanup.py::GuardCheck"
+   ],
+   "name": "分支",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/assign_cmd.py::run",
+    "cli/src/wf_cli/commands/open_cmd.py::run",
+    "cli/src/wf_cli/project.py::FIELD_SPECS",
+    "cli/src/wf_cli/project.py::CARD_FIELD_MAP"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/assign_cmd.py::run"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "回歸測試",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::capability_reason_missing_message",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::_ROUTING_RESERVED_ROLE",
+    "cli/src/wf_cli/card.py::validate_routing_names"
+   ],
+   "name": "執行",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=否",
+    "⚠️ 開卡寫得進、開卡後改不動"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::validate_capability_routing",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::_ROUTING_PARSE_RE",
+    "cli/src/wf_cli/card.py::_field_problems"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::format_routing_line"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §基線變更紀錄"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "基線變更紀錄",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>",
+    "cli/src/wf_cli/commands/open_cmd.py::add_parser",
+    "cli/src/wf_cli/doctor.py::<module>"
+   ],
+   "name": "服務的原始目標",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=否",
+    "⚠️ 開卡寫得進、開卡後改不動"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::_KNOWN_HEADER_PREFIXES",
+    "cli/src/wf_cli/commands/open_cmd.py::run",
+    "cli/src/wf_cli/doctor.py::evaluate_card_conformance",
+    "cli/src/wf_cli/doctor.py::audit_conformance"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::capability_reason_missing_message",
+    "cli/src/wf_cli/card.py::_ROUTING_RESERVED_ROLE",
+    "cli/src/wf_cli/card.py::validate_routing_names"
+   ],
+   "name": "查核",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=否",
+    "⚠️ 開卡寫得進、開卡後改不動"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::validate_capability_routing",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::_ROUTING_PARSE_RE",
+    "cli/src/wf_cli/card.py::_field_problems"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::format_routing_line"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §核心痛點"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::capability_reason_missing_message",
+    "cli/src/wf_cli/card.py::append_log_line",
+    "cli/src/wf_cli/card.py::_CORE_PAIN_HEADING",
+    "cli/src/wf_cli/card.py::read_db_scope_agreement"
+   ],
+   "name": "核心痛點",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::amend_core_pain",
+    "cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint",
+    "cli/src/wf_cli/commands/amend_cmd.py::run"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/resources.py::parse_block"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/brief.py::<module>",
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::<module>",
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::run_checkpoint"
+   ],
+   "name": "根因",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §決策與風險"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "決策與風險",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/commands/amend_cmd.py::_authorize_by_requester_ruling",
+    "cli/src/wf_cli/commands/handoff_cmd.py::<module>",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/config.py::<module>"
+   ],
+   "name": "環境",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::chain_depth_violation_message",
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body"
+   ],
+   "name": "目標",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "write-only",
+   "writers": [
+    "cli/src/wf_cli/cleanup.py::_check_self_cwd",
+    "cli/src/wf_cli/cleanup.py::_check_primary",
+    "cli/src/wf_cli/registry.py::observe_local_worktree"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/brief.py::<module>",
+    "cli/src/wf_cli/brief.py::validate_shape",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::_flatten_line_structure"
+   ],
+   "name": "範圍",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [
+    "cli/src/wf_cli/doctor.py::CommitTrailerReport.render_text"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::capability_reason_missing_message",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::validate_capability_routing",
+    "cli/src/wf_cli/card.py::Card"
+   ],
+   "name": "規劃",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=否",
+    "⚠️ 開卡寫得進、開卡後改不動",
+    "⚠️ amend 讀它當判準卻改不動它"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::_REQUESTED_BY_RE",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::restore_migration_header",
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_PHASE"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/card.py::restore_migration_header",
+    "cli/src/wf_cli/card.py::parse_requested_by"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §資源宣告"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/brief.py::<module>",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::Card.__post_init__",
+    "cli/src/wf_cli/card.py::render_spec_markdown"
+   ],
+   "name": "資源宣告",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::amend_resource_block",
+    "cli/src/wf_cli/commands/amend_cmd.py::run",
+    "cli/src/wf_cli/commands/open_cmd.py::run"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/amend_cmd.py::run",
+    "cli/src/wf_cli/resources.py::parse_block"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/commands/deploy_declare_cmd.py::<module>",
+    "cli/src/wf_cli/commands/deploy_declare_cmd.py::DECLARATION_TARGET"
+   ],
+   "name": "部署",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_PHASE",
+    "cli/src/wf_cli/pitfalls.py::PHASES",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "里程碑",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::read_db_scope_agreement",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/pitfalls.py::ALL_STAGE_FAMILIES",
+    "cli/src/wf_cli/registry.py::<module>"
+   ],
+   "name": "重現",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/brief.py::<module>",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::now_iso8601",
+    "cli/src/wf_cli/card.py::Card"
+   ],
+   "name": "需求",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=否",
+    "⚠️ 開卡寫得進、開卡後改不動",
+    "⚠️ amend 讀它當判準卻改不動它"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::_REQUESTED_BY_RE",
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/card.py::restore_migration_header",
+    "cli/src/wf_cli/card.py::_KNOWN_HEADER_PREFIXES"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/card.py::restore_migration_header",
+    "cli/src/wf_cli/card.py::parse_requested_by"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/brief.py::<module>",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::now_iso8601",
+    "cli/src/wf_cli/card.py::read_db_scope_agreement"
+   ],
+   "name": "需求方",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "write-only",
+   "writers": [
+    "cli/src/wf_cli/validation.py::validate_review_report"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/initiative-card.md §INIT-<id> <成果導向名稱>"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "非目標",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "card_field",
+   "mentions": [],
+   "name": "預期 vs 實際",
+   "notes": [
+    "open 渲染=否",
+    "amend 可改=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §驗收條件"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/card.py::_ACCEPTANCE_HEADING",
+    "cli/src/wf_cli/card.py::_locate_section",
+    "cli/src/wf_cli/card.py::amend_acceptance",
+    "cli/src/wf_cli/card.py::restore_migration_header"
+   ],
+   "name": "驗收條件",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint",
+    "cli/src/wf_cli/commands/amend_cmd.py::run"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body",
+    "cli/src/wf_cli/resources.py::parse_block"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/tasks-card.md §驗證"
+   ],
+   "kind": "card_field",
+   "mentions": [
+    "cli/src/wf_cli/brief.py::<module>",
+    "cli/src/wf_cli/brief.py::validate_shape",
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/card.py::Card"
+   ],
+   "name": "驗證",
+   "notes": [
+    "open 渲染=是",
+    "amend 可改=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/card.py::enforce_card_render_boundary",
+    "cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint",
+    "cli/src/wf_cli/commands/amend_cmd.py::run"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::render_spec_markdown",
+    "cli/src/wf_cli/card.py::_render_issue_body"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §2. 不可違反的規則"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "→merge",
+   "notes": [
+    "Project 選項=否",
+    "專責動詞=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §2. 不可違反的規則"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "→查核前",
+   "notes": [
+    "Project 選項=否",
+    "專責動詞=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §1.1 治理模型：決策與機械寫入分離"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "↔執行者",
+   "notes": [
+    "Project 選項=否",
+    "專責動詞=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §為什麼要兩軸",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表二：Gate／preflight 退回"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/review_cmd.py::<module>",
+    "cli/src/wf_cli/review.py::<module>"
+   ],
+   "name": "↩退回",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS",
+    "cli/src/wf_cli/review.py::STATUS_BY_RESULT"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS",
+    "cli/src/wf_cli/review.py::STATUS_BY_RESULT"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記",
+    "templates/TASKS.md §任務看板 (Task Board) — <專案名>"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "⏳待執行",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=否",
+    "⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」）"
+   ],
+   "readers": [
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "⏳部署中",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/deploy_declare_cmd.py::<module>",
+    "cli/src/wf_cli/commands/deploy_declare_cmd.py::DECLARATION_TARGET",
+    "cli/src/wf_cli/commands/deploy_declare_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/open_cmd.py::add_parser"
+   ],
+   "name": "⏸未部署",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/deploy_declare_cmd.py::DECLARATION_TARGET",
+    "cli/src/wf_cli/commands/deploy_declare_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §為什麼不下放（直接回應「一個看板服務兩個 repo」）",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表二：Gate／preflight 退回"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/amend_cmd.py::_escalate_layout_failure",
+    "cli/src/wf_cli/commands/handoff_cmd.py::<module>",
+    "cli/src/wf_cli/commands/handoff_cmd.py::_pitfall_gate",
+    "cli/src/wf_cli/commands/review_cmd.py::run"
+   ],
+   "name": "⏸阻塞",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=否",
+    "⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」）"
+   ],
+   "readers": [
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "⚪一般",
+   "notes": [
+    "Project 選項=否",
+    "專責動詞=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "✅已部署",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "templates/worktree-lifecycle.md §Worktree Lifecycle Runbook"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::<module>",
+    "cli/src/wf_cli/commands/handoff_cmd.py::run",
+    "cli/src/wf_cli/commands/open_cmd.py::add_parser"
+   ],
+   "name": "✅已驗證",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS",
+    "cli/src/wf_cli/commands/handoff_cmd.py::run",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS",
+    "cli/src/wf_cli/commands/handoff_cmd.py::run"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記",
+    "templates/TASKS.md §任務看板 (Task Board) — <專案名>"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/review_cmd.py::<module>",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/doctor.py::<module>",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "name": "✅通過",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS",
+    "cli/src/wf_cli/review.py::STATUS_BY_RESULT"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS",
+    "cli/src/wf_cli/review.py::STATUS_BY_RESULT"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」",
+    "AI_WORKFLOW.md §承接卡的狀態（需求方 2026-08-22 裁定 2 的另一半）"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>",
+    "cli/src/wf_cli/doctor.py::<module>"
+   ],
+   "name": "🏁完成",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES",
+    "cli/src/wf_cli/commands/handoff_cmd.py::run",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "templates/TASKS.md §任務看板 (Task Board) — <專案名>"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/card.py::Card",
+    "cli/src/wf_cli/commands/open_cmd.py::run",
+    "cli/src/wf_cli/doctor.py::<module>",
+    "cli/src/wf_cli/doctor.py::OPEN_INITIAL_STATUS"
+   ],
+   "name": "💡需求",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/card.py::Card",
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/doctor.py::OPEN_INITIAL_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §為什麼要兩軸",
+    "AI_WORKFLOW.md §⛔ 非射程（WF-STAGE-STATE-TWO-AXIS1）",
+    "AI_WORKFLOW.md §為什麼不下放（直接回應「一個看板服務兩個 repo」）"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/card.py::<module>",
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>",
+    "cli/src/wf_cli/commands/handoff_cmd.py::<module>",
+    "cli/src/wf_cli/commands/handoff_cmd.py::_pitfall_gate"
+   ],
+   "name": "📥Backlog",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/doctor.py::CONFORMANCE_KNOWN_GAP"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表二：Gate／preflight 退回"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/doctor_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/handoff_cmd.py::_pitfall_gate",
+    "cli/src/wf_cli/doctor.py::CleanupPreviewFinding",
+    "cli/src/wf_cli/doctor.py::DoctorReport.render_text"
+   ],
+   "name": "📦已合併",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=否",
+    "⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」）"
+   ],
+   "readers": [
+    "cli/src/wf_cli/doctor.py::run_doctor",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "templates/TASKS.md §任務看板 (Task Board) — <專案名>",
+    "templates/handoff-contract.md §3.1.6 轉錄與 doctor 判定"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/review_cmd.py::<module>",
+    "cli/src/wf_cli/commands/review_cmd.py::AWAITING_REVIEW_STATUS",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "name": "🔍待查核",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/commands/review_cmd.py::AWAITING_REVIEW_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」",
+    "AI_WORKFLOW.md §3.1 規劃閘門三級制"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/assign_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/handoff_cmd.py::<module>",
+    "cli/src/wf_cli/commands/handoff_cmd.py::_pitfall_gate"
+   ],
+   "name": "🔨執行中",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/assign_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §為什麼要兩軸",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "name": "🔬研究中",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕",
+    "templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "🔴紅線",
+   "notes": [
+    "Project 選項=否",
+    "專責動詞=否"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "🚀待部署",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記",
+    "templates/TASKS.md §任務看板 (Task Board) — <專案名>"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "🚧進行中",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=否",
+    "⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」）"
+   ],
+   "readers": [
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表四：escalation checkpoint",
+    "AI_WORKFLOW.md §表五：`🚨已升級` 的決策 owner"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::run_checkpoint",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/validation.py::check_checkpoint_gate",
+    "cli/src/wf_cli/validation.py::validate_checkpoint_input"
+   ],
+   "name": "🚨已升級",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=否",
+    "⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」）"
+   ],
+   "readers": [
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記",
+    "templates/TASKS.md §任務看板 (Task Board) — <專案名>"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "🛑已停止",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態"
+   ],
+   "kind": "delivery_status",
+   "mentions": [],
+   "name": "🧪驗證中",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS",
+    "cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0. 分類與狀態",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」",
+    "AI_WORKFLOW.md §3.1 規劃閘門三級制"
+   ],
+   "kind": "delivery_status",
+   "mentions": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::<module>",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "name": "🧭規劃中",
+   "notes": [
+    "Project 選項=是",
+    "專責動詞=是"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS",
+    "cli/src/wf_cli/project.py::FIELD_SPECS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS",
+    "cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS"
+   ]
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §2. Finding 分類",
+    "templates/review-escalation.md §3. 可計數的退回",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/review.py::counting_eligible"
+   ],
+   "name": "authoritative-artifact",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [
+    "cli/src/wf_cli/review.py::FINDING_CLASSES",
+    "cli/src/wf_cli/review.py::COUNTING_FINDING_CLASSES"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/baseline-cascade.md §程序"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "baseline-change-request",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "carried-forward",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::run_checkpoint",
+    "cli/src/wf_cli/commands/review_cmd.py::run"
+   ],
+   "name": "change-executor",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [
+    "cli/src/wf_cli/review.py::CHECKPOINT_DECISIONS"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "continue-same-executor",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/__init__.py::COMMAND_MODULES",
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::<module>",
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::run_contract_baseline"
+   ],
+   "name": "contract-baseline",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "write-only",
+   "writers": [
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::run_contract_baseline"
+   ]
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §3.2 卡範圍與開卡條件",
+    "AI_WORKFLOW.md §4.2 Database Contract"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "data-migration",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [
+    "cli/src/wf_cli/commands/open_cmd.py::add_parser",
+    "cli/src/wf_cli/resources.py::DB_SCOPES"
+   ],
+   "verdict": "read-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §2. Finding 分類",
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::<module>",
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/review.py::CheckpointFacts"
+   ],
+   "name": "escalation-checkpoint",
+   "notes": [
+    "相關動詞=checkpoint"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §4.1 Control-plane Contract",
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::run_checkpoint",
+    "cli/src/wf_cli/commands/review_cmd.py::add_parser",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/validation.py::check_attempt_not_duplicated"
+   ],
+   "name": "escalation-epoch-change",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0.2 允許的狀態轉移（canonical 本體；採用專案**引用不複製**）",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表五：`🚨已升級` 的決策 owner",
+    "templates/review-escalation.md §4. 三次門檻"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/checkpoint_cmd.py::run_checkpoint",
+    "cli/src/wf_cli/review.py::<module>",
+    "cli/src/wf_cli/validation.py::validate_checkpoint_input"
+   ],
+   "name": "escalation-resolution",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed",
+    "templates/handoff-contract.md §5. 專案實作",
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "forged-rejected",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §4. 三次門檻"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "fresh-ruling",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0.2 允許的狀態轉移（canonical 本體；採用專案**引用不複製**）",
+    "AI_WORKFLOW.md §4.1 Control-plane Contract",
+    "templates/control-plane-contract.md §4. Handoff 與 optional tmux adapter",
+    "templates/handoff-contract.md §1. 不變量"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/review.py::<module>"
+   ],
+   "name": "handoff-accepted",
+   "notes": [
+    "相關動詞=handoff"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/validation.py::validate_checkpoint_input"
+   ],
+   "name": "instruction-omitted",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed",
+    "templates/handoff-contract.md §5. 專案實作",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "malformed-ignored",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §0.2 允許的狀態轉移（canonical 本體；採用專案**引用不複製**）",
+    "AI_WORKFLOW.md §表一：交付狀態的允許轉移",
+    "AI_WORKFLOW.md §表二：Gate／preflight 退回",
+    "AI_WORKFLOW.md §3. 任務流程"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/review.py::<module>"
+   ],
+   "name": "preflight-failed",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "reissue-required",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "repaired-verified",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §3. 任務流程",
+    "AI_WORKFLOW.md §4.1 Control-plane Contract",
+    "templates/review-escalation.md §2. Finding 分類",
+    "templates/review-escalation.md §4. 三次門檻"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/validation.py::validate_accepted_overrides"
+   ],
+   "name": "review-correction",
+   "notes": [
+    "相關動詞=review"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "AI_WORKFLOW.md §3. 任務流程",
+    "AI_WORKFLOW.md §5.2 跨家族查核範式",
+    "templates/review-escalation.md §1. 三個不同層次",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/review_cmd.py::<module>",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/validation.py::SELF_RUN_CITATION",
+    "cli/src/wf_cli/validation.py::review_invalid_reasons"
+   ],
+   "name": "review-invalid",
+   "notes": [
+    "相關動詞=review"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed",
+    "templates/review-escalation.md §1. 三個不同層次",
+    "templates/review-escalation.md §2. Finding 分類",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/doctor.py::audit_review_channel",
+    "cli/src/wf_cli/review.py::render_checkpoint_comment"
+   ],
+   "name": "review-marker-clearance",
+   "notes": [
+    "相關動詞=review"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>",
+    "cli/src/wf_cli/validation.py::validate_checkpoint_input"
+   ],
+   "name": "spec-narrowed",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "mention-only",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §1. 三個不同層次"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "status-change",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "templates/review-escalation.md §4. 三次門檻",
+    "templates/review-escalation.md §5. Adapter 必填欄位",
+    "docs/ROADMAP.md §1. 身分：記錄宣告，不追求驗證",
+    "docs/ROADMAP.md §1. 身分：記錄宣告，不追求驗證 › 裁定"
+   ],
+   "kind": "event",
+   "mentions": [
+    "cli/src/wf_cli/commands/amend_cmd.py::<module>",
+    "cli/src/wf_cli/commands/amend_cmd.py::_authorize_by_requester_ruling",
+    "cli/src/wf_cli/commands/review_cmd.py::run",
+    "cli/src/wf_cli/review.py::<module>"
+   ],
+   "name": "structurally-vacuous",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [
+    "cli/src/wf_cli/review.py::ACCEPTED_MARKING_BINDINGS"
+   ],
+   "verdict": "ok",
+   "writers": [
+    "cli/src/wf_cli/validation.py::derive_accepted_marking_binding"
+   ]
+  },
+  {
+   "doc_hits": [
+    "docs/ROADMAP.md §⚠️ 一個被實測推翻的前提：runner 不是 UTF-8"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "ubuntu-latest",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  },
+  {
+   "doc_hits": [
+    "docs/ROADMAP.md §2. 唯一的執行面：CI"
+   ],
+   "kind": "event",
+   "mentions": [],
+   "name": "update-branch",
+   "notes": [
+    "相關動詞=無"
+   ],
+   "readers": [],
+   "verdict": "absent",
+   "writers": []
+  }
+ ],
+ "symbol_count": 86,
+ "ungated_status_flags": [
+  "assign_cmd.py --status（預設 🔨執行中，無 choices）"
+ ]
+}
