@@ -351,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.file:
         try:
             rows = scan_file(Path(args.file), inventory=None, rel=args.file)
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             msg = f"{type(exc).__name__}: {exc}"
             print(json.dumps({"file_error": msg}, ensure_ascii=False)
                   if args.json else f"[file-error] {msg}")
@@ -367,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         result = scan_corpus()
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         # inventory 讀不到／壞 JSON＝守衛自身失效，fail-closed 且證據可讀（⛔ 裸 traceback）
         msg = {"inventory_error": f"{type(exc).__name__}: {exc}"}
         print(json.dumps(msg, ensure_ascii=False) if args.json
