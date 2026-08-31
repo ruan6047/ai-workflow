@@ -85,7 +85,7 @@ L0＝canonical §1（波 2 改寫後）＋§2＋專案一分鐘心智模型（~4
 
 ## 十 · 四波五卡實施與切換移交
 
-**四波五卡（乙′ 解耦定案 2026-08-30）**：W0 conduct 生效（**T4**——conduct 即規則紅線；審核滿足＝需求方本 session 逐條確認之使用者 sign-off；執行⛔ PM 不可兼）→ W1 清單＋open＋表單（**T3**）→ **W2A canonical 本體＋stage-rules 生效＋tier-rules（T4 紅線，跨家族審）** → **W2B 配套：交接範本（含 contract templates 改寫）／L0／舊模板清理（T3）** → **W3′ CLI 內部改造（T3，⛔ 零看板語彙變更、⛔ 零 cpbl 接觸）**：Log→留言、卡面 fenced JSON、doctor 抽出、37 則拒絕訊息、find_conflicts 前綴＋別名、snapshot 補欄。
+**四波五卡（乙′ 解耦定案 2026-08-30）**：W0 conduct 生效（**T4**——conduct 即規則紅線；審核滿足＝需求方本 session 逐條確認之使用者 sign-off；執行⛔ PM 不可兼）→ W1 清單＋open＋表單（**T3**）→ **W2A canonical 本體＋stage-rules 生效＋tier-rules（T4 紅線，跨家族審）** → **W2B 配套：交接範本（含 contract templates 改寫）／L0／舊模板清理（T3）** → **W3′（＝卡 WF-REDESIGN-W3 之簡稱）CLI 內部改造（T3，⛔ 零看板語彙變更、⛔ 零 cpbl 接觸）**：Log→留言、卡面 fenced JSON、doctor 抽出、37 則拒絕訊息、find_conflicts 前綴＋別名、snapshot 補欄。
 **硬依賴鏈：W0 → W1 → W2A → W2B → W3′**（前張終態才可開下張）。本 Initiative 交付＝**框架就緒、⛔ 不切換**——canonical 新 §0 帶「尚未切換」標記，看板續跑 15 值舊語彙。
 
 ## 十之二 · 切換 Initiative（待開；本 Initiative 結案條件含其清單項建立）
