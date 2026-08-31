@@ -239,11 +239,19 @@ _CLAIM_KEYS = {"token", "occurrence", "reason", "rationale"}
 
 
 def _entry_schema_errors(entry: dict) -> list[str]:
-    """closed claim schema 驗證：鍵封閉、reason 屬兩值、rationale 非空、occurrence 非負。"""
+    """closed entry＋claim schema 驗證：鍵**恰等**封閉集合（缺鍵與多鍵同罪）、
+    identity 型別與 SHA-1 形狀、reason 屬兩值、rationale 非空、occurrence 非負。"""
     errs = []
-    extra = set(entry) - _ENTRY_KEYS
-    if extra:
-        errs.append(f"entry 鍵超出封閉集合：{sorted(extra)}")
+    if set(entry) != _ENTRY_KEYS:
+        errs.append(f"entry 鍵不等於封閉集合：缺 {sorted(_ENTRY_KEYS - set(entry))} "
+                    f"多 {sorted(set(entry) - _ENTRY_KEYS)}")
+    if not isinstance(entry.get("path"), str) or not entry.get("path"):
+        errs.append("path 缺失或非字串")
+    if not isinstance(entry.get("line_sha1"), str) \
+            or not re.fullmatch(r"[0-9a-f]{40}", entry.get("line_sha1") or ""):
+        errs.append("line_sha1 缺失或非 40 位 hex")
+    if not isinstance(entry.get("excerpt"), str) or not entry.get("excerpt"):
+        errs.append("excerpt 缺失或非字串")
     claims = entry.get("claims")
     if not isinstance(claims, list) or not claims:
         errs.append("claims 缺失或為空")
@@ -264,14 +272,30 @@ def _entry_schema_errors(entry: dict) -> list[str]:
     return errs
 
 
-def load_inventory(path: Path | None = None) -> dict[tuple[str, str], dict]:
-    # 晚綁定：預設參數在 import 時凍結會讓測試替身打不進（monkeypatch 失效）
+def load_inventory(path: Path | None = None) -> tuple[dict[tuple[str, str], dict], list[dict]]:
+    """回傳 (inventory map, load 期 invalid 證據)。缺 identity 的 entry ⛔ 不先索引
+    再崩潰（R18：缺 path／line_sha1 曾 KeyError）；重複 (path, line_sha1) fail-closed
+    ⛔ 不靜默覆蓋。晚綁定：預設參數在 import 時凍結會讓測試替身打不進。"""
     data = json.loads((path or INVENTORY_PATH).read_text(encoding="utf-8"))
-    return {(e["path"], e["line_sha1"]): e for e in data["entries"]}
+    inventory: dict[tuple[str, str], dict] = {}
+    load_errors: list[dict] = []
+    for idx, e in enumerate(data.get("entries", [])):
+        entry = e if isinstance(e, dict) else {}
+        errs = _entry_schema_errors(entry)
+        key = (entry.get("path"), entry.get("line_sha1"))
+        if not errs and key in inventory:
+            errs = ["duplicate (path, line_sha1)——⛔ 靜默覆蓋"]
+        if errs:
+            load_errors.append({"index": idx, "path": entry.get("path", "?"),
+                                "excerpt": str(entry.get("excerpt", ""))[:40],
+                                "errors": errs})
+            continue
+        inventory[key] = entry
+    return inventory, load_errors
 
 
 def scan_corpus() -> dict:
-    inventory = load_inventory()
+    inventory, load_errors = load_inventory()
     rows: list[dict] = []
     for p in corpus_paths():
         rows.extend(scan_file(p, inventory))
@@ -279,7 +303,7 @@ def scan_corpus() -> dict:
             for r in rows if r["class"] in ("b", "claims-mismatch")}
     dead = [e for k, e in inventory.items() if k not in used]
     mismatch = []
-    invalid = []
+    invalid = [dict(v, line=None) for v in load_errors]
     for r in rows:
         entry = inventory.get((r["path"], _line_key(r["text"])))
         if r["class"] == "invalid-claims":
@@ -339,7 +363,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f'[dead-entry] {e["path"]} sha1={e["line_sha1"][:12]} '
                   f'({e.get("excerpt", "")[:40]})')
         for v in result["invalid_entries"]:
-            print(f'[invalid-claims] {v["path"]}:{v["line"]} {v["errors"]}')
+            loc = v.get("line") if v.get("line") is not None else f'entry#{v.get("index", "?")}'
+            print(f'[invalid-claims] {v["path"]}:{loc} {v["errors"]}')
         for m in result["claims_mismatch"]:
             print(f'[claims-mismatch] {m["path"]}:{m["line"]} '
                   f'uncovered={m["uncovered"]} extra={m["extra"]}')

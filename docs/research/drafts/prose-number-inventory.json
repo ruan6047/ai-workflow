@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "spec": "P1-38 (b) 白名單（R17 後 occurrence-bound）：行文 SHA-1 釘住；claims 逐 occurrence（occurrence=偵測序第 i 個、token、reason∈兩值、line-specific rationale）；scanner 驗 (occurrence,token) 對集一一相等並驗 closed claim schema，違約 fail-closed",
+  "spec": "P1-38 (b) 白名單（R18 後）：entry 鍵恰等封閉集合（path/line_sha1/excerpt/claims）＋claims 逐 occurrence；load 期驗 identity 與重複鍵 fail-closed；scanner 驗 (occurrence,token) 對集一一相等",
   "classes": {
    "threshold-ruling": "閾值／裁定值——數字是規則本身",
    "design-closed-set": "不變量／設計封閉集合基數——數字是結構定義（含序數慣用語之非量測數）"
@@ -644,7 +644,7 @@
      "token": "三",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+     "rationale": "「三層評估」＝CLI 增量原則之三層評估程序（決議 §七），⛔ 非 DI 注入層級"
     }
    ]
   },
@@ -1743,7 +1743,7 @@
      "token": "三",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+     "rationale": "「三層評估」＝CLI 增量原則之三層評估程序（決議 §七），⛔ 非 DI 注入層級"
     },
     {
      "token": "三",
