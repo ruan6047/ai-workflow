@@ -417,6 +417,25 @@ def test_rationale_quotes_anchor_to_the_pinned_line():
     assert bad == []
 
 
+def test_w2b_six_claim_is_pinned_to_negation_form():
+    # R20/R21：「⛔ 非六檔」曾被解成枚舉基數；引句錨定擋不住（「六」也在行內），
+    # 故以黃金值釘語意：該 claim 必為否定式陳述。負控＝舊錯值必不過本判準
+    # （R21 變異實測：舊值可通過 schema／錨定／scanner 全套——本測試即補上的那道）。
+    def negation_form(rationale: str) -> bool:
+        return "非六檔" in rationale and "否定式" in rationale
+
+    w2b = pns.REPO_ROOT / "docs/research/drafts/wave-specs/w2b.md"
+    line = next(x for x in w2b.read_text(encoding="utf-8").splitlines()
+                if "⛔ 非六檔" in x)
+    data = json.loads(pns.INVENTORY_PATH.read_text(encoding="utf-8"))
+    entry = next(e for e in data["entries"]
+                 if e["path"].endswith("w2b.md") and e["line_sha1"] == pns._line_key(line))
+    six = [c for c in entry["claims"] if c["token"] == "六"]
+    assert len(six) == 1 and negation_form(six[0]["rationale"]), six
+    # 負控：R21 變異所用的舊錯值
+    assert not negation_form("「六」＝該段枚舉之基數（行內列明成員）")
+
+
 def test_is_red_fires_on_each_key_alone():
     empty = {k: [] for k in pns.RED_KEYS}
     assert not pns.is_red(empty)
