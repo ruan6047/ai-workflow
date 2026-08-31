@@ -336,6 +336,29 @@ def test_duplicate_identity_fails_closed(tmp_path, monkeypatch, capsys):
     assert rc == 1 and "duplicate" in out
 
 
+def test_missing_inventory_readable_failure(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(pns, "INVENTORY_PATH", tmp_path / "nope.json")
+    rc = pns.main([])
+    out = capsys.readouterr().out
+    assert rc == 1 and "[inventory-error]" in out
+
+
+def test_corrupt_inventory_readable_failure(tmp_path, monkeypatch, capsys):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(pns, "INVENTORY_PATH", bad)
+    rc = pns.main(["--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1 and "inventory_error" in payload
+
+
+def test_bool_occurrence_is_invalid():
+    e = _valid_load_entry()
+    e["claims"] = [_claim("9", 0)]
+    e["claims"][0]["occurrence"] = True
+    assert any("occurrence" in x for x in pns._entry_schema_errors(e))
+
+
 def test_json_mode_carries_mismatch_evidence(tmp_path, monkeypatch, capsys):
     # R17：--json 曾只吐兩個空清單——mismatch 證據與各項計數必須全數在 payload
     line = "信封 8 欄共 3 類。"
@@ -377,15 +400,48 @@ def test_every_inventory_claim_is_occurrence_bound():
 # ---- 語料與 CLI ----
 
 def test_corpus_is_fully_classified():
+    # 與 scanner 共用同一 predicate（R19：三處各自定義判準即漂移）
     result = pns.scan_corpus()
-    assert result["unclassified"] == [], [
-        f'{r["path"]}:{r["line"]} {r["text"][:80]}' for r in result["unclassified"]
-    ]
-    assert result["dead_entries"] == [], [
-        f'{e["path"]} {e.get("excerpt", "")[:60]}' for e in result["dead_entries"]
-    ]
-    assert result["uncovered_claims"] == [], result["uncovered_claims"][:5]
-    assert result["extra_claims"] == [], result["extra_claims"][:5]
+    for key in pns.RED_KEYS:
+        assert result[key] == [], (key, result[key][:5])
+    assert not pns.is_red(result)
+
+
+def test_load_invalid_reds_even_when_old_four_are_zero(tmp_path, monkeypatch, capsys):
+    # R19 反例一：舊四項（unclassified/dead/uncovered/extra）全零、invalid=1 必紅
+    e = _valid_load_entry(); del e["excerpt"]
+    _fake_corpus(tmp_path, monkeypatch, "2026-08-30 有 7 張卡。", [e])
+    rc = pns.main(["--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    c = payload["counts"]
+    assert c["unclassified"] == c["dead_entries"] == 0
+    assert c["uncovered_claims"] == c["extra_claims"] == 0
+    assert c["invalid_entries"] == 1
+
+
+def test_duplicate_occurrence_pair_reds_with_zero_projections(tmp_path, monkeypatch, capsys):
+    # R19 反例二：同 occurrence 重複 claim ⇒ 兩投影皆零、claims_mismatch=1 必紅
+    line = "目前有 8 張卡。"
+    key = pns._line_key(line)
+    entry = {"path": "corpus.md", "line_sha1": key, "excerpt": line[:20],
+             "claims": [_claim("8", 0), _claim("8", 0)]}
+    _fake_corpus(tmp_path, monkeypatch, line, [entry])
+    rc = pns.main(["--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    c = payload["counts"]
+    assert c["uncovered_claims"] == 0 and c["extra_claims"] == 0
+    assert c["claims_mismatch"] == 1
+    # human summary 也要看得見同一 count
+    rc2 = pns.main([])
+    out = capsys.readouterr().out
+    assert rc2 == 1 and '"claims_mismatch": 1' in out
+
+
+def test_file_mode_readable_failure(tmp_path, capsys):
+    assert pns.main(["--file", str(tmp_path / "nope.md")]) == 1
+    assert "[file-error]" in capsys.readouterr().out
 
 
 def test_cli_exit_code_red_on_unclassified(tmp_path):
