@@ -3,7 +3,7 @@ name: stage-implementation
 status: draft-pending-initiative
 description: 執行階段：把規格變成分支上可驗的變更。iteration 唯一遞增處。
 ---
-> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 五波施工卡；在此之前⛔ 不得作為現行規則引用。
+> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 施工卡（四波五卡）；在此之前⛔ 不得作為現行規則引用。
 
 # 執行階段
 

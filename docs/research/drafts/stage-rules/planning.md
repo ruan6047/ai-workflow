@@ -3,7 +3,7 @@ name: stage-planning
 status: draft-pending-initiative
 description: 規劃階段：把「要做什麼」變成「怎麼安全做」。規格只能在這裡改。
 ---
-> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 五波施工卡；在此之前⛔ 不得作為現行規則引用。
+> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 施工卡（四波五卡）；在此之前⛔ 不得作為現行規則引用。
 
 # 規劃階段
 

@@ -3,7 +3,7 @@ name: stage-research
 status: draft-pending-initiative
 description: 研究階段：把「不知道」變成可判定結論或誠實的不可判定。
 ---
-> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 五波施工卡；在此之前⛔ 不得作為現行規則引用。
+> ⛔ **草稿·未生效**。生效走 WORKFLOW-REDESIGN-2026-08-30 施工卡（四波五卡）；在此之前⛔ 不得作為現行規則引用。
 
 # 研究階段
 

@@ -1,7 +1,7 @@
 ---
 name: workflow-redesign-initiative-brief
 status: draft-pending-initiative
-description: 五波施工 Initiative 的 discovery brief（WF-19 形式）。開卡時逐字沿用。
+description: 四波五卡施工 Initiative 的 discovery brief（WF-19 形式；切換另 Initiative）。開卡時逐字沿用。
 ---
 > ⛔ **草稿·未生效**。父卡開卡時以本檔為 discovery brief；spec 基線＝合入本檔的 main commit SHA。
 
@@ -32,7 +32,7 @@ description: 五波施工 Initiative 的 discovery brief（WF-19 形式）。開
 - 「§0 重寫會變短」是推測；「card.py 砍半」是估計
 - PM 對照能否穩定抓住值域錯誤（取代 CLI 硬拒後）——無基線，施工期觀察
 - userContentEdits 長期保存未文件化——每日 snapshot 補規格節為對沖
-- 刪「有值」SINGLE_SELECT 選項的行為未實測——波 3 前置拋棄式 project 實測
+- 刪「有值」SINGLE_SELECT 選項的行為未實測——切換 Initiative 前置拋棄式 project 實測
 
 ## 非目標（⛔）
 

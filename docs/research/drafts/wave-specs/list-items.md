@@ -7,5 +7,5 @@ status: draft-pending-initiative
 
 - **W2A 觀察句**：canonical §0/§1 已被決議紀錄取代清單標記為過時，但檔內文字未改——讀者仍會把 15 值序列與 7 角色表當現行。
 - **W2B 觀察句**：五份交接文件無範本可用；L0 入口未成形；舊模板群被 CONTRACT_TOOL_RECONCILE 釘住無法移除——機械配套缺席使新規則面不可操作。
-- **W3 觀察句**：交付狀態欄仍為 15 值單欄；Log 佔 body 74.8%；157 張終態卡在活卡視圖。
+- **W3′ 觀察句**：Log 佔 body 74.8%（新條目無留言載體）；卡面機讀靠自寫解析；doctor 3,039 行駐留 CLI；37+ 則拒絕訊息無可跑補救；find_conflicts 漏前綴與別名、候選母體判準過寬。
 -（乙′ 解耦）原 W4 項移交**切換 Initiative** 清單項，屆時與 cutover 同組建立；本 Initiative 清單項僅上列三個。
