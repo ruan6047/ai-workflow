@@ -45,6 +45,7 @@ from wf_cli.validation import (
     validate_review_report,
 )
 
+from .fake_gh import seed_legacy_draft_card
 from .test_checkpoint import (  # noqa: F401  （simulated_preflight_writer 以 fixture 形式使用）
     EventGhRunner,
     arm_preflight,
@@ -98,6 +99,12 @@ def _open_card(card_id: str, *, repo: str | None = REPO) -> int:
         argv += ["--repo", repo]
     argv += [
         card_id,
+        "--from-issue", open_cmd.default_runner.seed_list_issue(repo or "acme/workflow"),
+        "--acceptance", "可獨立驗證的驗收條件一條",
+        "--stage-plan", "需求=把清單項變成一張可派工的卡",
+        "--tier-basis-sensitive-surfaces", "wfcli 狀態面寫入通道",
+        "--tier-basis-recoverability", "git revert",
+        "--tier-basis-blast-radius", "單一 repo",
         "--feature", "示範功能",
         "--tier", "T2",
         "--db-scope", "none",
@@ -634,11 +641,13 @@ def test_missing_repo_is_fail_closed(fake_runner, tmp_path, capsys, monkeypatch)
 
 
 def test_draft_item_without_issue_timeline_is_rejected(fake_runner, tmp_path, capsys):
-    open_card("DRAFT-CARD1", repo=None)  # Project draft item，無 Issue timeline
+    # ⚠️ ``open`` 已建不出 DraftIssue（`WF-REDESIGN-W1` 驗收 2）⇒ 直接以 project API
+    # 造一張，模擬板上既有的歷史 draft 卡。這一條就是「遺留可讀」那一軸。
+    seed_legacy_draft_card(fake_runner, "DRAFT-CARD1")
     rc = run_cli(review_argv("DRAFT-CARD1", write_input(tmp_path, APPROVE_REPORT)))
     assert rc == 2
     assert "draft item" in capsys.readouterr().err
-    assert card_item(fake_runner, "DRAFT-CARD1").fields["交付狀態"] == "💡需求"  # 停在 open 的初始值
+    assert card_item(fake_runner, "DRAFT-CARD1").fields["交付狀態"] == "💡需求"  # 停在初始值
 
 
 def test_unknown_card_returns_exit_3(fake_runner, tmp_path, capsys):

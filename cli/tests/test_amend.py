@@ -54,7 +54,7 @@ from wf_cli.project import (
 )
 from wf_cli.resources import ResourceDeclaration, parse_block, render_block
 
-from .fake_gh import FakeGhRunner
+from .fake_gh import FakeGhRunner, open_required_argv
 
 BODY = """- 需求：ruan6047　規劃：PM
 - 執行：待指派　查核：獨立校讀
@@ -239,7 +239,23 @@ def test_split_allows_body_without_log():
 # 指令層
 # --------------------------------------------------------------------------
 
-BASE_TARGET = ["--owner", "acme", "--project", "1"]
+#: ``open`` 的新必填欄，指向一個**刻意不存在**的清單項。
+#:
+#: ⭐ 給「應該在任何 gh 呼叫之前就拒收」的那幾條測試用：URL 形狀合法（過得了正規形
+#: 檢查），但沒有人種過那個 issue ⇒ 拒收若失效，``issue view`` 會在替身上炸成
+#: ``AssertionError``。⛔ 那不是雜訊，那正是這幾條要的失敗訊號。
+UNSEEDED_OPEN_EXTRAS = [
+    "--from-issue", "https://github.com/acme/wf/issues/9999",
+    "--acceptance", "可獨立驗證的驗收條件一條",
+    "--stage-plan", "需求=把清單項變成一張可派工的卡",
+    "--tier-basis-sensitive-surfaces", "wfcli 狀態面寫入通道",
+    "--tier-basis-recoverability", "git revert",
+    "--tier-basis-blast-radius", "單一 repo",
+]
+
+#: ⚠️ 一律帶 ``--repo``，理由同 ``test_commands_mocked.BASE_TARGET``：
+#: ``open`` 只產 issue-backed 卡，而 amend 改 body 需要 repo。
+BASE_TARGET = ["--owner", "acme", "--project", "1", "--repo", "acme/wf"]
 
 
 @pytest.fixture
@@ -261,17 +277,21 @@ def card(fake_runner):
     rc = run_cli(
         [
             "open", *BASE_TARGET, "AMEND-DEMO1",
+            *open_required_argv(fake_runner, "acme/wf", **{"--acceptance": "原條件甲"}),
             "--feature", "示範", "--tier", "T1", "--db-scope", "none",
             "--core-pain", "痛點", "--service-goal", "目標",
             "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
             "--review-capability", "主力型", "--review-capability-reason", "一般 review",
             "--resources", "file:demo.py",
-            "--acceptance", "原條件甲",
             "--verification", "原驗證甲",
             "--spec-baseline", "原基線",
         ]
     )
     assert rc == 0
+    # ⚠️ 清掉平台版本歷史，理由同 ``test_commands_mocked._budget_card``：
+    # ``open --from-issue`` 自己編輯過一次 body ⇒ 新卡誕生即有一版，而本檔多條
+    # 測試量的是 ``totalCount == 0`` 的全文退路。⛔ 不是遮迴歸——指紋路徑另有測試。
+    fake_runner.forget_revisions()
     return fake_runner
 
 
@@ -387,6 +407,10 @@ def test_amend_failure_in_one_field_writes_nothing(card):
 def test_long_original_value_is_written_to_log_in_full(card):
     long_value = "基" * 800
     run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "先塞長值", "--spec-baseline", long_value])
+    # ⚠️ 上一次 amend 在平台留了一版 ⇒ 下一次會走**指紋**路徑，而本條量的是**全文**
+    # 路徑不得截斷。清掉版本歷史把世界推回「平台沒有前一版」那一格，⛔ 不是遮迴歸：
+    # 指紋路徑另有 `test_log_records_fingerprints_not_full_text_when_a_revision_exists`。
+    card.forget_revisions()
     rc = run_cli(
         ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "再改回", "--spec-baseline", "短基線"]
     )
@@ -399,6 +423,7 @@ def test_long_original_value_is_written_to_log_in_full(card):
 def test_long_checklist_original_written_in_full(card):
     long_item = "條" * 500
     run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "塞長清單", "--acceptance", long_item])
+    card.forget_revisions()  # 理由同上一條：本條量的是全文路徑
     rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "換掉", "--acceptance", "短條件"])
     assert rc == 0
     assert f"[ ] {long_item}" in _item(card).body
@@ -561,7 +586,7 @@ def test_layout_failure_prints_actionable_runbook(card, capsys):
     project = resolve_project(card, "acme", 1)
     item = _item(card)
     corrupted = item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1)
-    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number, corrupted)
+    set_item_body(card, item.content_type, item.content_id, project, "acme/wf", item.issue_number, corrupted)
 
     rc = run_cli(
         ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"]
@@ -581,7 +606,7 @@ def test_duplicate_log_headings_also_get_runbook(card, capsys):
     project = resolve_project(card, "acme", 1)
     item = _item(card)
     set_item_body(
-        card, item.content_type, item.content_id, project, None, item.issue_number,
+        card, item.content_type, item.content_id, project, "acme/wf", item.issue_number,
         item.body + "\n\n## Log\n\n- 第二個標題",
     )
     rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"])
@@ -601,6 +626,7 @@ def issue_card(fake_runner):
     """真實 repo Issue 型別的卡：draft item 沒有 timeline，測不到 --escalate 的留言路徑。"""
     rc = run_cli(
         ["open", *BASE_TARGET, "--repo", "acme/wf", "ESC-DEMO1",
+         *open_required_argv(fake_runner, "acme/wf"),
          "--feature", "示範", "--tier", "T1", "--db-scope", "none",
          "--core-pain", "痛點", "--service-goal", "目標", "--spec-baseline", "原基線",
          "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
@@ -737,7 +763,7 @@ def test_runbook_step1_creates_the_file_step3_reads(card, capsys):
     """R4-01：第 3 步讀 orig.md，第 1 步就必須建立它，否則整份程序跑不動。"""
     project = resolve_project(card, "acme", 1)
     item = _item(card)
-    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number,
+    set_item_body(card, item.content_type, item.content_id, project, "acme/wf", item.issue_number,
                   item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1))
     run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"])
     err = capsys.readouterr().err
@@ -787,7 +813,7 @@ def test_runbook_requires_human_judgement_and_full_diff(card, capsys):
     """runbook 必須含「無法機械化的人工判斷」與「審閱完整 diff」兩步。"""
     project = resolve_project(card, "acme", 1)
     item = _item(card)
-    set_item_body(card, item.content_type, item.content_id, project, None, item.issue_number,
+    set_item_body(card, item.content_type, item.content_id, project, "acme/wf", item.issue_number,
                   item.body.replace("\n\n## Log\n\n", "\\n## Log\\n\\n", 1))
     run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--spec-baseline", "新基線"])
     err = capsys.readouterr().err
@@ -987,6 +1013,7 @@ def gov_card(gov_runner):
     """真實 Issue 卡，需求方欄填實際帳號、tier 為 T4（可測降級）。"""
     rc = run_cli(
         ["open", *GOV_TARGET, "GOV-DEMO1",
+         *open_required_argv(gov_runner, "acme/wf"),
          "--feature", "示範", "--tier", "T4", "--db-scope", "none",
          "--core-pain", "原始痛點", "--service-goal", "目標",
          "--requested-by", REQUESTER, "--planned-by", "PM",
@@ -995,6 +1022,8 @@ def gov_card(gov_runner):
          "--review-capability", "高階型", "--review-capability-reason", "紅線跨家族"]
     )
     assert rc == 0
+    # 理由同 ``card`` fixture：``open --from-issue`` 自己編輯過一次 body。
+    gov_runner.forget_revisions()
     gov_runner.comment_authors["555"] = REQUESTER
     return gov_runner
 
@@ -1274,6 +1303,7 @@ def test_runtime_output_matches_the_template_for_varied_inputs(gov_runner, autho
 
     rc = run_cli(
         ["open", *GOV_TARGET, "GOV-VARY1",
+         *open_required_argv(gov_runner, "acme/wf"),
          "--feature", "示範", "--tier", "T4", "--db-scope", "none",
          "--core-pain", "原始痛點", "--service-goal", "目標",
          "--requested-by", author, "--planned-by", "PM",
@@ -1829,6 +1859,7 @@ def test_open_written_routing_line_is_readable_by_the_assign_side(
     rc = run_cli(
         [
             "open", *BASE_TARGET, card_id,
+            *open_required_argv(fake_runner, "acme/wf"),
             "--feature", "往返語料", "--tier", "T2", "--db-scope", "none",
             "--core-pain", "痛點", "--service-goal", "目標",
             "--executor", values["executor"], "--reviewer", values["reviewer"],
@@ -1940,6 +1971,7 @@ def test_open_rejects_fullwidth_space_in_reason_without_creating_the_card(
     rc = run_cli(
         [
             "open", *BASE_TARGET, f"RESERVED-REASON-{axis}",
+            *UNSEEDED_OPEN_EXTRAS,
             "--feature", "示範", "--tier", "T2", "--db-scope", "none",
             "--core-pain", "痛點", "--service-goal", "目標",
             "--exec-capability", "主力型",
@@ -1957,6 +1989,7 @@ def test_open_rejects_fullwidth_space_in_reason_without_creating_the_card(
 def _reserved_name_argv(card_id="RESERVED-NAME1"):
     return [
         "open", *BASE_TARGET, card_id,
+        *UNSEEDED_OPEN_EXTRAS,
         "--feature", "示範", "--tier", "T2", "--db-scope", "none",
         "--core-pain", "痛點", "--service-goal", "目標",
         "--executor", "Claude Opus 5@Claude Code（子 agent）",
@@ -2125,3 +2158,145 @@ def test_format_routing_line_and_the_parser_agree_on_every_accepted_value():
     assert match.group("executor") == PM_REAL_NAME
     assert match.group("exec_reason") == PM_REAL_REASON
     assert match.group("exec_tier") == "主力型"
+
+
+# ==========================================================================
+# `WF-REDESIGN-W1` 驗收 5b：amend 擴充 feature／routing（⛔ 非新增動詞）
+# ==========================================================================
+
+
+def _card_routing_line(runner) -> str:
+    head = _item(runner).body.split("## ", 1)[0]
+    return next(line for line in head.splitlines() if line.startswith("- 執行："))
+
+
+def test_amend_feature_writes_all_three_derived_surfaces_and_reads_back(card):
+    """寫入集：Issue title ＋ Project item title ＋ ``功能`` 欄。
+
+    ⚠️ 前兩者在 issue-backed 卡上是**同一次寫入**（Project item 的標題是 Issue 標題的
+    平台導出），⇒ 這裡讀回**兩處**分別驗，⛔ 不以其中一處代表另一處。
+    """
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "功能名收窄", "--feature", "待審清單與開卡閘"]
+    )
+    assert rc == 0
+    item = _item(card)
+    assert item.title == "AMEND-DEMO1 待審清單與開卡閘"                      # Project item title
+    assert card.issues[item.issue_url]["title"] == "AMEND-DEMO1 待審清單與開卡閘"  # Issue title
+    assert item.text("功能") == "待審清單與開卡閘"                            # Project 欄位
+    assert "→ 功能：" in item.body and "理由 功能名收窄" in item.body          # Log 留痕
+
+
+def test_amend_routing_updates_only_the_named_groups(card):
+    """未給的路由欄**逐字沿用卡面現值**，⛔ 不從別處重建、⛔ 不正規化。"""
+    before = _card_routing_line(card)
+    assert "一般實作" in before and "一般 review" in before
+
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "改執行側理由",
+         "--exec-capability-reason", "W2A canonical T4 紅線"]
+    )
+    assert rc == 0
+    after = _card_routing_line(card)
+    assert "W2A canonical T4 紅線" in after
+    assert "一般實作" not in after
+    # 查核側四個字一個都沒動。
+    assert "查核：待指派（建議 主力型；一般 review）" in after
+
+
+def test_amend_routing_round_trips_through_the_consumer_side(card):
+    """round-trip 讀回驗證：改完之後 ``compare_capability_to_card`` 讀得回新值。
+
+    ⭐ 用**真正會跑的那條讀取路徑**（assign 的比對器），⛔ 不自寫一份正則比對——
+    寫入端與讀取端各寫一份判準正是本 repo 已登記過的形狀。
+    """
+    from wf_cli.card import CAPABILITY_MATCHED, compare_capability_to_card
+
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "改建議層級",
+         "--exec-capability", "高階型", "--exec-capability-reason", "動到規則本體",
+         "--reviewer", "Codex", "--review-capability", "高階型",
+         "--review-capability-reason", "紅線須跨家族"]
+    )
+    assert rc == 0
+    body = _item(card).body
+    comparison = compare_capability_to_card(body, "高階型")
+    assert comparison.outcome == CAPABILITY_MATCHED
+    assert comparison.suggested == "高階型"
+    assert "查核：Codex（建議 高階型；紅線須跨家族）" in _card_routing_line(card)
+
+
+def test_amend_feature_and_routing_can_travel_together(card):
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "同步卡面",
+         "--feature", "四波五卡 W1", "--exec-capability-reason", "W2A canonical T4 紅線"]
+    )
+    assert rc == 0
+    item = _item(card)
+    assert item.title == "AMEND-DEMO1 四波五卡 W1"
+    assert "W2A canonical T4 紅線" in _card_routing_line(card)
+
+
+def test_amend_routing_no_op_is_rejected(card):
+    """與現值相同 ⇒ 拒絕寫入不實的修訂留痕（形狀同資源宣告 no-op）。"""
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "沒改什麼",
+         "--exec-capability-reason", "一般實作"]
+    )
+    assert rc == 2
+
+
+def test_amend_routing_refuses_a_card_without_the_version_marker(card, capsys):
+    """卡面沒有路由行版本標記（本欄位上線前的舊卡）⇒ ⛔ 拒絕猜哪一行是路由行。"""
+    from wf_cli.card import ROUTING_MARKER
+
+    project = resolve_project(card, "acme", 1)
+    item = _item(card)
+    set_item_body(
+        card, item.content_type, item.content_id, project, "acme/wf", item.issue_number,
+        item.body.replace(ROUTING_MARKER + "\n", ""),
+    )
+    before = _item(card).body
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想改", "--executor", "某人"]
+    )
+    assert rc == 2
+    assert "宣告" in capsys.readouterr().err
+    assert _item(card).body == before, "拒收必須零寫入"
+
+
+def test_amend_feature_is_unavailable_on_a_legacy_draft_card(fake_runner, capsys):
+    """``--feature`` 只支援 issue-backed 卡：draft item 的標題走另一條 ID 命名空間。
+
+    ⚠️ 這是「遺留可讀」那一軸的一格——draft 卡讀得到、也 amend 得動其他欄位，
+    ⛔ 只有標題那一格用不了。
+    """
+    from .fake_gh import seed_legacy_draft_card
+
+    seed_legacy_draft_card(fake_runner, "DRAFT-FEAT1")
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "DRAFT-FEAT1", "--reason", "想改功能", "--feature", "新功能"]
+    )
+    assert rc == 2
+    assert "issue-backed" in capsys.readouterr().err
+
+
+def test_core_pain_still_cannot_share_an_invocation_with_the_new_flags(gov_card, capsys):
+    """一次調用＝一次治理裁定：``--core-pain`` ⛔ 不得與 feature／routing 同行。"""
+    for extra in (["--feature", "新功能"], ["--exec-capability-reason", "新理由"]):
+        rc = run_cli(
+            ["amend", *GOV_TARGET, "GOV-DEMO1", "--reason", "混在一起",
+             "--core-pain", "新痛點", "--ruling-url", _ruling(), *extra]
+        )
+        assert rc == 2, extra
+        assert "不得與其他欄位旗標同一次調用" in capsys.readouterr().err
+
+
+def test_routing_or_feature_alone_counts_as_a_field_to_amend(card):
+    """⛔ 不得被「沒有指定任何要修訂的欄位」那條前置檢查誤擋。"""
+    assert run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "只改功能", "--feature", "新功能名"]
+    ) == 0
+    assert run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "只改路由", "--executor", "某模型@某工具"]
+    ) == 0

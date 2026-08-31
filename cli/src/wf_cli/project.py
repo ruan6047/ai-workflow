@@ -376,6 +376,19 @@ def create_repo_issue(runner: GhRunner, repo: str, title: str, body: str) -> tup
     return number, url
 
 
+def set_issue_title(runner: GhRunner, repo: str, issue_number: int, title: str) -> None:
+    """改 Issue 標題。
+
+    ⭐ **Project item 的標題⛔ 沒有第二個 writer**：issue-backed item 的
+    ``content.title`` 就是 Issue 的標題（平台導出），⇒ 這一次寫入同時覆蓋
+    ``WF-REDESIGN-W1`` 驗收 5b 寫入集裡的「Issue title」與「Project item title」兩項。
+    ⛔ 不得由此推出「兩者是同一個欄位」——DraftIssue 上它們才是兩條路徑
+    （見 :func:`set_item_body`），只是 ``open`` 已不再產生 DraftIssue。
+    ⚠️ 呼叫端仍須**讀回驗證**：導出是平台行為，不是本函式的保證。
+    """
+    runner.execute(["issue", "edit", str(issue_number), "--repo", repo, "--title", title])
+
+
 def add_issue_comment(runner: GhRunner, repo: str, issue_number: int, body: str) -> None:
     """在 Issue timeline 追加一則留言（canonical §4.3：事件＝Issue timeline ＋結構化 comment）。
 
@@ -611,6 +624,7 @@ __all__ = [
     "add_issue_comment",
     "add_item_to_project",
     "create_draft_item",
+    "set_issue_title",
     "create_repo_issue",
     "ensure_fields",
     "find_item_by_card_id",

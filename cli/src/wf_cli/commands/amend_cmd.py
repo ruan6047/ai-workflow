@@ -246,6 +246,8 @@ from ..card import (
     adopt_resource_sentinels,
     restore_migration_header,
     drop_sentinel_less_resource_section,
+    CAPABILITY_TIERS,
+    ROUTING_FIELDS,
     TIERS,
     AmendError,
     MarkerWriteBoundaryError,
@@ -255,6 +257,7 @@ from ..card import (
     amend_core_pain,
     amend_initiative,
     amend_resource_block,
+    amend_routing,
     amend_spec_baseline,
     amend_verification,
     append_log_line,
@@ -272,6 +275,7 @@ from ..project import (
     list_items,
     resolve_project,
     set_field_value,
+    set_issue_title,
     set_item_body,
 )
 from ..resources import ResourceDeclaration, ResourceDeclarationError, parse_block, render_block
@@ -366,6 +370,53 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "--initiative",
         default=None,
         help="更正 Initiative 父卡（body 標頭行＋Project 欄位雙面同寫）；無父卡填 `—`",
+    )
+    # ---- 功能／路由更新（`WF-REDESIGN-W1` 驗收 5b。⛔ 非新增動詞——本卡射程逐字
+    # 「不新增 wfcli 動詞」，⇒ 擴充既有的 amend）。
+    #
+    # 寫入集四項：Issue title ＋ Project item title ＋ `功能` 欄 ＋ routing 行。
+    # ⚠️ 前兩項在 issue-backed 卡上是**同一次寫入**——Project item 的標題是 Issue
+    # 標題的平台導出（見 project.set_issue_title）。⇒ 本指令寫一次、**讀回驗證兩處**，
+    # ⛔ 不假裝它是兩次寫入。
+    p.add_argument(
+        "--feature",
+        default=None,
+        help="更正功能（Issue 標題後半段＋Project `功能` 欄）。"
+        "⚠️ 標題整行重寫為 `<卡ID> <功能>`，⛔ 不做部分替換——部分替換要先猜出舊功能"
+        "在標題裡的邊界，而那個猜測本身就是會出錯的 parser。"
+        "⛔ 只支援 issue-backed 卡：draft item 的標題走另一條 ID 命名空間。",
+    )
+    p.add_argument(
+        "--executor",
+        default=None,
+        help="更正路由行的執行者名字。未給的路由欄逐字沿用卡面現值。",
+    )
+    p.add_argument(
+        "--exec-capability",
+        default=None,
+        choices=list(CAPABILITY_TIERS),
+        help="更正路由行的**建議執行能力層級**（⛔ 不是 --tier 的 T0–T4 風險級別）。",
+    )
+    p.add_argument(
+        "--exec-capability-reason",
+        default=None,
+        help="更正路由行的建議執行能力層級理由。",
+    )
+    p.add_argument(
+        "--reviewer",
+        default=None,
+        help="更正路由行的查核者名字。",
+    )
+    p.add_argument(
+        "--review-capability",
+        default=None,
+        choices=list(CAPABILITY_TIERS),
+        help="更正路由行的建議查核能力層級。",
+    )
+    p.add_argument(
+        "--review-capability-reason",
+        default=None,
+        help="更正路由行的建議查核能力層級理由。",
     )
     p.add_argument(
         "--core-pain",
@@ -859,12 +910,38 @@ def _authorize_by_requester_ruling(runner, target, item, args, what: str) -> str
     return AUTHORITY_NOTE_TEMPLATE.format(author=author, url=args.ruling_url)
 
 
+#: ``--<旗標>`` → 路由行群組名。⛔ 值域由 ``card.ROUTING_FIELDS`` 持有，本表只做對映；
+#: 模組載入時斷言兩者一致（多／少一個群組會當場炸，⛔ 不會靜默少改一欄）。
+ROUTING_FLAG_TO_GROUP = {
+    "executor": "executor",
+    "exec_capability": "exec_tier",
+    "exec_capability_reason": "exec_reason",
+    "reviewer": "reviewer",
+    "review_capability": "rev_tier",
+    "review_capability_reason": "rev_reason",
+}
+assert set(ROUTING_FLAG_TO_GROUP.values()) == set(ROUTING_FIELDS), (
+    "amend 的路由旗標對映與 card.ROUTING_FIELDS 不一致："
+    f"{sorted(set(ROUTING_FLAG_TO_GROUP.values()) ^ set(ROUTING_FIELDS))}"
+)
+
+
+def _routing_updates(args: argparse.Namespace) -> dict[str, str]:
+    """本次調用要改的路由群組（未給的旗標⛔ 不進 dict，由 ``amend_routing`` 沿用現值）。"""
+    return {
+        group: getattr(args, flag)
+        for flag, group in ROUTING_FLAG_TO_GROUP.items()
+        if getattr(args, flag) is not None
+    }
+
+
 def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢查本就是平鋪的
     if not args.reason.strip():
         print("[amend] 拒絕：--reason 不得為空（每次修訂都要能回答為什麼）", file=sys.stderr)
         return 2
 
     wants_resources = args.db_scope is not None or args.resources is not None
+    routing_updates = _routing_updates(args)
     field_flags = [
         args.spec_baseline,
         args.acceptance,
@@ -873,9 +950,11 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         args.initiative,
         args.core_pain,
         args.brief,
+        args.feature,
     ]
     wants_fields = (
         any(f is not None for f in field_flags)
+        or bool(routing_updates)
         or wants_resources
         or args.drop_stale_resource_section
         or args.adopt_resource_sentinels
@@ -894,6 +973,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         if (
             others
             or wants_resources
+            or routing_updates
             or args.drop_stale_resource_section
             or args.adopt_resource_sentinels
             or args.restore_migration_header
@@ -990,6 +1070,24 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             # ⚠️ 欄位是 body 的恆等導出，故排進 pending_field_writes——指令層在 body
             # 寫成功後才寫欄位，並由 doctor 的漂移偵測抓「body 已更新、欄位過期」。
             pending_field_writes["簡介"] = args.brief
+        if routing_updates:
+            body, old = amend_routing(body, routing_updates)
+            changed = "；".join(f"{g}={routing_updates[g]}" for g in sorted(routing_updates))
+            changes.append(("routing 行", old, changed, None, True))
+        if args.feature is not None:
+            # ⚠️ **功能不在 body 裡**（``_render_issue_body`` 不渲染它；它只進 Issue 標題
+            # 與 Project `功能` 欄）⇒ 這一格**沒有** body 差分，只有 Log 行與兩個導出面。
+            # ⛔ 不得由「其他欄位都改 body」推出這一格也該改 body——把功能塞進 body 是
+            # 新增一個居所，那是規格變更不是修訂。
+            if item.content_type != "Issue" or item.issue_number is None or not target.repo:
+                raise AmendError(
+                    "--feature 需要 issue-backed 卡（本卡 content_type="
+                    f"{item.content_type}、issue_number={item.issue_number}、"
+                    f"repo={target.repo!r}）：draft item 的標題走 "
+                    "`gh project item-edit --id <DI_…> --title`，是另一條 ID 命名空間"
+                )
+            changes.append(("功能", item.text("功能") or "（未設定）", args.feature, None, False))
+            pending_field_writes["功能"] = args.feature
         if args.acceptance is not None:
             body, old = amend_acceptance(
                 body, args.acceptance, preserve_checked=args.preserve_checked
@@ -1240,6 +1338,41 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     set_item_body(
         runner, item.content_type, item.content_id, project, target.repo, item.issue_number, body
     )
+
+    # ---- 標題（`WF-REDESIGN-W1` 驗收 5b 的寫入集前兩項）----
+    #
+    # ⭐ **一次寫入、兩處讀回**：Project item 的標題是 Issue 標題的平台導出
+    # （見 project.set_issue_title），⇒ 這裡只發一次 `gh issue edit --title`，
+    # 但**分別**讀回 Issue 自己的標題與 Project item 的標題。⛔ 不以「Issue 標題對了
+    # ⇒ item 標題也對了」代替量測：那個導出是平台行為，不是本指令的保證，而
+    # 5b 的寫入集把兩者**分列兩項**。
+    if args.feature is not None:
+        expected_title = f"{args.card_id} {args.feature}"
+        set_issue_title(runner, target.repo, item.issue_number, expected_title)
+        issue_title = (
+            runner.run_json(
+                ["issue", "view", str(item.issue_number), "--repo", target.repo,
+                 "--json", "title"]
+            )
+            or {}
+        ).get("title")
+        after_item = find_item_by_card_id(list_items(runner, project), args.card_id)
+        item_title = after_item.title if after_item else None
+        mismatched = [
+            f"{label}（預期 {expected_title!r}，實際 {actual!r}）"
+            for label, actual in (("Issue title", issue_title), ("Project item title", item_title))
+            if actual != expected_title
+        ]
+        if mismatched:
+            print(
+                "[amend] body 已寫入，但標題寫入後讀回不符：" + "；".join(mismatched) + "。\n"
+                "  ⚠️ Project item 標題是 Issue 標題的平台導出，兩者不一致時通常是導出尚未\n"
+                "  收斂——⛔ 但本指令不猜，也不重試。重跑同一條 amend 即可再寫一次：\n"
+                f"     wfcli amend {args.card_id} --feature '{args.feature}' "
+                "--reason '<說明先前標題寫入為何中斷>'",
+                file=sys.stderr,
+            )
+            return 8
 
     # ---- 雙居所欄位：body 之後補寫 Project 側，並讀回驗證 ----
     #

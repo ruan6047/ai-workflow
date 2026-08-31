@@ -20,7 +20,7 @@ from wf_cli.review import (
 )
 from wf_cli.validation import validate_review_report
 
-from .fake_gh import FakeGhRunner, _parse_flags
+from .fake_gh import FakeGhRunner, open_required_argv, _parse_flags
 
 BASE_TARGET = ["--owner", "acme", "--project", "1"]
 REPO = "acme/demo"
@@ -46,7 +46,11 @@ class EventGhRunner(FakeGhRunner):
         if args[:2] == ["api", "user"]:
             return self.login + "\n"
 
-        if args[:2] == ["issue", "view"] and "--json" in flags:
+        # ⚠️ **只攔 `--json comments` 這一種**，⛔ 不是「所有 issue view」：
+        # `open --from-issue` 也走 `issue view`（讀 number/title/body/state/url），
+        # 攔成 comments 會讓它讀到一個沒有 body 的物件、於是每一張測試卡都被收件
+        # 閘門擋下——而那個假紅看起來完全像「產品端壞了」。
+        if args[:2] == ["issue", "view"] and flags.get("--json") == "comments":
             url = f"https://github.com/{flags['--repo']}/issues/{int(args[2])}"
             return jsonlib.dumps({"comments": self.comment_records.get(url, [])})
 
@@ -144,6 +148,7 @@ def open_card(card_id: str) -> int:
     return run_cli(
         [
             "open", *BASE_TARGET, "--repo", REPO, card_id,
+            *open_required_argv(open_cmd.default_runner, REPO),
             "--feature", "示範功能", "--tier", "T2", "--db-scope", "none",
             "--core-pain", "痛點文字", "--service-goal", "服務的原始目標文字",
             "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",

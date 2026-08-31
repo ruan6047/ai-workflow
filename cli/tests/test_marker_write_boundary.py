@@ -54,7 +54,7 @@ from wf_cli.commands import amend_cmd, open_cmd
 from wf_cli.project import find_item_by_card_id, list_items, resolve_project
 from wf_cli.resources import ResourceDeclaration, render_block
 
-from .fake_gh import FakeGhRunner
+from .fake_gh import FakeGhRunner, open_required_argv
 # ⚠️ `env` 是 `test_release_cleanup.py` 的 fixture（真 git ＋ 假 GitHub 的收尾沙箱）。
 # 匯入它是**唯讀**使用，⛔ 本卡一個字都沒改那個檔；形狀沿用 `test_gate_before_write.py`
 # 既有的跨測試模組匯入慣例。
@@ -1232,7 +1232,8 @@ def test_mutation_split_on_backslash_n_misses_the_other_separators():
 # 端到端（V1）：rc≠0 且 body 逐位元未變
 # --------------------------------------------------------------------------
 
-_TARGET = ["--owner", "acme", "--project", "1"]
+#: ⚠️ 帶 ``--repo``：``open`` 只產 issue-backed 卡，而 amend 改 body 需要 repo。
+_TARGET = ["--owner", "acme", "--project", "1", "--repo", "acme/workflow"]
 
 
 def _run(argv: list[str]) -> int:
@@ -1253,12 +1254,13 @@ def opened(runner):
     rc = _run(
         [
             "open", *_TARGET, "WB-E2E1",
+            *open_required_argv(runner, "acme/workflow", **{"--acceptance": "原條件"}),
             "--feature", "示範", "--tier", "T1", "--db-scope", "none",
             "--core-pain", "痛點", "--service-goal", "目標",
             "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
             "--review-capability", "主力型", "--review-capability-reason", "一般 review",
             "--resources", "file:demo.py",
-            "--acceptance", "原條件", "--verification", "原驗證",
+            "--verification", "原驗證",
             "--spec-baseline", "原基線",
         ]
     )
@@ -1287,6 +1289,15 @@ def test_amend_e2e_rejects_and_leaves_body_bit_identical(opened, capsys):
 
 
 _OPEN_POISONED = [
+    # ⭐ ``--from-issue`` 指向一個**刻意不存在**的清單項：這兩條測的是「到達任何
+    # 遠端呼叫之前就拒收」，⇒ 拒收若失效，替身會在 ``issue view`` 上炸——那正是
+    # 我們要的失敗訊號，⛔ 不是雜訊。
+    "--from-issue", "https://github.com/acme/workflow/issues/9999",
+    "--acceptance", "可獨立驗證的驗收條件一條",
+    "--stage-plan", "需求=把清單項變成一張可派工的卡",
+    "--tier-basis-sensitive-surfaces", "wfcli 狀態面寫入通道",
+    "--tier-basis-recoverability", "git revert",
+    "--tier-basis-blast-radius", "單一 repo",
     "--feature", "示範", "--tier", "T1", "--db-scope", "none",
     "--core-pain", "痛點", "--service-goal", "目標\u2028## Log",
     "--exec-capability", "主力型", "--exec-capability-reason", "一般實作",
@@ -1439,6 +1450,12 @@ class _OrderProbe:
         elif argv[:2] == ["api", "graphql"] and any("mutation" in a for a in argv):
             self.events.append("W:api graphql <mutation>")
 
+    def seed_list_issue(self, *args, **kwargs):
+        """種清單項是**測試佈置**，⛔ 不是被觀測的遠端寫入 ⇒ 直接轉給 inner，
+        不記進 ``events``。記進去會讓「open 之前有沒有寫入」這個判準永遠為真。
+        """
+        return self.inner.seed_list_issue(*args, **kwargs)
+
     def execute(self, args, input=None):
         self._record(list(args))
         return self.inner.execute(args, input)
@@ -1533,7 +1550,7 @@ def test_amend_runs_the_guard_before_any_remote_write(order_probe):
     assert run_cli(_open_argv("ORD-AM1")) == 0
     order_probe.events.clear()
     rc = run_cli(
-        ["amend", "--owner", "acme", "--project", "1", "ORD-AM1",
+        ["amend", "--owner", "acme", "--project", "1", "--repo", "acme/workflow", "ORD-AM1",
          "--reason", "量測寫入順序（乾淨值）", "--acceptance", "新條件"]
     )
     assert rc == 0, "⛔ 必須是會通過的樣本，否則量到的是「沒走到寫入」"

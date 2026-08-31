@@ -26,6 +26,10 @@ from .brief import Brief
 from .brief import render_block as render_brief_block
 from .brief import try_parse_block as try_parse_brief
 from .brief import validate_shape as validate_brief_shape
+from .card_face import SECTION_HEADING as CARD_FACE_SECTION_HEADING
+from .card_face import render_block as render_card_face_block
+from .card_face import try_parse_block as try_parse_card_face
+from .card_face import validate as validate_card_face
 from .resources import (
     CLAIMS_BEGIN_MARKER,
     CLAIMS_END_MARKER,
@@ -299,6 +303,11 @@ class Card:
     #: 卡片簡介（canonical §6.3）。⚠️ **可選**——既有卡在本欄位上線前一律沒有簡介，
     #: ⛔ 不得讓它們因缺欄位而無法 amend 或 handoff（fail-open，見 brief.try_parse_block）。
     brief: str | None = None
+    #: 卡面表單（`WF-REDESIGN-W1` 驗收 3）。⚠️ **可選**——本欄位上線前開的卡一律
+    #: 沒有這個區塊，⛔ 不得讓它們因缺區塊而無法 amend 或 handoff（fail-open，
+    #: 見 card_face.try_parse_block）。⭐ 但 ``open`` 這條路徑上它是**必填**：
+    #: 旗標在 ``commands/open_cmd.py`` 是 required，⇒ 新卡不可能沒有。
+    card_face: dict | None = None
     initiative: str | None = None
     requested_by: str = "—"
     planned_by: str = "—"
@@ -336,6 +345,12 @@ class Card:
         # 讀不回的名字。放在 Card 建構而非只放 CLI，是因為繞過 CLI 直接建 Card 的
         # 路徑（測試／未來呼叫端）同樣不該產出無法解析的路由行。
         validate_routing_names(executor=self.executor, reviewer=self.reviewer)
+        if self.card_face is not None:
+            # 寫入端拒收的 model 層防線，形狀同上一行的 ``validate_routing_names``：
+            # 繞過 CLI 直接建 Card 的路徑（測試／未來呼叫端）同樣不該產出一份
+            # 讀得回卻不合 schema 的卡面表單。CLI 層的乾淨訊息由
+            # ``commands/open_cmd.py`` 的前置檢查給（零遠端寫入）。
+            validate_card_face(self.card_face)
         if self.chain_depth > CHAIN_DEPTH_HARD_CAP:
             # 與 validation.validate_chain_depth 相同的機械紅線，這裡是繞過 CLI
             # 直接建構 Card（測試／未來呼叫端）時的防線；CLI 路徑應該在到達這裡
@@ -407,12 +422,47 @@ def format_routing_line(c: Card) -> str:
     括號內第一段填層級、第二段填理由；「紅線須跨家族或人工」「須 ≠ 執行」是範本給
     規劃者的填寫指示（規則文字），不是要逐字複製進卡面的內容，故不渲染。
     """
+    return f"{ROUTING_MARKER}\n{format_routing_body_line(**routing_values(c))}"
+
+
+#: 路由行的六個欄位名。⛔ 封閉集合，且**與 ``_ROUTING_PARSE_RE`` 的具名群組同名**——
+#: 寫入端與讀取端共用同一組鍵，⛔ 不各寫一份對照表。
+ROUTING_FIELDS = (
+    "executor",
+    "exec_tier",
+    "exec_reason",
+    "reviewer",
+    "rev_tier",
+    "rev_reason",
+)
+
+
+def routing_values(c: Card) -> dict[str, str]:
+    """把一張卡的路由六欄取成 ``{群組名: 值}``（鍵＝:data:`ROUTING_FIELDS`）。"""
+    return {
+        "executor": c.executor,
+        "exec_tier": c.executor_capability,
+        "exec_reason": c.executor_capability_reason,
+        "reviewer": c.reviewer,
+        "rev_tier": c.reviewer_capability,
+        "rev_reason": c.reviewer_capability_reason,
+    }
+
+
+def format_routing_body_line(
+    *, executor: str, exec_tier: str, exec_reason: str,
+    reviewer: str, rev_tier: str, rev_reason: str,
+) -> str:
+    """路由行本體（**不含** :data:`ROUTING_MARKER`）。
+
+    ⭐ **從值渲染，⛔ 不從 Card**：``amend --executor`` 這一族旗標改的是既有卡面上的
+    那一行，那裡沒有 ``Card`` 物件可拿（重建一個要湊齊十幾個與本次修訂無關的欄位，
+    而湊錯任何一個都會靜默寫出不同的卡面）。⇒ 渲染字面只此一份，``open`` 與 ``amend``
+    共用它，⛔ 兩處各寫一個 f-string 就會 drift，而範本一致性正是本欄位存在的理由。
+    """
     return (
-        f"{ROUTING_MARKER}\n"
-        f"- 執行：{c.executor}"
-        f"（建議 {c.executor_capability}；{c.executor_capability_reason}）"
-        f"　查核：{c.reviewer}"
-        f"（建議 {c.reviewer_capability}；{c.reviewer_capability_reason}）"
+        f"- 執行：{executor}（建議 {exec_tier}；{exec_reason}）"
+        f"　查核：{reviewer}（建議 {rev_tier}；{rev_reason}）"
     )
 
 
@@ -468,6 +518,12 @@ def _render_issue_body(c: Card, now: str) -> str:
     verification = "\n".join(f"- [ ] {line}" for line in c.verification)
     resource_block = render_block(c.resources)
     brief_block = f"{render_brief_block(Brief(text=c.brief))}\n\n" if c.brief else ""
+    # 卡面表單緊接資源宣告：兩者都是機器可讀區塊，擺在一起讓「這張卡的機讀面」
+    # 是一段連續的東西，⛔ 不散在 body 各處。缺表單的舊卡渲染成空字串 ⇒ 版面與
+    # 本欄位上線前**逐位元相同**（legacy fallback 的基礎）。
+    card_face_block = (
+        f"\n{render_card_face_block(c.card_face)}\n" if c.card_face is not None else ""
+    )
     return f"""- 需求：{c.requested_by}　規劃：{c.planned_by}
 {format_routing_line(c)}
 - Initiative：{c.initiative or '—'}　spec 基線：{c.spec_baseline}
@@ -479,7 +535,7 @@ def _render_issue_body(c: Card, now: str) -> str:
 - **痛點**：{c.core_pain}
 
 {resource_block}
-
+{card_face_block}
 ## 驗收條件
 
 {acceptance}
@@ -1115,6 +1171,8 @@ def enforce_card_render_boundary(
     ]
     if c.brief:
         checks.append(("簡介", c.brief, _read_brief_text))
+    if c.card_face is not None:
+        checks.append(("卡面表單", c.card_face, try_parse_card_face))
     # ⚠️ **刻意登記的涵蓋落差**：``owner``／``iteration`` 只出現在 Log 行，而 Log 是
     # append-only 留痕、本檔沒有「讀回單一 Log 欄位」的路徑 ⇒ 它們**只由性質 (1)
     # 涵蓋**（例如 owner 裡塞進一個 ``## Log`` 會讓 ``split_at_log`` 讀不回，當場拒收）。
@@ -1610,6 +1668,87 @@ def amend_initiative(body: str, new_value: str) -> tuple[str, str]:
         where="`Initiative`",
     )
     return candidate, old
+
+
+class RoutingUnamendable(AmendError):
+    """卡面的路由行定位不成立（無版本標記、標記多於一個、候選行不唯一、不相鄰、
+    或解析不出六欄）⇒ ⛔ 拒絕修訂。
+
+    ⭐ **定位判準與 :func:`compare_capability_to_card` 逐字同一套，⛔ 不另寫一份**：
+    那一套被同一個形狀打穿過兩次（R4-003／R5-001，見 ``_routing_line_candidates``
+    上方那整段），寫第二份等於讓下一次打穿只修到其中一份。
+    """
+
+
+def _locate_routing_line(body: str) -> tuple[list[str], int, re.Match[str]]:
+    """回傳 ``(Log 之前的全部行, 路由行在其中的索引, 解析結果)``；不成立即拋。"""
+    head, _ = split_at_log(body)
+    head_lines = head.splitlines()
+    first_heading = next(
+        (i for i, ln in enumerate(head_lines) if ln.startswith("## ")), len(head_lines)
+    )
+    header = head_lines[:first_heading]
+
+    declarations = [i for i, ln in enumerate(header) if ln.strip() == ROUTING_MARKER]
+    if len(declarations) != 1:
+        raise RoutingUnamendable(
+            f"卡面標頭區有 {len(declarations)} 個獨立成行的 {ROUTING_MARKER} 宣告（應恰為 1）"
+            "；⛔ 拒絕猜哪一行是現行路由行"
+            + ("。本卡開立於規劃期路由必填之前 ⇒ 沒有可修訂的路由行" if not declarations else "")
+        )
+    candidates = _routing_line_candidates(header)
+    if len(candidates) != 1:
+        raise RoutingUnamendable(
+            f"卡面標頭區的候選路由行有 {len(candidates)} 行（應恰為 1）"
+            "——候選＝標頭區裡無法被正面辨識為已知欄位行的每一行"
+        )
+    index = candidates[0]
+    if index != declarations[0] + 1:
+        raise RoutingUnamendable(
+            f"{ROUTING_MARKER} 宣告在標頭區第 {declarations[0] + 1} 行，"
+            f"但候選路由行在第 {index + 1} 行——標記必須緊鄰它所宣告的路由行"
+        )
+    match = _ROUTING_PARSE_RE.match(header[index].rstrip())
+    if match is None:
+        raise RoutingUnamendable(
+            "候選路由行不符合 templates/tasks-card.md 第 4 行格式"
+            "（全形／半形空白錯置、缺分號或括號、理由為空、查核段缺失、混入零寬字元）"
+            "；⛔ 拒絕在讀不回的行上做替換"
+        )
+    return head_lines, index, match
+
+
+def amend_routing(body: str, updates: dict[str, str]) -> tuple[str, str]:
+    """整行重寫路由行；``updates`` 只帶要改的群組（鍵＝:data:`ROUTING_FIELDS`）。
+
+    回傳 ``(新 body, 原路由行逐字)``。未給的群組**逐字沿用卡面現值**——⛔ 不從別處
+    重建，也⛔ 不正規化（``templates/handoff-contract.md`` §3.2 規則二禁止以正規化
+    代替拒收）。
+
+    ⚠️ **改完仍須過 ``validate_routing_names``／``validate_capability_routing``**：
+    本函式自己就跑，⇒ 寫不出一行讀不回的路由行（寫入端拒收，與 ``Card.__post_init__``
+    同一組判準函式）。
+    """
+    unknown = sorted(set(updates) - set(ROUTING_FIELDS))
+    if unknown:
+        raise RoutingUnamendable(f"未知的路由欄位 {unknown}；合法鍵＝{list(ROUTING_FIELDS)}")
+    head_lines, index, match = _locate_routing_line(body)
+    old_line = head_lines[index]
+    values = {name: match.group(name) for name in ROUTING_FIELDS}
+    values.update({k: v for k, v in updates.items() if v is not None})
+    validate_routing_names(executor=values["executor"], reviewer=values["reviewer"])
+    validate_capability_routing(
+        executor_capability=values["exec_tier"],
+        executor_capability_reason=values["exec_reason"],
+        reviewer_capability=values["rev_tier"],
+        reviewer_capability_reason=values["rev_reason"],
+    )
+    new_line = format_routing_body_line(**values)
+    if new_line == old_line:
+        raise AmendError("路由行與現值相同；拒絕寫入不實的修訂留痕")
+    head_lines[index] = new_line
+    _, tail = split_at_log(body)
+    return _join("\n".join(head_lines), tail), old_line
 
 
 def amend_brief(body: str, new_value: str) -> tuple[str, str | None]:
@@ -2196,6 +2335,7 @@ __all__ = [
     "CAPABILITY_DEVIATED",
     "CAPABILITY_MATCHED",
     "CAPABILITY_TIERS",
+    "CARD_FACE_SECTION_HEADING",
     "CHAIN_DEPTH_HARD_CAP",
     "REQUESTER_GATED_TIERS",
     "ROUTING_MARKER",
@@ -2208,10 +2348,13 @@ __all__ = [
     "CapabilityComparison",
     "Card",
     "RequesterUnparseable",
+    "ROUTING_FIELDS",
+    "RoutingUnamendable",
     "amend_acceptance",
     "amend_core_pain",
     "amend_initiative",
     "amend_resource_block",
+    "amend_routing",
     "amend_spec_baseline",
     "amend_verification",
     "append_log_line",
@@ -2220,6 +2363,7 @@ __all__ = [
     "chain_depth_violation_message",
     "compare_capability_to_card",
     "format_branch_worktree",
+    "format_routing_body_line",
     "format_routing_line",
     "is_tier_downgrade",
     "now_iso8601",
@@ -2227,6 +2371,7 @@ __all__ = [
     "parse_requested_by",
     "render_issue_body",
     "render_spec_markdown",
+    "routing_values",
     "routing_reserved_char_message",
     "split_at_log",
     "tier_downgrade_needs_ruling",

@@ -21,7 +21,7 @@ class ConfigError(ValueError):
 class Target:
     owner: str
     project: int
-    repo: str | None = None  # 例如 "ruan6047/cpbl-analytics"；None 表示走 draft issue 模式
+    repo: str | None = None  # 例如 "ruan6047/cpbl-analytics"；None＝本次指令沒有指定 repo
 
 
 def _load_config_file(path: Path) -> dict:
@@ -64,7 +64,9 @@ def add_target_args(parser) -> None:
     parser.add_argument("--project", type=int, help="Project number；預設讀設定檔或 WFCLI_PROJECT")
     parser.add_argument(
         "--repo",
-        help="owner/repo；有給則 open 建立真實 repo Issue，未給則建立 Project draft issue",
+        help="owner/repo；amend／review／handoff 改 body 或留言時需要它。"
+        "⚠️ `open` 的 repo 由 --from-issue 的 URL 決定（`WF-REDESIGN-W1` 驗收 2 之後"
+        "它不再建立任何 Issue），此旗標在 open 上只用來**交叉核對**：與 URL 不一致即拒收。",
     )
     parser.add_argument("--config", help="JSON 設定檔路徑（可存 owner/project/repo 預設值）")
 

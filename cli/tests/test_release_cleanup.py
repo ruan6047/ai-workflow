@@ -41,7 +41,7 @@ from wf_cli.project import (
 )
 
 from .conftest import git
-from .fake_gh import FakeGhRunner
+from .fake_gh import FakeGhRunner, _parse_flags, open_required_argv
 from .test_pitfalls import with_pitfall_report
 
 CARD_ID = "WF-RELEASE-SANDBOX1"
@@ -77,7 +77,9 @@ class ReleaseGhRunner(FakeGhRunner):
 
     def execute(self, args, input: str | None = None) -> str:  # type: ignore[override]
         args = list(args)
-        if args[:2] == ["issue", "view"]:
+        # ⚠️ **只攔 `--json state`**，⛔ 不是所有 `issue view`：`open --from-issue`
+        # 也走這條路讀清單項的 body，攔成 state 會讓每張測試卡都被收件閘門擋下。
+        if args[:2] == ["issue", "view"] and _parse_flags(args).get("--json") == "state":
             if self.issue_view_broken:
                 from wf_cli.gh import GhError
 
@@ -113,6 +115,16 @@ def _open_argv(card_id: str) -> list[str]:
     # 查核同取高階型。
     return [
         "open", *BASE_TARGET, card_id,
+        *open_required_argv(
+            open_cmd.default_runner, REPO,
+            **{
+                "--acceptance": "收尾清理走完且卡面留痕可查",
+                "--stage-plan": ["執行=接線收尾清理", "結案=封存"],
+                "--tier-basis-sensitive-surfaces": "worktree、本地與遠端分支、Issue 狀態",
+                "--tier-basis-recoverability": "不可逆（刪除後無法還原）",
+                "--tier-basis-blast-radius": "單一卡的工作區與分支",
+            },
+        ),
         "--feature", "收尾清理接線示範",
         "--tier", "T4",
         "--exec-capability", "高階型",

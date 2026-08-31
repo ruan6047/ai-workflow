@@ -335,6 +335,10 @@ def test_amend_dry_run_never_creates_project_fields(monkeypatch) -> None:
         spec_baseline=None, acceptance=None, verification=None, preserve_checked=False,
         db_scope=None, resources=None, tier=None, initiative=None,
         core_pain=None, ruling_url=None, record_unlogged_change=False, escalate=None,
+        # `WF-REDESIGN-W1` 驗收 5b 新增的旗標；手組 Namespace 必須跟著補齊，
+        # ⛔ 否則 `run()` 會在讀不到屬性時炸成 AttributeError 而不是走它該走的路。
+        feature=None, executor=None, exec_capability=None, exec_capability_reason=None,
+        reviewer=None, review_capability=None, review_capability_reason=None,
     )
     ac.run(args)  # 找不到卡會回非 0，⛔ 但那不是本測試的斷言對象
     assert all("field-create" not in " ".join(c) for c in created), (

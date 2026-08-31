@@ -9,7 +9,7 @@
 
 | 指令 | 做什麼 | 讀寫 |
 |---|---|---|
-| `open` | 依範本開卡：建立 Issue／Project draft item ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深／**規劃期路由**（執行與查核各一能力層級＋理由）六＋一項機械檢查全過才建卡；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒 | 寫 |
+| `open` | 把**待審清單項**升級成卡（`--from-issue <url>` 是唯一路徑，`WF-REDESIGN-W1`）：驗清單項填齊收件表單五欄，再把該 Issue 的 body 改寫成卡面、掛上 Project ＋（可選）git spec 檔骨架；核心痛點／服務的原始目標／tier／db_scope／資源宣告／鏈深／**規劃期路由**／**卡面表單**（階段計畫·級別依據三子問·清單收斂）／**驗收條件 ≥1** 機械檢查全過才寫；`--chain-depth`（預設 0）> 2 依決議 5 鏈式停損協定硬拒。⛔ 不再建立任何 Issue，也⛔ 不再建立 DraftIssue | 寫 |
 | `assign` | 派工：寫 owner／分支worktree／交付狀態；比對本卡與其他**已認領**活卡的資源宣告交集，撞則拒絕並列出衝突卡；`--actual-capability` 必填並與卡面建議執行層級比對，非「相符」（偏離／無基線／無法解析）一律 fail-closed 要求 `--capability-deviation-reason`，實際層級與理由一併入 Log | 寫（有條件拒絕） |
 | `amend` | 開卡後修訂卡面：spec 基線／驗收條件／驗證項目／資源宣告／`級別`；`--reason` 必填，每個被改欄位各 append 一行 Log 記下**完整原值**（不截斷，Log 是唯一還原點）並帶同一 `op` 識別碼；值未變、內容為空、錨點不唯一一律拒絕；`--spec-baseline` 另拒含換行（單行欄位須保持單行，否則會在卡面標頭區長出額外行）；清單替換預設重設未勾選，`--preserve-checked` 才沿用；`級別` 先寫並讀回驗證再寫 body；寫入前重讀比對，被他人改動即中止；`--record-unlogged-change` 補救半寫入；`--dry-run` 零遠端寫入 | 寫（有條件拒絕） |
 | `handoff` | 交接：驗證 `source_sha`（完整 40 碼 hex）與證據欄非空，依 `--next-stage` 轉交付狀態、寫 owner／最後交接／iteration；`--next-stage implementation`（查核退回語意）自動 +1，`review`／`release` 不遞增，`--iteration N` 可顯式覆寫（印警示，理由寫在 `--evidence`）；`release` 且需部署卡在部署狀態 `✅已驗證` 前拒絕 | 寫（有條件拒絕） |
@@ -34,7 +34,7 @@ canonical `AI_WORKFLOW.md` §3 Plan：「Plan 產出必含建議執行／查核�
 （層級語彙見專案 `MODEL_ROUTING.md`）」。`open` 因此有四個必填旗標：
 
 ```bash
-wfcli open CARD-ID --repo owner/repo \
+wfcli open CARD-ID --from-issue https://github.com/owner/repo/issues/123 \
   --tier T3 \
   --exec-capability 主力型   --exec-capability-reason "跨模組改動、根因已知" \
   --review-capability 高階型 --review-capability-reason "資料正確性紅線，須跨家族查核" \
@@ -467,9 +467,14 @@ wfcli open --config .wfcli.json CARD-ID ...               # 讀設定檔 {"owner
 WFCLI_OWNER=ruan6047 WFCLI_PROJECT=4 wfcli open CARD-ID    # 環境變數
 ```
 
-`--repo owner/repo` 有給時，`open` 建立**真實 repo Issue**（`gh issue create` + `gh project
-item-add`）；未給則建立**Project draft issue**（無 repo 掛載，`gh project item-create`）。
-兩種模式的 Ledger 欄位讀寫、資源宣告解析、`assign`／`handoff` 邏輯完全一致。
+`open` 的 repo 由 `--from-issue` 的 URL 決定（卡所屬 repo 的判定基準就是它，見
+`registry.card_repo_from_issue_url`）；`--repo` 給了就必須與它一致，不一致一律拒收、
+⛔ 不猜哪一個算數。⚠️ `--repo` 對 `amend`／`review`／`handoff` 仍是必要的——那些指令
+改 body／留言時需要它。
+
+⚠️ **DraftIssue 的建立已封閉**（`WF-REDESIGN-W1` 驗收 2）：`open` 只產 issue-backed 卡。
+板上既有的歷史 draft item **仍讀得到**（`list_items`／`set_item_body`／`review`／`amend`
+的讀取路徑刻意保留），⛔ 但 `--feature` 這類需要 Issue 標題的旗標對它們不適用。
 
 ## 凍結欄位結構（`OPS-STATE-PLANE-MIG1` Task 1 + 需求方裁決）
 
@@ -518,7 +523,9 @@ GraphQL schema 確實存在但未文件化、`gh` CLI 未曝露，见 Task 1 fie
 - **`deploy-declare` 是既有卡部署分類的唯一更正入口**：只在需求方明確決策後使用，
   固定要求 `--decision needs-deploy` 與非空 `--reason`，且只允許
   `—不適用 → ⏸未部署`。它不是 `deploy-state` 的跳轉例外；其餘重分類、重複宣告、
-  跳級與倒退全數拒絕。新卡仍由 `open --needs-deploy` 決定初始分類。
+  跳級與倒退全數拒絕。新卡的初始分類改由**開卡表單的階段計畫**決定：`--stage-plan`
+  含 `部署=...` ⇒ `⏸未部署`，沒宣告 ⇒ `—不適用`（取代關係見
+  `docs/research/WORKFLOW-REDESIGN-2026-08-30.md` §一第 12 列）。
 - **`deploy-state` 是部署狀態的唯一中間轉移入口**：它只允許
   `⏸未部署` 後的相鄰前進轉換。
   內建 `Status` 固定映射為 `⏸未部署`／`🚀待部署`→`Todo`、

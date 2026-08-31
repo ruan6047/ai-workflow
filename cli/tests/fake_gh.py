@@ -14,6 +14,39 @@ import re
 from typing import Any
 
 from wf_cli.gh import GhRunner
+from wf_cli.intake import REQUIREMENTS
+
+#: 一份**填齊五欄**的收件表單 body，形狀＝GitHub Issue Forms 的渲染結果
+#: （每個欄位一個 ``### <label>`` 標題）。⛔ 標題字面不重打——由
+#: ``wf_cli.intake.REQUIREMENTS`` 導出，⇒ 產品端改了值域，替身跟著動。
+COMPLETE_INTAKE_BODY = "\n".join(
+    f"### {label}\n\n清單項填答：{label}\n" for label in REQUIREMENTS
+)
+
+
+def open_required_argv(runner, repo: str = "acme/workflow", **overrides) -> list[str]:
+    """``open`` 在 `WF-REDESIGN-W1` 之後**新增的必填欄**，一份共用的最小合法值。
+
+    ⭐ **只此一份**：六個測試檔各自維護一份會在下一次表單改動時同時腐爛六處，而
+    「每個呼叫端各自重寫一份」正是本 repo 已登記過的形狀（`resources.py` 的
+    R1-01）。⛔ 內容是佔位字串——本函式量的是**接線**，⛔ 不是表單內容的品質。
+
+    順帶種一個清單項（``--from-issue`` 的來源），因為 ``open`` 已不再建立任何 issue。
+    """
+    values: dict[str, Any] = {
+        "--from-issue": runner.seed_list_issue(repo),
+        "--acceptance": "可獨立驗證的驗收條件一條",
+        "--stage-plan": "需求=把清單項變成一張可派工的卡",
+        "--tier-basis-sensitive-surfaces": "wfcli 狀態面寫入通道",
+        "--tier-basis-recoverability": "git revert",
+        "--tier-basis-blast-radius": "單一 repo",
+    }
+    values.update(overrides)
+    argv: list[str] = []
+    for key, value in values.items():
+        for one in (value if isinstance(value, list) else [value]):
+            argv += [key, one]
+    return argv
 
 
 def _parse_flags(args: list[str]) -> dict[str, Any]:
@@ -86,6 +119,43 @@ class FakeGhRunner(GhRunner):
                         if opt["id"] == option_id:
                             return opt["name"]
         raise AssertionError(f"unknown option id {option_id} for field {field_id}")
+
+    def seed_list_issue(
+        self,
+        repo: str = "acme/workflow",
+        *,
+        body: str | None = None,
+        title: str = "[清單] 待審項",
+    ) -> str:
+        """種一個**待審清單項** issue（不在 Project 上），回傳它的 URL。
+
+        ⭐ 存在的理由：``open`` 已不再建立任何 issue（`WF-REDESIGN-W1` 驗收 2），
+        ⇒ 每一條 open 測試都必須先有一個清單項可升級。⛔ 不讓 ``open`` 自己補一個，
+        那等於把被移除的那條路徑從測試側偷渡回來。
+        """
+        self._issue_seq += 1
+        number = self._issue_seq
+        url = f"https://github.com/{repo}/issues/{number}"
+        self.issues[url] = {
+            "title": title,
+            "body": COMPLETE_INTAKE_BODY if body is None else body,
+            "number": number,
+            "repo": repo,
+        }
+        return url
+
+    def forget_revisions(self) -> None:
+        """清掉所有 issue 的版本歷史，模擬「body 從未被編輯過」的卡。
+
+        ⭐ 為什麼需要它：``open --from-issue`` **本身就會編輯一次 body**（把清單項改寫成
+        卡面）⇒ 新卡自誕生起平台就有一版（清單項原文）。⇒ ``amend`` 的
+        ``totalCount == 0`` 全文退路對新卡**不再發生**，只對「open 之前就存在、body
+        從未被編輯過」的舊卡成立。要測那條退路就得明確造出那個世界狀態。
+        ⛔ 不得由此推出「全文退路是死碼」——DraftIssue 與「版本內容取不到」兩條退路
+        仍然會走到，各有自己的測試。
+        """
+        for issue in self.issues.values():
+            issue.pop("revisions", None)
 
     def execute(self, args, input: str | None = None) -> str:  # type: ignore[override]
         args = list(args)
@@ -201,6 +271,20 @@ class FakeGhRunner(GhRunner):
                 {"id": edit_id, "title": item["title"], "body": item["body"], "type": item["content_type"]}
             )
 
+        if args[:2] == ["issue", "view"]:
+            repo = flags["--repo"]
+            number = int(args[2])
+            url = f"https://github.com/{repo}/issues/{number}"
+            issue = self.issues.get(url)
+            if issue is None:
+                raise AssertionError(f"FakeGhRunner: 讀不存在的 issue {url}")
+            payload = {
+                "number": issue["number"], "title": issue["title"],
+                "body": issue["body"], "state": issue.get("state", "OPEN"), "url": url,
+            }
+            requested = str(flags["--json"]).split(",")
+            return json.dumps({k: payload[k] for k in requested})
+
         if args[:2] == ["issue", "create"]:
             repo = flags["--repo"]
             self._issue_seq += 1
@@ -224,6 +308,14 @@ class FakeGhRunner(GhRunner):
             repo = flags["--repo"]
             number = int(args[2])
             url = f"https://github.com/{repo}/issues/{number}"
+            if "--title" in flags:
+                self.issues[url]["title"] = flags["--title"]
+                # Project item 的標題是 Issue 標題的平台**導出**：真實 GitHub 上改
+                # Issue 標題，看板上那一列跟著變。替身照做，否則 amend --feature 的
+                # 「Project item title 讀回驗證」在這裡永遠讀到舊值而假紅。
+                for item in self.items.values():
+                    if item.get("issue_url") == url:
+                        item["title"] = flags["--title"]
             if "--body" in flags:
                 # ⭐ 每次改 body 都留一版——這是真實 `userContentEdits` 的語意
                 # （2026-08-25 對 aiwf#16 實測：totalCount 50、first:100 全數取回、
@@ -354,3 +446,60 @@ class FakeGhRunner(GhRunner):
                 }
             }
         raise AssertionError("FakeGhRunner: unhandled graphql query shape")
+
+
+def seed_legacy_draft_card(runner, card_id: str, *, owner: str = "acme", number: int = 1) -> str:
+    """直接以 project API 造一張 **DraftIssue** 卡（⛔ 不經 ``open``），回傳 item_id。
+
+    ⭐ **這是「遺留可讀」那一軸的輸入端**：`WF-REDESIGN-W1` 驗收 2 之後 ``open``
+    建不出 DraftIssue（創建封閉），但平台上仍可能有歷史 draft item，而
+    ``project.list_items``／``set_item_body``／``review``／``amend`` 對它們的讀取路徑
+    是**刻意保留**的。⛔ 這個 helper 不是把被移除的建立路徑從測試側搬回來——它模擬的
+    是「板上已經有一張 draft 卡」這個世界狀態，⛔ 不是 wfcli 造出來的。
+    """
+    from wf_cli.card import Card, render_issue_body
+    from wf_cli.project import (
+        create_draft_item,
+        ensure_fields,
+        resolve_project,
+        set_field_value,
+    )
+    from wf_cli.resources import ResourceDeclaration
+
+    card = Card(
+        card_id=card_id,
+        feature="遺留 draft 卡",
+        tier="T3",
+        db_scope="none",
+        core_pain="痛點文字",
+        service_goal="服務的原始目標文字",
+        resources=ResourceDeclaration(db_scope="none"),
+        executor_capability="主力型",
+        executor_capability_reason="跨模組改動",
+        reviewer_capability="主力型",
+        reviewer_capability_reason="一般 review 即可",
+        acceptance=["可獨立驗證的驗收條件一條"],
+    )
+    item_id = create_draft_item(
+        runner, owner, number, f"{card.card_id} {card.feature}", render_issue_body(card)
+    )
+    project = resolve_project(runner, owner, number)
+    fields = ensure_fields(runner, owner, number)
+    for name, value in {
+        "卡ID": card.card_id,
+        "Initiative": "—",
+        "級別": card.tier,
+        "功能": card.feature,
+        "owner": card.owner,
+        "分支worktree": card.branch_worktree,
+        "iteration": card.iteration,
+        "交付狀態": card.delivery_status,
+        "部署狀態": card.deployment_status,
+        "最後交接": card.last_handoff,
+        "服務的原始目標": card.service_goal,
+        "鏈深": card.chain_depth,
+        "資源宣告": card.resources.summary(),
+        "階段": "需求",
+    }.items():
+        set_field_value(runner, project, item_id, fields[name], value)
+    return item_id

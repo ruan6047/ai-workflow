@@ -34,7 +34,7 @@ from wf_cli.project import (
 )
 
 from .conftest import git
-from .fake_gh import FakeGhRunner
+from .fake_gh import FakeGhRunner, open_required_argv, seed_legacy_draft_card
 from .test_card import ROUTING_LINE_RE
 from .test_pitfalls import with_pitfall_report
 
@@ -82,7 +82,22 @@ def run_cli(argv: list[str]) -> int:
     return args.func(args)
 
 
-BASE_TARGET = ["--owner", "acme", "--project", "1"]
+#: ⚠️ 目標一律帶 ``--repo``：``open`` 改成 ``--from-issue`` 之後每張卡都是
+#: **issue-backed**（DraftIssue 的建立已封閉，`WF-REDESIGN-W1` 驗收 2），而
+#: ``set_item_body`` 對真 Issue 需要 repo 與 issue_number 才改得動 body。
+#: ⛔ 這不是本卡改了 amend／handoff 的契約——那條要求本來就在，只是以前
+#: 不帶 ``--repo`` 開出來的是 draft 卡，走的是另一條 ID 命名空間。
+BASE_TARGET = ["--owner", "acme", "--project", "1", "--repo", ASSIGN_REPO]
+
+
+#: ``open`` 的卡面表單必填欄（`WF-REDESIGN-W1` 驗收 3）預設值。⛔ 佔位字串是刻意的：
+#: 本檔量的是**指令的接線**，不是表單內容的品質——內容判準⛔ 不存在（PM 只判有沒有填）。
+CARD_FACE_DEFAULTS = {
+    "--stage-plan": "需求=把清單項變成一張可派工的卡",
+    "--tier-basis-sensitive-surfaces": "wfcli 狀態面寫入通道",
+    "--tier-basis-recoverability": "git revert",
+    "--tier-basis-blast-radius": "單一 repo",
+}
 
 
 def _open_argv(card_id: str, **overrides) -> list[str]:
@@ -96,11 +111,20 @@ def _open_argv(card_id: str, **overrides) -> list[str]:
         "--exec-capability-reason": "跨模組改動",
         "--review-capability": "主力型",
         "--review-capability-reason": "一般 review 即可",
+        "--acceptance": "可獨立驗證的驗收條件一條",
+        **CARD_FACE_DEFAULTS,
     }
     defaults.update(overrides)
+    # ⭐ ``open`` 已不再建立 issue（驗收 2）⇒ 每張測試卡都得先有一個**清單項**可升級。
+    # ⛔ 不讓替身在 `issue view` 時自動生一個：那等於把被移除的路徑從測試側偷渡回來。
+    defaults.setdefault(
+        "--from-issue",
+        open_cmd.default_runner.seed_list_issue(overrides.get("--repo", "acme/workflow")),
+    )
     argv = ["open", *BASE_TARGET, card_id]
     for k, v in defaults.items():
-        argv += [k, v]
+        for one in (v if isinstance(v, list) else [v]):
+            argv += [k, one]
     return argv
 
 
@@ -199,7 +223,7 @@ def test_open_default_still_reaches_backlog_through_the_checked_transition(fake_
     assert list_items(fake_runner, project)[0].fields["交付狀態"] == "📥Backlog"
 
 
-def test_open_creates_draft_item_with_all_ledger_fields(fake_runner, capsys):
+def test_open_upgrades_a_list_issue_with_all_ledger_fields(fake_runner, capsys):
     rc = run_cli(_open_argv("DEMO-CARD1", **{"--resources": "file:demo.py,port:9000"}))
     assert rc == 0
     project = resolve_project(fake_runner, "acme", 1)
@@ -214,8 +238,11 @@ def test_open_creates_draft_item_with_all_ledger_fields(fake_runner, capsys):
     assert item.fields["部署狀態"] == "—不適用"
     assert "file:demo.py" in item.body
     assert "## 資源宣告" in item.body
+    # ⭐ open 已不再建立任何 issue，它**升級**一個既有的清單項（驗收 2）⇒ 卡的內容
+    # 型別恆為 Issue，⛔ 不再有 DraftIssue 那條分支。
+    assert item.content_type == "Issue" and item.issue_url is not None
     out = capsys.readouterr().out
-    assert "已建立卡 DEMO-CARD1" in out
+    assert "已由清單項升級為卡 DEMO-CARD1" in out
 
 
 def test_open_rejects_blank_required_fields_even_though_argparse_accepted_them(fake_runner):
@@ -906,7 +933,7 @@ def test_assign_blocks_draft_issue_card(fake_runner, capsys):
     這正是本檔其餘 assign 測試全部得改成真 Issue 的原因，明寫成一條測試而不是
     藏在 fixture 的沉默行為裡。
     """
-    run_cli(_open_argv("DRAFT-CARD1"))  # 沒有 --repo ＝ DraftIssue
+    seed_legacy_draft_card(fake_runner, "DRAFT-CARD1")  # ⛔ open 已建不出 draft
     rc = run_cli(_assign_argv("DRAFT-CARD1", "某模型@某工具", "b", "/w"))
     assert rc == 5
     assert "判不出卡所屬 repo" in capsys.readouterr().err
@@ -1304,13 +1331,25 @@ def test_handoff_iteration_override_takes_precedence_over_auto_increment(fake_ru
     assert item.fields["iteration"] == 10
 
 
-def test_open_needs_deploy_flag_sets_initial_deployment_status(fake_runner):
+def test_open_derives_initial_deployment_status_from_the_stage_plan(fake_runner):
+    """部署狀態的初值由**階段計畫**導出，⛔ 不再有獨立旗標（`WF-REDESIGN-W1` 驗收 4）。
+
+    取代關係逐字見 `docs/research/WORKFLOW-REDESIGN-2026-08-30.md` §一第 12 列
+    （被取代者＝那個旗標；取代者＝開卡表單「階段計畫」；owner＝W1）。
+    ⛔ 兩個方向都要測：宣告了部署階段 ⇒ ⏸未部署；沒宣告 ⇒ —不適用。單測前者的話，
+    「一律回 ⏸未部署」這個實作也會綠。
+    """
     argv = _open_argv("DEPLOY-FLAG-CARD1")
-    argv.append("--needs-deploy")
+    argv += ["--stage-plan", "部署=上線並驗證"]
     assert run_cli(argv) == 0
+    assert run_cli(_open_argv("DEPLOY-FLAG-CARD2")) == 0
     project = resolve_project(fake_runner, "acme", 1)
-    item = list_items(fake_runner, project)[0]
-    assert item.fields["部署狀態"] == "⏸未部署"
+    seen = {
+        i.fields["卡ID"]: i.fields["部署狀態"]
+        for i in list_items(fake_runner, project)
+        if i.fields["卡ID"].startswith("DEPLOY-FLAG-")
+    }
+    assert seen == {"DEPLOY-FLAG-CARD1": "⏸未部署", "DEPLOY-FLAG-CARD2": "—不適用"}, seen
 
 
 def test_deploy_declare_corrects_not_applicable_to_undeployed_with_auditable_decision(fake_runner):
@@ -1367,7 +1406,7 @@ def test_deploy_declare_reports_partial_write_when_item_mutation_fails_after_tim
 
 def test_deploy_declare_rejects_any_state_other_than_not_applicable(fake_runner):
     open_argv = _open_argv("DEPLOY-DECLARE-CARD2", **{"--repo": "acme/workflow"})
-    open_argv.append("--needs-deploy")
+    open_argv += ["--stage-plan", "部署=上線並驗證"]
     run_cli(open_argv)
     fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
     project = resolve_project(fake_runner, "acme", 1)
@@ -1414,7 +1453,7 @@ def test_deploy_declare_dry_run_writes_nothing(fake_runner, capsys):
 
 def test_deploy_state_advances_one_legal_step_updates_builtin_status_and_issue_timeline(fake_runner):
     open_argv = _open_argv("DEPLOY-STATE-CARD1", **{"--repo": "acme/workflow"})
-    open_argv.append("--needs-deploy")
+    open_argv += ["--stage-plan", "部署=上線並驗證"]
     run_cli(open_argv)
     fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
 
@@ -1438,7 +1477,7 @@ def test_deploy_state_advances_one_legal_step_updates_builtin_status_and_issue_t
 
 def test_deploy_state_maps_every_legal_step_to_the_expected_builtin_status(fake_runner):
     open_argv = _open_argv("DEPLOY-STATE-CARD-MAPPING", **{"--repo": "acme/workflow"})
-    open_argv.append("--needs-deploy")
+    open_argv += ["--stage-plan", "部署=上線並驗證"]
     run_cli(open_argv)
     fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
     project = resolve_project(fake_runner, "acme", 1)
@@ -1458,7 +1497,7 @@ def test_deploy_state_maps_every_legal_step_to_the_expected_builtin_status(fake_
 
 def test_deploy_state_rejects_illegal_jump_without_timeline_or_item_mutation(fake_runner):
     open_argv = _open_argv("DEPLOY-STATE-CARD2", **{"--repo": "acme/workflow"})
-    open_argv.append("--needs-deploy")
+    open_argv += ["--stage-plan", "部署=上線並驗證"]
     run_cli(open_argv)
     fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
     project = resolve_project(fake_runner, "acme", 1)
@@ -1489,7 +1528,7 @@ def test_deploy_state_cannot_reclassify_not_applicable_card_as_deployable(fake_r
 
 def test_deploy_state_dry_run_validates_but_does_not_write(fake_runner, capsys):
     open_argv = _open_argv("DEPLOY-STATE-CARD3", **{"--repo": "acme/workflow"})
-    open_argv.append("--needs-deploy")
+    open_argv += ["--stage-plan", "部署=上線並驗證"]
     run_cli(open_argv)
     fake_runner.add_builtin_status("acme", 1, ["Todo", "In Progress", "Done"])
 
@@ -1506,7 +1545,7 @@ def test_deploy_state_dry_run_validates_but_does_not_write(fake_runner, capsys):
 
 def test_handoff_release_blocked_when_deploy_not_verified(fake_runner):
     argv = _open_argv("RELEASE-CARD1")
-    argv.append("--needs-deploy")  # 部署狀態初始為 ⏸未部署，尚未 ✅已驗證
+    argv += ["--stage-plan", "部署=上線並驗證"]  # 部署狀態初始為 ⏸未部署，尚未 ✅已驗證
     run_cli(argv)
 
     rc = run_cli(_handoff_argv("RELEASE-CARD1", "c" * 40, **{"--next-stage": "release"}))
@@ -1518,7 +1557,7 @@ def test_handoff_release_allowed_once_deployment_verified(fake_runner):
     # （由各專案自己的部署管線／DEPLOYMENT.md 負責），這裡直接寫欄位模擬「已完成
     # 部署驗證」的前提，只驗證 handoff release 閘門本身在此前提下確實放行。
     argv = _open_argv("RELEASE-CARD1B")
-    argv.append("--needs-deploy")
+    argv += ["--stage-plan", "部署=上線並驗證"]
     run_cli(argv)
     project = resolve_project(fake_runner, "acme", 1)
     fields = ensure_fields(fake_runner, "acme", 1)
@@ -1714,10 +1753,36 @@ def test_amend_restore_header_refuses_a_card_that_already_has_it(fake_runner):
 # ---------------------------------------------------------------------------
 
 
-def _budget_card(fake_runner, card_id="BUDGET-CARD"):
+def _budget_card(fake_runner, card_id="BUDGET-CARD", *, forget_revisions=True):
+    """開一張卡；``forget_revisions`` 為真時清掉平台版本歷史。
+
+    ⚠️ **預設清掉是刻意的**：``open --from-issue`` 自己就編輯過一次 body（把清單項
+    改寫成卡面）⇒ 新卡自誕生起就有一版，而本檔多條測試量的是 ``totalCount == 0``
+    的全文退路。清掉版本＝造出「open 之前就存在、body 從未被編輯過」的舊卡世界狀態，
+    ⛔ 不是遮掉一個迴歸——指紋路徑本身另有
+    ``test_log_records_fingerprints_not_full_text_when_a_revision_exists``
+    與 ``test_upgraded_card_takes_the_fingerprint_path_on_its_first_amend`` 兩條在釘。
+    """
     run_cli(_open_argv(card_id, **{"--repo": ASSIGN_REPO}))
+    if forget_revisions:
+        fake_runner.forget_revisions()
     project = resolve_project(fake_runner, "acme", 1)
     return project, find_item_by_card_id(list_items(fake_runner, project), card_id)
+
+
+def test_upgraded_card_takes_the_fingerprint_path_on_its_first_amend(fake_runner):
+    """⭐ `WF-REDESIGN-W1` 之後的**新**行為，明寫成一條而不是藏在別的測試的沉默裡。
+
+    ``open --from-issue`` 把清單項的 body 改寫成卡面 ⇒ 平台的 ``userContentEdits``
+    從那一刻起就有一版（清單項原文）⇒ 這張卡的**第一次** amend 就走指紋路徑。
+    ⛔ 這不是資料損失：amend 寫入後的前一版就是這次被改掉的卡面 body，舊值取得回。
+    """
+    project, _ = _budget_card(fake_runner, "UPGRADED-FIRST", forget_revisions=False)
+    run_cli(["amend", *BASE_TARGET, "--repo", ASSIGN_REPO, "UPGRADED-FIRST",
+             "--reason", "升級後的第一次修訂", "--acceptance", "只有這一條"])
+    body = find_item_by_card_id(list_items(fake_runner, project), "UPGRADED-FIRST").body
+    last = body.split("\n## Log", 1)[1].strip().splitlines()[-1]
+    assert "sha256:" in last, f"升級後的卡第一次 amend 竟走全文路徑：{last[:200]}"
 
 
 def test_log_records_fingerprints_not_full_text_when_a_revision_exists(fake_runner):
@@ -1931,7 +1996,9 @@ def test_draft_issue_card_always_falls_back_to_full_text(fake_runner):
     ⭐ A2 逐字要求「兩條各須有獨立測試」。自審發現 (b) 有、(a) 沒有——本檔原有的
     四處 `DraftIssue` 全屬 `assign` 的 repo 判定，⛔ 與本卡無關。
     """
-    run_cli(_open_argv("DRAFT-BUDGET"))  # 沒有 --repo ＝ DraftIssue
+    # ⚠️ ``open`` 已建不出 DraftIssue（驗收 2）⇒ 這裡直接以 project API 造一張，
+    # 模擬「板上已有的歷史 draft 卡」。⛔ 不是把被移除的建立路徑搬回測試側。
+    seed_legacy_draft_card(fake_runner, "DRAFT-BUDGET")
     project = resolve_project(fake_runner, "acme", 1)
     run_cli(["amend", *BASE_TARGET, "DRAFT-BUDGET",
              "--reason", "draft 卡必須寫全文", "--acceptance", "可辨識的驗收原文"])
@@ -2012,3 +2079,174 @@ def test_no_user_facing_text_still_claims_the_log_holds_the_full_old_value():
     assert not hits, f"仍有過期的還原指引：{hits}"
     # ⭐ 負控：確認掃描抓得到東西——這兩句必須存在，否則本測試是零資訊。
     assert "見平台前一版" in src and "原值已完整寫入 Log" in src
+
+
+# ==========================================================================
+# `WF-REDESIGN-W1` 驗收 2／4：--from-issue 是唯一開卡路徑
+# ==========================================================================
+
+
+def test_open_has_no_way_to_create_an_issue_or_a_draft_item():
+    """⭐ **創建封閉**那一軸（驗收 2）。
+
+    ⛔ 不用「跑一次看看有沒有建出來」證明——那只證明這一次的輸入沒走到。這裡直接
+    釘住 ``open_cmd`` 這個模組**構造上**碰不到兩個建立函式：名字不在它的命名空間裡，
+    原始碼裡也沒有那兩個字面。⇒ 要把路徑加回來，這條會轉紅。
+    """
+    import inspect
+
+    source = inspect.getsource(open_cmd)
+    for creator in ("create_repo_issue", "create_draft_item"):
+        assert not hasattr(open_cmd, creator), f"{creator} 又被 import 回 open_cmd"
+        # 模組 docstring 逐字談到這兩條被移除的分支，⇒ 只數「出現次數」會誤判。
+        code = source.split('"""', 2)[-1]
+        assert creator not in code, f"{creator} 又出現在 open_cmd 的程式碼裡"
+
+
+def test_open_without_from_issue_is_refused_by_argparse(fake_runner):
+    """舊路徑實跑確認移除：不給 ``--from-issue`` 連 parse 都過不了。"""
+    parser = build_parser()
+    argv = [a for a in _open_argv("NOFROM-CARD1") if a != "--from-issue"]
+    argv = [a for a in argv if not a.startswith("https://github.com/")]
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)
+
+
+def test_needs_deploy_flag_is_gone(fake_runner):
+    """驗收 4：``--needs-deploy`` 移除（取代者＝開卡表單「階段計畫」）。"""
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args([*_open_argv("NODEPLOY-CARD1"), "--needs-deploy"])
+
+
+def test_open_refuses_an_issue_missing_form_fields_and_prints_a_runnable_fix(fake_runner, capsys):
+    """驗證項一：對**缺表單欄位**的 ``--from-issue`` 實跑拒收，訊息含補救。
+
+    ⭐ 同時斷言**零寫入**：project 連解析都沒發生 ⇒ 拒收排在任何遠端寫入之前。
+    """
+    url = fake_runner.seed_list_issue("acme/workflow", body="### 出處可指\n\n只填了一欄\n")
+    rc = run_cli(_open_argv("INTAKE-SHORT1", **{"--from-issue": url}))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "缺收件表單欄位" in err
+    assert "是觀察不是結論" in err and "提案者身分" in err
+    assert f"gh issue edit 1 --repo acme/workflow --body-file /tmp/intake-1.md" in err
+    assert fake_runner.projects == {} and fake_runner.items == {}
+
+
+def test_open_refuses_a_url_that_is_not_the_normal_form(fake_runner, capsys):
+    rc = run_cli(_open_argv("BADURL-CARD1", **{"--from-issue": "https://github.com/acme/wf/pull/3"}))
+    assert rc == 2
+    assert "不是正規形" in capsys.readouterr().err
+    assert fake_runner.projects == {} and fake_runner.items == {}
+
+
+def test_open_refuses_to_upgrade_a_body_that_is_already_a_card(fake_runner, capsys):
+    """半途中斷的還原路徑：body 已是卡面 ⇒ 拒收，並給**可跑**的還原指令。"""
+    assert run_cli(_open_argv("RESUME-CARD1")) == 0
+    card_url = list_items(fake_runner, resolve_project(fake_runner, "acme", 1))[0].issue_url
+    capsys.readouterr()
+    rc = run_cli(_open_argv("RESUME-CARD2", **{"--from-issue": card_url}))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "已經是卡面" in err
+    assert "gh api graphql" in err and "userContentEdits" in err
+    assert "gh issue edit" in err
+
+
+def test_open_refuses_an_issue_that_is_already_on_the_board(fake_runner, capsys):
+    """清單項的定義是「**不在** Project #4 的 issue」⇒ 已上板的不得再升級一次。
+
+    ⚠️ 與上一條不同：這裡連 body 都還沒被改寫過（測試自己把清單項掛上板），
+    ⇒ 擋它的是**板上有沒有**，⛔ 不是 body 長什麼樣。
+    """
+    from wf_cli.project import add_item_to_project
+
+    url = fake_runner.seed_list_issue("acme/workflow")
+    resolve_project(fake_runner, "acme", 1)
+    add_item_to_project(fake_runner, "acme", 1, url)
+    capsys.readouterr()
+    rc = run_cli(_open_argv("ONBOARD-CARD1", **{"--from-issue": url}))
+    assert rc == 3
+    assert "它已經是卡" in capsys.readouterr().err
+
+
+def test_open_requires_at_least_one_non_blank_acceptance(fake_runner, capsys):
+    """驗收 4：驗收條件改必填（≥1）。argparse 擋「一條都沒給」，CLI 擋空白字串。"""
+    parser = build_parser()
+    argv = _open_argv("ACC-CARD1")
+    stripped = []
+    skip = False
+    for token in argv:
+        if skip:
+            skip = False
+            continue
+        if token == "--acceptance":
+            skip = True
+            continue
+        stripped.append(token)
+    with pytest.raises(SystemExit):
+        parser.parse_args(stripped)
+
+    rc = run_cli(_open_argv("ACC-CARD2", **{"--acceptance": "   "}))
+    assert rc == 2
+    assert "至少要有一條非空白的驗收條件" in capsys.readouterr().err
+    assert fake_runner.items == {}
+
+
+def test_open_writes_the_card_face_form_and_it_reads_back(fake_runner):
+    """驗收 3 的 writer 側 e2e：開卡寫進去的表單，reader 逐字讀得回。"""
+    from wf_cli.card_face import parse_block as parse_card_face
+
+    assert run_cli(
+        _open_argv("FACE-CARD1", **{
+            "--stage-plan": ["需求=把清單項變成卡", "執行=實作與自測"],
+            "--list-convergence": "https://github.com/ruan6047/ai-workflow/issues/177=related",
+        })
+    ) == 0
+    item = list_items(fake_runner, resolve_project(fake_runner, "acme", 1))[0]
+    assert parse_card_face(item.body) == {
+        "schema_version": "1",
+        "stage_plan": [
+            {"stage": "需求", "goal": "把清單項變成卡"},
+            {"stage": "執行", "goal": "實作與自測"},
+        ],
+        "tier_basis": {
+            "sensitive_surfaces": "wfcli 狀態面寫入通道",
+            "recoverability": "git revert",
+            "blast_radius": "單一 repo",
+        },
+        "list_convergence": [
+            {"issue_url": "https://github.com/ruan6047/ai-workflow/issues/177", "claim": "related"}
+        ],
+    }
+
+
+def test_open_refuses_a_duplicate_stage_before_touching_github(fake_runner, capsys):
+    rc = run_cli(
+        _open_argv("FACE-DUP1", **{"--stage-plan": ["需求=甲", "需求=乙"]})
+    )
+    assert rc == 2
+    assert "重複的 stage" in capsys.readouterr().err
+    assert fake_runner.projects == {} and fake_runner.items == {}
+
+
+def test_open_records_the_source_list_item_and_its_fingerprint_in_the_log(fake_runner):
+    """升級留痕：Log 指得回來源清單項，並記下被覆寫的原文指紋。"""
+    import hashlib
+
+    from .fake_gh import COMPLETE_INTAKE_BODY
+
+    url = fake_runner.seed_list_issue("acme/workflow")
+    assert run_cli(_open_argv("PROV-CARD1", **{"--from-issue": url})) == 0
+    body = list_items(fake_runner, resolve_project(fake_runner, "acme", 1))[0].body
+    digest = hashlib.sha256(COMPLETE_INTAKE_BODY.encode("utf-8")).hexdigest()
+    assert f"由待審清單項 {url} 升級" in body
+    assert f"清單項原文 sha256:{digest}" in body
+
+
+def test_open_rewrites_the_issue_title_to_card_id_and_feature(fake_runner):
+    assert run_cli(_open_argv("TITLE-CARD1", **{"--feature": "待審清單與開卡閘"})) == 0
+    item = list_items(fake_runner, resolve_project(fake_runner, "acme", 1))[0]
+    assert item.title == "TITLE-CARD1 待審清單與開卡閘"
+    assert fake_runner.issues[item.issue_url]["title"] == "TITLE-CARD1 待審清單與開卡閘"
