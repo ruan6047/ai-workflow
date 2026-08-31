@@ -198,14 +198,17 @@ def test_id_patterns_clean_and_adjacent(tmp_path):
 
 # ---- inventory 契約 ----
 
+def _claim(token, occ, reason="design-closed-set", rationale="「樣例」＝測試用枚舉理由"):
+    return {"token": token, "occurrence": occ, "reason": reason, "rationale": rationale}
+
+
 def _entry(line, claims):
     return {("probe.md", pns._line_key(line)): {"claims": claims}}
 
 
 def test_inventory_pins_line_text(tmp_path):
     line = "信封固定為 8 欄，缺一即拒。"
-    inv = _entry(line, [{"token": "8", "reason": "design-closed-set",
-                         "rationale": "「8 欄」＝信封欄位枚舉"}])
+    inv = _entry(line, [_claim("8", 0, rationale="「8 欄」＝信封欄位枚舉")])
     assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["b"]
     rows2 = _scan_text(tmp_path, "信封固定為 9 欄，缺一即拒。", inventory=inv)
     assert [r["class"] for r in rows2] == ["unclassified"]
@@ -214,27 +217,90 @@ def test_inventory_pins_line_text(tmp_path):
 def test_claims_must_cover_every_token(tmp_path):
     # R16：行級單一 rationale 放行整列 tokens 被退回——漏 token 即紅
     line = "信封 8 欄共 3 類。"
-    inv = _entry(line, [{"token": "8", "reason": "design-closed-set",
-                         "rationale": "「8 欄」＝信封欄位枚舉"}])
+    inv = _entry(line, [_claim("8", 0, rationale="「8 欄」＝信封欄位枚舉")])
     assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["claims-mismatch"]
 
 
 def test_claims_must_not_exceed_tokens(tmp_path):
     line = "信封固定為 8 欄，缺一即拒。"
-    inv = _entry(line, [{"token": "8", "reason": "design-closed-set", "rationale": "「8 欄」＝枚舉"},
-                        {"token": "3", "reason": "design-closed-set", "rationale": "幽靈 claim"}])
+    inv = _entry(line, [_claim("8", 0, rationale="「8 欄」＝枚舉"),
+                        _claim("3", 1, rationale="幽靈 claim 佔位")])
     assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["claims-mismatch"]
 
 
-def test_repeated_token_needs_one_claim_per_occurrence(tmp_path):
+def test_repeated_token_needs_occurrence_bound_claims(tmp_path):
+    # R17：multiset 只證數量——兩個 8 綁在同一 occurrence 即紅，⛔ 數量對就放行
     line = "共 8 份檔案，預期 8 全綠。"
-    one = _entry(line, [{"token": "8", "reason": "design-closed-set", "rationale": "「8 份」＝檔案枚舉"}])
-    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=one)] == ["claims-mismatch"]
-    two = _entry(line, [
-        {"token": "8", "reason": "design-closed-set", "rationale": "「8 份」＝檔案枚舉"},
-        {"token": "8", "reason": "threshold-ruling", "rationale": "「預期 8」＝oracle 期望值"},
+    both_on_first = _entry(line, [
+        _claim("8", 0, rationale="「8 份」＝檔案枚舉"),
+        _claim("8", 0, "threshold-ruling", "「預期 8」＝oracle 期望值"),
     ])
-    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=two)] == ["b"]
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=both_on_first)] \
+        == ["claims-mismatch"]
+    bound = _entry(line, [
+        _claim("8", 0, rationale="「8 份」＝檔案枚舉"),
+        _claim("8", 1, "threshold-ruling", "「預期 8」＝oracle 期望值"),
+    ])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=bound)] == ["b"]
+
+
+# ---- closed claim schema：主 scanner 自驗，⛔ 不倚賴 pytest 對當下檔案（R17） ----
+
+def test_illegal_reason_is_fail_closed(tmp_path):
+    line = "目前有 42 張卡。"
+    inv = _entry(line, [_claim("42", 0, reason="environment-fact",
+                               rationale="非法類別測試")])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["invalid-claims"]
+
+
+def test_empty_rationale_is_fail_closed(tmp_path):
+    line = "目前有 42 張卡。"
+    inv = _entry(line, [_claim("42", 0, rationale="")])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["invalid-claims"]
+
+
+def test_extra_claim_key_is_fail_closed(tmp_path):
+    line = "目前有 42 張卡。"
+    c = _claim("42", 0, rationale="「42 張」測試")
+    c["note"] = "偷渡欄位"
+    inv = _entry(line, [c])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["invalid-claims"]
+
+
+def _fake_corpus(tmp_path, monkeypatch, text, entries):
+    corpus = tmp_path / "corpus.md"
+    corpus.write_text(text + "\n", encoding="utf-8")
+    invp = tmp_path / "inv.json"
+    invp.write_text(json.dumps({"_meta": {}, "entries": entries}, ensure_ascii=False),
+                    encoding="utf-8")
+    monkeypatch.setattr(pns, "INVENTORY_PATH", invp)
+    monkeypatch.setattr(pns, "corpus_paths", lambda: [corpus])
+    monkeypatch.setattr(pns, "REPO_ROOT", tmp_path)
+
+
+def test_dead_entry_reported_without_crash(tmp_path, monkeypatch, capsys):
+    # R17：dead-entry 路徑曾 KeyError 'reason'——新 schema 下必須可讀輸出且 rc=1
+    _fake_corpus(tmp_path, monkeypatch, "2026-08-30 有 7 張卡。", [
+        {"path": "corpus.md", "line_sha1": "0" * 40, "excerpt": "早已被改掉的行",
+         "claims": [_claim("9", 0)]},
+    ])
+    rc = pns.main([])
+    out = capsys.readouterr().out
+    assert rc == 1 and "[dead-entry]" in out and "早已被改掉的行"[:8] in out
+
+
+def test_json_mode_carries_mismatch_evidence(tmp_path, monkeypatch, capsys):
+    # R17：--json 曾只吐兩個空清單——mismatch 證據與各項計數必須全數在 payload
+    line = "信封 8 欄共 3 類。"
+    _fake_corpus(tmp_path, monkeypatch, line, [
+        {"path": "corpus.md", "line_sha1": pns._line_key(line), "excerpt": line[:20],
+         "claims": [_claim("8", 0, rationale="「8 欄」＝枚舉")]},
+    ])
+    rc = pns.main(["--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert payload["counts"]["claims_mismatch"] == 1
+    assert payload["claims_mismatch"][0]["uncovered"], payload
 
 
 def test_inventory_reasons_pinned_to_pm_conduct_b():
@@ -252,6 +318,13 @@ def test_every_claim_carries_line_specific_rationale():
            if not c.get("rationale") or c["rationale"].strip() == c["reason"]
            or len(c["rationale"]) < 10]
     assert bad == []
+
+
+def test_every_inventory_claim_is_occurrence_bound():
+    data = json.loads(pns.INVENTORY_PATH.read_text(encoding="utf-8"))
+    for e in data["entries"]:
+        occs = sorted(c["occurrence"] for c in e["claims"])
+        assert occs == list(range(len(occs))), e["excerpt"]
 
 
 # ---- 語料與 CLI ----

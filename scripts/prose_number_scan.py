@@ -217,11 +217,15 @@ def scan_file(path: Path, inventory: dict[tuple[str, str], dict] | None = None,
             entry = (inventory or {}).get((rel, _line_key(line)))
             if entry is None:
                 cls, reason = "unclassified", ""
+            elif _entry_schema_errors(entry):
+                # scanner 自身驗 closed claim schema——⛔ 不倚賴 pytest 對當下檔案
+                cls, reason = "invalid-claims", ""
             else:
-                # 逐 token 覆蓋：偵測 multiset 與 claims multiset 必須一一相等
-                detected = sorted(arabic + chinese)
-                claimed = sorted(c["token"] for c in entry.get("claims", []))
-                if detected == claimed:
+                # 逐 occurrence 綁定：第 i 個偵測必須恰有一個 claim(occurrence=i, token=t_i)
+                detected = arabic + chinese
+                pairs = {(c["occurrence"], c["token"]) for c in entry["claims"]}
+                want = {(i, t) for i, t in enumerate(detected)}
+                if pairs == want and len(entry["claims"]) == len(detected):
                     cls, reason = "b", "claims"
                 else:
                     cls, reason = "claims-mismatch", ""
@@ -230,8 +234,39 @@ def scan_file(path: Path, inventory: dict[tuple[str, str], dict] | None = None,
     return rows
 
 
-def load_inventory(path: Path = INVENTORY_PATH) -> dict[tuple[str, str], dict]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+_ENTRY_KEYS = {"path", "line_sha1", "excerpt", "claims"}
+_CLAIM_KEYS = {"token", "occurrence", "reason", "rationale"}
+
+
+def _entry_schema_errors(entry: dict) -> list[str]:
+    """closed claim schema 驗證：鍵封閉、reason 屬兩值、rationale 非空、occurrence 非負。"""
+    errs = []
+    extra = set(entry) - _ENTRY_KEYS
+    if extra:
+        errs.append(f"entry 鍵超出封閉集合：{sorted(extra)}")
+    claims = entry.get("claims")
+    if not isinstance(claims, list) or not claims:
+        errs.append("claims 缺失或為空")
+        return errs
+    for i, c in enumerate(claims):
+        if not isinstance(c, dict) or set(c) != _CLAIM_KEYS:
+            errs.append(f"claim[{i}] 鍵不等於封閉集合 {sorted(_CLAIM_KEYS)}")
+            continue
+        if c["reason"] not in ALLOWED_B_REASONS:
+            errs.append(f"claim[{i}] reason 非法：{c['reason']!r}")
+        if not isinstance(c["rationale"], str) or not c["rationale"].strip() \
+                or c["rationale"].strip() == c["reason"]:
+            errs.append(f"claim[{i}] rationale 空缺或自證")
+        if not isinstance(c["occurrence"], int) or c["occurrence"] < 0:
+            errs.append(f"claim[{i}] occurrence 非法")
+        if not isinstance(c["token"], str) or not c["token"]:
+            errs.append(f"claim[{i}] token 非法")
+    return errs
+
+
+def load_inventory(path: Path | None = None) -> dict[tuple[str, str], dict]:
+    # 晚綁定：預設參數在 import 時凍結會讓測試替身打不進（monkeypatch 失效）
+    data = json.loads((path or INVENTORY_PATH).read_text(encoding="utf-8"))
     return {(e["path"], e["line_sha1"]): e for e in data["entries"]}
 
 
@@ -244,20 +279,19 @@ def scan_corpus() -> dict:
             for r in rows if r["class"] in ("b", "claims-mismatch")}
     dead = [e for k, e in inventory.items() if k not in used]
     mismatch = []
+    invalid = []
     for r in rows:
-        if r["class"] != "claims-mismatch":
+        entry = inventory.get((r["path"], _line_key(r["text"])))
+        if r["class"] == "invalid-claims":
+            invalid.append({"path": r["path"], "line": r["line"],
+                            "errors": _entry_schema_errors(entry or {}),
+                            "text": r["text"]})
+        if r["class"] != "claims-mismatch" or entry is None:
             continue
-        entry = inventory[(r["path"], _line_key(r["text"]))]
-        detected = sorted(r["tokens"])
-        claimed = sorted(c["token"] for c in entry.get("claims", []))
-        uncovered = list(detected)
-        for t in claimed:
-            if t in uncovered:
-                uncovered.remove(t)
-        extra = list(claimed)
-        for t in detected:
-            if t in extra:
-                extra.remove(t)
+        want = [(i, t) for i, t in enumerate(r["tokens"])]
+        got = [(c["occurrence"], c["token"]) for c in entry["claims"]]
+        uncovered = [p for p in want if p not in got]
+        extra = [p for p in got if p not in want]
         mismatch.append({"path": r["path"], "line": r["line"],
                          "uncovered": uncovered, "extra": extra,
                          "text": r["text"]})
@@ -265,6 +299,7 @@ def scan_corpus() -> dict:
         "rows": rows,
         "unclassified": [r for r in rows if r["class"] == "unclassified"],
         "dead_entries": dead,
+        "invalid_entries": invalid,
         "uncovered_claims": [m for m in mismatch if m["uncovered"]],
         "extra_claims": [m for m in mismatch if m["extra"]],
         "claims_mismatch": mismatch,
@@ -289,25 +324,34 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if bad else 0
 
     result = scan_corpus()
+    evidence_keys = ("unclassified", "dead_entries", "invalid_entries",
+                     "uncovered_claims", "extra_claims", "claims_mismatch")
     if args.json:
-        print(json.dumps({k: result[k] for k in ("unclassified", "dead_entries")},
-                         ensure_ascii=False, indent=1))
+        # 失敗證據契約：四項計數＋逐列 mismatch／invalid 證據全數輸出
+        payload = {k: result[k] for k in evidence_keys}
+        payload["counts"] = {k: len(result[k]) for k in evidence_keys}
+        payload["total"] = len(result["rows"])
+        print(json.dumps(payload, ensure_ascii=False, indent=1, default=str))
     else:
         for r in result["unclassified"]:
             print(f'[unclassified] {r["path"]}:{r["line"]} {r["tokens"]} | {r["text"][:100]}')
         for e in result["dead_entries"]:
-            print(f'[dead-entry] {e["path"]} sha1={e["line_sha1"][:12]} ({e["reason"]})')
+            print(f'[dead-entry] {e["path"]} sha1={e["line_sha1"][:12]} '
+                  f'({e.get("excerpt", "")[:40]})')
+        for v in result["invalid_entries"]:
+            print(f'[invalid-claims] {v["path"]}:{v["line"]} {v["errors"]}')
         for m in result["claims_mismatch"]:
             print(f'[claims-mismatch] {m["path"]}:{m["line"]} '
                   f'uncovered={m["uncovered"]} extra={m["extra"]}')
         counts = {"total": len(result["rows"]),
                   "unclassified": len(result["unclassified"]),
                   "dead_entries": len(result["dead_entries"]),
+                  "invalid_entries": len(result["invalid_entries"]),
                   "uncovered_claims": len(result["uncovered_claims"]),
                   "extra_claims": len(result["extra_claims"])}
         print(json.dumps(counts, ensure_ascii=False))
     red = (result["unclassified"] or result["dead_entries"]
-           or result["claims_mismatch"])
+           or result["invalid_entries"] or result["claims_mismatch"])
     return 1 if red else 0
 
 
