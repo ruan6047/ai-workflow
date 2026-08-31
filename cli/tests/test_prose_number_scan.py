@@ -203,7 +203,9 @@ def _claim(token, occ, reason="design-closed-set", rationale="「樣例」＝測
 
 
 def _entry(line, claims):
-    return {("probe.md", pns._line_key(line)): {"claims": claims}}
+    key = pns._line_key(line)
+    return {("probe.md", key): {"path": "probe.md", "line_sha1": key,
+                                "excerpt": line[:20], "claims": claims}}
 
 
 def test_inventory_pins_line_text(tmp_path):
@@ -287,6 +289,51 @@ def test_dead_entry_reported_without_crash(tmp_path, monkeypatch, capsys):
     rc = pns.main([])
     out = capsys.readouterr().out
     assert rc == 1 and "[dead-entry]" in out and "早已被改掉的行"[:8] in out
+
+
+# ---- load 期 entry identity 驗證（R18：缺欄曾 class b／KeyError） ----
+
+def _load_case(tmp_path, monkeypatch, capsys, entry):
+    _fake_corpus(tmp_path, monkeypatch, "2026-08-30 有 7 張卡。", [entry])
+    rc = pns.main([])
+    return rc, capsys.readouterr().out
+
+
+def _valid_load_entry():
+    return {"path": "corpus.md", "line_sha1": "a" * 40, "excerpt": "樣例行",
+            "claims": [_claim("9", 0)]}
+
+
+def test_missing_excerpt_is_invalid_not_b(tmp_path, monkeypatch, capsys):
+    e = _valid_load_entry(); del e["excerpt"]
+    rc, out = _load_case(tmp_path, monkeypatch, capsys, e)
+    assert rc == 1 and "[invalid-claims]" in out and "excerpt" in out
+
+
+def test_missing_path_reported_not_keyerror(tmp_path, monkeypatch, capsys):
+    e = _valid_load_entry(); del e["path"]
+    rc, out = _load_case(tmp_path, monkeypatch, capsys, e)
+    assert rc == 1 and "[invalid-claims]" in out
+
+
+def test_missing_line_sha1_reported_not_keyerror(tmp_path, monkeypatch, capsys):
+    e = _valid_load_entry(); del e["line_sha1"]
+    rc, out = _load_case(tmp_path, monkeypatch, capsys, e)
+    assert rc == 1 and "[invalid-claims]" in out
+
+
+def test_wrong_sha1_type_is_invalid(tmp_path, monkeypatch, capsys):
+    e = _valid_load_entry(); e["line_sha1"] = "not-a-sha"
+    rc, out = _load_case(tmp_path, monkeypatch, capsys, e)
+    assert rc == 1 and "40 位 hex" in out
+
+
+def test_duplicate_identity_fails_closed(tmp_path, monkeypatch, capsys):
+    _fake_corpus(tmp_path, monkeypatch, "2026-08-30 有 7 張卡。",
+                 [_valid_load_entry(), _valid_load_entry()])
+    rc = pns.main([])
+    out = capsys.readouterr().out
+    assert rc == 1 and "duplicate" in out
 
 
 def test_json_mode_carries_mismatch_evidence(tmp_path, monkeypatch, capsys):
