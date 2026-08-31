@@ -18,7 +18,7 @@ replacement_rows: [1, 3]
 3. 取代清單 **rows 1、3** 的舊文刪除（⛔ 不留屍體；其餘列各歸其 owner 卡，⛔ 不在本卡動）
 4. （P1-31 修訂：raw grep 無法同時表達 0 與豁免、零命中還 rc=1 ⇒ 改 **allowlist-aware checker**）拋棄式檢查腳本：對 post-image 逐符掃描、逐命中輸出 file／line／context；核准例外住 **versioned manifest＝`scripts/pollution-allowlist.json`**（逐 hit 綁 token＋file＋穩定 anchor）；唯一 pass criterion＝`unapproved_count==0`；**negative control 於 temp fixture／worktree 副本執行⛔ 不污染 merge result**；stdout／stderr／rc 分開釘。canonical 行號引用守衛綠
 5. （P1-31 併判準）三個腐爛自述（「短版」／「最後核實：<日期>」／行數自述 `[0-9]{3,} ?行`）改為 **checker 的輸入 token**——⛔ 不另宣告 raw count=0；豁免同走 manifest，輸出與 AC4 同一份
+6. ⭐（丙修訂）8 份 stage-rules 以 move 生效、節號引用對齊新 canonical；tier-rules 框架層檔上線（環境枚舉與別名表移交 DATABASE_CONTRACT）——規則類整套與 canonical 同一輪跨家族審；stage-rules 內容之紅線滿足另含需求方本 session 逐條確認（§八）
 6b.（回應清冊）stage-rules 落檔時注意事項全編號化（F-<階段>-NN），**逐條清冊條文標「目標、尚未生效——機制生效於 W3′」**——決議 §三之二
 7. （R3 過渡橫幅）8 份 stage-rules 檔頂各含一行「⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative」——`grep -l 舊語彙 stage-rules/*.md | wc -l` 預期 8
-6. ⭐（丙修訂）8 份 stage-rules 以 move 生效、節號引用對齊新 canonical；tier-rules 框架層檔上線（環境枚舉與別名表移交 DATABASE_CONTRACT）——規則類整套與 canonical 同一輪跨家族審；stage-rules 內容之紅線滿足另含需求方本 session 逐條確認（§八）
 **驗證**：跨家族裁決含身分自述；test_canonical_citation_scan 綠；⭐ 對照決議紀錄逐節核對（查核者實跑取代清單全表）。
