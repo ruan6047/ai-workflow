@@ -1683,45 +1683,6 @@
    ]
   },
   {
-   "path": "docs/research/drafts/wave-specs/w0.md",
-   "line_sha1": "17fd9f2a77fe2d6bad4198442e8b6fb16cbf8e0a",
-   "excerpt": "1. pm-conduct／executor-conduct／reviewer-conduct／list-intake-requiremen",
-   "claims": [
-    {
-     "token": "四",
-     "occurrence": 0,
-     "reason": "design-closed-set",
-     "rationale": "「四份檔／四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
-    }
-   ]
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w0.md",
-   "line_sha1": "6c47b0a7107138f6906b4dbd37e881fd54fb68b4",
-   "excerpt": "**⛔ 非射程**：不改四份檔的實質內容（已確認）；不動 canonical；不建清單機制（波 1）。",
-   "claims": [
-    {
-     "token": "四",
-     "occurrence": 0,
-     "reason": "design-closed-set",
-     "rationale": "「四份檔／四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
-    }
-   ]
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w0.md",
-   "line_sha1": "f006e4529265d320658b1ffff56fd5c3235820c7",
-   "excerpt": "**痛點（落差）**：三份 conduct 與收件條件已經需求方逐條確認，但仍掛 draft-pending 隔離於 drafts/——派工",
-   "claims": [
-    {
-     "token": "三",
-     "occurrence": 0,
-     "reason": "design-closed-set",
-     "rationale": "「三份」＝W0 射程 conduct 檔枚舉"
-    }
-   ]
-  },
-  {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "00f9e020c69d9d4fd60f9941fce5f36cd32a5e4f",
    "excerpt": "1b.（P1-27）清單機制上線後同批建立**四個**清單項（W2A／W2B／W3′／切換 Initiative——內容逐字取 list-i",
