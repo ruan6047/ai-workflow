@@ -46,7 +46,7 @@ CLI 增量依決議 §七原則（動詞新增須需求方裁定、其餘走三�
 | W1 | 清單＋open --from-issue＋表單 | T3 | 獨立查核 |
 | W2A | canonical＋stage-rules＋tier-rules（規則類整套） | T4 紅線 | 跨家族（Codex） |
 | W2B | 交接範本（含 contract templates）／L0／舊模板清理 | T3 | 獨立查核；需求方閘門 |
-| W3′ | CLI 內部：Log→留言（6 寫入點）／fenced JSON／doctor 抽出／37 則訊息／find_conflicts／snapshot | T3 | 獨立查核 |
+| W3′ | CLI 內部：Log→留言（7 persistent sinks＝open 1＋append 6）／fenced JSON／doctor 抽出／37 則訊息／find_conflicts／snapshot | T3 | 獨立查核 |
 
 **⛔ 不在本 Initiative**：看板切換（改名／選項／封存）、P1-20 rehearsal 與 forward-repair、cpbl 全部（9 檔／stub／別名副本／submodule bump／原 W4 舊卡）——移交**切換 Initiative**（決議 §十之二），本卡結案條件含其清單項建立。回顧觸發錨於切換；fail-safe 2026-10-31 不變。
 
