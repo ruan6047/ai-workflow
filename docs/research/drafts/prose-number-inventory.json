@@ -701,7 +701,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/executor-conduct.md",
+   "path": "stage-rules/executor-conduct.md",
    "line_sha1": "58a72363430c1d8c4d99ab0e2b924a7a208e322d",
    "excerpt": "- worktree 紀律：Edit／Write／server 指向 worktree；一卡一 worktree 一 session。",
    "claims": [
@@ -714,7 +714,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/executor-conduct.md",
+   "path": "stage-rules/executor-conduct.md",
    "line_sha1": "cd23246c9f1f98071354b91461544d105af01a4e",
    "excerpt": "⭐ **交付報告是 ③ 的一部分**：只推 commit 沒報告＝仍在進行中，⛔ 不得轉待確認。自評只有本人寫得出來——PM 代寫的是另一份",
    "claims": [
@@ -778,7 +778,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "01959c712144b36c0e53daabd36a7c7c4522af99",
    "excerpt": "## 為什麼四項都要逐字寫進 body",
    "claims": [
@@ -791,7 +791,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "0be3ab0832f037104b7a3b0b1a901ad43316b6ae",
    "excerpt": "- ⛔ 不判斷內容對不對 —— PM 只看下列四項有沒有填",
    "claims": [
@@ -804,7 +804,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "0def658cfbcc0a4523394363deb6865c1df12f12",
    "excerpt": "| session ID | Claude：`~/.claude/projects/<cwd>/<id>.jsonl` 的 `<id>`；C",
    "claims": [
@@ -817,7 +817,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "16120709d04a20bb8398010db499758f0b8bd136",
    "excerpt": "**PM 怎麼判**：三格有沒有填。⛔ 不核對。",
    "claims": [
@@ -830,7 +830,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "1662a64b1b7ac30835a235c56509c039f665e38c",
    "excerpt": "AI 在執行其他卡時撞到的，寫「在哪張卡的哪一步撞到」。例：`執行 aiwf#165 A3 掃描時，在 snapshot_populatio",
    "claims": [
@@ -843,7 +843,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "298b98108d4df2208c011afe0fb430750fd43234",
    "excerpt": "**為什麼 session ID 不是自述**：它本身是自述，但它**指向一份本機檔案** —— 而檔案裡的 `model` 是 harne",
    "claims": [
@@ -856,7 +856,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "44f8c2c9d38f6962a6ba89c5bec569721ef6104d",
    "excerpt": "四項齊 ⇒ `gh issue create` 到指定 repo，**body 逐字含四項的填答**。",
    "claims": [
@@ -875,7 +875,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "498b2b1b2b3778442a1446146708a8128fd985cf",
    "excerpt": "⛔ **PM 不得檢查自己的提案。** 由**另一個 PM** 做這四項的收件檢查，裁決逐字寫進 issue body，含裁決者身分自述與時",
    "claims": [
@@ -894,7 +894,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "6624fc57b6d32aede5b6cae73b5e6d1d6dcd4658",
    "excerpt": "**寫什麼**：一個連結，或逐字引文加來源。",
    "claims": [
@@ -907,7 +907,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "745d7a27a5e2ca69db281d08f34070a86737a3a9",
    "excerpt": "清單項與既有卡都是 issue，⇒ 一次搜尋同時涵蓋兩者，⛔ 不需要兩套查法。",
    "claims": [
@@ -926,7 +926,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "7f4230bb8477d4b90626ccafa0a5f3cf7487806d",
    "excerpt": "⛔ **不填模型名，⛔ 不填 AI 工具。** transcript 已由 harness 寫入：Claude 每則 assistant 訊",
    "claims": [
@@ -945,7 +945,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "8759198695b7ca81a0f60410ac3d961c1b7a6c42",
    "excerpt": "⚠️ 清單項⛔ **不可配卡ID** —— `open` 的唯一性檢查只看 Project #4 的 items，配了 ID 的清單項不會被",
    "claims": [
@@ -958,7 +958,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "905ff23eefa7664d95478dd55f0c0a6f1c4c6ea4",
    "excerpt": "被 PM 擋下來的提案⛔ 不留痕（它只存在於對話視窗）。⇒ 「這道閘門有沒有在運作」只能從收進去的那些項回推。四項寫得越逐字，回推得越準。",
    "claims": [
@@ -971,7 +971,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "9612be1175cf675017765422b90fb6301e7b7029",
    "excerpt": "⚠️ **這道閘門機械上不成立，效力只來自留痕。** 跨家族查核者⛔ 沒有 wfcli 也⛔ 沒有 gh token；`gh` token ",
    "claims": [
@@ -996,7 +996,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "a2ae14548ba945333665f94a0016b895e927abc9",
    "excerpt": "⛔ 第二個 PM 由誰擔任、原始輸出需求方看不看得到 —— **未定**。",
    "claims": [
@@ -1009,7 +1009,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "c72bc4eed75e26906af50a52b00de5d57c6c8368",
    "excerpt": "**寫什麼**：三格，缺一不可。",
    "claims": [
@@ -1022,7 +1022,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "c9bd390689996ecf7f38a82e499a901284c5bfd2",
    "excerpt": "description: 提案進待審清單前必須滿足的四項條件。提案者（人或 AI）依此撰寫，PM 依此收或退。PM ⛔ 只判流程、不判內容。",
    "claims": [
@@ -1035,7 +1035,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "d9a53921e677911541a3fb069dcb15810ce321ae",
    "excerpt": "**為什麼**：關鍵字沒命中不等於不存在。「我確認過了」是宣稱，事後⛔ 查不了；「我搜了 A B C，命中 #12 #45」查得了，而且下一",
    "claims": [
@@ -1048,7 +1048,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "e54e7759c93f33e2fae39594b1c5fed6d75c2de8",
    "excerpt": "有人發現一個問題、或想要一個功能，要把它交給 PM 進待審清單時。提案者可以是人，也可以是執行其他卡時撞到問題的 AI。",
    "claims": [
@@ -1067,7 +1067,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "e94c331f26373826c94b69c3e29502c669799e0a",
    "excerpt": "缺任一項 ⇒ 退回提案者補。⛔ PM 不代填。",
    "claims": [
@@ -1080,7 +1080,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "fb3031c28f48161946ed2fe88a0838a56f37eaac",
    "excerpt": "**為什麼**：GitHub 搬 issue **會換號碼**，而號碼正是引用它的方式。放錯了就得換一次號。",
    "claims": [
@@ -1093,7 +1093,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "fe9bc8d851e3ca650404fe1dcdf945cc388ea45c",
    "excerpt": "⚠️ 這一格的存在是本設計自己造成的：`issue.author` 本來就是 GitHub 記的事實、不可造假，但「PM 是清單唯一 wri",
    "claims": [
@@ -1177,7 +1177,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "0e7dd5e7f075743849e504539c426cc90bc796c0",
    "excerpt": "## 三 · 動作前四問",
    "claims": [
@@ -1190,7 +1190,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "1b0170ea66adc502a6043194826bd4eb61d9d1be",
    "excerpt": "⇒ **同族第三張出現時停手**，改判「這是一根問題還是 N 個實例」。若是實例 ⇒ 正解是**一張窮舉卡**，且開它之前先量母體。⛔ 不是",
    "claims": [
@@ -1215,7 +1215,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "40a89abfd5e71ffec88d4859404afcef336527c8",
    "excerpt": "- ⛔ **不裁定升級四選一** —— PM 只準備升級單（三次退回的逐字理由＋痛點原文＋四個值各自「若成立會是什麼證據」），裁定歸需求方。",
    "claims": [
@@ -1234,7 +1234,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "58fed365e3ea94a8652d3e171f7976d805e0a741",
    "excerpt": "**對價：結案報告閘。** 每張直行的卡進結案／待確認後，PM 呈**一屏內**的結案報告（七段：痛點→處置／裁決摘要含 blocking ",
    "claims": [
@@ -1247,7 +1247,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "7158fb23768c4be3d15a16437d31fc1c179d91b7",
    "excerpt": "- **提案被推翻後⛔ 不當場翻面** —— 重新研究至少三輪（各須新量測或新母體）再給新建議。被推翻＝原證據基礎不足，翻面沿用的是同一個不",
    "claims": [
@@ -1266,7 +1266,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "a3a6f0f798fdaf45bc3dbc7cb31969ad55e82d17",
    "excerpt": "一次授權⛔ 不延伸到下一次；上一張卡的同意⛔ 不適用於這一張。",
    "claims": [
@@ -1297,7 +1297,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "a950c9fd4548f3478471493bf5d494c2768ed9b0",
    "excerpt": "⚠️ 代價同場實證：Codex 的裁決⛔ 沒寫派審詞明文要求的 session ID ⇒ **每換一個實體，就有一批未明說的慣例會掉**。⇒",
    "claims": [
@@ -1316,7 +1316,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "d157f4682491ea5da1c69013cc3e49cf11ab1b53",
    "excerpt": "**轉手一個 finding 等於背書它。** 轉手前先驗兩件：那份 artifact 是誰產出的、它要求的機制有沒有 writer。",
    "claims": [
@@ -1329,7 +1329,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "e4c79b5d62b30d9c5ad0c66bccfd0156d4c0bb10",
    "excerpt": "- ⛔ **不檢查自己的提案** —— PM 自己發起的提案由**另一個 PM** 收件檢查。",
    "claims": [
@@ -1342,7 +1342,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "e8cdd8d15014a1a6b7e883794cad2494c8351d2c",
    "excerpt": "PM 自己提案時，收件檢查由**另一個 PM** 做，裁決由那個 PM **自己寫進 issue body**，⛔ 不經第一個 PM 轉錄。",
    "claims": [
@@ -1361,7 +1361,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "path": "stage-rules/pm-conduct.md",
    "line_sha1": "ff504c8ffbfebf9f29178c3fe654b7c7d550d203",
    "excerpt": "- **兼任執行者的線**：T0／T1 可兼；**T2 以上⛔ 不可兼**（T2 起負規劃義務＝要有第二個判斷）。⛔ 判準是風險軸，⛔ 不得",
    "claims": [
@@ -1599,7 +1599,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/reviewer-conduct.md",
+   "path": "stage-rules/reviewer-conduct.md",
    "line_sha1": "9b172cc8265c2d8f91a01b75d3221de871c99ff8",
    "excerpt": "- **高階型研究卡**：可重跑＋**≥3 個不同族角度的對抗性反測**（時間外／母體外／洩漏探針／重抽／規則邊界）；角度不適用寫「不適用：",
    "claims": [
@@ -1612,7 +1612,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/reviewer-conduct.md",
+   "path": "stage-rules/reviewer-conduct.md",
    "line_sha1": "c38ed46f9e4f2ace083ac6755e42f665586e287c",
    "excerpt": "被派審裁決的 AI 或人工。⚠️ 你可能來自另一個實體——**本檔與派審詞就是全部要求**，沒寫的慣例⛔ 不存在。",
    "claims": [
@@ -1625,7 +1625,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/reviewer-conduct.md",
+   "path": "stage-rules/reviewer-conduct.md",
    "line_sha1": "cb16c6b1e33d79372fac615ae44f6230d4567702",
    "excerpt": "- **root_cause_id 對照派審詞所列的前輪**，同根因沿用同字串；⭐ 你若判出同根因第三輪，寫明並建議升級，⛔ 不再開新輪。",
    "claims": [
