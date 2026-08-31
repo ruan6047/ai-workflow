@@ -34,7 +34,12 @@ suite（成對測試：真識別子剝除／同形量測必響）釘住每一條
 
 - 行文被改／被刪 ⇒ inventory 條目變**死條目**（load-bearing 檢查，轉紅）。
 - 新增未分類數字 ⇒ unclassified，轉紅。
-- 唯一判準：``unclassified_count == 0 && dead_entries == 0``。
+- claims 逐 token：每筆 (b) 條目帶 ``claims``（token → reason＋rationale），
+  scanner 驗偵測 token multiset 與 claims **一一相等**——漏一（uncovered）、
+  多一（extra）、同 token 不同語意未分開，均轉紅（R16：行級單一 rationale
+  放行整列 tokens 被裁決退回；需求方 2026-08-31 裁定乙＝逐 token claims）。
+- 唯一判準（四項全零）：``unclassified == 0 && dead_entries == 0 &&
+  uncovered_claims == 0 && extra_claims == 0``。
 
 ## 射程
 
@@ -160,16 +165,36 @@ def _line_key(text: str) -> str:
     return hashlib.sha1(text.strip().encode("utf-8")).hexdigest()
 
 
+_FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
 def _prose_lines(text: str):
-    """逐行產出 (行號, 行文)，整塊跳過 fenced code block（Markdown tokenization）。"""
-    in_fence = False
+    """逐行產出 (行號, 行文)，整塊跳過 fenced code block。
+
+    fence 狀態機依 CommonMark 子集三條規則（R16 反例：單一 boolean 翻轉會被
+    「四反引號外層＋三反引號內文」的合法 Markdown 打穿）：
+    - opener 記住**字元種類與長度**（```` 與 ``` 是不同 opener）；
+    - closer 須同字元、長度**不短於** opener、且整行除尾端空白外只有 fence
+      （帶 info string 的行不是 closer）；反引號與波浪號**不互關**；
+    - EOF 隱式關閉。
+    """
+    fence_char: str | None = None
+    fence_len = 0
     for lineno, line in enumerate(text.splitlines(), 1):
-        if re.match(r"^\s*(```|~~~)", line):
-            in_fence = not in_fence
+        m = _FENCE_OPEN.match(line)
+        if fence_char is None:
+            if m:
+                fence_char = m.group(1)[0]
+                fence_len = len(m.group(1))
+                continue
+            yield lineno, line
+        else:
+            if (m and m.group(1)[0] == fence_char
+                    and len(m.group(1)) >= fence_len
+                    and m.group(2).strip() == ""):
+                fence_char = None
+                fence_len = 0
             continue
-        if in_fence:
-            continue
-        yield lineno, line
 
 
 def scan_file(path: Path, inventory: dict[tuple[str, str], dict] | None = None,
@@ -190,10 +215,16 @@ def scan_file(path: Path, inventory: dict[tuple[str, str], dict] | None = None,
             cls, reason = "c", "artifact-pinned"
         else:
             entry = (inventory or {}).get((rel, _line_key(line)))
-            if entry is not None:
-                cls, reason = "b", entry["reason"]
-            else:
+            if entry is None:
                 cls, reason = "unclassified", ""
+            else:
+                # 逐 token 覆蓋：偵測 multiset 與 claims multiset 必須一一相等
+                detected = sorted(arabic + chinese)
+                claimed = sorted(c["token"] for c in entry.get("claims", []))
+                if detected == claimed:
+                    cls, reason = "b", "claims"
+                else:
+                    cls, reason = "claims-mismatch", ""
         rows.append({"path": rel, "line": lineno, "tokens": arabic + chinese,
                      "class": cls, "reason": reason, "text": line})
     return rows
@@ -209,12 +240,34 @@ def scan_corpus() -> dict:
     rows: list[dict] = []
     for p in corpus_paths():
         rows.extend(scan_file(p, inventory))
-    used = {(r["path"], _line_key(r["text"])) for r in rows if r["class"] == "b"}
+    used = {(r["path"], _line_key(r["text"]))
+            for r in rows if r["class"] in ("b", "claims-mismatch")}
     dead = [e for k, e in inventory.items() if k not in used]
+    mismatch = []
+    for r in rows:
+        if r["class"] != "claims-mismatch":
+            continue
+        entry = inventory[(r["path"], _line_key(r["text"]))]
+        detected = sorted(r["tokens"])
+        claimed = sorted(c["token"] for c in entry.get("claims", []))
+        uncovered = list(detected)
+        for t in claimed:
+            if t in uncovered:
+                uncovered.remove(t)
+        extra = list(claimed)
+        for t in detected:
+            if t in extra:
+                extra.remove(t)
+        mismatch.append({"path": r["path"], "line": r["line"],
+                         "uncovered": uncovered, "extra": extra,
+                         "text": r["text"]})
     return {
         "rows": rows,
         "unclassified": [r for r in rows if r["class"] == "unclassified"],
         "dead_entries": dead,
+        "uncovered_claims": [m for m in mismatch if m["uncovered"]],
+        "extra_claims": [m for m in mismatch if m["extra"]],
+        "claims_mismatch": mismatch,
     }
 
 
@@ -244,11 +297,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f'[unclassified] {r["path"]}:{r["line"]} {r["tokens"]} | {r["text"][:100]}')
         for e in result["dead_entries"]:
             print(f'[dead-entry] {e["path"]} sha1={e["line_sha1"][:12]} ({e["reason"]})')
+        for m in result["claims_mismatch"]:
+            print(f'[claims-mismatch] {m["path"]}:{m["line"]} '
+                  f'uncovered={m["uncovered"]} extra={m["extra"]}')
         counts = {"total": len(result["rows"]),
                   "unclassified": len(result["unclassified"]),
-                  "dead_entries": len(result["dead_entries"])}
+                  "dead_entries": len(result["dead_entries"]),
+                  "uncovered_claims": len(result["uncovered_claims"]),
+                  "extra_claims": len(result["extra_claims"])}
         print(json.dumps(counts, ensure_ascii=False))
-    red = result["unclassified"] or result["dead_entries"]
+    red = (result["unclassified"] or result["dead_entries"]
+           or result["claims_mismatch"])
     return 1 if red else 0
 
 
