@@ -1,12 +1,9 @@
 {
  "_meta": {
-  "spec": "P1-38 (b) 白名單分類：行文 SHA-1 釘住，改字即脫鉤轉紅",
+  "spec": "P1-38 (b) 白名單：行文 SHA-1 釘住（改字即脫鉤轉紅）；reason 僅限 pm-conduct 三形態之 (b) 兩類；rationale 逐筆說明該行數字為何屬白名單",
   "classes": {
    "threshold-ruling": "閾值／裁定值——數字是規則本身",
-   "design-closed-set": "設計封閉集合基數／不變量——數字是結構定義",
-   "code-or-pattern-constant": "程式碼、schema、查詢常數——非敘述量測",
-   "environment-fact": "環境結構事實（repo/token 配置）非量測",
-   "historical-event-count": "書寫當時的事件史計數，指過去事件不隨現況漂"
+   "design-closed-set": "不變量／設計封閉集合基數——數字是結構定義（含序數慣用語之非量測數）"
   }
  },
  "entries": [
@@ -14,889 +11,897 @@
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "0021ae4c79816c33e3d39fc51eff3aabb1aebd87",
    "reason": "threshold-ruling",
-   "excerpt": "**規劃 8**：驗收可追溯痛點／⛔不拿全 repo 現況當本卡標準／檢查非零資訊（先講什麼會推翻它）／間歇缺陷預先登記"
+   "rationale": "「同族／同根因第三次」＝停手與升級的裁定門檻，數字即規則",
+   "excerpt": "**規劃 8**：驗收可追溯痛點／⛔不拿全 repo 現況當本卡標準／檢查非零資訊（先講什麼會推翻它）／間歇缺陷預先登記可證偽預測／守衛基線"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "00e9c4ed8a8320b37ac4a72a76854deeda3f4d0c",
    "reason": "threshold-ruling",
-   "excerpt": "- **開卡表單**：A 逐字繼承（痛點原文／出處／身分／repo）＋ B 新增（卡ID·功能·⛔非射程·**階段計畫*"
+   "rationale": "「驗收 ≥1」＝開卡表單的裁定門檻，數字即規則（決議 §四）",
+   "excerpt": "- **開卡表單**：A 逐字繼承（痛點原文／出處／身分／repo）＋ B 新增（卡ID·功能·⛔非射程·**階段計畫**·**驗收≥1 逐"
+  },
+  {
+   "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
+   "line_sha1": "06f22717217b512041e2d18250b34a7cb07d687d",
+   "reason": "design-closed-set",
+   "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′），設計封閉集合",
+   "excerpt": "## 十 · 四波五卡實施與切換移交"
+  },
+  {
+   "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
+   "line_sha1": "27d1b1a727af4ee72ec2c0371a4f9fe39a7b0885",
+   "reason": "design-closed-set",
+   "rationale": "「6」＝決議 §六角色表枚舉基數（本節列出全部六角色）",
+   "excerpt": "## 六 · 角色（6）與授權"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "30fa395f096ec423fcd1fdfb4b974354dae5ed78",
    "reason": "design-closed-set",
-   "excerpt": "- **階段 8**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案（* 可跳過；跑"
+   "rationale": "「8 階段」＝決議 §三枚舉的階段集合（行內以箭頭列出全部成員）",
+   "excerpt": "- **階段 8**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案（* 可跳過；跑哪些由開卡「階段計畫"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "3314fcae06d4f4ba8420b436a95e520bcbbe0160",
    "reason": "design-closed-set",
-   "excerpt": "**硬依賴鏈：W0 → W1 → W2A → W2B → W3′**（前張終態才可開下張）。本 Initiative 交"
+   "rationale": "「15 值」＝舊制看板狀態單欄的枚舉基數（canonical §0 條文定義的封閉集合，指設計非量測）",
+   "excerpt": "**硬依賴鏈：W0 → W1 → W2A → W2B → W3′**（前張終態才可開下張）。本 Initiative 交付＝**框架就緒、⛔"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "44ea04c5c7e80444547b0049e4f883ce6f8f3a07",
    "reason": "design-closed-set",
-   "excerpt": "- **狀態 10 bit**：通用 7（待辦／進行中／待確認／完成／退回＋正交：阻塞／升級）＋專屬 3（研究·**不可"
+   "rationale": "「10 bit」＝通用 7＋專屬 3 的狀態枚舉和（成員行內列明）",
+   "excerpt": "- **狀態 10 bit**：通用 7（待辦／進行中／待確認／完成／退回＋正交：阻塞／升級）＋專屬 3（研究·**不可判定**、維護·**"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "49d8eca3e167d982382177419369ba78bae7a1ea",
    "reason": "design-closed-set",
-   "excerpt": "- 級別**單向門**：升自由；降須需求方裁定留痕。分級表兩層 DI（框架＝canonical「變更級別」段（§0 前言"
+   "rationale": "「三層／兩層」＝DI 注入層級枚舉（任務→專案→框架），設計封閉集合",
+   "excerpt": "- 級別**單向門**：升自由；降須需求方裁定留痕。分級表兩層 DI（框架＝canonical「變更級別」段（§0 前言，逐字「取風險、影響"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "4e827c1e72d33c35189703409571cf6c0a186eb0",
    "reason": "design-closed-set",
-   "excerpt": "- **轉移記錄**：`時間 from(階段/狀態) to 輪次`，⛔ 無第五欄（升級出口例外多一值）。不變量：卡面現值"
+   "rationale": "轉移記錄欄數＝四欄設計（時間/from/to/輪次），「無第五欄」＝該封閉結構的否定式陳述",
+   "excerpt": "- **轉移記錄**：`時間 from(階段/狀態) to 輪次`，⛔ 無第五欄（升級出口例外多一值）。不變量：卡面現值＝最後一行 to。"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "5076f0a2e0ee8df158f28aa3955da4f159727662",
    "reason": "design-closed-set",
-   "excerpt": "- **收件五條件**（PM 只判流程）：出處可指／是觀察不是結論（⭐ 唯一需第二 PM）／查重留痕（列關鍵字＋命中）／"
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
+   "excerpt": "- **收件五條件**（PM 只判流程）：出處可指／是觀察不是結論（⭐ 唯一需第二 PM）／查重留痕（列關鍵字＋命中）／屬哪 repo／提案"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "522f3e8a7c4f7d0563530aec7b1239280420a75a",
    "reason": "design-closed-set",
-   "excerpt": "注意事項全編號化（`F-<階段>-NN`／`P-`／`T-`，W2A 落檔時做）；③ 交回必附回應清冊——對 ① 印出之"
+   "rationale": "「三值」＝回應清冊值域枚舉（行內列明）；「三層」＝DI 層級枚舉",
+   "excerpt": "注意事項全編號化（`F-<階段>-NN`／`P-`／`T-`，W2A 落檔時做）；③ 交回必附回應清冊——對 ① 印出之三層編號清單**逐條"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "53f0de2ac3c98971323672dafb6c0e7f85901b38",
    "reason": "design-closed-set",
-   "excerpt": "- 交接文件五份：派工包／交付報告／派審詞／裁決／狀態變更裁定單；共同信封（卡與身分＋**已知未驗項逐項＋各自原因、分驗"
-  },
-  {
-   "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
-   "line_sha1": "54ddade426c35540dc6e0b4353ebbc7347a165ff",
-   "reason": "historical-event-count",
-   "excerpt": "- **Log 移出 body**（P1-33 十二輪定稿，⛔ 原「一則固定留言」模型已因無 CAS 廢棄）：**一事件"
+   "rationale": "「五份」＝交接文件枚舉（行內列明：派工包／交付報告／派審詞／裁決／狀態變更裁定單）",
+   "excerpt": "- 交接文件五份：派工包／交付報告／派審詞／裁決／狀態變更裁定單；共同信封（卡與身分＋**已知未驗項逐項＋各自原因、分驗不了／沒去驗／刻意不"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "6334a86f3c2c7b89f1dd2047c2a9550bac55d6fe",
    "reason": "design-closed-set",
-   "excerpt": "**結案 7**：合併⛔非結案／不帶 --cleanup 的 release 寫明理由／終態才釋放資源／清單收斂核對／補"
+   "rationale": "前綴數＝該階段注意事項定稿條數（本行即逐條枚舉該清冊，數字＝行內成員數）",
+   "excerpt": "**結案 7**：合併⛔非結案／不帶 --cleanup 的 release 寫明理由／終態才釋放資源／清單收斂核對／補帳⛔不代寫他人 fi"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "63d42f7054a82fdb57abc187cd2010c0ee85cb16",
    "reason": "design-closed-set",
+   "rationale": "前綴數＝該階段注意事項定稿條數（本行即逐條枚舉該清冊，數字＝行內成員數）",
    "excerpt": "**部署 0／維護 0**：留空標⛔ 未寫，累積實例後補。"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "684be32afe33dacd3486e710ccf446adbaf01772",
    "reason": "design-closed-set",
+   "rationale": "7／6＝canonical §1 舊角色表與決議 §六新角色表的枚舉基數（成員行內或該節列明）",
    "excerpt": "| 3 | canonical §1 角色表（7 角色） | 本紀錄 §六（6 角色） | W2A | 待做 |"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "7ad1ffdccaa700a4d3eaf58b9d25d6ab3eabccea",
    "reason": "threshold-ruling",
-   "excerpt": "**需求 15**：清單項升級（--from-issue）／痛點逐字沿用／卡ID 升級才配／查重列關鍵字／清單收斂宣告／"
+   "rationale": "「驗收 ≥1」＝開卡表單的裁定門檻，數字即規則（決議 §四）",
+   "excerpt": "**需求 15**：清單項升級（--from-issue）／痛點逐字沿用／卡ID 升級才配／查重列關鍵字／清單收斂宣告／同族第三張改窮舉卡先"
+  },
+  {
+   "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
+   "line_sha1": "7c59645247e97346618424fcb647987343fd9777",
+   "reason": "design-closed-set",
+   "rationale": "「8×10」＝決議 §三定義的階段×狀態矩陣基數（兩軸成員均於 §三枚舉）",
+   "excerpt": "## 三 · 階段與狀態（8 × 10）"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "7db873d96999b310f49fcf9d658a06e52a5d79e9",
    "reason": "design-closed-set",
-   "excerpt": "**執行 12**：worktree 路徑紀律／（並行共用 checkout 時）逐檔 add、SHA rev-pars"
+   "rationale": "前綴數＝該階段注意事項定稿條數（本行即逐條枚舉該清冊，數字＝行內成員數）",
+   "excerpt": "**執行 12**：worktree 路徑紀律／（並行共用 checkout 時）逐檔 add、SHA rev-parse／⛔不截斷輸出／r"
+  },
+  {
+   "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
+   "line_sha1": "85170c60817d9a65f41a50a7d6ab8271f0585572",
+   "reason": "threshold-ruling",
+   "rationale": "升級／升遷門檻＝裁定值（第 3 次、3 張卡），數字即規則",
+   "excerpt": "## 八 · 注意事項（定稿；各階段條數見下、⛔ 不另記總數——總數是會漂的第二居所。DI 三層：任務→專案→框架；累加⛔ 不覆寫；升遷門檻"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "9aa64613d40fecd14c102fa93ef59bdcb16a292e",
    "reason": "design-closed-set",
+   "rationale": "「8×10」＝決議 §三定義的階段×狀態矩陣基數（兩軸成員均於 §三枚舉）",
    "excerpt": "| 2 | 看板實際狀態語彙（15 值） | 8×10 cutover | 切換 Initiative | 待開 |"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "a99f5f916f9a749792b377ef9665639f1dfd64b7",
    "reason": "design-closed-set",
-   "excerpt": "> ⛔ 本紀錄非生效條文。生效走四波五卡施工（切換與 cpbl 移植另歸切換 Initiative）；`drafts/`"
+   "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′），設計封閉集合",
+   "excerpt": "> ⛔ 本紀錄非生效條文。生效走四波五卡施工（切換與 cpbl 移植另歸切換 Initiative）；`drafts/` 下全部檔案 `st"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "be18e1143829f4a4df100769068de3073bf3910a",
    "reason": "design-closed-set",
-   "excerpt": "**研究 14**：先量母體／不窮舉時報母體與掃量（紅數＝下界）／實跑⛔不讀碼推論／量在 origin/main／驗證器"
+   "rationale": "前綴數＝該階段注意事項定稿條數（本行即逐條枚舉該清冊，數字＝行內成員數）",
+   "excerpt": "**研究 14**：先量母體／不窮舉時報母體與掃量（紅數＝下界）／實跑⛔不讀碼推論／量在 origin/main／驗證器 import／不顯"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "c24666f45538a41447c739b5a9351a8cd5484e29",
+   "reason": "design-closed-set",
+   "rationale": "前綴數＝該階段注意事項定稿條數（本行即逐條枚舉該清冊，數字＝行內成員數）",
+   "excerpt": "**審核 9**：基線 merge-base 釘死／轉手 finding＝背書／self_run 實跑 rc 分開取／core_pain_r"
+  },
+  {
+   "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
+   "line_sha1": "e15366c249e290fafc7da838440991a8af273689",
    "reason": "threshold-ruling",
-   "excerpt": "**審核 9**：基線 merge-base 釘死／轉手 finding＝背書／self_run 實跑 rc 分開取／c"
+   "rationale": "T0/T1/T2＝級別枚舉引用；可兼線＝裁定門檻（風險軸）",
+   "excerpt": "- 同卡同輪一人一角。PM 兼執行：**T0/T1 可、T2+ ⛔ 不可**（風險軸⛔ 非難度軸）。"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "e2216b0bd55f65bde69c004802a7509fcb886dce",
    "reason": "threshold-ruling",
-   "excerpt": "- **迴圈 5 步**：① CLI 印三層注意事項＋清冊 ② PM 派 ③ 執行者交回 ④ 多輪有序 R1 前提→R2"
+   "rationale": "升級／升遷門檻＝裁定值（第 3 次、3 張卡），數字即規則",
+   "excerpt": "- **迴圈 5 步**：① CLI 印三層注意事項＋清冊 ② PM 派 ③ 執行者交回 ④ 多輪有序 R1 前提→R2 射程→R3 內容→"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "f8b8562dc9a4ad245f37724a311e8072cd0bb85d",
    "reason": "design-closed-set",
-   "excerpt": "| 1 | canonical §0 十五值單欄序列（條文） | 本紀錄 §三（8×10），帶「尚未切換」標記 | W2"
+   "rationale": "「8×10」＝決議 §三定義的階段×狀態矩陣基數（兩軸成員均於 §三枚舉）",
+   "excerpt": "| 1 | canonical §0 十五值單欄序列（條文） | 本紀錄 §三（8×10），帶「尚未切換」標記 | W2A | 待做 |"
   },
   {
    "path": "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
    "line_sha1": "fb851956080dc6d7d016acd7d98c5b9ad960539c",
    "reason": "threshold-ruling",
-   "excerpt": "- 研究高階型：查核＝可重跑＋**≥3 不同族角度對抗性反測**（不適用附原因）；執行者必附可重跑 harness。交付"
+   "rationale": "「≥3 不同族反測」＝高階型查核的裁定門檻，數字即規則（決議 §六）",
+   "excerpt": "- 研究高階型：查核＝可重跑＋**≥3 不同族角度對抗性反測**（不適用附原因）；執行者必附可重跑 harness。交付報告缺席＝③ 未完成"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
    "line_sha1": "099c814990f03576f9128b2f3bd6922fddf07a74",
    "reason": "design-closed-set",
-   "excerpt": "- （R9–13 累增）reader 按 op id 去重＋corruption gate 的實作可行性——W3′ 執行"
+   "rationale": "「第一步」＝序數慣用語，非量測",
+   "excerpt": "- （R9–13 累增）reader 按 op id 去重＋corruption gate 的實作可行性——W3′ 執行期第一步"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
    "line_sha1": "1bf74045adc0656ae45fa63d06ae9f71236e552a",
    "reason": "threshold-ruling",
-   "excerpt": "**回顧三指標的 regime-neutral 定義（新舊制語意相同，供 N=30 對照）**：①清單項→卡轉化（舊制以"
+   "rationale": "「N=30」＝回顧樣本量裁定值（brief N=30 依據段推導），數字即規則",
+   "excerpt": "**回顧三指標的 regime-neutral 定義（新舊制語意相同，供 N=30 對照）**：①清單項→卡轉化（舊制以「開卡即卡」折算）；"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
    "line_sha1": "22dd39525052c928b2d0d95ba2acc89b52cba744",
    "reason": "design-closed-set",
+   "rationale": "「×3」＝conduct 檔枚舉（pm/executor/reviewer），W0 射程行內定義",
    "excerpt": "| W0 | conduct×3＋intake 生效（sign-off 審） | T4 | 執行⛔ PM 不可兼 |"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
    "line_sha1": "3f13c09c3dfd3bb981a315dcf4766539ed11af29",
    "reason": "design-closed-set",
+   "rationale": "「三」＝服務目標並列枚舉（可稽核／防事故／流程順暢），行內列明",
    "excerpt": "可稽核＋防低級事故＋**流程順暢**（第三項為本次新增的並列目標——前兩項不得以犧牲它的方式達成）。"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
    "line_sha1": "5a99c29e907b4a51b3426b97df4ba6c193a9fb7a",
    "reason": "design-closed-set",
+   "rationale": "「7 值」＝部署狀態舊選單的枚舉基數（已推翻假設引用該設計集合）",
    "excerpt": "- 「部署狀態是正交軸」→ 7 值全部映射到通用狀態 ⇒ 退位成記錄"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
-   "line_sha1": "631d3207686f0075ff2cd6c4fae02b5a5b464b43",
+   "line_sha1": "6c137ac375794aefaa79331b16ded976fdb4db8f",
    "reason": "design-closed-set",
-   "excerpt": "決議紀錄 §一 取代清單＋§二 污染符封閉集合；派工包定閱讀清單；查核 grep diff；波 2 刪⛔ 不留。"
+   "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′），設計封閉集合",
+   "excerpt": "## 拆卡定稿（乙′ 解耦：四波五卡，全 aiwf、零不可逆；硬依賴 W0→W1→W2A→W2B→W3′）"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
    "line_sha1": "828c0a85db571550386c6a08daaab0db0c3f1e16",
    "reason": "design-closed-set",
-   "excerpt": "description: 四波五卡施工 Initiative 的 discovery brief（WF-19 形式；切換"
-  },
-  {
-   "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
-   "line_sha1": "8f779268248eec916d325a6d8b7cc9dcca7f8f9d",
-   "reason": "design-closed-set",
-   "excerpt": "- 「SINGLE_SELECT 選項改不掉」→ updateProjectV2Field 可改可刪 ⇒ 遷移走丙（改名"
+   "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′），設計封閉集合",
+   "excerpt": "description: 四波五卡施工 Initiative 的 discovery brief（WF-19 形式；切換另 Initiati"
   },
   {
    "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
    "line_sha1": "99580b82090bf0836f4afafb733d41e5942f9d2d",
    "reason": "design-closed-set",
-   "excerpt": "CLI 增量依決議 §七原則（動詞新增須需求方裁定、其餘走三層評估、⛔ 不無限膨脹）；不批次補寫舊停卡的復活條件；不寫部"
-  },
-  {
-   "path": "docs/research/drafts/WORKFLOW-REDESIGN-INITIATIVE-BRIEF.md",
-   "line_sha1": "c8666c17b5c8dee0dd02b018325a3cd213067ea3",
-   "reason": "design-closed-set",
-   "excerpt": "「明明是為了流程順暢 現在卻卡了一個月」「現在是不是又無限開卡了」「目前框架內ＣＬＩ有點過量尤其是很多不該由ＣＬＩ處理的"
+   "rationale": "「三層／兩層」＝DI 注入層級枚舉（任務→專案→框架），設計封閉集合",
+   "excerpt": "CLI 增量依決議 §七原則（動詞新增須需求方裁定、其餘走三層評估、⛔ 不無限膨脹）；不批次補寫舊停卡的復活條件；不寫部署／維護階段內容（留"
   },
   {
    "path": "docs/research/drafts/stage-rules/closeout.md",
    "line_sha1": "116f6872ba565690eb981e5cd15091672e97c86e",
    "reason": "design-closed-set",
-   "excerpt": "產出物＝結案報告（一屏七段）＋封存（archiveProjectV2Item）。進入＝審核 APPROVE（直行卡由 P"
+   "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 結案報告閘逐段列明）",
+   "excerpt": "產出物＝結案報告（一屏七段）＋封存（archiveProjectV2Item）。進入＝審核 APPROVE（直行卡由 PM 帶入）。離開＝終"
   },
   {
    "path": "docs/research/drafts/stage-rules/closeout.md",
    "line_sha1": "42f44999597747e73ba697a9392576721004a4bd",
    "reason": "design-closed-set",
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
    "excerpt": "通用 7 ＋ 停止（終態、⛔ 無出口；裁定必含決策／原因／可證偽復活條件；復活＝開新卡）。完成與停止都跑封存。"
+  },
+  {
+   "path": "docs/research/drafts/stage-rules/closeout.md",
+   "line_sha1": "aa2eed6b77fca4d4a9be3907f96f36750d3aa125",
+   "reason": "design-closed-set",
+   "rationale": "括號數＝該階段注意事項清冊的定稿條數（決議 §八；條目即本節逐條列出，W2A 編號化後由清冊長度機械對照）",
+   "excerpt": "## 5 注意事項（7）"
   },
   {
    "path": "docs/research/drafts/stage-rules/deploy.md",
    "line_sha1": "19ce87e7579923e5982bfa10af718a6cd784e884",
    "reason": "design-closed-set",
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
    "excerpt": "通用 7 狀態；固定紀律＝先備份後驗證、部署事實（環境／時間／SHA／驗證）為本階段產出物。"
   },
   {
    "path": "docs/research/drafts/stage-rules/executor-conduct.md",
    "line_sha1": "58a72363430c1d8c4d99ab0e2b924a7a208e322d",
    "reason": "design-closed-set",
-   "excerpt": "- worktree 紀律：Edit／Write／server 指向 worktree；一卡一 worktree 一 s"
+   "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則",
+   "excerpt": "- worktree 紀律：Edit／Write／server 指向 worktree；一卡一 worktree 一 session。"
   },
   {
    "path": "docs/research/drafts/stage-rules/executor-conduct.md",
    "line_sha1": "cd23246c9f1f98071354b91461544d105af01a4e",
    "reason": "design-closed-set",
-   "excerpt": "⭐ **交付報告是 ③ 的一部分**：只推 commit 沒報告＝仍在進行中，⛔ 不得轉待確認。自評只有本人寫得出來——"
+   "rationale": "「一」系＝序數／慣用語（一部分、另一份、一張窮舉卡等），非量測",
+   "excerpt": "⭐ **交付報告是 ③ 的一部分**：只推 commit 沒報告＝仍在進行中，⛔ 不得轉待確認。自評只有本人寫得出來——PM 代寫的是另一份"
   },
   {
    "path": "docs/research/drafts/stage-rules/implementation.md",
    "line_sha1": "101f923481f3ea99118fec36b74a064381ca7058",
    "reason": "design-closed-set",
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
    "excerpt": "通用 7，不加不減。"
   },
   {
    "path": "docs/research/drafts/stage-rules/implementation.md",
-   "line_sha1": "5e3cc45b1668e3cfb1fea5c019bdaee13d7b67e9",
+   "line_sha1": "d5c2e38b71d159ea50a41fa2732aec418f646199",
    "reason": "design-closed-set",
-   "excerpt": "4. rc=0 ⛔ 不等於成功——看被改變的狀態"
+   "rationale": "括號數＝該階段注意事項清冊的定稿條數（決議 §八；條目即本節逐條列出，W2A 編號化後由清冊長度機械對照）",
+   "excerpt": "## 5 注意事項（12）"
   },
   {
    "path": "docs/research/drafts/stage-rules/implementation.md",
    "line_sha1": "f7b03b91944cccb3d25393d29a984371dfb6f7f6",
    "reason": "design-closed-set",
-   "excerpt": "② 派工包（規格＋三層注意事項＋13 族清冊＋上一輪退回理由＋信封模型行）。③ 執行者推分支＋交回交付報告——⭐ 報告是"
+   "rationale": "「三層／兩層」＝DI 注入層級枚舉（任務→專案→框架），設計封閉集合",
+   "excerpt": "② 派工包（規格＋三層注意事項＋13 族清冊＋上一輪退回理由＋信封模型行）。③ 執行者推分支＋交回交付報告——⭐ 報告是 ③ 的一部分：只推"
+  },
+  {
+   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
+   "line_sha1": "01959c712144b36c0e53daabd36a7c7c4522af99",
+   "reason": "design-closed-set",
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
+   "excerpt": "## 為什麼四項都要逐字寫進 body"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "0be3ab0832f037104b7a3b0b1a901ad43316b6ae",
    "reason": "design-closed-set",
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
    "excerpt": "- ⛔ 不判斷內容對不對 —— PM 只看下列四項有沒有填"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "0def658cfbcc0a4523394363deb6865c1df12f12",
    "reason": "design-closed-set",
-   "excerpt": "| session ID | Claude：`~/.claude/projects/<cwd>/<id>.jsonl` "
+   "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則",
+   "excerpt": "| session ID | Claude：`~/.claude/projects/<cwd>/<id>.jsonl` 的 `<id>`；C"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "16120709d04a20bb8398010db499758f0b8bd136",
    "reason": "design-closed-set",
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
    "excerpt": "**PM 怎麼判**：三格有沒有填。⛔ 不核對。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "1662a64b1b7ac30835a235c56509c039f665e38c",
    "reason": "design-closed-set",
-   "excerpt": "AI 在執行其他卡時撞到的，寫「在哪張卡的哪一步撞到」。例：`執行 aiwf#165 A3 掃描時，在 snapshot"
+   "rationale": "「一」系＝序數／慣用語（一部分、另一份、一張窮舉卡等），非量測",
+   "excerpt": "AI 在執行其他卡時撞到的，寫「在哪張卡的哪一步撞到」。例：`執行 aiwf#165 A3 掃描時，在 snapshot_populatio"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "298b98108d4df2208c011afe0fb430750fd43234",
    "reason": "design-closed-set",
-   "excerpt": "**為什麼 session ID 不是自述**：它本身是自述，但它**指向一份本機檔案** —— 而檔案裡的 `mode"
+   "rationale": "「一份／唯一」＝慣用語（session ID 指向單一 transcript 檔的陳述），非量測",
+   "excerpt": "**為什麼 session ID 不是自述**：它本身是自述，但它**指向一份本機檔案** —— 而檔案裡的 `model` 是 harne"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "44f8c2c9d38f6962a6ba89c5bec569721ef6104d",
    "reason": "design-closed-set",
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
    "excerpt": "四項齊 ⇒ `gh issue create` 到指定 repo，**body 逐字含四項的填答**。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "498b2b1b2b3778442a1446146708a8128fd985cf",
    "reason": "design-closed-set",
-   "excerpt": "⛔ **PM 不得檢查自己的提案。** 由**另一個 PM** 做這四項的收件檢查，裁決逐字寫進 issue body，"
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
+   "excerpt": "⛔ **PM 不得檢查自己的提案。** 由**另一個 PM** 做這四項的收件檢查，裁決逐字寫進 issue body，含裁決者身分自述與時"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "6624fc57b6d32aede5b6cae73b5e6d1d6dcd4658",
    "reason": "design-closed-set",
+   "rationale": "「一個」＝表單填答形式的慣用語，非量測",
    "excerpt": "**寫什麼**：一個連結，或逐字引文加來源。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "745d7a27a5e2ca69db281d08f34070a86737a3a9",
    "reason": "design-closed-set",
+   "rationale": "「一次／兩套」＝查重設計的慣用陳述（同一搜尋涵蓋兩母體），非量測",
    "excerpt": "清單項與既有卡都是 issue，⇒ 一次搜尋同時涵蓋兩者，⛔ 不需要兩套查法。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "7f4230bb8477d4b90626ccafa0a5f3cf7487806d",
    "reason": "design-closed-set",
-   "excerpt": "⛔ **不填模型名，⛔ 不填 AI 工具。** transcript 已由 harness 寫入：Claude 每則 a"
+   "rationale": "「一」系＝序數／慣用語（一部分、另一份、一張窮舉卡等），非量測",
+   "excerpt": "⛔ **不填模型名，⛔ 不填 AI 工具。** transcript 已由 harness 寫入：Claude 每則 assistant 訊"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "8759198695b7ca81a0f60410ac3d961c1b7a6c42",
    "reason": "design-closed-set",
-   "excerpt": "⚠️ 清單項⛔ **不可配卡ID** —— `open` 的唯一性檢查只看 Project #4 的 items，配了 "
+   "rationale": "「第二張」＝重複開卡的序數慣用語，非量測",
+   "excerpt": "⚠️ 清單項⛔ **不可配卡ID** —— `open` 的唯一性檢查只看 Project #4 的 items，配了 ID 的清單項不會被"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "905ff23eefa7664d95478dd55f0c0a6f1c4c6ea4",
    "reason": "design-closed-set",
-   "excerpt": "被 PM 擋下來的提案⛔ 不留痕（它只存在於對話視窗）。⇒ 「這道閘門有沒有在運作」只能從收進去的那些項回推。四項寫得越"
+   "rationale": "「四項」＝收件條件枚舉引用（本檔條件 1–4），設計封閉集合",
+   "excerpt": "被 PM 擋下來的提案⛔ 不留痕（它只存在於對話視窗）。⇒ 「這道閘門有沒有在運作」只能從收進去的那些項回推。四項寫得越逐字，回推得越準。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "9612be1175cf675017765422b90fb6301e7b7029",
    "reason": "design-closed-set",
-   "excerpt": "⚠️ **這道閘門機械上不成立，效力只來自留痕。** 跨家族查核者⛔ 沒有 wfcli 也⛔ 沒有 gh token；`"
+   "rationale": "「第二」＝角色序數（決議 §六角色枚舉成員），非量測",
+   "excerpt": "⚠️ **這道閘門機械上不成立，效力只來自留痕。** 跨家族查核者⛔ 沒有 wfcli 也⛔ 沒有 gh token；`gh` token "
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "a2ae14548ba945333665f94a0016b895e927abc9",
    "reason": "design-closed-set",
+   "rationale": "「第二」＝角色序數（決議 §六角色枚舉成員），非量測",
    "excerpt": "⛔ 第二個 PM 由誰擔任、原始輸出需求方看不看得到 —— **未定**。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "c72bc4eed75e26906af50a52b00de5d57c6c8368",
    "reason": "design-closed-set",
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
    "excerpt": "**寫什麼**：三格，缺一不可。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "c9bd390689996ecf7f38a82e499a901284c5bfd2",
    "reason": "design-closed-set",
-   "excerpt": "description: 提案進待審清單前必須滿足的四項條件。提案者（人或 AI）依此撰寫，PM 依此收或退。PM ⛔ "
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
+   "excerpt": "description: 提案進待審清單前必須滿足的四項條件。提案者（人或 AI）依此撰寫，PM 依此收或退。PM ⛔ 只判流程、不判內容。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "d9a53921e677911541a3fb069dcb15810ce321ae",
    "reason": "design-closed-set",
-   "excerpt": "**為什麼**：關鍵字沒命中不等於不存在。「我確認過了」是宣稱，事後⛔ 查不了；「我搜了 A B C，命中 #12 #4"
-  },
-  {
-   "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
-   "line_sha1": "db6d3f76157373908744a3136780c869fd980f61",
-   "reason": "environment-fact",
-   "excerpt": "⚠️ 兩份 transcript 都在**本機** ⇒ 只有需求方在這台機器上核對得到，跨家族查核者⛔ 做不到。"
+   "rationale": "「下一個人」＝序數慣用語，非量測",
+   "excerpt": "**為什麼**：關鍵字沒命中不等於不存在。「我確認過了」是宣稱，事後⛔ 查不了；「我搜了 A B C，命中 #12 #45」查得了，而且下一"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "e54e7759c93f33e2fae39594b1c5fed6d75c2de8",
    "reason": "design-closed-set",
+   "rationale": "「一張／一個」＝流程單位的慣用語（清單項→卡），非量測",
    "excerpt": "有人發現一個問題、或想要一個功能，要把它交給 PM 進待審清單時。提案者可以是人，也可以是執行其他卡時撞到問題的 AI。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "e94c331f26373826c94b69c3e29502c669799e0a",
    "reason": "design-closed-set",
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
    "excerpt": "缺任一項 ⇒ 退回提案者補。⛔ PM 不代填。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "fb3031c28f48161946ed2fe88a0838a56f37eaac",
    "reason": "design-closed-set",
+   "rationale": "「一次」＝慣用語（重引用成本陳述），非量測",
    "excerpt": "**為什麼**：GitHub 搬 issue **會換號碼**，而號碼正是引用它的方式。放錯了就得換一次號。"
   },
   {
    "path": "docs/research/drafts/stage-rules/list-intake-requirements.md",
    "line_sha1": "fe9bc8d851e3ca650404fe1dcdf945cc388ea45c",
    "reason": "design-closed-set",
-   "excerpt": "⚠️ 這一格的存在是本設計自己造成的：`issue.author` 本來就是 GitHub 記的事實、不可造假，但「PM"
+   "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則",
+   "excerpt": "⚠️ 這一格的存在是本設計自己造成的：`issue.author` 本來就是 GitHub 記的事實、不可造假，但「PM 是清單唯一 wri"
   },
   {
    "path": "docs/research/drafts/stage-rules/maintenance.md",
    "line_sha1": "1dfeb66cb829208e5249858365ebd00e552dc4bb",
    "reason": "design-closed-set",
-   "excerpt": "通用 7 ＋ 運行中。ADD：`完成 → 運行中`（迴圈收口）、`運行中 → 待辦`（有事了）、`運行中 → 結案／完成"
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
+   "excerpt": "通用 7 ＋ 運行中。ADD：`完成 → 運行中`（迴圈收口）、`運行中 → 待辦`（有事了）、`運行中 → 結案／完成`（服務下線）。自迴"
   },
   {
    "path": "docs/research/drafts/stage-rules/planning.md",
    "line_sha1": "66482b39cf793d786014270f988f49ec47659738",
    "reason": "design-closed-set",
+   "rationale": "「三層」＝顆粒度層級枚舉（重／中／輕，行內列明）",
    "excerpt": "8. 顆粒度三層（重／中／輕；試跑慣例⛔ 非定案制度）"
   },
   {
    "path": "docs/research/drafts/stage-rules/planning.md",
    "line_sha1": "721d953e3aac760434ade47a3a3a6f3f72348a8a",
    "reason": "design-closed-set",
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
    "excerpt": "通用 7，不加不減。⚠️ 本階段是「退回上一階段」的主要目的地。"
   },
   {
    "path": "docs/research/drafts/stage-rules/planning.md",
    "line_sha1": "85819cd9250b412b27eff2dc5a6b867e4e289512",
    "reason": "threshold-ruling",
+   "rationale": "「同族／同根因第三次」＝停手與升級的裁定門檻，數字即規則",
    "excerpt": "7. 同族第三輪＝形狀錯了；跳出法＝開放集合→封閉集合、追精確度→證明天花板"
+  },
+  {
+   "path": "docs/research/drafts/stage-rules/planning.md",
+   "line_sha1": "a99b17a3c053922361fe515481b097140e1eec99",
+   "reason": "design-closed-set",
+   "rationale": "括號數＝該階段注意事項清冊的定稿條數（決議 §八；條目即本節逐條列出，W2A 編號化後由清冊長度機械對照）",
+   "excerpt": "## 5 注意事項（8）"
+  },
+  {
+   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
+   "line_sha1": "0e7dd5e7f075743849e504539c426cc90bc796c0",
+   "reason": "design-closed-set",
+   "rationale": "「四問」＝pm-conduct §三枚舉的自檢問題集合",
+   "excerpt": "## 三 · 動作前四問"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "1b0170ea66adc502a6043194826bd4eb61d9d1be",
    "reason": "threshold-ruling",
-   "excerpt": "⇒ **同族第三張出現時停手**，改判「這是一根問題還是 N 個實例」。若是實例 ⇒ 正解是**一張窮舉卡**，且開它之"
-  },
-  {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
-   "line_sha1": "2d531c35299b379e9fd6a3f2fe146b52adb63407",
-   "reason": "historical-event-count",
-   "excerpt": "- **PM 產出也有檢核清冊**：派審詞／結案報告的信封段落＋未驗三分類編號化，發出前逐條回應——「執行者有清冊而 P"
-  },
-  {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
-   "line_sha1": "3e4e61a60c6db8098c117745d55208e539a07afa",
-   "reason": "threshold-ruling",
-   "excerpt": "- ⛔ **不截斷 wfcli 的輸出。** `| tail` 讓 `$?` 變成 `tail` 的 rc，並截掉守衛裁"
+   "rationale": "「同族／同根因第三次」＝停手與升級的裁定門檻，數字即規則",
+   "excerpt": "⇒ **同族第三張出現時停手**，改判「這是一根問題還是 N 個實例」。若是實例 ⇒ 正解是**一張窮舉卡**，且開它之前先量母體。⛔ 不是"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "40a89abfd5e71ffec88d4859404afcef336527c8",
-   "reason": "design-closed-set",
-   "excerpt": "- ⛔ **不裁定升級四選一** —— PM 只準備升級單（三次退回的逐字理由＋痛點原文＋四個值各自「若成立會是什麼證據"
+   "reason": "threshold-ruling",
+   "rationale": "升級／升遷門檻＝裁定值（第 3 次、3 張卡），數字即規則",
+   "excerpt": "- ⛔ **不裁定升級四選一** —— PM 只準備升級單（三次退回的逐字理由＋痛點原文＋四個值各自「若成立會是什麼證據」），裁定歸需求方。"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "58fed365e3ea94a8652d3e171f7976d805e0a741",
    "reason": "design-closed-set",
-   "excerpt": "**對價：結案報告閘。** 每張直行的卡進結案／待確認後，PM 呈**一屏內**的結案報告（七段：痛點→處置／裁決摘要含"
+   "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 結案報告閘逐段列明）",
+   "excerpt": "**對價：結案報告閘。** 每張直行的卡進結案／待確認後，PM 呈**一屏內**的結案報告（七段：痛點→處置／裁決摘要含 blocking "
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "7158fb23768c4be3d15a16437d31fc1c179d91b7",
-   "reason": "design-closed-set",
-   "excerpt": "- **提案被推翻後⛔ 不當場翻面** —— 重新研究至少三輪（各須新量測或新母體）再給新建議。被推翻＝原證據基礎不足，"
-  },
-  {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
-   "line_sha1": "929f9d2e89bd2173cb11336044757e302965225c",
-   "reason": "environment-fact",
-   "excerpt": "⚠️ **它有完整寫入權。** 本機 Codex 對兩個 repo 都是 `trusted`，且共用同一個 `gh` t"
+   "reason": "threshold-ruling",
+   "rationale": "「至少三輪」＝需求方裁定的重研究門檻，數字即規則",
+   "excerpt": "- **提案被推翻後⛔ 不當場翻面** —— 重新研究至少三輪（各須新量測或新母體）再給新建議。被推翻＝原證據基礎不足，翻面沿用的是同一個不"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "a3a6f0f798fdaf45bc3dbc7cb31969ad55e82d17",
    "reason": "design-closed-set",
+   "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則",
    "excerpt": "一次授權⛔ 不延伸到下一次；上一張卡的同意⛔ 不適用於這一張。"
-  },
-  {
-   "path": "docs/research/drafts/stage-rules/pm-conduct.md",
-   "line_sha1": "a5a8c3cb086d2c5a7ca191bd428e01fb06de06c5",
-   "reason": "environment-fact",
-   "excerpt": "⚠️ GitHub 上的 `author` 恆為 `ruan6047`（只有一個 token）⇒ 唯一的身分訊號是自述的"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "a950c9fd4548f3478471493bf5d494c2768ed9b0",
    "reason": "design-closed-set",
-   "excerpt": "⚠️ 代價同場實證：Codex 的裁決⛔ 沒寫派審詞明文要求的 session ID ⇒ **每換一個實體，就有一批未明"
+   "rationale": "「一」系＝序數／慣用語（一部分、另一份、一張窮舉卡等），非量測",
+   "excerpt": "⚠️ 代價同場實證：Codex 的裁決⛔ 沒寫派審詞明文要求的 session ID ⇒ **每換一個實體，就有一批未明說的慣例會掉**。⇒"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "d157f4682491ea5da1c69013cc3e49cf11ab1b53",
    "reason": "design-closed-set",
-   "excerpt": "**轉手一個 finding 等於背書它。** 轉手前先驗兩件：那份 artifact 是誰產出的、它要求的機制有沒有 "
+   "rationale": "「一個／兩件」＝慣用語＋行內枚舉（artifact 來源＋機制 writer），非量測",
+   "excerpt": "**轉手一個 finding 等於背書它。** 轉手前先驗兩件：那份 artifact 是誰產出的、它要求的機制有沒有 writer。"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "e4c79b5d62b30d9c5ad0c66bccfd0156d4c0bb10",
    "reason": "design-closed-set",
+   "rationale": "「第二」＝角色序數（決議 §六角色枚舉成員），非量測",
    "excerpt": "- ⛔ **不檢查自己的提案** —— PM 自己發起的提案由**另一個 PM** 收件檢查。"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "e8cdd8d15014a1a6b7e883794cad2494c8351d2c",
    "reason": "design-closed-set",
-   "excerpt": "PM 自己提案時，收件檢查由**另一個 PM** 做，裁決由那個 PM **自己寫進 issue body**，⛔ 不經"
+   "rationale": "「第二」＝角色序數（決議 §六角色枚舉成員），非量測",
+   "excerpt": "PM 自己提案時，收件檢查由**另一個 PM** 做，裁決由那個 PM **自己寫進 issue body**，⛔ 不經第一個 PM 轉錄。"
   },
   {
    "path": "docs/research/drafts/stage-rules/pm-conduct.md",
    "line_sha1": "ff504c8ffbfebf9f29178c3fe654b7c7d550d203",
-   "reason": "design-closed-set",
-   "excerpt": "- **兼任執行者的線**：T0／T1 可兼；**T2 以上⛔ 不可兼**（T2 起負規劃義務＝要有第二個判斷）。⛔ 判"
+   "reason": "threshold-ruling",
+   "rationale": "T0/T1/T2＝級別枚舉引用；可兼線＝裁定門檻（風險軸）",
+   "excerpt": "- **兼任執行者的線**：T0／T1 可兼；**T2 以上⛔ 不可兼**（T2 起負規劃義務＝要有第二個判斷）。⛔ 判準是風險軸，⛔ 不得"
   },
   {
    "path": "docs/research/drafts/stage-rules/requirement.md",
    "line_sha1": "0258df0790ad4e333e63f930c094bf6a71ae0e29",
    "reason": "design-closed-set",
-   "excerpt": "把一個清單項變成一張可派工的卡。產出物＝開卡表單（全欄）＋收斂後的清單。進入＝清單項獲需求方點頭＋指派執行者。離開＝表單"
+   "rationale": "表單欄位集合＝本行逐一枚舉（A 繼承＋B 新增）；≥1／≤2 為欄內裁定門檻",
+   "excerpt": "把一個清單項變成一張可派工的卡。產出物＝開卡表單（全欄）＋收斂後的清單。進入＝清單項獲需求方點頭＋指派執行者。離開＝表單過 R1–R4，`o"
+  },
+  {
+   "path": "docs/research/drafts/stage-rules/requirement.md",
+   "line_sha1": "16fbe8999ba5846a899c11f884d2d4abd7605e81",
+   "reason": "design-closed-set",
+   "rationale": "括號數＝該階段注意事項清冊的定稿條數（決議 §八；條目即本節逐條列出，W2A 編號化後由清冊長度機械對照）",
+   "excerpt": "## 5 注意事項（15）"
   },
   {
    "path": "docs/research/drafts/stage-rules/requirement.md",
    "line_sha1": "1d61729e05a30f01b98196d2cecfcaf46e88f275",
    "reason": "design-closed-set",
-   "excerpt": "通用 7。ADD：`待確認 → 撤銷降回清單`（固定動作 deleteProjectV2Item；卡ID 保留、iter"
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
+   "excerpt": "通用 7。ADD：`待確認 → 撤銷降回清單`（固定動作 deleteProjectV2Item；卡ID 保留、iteration 延續）。"
   },
   {
    "path": "docs/research/drafts/stage-rules/requirement.md",
    "line_sha1": "300f94da8f8faf903ed1459df273a1b833093006",
    "reason": "threshold-ruling",
+   "rationale": "「鏈深 ≤2」＝需求方裁定的路由上限，數字即規則",
    "excerpt": "10. 鏈深 ≤2；路由欄一次填齊"
   },
   {
    "path": "docs/research/drafts/stage-rules/requirement.md",
    "line_sha1": "7259e1d683c13ef58da7b4ea73f593b900f25974",
    "reason": "threshold-ruling",
+   "rationale": "「驗收 ≥1」＝開卡表單的裁定門檻，數字即規則（決議 §四）",
    "excerpt": "8. 驗收條件 ≥1，逐條可追溯回痛點原文"
   },
   {
    "path": "docs/research/drafts/stage-rules/requirement.md",
    "line_sha1": "7be2403f336fe5a4bd6d8fb756515c63e80140c8",
    "reason": "design-closed-set",
+   "rationale": "「一張／一個」＝流程單位的慣用語（清單項→卡），非量測",
    "excerpt": "description: 需求階段：把一個清單項變成一張可派工的卡。"
   },
   {
    "path": "docs/research/drafts/stage-rules/requirement.md",
    "line_sha1": "9a3ae08a71c86f74c20e587ecccf346240cd4596",
    "reason": "threshold-ruling",
+   "rationale": "「同族／同根因第三次」＝停手與升級的裁定門檻，數字即規則",
    "excerpt": "6. 同族第三張停手 ⇒ 一張窮舉卡，開之前先量母體"
   },
   {
    "path": "docs/research/drafts/stage-rules/research.md",
    "line_sha1": "53bba759eaa39f73ed12943b38b2911cd8cd1226",
    "reason": "design-closed-set",
+   "rationale": "「一張卡」＝流程單位慣用語，非量測",
    "excerpt": "12. 研究一張卡前先讀它自己的留言"
   },
   {
    "path": "docs/research/drafts/stage-rules/research.md",
    "line_sha1": "66029990c6e696af83d69692be297cca8af8e9b2",
    "reason": "threshold-ruling",
-   "excerpt": "③ 交回＝量測紀錄＋結論（討論形狀⛔ 非送審形狀）。⭐ ③ 與 ④ 之間插討論回合——需求方提問、執行者答；出口由討論定"
+   "rationale": "「≥3 不同族反測」＝高階型查核的裁定門檻，數字即規則（決議 §六）",
+   "excerpt": "③ 交回＝量測紀錄＋結論（討論形狀⛔ 非送審形狀）。⭐ ③ 與 ④ 之間插討論回合——需求方提問、執行者答；出口由討論定。④ 查核者只驗量測"
   },
   {
    "path": "docs/research/drafts/stage-rules/research.md",
    "line_sha1": "775d4ee38db7b3b4da51fd670b134b2053d01021",
    "reason": "design-closed-set",
-   "excerpt": "通用 7 ＋ 不可判定。ADD：`待確認 → 不可判定`、`不可判定 → 結案／完成`。不可判定與完成的行為差別＝能不能"
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
+   "excerpt": "通用 7 ＋ 不可判定。ADD：`待確認 → 不可判定`、`不可判定 → 結案／完成`。不可判定與完成的行為差別＝能不能被後續卡引用（⛔ 禁"
+  },
+  {
+   "path": "docs/research/drafts/stage-rules/research.md",
+   "line_sha1": "ad611790ade369d88421edb8e7c32e13b82bbad6",
+   "reason": "design-closed-set",
+   "rationale": "括號數＝該階段注意事項清冊的定稿條數（決議 §八；條目即本節逐條列出，W2A 編號化後由清冊長度機械對照）",
+   "excerpt": "## 5 注意事項（14）"
   },
   {
    "path": "docs/research/drafts/stage-rules/review.md",
    "line_sha1": "4eb2e22cd69daf1b60e5dd89eb6a2ae9fd03d78f",
    "reason": "threshold-ruling",
+   "rationale": "「同族／同根因第三次」＝停手與升級的裁定門檻，數字即規則",
    "excerpt": "7. root_cause_id 對照前輪（派審詞必列）；同根因第三輪 ⇒ 升級"
   },
   {
    "path": "docs/research/drafts/stage-rules/review.md",
    "line_sha1": "65a26dbf0c1ff8ac21f3b6d605d03875e5017a28",
    "reason": "threshold-ruling",
-   "excerpt": "② PM 派審詞（信封：merge-base 基線釘死、前輪 findings＋root_cause_id、模型／家族行"
+   "rationale": "「第三輪」＝同根因升級門檻裁定值，數字即規則",
+   "excerpt": "② PM 派審詞（信封：merge-base 基線釘死、前輪 findings＋root_cause_id、模型／家族行、PM 已知未驗項）"
+  },
+  {
+   "path": "docs/research/drafts/stage-rules/review.md",
+   "line_sha1": "c617c415a3846a470adfb74a98bbbabaee2df6de",
+   "reason": "design-closed-set",
+   "rationale": "括號數＝該階段注意事項清冊的定稿條數（決議 §八；條目即本節逐條列出，W2A 編號化後由清冊長度機械對照）",
+   "excerpt": "## 5 注意事項（9）"
   },
   {
    "path": "docs/research/drafts/stage-rules/review.md",
    "line_sha1": "f19db5922cd88420a3d02e477704d410f4bfe085",
    "reason": "design-closed-set",
+   "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（待辦／進行中／待確認／完成／退回＋阻塞／升級）",
    "excerpt": "通用 7。「退回無效」⛔ 非本階段狀態——是升級裁定第 ④ 值。"
   },
   {
    "path": "docs/research/drafts/stage-rules/reviewer-conduct.md",
    "line_sha1": "9b172cc8265c2d8f91a01b75d3221de871c99ff8",
    "reason": "threshold-ruling",
-   "excerpt": "- **高階型研究卡**：可重跑＋**≥3 個不同族角度的對抗性反測**（時間外／母體外／洩漏探針／重抽／規則邊界）；角"
+   "rationale": "「≥3 不同族反測」＝高階型查核的裁定門檻，數字即規則（決議 §六）",
+   "excerpt": "- **高階型研究卡**：可重跑＋**≥3 個不同族角度的對抗性反測**（時間外／母體外／洩漏探針／重抽／規則邊界）；角度不適用寫「不適用："
   },
   {
    "path": "docs/research/drafts/stage-rules/reviewer-conduct.md",
    "line_sha1": "c38ed46f9e4f2ace083ac6755e42f665586e287c",
    "reason": "design-closed-set",
+   "rationale": "「一」系＝序數／慣用語（一部分、另一份、一張窮舉卡等），非量測",
    "excerpt": "被派審裁決的 AI 或人工。⚠️ 你可能來自另一個實體——**本檔與派審詞就是全部要求**，沒寫的慣例⛔ 不存在。"
   },
   {
    "path": "docs/research/drafts/stage-rules/reviewer-conduct.md",
    "line_sha1": "cb16c6b1e33d79372fac615ae44f6230d4567702",
    "reason": "threshold-ruling",
-   "excerpt": "- **root_cause_id 對照派審詞所列的前輪**，同根因沿用同字串；⭐ 你若判出同根因第三輪，寫明並建議升級"
+   "rationale": "「同族／同根因第三次」＝停手與升級的裁定門檻，數字即規則",
+   "excerpt": "- **root_cause_id 對照派審詞所列的前輪**，同根因沿用同字串；⭐ 你若判出同根因第三輪，寫明並建議升級，⛔ 不再開新輪。"
   },
   {
    "path": "docs/research/drafts/wave-specs/list-items.md",
    "line_sha1": "50ed6f60f036afa1288b3d0802905c67bce6e710",
    "reason": "design-closed-set",
-   "excerpt": "- **W2A 觀察句**：canonical §0/§1 已被決議紀錄取代清單標記為過時，但檔內文字未改——讀者仍會把"
+   "rationale": "「15 值」＝舊制看板狀態單欄的枚舉基數（canonical §0 條文定義的封閉集合，指設計非量測）",
+   "excerpt": "- **W2A 觀察句**：canonical §0/§1 已被決議紀錄取代清單標記為過時，但檔內文字未改——讀者仍會把 15 值序列與 7"
   },
   {
    "path": "docs/research/drafts/wave-specs/list-items.md",
    "line_sha1": "639875da178860e7aef47a6c3f57862d74fe7b09",
    "reason": "design-closed-set",
-   "excerpt": "- **oracle（W1 AC 與父卡驗收共用）**：四個清單項各有 issue URL 且⛔ 不在 Project "
+   "rationale": "「四個清單項」＝list-items.md 逐節枚舉（W2A/W2B/W3′/切換），oracle 對照同一集合",
+   "excerpt": "- **oracle（W1 AC 與父卡驗收共用）**：四個清單項各有 issue URL 且⛔ 不在 Project #4。**升級 ac"
   },
   {
    "path": "docs/research/drafts/wave-specs/list-items.md",
    "line_sha1": "ecbd19a2b06192b5736762976ae7c3e4b7cac36e",
    "reason": "design-closed-set",
-   "excerpt": "- **W2B 觀察句**：五份交接文件無範本可用；L0 入口未成形；舊模板群被 CONTRACT_TOOL_RECON"
+   "rationale": "「五份」＝交接文件枚舉（行內列明：派工包／交付報告／派審詞／裁決／狀態變更裁定單）",
+   "excerpt": "- **W2B 觀察句**：五份交接文件無範本可用；L0 入口未成形；舊模板群被 CONTRACT_TOOL_RECONCILE 釘住無法移"
   },
   {
    "path": "docs/research/drafts/wave-specs/w0.md",
    "line_sha1": "17fd9f2a77fe2d6bad4198442e8b6fb16cbf8e0a",
    "reason": "design-closed-set",
-   "excerpt": "1. pm-conduct／executor-conduct／reviewer-conduct／list-intake-"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w0.md",
-   "line_sha1": "367a9eeef56e06d938cff2cae211fe2bcc47ad7c",
-   "reason": "design-closed-set",
-   "excerpt": "> ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_"
+   "rationale": "「三份 conduct／四檔」＝W0 射程枚舉（pm/executor/reviewer conduct＋list-intake），成員行內或 spec 列明",
+   "excerpt": "1. pm-conduct／executor-conduct／reviewer-conduct／list-intake-requiremen"
   },
   {
    "path": "docs/research/drafts/wave-specs/w0.md",
    "line_sha1": "6c47b0a7107138f6906b4dbd37e881fd54fb68b4",
    "reason": "design-closed-set",
+   "rationale": "「三份 conduct／四檔」＝W0 射程枚舉（pm/executor/reviewer conduct＋list-intake），成員行內或 spec 列明",
    "excerpt": "**⛔ 非射程**：不改四份檔的實質內容（已確認）；不動 canonical；不建清單機制（波 1）。"
   },
   {
    "path": "docs/research/drafts/wave-specs/w0.md",
    "line_sha1": "f006e4529265d320658b1ffff56fd5c3235820c7",
    "reason": "design-closed-set",
-   "excerpt": "**痛點（落差）**：三份 conduct 與收件條件已經需求方逐條確認，但仍掛 draft-pending 隔離於 d"
+   "rationale": "「三份 conduct／四檔」＝W0 射程枚舉（pm/executor/reviewer conduct＋list-intake），成員行內或 spec 列明",
+   "excerpt": "**痛點（落差）**：三份 conduct 與收件條件已經需求方逐條確認，但仍掛 draft-pending 隔離於 drafts/——派工"
   },
   {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "00f9e020c69d9d4fd60f9941fce5f36cd32a5e4f",
    "reason": "design-closed-set",
-   "excerpt": "1b.（P1-27）清單機制上線後同批建立**四個**清單項（W2A／W2B／W3′／切換 Initiative——內容"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "1197bea8f9bead1123367ce55e8603b441f4821d",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "PID=$(echo \"$R\"|jq -r '.data.user.projectV2.id')"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "1497313b8ffb68bc2cc74a6a6d8297df9f35609a",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "\"stage_plan\":{\"type\":\"array\",\"minItems\":1,\"items\":{\"type\":\"o"
+   "rationale": "「四個清單項」＝list-items.md 逐節枚舉（W2A/W2B/W3′/切換），oracle 對照同一集合",
+   "excerpt": "1b.（P1-27）清單機制上線後同批建立**四個**清單項（W2A／W2B／W3′／切換 Initiative——內容逐字取 list-i"
   },
   {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "246aa9c4e4a2d83974e646ae67744b75fef52c52",
    "reason": "design-closed-set",
-   "excerpt": "5b.（P1-26，唯一 owner＝本卡）既有 `amend` 動詞擴充 feature／routing 更新旗標（⛔"
+   "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′），設計封閉集合",
+   "excerpt": "5b.（P1-26，唯一 owner＝本卡）既有 `amend` 動詞擴充 feature／routing 更新旗標（⛔ 非新增動詞；依 C"
   },
   {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "24f3c9e58fa6f4bb3d483bd1438bc08fd32eb087",
    "reason": "design-closed-set",
-   "excerpt": "**驗證**：對缺表單欄位的 --from-issue 實跑拒收（訊息含補救）；對舊路徑實跑確認移除；pytest 全綠"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "2981aa6b688b62d7d20d5383bd261bb8a20ef0f3",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "\"schema_version\":{\"const\":\"1\"},"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "367a9eeef56e06d938cff2cae211fe2bcc47ad7c",
-   "reason": "design-closed-set",
-   "excerpt": "> ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "3938ecdaac75a87a7847993a225e7e3a6feb0185",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "\"properties\":{\"issue_url\":{\"type\":\"string\",\"pattern\":\"^https"
+   "rationale": "「一」＝動作次數的慣用語（一句裁定／一次性 producer／試打一份），非量測",
+   "excerpt": "**驗證**：對缺表單欄位的 --from-issue 實跑拒收（訊息含補救）；對舊路徑實跑確認移除；pytest 全綠；交付報告附 CLI"
   },
   {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "5b0fe8be308ec5792c423686d211152dd9810649",
-   "reason": "design-closed-set",
-   "excerpt": "schema 外附加規則（validator 同步實作、各有拒收 fixture）：stage_plan 重複 stag"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "5d36f3d5b8dac99085605e1841278a7dff39e881",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "[ \"$(echo \"$R\"|jq -r '.data.user.projectV2.items.pageInfo.ha"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "62ba2f73e2bc6e30b8b7828e3d407c286ad4dda7",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "\"goal\":{\"type\":\"string\",\"minLength\":1}}}},"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "63c63d21c7502fa9b63b6c1883094719922f774e",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "R=$(gh api graphql -f query='query($a:String){user(login:\"ru"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "6c61fc74362b9ee798cc89cff9dddb5ba17bdcb5",
-   "reason": "design-closed-set",
-   "excerpt": "replacement_rows: [12]"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "7b053616b9a40f54c74ab4bda133164a076a64c3",
-   "reason": "design-closed-set",
-   "excerpt": "5. （P1-07 修訂）撤銷程序的**規則條文化歸 W2A**（requirement.md 生效時已含 ADD 撤銷"
+   "reason": "threshold-ruling",
+   "rationale": "「0 或負」＝拒收 fixture 的邊界裁定值；「四類」＝該行逐一枚舉的 fixture 集合",
+   "excerpt": "schema 外附加規則（validator 同步實作、各有拒收 fixture）：stage_plan 重複 stage 拒收；list_"
   },
   {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "8ff87579d73b029b47a93c8df33bb7de2ca251ed",
    "reason": "threshold-ruling",
+   "rationale": "「驗收 ≥1」＝開卡表單的裁定門檻，數字即規則（決議 §四）",
    "excerpt": "4. 驗收條件改必填（≥1）；--needs-deploy 移除"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "95b0cba28677485525c88a3a9dffe70a0359def1",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "\"blast_radius\":{\"type\":\"string\",\"minLength\":1}}},"
   },
   {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "c1b1ad5925ff64ecefb1948c962e35b53dbb83b8",
    "reason": "design-closed-set",
-   "excerpt": "**前置（P1-18 修訂）**：板上唯一 DraftIssue item 之處置於開工時經需求方一句裁定（轉 Issu"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "c28bc2cd703087724d5603ff40c95f62c2819bc2",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "CUR=$(echo \"$R\"|jq -r '.data.user.projectV2.items.pageInfo.e"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "d2a47d429d34115ecb83237d62628e8c10cc9789",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "echo \"$R\" | jq -c '.data.user.projectV2.items.nodes[] | {ite"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "db177387681fa9829c7a3321c8e90ecc3ad01f58",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "\"properties\":{\"sensitive_surfaces\":{\"type\":\"string\",\"minLeng"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w1.md",
-   "line_sha1": "e3170ea3b9e76f12320aed1a7479b40b082ad00b",
-   "reason": "code-or-pattern-constant",
-   "excerpt": "\"recoverability\":{\"type\":\"string\",\"minLength\":1},"
+   "rationale": "「一」＝動作次數的慣用語（一句裁定／一次性 producer／試打一份），非量測",
+   "excerpt": "**前置（P1-18 修訂）**：板上唯一 DraftIssue item 之處置於開工時經需求方一句裁定（轉 Issue／封存／明示保留）"
   },
   {
    "path": "docs/research/drafts/wave-specs/w1.md",
    "line_sha1": "f554c123927dccd2553d0ed123df067f2228f195",
    "reason": "design-closed-set",
+   "rationale": "收件條件／身分格集合＝list-intake-requirements 逐節枚舉（條件 1–5、三格表），設計封閉集合",
    "excerpt": "1. `.github/ISSUE_TEMPLATE` 收件表單上線：五條件各一欄"
+  },
+  {
+   "path": "docs/research/drafts/wave-specs/w2a.md",
+   "line_sha1": "162ec63be5056a82fc7a5372b0b945d0cc592833",
+   "reason": "threshold-ruling",
+   "rationale": "「0」＝checker 唯一判準值（unapproved_count==0 的設計），數字即規則",
+   "excerpt": "4. （P1-31 修訂：raw grep 無法同時表達 0 與豁免、零命中還 rc=1 ⇒ 改 **allowlist-aware che"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2a.md",
    "line_sha1": "215a9a823153b4b8a17908a5fcfd08e36188101b",
    "reason": "design-closed-set",
+   "rationale": "7／6＝canonical §1 舊角色表與決議 §六新角色表的枚舉基數（成員行內或該節列明）",
    "excerpt": "1. §1 換 6 角色表（需求方／人工查核／PM／第二 PM／執行者／查核者）；§1／§2 移至 §0 前"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2a.md",
    "line_sha1": "279939024578b25faed859c69d1e6d55feaa5ab6",
    "reason": "threshold-ruling",
-   "excerpt": "7. （R3 過渡橫幅）8 份 stage-rules 檔頂各含一行「⚠️ 看板值仍為舊語彙（15 值），對照見決議 §"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w2a.md",
-   "line_sha1": "367a9eeef56e06d938cff2cae211fe2bcc47ad7c",
-   "reason": "design-closed-set",
-   "excerpt": "> ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w2a.md",
-   "line_sha1": "38d3828d9ce53bcc346cd3be472563178db58f73",
-   "reason": "design-closed-set",
-   "excerpt": "replacement_rows: [1, 3]"
+   "rationale": "「預期 8」＝AC oracle 的期望值（8 份 stage-rules 檔的枚舉基數）",
+   "excerpt": "7. （R3 過渡橫幅）8 份 stage-rules 檔頂各含一行「⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 In"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2a.md",
    "line_sha1": "39fa373fd58fca4f82089ea236030cacde63d28f",
    "reason": "design-closed-set",
-   "excerpt": "5. （P1-31 併判準）三個腐爛自述（「短版」／「最後核實：<日期>」／行數自述 `[0-9]{3,} ?行`）改為"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w2a.md",
-   "line_sha1": "77a289d4b6fbb656903ef5669b64f6074dc42409",
-   "reason": "design-closed-set",
-   "excerpt": "3. 取代清單 **rows 1、3** 的舊文刪除（⛔ 不留屍體；其餘列各歸其 owner 卡，⛔ 不在本卡動）"
+   "rationale": "「三個」＝checker 輸入 token 枚舉（行內列明：短版／最後核實／行數自述樣式）",
+   "excerpt": "5. （P1-31 併判準）三個腐爛自述（「短版」／「最後核實：<日期>」／行數自述 `[0-9]{3,} ?行`）改為 **checker"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2a.md",
    "line_sha1": "91b517d872e0e7a7b37769b1e0ce5495d81c0d7b",
    "reason": "design-closed-set",
-   "excerpt": "6. ⭐（丙修訂）8 份 stage-rules 以 move 生效、節號引用對齊新 canonical；tier-ru"
+   "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一，決議 §三集合的檔案化）",
+   "excerpt": "6. ⭐（丙修訂）8 份 stage-rules 以 move 生效、節號引用對齊新 canonical；tier-rules 框架層檔上線"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2a.md",
    "line_sha1": "a1d7967b473071862136272624dbc044d3f93912",
    "reason": "design-closed-set",
-   "excerpt": "2. §0 重寫為 8 階段 × 10 狀態＋轉移 delta 制，全節帶「本節定義目標狀態，尚未切換；cutover＝"
+   "rationale": "「8×10」＝決議 §三定義的階段×狀態矩陣基數（兩軸成員均於 §三枚舉）",
+   "excerpt": "2. §0 重寫為 8 階段 × 10 狀態＋轉移 delta 制，全節帶「本節定義目標狀態，尚未切換；cutover＝切換 Initiat"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2b.md",
    "line_sha1": "2538288de45b4f5d525d1930ec3f3fc893142f82",
    "reason": "design-closed-set",
-   "excerpt": "1. （P1-15 封閉 mapping）舊 → 新逐檔對照，各附 falsifier：tasks-card.md → "
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w2b.md",
-   "line_sha1": "367a9eeef56e06d938cff2cae211fe2bcc47ad7c",
-   "reason": "design-closed-set",
-   "excerpt": "> ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w2b.md",
-   "line_sha1": "855a1c52e14fb02b9e92d4c92134e0671d5f9a46",
-   "reason": "design-closed-set",
-   "excerpt": "**資源**：file:templates/、file:AGENTS.md、file:README.md、file:do"
+   "rationale": "舊→新 mapping＝行內逐檔枚舉（各檔名與 falsifier 列明），封閉 mapping 母體",
+   "excerpt": "1. （P1-15 封閉 mapping）舊 → 新逐檔對照，各附 falsifier：tasks-card.md → 移除（卡面 fenc"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2b.md",
    "line_sha1": "b58630ed10809cfe2f2c1298b6974614e8623cc5",
    "reason": "design-closed-set",
-   "excerpt": "3. L0 成形：AGENTS／README 指向「canonical 前兩節＋專案心智模型，其餘用查的」，並含決議 §"
+   "rationale": "「八份 SOP」＝stage-rules 檔枚舉（決議 §三之二指定句逐字）",
+   "excerpt": "3. L0 成形：AGENTS／README 指向「canonical 前兩節＋專案心智模型，其餘用查的」，並含決議 §三之二指定句逐字：「"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2b.md",
    "line_sha1": "c37ad07cdfbd88435812a8a870be1949e361b6b9",
    "reason": "design-closed-set",
-   "excerpt": "**痛點（落差）**：五份交接文件中三份（交付報告／裁決／狀態變更裁定單）無範本、兩份（派工包／派審詞）現行檔為舊制形狀"
+   "rationale": "「五份」＝交接文件枚舉（行內列明：派工包／交付報告／派審詞／裁決／狀態變更裁定單）",
+   "excerpt": "**痛點（落差）**：五份交接文件中三份（交付報告／裁決／狀態變更裁定單）無範本、兩份（派工包／派審詞）現行檔為舊制形狀；L0 入口未成形；"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2b.md",
    "line_sha1": "ef83789e24a4a396407e03d0794dacef9ba3730e",
    "reason": "design-closed-set",
+   "rationale": "「一」＝動作次數的慣用語（一句裁定／一次性 producer／試打一份），非量測",
    "excerpt": "**驗證**：pytest 全綠；污染符 grep 零命中；派工包範本可實際產出一份（對 W3′ 的派工試打）。"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2b.md",
    "line_sha1": "f2d43661040c9d2b41698db00d95f40575e03210",
    "reason": "design-closed-set",
-   "excerpt": "0.（P1-35 範本 owner，四類輸出面）dispatch-package／delivery-report／rev"
+   "rationale": "「四類」＝範本輸出面枚舉（行內列明：dispatch/delivery/review-dispatch/closeout）",
+   "excerpt": "0.（P1-35 範本 owner，四類輸出面）dispatch-package／delivery-report／review-dispat"
   },
   {
    "path": "docs/research/drafts/wave-specs/w2b.md",
    "line_sha1": "fe6ad42f5c8c9d868a51d83ac5b1c21acc196c4a",
    "reason": "design-closed-set",
+   "rationale": "「五檔」＝被守衛釘住的舊模板枚舉（行內或 w2b 痛點段列明），P1-15 封閉 mapping 的母體",
    "excerpt": "4. 封閉五檔依 mapping 落地，CI 全綠"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w3.md",
-   "line_sha1": "01010f84b1132879c75b92c8ab5b16fabe024595",
-   "reason": "design-closed-set",
-   "excerpt": "> ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w3.md",
-   "line_sha1": "24136af15d53705b34dbf404a2e4f7915fa9216d",
-   "reason": "design-closed-set",
-   "excerpt": "2. 卡面機讀 fenced JSON：**只擴充／消費 W1 的 v1 schema**（版本升級依 W1 定義之規則"
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w3.md",
-   "line_sha1": "34a811c3a74d2e2341965e02c84669fc21d32871",
-   "reason": "design-closed-set",
-   "excerpt": "replacement_rows: [10]"
   },
   {
    "path": "docs/research/drafts/wave-specs/w3.md",
    "line_sha1": "3d5496ff32806a0800843aebd96c83df47fe9c95",
    "reason": "design-closed-set",
+   "rationale": "「三項」＝assign 交集檢查行為枚舉（(a)(b)(c) 於後續行逐一定義）",
    "excerpt": "5. （P1-14 唯一 owner；P1-34 定稿）assign 交集檢查三項行為："
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w3.md",
-   "line_sha1": "8a62f25267eca733caa1e56ec5a1eb6638baae97",
-   "reason": "design-closed-set",
-   "excerpt": "(b) `file:` 前綴包含——component sequence／NFC／casefold **逐字依 WF_R"
   },
   {
    "path": "docs/research/drafts/wave-specs/w3.md",
    "line_sha1": "97ebfe695d046b3a242768df137ac1989edd3341",
    "reason": "design-closed-set",
-   "excerpt": "6b.（P1-35 機制 owner）pitfalls 逐條 note roster＋handoff gate＋CLI "
+   "rationale": "「三層／兩層」＝DI 注入層級枚舉（任務→專案→框架），設計封閉集合",
+   "excerpt": "6b.（P1-35 機制 owner）pitfalls 逐條 note roster＋handoff gate＋CLI 列印含編號三層清單，"
   },
   {
    "path": "docs/research/drafts/wave-specs/w3.md",
    "line_sha1": "a0a4e9e253407ef3a8f19959632690bd9aa44c01",
    "reason": "design-closed-set",
-   "excerpt": "(c) `db:` 別名——封閉三格：**已登記別名 → 正規化命中；未登記 → 按字面＋stderr 警示；regis"
+   "rationale": "「三格」＝db: 別名處置值域枚舉（行內列明：已登記／未登記／載入失敗）",
+   "excerpt": "(c) `db:` 別名——封閉三格：**已登記別名 → 正規化命中；未登記 → 按字面＋stderr 警示；registry 載入或解析失"
   }
  ]
 }

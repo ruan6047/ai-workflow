@@ -53,7 +53,7 @@
 ## 五 · 留痕
 
 - **轉移記錄**：`時間 from(階段/狀態) to 輪次`，⛔ 無第五欄（升級出口例外多一值）。不變量：卡面現值＝最後一行 to。
-- **Log 移出 body**（P1-33 十二輪定稿，⛔ 原「一則固定留言」模型已因無 CAS 廢棄）：**一事件一留言**（實體 at-least-once／邏輯 exactly-once，envelope 凍結重用）＋索引留言＝純投影；部署兩階段 flags 可回退；細節以 W3′ spec 為準。舊 body Log 原地凍結。
+- **Log 移出 body**（P1-33 定稿於第十二輪（2026-08-31），⛔ 原「一則固定留言」模型已因無 CAS 廢棄）：**一事件一留言**（實體 at-least-once／邏輯 exactly-once，envelope 凍結重用）＋索引留言＝純投影；部署兩階段 flags 可回退；細節以 W3′ spec 為準。舊 body Log 原地凍結。
 - **甲′ 規格居所**：卡面單一居所＋`spec_version` 必 bump；基線＝版本號（WF-17 查核硬退沿用）；稽核＝`userContentEdits`（實測 diff 欄＝全文快照）。
 
 ## 六 · 角色（6）與授權
