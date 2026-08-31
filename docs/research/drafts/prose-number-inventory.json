@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "spec": "P1-38 (b) 白名單（R18 後）：entry 鍵恰等封閉集合（path/line_sha1/excerpt/claims）＋claims 逐 occurrence；load 期驗 identity 與重複鍵 fail-closed；scanner 驗 (occurrence,token) 對集一一相等",
+  "spec": "P1-38 (b) 白名單（R19 後）：entry 鍵恰等封閉集合＋claims 逐 occurrence＋rationale 引句錨定原行；判準單一 predicate（RED_KEYS）",
   "classes": {
    "threshold-ruling": "閾值／裁定值——數字是規則本身",
    "design-closed-set": "不變量／設計封閉集合基數——數字是結構定義（含序數慣用語之非量測數）"
@@ -98,7 +98,7 @@
      "token": "8",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「8 階段」＝決議 §三枚舉（行內箭頭列出全部成員）"
+     "rationale": "「階段 8」＝決議 §三枚舉（行內箭頭列出全部成員）"
     }
    ]
   },
@@ -111,7 +111,7 @@
      "token": "15",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
+     "rationale": "「15 值／十五值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     }
    ]
   },
@@ -212,7 +212,7 @@
      "token": "八",
      "occurrence": 2,
      "reason": "design-closed-set",
-     "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
+     "rationale": "「8 份／八份 SOP」＝stage-rules 檔枚舉（八階段各一）"
     }
    ]
   },
@@ -319,7 +319,7 @@
      "token": "一",
      "occurrence": 4,
      "reason": "design-closed-set",
-     "rationale": "「鏈深≤2 路由一次填齊」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「鏈深≤2路由一次填齊」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -383,7 +383,7 @@
      "token": "15",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
+     "rationale": "「15 值／十五值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     },
     {
      "token": "8",
@@ -509,7 +509,7 @@
      "token": "十五",
      "occurrence": 2,
      "reason": "design-closed-set",
-     "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
+     "rationale": "「15 值／十五值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     }
    ]
   },
@@ -985,13 +985,13 @@
      "token": "二",
      "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「第二個 PM 只能給裁決」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「第二個PM只能給裁決」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
      "occurrence": 2,
      "reason": "design-closed-set",
-     "rationale": "「寫入仍由第一個 PM 執」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「寫入仍由第一個PM執」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1004,7 +1004,7 @@
      "token": "二",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「第二個 PM 由誰擔任」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「第二個PM由誰擔任」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1075,7 +1075,7 @@
      "token": "一",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「缺任一項 ⇒ 退回」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「缺任一項⇒退回」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1356,7 +1356,7 @@
      "token": "一",
      "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「不經第一個 PM 轉錄」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「不經第一個PM轉錄」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1484,7 +1484,7 @@
      "token": "一",
      "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「張停手 ⇒ 一張窮舉卡」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「張停手⇒一張窮舉卡」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1646,7 +1646,7 @@
      "token": "15",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
+     "rationale": "「15 值／十五值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     },
     {
      "token": "7",
@@ -1691,7 +1691,7 @@
      "token": "四",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
+     "rationale": "「四份檔／四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
     }
    ]
   },
@@ -1704,7 +1704,7 @@
      "token": "四",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
+     "rationale": "「四份檔／四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
     }
    ]
   },
@@ -1889,13 +1889,13 @@
      "token": "8",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
+     "rationale": "「8 份／八份 SOP」＝stage-rules 檔枚舉（八階段各一）"
     },
     {
      "token": "15",
      "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
+     "rationale": "「15 值／十五值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     },
     {
      "token": "8",
@@ -1932,7 +1932,7 @@
      "token": "一",
      "occurrence": 2,
      "reason": "design-closed-set",
-     "rationale": "「輸出與   同一份」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「同一份」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1945,7 +1945,7 @@
      "token": "8",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
+     "rationale": "「8 份／八份 SOP」＝stage-rules 檔枚舉（八階段各一）"
     },
     {
      "token": "一",
@@ -1983,7 +1983,7 @@
      "token": "八",
      "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
+     "rationale": "「8 份／八份 SOP」＝stage-rules 檔枚舉（八階段各一）"
     }
    ]
   },

@@ -390,6 +390,41 @@ def test_every_claim_carries_line_specific_rationale():
     assert bad == []
 
 
+def test_rationale_quotes_anchor_to_the_pinned_line():
+    # R18 型錯綁的機械化（「兩層」不在原列）：rationale 開頭引句「X」（或 X／Y
+    # 多形式）至少一形式須出現在被釘的原行（空白收斂後比對）。慣用語片語由
+    # 產生器自原行抽出，違例＝引句與原行脫鉤＝疑似錯綁。
+    import re as _re
+    data = json.loads(pns.INVENTORY_PATH.read_text(encoding="utf-8"))
+    texts = {}
+    for p in pns.corpus_paths():
+        rel = str(p.relative_to(pns.REPO_ROOT))
+        for line in p.read_text(encoding="utf-8").splitlines():
+            texts.setdefault(rel, {})[pns._line_key(line)] = line
+    bad = []
+    for e in data["entries"]:
+        line = texts.get(e["path"], {}).get(e["line_sha1"])
+        if line is None:
+            continue  # 死條目由 dead_entries 守
+        flat = _re.sub(r"\s+", "", line)
+        for c in e["claims"]:
+            m = _re.match(r"「([^」]+)」", c["rationale"])
+            if not m:
+                continue
+            parts = [x for x in _re.split(r"[／/]", m.group(1)) if x]
+            if not any(x in line or _re.sub(r"\s+", "", x) in flat for x in parts):
+                bad.append((e["path"], c["occurrence"], c["token"], m.group(1)))
+    assert bad == []
+
+
+def test_is_red_fires_on_each_key_alone():
+    empty = {k: [] for k in pns.RED_KEYS}
+    assert not pns.is_red(empty)
+    for k in pns.RED_KEYS:
+        one = dict(empty); one[k] = [{"x": 1}]
+        assert pns.is_red(one), k
+
+
 def test_every_inventory_claim_is_occurrence_bound():
     data = json.loads(pns.INVENTORY_PATH.read_text(encoding="utf-8"))
     for e in data["entries"]:
@@ -441,6 +476,13 @@ def test_duplicate_occurrence_pair_reds_with_zero_projections(tmp_path, monkeypa
 
 def test_file_mode_readable_failure(tmp_path, capsys):
     assert pns.main(["--file", str(tmp_path / "nope.md")]) == 1
+    assert "[file-error]" in capsys.readouterr().out
+
+
+def test_file_mode_non_utf8_readable_failure(tmp_path, capsys):
+    f = tmp_path / "bad.md"
+    f.write_bytes(b"\xff\xfe 42 \x88")
+    assert pns.main(["--file", str(f)]) == 1
     assert "[file-error]" in capsys.readouterr().out
 
 
