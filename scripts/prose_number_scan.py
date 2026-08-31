@@ -8,36 +8,39 @@
 敘述數字必須逐項可歸類為三形態之一：
 
 - **(a) 日期化歷史**——同一行帶 ISO 日期，快照數被釘在時間上；
-- **(b) 白名單**——閾值／裁定值、不變量與封閉集合基數（數字本身即設計）；
-- **(c) 量法＋artifact 指向**——同一行指向重量指令或已釘 hash 的 artifact。
+- **(b) 白名單**——僅兩類：閾值／裁定值、不變量／設計封閉集合基數
+  （pm-conduct「量測與轉述紀律」段的封閉定義；⛔ 本工具不得自行增類——R15
+  曾以 environment-fact 等三個自造類擴張白名單，被裁決退回）；
+- **(c) 量法＋artifact 指向**——行內有明文重量契約（「量法」「artifact 重量／
+  重列」），或 artifact 檔指向**與** hash 字面同時在場。⛔ 單獨出現 `.json`
+  路徑或一段 hex 不算（R15 反例：「inventory.json 目前有 44 張卡」曾被誤判綠）。
 
-R14 裁決（P1-38）證明人工終掃是假陰性製造機：只掃阿拉伯數字漏中文數字、
-只掃固定 regex 漏「未查」段。本腳本把「有數字但三態皆非」這件事**轉紅**。
-唯一判準：``unclassified_count == 0``（外加 inventory 死條目為零——見下）。
+R14/R15 兩輪證明假陰性是這裡的主要敵人：R14 漏中文數字與未查段；R15 漏
+inline code 內的數字、數字 heading、7 位以上純十進位（被 SHA regex 吃掉）、
+量詞「人」。修法⛔ 不是再加 broad regex，而是：偵測面**縮小剝除範圍**（fenced
+code block 整塊排除＝Markdown tokenization；inline code 內容保留掃描；heading
+只剝行首章節序號後照掃；SHA 樣式必須含至少一個 a-f），並以 detector-escape
+suite（成對測試：真識別子剝除／同形量測必響）釘住每一條剝除規則。
 
 ## 分類的機械來源
 
-(a) 與 (c) 由行內訊號自動判定（日期 regex／artifact 訊號）。(b) **沒有可靠的
-形狀訊號**——「11 個動詞」（可漂移的現況 inventory）與「信封 8 欄」（設計封閉
-集合）長得一模一樣，這正是 R14 打穿形狀判定的點。因此 (b) 一律住
-``docs/research/drafts/prose-number-inventory.json``：每條＝(路徑, 行文 SHA-1)
-→ 分類理由。⛔ 這不是排除清單——條目以**行文 hash 釘住**，該行改一個字元即
-脫鉤轉紅，逼重新分類；且每條帶理由可稽核。
+(a) 與 (c) 由行內訊號自動判定。(b) **沒有可靠的形狀訊號**——「11 個動詞」
+（可漂移的現況 inventory）與「信封 8 欄」（設計封閉集合）長得一模一樣。因此
+(b) 一律住 ``docs/research/drafts/prose-number-inventory.json``：每條＝
+(路徑, 行文 SHA-1) → reason（僅 threshold-ruling／design-closed-set 兩值，
+測試對 pm-conduct 的封閉定義釘死，⛔ 不以 inventory 自宣告的集合自證）＋
+**line-specific rationale**（該行的數字為何屬白名單，逐筆可稽核）。
+⛔ 這不是排除清單——條目以行文 hash 釘住，該行改一個字元即脫鉤轉紅。
 
 - 行文被改／被刪 ⇒ inventory 條目變**死條目**（load-bearing 檢查，轉紅）。
 - 新增未分類數字 ⇒ unclassified，轉紅。
+- 唯一判準：``unclassified_count == 0 && dead_entries == 0``。
 
 ## 射程
 
 封閉語料＝P1-38 裁決點名的規劃文書（決議＋brief＋wave-specs＋stage-rules）。
 ⛔ 不是全 repo 開放集合：本規範管的是「規劃敘述」，程式碼與 canonical 另有
 守衛。父卡卡面不是 repo 檔，用 ``--file`` 對匯出檔跑（僅自動分類，資訊性）。
-
-## 偵測（Arabic ＋ 中文數字）
-
-先剝識別子（SHA／日期／P1-NN／issue 號／regex 常數／行首編號…），剩下的
-阿拉伯數字、或**帶量詞的中文數字**（「十二條」「六條」——R14 反例的形狀）即為
-候選。單獨「一」只在後接量詞時算（「一次授權」「唯一」是慣用語不是量測）。
 """
 from __future__ import annotations
 
@@ -50,6 +53,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INVENTORY_PATH = REPO_ROOT / "docs" / "research" / "drafts" / "prose-number-inventory.json"
+
+# pm-conduct (b) 的封閉定義；測試釘住這個集合（⛔ 不讀 inventory 自宣告）
+ALLOWED_B_REASONS = frozenset({"threshold-ruling", "design-closed-set"})
 
 CORPUS = [
     "docs/research/WORKFLOW-REDESIGN-2026-08-30.md",
@@ -65,12 +71,24 @@ def corpus_paths() -> list[Path]:
 
 
 DATE = r"20\d\d-\d\d(?:-\d\d)?"
-# artifact 指向訊號：hash 字面／artifact 檔／「量法」「artifact 重量／重列」宣告
-ARTIFACT_SIGNAL = r"[0-9a-f]{12,64}|baseline-universe|\.json\b|量法|artifact ?重[量列]"
 
-# 剝掉的識別子：不是「量」的數字（引用號、版本、regex、hash、行首編號…）
+# (c) 訊號：明文重量契約，或 artifact 檔指向＋hash 字面同行並存
+_MEASURE_CONTRACT = re.compile(r"量法|artifact ?重[量列]")
+_ARTIFACT_FILE = re.compile(r"[\w-]+\.json\b|baseline-universe")
+_HASH_LITERAL = re.compile(r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{12,64}\b")
+
+
+def _has_artifact_signal(line: str) -> bool:
+    if _MEASURE_CONTRACT.search(line):
+        return True
+    return bool(_ARTIFACT_FILE.search(line) and _HASH_LITERAL.search(line))
+
+
+# 剝掉的識別子：不是「量」的數字（引用號、版本、regex 錨、hash、行首編號…）。
+# ⚠️ 每一條都要在 detector-escape suite 有成對測試：真識別子剝除＝不產列；
+# 相鄰同形量測＝必產列。SHA 樣式要求至少含一個 a-f——純十進位長數是「量」。
 ID_PATS = [
-    r"\b[0-9a-f]{7,40}\b",
+    r"\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b",
     r"P1-\d+",
     r"§[\d.．]+(?:\.\d+)*",
     r"§[一二三四五六七八九十]+(?:之[一二三四五六七八九十]+)?",
@@ -92,13 +110,11 @@ ID_PATS = [
     r"\d{2}:\d{2}",
     r"\+08:00",
     r"\b0\.\d+\.\d+\b",
-    r"2020-12",
     r"\bop [0-9a-f]{8}\b",
     r"WF-\d+|WF-REDESIGN\d*",
     r"aiwf#\d+",
     r"cpbl#\d+",
     r"[Pp]hase ?[12]\b",
-    r"8×10",
     r"ruan6047",
     r"first:\d+",
     r"shasum -a 256",
@@ -106,21 +122,54 @@ ID_PATS = [
     r"^\s*\d+[a-b]?[\.、]",
     r"^\s*\|\s*\d+\s*\|",
     r"^\s*- \*?\*?\d+[\.、]",
+    # regex 字元類量詞（如行數自述 token 的樣式本體）——機器形狀非量測
+    r"\[\d(?:-\d)?\]\{\d+,?\d*\}( ?\?)?",
+    # API／機讀識別子與結構引用（各有 detector-escape 成對測試）
+    r"[A-Za-z_]+V2[A-Za-z_]*",
+    r"[\w/.-]+\.(?:py|md|sql|sh|yml|json|jsonl):\d+",
+    r"\bA\d\b",
+    r"條件 ?\d",
+    r"波 ?\d",
+    r"rows? ?\d+(?:、\d+)*",
+    r"replacement_rows: ?\[[\d, ]*\]",
+    r"spec_version: ?\d+",
+    r"\brc ?= ?\d+",
+    r"WF_[A-Z_]+\d*",
 ]
 
-MEASURE_WORDS = "張條筆欄格種類段波卡檔項輪批次個列份步天例處行題值族層面軸房盞問座支套門"
+MEASURE_WORDS = (
+    "張條筆欄格種類段波卡檔項輪批次個列份步天例處行題值族層面軸房盞問座支套門人位名"
+)
 CN_NUM = "[一二三四五六七八九十百千兩]"
+
+# heading 行首的章節序號（「## 八 ·」「### 3.」）——剝掉序號後其餘照掃，
+# ⛔ 不整行跳過（R15 反例：「## 目前有 43 張卡」曾整行漏掃）
+_HEADING_ORDINAL = re.compile(
+    r"^(#{1,4}) (?:[一二三四五六七八九十]+(?:之[一二三四五六七八九十]+)? ?[·．]?|\d+[\.、]? ?)"
+)
 
 
 def _strip_ids(text: str) -> str:
     text = re.sub(DATE, " ", text)
     for pat in ID_PATS:
         text = re.sub(pat, " ", text, flags=re.M)
-    return re.sub(r"`[^`]*`", " ", text)
+    return text
 
 
 def _line_key(text: str) -> str:
     return hashlib.sha1(text.strip().encode("utf-8")).hexdigest()
+
+
+def _prose_lines(text: str):
+    """逐行產出 (行號, 行文)，整塊跳過 fenced code block（Markdown tokenization）。"""
+    in_fence = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if re.match(r"^\s*(```|~~~)", line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        yield lineno, line
 
 
 def scan_file(path: Path, inventory: dict[tuple[str, str], dict] | None = None,
@@ -128,17 +177,16 @@ def scan_file(path: Path, inventory: dict[tuple[str, str], dict] | None = None,
     """回傳該檔每個含候選數字行的分類列。inventory=None 時 (b) 永不命中。"""
     rel = rel if rel is not None else str(path.relative_to(REPO_ROOT))
     rows = []
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if re.match(r"^#{1,4} ", line):
-            continue  # 標題的章節序號不是敘述數字
-        stripped = _strip_ids(line)
+    for lineno, line in _prose_lines(path.read_text(encoding="utf-8")):
+        scannable = _HEADING_ORDINAL.sub(r"\1 ", line, count=1)
+        stripped = _strip_ids(scannable)
         arabic = re.findall(r"\d+(?:[.,]\d+)*%?", stripped)
         chinese = re.findall(CN_NUM + "+(?=[" + MEASURE_WORDS + "])", stripped)
         if not (arabic or chinese):
             continue
         if re.search(DATE, line):
             cls, reason = "a", "dated-history"
-        elif re.search(ARTIFACT_SIGNAL, line):
+        elif _has_artifact_signal(line):
             cls, reason = "c", "artifact-pinned"
         else:
             entry = (inventory or {}).get((rel, _line_key(line)))
