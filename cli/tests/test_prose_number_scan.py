@@ -74,6 +74,36 @@ def test_escape_bare_json_is_not_artifact(tmp_path):
     assert _classes(tmp_path, "inventory.json 目前有 44 張卡。") == ["unclassified"]
 
 
+# ---- fence 狀態機成對測試（R16 反例＋CommonMark 三規則） ----
+
+def test_fence_four_backtick_outer_with_three_inner(tmp_path):
+    # R16 反例：四反引號外層＋三反引號內文是合法 Markdown；close 後的裸數必轉紅
+    text = "````markdown\n```\n````\n目前有 42 張卡。"
+    assert _classes(tmp_path, text) == ["unclassified"]
+
+
+def test_fence_shorter_closer_does_not_close(tmp_path):
+    text = "````\n```\n目前有 42 張卡。"
+    assert _classes(tmp_path, text) == []  # 仍在 fence 內
+
+
+def test_fence_backtick_and_tilde_do_not_interclose(tmp_path):
+    text = "```\n~~~\n目前有 42 張卡。"
+    assert _classes(tmp_path, text) == []  # ~~~ 不關反引號 fence
+    text2 = "~~~\n```\n目前有 42 張卡。"
+    assert _classes(tmp_path, text2) == []  # ``` 不關波浪號 fence
+
+
+def test_fence_info_string_line_is_not_closer(tmp_path):
+    text = "```\n```python\n目前有 42 張卡。"
+    assert _classes(tmp_path, text) == []  # 帶 info string 的行不是 closer
+
+
+def test_fence_plain_block_still_excluded(tmp_path):
+    text = "```\n目前有 42 張卡。\n```\n2026-08-30 有 7 張卡。"
+    assert _classes(tmp_path, text) == ["a"]
+
+
 def test_ordinal_heading_still_stripped(tmp_path):
     # 章節序號不是敘述數字；heading 其餘內容照掃
     assert _classes(tmp_path, "## 八 · 注意事項") == []
@@ -168,27 +198,59 @@ def test_id_patterns_clean_and_adjacent(tmp_path):
 
 # ---- inventory 契約 ----
 
+def _entry(line, claims):
+    return {("probe.md", pns._line_key(line)): {"claims": claims}}
+
+
 def test_inventory_pins_line_text(tmp_path):
     line = "信封固定為 8 欄，缺一即拒。"
-    inv = {("probe.md", pns._line_key(line)): {"reason": "design-closed-set"}}
+    inv = _entry(line, [{"token": "8", "reason": "design-closed-set",
+                         "rationale": "「8 欄」＝信封欄位枚舉"}])
     assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["b"]
     rows2 = _scan_text(tmp_path, "信封固定為 9 欄，缺一即拒。", inventory=inv)
     assert [r["class"] for r in rows2] == ["unclassified"]
+
+
+def test_claims_must_cover_every_token(tmp_path):
+    # R16：行級單一 rationale 放行整列 tokens 被退回——漏 token 即紅
+    line = "信封 8 欄共 3 類。"
+    inv = _entry(line, [{"token": "8", "reason": "design-closed-set",
+                         "rationale": "「8 欄」＝信封欄位枚舉"}])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["claims-mismatch"]
+
+
+def test_claims_must_not_exceed_tokens(tmp_path):
+    line = "信封固定為 8 欄，缺一即拒。"
+    inv = _entry(line, [{"token": "8", "reason": "design-closed-set", "rationale": "「8 欄」＝枚舉"},
+                        {"token": "3", "reason": "design-closed-set", "rationale": "幽靈 claim"}])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=inv)] == ["claims-mismatch"]
+
+
+def test_repeated_token_needs_one_claim_per_occurrence(tmp_path):
+    line = "共 8 份檔案，預期 8 全綠。"
+    one = _entry(line, [{"token": "8", "reason": "design-closed-set", "rationale": "「8 份」＝檔案枚舉"}])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=one)] == ["claims-mismatch"]
+    two = _entry(line, [
+        {"token": "8", "reason": "design-closed-set", "rationale": "「8 份」＝檔案枚舉"},
+        {"token": "8", "reason": "threshold-ruling", "rationale": "「預期 8」＝oracle 期望值"},
+    ])
+    assert [r["class"] for r in _scan_text(tmp_path, line, inventory=two)] == ["b"]
 
 
 def test_inventory_reasons_pinned_to_pm_conduct_b():
     # 字面釘死 pm-conduct (b) 兩類；⛔ 不以 inventory 自宣告的集合自證
     assert pns.ALLOWED_B_REASONS == frozenset({"threshold-ruling", "design-closed-set"})
     data = json.loads(pns.INVENTORY_PATH.read_text(encoding="utf-8"))
-    bad = [e for e in data["entries"] if e["reason"] not in pns.ALLOWED_B_REASONS]
+    bad = [c for e in data["entries"] for c in e["claims"]
+           if c["reason"] not in pns.ALLOWED_B_REASONS]
     assert bad == []
 
 
-def test_inventory_entries_carry_line_specific_rationale():
+def test_every_claim_carries_line_specific_rationale():
     data = json.loads(pns.INVENTORY_PATH.read_text(encoding="utf-8"))
-    bad = [e for e in data["entries"]
-           if not e.get("rationale") or e["rationale"].strip() == e["reason"]
-           or len(e["rationale"]) < 10]
+    bad = [c for e in data["entries"] for c in e["claims"]
+           if not c.get("rationale") or c["rationale"].strip() == c["reason"]
+           or len(c["rationale"]) < 10]
     assert bad == []
 
 
@@ -202,6 +264,8 @@ def test_corpus_is_fully_classified():
     assert result["dead_entries"] == [], [
         f'{e["path"]} {e.get("excerpt", "")[:60]}' for e in result["dead_entries"]
     ]
+    assert result["uncovered_claims"] == [], result["uncovered_claims"][:5]
+    assert result["extra_claims"] == [], result["extra_claims"][:5]
 
 
 def test_cli_exit_code_red_on_unclassified(tmp_path):
