@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "spec": "P1-38 (b) 白名單（R16 後 token-level）：行文 SHA-1 釘住；每筆 claims 逐 token（reason∈兩類＋line-specific rationale）；scanner 驗偵測 multiset 與 claims 一一相等，漏一多一即紅",
+  "spec": "P1-38 (b) 白名單（R17 後 occurrence-bound）：行文 SHA-1 釘住；claims 逐 occurrence（occurrence=偵測序第 i 個、token、reason∈兩值、line-specific rationale）；scanner 驗 (occurrence,token) 對集一一相等並驗 closed claim schema，違約 fail-closed",
   "classes": {
    "threshold-ruling": "閾值／裁定值——數字是規則本身",
    "design-closed-set": "不變量／設計封閉集合基數——數字是結構定義（含序數慣用語之非量測數）"
@@ -14,16 +14,19 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8」＝規劃階段注意事項定稿條數（本行即逐條枚舉）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     },
     {
      "token": "三",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「三層」＝顆粒度層級枚舉（重／中／輕，行內列明）"
     }
@@ -36,16 +39,19 @@
    "claims": [
     {
      "token": "1",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「≥1」＝驗收條數裁定門檻，數字即規則"
     },
     {
      "token": "2",
+     "occurrence": 1,
      "reason": "threshold-ruling",
      "rationale": "「≤2」＝鏈深路由上限裁定值"
     },
     {
      "token": "2",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「×2」＝執行／查核兩角色的能力層級欄枚舉"
     }
@@ -58,11 +64,13 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     },
     {
      "token": "五",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     }
@@ -75,6 +83,7 @@
    "claims": [
     {
      "token": "6",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「6」＝決議 §六新角色表枚舉基數（成員行內列明）"
     }
@@ -87,6 +96,7 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8 階段」＝決議 §三枚舉（行內箭頭列出全部成員）"
     }
@@ -99,6 +109,7 @@
    "claims": [
     {
      "token": "15",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     }
@@ -111,16 +122,19 @@
    "claims": [
     {
      "token": "10",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「10 bit」＝通用 7＋專屬 3 之枚舉和"
     },
     {
      "token": "7",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     },
     {
      "token": "3",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「專屬 3」＝專屬狀態枚舉（不可判定／運行中／停止，行內列明）"
     }
@@ -133,6 +147,7 @@
    "claims": [
     {
      "token": "兩",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「兩層」＝分級表 DI 層枚舉（框架＋專案，行內列明）"
     }
@@ -145,16 +160,19 @@
    "claims": [
     {
      "token": "五",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「第五欄」＝轉移記錄四欄設計的否定式陳述（時間/from/to/輪次）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「升級出口例外多一值」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「卡面現值＝最後一行」＝序數／慣用語非量測（本行語境）"
     }
@@ -167,6 +185,7 @@
    "claims": [
     {
      "token": "五",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「五條件」＝收件條件枚舉（list-intake 條件 1–5）"
     }
@@ -179,16 +198,19 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「三值」＝回應清冊值域枚舉（已遵循／不適用／發現）"
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「三值」＝回應清冊值域枚舉（已遵循／不適用／發現）"
     },
     {
      "token": "八",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
     }
@@ -201,11 +223,13 @@
    "claims": [
     {
      "token": "五",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「五份」＝交接文件枚舉（行內列明五種）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「三種」＝未驗原因值域枚舉（canonical §6.4.2 承接）"
     }
@@ -218,6 +242,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「7」＝結案階段注意事項定稿條數（本行即逐條枚舉）"
     }
@@ -230,11 +255,13 @@
    "claims": [
     {
      "token": "0",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「0」＝部署／維護注意事項刻意留空之條數（設計決定）"
     },
     {
      "token": "0",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「0」＝部署／維護注意事項刻意留空之條數（設計決定）"
     }
@@ -247,11 +274,13 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「7」＝canonical §1 舊角色表枚舉基數"
     },
     {
      "token": "6",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「6」＝決議 §六新角色表枚舉基數（成員行內列明）"
     }
@@ -264,26 +293,31 @@
    "claims": [
     {
      "token": "15",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「15」＝需求階段注意事項定稿條數（本行即逐條枚舉）"
     },
     {
      "token": "1",
+     "occurrence": 1,
      "reason": "threshold-ruling",
      "rationale": "「≥1」＝驗收條數裁定門檻，數字即規則"
     },
     {
      "token": "2",
+     "occurrence": 2,
      "reason": "threshold-ruling",
      "rationale": "「≤2」＝鏈深路由上限裁定值"
     },
     {
      "token": "三",
+     "occurrence": 3,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     },
     {
      "token": "一",
+     "occurrence": 4,
      "reason": "design-closed-set",
      "rationale": "「鏈深≤2 路由一次填齊」＝序數／慣用語非量測（本行語境）"
     }
@@ -296,11 +330,13 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8」＝決議 §三枚舉的階段集合基數"
     },
     {
      "token": "10",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「10」＝決議 §三枚舉的狀態集合基數（通用7＋專屬3）"
     }
@@ -313,6 +349,7 @@
    "claims": [
     {
      "token": "12",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「12」＝執行階段注意事項定稿條數（本行即逐條枚舉）"
     }
@@ -325,11 +362,13 @@
    "claims": [
     {
      "token": "3",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「3 張卡」＝注意事項升遷門檻裁定值"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
     }
@@ -342,16 +381,19 @@
    "claims": [
     {
      "token": "15",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     },
     {
      "token": "8",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「8」＝決議 §三枚舉的階段集合基數"
     },
     {
      "token": "10",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「10」＝決議 §三枚舉的狀態集合基數（通用7＋專屬3）"
     }
@@ -364,11 +406,13 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     },
     {
      "token": "五",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     }
@@ -381,6 +425,7 @@
    "claims": [
     {
      "token": "14",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「14」＝研究階段注意事項定稿條數（本行即逐條枚舉）"
     }
@@ -393,11 +438,13 @@
    "claims": [
     {
      "token": "9",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「9」＝審核階段注意事項定稿條數（本行即逐條枚舉）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     }
@@ -410,6 +457,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則"
     }
@@ -422,16 +470,19 @@
    "claims": [
     {
      "token": "5",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「5 步」＝①–⑤行內逐一枚舉的審核迴圈"
     },
     {
      "token": "3",
+     "occurrence": 1,
      "reason": "threshold-ruling",
      "rationale": "「第 3 次」＝同輪退回自動升級門檻裁定值"
     },
     {
      "token": "三",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
     }
@@ -444,16 +495,19 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8」＝決議 §三枚舉的階段集合基數"
     },
     {
      "token": "10",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「10」＝決議 §三枚舉的狀態集合基數（通用7＋專屬3）"
     },
     {
      "token": "十五",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     }
@@ -466,6 +520,7 @@
    "claims": [
     {
      "token": "3",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「≥3」＝高階型對抗反測門檻裁定值"
     }
@@ -478,6 +533,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「執行期第一步」＝序數／慣用語非量測（本行語境）"
     }
@@ -490,6 +546,7 @@
    "claims": [
     {
      "token": "30",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「N=30」＝回顧樣本量裁定值（brief 依據段推導）"
     }
@@ -502,6 +559,7 @@
    "claims": [
     {
      "token": "3",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「×3」＝conduct 檔枚舉（pm/executor/reviewer）"
     }
@@ -514,11 +572,13 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三」＝服務目標並列枚舉（可稽核／防事故／流程順暢）"
     },
     {
      "token": "兩",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「前兩項」＝服務目標枚舉之子集引用"
     }
@@ -531,6 +591,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「7 值」＝部署狀態舊選單枚舉基數（已推翻假設引用）"
     }
@@ -543,11 +604,13 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     },
     {
      "token": "五",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     }
@@ -560,11 +623,13 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     },
     {
      "token": "五",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     }
@@ -577,6 +642,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
     }
@@ -589,6 +655,7 @@
    "claims": [
     {
      "token": "七",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 逐段列明）"
     }
@@ -601,6 +668,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -613,6 +681,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "括號數＝該階段注意事項清冊定稿條數（決議 §八；條目即本檔逐條列出）"
     }
@@ -625,6 +694,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -637,6 +707,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則"
     }
@@ -649,6 +720,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「代寫的是另一份文件」＝序數／慣用語非量測（本行語境）"
     }
@@ -661,6 +733,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -673,6 +746,7 @@
    "claims": [
     {
      "token": "12",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "括號數＝該階段注意事項清冊定稿條數（決議 §八；條目即本檔逐條列出）"
     }
@@ -685,18 +759,21 @@
    "claims": [
     {
      "token": "13",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「13 族」＝執行階段踩坑族清冊基數（canonical 定稿枚舉）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
     },
     {
      "token": "一",
+     "occurrence": 2,
      "reason": "design-closed-set",
-     "rationale": "「規格＋三層注意事項＋13」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「上一輪退回理由」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -707,6 +784,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
     }
@@ -719,6 +797,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
     }
@@ -731,6 +810,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則"
     }
@@ -743,6 +823,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三格」＝提案者身分欄枚舉（本檔表格列明）"
     }
@@ -755,6 +836,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「在哪張卡的哪一步撞到」＝序數／慣用語非量測（本行語境）"
     }
@@ -767,6 +849,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「指向一份本機檔案」＝序數／慣用語非量測（本行語境）"
     }
@@ -779,11 +862,13 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
     },
     {
      "token": "四",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
     }
@@ -796,11 +881,13 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「另一個」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "四",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
     }
@@ -813,6 +900,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「一個連結」＝序數／慣用語非量測（本行語境）"
     }
@@ -825,11 +913,13 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則"
     },
     {
      "token": "兩",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「不需要兩套查法」＝序數／慣用語非量測（本行語境）"
     }
@@ -842,13 +932,15 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「多填一格只是多一個能說謊」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「多填一格只是多一個」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「多填一格只是多一個能說謊」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「填一格只是多一個能說謊的地」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -859,6 +951,7 @@
    "claims": [
     {
      "token": "二",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「同一件事會被開成第二張卡」＝序數／慣用語非量測（本行語境）"
     }
@@ -871,6 +964,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
     }
@@ -883,16 +977,19 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「就是需求方本人 ⇒ 任何」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「都是同一個」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "二",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「第二個 PM 只能給裁決」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「寫入仍由第一個 PM 執」＝序數／慣用語非量測（本行語境）"
     }
@@ -905,8 +1002,9 @@
    "claims": [
     {
      "token": "二",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「第二個 PM 由誰擔任、」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「第二個 PM 由誰擔任」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -917,6 +1015,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三格」＝提案者身分欄枚舉（本檔表格列明）"
     }
@@ -929,6 +1028,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
     }
@@ -941,8 +1041,9 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「而且下一個人看得出漏搜了」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「而且下一個人看得出漏」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -953,13 +1054,15 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「有人發現一個問題、或想要」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「有人發現一個問題」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「有人發現一個問題、或想要」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「或想要一個功能」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -970,8 +1073,9 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「缺任一項 ⇒ 退回提案者」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「缺任一項 ⇒ 退回」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -982,6 +1086,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「放錯了就得換一次號」＝序數／慣用語非量測（本行語境）"
     }
@@ -994,13 +1099,15 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則"
+     "rationale": "「這一格」＝表單欄位的指示語（序數慣用），非量測"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「一」＝一對一不變量／唯一性約束，數字即規則"
+     "rationale": "「這一格」＝表單欄位的指示語（序數慣用），非量測"
     }
    ]
   },
@@ -1011,6 +1118,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -1023,6 +1131,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三層」＝顆粒度層級枚舉（重／中／輕，行內列明）"
     }
@@ -1035,6 +1144,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -1047,6 +1157,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     }
@@ -1059,6 +1170,7 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "括號數＝該階段注意事項清冊定稿條數（決議 §八；條目即本檔逐條列出）"
     }
@@ -1071,6 +1183,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四問」＝pm-conduct §三自檢問題枚舉"
     }
@@ -1083,16 +1196,19 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「一張窮舉卡」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "四",
+     "occurrence": 2,
      "reason": "threshold-ruling",
      "rationale": "「第四張」＝同族停手門檻的否定式陳述（第三張後禁開）"
     }
@@ -1105,11 +1221,13 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「三次」＝升級單門檻引用，數字即規則"
     },
     {
      "token": "四",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四選一」＝升級裁定值域枚舉"
     }
@@ -1122,6 +1240,7 @@
    "claims": [
     {
      "token": "七",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 逐段列明）"
     }
@@ -1134,13 +1253,15 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「三輪」＝提案被翻後的重研究門檻裁定值"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「翻面沿用的是同一個不足的」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「面沿用的是同一個不足的基礎」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1151,21 +1272,25 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「一次授權／下一次／上一張／這一張」＝同一條授權單次性規則的成對指涉（本行整句即該規則），非量測"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「一次授權／下一次／上一張／這一張」＝同一條授權單次性規則的成對指涉（本行整句即該規則），非量測"
     },
     {
      "token": "一",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「一次授權／下一次／上一張／這一張」＝同一條授權單次性規則的成對指涉（本行整句即該規則），非量測"
     },
     {
      "token": "一",
+     "occurrence": 3,
      "reason": "design-closed-set",
      "rationale": "「一次授權／下一次／上一張／這一張」＝同一條授權單次性規則的成對指涉（本行整句即該規則），非量測"
     }
@@ -1178,11 +1303,13 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「每換一個實體」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「就有一批未明說的慣例會掉」＝序數／慣用語非量測（本行語境）"
     }
@@ -1195,8 +1322,9 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「轉手一個 finding」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「轉手一個」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1207,6 +1335,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「另一個」＝序數／慣用語非量測（本行語境）"
     }
@@ -1219,11 +1348,13 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「另一個」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「不經第一個 PM 轉錄」＝序數／慣用語非量測（本行語境）"
     }
@@ -1236,8 +1367,9 @@
    "claims": [
     {
      "token": "二",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「起負規劃義務＝要有第二個」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「義務＝要有第二個判斷」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1248,13 +1380,15 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「把一個清單項變成一張可派」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「把一個清單項變成」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「把一個清單項變成一張可派」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「個清單項變成一張可派工的卡」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1265,6 +1399,7 @@
    "claims": [
     {
      "token": "15",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "括號數＝該階段注意事項清冊定稿條數（決議 §八；條目即本檔逐條列出）"
     }
@@ -1277,6 +1412,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -1289,11 +1425,13 @@
    "claims": [
     {
      "token": "2",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「≤2」＝鏈深路由上限裁定值"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「路由欄一次填齊」＝序數／慣用語非量測（本行語境）"
     }
@@ -1306,6 +1444,7 @@
    "claims": [
     {
      "token": "1",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「≥1」＝驗收條數裁定門檻，數字即規則"
     }
@@ -1318,13 +1457,15 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「把一個清單項變成一張可派」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「把一個清單項變成」＝序數／慣用語非量測（本行語境）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「把一個清單項變成一張可派」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「個清單項變成一張可派工的卡」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1335,13 +1476,15 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「同族第三張停手 ⇒ 一張」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「張停手 ⇒ 一張窮舉卡」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1352,8 +1495,9 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「研究一張卡前先讀它自己的」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「研究一張卡前先讀它」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1364,6 +1508,7 @@
    "claims": [
     {
      "token": "3",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「≥3」＝高階型對抗反測門檻裁定值"
     }
@@ -1376,6 +1521,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -1388,6 +1534,7 @@
    "claims": [
     {
      "token": "14",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "括號數＝該階段注意事項清冊定稿條數（決議 §八；條目即本檔逐條列出）"
     }
@@ -1400,6 +1547,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     }
@@ -1412,11 +1560,13 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     },
     {
      "token": "四",
+     "occurrence": 1,
      "reason": "threshold-ruling",
      "rationale": "「第四輪」＝同根因升級門檻的否定式陳述（第三輪即升級）"
     }
@@ -1429,6 +1579,7 @@
    "claims": [
     {
      "token": "9",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "括號數＝該階段注意事項清冊定稿條數（決議 §八；條目即本檔逐條列出）"
     }
@@ -1441,6 +1592,7 @@
    "claims": [
     {
      "token": "7",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「通用 7」＝決議 §三枚舉的通用狀態集合（成員行內列明）"
     }
@@ -1453,6 +1605,7 @@
    "claims": [
     {
      "token": "3",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「≥3」＝高階型對抗反測門檻裁定值"
     }
@@ -1465,6 +1618,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「你可能來自另一個實體」＝序數／慣用語非量測（本行語境）"
     }
@@ -1477,6 +1631,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「第三」＝同族／同根因停手與升級門檻裁定值"
     }
@@ -1489,11 +1644,13 @@
    "claims": [
     {
      "token": "15",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     },
     {
      "token": "7",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「7」＝canonical §1 舊角色表枚舉基數"
     }
@@ -1506,6 +1663,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四個」＝list-items 清單項枚舉（W2A/W2B/W3′/切換）"
     }
@@ -1518,6 +1676,7 @@
    "claims": [
     {
      "token": "五",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「五份」＝交接文件枚舉（行內列明五種）"
     }
@@ -1530,6 +1689,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
     }
@@ -1542,6 +1702,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四檔」＝W0 射程枚舉（三 conduct＋list-intake）"
     }
@@ -1554,6 +1715,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三份」＝W0 射程 conduct 檔枚舉"
     }
@@ -1566,6 +1728,7 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四個」＝list-items 清單項枚舉（W2A/W2B/W3′/切換）"
     }
@@ -1578,28 +1741,33 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+     "rationale": "「三欄」＝Issue title／Project item title／功能欄之退場 oracle 對象枚舉"
     },
     {
      "token": "四",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     },
     {
      "token": "五",
+     "occurrence": 3,
      "reason": "design-closed-set",
      "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
     },
     {
      "token": "五",
+     "occurrence": 4,
      "reason": "design-closed-set",
-     "rationale": "「四波五卡」＝本 Initiative 拆卡定案枚舉（W0/W1/W2A/W2B/W3′）"
+     "rationale": "「五波施工」＝退場 oracle 的禁字探針字面（驗零殘留），⛔ 非現行語彙引用"
     }
    ]
   },
@@ -1610,8 +1778,9 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
-     "rationale": "「的清單項用本機制實際升級」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「機制實際升級一次＝驗收即實」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1622,11 +1791,13 @@
    "claims": [
     {
      "token": "0",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「0 或負」＝拒收 fixture 邊界裁定值"
     },
     {
      "token": "四",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「四類」＝拒收 fixture 枚舉（行內列明四種）"
     }
@@ -1639,6 +1810,7 @@
    "claims": [
     {
      "token": "1",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「≥1」＝驗收條數裁定門檻，數字即規則"
     }
@@ -1651,6 +1823,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「前置一次性唯讀查詢」＝序數／慣用語非量測（本行語境）"
     }
@@ -1663,11 +1836,13 @@
    "claims": [
     {
      "token": "五",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「五條件」＝收件條件枚舉（list-intake 條件 1–5）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「五條件各一欄」＝序數／慣用語非量測（本行語境）"
     }
@@ -1680,11 +1855,13 @@
    "claims": [
     {
      "token": "0",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「0」＝checker 唯一判準值（unapproved_count==0 設計）"
     },
     {
      "token": "0",
+     "occurrence": 1,
      "reason": "threshold-ruling",
      "rationale": "「0」＝checker 唯一判準值（unapproved_count==0 設計）"
     }
@@ -1697,6 +1874,7 @@
    "claims": [
     {
      "token": "6",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「6」＝決議 §六新角色表枚舉基數（成員行內列明）"
     }
@@ -1709,21 +1887,25 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
     },
     {
      "token": "15",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「15 值」＝舊制看板狀態單欄枚舉基數（canonical §0 定義的設計集合）"
     },
     {
      "token": "8",
+     "occurrence": 2,
      "reason": "threshold-ruling",
      "rationale": "「預期 8」＝AC oracle 期望值＝stage-rules 檔枚舉基數"
     },
     {
      "token": "一",
+     "occurrence": 3,
      "reason": "design-closed-set",
      "rationale": "「檔頂各含一行」＝序數／慣用語非量測（本行語境）"
     }
@@ -1736,16 +1918,19 @@
    "claims": [
     {
      "token": "0",
+     "occurrence": 0,
      "reason": "threshold-ruling",
      "rationale": "「0」＝checker 判準引用（⛔ 另宣告 raw count=0 的否定式陳述）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「三個」＝checker 輸入 token 枚舉（行內列明）"
     },
     {
      "token": "一",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「輸出與   同一份」＝序數／慣用語非量測（本行語境）"
     }
@@ -1758,13 +1943,15 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
     },
     {
      "token": "一",
+     "occurrence": 1,
      "reason": "design-closed-set",
-     "rationale": "「規則類整套與 canon」＝序數／慣用語非量測（本行語境）"
+     "rationale": "「同一輪跨家族審」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
@@ -1775,35 +1962,15 @@
    "claims": [
     {
      "token": "8",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8」＝決議 §三枚舉的階段集合基數"
     },
     {
      "token": "10",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「10」＝決議 §三枚舉的狀態集合基數（通用7＋專屬3）"
-    }
-   ]
-  },
-  {
-   "path": "docs/research/drafts/wave-specs/w2b.md",
-   "line_sha1": "2538288de45b4f5d525d1930ec3f3fc893142f82",
-   "excerpt": "1. （P1-15 封閉 mapping）舊 → 新逐檔對照，各附 falsifier：tasks-card.md → 移除（卡面 fenc",
-   "claims": [
-    {
-     "token": "6",
-     "reason": "design-closed-set",
-     "rationale": "舊→新 mapping＝行內逐檔枚舉（各檔名與 falsifier 列明）"
-    },
-    {
-     "token": "五",
-     "reason": "design-closed-set",
-     "rationale": "舊→新 mapping＝行內逐檔枚舉（各檔名與 falsifier 列明）"
-    },
-    {
-     "token": "四",
-     "reason": "design-closed-set",
-     "rationale": "舊→新 mapping＝行內逐檔枚舉（各檔名與 falsifier 列明）"
     }
    ]
   },
@@ -1814,6 +1981,7 @@
    "claims": [
     {
      "token": "八",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「8 份」＝stage-rules SOP 檔枚舉（八階段各一）"
     }
@@ -1826,26 +1994,31 @@
    "claims": [
     {
      "token": "五",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「五份」＝交接文件枚舉（行內列明五種）"
     },
     {
      "token": "三",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「三份」＝五份交接文件枚舉中無範本之子集（行內列明）"
     },
     {
      "token": "兩",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「兩份」＝五份枚舉中舊制形狀之子集（行內列明）"
     },
     {
      "token": "五",
+     "occurrence": 3,
      "reason": "design-closed-set",
      "rationale": "「五檔」＝被守衛釘住的舊模板枚舉（P1-15 mapping 母體）"
     },
     {
      "token": "六",
+     "occurrence": 4,
      "reason": "design-closed-set",
      "rationale": "「六」＝該段枚舉之基數（行內列明成員）"
     }
@@ -1858,6 +2031,7 @@
    "claims": [
     {
      "token": "一",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「派工包範本可實際產出一份」＝序數／慣用語非量測（本行語境）"
     }
@@ -1870,21 +2044,25 @@
    "claims": [
     {
      "token": "四",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「四類」＝範本輸出面枚舉（行內列明）"
     },
     {
      "token": "七",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 逐段列明）"
     },
     {
      "token": "五",
+     "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「五檔」＝新範本檔枚舉（四類輸出＋closeout-report）"
     },
     {
      "token": "三",
+     "occurrence": 3,
      "reason": "design-closed-set",
      "rationale": "「三值」＝回應清冊值域枚舉（已遵循／不適用／發現）"
     }
@@ -1897,6 +2075,7 @@
    "claims": [
     {
      "token": "五",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「五檔」＝被守衛釘住的舊模板枚舉（P1-15 mapping 母體）"
     }
@@ -1909,6 +2088,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三項」＝assign 交集檢查行為枚舉（(a)(b)(c)）"
     }
@@ -1921,11 +2101,13 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
     },
     {
      "token": "六",
+     "occurrence": 1,
      "reason": "design-closed-set",
      "rationale": "「六種」＝回應清冊拒收型枚舉（行內逐一列明，各有 fixture）"
     }
@@ -1938,6 +2120,7 @@
    "claims": [
     {
      "token": "三",
+     "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三格」＝db: 別名處置值域枚舉（行內列明）"
     }
