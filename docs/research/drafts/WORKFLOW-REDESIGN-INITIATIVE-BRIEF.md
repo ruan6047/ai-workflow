@@ -33,6 +33,9 @@ description: 四波五卡施工 Initiative 的 discovery brief（WF-19 形式；
 - PM 對照能否穩定抓住值域錯誤（取代 CLI 硬拒後）——無基線，施工期觀察
 - userContentEdits 長期保存未文件化——每日 snapshot 補規格節為對沖
 - 刪「有值」SINGLE_SELECT 選項的行為未實測——切換 Initiative 前置拋棄式 project 實測
+- （R9–13 累增）epoch＋dual reader 的部署可行性——W3′ 執行期 spike
+- （R9–13 累增）journal 多 session 同時 retry 同 op 的行為——未 spike；envelope 整份重用使最壞為同 hash 重複
+- （R9–13 累增）reader 按 op id 去重＋corruption gate 的實作可行性——W3′ 執行期第一步
 
 ## 非目標（⛔）
 

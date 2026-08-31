@@ -13,7 +13,7 @@ replacement_rows: []
 **⛔ 非射程**：不動 canonical 本體（W2A 已完）；不動 CLI 碼（W3′）。
 **階段計畫**：需求 → 執行 → 審核 → 結案（內容已確認，跳過研究／規劃）。
 **級別依據**（P1-11 重推）：改寫 dispatch-package 等 contract templates＝public contract ⇒ **T3**。執行 主力型／查核 主力型＋獨立；需求方閘門適用。硬依賴：W2A 終態後才可開工。執行 主力型／查核 主力型。db-scope none。
-**資源**：file:templates/、file:AGENTS.md、file:README.md、file:MODEL_ROUTING.md、file:docs/CONTRACT_TOOL_RECONCILE.md、file:cli/tests/test_contract_tool_reconcile.py
+**資源**：file:templates/、file:AGENTS.md、file:README.md、file:docs/CONTRACT_TOOL_RECONCILE.md、file:cli/tests/test_contract_tool_reconcile.py（MODEL_ROUTING 項已於 9bb9cba 前置完成，⛔ 不再宣告——取代清單 row 5）
 **驗收**：
 0.（P1-35 範本 owner，四類輸出面）dispatch-package／delivery-report／review-dispatch／**closeout-report（新檔 templates/closeout-report.md，七段結案報告——falsifier 同新五檔）**全含「注意事項回應清冊」欄（逐條編號三值）
 1. （P1-15 封閉 mapping）舊 → 新逐檔對照，各附 falsifier：tasks-card.md → 移除（卡面 fenced JSON 承接）；bug-card.md＋bug-workflow.md → 移除（缺陷走清單＋一般卡）；initiative-card.md → 移除（父卡模型住 stage-rules）；templates/TASKS.md → 移除（state plane）。新五檔：templates/dispatch-package.md（改寫）、templates/review-dispatch.md（新——派審信封）、templates/delivery-report.md（新）、templates/verdict.md（新）、templates/status-change-ruling.md（新）——各以「檔案存在＋含信封四段標題」為存在性判準。**（P1-15 補）templates/review-prompt.md → 改寫保留**（wfcli review 的結構化輸出契約，碼引用 6 處不動；改寫使其與 verdict.md 分工：前者 schema、後者人讀範本）；被移除各舊檔以 git grep 檔名於 post-image 驗「舊入口零引用」（mapping 文件自身除外）
