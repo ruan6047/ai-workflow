@@ -29,8 +29,8 @@ description: 四波五卡施工 Initiative 的 discovery brief（WF-19 形式；
 - 「Codex 查核者無寫入通道」→ trusted＋keyring gh ⇒ 跨實體自寫回，轉錄環節消失
 - 「部署狀態是正交軸」→ 7 值全部映射到通用狀態 ⇒ 退位成記錄
 - 「留 scratchpad 等施工」→ /private/tmp 重開機即滅 ⇒ 先入庫（bf267aa）
-- 「逐次合併授權有守門價值」→ 實測 5/5 照准、0 攔截 ⇒ 零資訊檢查，改結案報告閘
-- 「git spec 檔可當基線錨」→ 57 份零讀者、活卡三抽三漂移 ⇒ 甲′ 卡面單一居所
+- 「逐次合併授權有守門價值」→ 2026-08-30 實測 5/5 照准、0 攔截 ⇒ 零資訊檢查，改結案報告閘
+- 「git spec 檔可當基線錨」→ 2026-08-30 量測 57 份零讀者、活卡三抽三漂移 ⇒ 甲′ 卡面單一居所
 
 **存活的反駁（＝待驗證假設）**：
 - 觀察者效應（PM 知道需求方會看而更誠實）無法量測——結案報告閘是對它的下注，回顧點驗（觸發＝cutover 後第 30 張常態卡結案；fail-safe＝2026-10-31）
@@ -54,7 +54,7 @@ CLI 增量依決議 §七原則（動詞新增須需求方裁定、其餘走三�
 | W1 | 清單＋open --from-issue＋表單 | T3 | 獨立查核 |
 | W2A | canonical＋stage-rules＋tier-rules（規則類整套） | T4 紅線 | 跨家族（Codex） |
 | W2B | 交接範本（含 contract templates）／L0／舊模板清理 | T3 | 獨立查核；需求方閘門 |
-| W3′ | CLI 內部：Log→留言（7 persistent sinks＝open 1＋append 6）／fenced JSON／doctor 抽出／37 則訊息／find_conflicts／snapshot | T3 | 獨立查核 |
+| W3′ | CLI 內部：Log→留言（7 persistent sinks＝open 1＋append 6）／fenced JSON／doctor 抽出／拒絕訊息全集（開卡時 artifact 重量）／find_conflicts／snapshot | T3 | 獨立查核 |
 
 **⛔ 不在本 Initiative**：看板切換（改名／選項／封存）、P1-20 rehearsal 與 forward-repair、cpbl 全部（9 檔／stub／別名副本／submodule bump／原 W4 舊卡）——移交**切換 Initiative**（決議 §十之二），本卡結案條件含其清單項建立。回顧觸發錨於切換；fail-safe 2026-10-31 不變。
 

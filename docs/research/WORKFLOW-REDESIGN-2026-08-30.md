@@ -18,7 +18,7 @@
 | 8 | aiwf `TASKS.md` | 墓碑→移除；入口改查詢指令 | — | ✅ 已完成（26ba48d＋9bb9cba） |
 | 9 | cpbl `docs/TASKS.md`＋CLAUDE.md 路由 | 同上 | 切換 Initiative | 待開 |
 | 10 | `open --spec-dir` | 甲′：規格住卡面＋spec_version | W3′ | 待做 |
-| 11 | 57 份 cpbl spec 檔 | 封存 | 切換 Initiative | 待開 |
+| 11 | cpbl spec 檔（2026-08-30 盤點 57 份） | 封存 | 切換 Initiative | 待開 |
 | 12 | `--needs-deploy` 旗標 | 開卡表單「階段計畫」 | W1 | 待做 |
 | 13 | 內建 `Status` 欄 | 已退出 view（✅）；wfcli 寫入移除隨部署欄退位 | 切換 Initiative | 部分完成 |
 | 14 | `📥Backlog` 狀態值 | 狀態「待辦」＋待審清單 | 切換 Initiative | 待開 |
@@ -93,7 +93,7 @@ L0＝canonical §1（波 2 改寫後）＋§2＋專案一分鐘心智模型（~4
 cutover 與全部不可逆／跨 repo 內容移交於此，屆時與 cpbl 移植同組：
 1. 看板切換：改名（交付狀態→狀態，view filter 同步）→ 選項 15→10 → 終態卡封存（數量屆時 artifact 重量）——凍結宣告含 **Project 寫入全域 freeze**，⛔ 不得以卡序列代替
 2. **P1-20 全文於此生效**：拋棄式 Project 完整 restore rehearsal（item／field／option／view 全涵蓋、逐步 inverse、read-back oracle）；**刪 option 起⛔ 非 rollback＝forward-repair**，凍結前需求方核可計畫與停損點；rehearsal 未實證⛔ 不得進切換步②以後；rehearsal 工具＝拋棄式腳本⛔ 不入 wfcli
-3. cpbl 側：9 檔語彙相容、review_gate_inventory 的留言 Log 缺口、stub 摘要同步、DATABASE_CONTRACT 別名表 cpbl 副本、submodule 指標 bump（現凍結於 f207d2ec——bump 即移植第一步）、cpbl TASKS.md／MODEL_ROUTING 清理（原 W4 項）
+3. cpbl 側（2026-08-30 盤點）：9 檔語彙相容、review_gate_inventory 的留言 Log 缺口、stub 摘要同步、DATABASE_CONTRACT 別名表 cpbl 副本、submodule 指標 bump（現凍結於 f207d2ec——bump 即移植第一步）、cpbl TASKS.md／MODEL_ROUTING 清理（原 W4 項）
 4. 原 W4 全部內容：36 張舊卡逐張處置、57 份 spec 檔封存、13 個 db: 宣告正規化、15 張 write+ 補宣告、舊分支欄刪除——數字開卡時 artifact 重量
 5. deploy-state／deploy-declare 動詞與內建 Status 寫入移除（隨部署狀態欄退位）
 6. **回顧觸發移交於此**：cutover 後第 30 張常態卡結案；fail-safe 2026-10-31 不變——屆時未開切換 Initiative 亦強制檢討
@@ -103,17 +103,17 @@ cutover 與全部不可逆／跨 repo 內容移交於此，屆時與 cpbl 移植
 
 ## 十一 · 已執行（2026-08-29–30，均回讀驗證）
 
-兩 view 可見欄位改自訂欄（移除內建 Status）／刪 `部署狀態` 的 `🏁完成`（0 列 0 writer）／停 7 卡（#54 #55 #56 #60 #115 #84 #86，各附可證偽復活條件）／阻塞 15 卡（解除條件＝清單機制上線）／#165 跨家族查核→升級②→R4→merge `52780f6` 結案。
+兩 view 可見欄位改自訂欄（移除內建 Status）／刪 `部署狀態` 的 `🏁完成`（2026-08-30 量測 0 列 0 writer）／停 7 卡（#54 #55 #56 #60 #115 #84 #86，各附可證偽復活條件）／阻塞 15 卡（解除條件＝清單機制上線）／#165 跨家族查核→升級②→R4→merge `52780f6` 結案。
 
 ## 十二 · 資源管理補議（2026-08-30 補討論定案）
 
-1. **覆蓋規則（優先）**：`db_scope ∈ {write, schema, data-migration}` ⇒ 資源宣告必含 ≥1 個 `db:` 資源；PM 開卡 ④ 對照（同級別依據形狀），⛔ 不進 CLI 硬拒。依據：實測 22 張寫入卡僅 7 張有 `db:` 宣告（68% 對互斥檢查隱形）。既有 15 張未宣告者歸波 4。
+1. **覆蓋規則（優先）**：`db_scope ∈ {write, schema, data-migration}` ⇒ 資源宣告必含 ≥1 個 `db:` 資源；PM 開卡 ④ 對照（同級別依據形狀），⛔ 不進 CLI 硬拒。依據：2026-08-30 實測 22 張寫入卡僅 7 張有 `db:` 宣告（68% 對互斥檢查隱形）。既有 15 張未宣告者歸波 4。
 2. **環境名（丙）**：regex ⛔ 不動（只驗形狀）；`DATABASE_CONTRACT` 明文封閉枚舉 **`local`｜`prod`** ＋別名表 `production→prod`、`dev→local`（需求方 2026-08-30 核准；cpbl 實際僅兩顆庫：本機 5433 與 VPS 生產）；`find_conflicts` 比對前依已登記別名正規化並以測試釘住（現別名測試為 0）；13 個既有宣告波 4 正規化。⚠️ 收緊 grammar 被否決——單向門（曾鎖死 33 張卡 amend），且方向違反「值域歸規範、PM 對照」。
 3. **生命週期三時點**：開卡粗宣告（目錄前綴可）→ 規劃 ⑤ 依規格 amend 精確化（⚠️ `--resources` 整份取代——先讀現值、整份重列；寫進規劃階段注意事項）→ assign 交集檢查。
-4. **型別⛔ 不擴**：`port:`／`container:` 實測使用量 0。
-5. 另已定（前議）：交集母體判準改「有分支或 worktree」（29%→88%）；`file:` 比對改路徑前綴包含（假陰性 7 對＝命中 7 倍）。**行為變更的唯一 owner＝W3′**（P1-14），驗收含正反例測試。
+4. **型別⛔ 不擴**：`port:`／`container:` 2026-08-30 實測使用量 0。
+5. 另已定（前議）：交集母體判準改「有分支或 worktree」（2026-08-30 量測 29%→88%）；`file:` 比對改路徑前綴包含（同日量測假陰性 7 對＝命中 7 倍）。**行為變更的唯一 owner＝W3′**（P1-14），驗收含正反例測試。
 6. ⚠️ 更正：memory 舊載「DATABASE_CONTRACT §3 與 regex 不一致」已過期——現行契約與 regex 一致且自引 regex 原文。
 
 ## 十三 · 未定／未查
 
-未定：分級表專案層級別數字／部署維護內容／舊卡處置細節（切換 Initiative）／`🚧進行中` 等廢止值隨切換 Initiative 消滅。未查：144 拒絕點餘 118 未分類／63 條中已在 canonical 者未逐條查／card.py 砍半是估計／留言 65,536 上限通說／刪有值選項未實測／`決策佇列` writer 未查／26 張 T2+ 繞規劃豁免未查／舊分支欄未刪。
+未定：分級表專案層級別數字／部署維護內容／舊卡處置細節（切換 Initiative）／`🚧進行中` 等廢止值隨切換 Initiative 消滅。未查（皆 2026-08-30 快照）：144 拒絕點餘 118 未分類／63 條中已在 canonical 者未逐條查／card.py 砍半是估計／留言 65,536 上限通說／刪有值選項未實測／`決策佇列` writer 未查／26 張 T2+ 繞規劃豁免未查／舊分支欄未刪。
