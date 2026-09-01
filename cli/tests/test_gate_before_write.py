@@ -25,7 +25,7 @@ from wf_cli.commands import (
 from wf_cli.project import find_item_by_card_id, list_items, resolve_project
 
 from . import conftest as guard
-from .fake_gh import FakeGhRunner
+from .fake_gh import FakeGhRunner, open_required_argv
 from .test_amend import GOV_TARGET
 from .test_checkpoint import EventGhRunner
 from .test_commands_mocked import _assign_argv, _open_for_assign, run_cli
@@ -278,6 +278,7 @@ def gov_style_card(cmd_runner):
     """
     assert run_cli(
         ["open", *GOV_TARGET, "GOV-DEMO1",
+         *open_required_argv(cmd_runner, "acme/wf"),
          "--feature", "示範", "--tier", "T4", "--db-scope", "none",
          "--core-pain", "原始痛點", "--service-goal", "目標",
          "--requested-by", "ruan6047", "--planned-by", "PM",

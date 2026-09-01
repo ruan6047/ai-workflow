@@ -376,6 +376,61 @@ def create_repo_issue(runner: GhRunner, repo: str, title: str, body: str) -> tup
     return number, url
 
 
+#: Project 內建 `Title` 欄的欄位名。
+#:
+#: ⛔ **它與 `ItemSnapshot.title`（＝GraphQL `content.title`）不是同一個東西**，而本 repo
+#: 曾經把它們當成同一個（`WF-REDESIGN-W1` R1-1）。兩個實測事實：
+#:
+#: 1. **wfcli 現行路徑寫不動它；已窮舉的 GraphQL ProjectV2 mutation 面裡也找不到 writer。**
+#:    2026-08-31 對真 Project #4 的 item `PVTI_lAHOAvJcys4BfXPrzg4nJLo` 實跑
+#:    `updateProjectV2ItemFieldValue`（fieldId=`PVTF_lAHOAvJcys4BfXPrzhZqqUk`）：
+#:    `VALIDATION` 錯誤，訊息逐字 **"The title field can only be updated on DraftIssues"**。
+#:    ⭐ 另以 schema introspection 窮舉 **GraphQL 的 `ProjectV2*` mutation 面**：32 個之中
+#:    只有 5 個吃 `title` input，其中 `addProjectV2DraftIssue`／`updateProjectV2DraftIssue`
+#:    限 DraftIssue，`createProjectV2`／`copyProjectV2`／`updateProjectV2` 寫的是
+#:    **專案自己**的標題。
+#:    ⚠️ **窮舉的射程逐字＝GraphQL mutation 面**（查核 R2-1）。⛔ **未量** REST 的
+#:    projects v2 端點、Projects 的匯出面與 webhook 面 ⇒ ⛔ 不得寫成「API 上沒有任何
+#:    writer」那種全稱。⚠️ 「證不出來 ≠ 沒有」：本條說的是**這次窮舉的範圍內沒找到**。
+#: 2. **它是「上板當下的快照」，⛔ 不是投影**。2026-09-01 差分實驗：把**同一張** `aiwf#177`
+#:    加進一個新建的拋棄式 Project（item 建於 `2026-09-01T03:48:02Z`），該處 `Title` 欄
+#:    ＝當下的 `content.title`（新值）；而 Project #4 的同一張（item 建於
+#:    `2026-08-30T13:24:13Z`、改名於 `2026-08-31T02:41:39Z`）仍是舊值。同一 issue、
+#:    同一時刻、兩個值 ⇒ 快照在 `addProjectV2ItemById` 當下取一次，之後不再更新。
+#: 3. **母體切分完全吻合**（同日全量 213 個 item）：有 `RENAMED_TITLE_EVENT` 的恰 5 筆，
+#:    **5 筆全部**不一致；無改名的 208 筆，**208 筆全部**一致。⛔ 兩個方向都沒有反例。
+#:    最舊的不一致是 `cpbl#60`（改名於 `2026-08-06T04:40:57Z`）⇒ 已持續約 **26 天**。
+#: 4. ⭐ **它對人類讀者不可見**。2026-09-01 於登入的瀏覽器實看 Projects UI 的 Title 欄：
+#:    五筆不一致的 item（`aiwf#177` 與四張 cpbl）**全部**顯示 `content.title`（新值），
+#:    ⛔ 沒有一筆顯示這個欄位的舊值。⇒ **目前已實測可讀到舊值的面，例子包括** GraphQL 的
+#:    `fieldValueByName("Title")` 與 `gh project item-list` 的頂層 `title`。
+#:    ⚠️ ⛔ **不是「只有這兩個」**（查核 R2-1）：讀取面同樣沒有被窮舉過——量到的是
+#:    這兩個確實讀得到，⛔ 不是別的都讀不到。
+#:
+#: ⛔ **不得把 `content.title` 改名成「第二個 surface」**來讓某條 oracle 成立：那是把
+#:    量不到的東西改個名字宣稱量到了。
+#: ⚠️ **目前已知**能刷新它的動作是 `deleteProjectV2Item` ＋ 重新 `addProjectV2ItemById`
+#:    （由第 2 點的差分實驗推得），而那會**清掉該 item 全部自訂欄位值**
+#:    （卡ID／級別／交付狀態…）⇒ ⛔ 不是修復路徑。⛔ 也未窮舉「還有沒有別的刷新方式」。
+PROJECT_TITLE_FIELD = "Title"
+
+
+def set_issue_title(runner: GhRunner, repo: str, issue_number: int, title: str) -> None:
+    """改 Issue 標題。
+
+    ⭐ 這一次寫入覆蓋兩個 surface 中的**一個半**：Issue 本體的標題（真的被寫），以及
+    GraphQL ``content.title``（它就是 Issue 標題，必然跟著）。
+
+    ⛔ **它碰不到第三個 surface**：Project 內建 `Title` **欄**（見
+    :data:`PROJECT_TITLE_FIELD`）——平台明文只允許在 DraftIssue 上寫它。
+    ⚠️ 2026-08-31 之前本檔的 docstring 逐字寫著「Project item 的標題⛔ 沒有第二個
+    writer」，那句話**是錯的**：它把 `content.title` 與 `Title` 欄當成同一個東西，
+    而實測全板 213 個 item 有 5 筆兩者不同。該句已刪。
+    ⚠️ 呼叫端仍須**讀回驗證**，且必須把三個 surface 分開讀。
+    """
+    runner.execute(["issue", "edit", str(issue_number), "--repo", repo, "--title", title])
+
+
 def add_issue_comment(runner: GhRunner, repo: str, issue_number: int, body: str) -> None:
     """在 Issue timeline 追加一則留言（canonical §4.3：事件＝Issue timeline ＋結構化 comment）。
 
@@ -610,7 +665,9 @@ __all__ = [
     "ProjectMeta",
     "add_issue_comment",
     "add_item_to_project",
+    "PROJECT_TITLE_FIELD",
     "create_draft_item",
+    "set_issue_title",
     "create_repo_issue",
     "ensure_fields",
     "find_item_by_card_id",

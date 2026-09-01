@@ -426,6 +426,8 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "event/status-change": "absent",
     "event/ubuntu-latest": "absent",
     "event/update-branch": "absent",
+    "guard/cli/src/wf_cli/card.py→card_face": "_assert_schema_is_understood／_validate_against／validate／validate_issue_url",
+    "guard/cli/src/wf_cli/commands/amend_cmd.py→card_face": "_assert_schema_is_understood／_validate_against／validate／validate_issue_url",
     "guard/cli/src/wf_cli/card.py→resources": "find_conflicts",
     "guard/cli/src/wf_cli/commands/amend_cmd.py→resources": "find_conflicts",
     "guard/cli/src/wf_cli/commands/assign_cmd.py→card": "validate_capability_routing／validate_routing_field／validate_routing_names"

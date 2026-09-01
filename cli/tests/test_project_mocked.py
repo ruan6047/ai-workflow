@@ -25,10 +25,13 @@ from .fake_gh import FakeGhRunner
 def test_ensure_fields_creates_all_frozen_fields():
     runner = FakeGhRunner()
     fields = ensure_fields(runner, "acme", 1)
-    assert set(fields) == set(FIELD_SPECS)
-    for name, meta in fields.items():
-        expected_type = FIELD_SPECS[name][0]
-        assert meta.type == expected_type
+    # ⚠️ **超集合、⛔ 不是相等**：`ensure_fields` 回的是 `list_fields` 看到的全部欄位，
+    # 而真 Project 恆帶內建欄（`Title`／`Assignees`／`Status`／`Labels`…，實測 Project #4
+    # 有 13 個）。上一版寫相等只因替身**省略了內建欄** ⇒ 那個相等是替身造出來的假事實。
+    # ⛔ 不得改回相等：改回去等於再次要求替身比真實平台窄。
+    assert set(FIELD_SPECS) <= set(fields)
+    for name in FIELD_SPECS:
+        assert fields[name].type == FIELD_SPECS[name][0]
 
 
 def test_ensure_fields_is_idempotent():
@@ -207,7 +210,7 @@ def test_ensure_fields_creation_path_return_matches_fresh_read():
     returned = ensure_fields(runner, "acme", 1)
     fresh = list_fields(runner, "acme", 1)
     assert field_diff(returned, fresh) == []
-    assert set(returned) == set(FIELD_SPECS), "前提沒成立：這一次應該真的建了欄位"
+    assert set(FIELD_SPECS) <= set(returned), "前提沒成立：這一次應該真的建了欄位"
 
 
 def test_ensure_fields_zero_creation_path_return_matches_fresh_read():

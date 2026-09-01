@@ -1,0 +1,78 @@
+# 待審清單收件表單（WF-REDESIGN-W1 AC1）。
+#
+# ⭐ 五個欄位＝stage-rules/list-intake-requirements.md 的五條件，**一條件一欄**，
+# 欄位標題逐字取自該檔的節名。⛔ 不得改標題字面：`wfcli open --from-issue` 以
+# `### <標題>` 定位（見 cli/src/wf_cli/intake.py 的 REQUIREMENTS），改字面等於
+# 讓每一張照本表單開的清單項都升不了級。
+#
+# ⛔ 本表單不判內容。PM 只判五欄有沒有填（該檔「PM 的動作」逐字）；內容對不對
+# 是開卡之後、需求階段 R1 的事。
+name: 待審清單提案
+description: 把一個問題或想要的功能交給 PM 進待審清單（⛔ 不是開卡；卡由 PM 以 wfcli open --from-issue 升級）
+title: "[清單] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **這張 issue 是清單項，⛔ 不是卡。** 它不進 Project #4、⛔ 不配卡ID、⛔ 不掛成任何卡的 sub-issue。
+
+        五欄缺任一項，PM 退回提案者補；⛔ PM 不代填。條件全文見 `stage-rules/list-intake-requirements.md`。
+
+        **降回清單＝PM 執行 deleteProjectV2Item＋轉移留言**（撤銷程序的規則條文歸 W2A；⛔ 本表單只註記，⛔ 沒有對應的 CLI 動詞）。
+
+  - type: textarea
+    id: source
+    attributes:
+      label: 出處可指
+      description: 一個連結，或逐字引文加來源。AI 在執行其他卡時撞到的，寫「在哪張卡的哪一步撞到」。
+      placeholder: 執行 aiwf#165 A3 掃描時，在 snapshot_population.py:5 撞到
+    validations:
+      required: true
+
+  - type: textarea
+    id: observation
+    attributes:
+      label: 是觀察不是結論
+      description: 可觀測的現象。形狀是「X 指向 Y，但 Y 不存在」「A 每天跑，B 從沒讀過它」。⛔ 不寫「應該改成 Z」「這是設計缺陷」。
+      placeholder: canonical §0/§1 已被決議紀錄取代清單標記為過時，但檔內文字未改——讀者仍會把 15 值序列與 7 角色表當現行。
+    validations:
+      required: true
+
+  - type: textarea
+    id: dedup
+    attributes:
+      label: 查重留痕
+      description: |
+        逐字列出搜過的關鍵字，加上命中的 issue 編號。⛔ 不寫「已確認沒有重複」。
+        查法：`gh issue list --repo ruan6047/<repo> --state all --search "<關鍵字>"`
+      placeholder: 搜了「開卡閘」「from-issue」「清單」，命中 #177 #217
+    validations:
+      required: true
+
+  - type: dropdown
+    id: repo
+    attributes:
+      label: 屬哪個 repo
+      description: 判準＝這件事將來會改哪個 repo 的檔案。
+      options:
+        - ai-workflow
+        - cpbl-analytics
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposer
+    attributes:
+      label: 提案者身分
+      description: |
+        三格，缺一不可：GitHub 帳號／session ID／該則訊息定位。
+        session ID：Claude `~/.claude/projects/<cwd>/<id>.jsonl` 的 `<id>`；Codex `~/.codex/archived_sessions/rollout-<時間>-<id>.jsonl` 的 `<id>`。
+        訊息定位：Claude 訊息 `uuid`；Codex 該則 `timestamp`。
+        ⛔ 不填模型名、⛔ 不填 AI 工具——transcript 已由 harness 寫入。
+      placeholder: |
+        GitHub 帳號：ruan6047
+        session ID：cc0a7952-07a5-4978-8d03-8b5f48fbc690
+        訊息定位：uuid 3f2b1c8e-....
+    validations:
+      required: true

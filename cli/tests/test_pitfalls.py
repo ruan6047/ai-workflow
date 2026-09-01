@@ -401,7 +401,7 @@ def runner(monkeypatch):
     return fake
 
 
-_TARGET = ["--owner", "acme", "--project", "1"]
+_TARGET = ["--owner", "acme", "--project", "1", "--repo", "acme/workflow"]
 
 
 def _run(argv: list[str]) -> int:
@@ -416,15 +416,25 @@ def _open(card_id: str, **overrides) -> int:
         "--core-pain": "痛點文字", "--service-goal": "服務的原始目標文字",
         "--exec-capability": "主力型", "--exec-capability-reason": "跨模組改動",
         "--review-capability": "主力型", "--review-capability-reason": "一般 review 即可",
+        "--acceptance": "可獨立驗證的驗收條件一條",
+        "--stage-plan": "需求=把清單項變成一張可派工的卡",
+        "--tier-basis-sensitive-surfaces": "wfcli 狀態面寫入通道",
+        "--tier-basis-recoverability": "git revert",
+        "--tier-basis-blast-radius": "單一 repo",
     }
     defaults.update(overrides)
+    defaults.setdefault(
+        "--from-issue",
+        open_cmd.default_runner.seed_list_issue(overrides.get("--repo", "acme/workflow")),
+    )
     argv = ["open", *_TARGET, card_id]
     for k, v in defaults.items():
         if isinstance(v, bool):
             if v:
                 argv.append(k)
         else:
-            argv += [k, v]
+            for one in (v if isinstance(v, list) else [v]):
+                argv += [k, one]
     return _run(argv)
 
 
@@ -675,7 +685,7 @@ def test_the_gate_runs_after_the_existing_preflight_refusals(runner, capsys):
     ⭐ 這條是**位置**的守衛：閘門若擺到既有檢查之前，同一個錯誤會換一個 rc
     回報，而那些 rc 已經被別的測試依賴。這裡拿部署閘門（rc=4）當代表。
     """
-    assert _open("PITFALL-E2E8", **{"--needs-deploy": True}) == 0
+    assert _open("PITFALL-E2E8", **{"--stage-plan": ["需求=升級", "部署=上線並驗證"]}) == 0
     capsys.readouterr()
     rc = _handoff("PITFALL-E2E8", "9" * 40, **{"--next-stage": "release"})
     assert rc == 4, "部署閘門的 rc=4 必須先於踩坑閘門的 rc=2"

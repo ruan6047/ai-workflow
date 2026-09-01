@@ -14,6 +14,39 @@ import re
 from typing import Any
 
 from wf_cli.gh import GhRunner
+from wf_cli.intake import REQUIREMENTS
+
+#: 一份**填齊五欄**的收件表單 body，形狀＝GitHub Issue Forms 的渲染結果
+#: （每個欄位一個 ``### <label>`` 標題）。⛔ 標題字面不重打——由
+#: ``wf_cli.intake.REQUIREMENTS`` 導出，⇒ 產品端改了值域，替身跟著動。
+COMPLETE_INTAKE_BODY = "\n".join(
+    f"### {label}\n\n清單項填答：{label}\n" for label in REQUIREMENTS
+)
+
+
+def open_required_argv(runner, repo: str = "acme/workflow", **overrides) -> list[str]:
+    """``open`` 在 `WF-REDESIGN-W1` 之後**新增的必填欄**，一份共用的最小合法值。
+
+    ⭐ **只此一份**：六個測試檔各自維護一份會在下一次表單改動時同時腐爛六處，而
+    「每個呼叫端各自重寫一份」正是本 repo 已登記過的形狀（`resources.py` 的
+    R1-01）。⛔ 內容是佔位字串——本函式量的是**接線**，⛔ 不是表單內容的品質。
+
+    順帶種一個清單項（``--from-issue`` 的來源），因為 ``open`` 已不再建立任何 issue。
+    """
+    values: dict[str, Any] = {
+        "--from-issue": runner.seed_list_issue(repo),
+        "--acceptance": "可獨立驗證的驗收條件一條",
+        "--stage-plan": "需求=把清單項變成一張可派工的卡",
+        "--tier-basis-sensitive-surfaces": "wfcli 狀態面寫入通道",
+        "--tier-basis-recoverability": "git revert",
+        "--tier-basis-blast-radius": "單一 repo",
+    }
+    values.update(overrides)
+    argv: list[str] = []
+    for key, value in values.items():
+        for one in (value if isinstance(value, list) else [value]):
+            argv += [key, one]
+    return argv
 
 
 def _parse_flags(args: list[str]) -> dict[str, Any]:
@@ -52,10 +85,29 @@ class FakeGhRunner(GhRunner):
         self._seq += 1
         return f"{prefix}{self._seq}"
 
+    #: ⭐ Project 內建 `Title` 欄的**測試旋鈕**，預設 ``False``＝不跟著 Issue 改名走。
+    #:
+    #: (a) 現在的行為：`gh issue edit --title` 更新 item 的 `content.title`，但**不動**
+    #:     `Title` 欄值。
+    #: (b) 為什麼：這是**實測到的平台行為**，⛔ 不是猜的——2026-08-31 對真 Project #4
+    #:     全量掃描 213 個 item，`content.title != Title 欄` 者 **5 筆**；其中 `aiwf#177`
+    #:     的改名發生在 `2026-08-31T02:41:39Z`（RENAMED_TITLE_EVENT 恰 1 筆），而該欄在
+    #:     18 小時後仍是舊值。⇒ 改名**不會**刷新這個投影。
+    #: (c) ⛔ 不得由此推出「它永遠不收斂」——量到的是「≥18 小時未收斂」，⛔ 不是永不。
+    #:     旋鈕留著就是為了讓「若平台哪天改成會收斂」也表達得出來。
+    #: ⚠️ 上一版的替身把兩者同步更新 ⇒ **測試在構造上表達不出這種分歧**，`WF-REDESIGN-W1`
+    #:     R1-1 就是這樣漏掉的。
+    title_field_follows_rename = False
+
     def _ensure_project(self, owner: str, number: str | int) -> dict[str, Any]:
         key = (owner, int(number))
         if key not in self.projects:
             self.projects[key] = {"id": self._next("PVT_"), "fields": {}}
+            # 內建 `Title` 欄（dataType=TITLE）在真 Project 上恆存在，⛔ 不是 field-create
+            # 出來的 ⇒ 這裡直接放進去，不經 `project field-create` 那條路。
+            self.projects[key]["fields"]["Title"] = {
+                "id": self._next("PVTF_TITLE_"), "gh_type": "ProjectV2Field", "options": [],
+            }
         return self.projects[key]
 
     def add_builtin_status(self, owner: str, number: int, options: list[str]) -> None:
@@ -86,6 +138,43 @@ class FakeGhRunner(GhRunner):
                         if opt["id"] == option_id:
                             return opt["name"]
         raise AssertionError(f"unknown option id {option_id} for field {field_id}")
+
+    def seed_list_issue(
+        self,
+        repo: str = "acme/workflow",
+        *,
+        body: str | None = None,
+        title: str = "[清單] 待審項",
+    ) -> str:
+        """種一個**待審清單項** issue（不在 Project 上），回傳它的 URL。
+
+        ⭐ 存在的理由：``open`` 已不再建立任何 issue（`WF-REDESIGN-W1` 驗收 2），
+        ⇒ 每一條 open 測試都必須先有一個清單項可升級。⛔ 不讓 ``open`` 自己補一個，
+        那等於把被移除的那條路徑從測試側偷渡回來。
+        """
+        self._issue_seq += 1
+        number = self._issue_seq
+        url = f"https://github.com/{repo}/issues/{number}"
+        self.issues[url] = {
+            "title": title,
+            "body": COMPLETE_INTAKE_BODY if body is None else body,
+            "number": number,
+            "repo": repo,
+        }
+        return url
+
+    def forget_revisions(self) -> None:
+        """清掉所有 issue 的版本歷史，模擬「body 從未被編輯過」的卡。
+
+        ⭐ 為什麼需要它：``open --from-issue`` **本身就會編輯一次 body**（把清單項改寫成
+        卡面）⇒ 新卡自誕生起平台就有一版（清單項原文）。⇒ ``amend`` 的
+        ``totalCount == 0`` 全文退路對新卡**不再發生**，只對「open 之前就存在、body
+        從未被編輯過」的舊卡成立。要測那條退路就得明確造出那個世界狀態。
+        ⛔ 不得由此推出「全文退路是死碼」——DraftIssue 與「版本內容取不到」兩條退路
+        仍然會走到，各有自己的測試。
+        """
+        for issue in self.issues.values():
+            issue.pop("revisions", None)
 
     def execute(self, args, input: str | None = None) -> str:  # type: ignore[override]
         args = list(args)
@@ -144,7 +233,8 @@ class FakeGhRunner(GhRunner):
             self.items[item_id] = {
                 "content_type": "DraftIssue", "title": flags["--title"],
                 "body": flags.get("--body", ""), "issue_number": None, "issue_url": None,
-                "repo": None, "fields": {}, "_project_key": (owner, int(number)),
+                "repo": None, "fields": {"Title": flags["--title"]},
+                "_project_key": (owner, int(number)),
                 "content_id": content_id,
             }
             self.content_id_to_item_id[content_id] = item_id
@@ -161,7 +251,8 @@ class FakeGhRunner(GhRunner):
             self.items[item_id] = {
                 "content_type": "Issue", "title": issue["title"], "body": issue["body"],
                 "issue_number": issue["number"], "issue_url": url, "repo": issue["repo"],
-                "fields": {}, "_project_key": (owner, int(number)),
+                # `Title` 欄的值在**上板當下**取一次快照；之後由 title_field_follows_rename 決定跟不跟。
+                "fields": {"Title": issue["title"]}, "_project_key": (owner, int(number)),
             }
             return json.dumps({"id": item_id})
 
@@ -197,9 +288,26 @@ class FakeGhRunner(GhRunner):
                 item["body"] = flags["--body"]
             if "--title" in flags:
                 item["title"] = flags["--title"]
+                # ⚠️ draft item 是**唯一**平台允許寫 `Title` 欄的型別（實測錯誤訊息逐字：
+                # 「The title field can only be updated on DraftIssues」）⇒ 這裡兩者同寫。
+                item["fields"]["Title"] = flags["--title"]
             return json.dumps(
                 {"id": edit_id, "title": item["title"], "body": item["body"], "type": item["content_type"]}
             )
+
+        if args[:2] == ["issue", "view"]:
+            repo = flags["--repo"]
+            number = int(args[2])
+            url = f"https://github.com/{repo}/issues/{number}"
+            issue = self.issues.get(url)
+            if issue is None:
+                raise AssertionError(f"FakeGhRunner: 讀不存在的 issue {url}")
+            payload = {
+                "number": issue["number"], "title": issue["title"],
+                "body": issue["body"], "state": issue.get("state", "OPEN"), "url": url,
+            }
+            requested = str(flags["--json"]).split(",")
+            return json.dumps({k: payload[k] for k in requested})
 
         if args[:2] == ["issue", "create"]:
             repo = flags["--repo"]
@@ -224,6 +332,18 @@ class FakeGhRunner(GhRunner):
             repo = flags["--repo"]
             number = int(args[2])
             url = f"https://github.com/{repo}/issues/{number}"
+            if "--title" in flags:
+                self.issues[url]["title"] = flags["--title"]
+                # ⭐ **兩個 surface 分開建模**（`WF-REDESIGN-W1` R1-1）：
+                # `content.title` 跟著改名走（GraphQL 讀 Issue 本體，必然是新值）；
+                # Project 內建 `Title` **欄**預設**不跟**——實測依據見
+                # ``title_field_follows_rename`` 上方那段。
+                # ⛔ 上一版把兩者一起更新，於是替身比真實平台**寬鬆**，測試表達不出分歧。
+                for item in self.items.values():
+                    if item.get("issue_url") == url:
+                        item["title"] = flags["--title"]
+                        if self.title_field_follows_rename:
+                            item["fields"]["Title"] = flags["--title"]
             if "--body" in flags:
                 # ⭐ 每次改 body 都留一版——這是真實 `userContentEdits` 的語意
                 # （2026-08-25 對 aiwf#16 實測：totalCount 50、first:100 全數取回、
@@ -354,3 +474,60 @@ class FakeGhRunner(GhRunner):
                 }
             }
         raise AssertionError("FakeGhRunner: unhandled graphql query shape")
+
+
+def seed_legacy_draft_card(runner, card_id: str, *, owner: str = "acme", number: int = 1) -> str:
+    """直接以 project API 造一張 **DraftIssue** 卡（⛔ 不經 ``open``），回傳 item_id。
+
+    ⭐ **這是「遺留可讀」那一軸的輸入端**：`WF-REDESIGN-W1` 驗收 2 之後 ``open``
+    建不出 DraftIssue（創建封閉），但平台上仍可能有歷史 draft item，而
+    ``project.list_items``／``set_item_body``／``review``／``amend`` 對它們的讀取路徑
+    是**刻意保留**的。⛔ 這個 helper 不是把被移除的建立路徑從測試側搬回來——它模擬的
+    是「板上已經有一張 draft 卡」這個世界狀態，⛔ 不是 wfcli 造出來的。
+    """
+    from wf_cli.card import Card, render_issue_body
+    from wf_cli.project import (
+        create_draft_item,
+        ensure_fields,
+        resolve_project,
+        set_field_value,
+    )
+    from wf_cli.resources import ResourceDeclaration
+
+    card = Card(
+        card_id=card_id,
+        feature="遺留 draft 卡",
+        tier="T3",
+        db_scope="none",
+        core_pain="痛點文字",
+        service_goal="服務的原始目標文字",
+        resources=ResourceDeclaration(db_scope="none"),
+        executor_capability="主力型",
+        executor_capability_reason="跨模組改動",
+        reviewer_capability="主力型",
+        reviewer_capability_reason="一般 review 即可",
+        acceptance=["可獨立驗證的驗收條件一條"],
+    )
+    item_id = create_draft_item(
+        runner, owner, number, f"{card.card_id} {card.feature}", render_issue_body(card)
+    )
+    project = resolve_project(runner, owner, number)
+    fields = ensure_fields(runner, owner, number)
+    for name, value in {
+        "卡ID": card.card_id,
+        "Initiative": "—",
+        "級別": card.tier,
+        "功能": card.feature,
+        "owner": card.owner,
+        "分支worktree": card.branch_worktree,
+        "iteration": card.iteration,
+        "交付狀態": card.delivery_status,
+        "部署狀態": card.deployment_status,
+        "最後交接": card.last_handoff,
+        "服務的原始目標": card.service_goal,
+        "鏈深": card.chain_depth,
+        "資源宣告": card.resources.summary(),
+        "階段": "需求",
+    }.items():
+        set_field_value(runner, project, item_id, fields[name], value)
+    return item_id
