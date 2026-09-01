@@ -4,6 +4,8 @@ status: draft-pending-initiative
 replacement_rows: []
 ---
 > ⛔ 草稿·規劃產出物。各波開卡時逐字搬進卡面（甲′：規格住卡面＋spec_version）；本檔屆時封存。spec_version: 1
+>
+> ⚠️ **本檔⛔ 不封存（需求方 2026-09-02 裁定，例外）**：`cli/tests/test_prose_number_scan.py` 的黃金值回歸測試同時綁本檔路徑與 inventory 內本檔的條目，而封存必須同時改掉兩處，彼此互斥。⇒ 上一句的「屆時封存」對本檔已不適用；試圖封存會使 CI 轉紅（`FileNotFoundError`），⛔ 那是刻意的守衛、⛔ 非待修的缺陷。成因量測登記於 `ruan6047/ai-workflow#213`，例外留痕於 `#220`。
 
 
 > replacement_rows 為空的原因：機械配套，無取代列。
