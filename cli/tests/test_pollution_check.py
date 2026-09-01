@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -63,17 +64,45 @@ def test_discovery_lead_is_flagged_on_a_fixture(tmp_path):
 
 # ---- (2) 自指檔在母體內且可見列計（canonical §6.2） ----
 
-def test_self_reference_files_are_in_the_population_and_tallied():
+def _mini_repo(root: Path) -> str:
+    """在 tmp 造一棵有一個 commit 的小 repo，回傳該 commit 的 SHA。
+
+    ⚠️ **刻意⛔ 不對真 repo 跑 `post_image_paths`**：CI 的 checkout 是 shallow
+    （`fetch-depth` 預設 1），`git diff <BASE_SHA>` 在那裡直接 `CalledProcessError`
+    ——本測試首版就是這樣本機綠、CI 紅。判準本身與 repo 歷史無關，故改成合成樹。
+    """
+    def g(*a: str) -> str:
+        return subprocess.run(["git", *a], cwd=root, check=True,
+                              capture_output=True, text=True).stdout.strip()
+    g("init", "-q", "-b", "main")
+    g("config", "user.email", "t@example.invalid")
+    g("config", "user.name", "t")
+    (root / "seed.txt").write_text("seed\n", encoding="utf-8")
+    g("add", "seed.txt")
+    g("commit", "-qm", "seed")
+    return g("rev-parse", "HEAD")
+
+
+def test_self_reference_files_are_not_filtered_out_of_the_population(tmp_path):
     # 成員判準＝canonical §6.2 的「工具或測試檔」：checker、manifest、本測試檔
     assert pc.SELF_REFERENCE_PATHS == (
         "scripts/pollution_check.py",
         "scripts/pollution-allowlist.json",
         "cli/tests/test_pollution_check.py",
     )
-    rels = pc.post_image_paths(_REPO_ROOT, pc.BASE_SHA)
-    for path in pc.SELF_REFERENCE_PATHS:
-        assert path in rels, f"{path} 被踢出母體——canonical §6.2 逐字禁止偷偷排除"
+    base = _mini_repo(tmp_path)
+    for rel in (*pc.SELF_REFERENCE_PATHS, "docs/normal.md"):
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("一行含 needs-deploy 的內容\n", encoding="utf-8")
+    rels = pc.post_image_paths(tmp_path, base)
+    for rel in pc.SELF_REFERENCE_PATHS:
+        assert rel in rels, f"{rel} 被踢出母體——canonical §6.2 逐字禁止偷偷排除"
+    assert "docs/normal.md" in rels
 
+
+def test_self_reference_hits_are_visible_and_tallied():
+    # ⛔ 不碰 git：直接指定三個檔，判準與 repo 歷史無關
     result = pc.run(_REPO_ROOT, list(pc.SELF_REFERENCE_PATHS), pc.ALLOWLIST_PATH)
     assert result["self_reference_count"] > 0
     # 命中計入母體總數，⛔ 不是被扣掉
