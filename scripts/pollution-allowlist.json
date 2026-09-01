@@ -18,7 +18,7 @@
    "line_sha1": "d85bcfff439dac78861456e6110a5ef1ce326667",
    "excerpt": "看板 `交付狀態` 欄的現有值，排列順序為 `💡需求 → 🔬研究中 → 🧭規劃中 → 📥Backlog → 🔨執行中 → 🔍待查核 → ✅通過 → 📦已合併 →",
    "occurrences": 1,
-   "rationale": "canonical §0.0 之「切換前的現行看板語彙」區塊：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——本卡刻意保留它做現況記載，並在同節逐字標明它⛔ 不是條文。"
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
   },
   {
    "path": "AI_WORKFLOW.md",
@@ -26,31 +26,31 @@
    "line_sha1": "d85bcfff439dac78861456e6110a5ef1ce326667",
    "excerpt": "看板 `交付狀態` 欄的現有值，排列順序為 `💡需求 → 🔬研究中 → 🧭規劃中 → 📥Backlog → 🔨執行中 → 🔍待查核 → ✅通過 → 📦已合併 →",
    "occurrences": 1,
-   "rationale": "canonical §0.0 之「切換前的現行看板語彙」區塊：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——本卡刻意保留它做現況記載，並在同節逐字標明它⛔ 不是條文。"
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
   },
   {
    "path": "AI_WORKFLOW.md",
    "token": "⏳待執行",
-   "line_sha1": "ce9af75bac56522af9034e1e2f887f66df87dd75",
-   "excerpt": "**廢止的歷史值**（向後相容，已寫的卡留著，新寫入不得用）：`🚧進行中`、`⏳待執行`。不可覆寫 event log 是狀態歷史，Ledger 是由 even",
+   "line_sha1": "fc83fbc5bc6ee1fa1a0f3f885efeddf6dcefd053",
+   "excerpt": "| b | **廢止的歷史值**（向後相容，已寫的卡留著，新寫入不得用）：`🚧進行中`、`⏳待執行` | **現行有效**（強制） | 切換 Initiativ",
    "occurrences": 1,
-   "rationale": "canonical §0.0 之「切換前的現行看板語彙」區塊：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——本卡刻意保留它做現況記載，並在同節逐字標明它⛔ 不是條文。"
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
   },
   {
    "path": "AI_WORKFLOW.md",
    "token": "🚧進行中",
-   "line_sha1": "ce9af75bac56522af9034e1e2f887f66df87dd75",
-   "excerpt": "**廢止的歷史值**（向後相容，已寫的卡留著，新寫入不得用）：`🚧進行中`、`⏳待執行`。不可覆寫 event log 是狀態歷史，Ledger 是由 even",
+   "line_sha1": "fc83fbc5bc6ee1fa1a0f3f885efeddf6dcefd053",
+   "excerpt": "| b | **廢止的歷史值**（向後相容，已寫的卡留著，新寫入不得用）：`🚧進行中`、`⏳待執行` | **現行有效**（強制） | 切換 Initiativ",
    "occurrences": 1,
-   "rationale": "canonical §0.0 之「切換前的現行看板語彙」區塊：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——本卡刻意保留它做現況記載，並在同節逐字標明它⛔ 不是條文。"
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
   },
   {
    "path": "AI_WORKFLOW.md",
    "token": "部署狀態",
-   "line_sha1": "ce9af75bac56522af9034e1e2f887f66df87dd75",
-   "excerpt": "**廢止的歷史值**（向後相容，已寫的卡留著，新寫入不得用）：`🚧進行中`、`⏳待執行`。不可覆寫 event log 是狀態歷史，Ledger 是由 even",
+   "line_sha1": "4ef0579a2a0fe22b6ac1ba64e324bf13dff88887",
+   "excerpt": "| e | 部署狀態獨立：`—不適用`，或 `⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證` | **敘述**（值域現況） |",
    "occurrences": 1,
-   "rationale": "canonical §0.0 之「切換前的現行看板語彙」區塊：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——本卡刻意保留它做現況記載，並在同節逐字標明它⛔ 不是條文。"
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
   },
   {
    "path": "AI_WORKFLOW.md",
@@ -65,7 +65,7 @@
    "token": "部署狀態",
    "line_sha1": "2d1f0ccf8109090691f439cc2dc3caccac76fa57",
    "excerpt": "部署狀態**，它取用的分支排在讀 `部署狀態` 的 `elif ... == \"release\"` 閘門**之前**",
-   "occurrences": 1,
+   "occurrences": 2,
    "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
   },
   {
@@ -255,8 +255,8 @@
   {
    "path": "AI_WORKFLOW.md",
    "token": "claim 事件",
-   "line_sha1": "bcd74319d7ee60523a2606a17be8bc7891f92aa5",
-   "excerpt": "- **Plan** 回答「如何安全實作」：技術規劃者只在已核可的 Discovery／Design 基線上產出 spec、依賴圖、風險、驗證與子卡切片。發現不",
+   "line_sha1": "49e0301bd0d756769ac36bed7a06dd555abd16bd",
+   "excerpt": "- **Plan** 回答「如何安全實作」：**執行者**（規劃階段內即技術規劃者，見 [`stage-rules/planning.md`](stage-ru",
    "occurrences": 1,
    "rationale": "⚠️ **登記為 finding，⛔ 不是乾淨的例外**：canonical §3 仍寫「偏離與理由記入 claim 事件」，而 claim event log 已於 2026-08-04 封存（決議 §一 row 5 只把 MODEL_ROUTING.md 的同句改掉，canonical §3 的這一句⛔ 沒有任何一列涵蓋）。本卡⛔ 不自行改它——那會是一條沒有 owner 的T4 規則變更；已於交付報告上呈需求方指派 owner。"
   },
@@ -273,7 +273,7 @@
    "token": "📥Backlog",
    "line_sha1": "c5b6eed2363dfd062e19ab10e6cb209b4f645669",
    "excerpt": "**進 `📥Backlog` 的狀態前提依級別分流**（需求方 2026-08-21 於 `ruan6047/ai-workflow#120` 的裁定）：**T",
-   "occurrences": 1,
+   "occurrences": 3,
    "rationale": "canonical §3 規劃閘門與流程的既有條文，敘述的是現行看板值與現行契約名稱；⛔ 取代清單無對應列 ⇒ ⛔ 不在本卡射程。"
   },
   {

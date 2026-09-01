@@ -650,19 +650,6 @@
   },
   {
    "path": "stage-rules/closeout.md",
-   "line_sha1": "116f6872ba565690eb981e5cd15091672e97c86e",
-   "excerpt": "產出物＝結案報告（一屏七段）＋封存（archiveProjectV2Item）。進入＝審核 APPROVE（直行卡由 PM 帶入）。離開＝終",
-   "claims": [
-    {
-     "token": "七",
-     "occurrence": 0,
-     "reason": "design-closed-set",
-     "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 逐段列明）"
-    }
-   ]
-  },
-  {
-   "path": "stage-rules/closeout.md",
    "line_sha1": "42f44999597747e73ba697a9392576721004a4bd",
    "excerpt": "通用 7 ＋ 停止（終態、⛔ 無出口；裁定必含決策／原因／可證偽復活條件；復活＝開新卡）。完成與停止都跑封存。",
    "claims": [
@@ -2269,6 +2256,57 @@
      "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "7497c309c0b7895efe8ef48bf805bd8022cb7a62",
+   "excerpt": "產出物＝結案報告（一屏七段）＋封存（archiveProjectV2Item）。",
+   "claims": [
+    {
+     "token": "七",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 逐段列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "fa8426aa762d339dbfc4c139620cf38642a4dd1b",
+   "excerpt": "**進入＝最後一個適用階段進入 `完成`**，⛔ 不固定在某一個階段。實測三條入邊：",
+   "claims": [
+    {
+     "token": "一",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「最後一個適用階段」＝序數／慣用語非量測（本行語境）"
+    },
+    {
+     "token": "一",
+     "occurrence": 1,
+     "reason": "design-closed-set",
+     "rationale": "「某一個階段」＝序數／慣用語非量測（本行語境）"
+    },
+    {
+     "token": "三",
+     "occurrence": 2,
+     "reason": "design-closed-set",
+     "rationale": "「三條入邊」＝結案階段入邊枚舉（三條行內逐條列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "82231e65dfd55c6bafdeda307c1f350678bac22f",
+   "excerpt": "⚠️ 本段自 canonical §0.1 搬入（`WF-REDESIGN-W2A` AC8），⛔ 原處不留一份。舊文只",
+   "claims": [
+    {
+     "token": "一",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「不留一份」＝序數／慣用語非量測（本行語境）"
     }
    ]
   }
