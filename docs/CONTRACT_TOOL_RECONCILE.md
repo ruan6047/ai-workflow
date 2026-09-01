@@ -206,15 +206,33 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 
 ### 4.3 卡面欄位：契約宣告了，工具完全不渲染（19 項）
 
-| 範本 | 欄位 |
+> ⚠️ **本節記的是 `WF-REDESIGN-W2B` 之前的狀態，保留作為歷史。** 該卡把下表三份範本整份
+> 移除（對照與 falsifier 見 [`../templates/template-migration-map.md`](../templates/template-migration-map.md)），
+> ⇒ 下列 19 個欄位連同其餘 `card_field` 符號**整類離開契約 universe**，本節所述的缺口
+> 因此不再出現在對帳表上。
+>
+> ⛔ **不得把「不在表上了」讀成「已修復」。** 兩者的差別是可觀察的：修復會讓判定從
+> `absent` 翻成 `ok`（符號還在、多了 writer）；離開 universe 是符號本身消失（表上查無此列）。
+> 本次是後者——工具側的渲染能力**一行都沒有增加**。
+>
+> ⭐ **它們什麼時候回來**：卡面機讀改 fenced JSON 由 `WF-REDESIGN-W3` 承接。屆時
+> `card_field` 的 universe 由那份 schema 重新導出，本節所列的每一欄要重新判一次
+> 「渲染得出來嗎」。⛔ 在那之前，本 repo **沒有任何卡面欄位契約**——這是刻意的中間態，
+> ⛔ 不是漏掉。
+
+<!-- w2b-historical:begin -->
+| 範本（`WF-REDESIGN-W2B` 已移除） | 欄位 |
 |---|---|
 | `tasks-card.md` | `部署`、`環境`、`PR`、`Merge SHA`、`範圍`、`Discovery`、`Design` |
 | `initiative-card.md` | `目標`、`非目標`、`里程碑`、`依賴與子卡`、`基線變更紀錄`、`決策與風險` |
 | `bug-card.md` | `重現`、`預期 vs 實際`、`環境`、`根因`、`修復`、`回歸測試` |
 
-`wfcli open` 只渲染 `tasks-card.md` 的前半段欄位。**`initiative-card.md` 與 `bug-card.md`
-的卡面在工具側整份不存在**——canonical §3 要求大型工作以 Initiative 父卡管理、bug 依
-`bug-workflow.md` 處理，而那兩種卡沒有任何機械支援。
+當時的判定是：`wfcli open` 只渲染 `tasks-card.md` 的前半段欄位；**`initiative-card.md` 與
+`bug-card.md` 的卡面在工具側整份不存在**——canonical §3 要求大型工作以 Initiative 父卡
+管理、bug 依 `bug-workflow.md` 處理，而那兩種卡沒有任何機械支援。⇒ `WF-REDESIGN-W2B`
+的處置是**移除那三份範本**（父卡模型移入 `stage-rules/`、缺陷改走待審清單＋一般卡），
+⛔ 不是補 19 個欄位的 writer——「19 個欄位逐欄開卡」正是本卡一開始要消滅的「修實例不修形狀」。
+<!-- w2b-historical:end -->
 
 ### 4.4 事件：契約要求、無 writer（6 項新增）
 
@@ -344,6 +362,20 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 處置語彙：`補寫入者`｜`補讀取者`｜`已知限制`｜`從契約移除`｜`過抽`｜`待需求方裁定`。
 以下按族給處置建議；**本卡不實作任何一項**。
 
+> ⚠️ **`WF-REDESIGN-W2B` 之後，下表有四族的成員已整批離開 universe**（成因＝三份卡面範本被移除，
+> 逐符號處置見 §7.1）。⛔ 下表**保留原樣**——它記的是「當時判了什麼、建議怎麼處置」，
+> 那份判斷本身沒有失效；⛔ 不得就地改寫成「已解決」。對照如下：
+>
+> | 下表的族 | 現況 |
+> |---|---|
+> | §3 五個已知實例 之 `需求` 欄 | 符號已離開 universe；其餘四項不受影響，仍是缺口 |
+> | §4.2 開卡後改不動（`規劃`／`執行`／`查核`／`DB`／`服務的原始目標`） | 五個符號全部離開 universe |
+> | §4.3 完全不渲染（19 項） | 全部離開 universe |
+> | 過抽 之 `🔴紅線`／`⚪一般`／`card_field` 的 `目標`／`需求方`／`範圍` | 離開 universe；同列其餘成員不受影響 |
+>
+> ⛔ **「離開 universe」⛔ 不等於「已修復」**：修復會讓判定從 `absent` 翻成 `ok`；
+> 這次是符號本身消失。工具側的渲染能力一行都沒有增加。
+
 | 族 | 成員 | 建議處置 |
 |---|---|---|
 | §3 五個已知實例 | `review-invalid`、`preflight-failed`、`status-change`、amend 繞過 `find_conflicts`、`需求` 欄 | `補寫入者`（`review-invalid` 工程量最小：偵測已在，只差留痕）。`amend` 那項是**閘門繞過**，風險高於留痕缺失，建議單獨開卡 |
@@ -370,37 +402,14 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 ```json
 {
   "gaps": {
-    "card_field/Design": "absent",
-    "guard/cli/src/wf_cli/card.py→brief": "validate_shape",
-    "guard/cli/src/wf_cli/commands/amend_cmd.py→brief": "validate_shape",
-    "card_field/Discovery": "absent",
-    "card_field/Merge SHA": "absent",
-    "card_field/PR": "mention-only",
-    "card_field/依賴與子卡": "absent",
-    "card_field/修復": "mention-only",
-    "card_field/回歸測試": "absent",
-    "card_field/基線變更紀錄": "absent",
-    "card_field/根因": "mention-only",
-    "card_field/決策與風險": "absent",
-    "card_field/環境": "mention-only",
-    "card_field/目標": "write-only",
-    "card_field/範圍": "read-only",
-    "card_field/部署": "read-only",
-    "card_field/里程碑": "absent",
-    "card_field/重現": "mention-only",
-    "card_field/需求方": "write-only",
-    "card_field/非目標": "absent",
-    "card_field/預期 vs 實際": "absent",
     "delivery_status/→merge": "absent",
     "delivery_status/→查核前": "absent",
     "delivery_status/↔執行者": "absent",
     "delivery_status/⏳待執行": "read-only",
     "delivery_status/⏸阻塞": "read-only",
-    "delivery_status/⚪一般": "absent",
     "delivery_status/📦已合併": "read-only",
-    "delivery_status/🔴紅線": "absent",
-    "delivery_status/🚨已升級": "read-only",
     "delivery_status/🚧進行中": "read-only",
+    "delivery_status/🚨已升級": "read-only",
     "event/authoritative-artifact": "read-only",
     "event/baseline-change-request": "absent",
     "event/carried-forward": "absent",
@@ -426,9 +435,11 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
     "event/status-change": "absent",
     "event/ubuntu-latest": "absent",
     "event/update-branch": "absent",
+    "guard/cli/src/wf_cli/card.py→brief": "validate_shape",
     "guard/cli/src/wf_cli/card.py→card_face": "_assert_schema_is_understood／_validate_against／validate／validate_issue_url",
-    "guard/cli/src/wf_cli/commands/amend_cmd.py→card_face": "_assert_schema_is_understood／_validate_against／validate／validate_issue_url",
     "guard/cli/src/wf_cli/card.py→resources": "find_conflicts",
+    "guard/cli/src/wf_cli/commands/amend_cmd.py→brief": "validate_shape",
+    "guard/cli/src/wf_cli/commands/amend_cmd.py→card_face": "_assert_schema_is_understood／_validate_against／validate／validate_issue_url",
     "guard/cli/src/wf_cli/commands/amend_cmd.py→resources": "find_conflicts",
     "guard/cli/src/wf_cli/commands/assign_cmd.py→card": "validate_capability_routing／validate_routing_field／validate_routing_names"
   }
@@ -441,9 +452,9 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 > 錨點漂移不是缺口變化——判定是否變了以 `--check` 的第 3 個方向為準。
 
 <!-- reconcile-generated:begin -->
-- 契約側符號總數：**86**（由掃描文件導出，非人工登記）
-- 判定為缺口：**54**
-- 守衛覆蓋缺口：**5**
+- 契約側符號總數：**50**（由掃描文件導出，非人工登記）
+- 判定為缺口：**33**
+- 守衛覆蓋缺口：**7**
 - ⚠️ 自由文字狀態旗標（可繞過所有契約前提直接設定任一已宣告狀態）：`assign_cmd.py --status（預設 🔨執行中，無 choices）`
 
 ### 事件型別（26）
@@ -468,8 +479,8 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `preflight-failed` | mention-only | `AI_WORKFLOW.md §0.2 允許的狀態轉移（canonical 本體；採用專案**引用不複製**）`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表二：Gate／preflight 退回`<br>…共 6 | — | — | 相關動詞=無 |
 | `reissue-required` | absent | `templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | — | 相關動詞=無 |
 | `repaired-verified` | absent | `templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | — | 相關動詞=無 |
-| `review-correction` | mention-only | `AI_WORKFLOW.md §3. 任務流程`<br>`AI_WORKFLOW.md §4.1 Control-plane Contract`<br>`templates/review-escalation.md §2. Finding 分類`<br>…共 5 | — | — | 相關動詞=review |
-| `review-invalid` | mention-only | `AI_WORKFLOW.md §3. 任務流程`<br>`AI_WORKFLOW.md §5.2 跨家族查核範式`<br>`templates/review-escalation.md §1. 三個不同層次`<br>…共 6 | — | — | 相關動詞=review |
+| `review-correction` | mention-only | `AI_WORKFLOW.md §3. 任務流程`<br>`AI_WORKFLOW.md §4.1 Control-plane Contract`<br>`templates/closeout-report.md §7. 翻案把手`<br>…共 6 | — | — | 相關動詞=review |
+| `review-invalid` | mention-only | `AI_WORKFLOW.md §3. 任務流程`<br>`AI_WORKFLOW.md §5.2 跨家族查核範式`<br>`templates/review-dispatch.md §信封三 · 機械指令`<br>…共 9 | — | — | 相關動詞=review |
 | `review-marker-clearance` | mention-only | `templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed`<br>`templates/review-escalation.md §1. 三個不同層次`<br>`templates/review-escalation.md §2. Finding 分類`<br>…共 4 | — | — | 相關動詞=review |
 | `spec-narrowed` | mention-only | `templates/review-escalation.md §4. 三次門檻`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | — | 相關動詞=無 |
 | `status-change` | absent | `templates/review-escalation.md §1. 三個不同層次` | — | — | 相關動詞=無 |
@@ -477,84 +488,163 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 | `update-branch` | absent | `docs/ROADMAP.md §2. 唯一的執行面：CI` | — | — | 相關動詞=無 |
 | `structurally-vacuous` | ok | `templates/review-escalation.md §4. 三次門檻`<br>`templates/review-escalation.md §5. Adapter 必填欄位`<br>`docs/ROADMAP.md §1. 身分：記錄宣告，不追求驗證`<br>…共 5 | `cli/src/wf_cli/validation.py::derive_accepted_marking_binding` | `cli/src/wf_cli/review.py::ACCEPTED_MARKING_BINDINGS` | 相關動詞=無 |
 
-### 交付狀態（26）
+### 交付狀態（24）
 
 | 符號 | 判定 | 契約出處 | 寫入者 | 讀取者 | 備註 |
 |---|---|---|---|---|---|
 | `→merge` | absent | `AI_WORKFLOW.md §2. 不可違反的規則` | — | — | Project 選項=否；專責動詞=否 |
 | `→查核前` | absent | `AI_WORKFLOW.md §2. 不可違反的規則` | — | — | Project 選項=否；專責動詞=否 |
 | `↔執行者` | absent | `AI_WORKFLOW.md §1.1 治理模型：決策與機械寫入分離` | — | — | Project 選項=否；專責動詞=否 |
-| `⏳待執行` | read-only | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 ``<br>…共 4 | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
-| `⏸阻塞` | read-only | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §為什麼不下放（直接回應「一個看板服務兩個 repo」）`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 14 | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
-| `⚪一般` | absent | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | Project 選項=否；專責動詞=否 |
-| `📦已合併` | read-only | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 11 | — | `cli/src/wf_cli/doctor.py::run_doctor`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
-| `🔴紅線` | absent | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | Project 選項=否；專責動詞=否 |
-| `🚧進行中` | read-only | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 ``<br>…共 4 | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
-| `🚨已升級` | read-only | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表四：escalation checkpoint`<br>…共 11 | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
-| `↩退回` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §為什麼要兩軸`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 7 | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | Project 選項=是；專責動詞=是 |
-| `⏳部署中` | ok | `AI_WORKFLOW.md §0. 分類與狀態` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `⏸未部署` | ok | `AI_WORKFLOW.md §0. 分類與狀態` | `cli/src/wf_cli/commands/deploy_declare_cmd.py::DECLARATION_TARGET`<br>`cli/src/wf_cli/commands/deploy_declare_cmd.py::add_parser`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>…共 5 | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `✅已部署` | ok | `AI_WORKFLOW.md §0. 分類與狀態` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `✅已驗證` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`templates/worktree-lifecycle.md §Worktree Lifecycle Runbook` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/commands/handoff_cmd.py::run` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/commands/handoff_cmd.py::run`<br>…共 4 | Project 選項=是；專責動詞=是 |
-| `✅通過` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 ``<br>…共 5 | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | Project 選項=是；專責動詞=是 |
-| `🏁完成` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」`<br>…共 9 | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES`<br>`cli/src/wf_cli/commands/handoff_cmd.py::run`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `💡需求` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`templates/TASKS.md §任務看板 (Task Board) — <專案名>` | `cli/src/wf_cli/card.py::Card`<br>`cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>…共 4 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `📥Backlog` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §為什麼要兩軸`<br>`AI_WORKFLOW.md §⛔ 非射程（WF-STAGE-STATE-TWO-AXIS1）`<br>…共 10 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/doctor.py::CONFORMANCE_KNOWN_GAP` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `🔍待查核` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`templates/TASKS.md §任務看板 (Task Board) — <專案名>`<br>…共 7 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/commands/review_cmd.py::AWAITING_REVIEW_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `🔨執行中` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」`<br>…共 7 | `cli/src/wf_cli/commands/assign_cmd.py::add_parser`<br>`cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `🔬研究中` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §為什麼要兩軸`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 5 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `🚀待部署` | ok | `AI_WORKFLOW.md §0. 分類與狀態` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `🛑已停止` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 ``<br>…共 5 | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES` | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `🧪驗證中` | ok | `AI_WORKFLOW.md §0. 分類與狀態` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
-| `🧭規劃中` | ok | `AI_WORKFLOW.md §0. 分類與狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」`<br>…共 5 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `⏳待執行` | read-only | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 `` | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `⏸阻塞` | read-only | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §為什麼不下放（直接回應「一個看板服務兩個 repo」）`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 13 | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `📦已合併` | read-only | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §狀態`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 9 | — | `cli/src/wf_cli/doctor.py::run_doctor`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `🚧進行中` | read-only | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 `` | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `🚨已升級` | read-only | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表四：escalation checkpoint`<br>…共 9 | — | `cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=否；⚠️ 沒有專責動詞；只有自由文字旗標寫得進去（見報告的「自由文字狀態旗標」） |
+| `↩退回` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §為什麼要兩軸`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 6 | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | Project 選項=是；專責動詞=是 |
+| `⏳部署中` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `⏸未部署` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束` | `cli/src/wf_cli/commands/deploy_declare_cmd.py::DECLARATION_TARGET`<br>`cli/src/wf_cli/commands/deploy_declare_cmd.py::add_parser`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>…共 5 | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `✅已部署` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `✅已驗證` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`templates/worktree-lifecycle.md §Worktree Lifecycle Runbook` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/commands/handoff_cmd.py::run` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/commands/handoff_cmd.py::run`<br>…共 4 | Project 選項=是；專責動詞=是 |
+| `✅通過` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 ``<br>…共 4 | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | `cli/src/wf_cli/doctor.py::REVIEW_RESULT_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS`<br>`cli/src/wf_cli/review.py::STATUS_BY_RESULT` | Project 選項=是；專責動詞=是 |
+| `🏁完成` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」`<br>…共 7 | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES`<br>`cli/src/wf_cli/commands/handoff_cmd.py::run`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `💡需求` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移` | `cli/src/wf_cli/card.py::Card`<br>`cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>…共 4 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `📥Backlog` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §為什麼要兩軸`<br>`AI_WORKFLOW.md §⛔ 非射程（WF-STAGE-STATE-TWO-AXIS1）`<br>…共 9 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/doctor.py::CONFORMANCE_KNOWN_GAP` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `🔍待查核` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`templates/handoff-contract.md §3.1.6 轉錄與 doctor 判定`<br>…共 6 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/commands/review_cmd.py::AWAITING_REVIEW_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `🔨執行中` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」`<br>…共 6 | `cli/src/wf_cli/commands/assign_cmd.py::add_parser`<br>`cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `🔬研究中` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §為什麼要兩軸`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>…共 4 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `🚀待部署` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `🛑已停止` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表七：條文 ↔ `handoff_cmd.py` 的落差登記 ``<br>…共 4 | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES` | `cli/src/wf_cli/commands/assign_cmd.py::TERMINAL_STATUSES`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `🧪驗證中` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS` | `cli/src/wf_cli/commands/deploy_state_cmd.py::DEPLOYMENT_TRANSITIONS`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::PROJECT_STATUS_BY_DEPLOYMENT_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
+| `🧭規劃中` | ok | `AI_WORKFLOW.md §切換前的現行看板語彙與仍有效的約束`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`AI_WORKFLOW.md §表六：規劃期須納入的三項，各自的落點與「今天有沒有執行者」`<br>…共 4 | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS` | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_STATUS`<br>`cli/src/wf_cli/doctor.py::HANDOFF_STAGE_EXPECTED_STATUS`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | Project 選項=是；專責動詞=是 |
 
-### 卡面欄位（34）
-
-| 符號 | 判定 | 契約出處 | 寫入者 | 讀取者 | 備註 |
-|---|---|---|---|---|---|
-| `Design` | absent | `templates/initiative-card.md §INIT-<id> <成果導向名稱>`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `Discovery` | absent | `templates/initiative-card.md §INIT-<id> <成果導向名稱>`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `Merge SHA` | absent | `templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `PR` | mention-only | `templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `依賴與子卡` | absent | `templates/initiative-card.md §依賴與子卡` | — | — | open 渲染=否；amend 可改=否 |
-| `修復` | mention-only | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `回歸測試` | absent | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `基線變更紀錄` | absent | `templates/initiative-card.md §基線變更紀錄` | — | — | open 渲染=否；amend 可改=否 |
-| `根因` | mention-only | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `決策與風險` | absent | `templates/initiative-card.md §決策與風險` | — | — | open 渲染=否；amend 可改=否 |
-| `環境` | mention-only | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `目標` | write-only | `templates/initiative-card.md §INIT-<id> <成果導向名稱>` | `cli/src/wf_cli/cleanup.py::_check_self_cwd`<br>`cli/src/wf_cli/cleanup.py::_check_primary`<br>`cli/src/wf_cli/registry.py::observe_local_worktree` | — | open 渲染=否；amend 可改=否 |
-| `範圍` | read-only | `templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | `cli/src/wf_cli/doctor.py::CommitTrailerReport.render_text` | open 渲染=否；amend 可改=否 |
-| `部署` | read-only | `templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | — | `cli/src/wf_cli/commands/handoff_cmd.py::STAGE_PHASE`<br>`cli/src/wf_cli/pitfalls.py::PHASES`<br>`cli/src/wf_cli/project.py::FIELD_SPECS` | open 渲染=否；amend 可改=否 |
-| `里程碑` | absent | `templates/initiative-card.md §INIT-<id> <成果導向名稱>` | — | — | open 渲染=否；amend 可改=否 |
-| `重現` | mention-only | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `需求方` | write-only | `templates/initiative-card.md §INIT-<id> <成果導向名稱>` | `cli/src/wf_cli/validation.py::validate_review_report` | — | open 渲染=否；amend 可改=否 |
-| `非目標` | absent | `templates/initiative-card.md §INIT-<id> <成果導向名稱>` | — | — | open 渲染=否；amend 可改=否 |
-| `預期 vs 實際` | absent | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕` | — | — | open 渲染=否；amend 可改=否 |
-| `DB` | ok | `templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body` | `cli/src/wf_cli/card.py::_KNOWN_HEADER_PREFIXES` | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動 |
-| `Initiative` | ok | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/card.py::amend_spec_baseline`<br>…共 5 | `cli/src/wf_cli/card.py::_SPEC_BASELINE_RE`<br>`cli/src/wf_cli/card.py::restore_migration_header`<br>`cli/src/wf_cli/card.py::_KNOWN_HEADER_PREFIXES`<br>…共 9 | open 渲染=是；amend 可改=是 |
-| `Log` | ok | `templates/bug-card.md §Log`<br>`templates/tasks-card.md §Log` | `cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint` | `cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint` | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動；⚠️ amend 讀它當判準卻改不動它 |
-| `owner` | ok | `templates/initiative-card.md §INIT-<id> <成果導向名稱>` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/cleanup.py::_check_foreign_lease`<br>…共 11 | `cli/src/wf_cli/commands/amend_cmd.py::_ISSUECOMMENT_URL_RE`<br>`cli/src/wf_cli/commands/assign_cmd.py::run`<br>`cli/src/wf_cli/commands/deploy_state_cmd.py::REQUIRED_FIELDS`<br>…共 15 | open 渲染=否；amend 可改=否 |
-| `spec 基線` | ok | `templates/initiative-card.md §INIT-<id> <成果導向名稱>`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/card.py::amend_spec_baseline`<br>…共 5 | `cli/src/wf_cli/card.py::_SPEC_BASELINE_RE`<br>`cli/src/wf_cli/card.py::restore_migration_header`<br>`cli/src/wf_cli/commands/amend_cmd.py::run` | open 渲染=是；amend 可改=是 |
-| `分支` | ok | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/commands/assign_cmd.py::run` | `cli/src/wf_cli/commands/assign_cmd.py::run`<br>`cli/src/wf_cli/commands/open_cmd.py::run`<br>`cli/src/wf_cli/project.py::FIELD_SPECS`<br>…共 7 | open 渲染=否；amend 可改=否 |
-| `執行` | ok | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::format_routing_line` | `cli/src/wf_cli/card.py::validate_capability_routing`<br>`cli/src/wf_cli/card.py::_ROUTING_PARSE_RE`<br>`cli/src/wf_cli/card.py::_field_problems`<br>…共 8 | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動 |
-| `服務的原始目標` | ok | `templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body` | `cli/src/wf_cli/card.py::_KNOWN_HEADER_PREFIXES`<br>`cli/src/wf_cli/commands/open_cmd.py::run`<br>`cli/src/wf_cli/doctor.py::evaluate_card_conformance`<br>…共 8 | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動 |
-| `查核` | ok | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::format_routing_line` | `cli/src/wf_cli/card.py::validate_capability_routing`<br>`cli/src/wf_cli/card.py::_ROUTING_PARSE_RE`<br>`cli/src/wf_cli/card.py::_field_problems` | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動 |
-| `核心痛點` | ok | `templates/tasks-card.md §核心痛點` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/resources.py::parse_block` | `cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint`<br>`cli/src/wf_cli/commands/amend_cmd.py::run`<br>`cli/src/wf_cli/doctor.py::_core_pain_value` | open 渲染=是；amend 可改=是 |
-| `規劃` | ok | `templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/card.py::restore_migration_header`<br>…共 4 | `cli/src/wf_cli/card.py::_REQUESTED_BY_RE`<br>`cli/src/wf_cli/card.py::restore_migration_header`<br>`cli/src/wf_cli/commands/handoff_cmd.py::STAGE_PHASE`<br>…共 5 | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動；⚠️ amend 讀它當判準卻改不動它 |
-| `資源宣告` | ok | `templates/tasks-card.md §資源宣告` | `cli/src/wf_cli/commands/amend_cmd.py::run`<br>`cli/src/wf_cli/resources.py::parse_block` | `cli/src/wf_cli/commands/amend_cmd.py::run`<br>`cli/src/wf_cli/commands/open_cmd.py::run`<br>`cli/src/wf_cli/project.py::FIELD_SPECS`<br>…共 6 | open 渲染=是；amend 可改=是 |
-| `需求` | ok | `templates/bug-card.md §BUG-<id> <一句話症狀> 〔T2/T3/T4；🔴紅線 / ⚪一般〕`<br>`templates/tasks-card.md §<卡ID> <功能名>  〔T0/T1/T2/T3/T4；🔴紅線 / ⚪一般〕` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/card.py::restore_migration_header`<br>…共 6 | `cli/src/wf_cli/card.py::_REQUESTED_BY_RE`<br>`cli/src/wf_cli/card.py::restore_migration_header`<br>`cli/src/wf_cli/card.py::_KNOWN_HEADER_PREFIXES`<br>…共 8 | open 渲染=是；amend 可改=否；⚠️ 開卡寫得進、開卡後改不動；⚠️ amend 讀它當判準卻改不動它 |
-| `驗收條件` | ok | `templates/tasks-card.md §驗收條件` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body`<br>`cli/src/wf_cli/resources.py::parse_block` | `cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint`<br>`cli/src/wf_cli/commands/amend_cmd.py::run` | open 渲染=是；amend 可改=是 |
-| `驗證` | ok | `templates/tasks-card.md §驗證` | `cli/src/wf_cli/card.py::render_spec_markdown`<br>`cli/src/wf_cli/card.py::render_issue_body` | `cli/src/wf_cli/commands/amend_cmd.py::_largest_field_hint`<br>`cli/src/wf_cli/commands/amend_cmd.py::run` | open 渲染=是；amend 可改=是 |
-
-### 守衛覆蓋缺口（5）
+### 守衛覆蓋缺口（7）
 
 | 寫入入口 | 資料模組 | 用到的 serializer | 未跑的守衛 |
 |---|---|---|---|
 | `cli/src/wf_cli/card.py` | `brief` | `render_block` | `validate_shape` |
+| `cli/src/wf_cli/card.py` | `card_face` | `render_block` | `_assert_schema_is_understood／_validate_against／validate／validate_issue_url` |
 | `cli/src/wf_cli/card.py` | `resources` | `render_block` | `find_conflicts` |
 | `cli/src/wf_cli/commands/amend_cmd.py` | `brief` | `render_block` | `validate_shape` |
+| `cli/src/wf_cli/commands/amend_cmd.py` | `card_face` | `render_block` | `_assert_schema_is_understood／_validate_against／validate／validate_issue_url` |
 | `cli/src/wf_cli/commands/amend_cmd.py` | `resources` | `render_block` | `find_conflicts` |
 | `cli/src/wf_cli/commands/assign_cmd.py` | `card` | `format_branch_worktree` | `validate_capability_routing／validate_routing_field／validate_routing_names` |
-
 <!-- reconcile-generated:end -->
+
+## 7. `WF-REDESIGN-W2B` 的基線 set diff 與逐項處置
+
+卡面 AC2：以**已釘死的基線 artifact** 與 W2A＋W2B 的 merge result 做 set diff，
+**每個 removed／added／changed symbol 逐項 disposition**。⛔ count 只作摘要——集合與 hash 才是基線。
+
+**diff identity ＝ `(kind, name)`**：added／removed 依 key；changed ＝同 key 的 canonical row 不同。
+
+### 7.0 怎麼重跑（本節三個機械區塊都由此產生，⛔ 非手寫）
+
+```python
+# 基線 artifact 的身分：全檔位元組即 canonical 序列化，⇒ 兩者 sha256 相同
+import hashlib, json, subprocess, sys
+raw = open("docs/research/drafts/wave-specs/baseline-universe.json", "rb").read()
+assert hashlib.sha256(raw).hexdigest() == \
+    "c1a1279324f2b5f40421eaa0408314a1afadae2c374c0c98782f66510af4bb68"
+base = json.loads(raw.decode("utf-8"))
+
+# merge result 的同 schema artifact
+cur = json.loads(subprocess.run(
+    [sys.executable, "scripts/contract_tool_reconcile.py", "--format", "json"],
+    capture_output=True, text=True, check=True).stdout)
+
+def rows_sha(rows):                       # rows 依 (kind,name) 排序後 canonical 序列化
+    s = sorted(rows, key=lambda r: (r["kind"], r["name"]))
+    blob = json.dumps(s, ensure_ascii=False, sort_keys=True, separators=(",", ": "))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+B = {(r["kind"], r["name"]): r for r in base["rows"]}
+C = {(r["kind"], r["name"]): r for r in cur["rows"]}
+removed, added = sorted(set(B) - set(C)), sorted(set(C) - set(B))
+```
+
+⚠️ **`rows` 的 hash 與全檔 hash 是兩個不同的量。** 基線 artifact 帶 `_meta`（載 source SHA
+與 generator 版本），故全檔 hash 含 `_meta`；`rows` hash 不含。**跨 HEAD 比對用 `rows` hash**
+——`_meta.source_sha` 每次產生都不同，用全檔 hash 比等於保證永遠不相等。
+
+<!-- w2b-setdiff:begin -->
+
+- 基線 artifact：`docs/research/drafts/wave-specs/baseline-universe.json`（`_meta.source_sha` = `ce45a80f9dfe89d38e53d25a0b012e7bc8956003`）
+- 基線全文 sha256（＝卡面 AC2 釘死值）：`c1a1279324f2b5f40421eaa0408314a1afadae2c374c0c98782f66510af4bb68`
+- 基線 rows canonical sha256：`d13ba6c04f5954295c705f515dbc1f242bd513d00da2eb708777b940c98d45cc`
+- **本次 merge result rows canonical sha256：`13141b5d9b6e7188818d9df12a59ecfd42b43cb8f1a68af8b800ef69387a4421`**
+- 摘要（⛔ 非基線，集合與 hash 才是）：基線 rows 86 → 本次 50；removed 36／added 0／changed 23；缺口 54 → 33；守衛缺口 5 → 7
+
+### 7.1 removed（36）——符號離開 universe
+
+| kind | 符號 | 基線判定 | 基線出處檔 | 處置 |
+|---|---|---|---|---|
+| `card_field` | `DB` | `ok` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `Design` | `absent` | `templates/initiative-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `Discovery` | `absent` | `templates/initiative-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `Initiative` | `ok` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `Log` | `ok` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `Merge SHA` | `absent` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `PR` | `mention-only` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `owner` | `ok` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `spec 基線` | `ok` | `templates/initiative-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `依賴與子卡` | `absent` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `修復` | `mention-only` | `templates/bug-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `分支` | `ok` | `templates/bug-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `回歸測試` | `absent` | `templates/bug-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `執行` | `ok` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `基線變更紀錄` | `absent` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `服務的原始目標` | `ok` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `查核` | `ok` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `核心痛點` | `ok` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `根因` | `mention-only` | `templates/bug-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `決策與風險` | `absent` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `環境` | `mention-only` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `目標` | `write-only` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `範圍` | `read-only` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `規劃` | `ok` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `資源宣告` | `ok` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `部署` | `read-only` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `里程碑` | `absent` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `重現` | `mention-only` | `templates/bug-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `需求` | `ok` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `需求方` | `write-only` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `非目標` | `absent` | `templates/initiative-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `預期 vs 實際` | `absent` | `templates/bug-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `驗收條件` | `ok` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `card_field` | `驗證` | `ok` | `templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `delivery_status` | `⚪一般` | `absent` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+| `delivery_status` | `🔴紅線` | `absent` | `templates/bug-card.md`<br>`templates/tasks-card.md` | `從契約移除`：唯一出處為本卡移除的範本 |
+
+### 7.2 added（0）——新符號進 universe
+
+（無。本卡新增的六份範本刻意不引入新的契約符號：反引號 kebab 一律沿用既有符號，emoji 後一律留空白以免被抽成交付狀態。）
+
+### 7.3 changed（23）——同 key、canonical row 不同
+
+| kind | 符號 | 變動欄 | 判定 基線 → 本次 | 處置 |
+|---|---|---|---|---|
+| `delivery_status` | `↩退回` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `⏳待執行` | `doc_hits` | `read-only` → `read-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `⏳部署中` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `⏸未部署` | `doc_hits`、`mentions` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `⏸阻塞` | `doc_hits` | `read-only` → `read-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `✅已部署` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `✅已驗證` | `doc_hits`、`mentions` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `✅通過` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🏁完成` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `💡需求` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `📥Backlog` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `📦已合併` | `doc_hits` | `read-only` → `read-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🔍待查核` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🔨執行中` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🔬研究中` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🚀待部署` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🚧進行中` | `doc_hits` | `read-only` → `read-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🚨已升級` | `doc_hits` | `read-only` → `read-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🛑已停止` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🧪驗證中` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `delivery_status` | `🧭規劃中` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `event` | `review-correction` | `doc_hits` | `mention-only` → `mention-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `event` | `review-invalid` | `doc_hits` | `mention-only` → `mention-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+
+<!-- w2b-setdiff:end -->

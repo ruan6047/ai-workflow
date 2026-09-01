@@ -634,21 +634,50 @@ def test_control_4_amend_can_write_resources_without_running_find_conflicts(live
     assert "render_block" in hits[0].serializer
 
 
-def test_control_5_requested_by_is_written_at_open_and_never_amendable(live):
-    row = _row(live, "card_field", "需求")
-    assert row.writers, "需求欄在 render_issue_body 裡，應有 writer"
-    assert "amend 可改=否" in row.notes
-    assert "⚠️ 開卡寫得進、開卡後改不動" in row.notes
-    assert "⚠️ amend 讀它當判準卻改不動它" in row.notes
+def test_control_5_card_field_universe_is_empty_until_the_fenced_json_card_face_lands(live):
+    """原正控組 5（``需求`` 欄：開卡寫得進、開卡後改不動）**在真 repo 上已無標的**。
+
+    ``WF-REDESIGN-W2B`` 移除了 ``templates/*card*.md`` 三份範本（`tasks-card.md`／
+    `bug-card.md`／`initiative-card.md`），而 :data:`ctr.CARD_TEMPLATE_GLOB` 是 ``card_field``
+    universe 的**唯一**來源 ⇒ 該 kind 整類離開對帳表，``_row(live, "card_field", "需求")``
+    不再有東西可取。
+
+    ⛔ **這不是把控制組刪掉，是把它換成一條會響的 ratchet。** 本測試現在釘的是
+    「card_field 是空的，而且空得有機械理由」：
+
+    - 若有人在 ``templates/`` 下再放一份 ``*card*.md``（例如 ``WF-REDESIGN-W3`` 落地
+      卡面 fenced JSON 的 schema 範本），下面兩條 assert **當場轉紅**，逼那張卡回來把
+      真 repo 的 card_field 正控組重新建立起來——⛔ 不會靜默地少一組控制。
+    - 反之，若對帳器自己壞掉而讓 card_field 憑空消失，``card_templates()`` 仍會回傳
+      非空清單 ⇒ 第一條 assert 抓得到。兩條分開寫就是為了分辨這兩種成因。
+
+    ⚠️ **誠實登記**：在 ``WF-REDESIGN-W3`` 之前，「open 寫得進／amend 改不動」這組
+    **真 repo** 上的正控組不存在；同名判定的鑑別力只剩合成 repo 那幾條
+    （``test_field_read_by_a_parser_is_not_thereby_amendable``／
+    ``test_adding_an_amend_function_flips_amendability``）。⛔ 不得把本測試通過讀成
+    「那組控制仍在跑」。
+    """
+    assert ctr.card_templates(_REPO_ROOT) == [], (
+        "templates/ 下又出現 *card*.md ⇒ card_field universe 已恢復，"
+        "請把真 repo 的正控組（開卡寫得進、開卡後改不動）一併重建"
+    )
+    assert [r for r in live.rows if r.kind == ctr.KIND_FIELD] == []
 
 
 def test_live_table_is_not_vacuous(live):
-    """正控組的另一半：表上必須同時存在「有實作」的列。
+    """正控組的另一半：表上必須同時存在「有實作」與「缺口」的列。
 
-    全綠或全紅的表都沒有鑑別力。這條釘住三個 kind 各至少有一列判定為 ``ok``——若某次改動
-    讓判定塌成單一值，這裡會紅。
+    全綠或全紅的表都沒有鑑別力。這條釘住**表上實際存在的每一個 kind** 各至少有一列判定為
+    ``ok``、也至少有一列是缺口——若某次改動讓判定塌成單一值，這裡會紅。
+
+    ⚠️ **``card_field`` 自 ``WF-REDESIGN-W2B`` 起不在母體內**（成因與 ratchet 見
+    ``test_control_5_card_field_universe_is_empty_until_the_fenced_json_card_face_lands``）。
+    ⛔ 母體改成「表上實際存在的 kind」而不是寫死三個，是為了讓本條在那之後仍有鑑別力；
+    ⛔ 不得由此推出「kind 少一個沒關係」——少了哪一個由上面那條專門的測試負責喊。
     """
-    for kind in (ctr.KIND_EVENT, ctr.KIND_STATUS, ctr.KIND_FIELD):
+    kinds = sorted({r.kind for r in live.rows})
+    assert kinds == sorted({ctr.KIND_STATUS, ctr.KIND_EVENT}), f"表上的 kind 集合變了：{kinds}"
+    for kind in kinds:
         ok = [r for r in live.rows if r.kind == kind and r.verdict == ctr.VERDICT_OK]
         gaps = [r for r in live.rows if r.kind == kind and r.is_gap]
         assert ok, f"{kind} 沒有任何判定為 ok 的列，對帳器可能整體失效"
