@@ -381,14 +381,17 @@ def create_repo_issue(runner: GhRunner, repo: str, title: str, body: str) -> tup
 #: ⛔ **它與 `ItemSnapshot.title`（＝GraphQL `content.title`）不是同一個東西**，而本 repo
 #: 曾經把它們當成同一個（`WF-REDESIGN-W1` R1-1）。兩個實測事實：
 #:
-#: 1. **寫不了，而且沒有第二條路**。2026-08-31 對真 Project #4 的 item
-#:    `PVTI_lAHOAvJcys4BfXPrzg4nJLo` 實跑 `updateProjectV2ItemFieldValue`
-#:    （fieldId=`PVTF_lAHOAvJcys4BfXPrzhZqqUk`）：`VALIDATION` 錯誤，訊息逐字
-#:    **"The title field can only be updated on DraftIssues"**。
-#:    ⭐ 另以 schema introspection **窮舉**整個 mutation 面：32 個 `ProjectV2*` mutation
-#:    中只有 5 個吃 `title` input，其中 `addProjectV2DraftIssue`／`updateProjectV2DraftIssue`
+#: 1. **wfcli 現行路徑寫不動它；已窮舉的 GraphQL ProjectV2 mutation 面裡也找不到 writer。**
+#:    2026-08-31 對真 Project #4 的 item `PVTI_lAHOAvJcys4BfXPrzg4nJLo` 實跑
+#:    `updateProjectV2ItemFieldValue`（fieldId=`PVTF_lAHOAvJcys4BfXPrzhZqqUk`）：
+#:    `VALIDATION` 錯誤，訊息逐字 **"The title field can only be updated on DraftIssues"**。
+#:    ⭐ 另以 schema introspection 窮舉 **GraphQL 的 `ProjectV2*` mutation 面**：32 個之中
+#:    只有 5 個吃 `title` input，其中 `addProjectV2DraftIssue`／`updateProjectV2DraftIssue`
 #:    限 DraftIssue，`createProjectV2`／`copyProjectV2`／`updateProjectV2` 寫的是
-#:    **專案自己**的標題。⇒ issue-backed item 的這一欄在 API 上**沒有任何 writer**。
+#:    **專案自己**的標題。
+#:    ⚠️ **窮舉的射程逐字＝GraphQL mutation 面**（查核 R2-1）。⛔ **未量** REST 的
+#:    projects v2 端點、Projects 的匯出面與 webhook 面 ⇒ ⛔ 不得寫成「API 上沒有任何
+#:    writer」那種全稱。⚠️ 「證不出來 ≠ 沒有」：本條說的是**這次窮舉的範圍內沒找到**。
 #: 2. **它是「上板當下的快照」，⛔ 不是投影**。2026-09-01 差分實驗：把**同一張** `aiwf#177`
 #:    加進一個新建的拋棄式 Project（item 建於 `2026-09-01T03:48:02Z`），該處 `Title` 欄
 #:    ＝當下的 `content.title`（新值）；而 Project #4 的同一張（item 建於
@@ -399,13 +402,16 @@ def create_repo_issue(runner: GhRunner, repo: str, title: str, body: str) -> tup
 #:    最舊的不一致是 `cpbl#60`（改名於 `2026-08-06T04:40:57Z`）⇒ 已持續約 **26 天**。
 #: 4. ⭐ **它對人類讀者不可見**。2026-09-01 於登入的瀏覽器實看 Projects UI 的 Title 欄：
 #:    五筆不一致的 item（`aiwf#177` 與四張 cpbl）**全部**顯示 `content.title`（新值），
-#:    ⛔ 沒有一筆顯示這個欄位的舊值。⇒ 看得到舊值的只有 GraphQL 的
+#:    ⛔ 沒有一筆顯示這個欄位的舊值。⇒ **目前已實測可讀到舊值的面，例子包括** GraphQL 的
 #:    `fieldValueByName("Title")` 與 `gh project item-list` 的頂層 `title`。
+#:    ⚠️ ⛔ **不是「只有這兩個」**（查核 R2-1）：讀取面同樣沒有被窮舉過——量到的是
+#:    這兩個確實讀得到，⛔ 不是別的都讀不到。
 #:
 #: ⛔ **不得把 `content.title` 改名成「第二個 surface」**來讓某條 oracle 成立：那是把
 #:    量不到的東西改個名字宣稱量到了。
-#: ⚠️ 唯一已知能刷新它的動作是 `deleteProjectV2Item` ＋ 重新 `addProjectV2ItemById`，
-#:    而那會**清掉該 item 全部自訂欄位值**（卡ID／級別／交付狀態…）⇒ ⛔ 不是修復路徑。
+#: ⚠️ **目前已知**能刷新它的動作是 `deleteProjectV2Item` ＋ 重新 `addProjectV2ItemById`
+#:    （由第 2 點的差分實驗推得），而那會**清掉該 item 全部自訂欄位值**
+#:    （卡ID／級別／交付狀態…）⇒ ⛔ 不是修復路徑。⛔ 也未窮舉「還有沒有別的刷新方式」。
 PROJECT_TITLE_FIELD = "Title"
 
 

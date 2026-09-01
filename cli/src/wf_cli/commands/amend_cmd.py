@@ -1380,10 +1380,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     #     ③ Project 內建 `Title` **欄**（`item.text("Title")`）。
     #     **①② 是判準**（不符 ⇒ rc=8）；**③ 不是判準**，只印一行事實註記。
     # (b) 為什麼 ③ 退出判準（需求方 2026-09-01 裁定甲，證據為下列四項實測）：
-    #     1. **沒有 writer，且窮舉過**：對真 Project #4 實跑 `updateProjectV2ItemFieldValue`
+    #     1. **wfcli 現行路徑寫不動它；已窮舉的 GraphQL `ProjectV2*` mutation 面裡也
+    #        找不到 writer**：對真 Project #4 實跑 `updateProjectV2ItemFieldValue`
     #        回 "The title field can only be updated on DraftIssues"；schema introspection
     #        窮舉 32 個 `ProjectV2*` mutation，吃 `title` 的 5 個之中，兩個限 DraftIssue、
     #        三個寫的是**專案自己**的標題。
+    #        ⚠️ 射程逐字＝**GraphQL mutation 面**（查核 R2-1）；⛔ 未量 REST／匯出／webhook。
     #     2. **它是 add-time 快照**：把同一張 `aiwf#177` 加進一個新建的拋棄式 Project，
     #        該處的 `Title` 欄＝當下的 `content.title`（新值），而 Project #4 的同一張
     #        仍是舊值。同一 issue、同一時刻、兩個值。
@@ -1392,12 +1394,20 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     #     4. **人類讀者看不到它**：實看 Projects UI 的 Title 欄，五筆不一致的 item
     #        **全部**顯示 `content.title`（新值）。
     #     ⇒ 把它留在判準裡＝讓 `--feature` 在 issue-backed 卡上**永遠**回非零，
-    #     而那個非零指向的是一個**沒有 writer、沒有 wfcli 消費者、讀者也看不到**的值。
+    #     而那個非零指向的是一個**在已量範圍內找不到 writer、沒有 wfcli 消費者、
+    #     且實看 UI 讀者看不到**的值。
     # (c) ⚠️ **上一版在這裡寫過一句被自己量測推翻的話**：「它是看板檢視上讀者實際看到的
     #     那一格」——**錯的**，見 (b)4。就地留證，⛔ 不靜默刪掉。
     # (d) ⛔ **不得由「③ 退出判準」推出「③ 已同步」或「③ 不存在」**：它仍是一個對不上的
-    #     機讀值，讀得到它的是 GraphQL `fieldValueByName("Title")` 與
-    #     `gh project item-list` 的頂層 `title`。註記就是為了讓它保持被說出來。
+    #     機讀值；**目前已實測讀得到它的面，例子包括** GraphQL `fieldValueByName("Title")`
+    #     與 `gh project item-list` 的頂層 `title`。⛔ 讀取面**未窮舉**，故⛔ 不寫「只有」。
+    #     註記就是為了讓它保持被說出來。
+    # (e) ⚠️ **本段與下方訊息的措辭收斂自查核 R2-1**（`title-field-note-exceeds-measured-
+    #     api-surface`）：上一版寫「wfcli 與**任何 API** 呼叫都寫不動它」與「這個舊值
+    #     **只有** …讀得到」，兩句都把**已窮舉的 GraphQL mutation 面**擴寫成全 API／
+    #     全讀取面，而我自己在 issuecomment-5488724887 §七第 4 項就寫著 REST／匯出／
+    #     webhook 未量。就地留證，⛔ 不靜默改掉。
+    #     ⛔ 回歸斷言（`tests/test_amend.py`）禁止這兩個全稱重新出現。
     # (e) ⛔ 也不得由此推出「可以改用 delete+re-add 修它」：那會清掉該 item 全部自訂
     #     欄位值，且 `deleteProjectV2Item` 是 W2A 的「撤銷」語意。
     if args.feature is not None:
@@ -1439,13 +1449,16 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             print(
                 f"[amend] 註記：Project 內建 `{PROJECT_TITLE_FIELD}` 欄仍是 "
                 f"{project_title_field!r}（本次寫入值為 {expected_title!r}）。\n"
-                "  這一格是 item **上板當下**的快照，wfcli 與任何 API 呼叫都寫不動它"
-                "（平台逐字：\"The title field can only be updated on DraftIssues\"）。\n"
+                "  這一格是 item **上板當下**的快照。wfcli 現行路徑寫不動它，"
+                "已窮舉的 GraphQL ProjectV2 mutation 面裡也找不到 writer\n"
+                "  （平台逐字：\"The title field can only be updated on DraftIssues\"）；"
+                "⚠️ REST／匯出／webhook 面未量，⛔ 不宣稱全 API。\n"
                 "  ⛔ 不是本次寫入失敗；⛔ 重跑本指令不會讓它收斂；⛔ Projects UI 上也沒有"
                 "這一格的控制項。\n"
-                "  ⚠️ 看板 UI 的 Title 欄顯示的是 content.title（＝新值）⇒ 這個舊值只有"
-                " GraphQL fieldValueByName(\"Title\")\n"
-                "  與 gh project item-list 的頂層 title 讀得到。⛔ 不得把它讀成「已同步」。",
+                "  ⚠️ 看板 UI 的 Title 欄顯示的是 content.title（＝新值）⇒ 目前已實測可讀到"
+                "這個舊值的面，例子包括\n"
+                "  GraphQL fieldValueByName(\"Title\") 與 gh project item-list 的頂層 title"
+                "（⛔ 讀取面未窮舉）。⛔ 不得把它讀成「已同步」。",
                 file=sys.stderr,
             )
 

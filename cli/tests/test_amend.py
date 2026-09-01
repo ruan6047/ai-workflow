@@ -2393,3 +2393,59 @@ def test_routing_or_feature_alone_counts_as_a_field_to_amend(card):
     assert run_cli(
         ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "只改路由", "--executor", "某模型@某工具"]
     ) == 0
+
+
+# ==========================================================================
+# 查核 R2-1：註記的措辭不得超過已量到的證據強度
+# ==========================================================================
+#
+# root_cause `title-field-exceeds-measured-api-surface`：裁定甲的修復差分把「已窮舉的
+# **GraphQL ProjectV2 mutation 面**」擴寫成「**任何 API**」，把「已實測讀得到的兩個面」
+# 擴寫成「**只有**這兩個」。⚠️ 而同一份研究備忘（issuecomment-5488724887 §七第 4 項）
+# 自己就寫著 REST／匯出／webhook **未量**。
+#
+# ⇒ 下面兩條把「不得再寫全稱」釘成機械事實。⛔ 它們驗的是**措辭**不是行為——行為由
+# 上面那組 surface 測試釘住，兩者缺一不可。
+
+#: ⛔ 禁止在**公開 CLI 訊息**與 `PROJECT_TITLE_FIELD` 註解裡出現的全稱措辭。
+#: ⚠️ 逐字黃金值：要改措辭是合法的，但得連這裡一起改，而那一行 diff 就是給查核者看的。
+OVERCLAIM_TOKENS = ("任何 API", "只有 GraphQL", "都寫不動它", "沒有任何 writer")
+
+#: 必須同時出現的**界線**措辭——⛔ 只禁全稱不夠：把句子刪光也會讓禁令通過。
+BOUNDED_TOKENS = ("已窮舉的 GraphQL", "未量", "例子包括", "未窮舉")
+
+
+def test_the_title_field_note_never_overclaims_the_api_surface(card, capsys):
+    """公開 CLI 訊息（**實跑捕捉，⛔ 不是讀原始碼**）的措辭界線。"""
+    assert run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "量測註記措辭", "--feature", "量測用功能名"]
+    ) == 0
+    err = capsys.readouterr().err
+    assert "[amend] 註記：" in err, err
+    for token in OVERCLAIM_TOKENS:
+        assert token not in err, f"註記又寫回全稱措辭「{token}」：{err}"
+    for token in BOUNDED_TOKENS:
+        assert token in err, f"註記少了界線措辭「{token}」：{err}"
+
+
+def test_the_project_title_field_constant_states_its_measurement_scope():
+    """`PROJECT_TITLE_FIELD` 的 `#:` 註解區塊同樣不得寫全稱。
+
+    ⚠️ 只切**那個常數上方的註解區塊**，⛔ 不掃整個 `project.py`：別的卡寫的句子不歸
+    本卡管，掃整檔會讓這條變成一個會被無關改動弄紅的雜訊來源。
+    """
+    from pathlib import Path
+
+    import wf_cli.project as project_mod
+
+    lines = Path(project_mod.__file__).read_text(encoding="utf-8").splitlines()
+    end = next(i for i, ln in enumerate(lines) if ln.startswith("PROJECT_TITLE_FIELD ="))
+    start = end
+    while start > 0 and lines[start - 1].startswith("#:"):
+        start -= 1
+    block = "\n".join(lines[start:end])
+    assert "schema introspection" in block, "切錯區塊了"
+    for token in OVERCLAIM_TOKENS:
+        assert token not in block, f"常數註解又寫回全稱措辭「{token}」"
+    for token in ("GraphQL 的 `ProjectV2*` mutation 面", "未量", "例子包括", "未窮舉"):
+        assert token in block, f"常數註解少了界線措辭「{token}」"
