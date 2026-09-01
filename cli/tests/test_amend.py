@@ -2193,7 +2193,9 @@ def test_amend_feature_writes_the_two_writable_surfaces_and_reads_all_three(card
 
     ⚠️ 現在的斷言分兩類，⛔ 不混為一談：
     - **寫得動的兩個**（Issue 本體的 title、GraphQL `content.title`）必須是新值；
-    - **寫不動的那一個**（Project 內建 `Title` 欄）必須**仍是舊值**，且指令必須印出警示。
+    - **寫不動的那一個**（Project 內建 `Title` 欄）必須**仍是舊值**，且指令必須印出
+      一行**事實註記**（⚠️ 需求方 2026-09-01 裁定甲之後它**不是警示**：該欄已退出判準，
+      因為它沒有 writer、沒有 wfcli 消費者、且看板 UI 顯示的是 content.title）。
       平台實測逐字：`updateProjectV2ItemFieldValue` 對 issue-backed item 回
       "The title field can only be updated on DraftIssues"。
     """
@@ -2211,16 +2213,18 @@ def test_amend_feature_writes_the_two_writable_surfaces_and_reads_all_three(card
     # 寫不動的那一個：仍是舊值，且被大聲說出來
     assert item.text("Title") == before_title_field != "AMEND-DEMO1 待審清單與開卡閘"
     err = capsys.readouterr().err
+    assert "[amend] 註記：" in err
     assert "Project 內建 `Title` 欄" in err
     assert "can only be updated on DraftIssues" in err
-    assert "本次仍放行" in err
+    # ⛔ 它**不得**再措辭成警示／失敗：該欄已退出判準（裁定甲）。
+    assert "警示" not in err and "拒收" not in err
 
 
-def test_the_title_field_warning_is_conditional_not_unconditional(card, capsys):
-    """⛔ 負控：警示必須由**讀回值**決定，⛔ 不是無條件印。
+def test_the_title_field_note_is_conditional_not_unconditional(card, capsys):
+    """⛔ 負控：註記必須由**讀回值**決定，⛔ 不是無條件印。
 
     把替身的旋鈕打開（模擬「若平台哪天讓該欄跟著改名走」）⇒ 三個 surface 一致 ⇒
-    ⛔ 不得再印警示。沒有這條，把警示寫成無條件 `print` 也會讓上一條全綠。
+    ⛔ 不得再印註記。沒有這條，把註記寫成無條件 `print` 也會讓上一條全綠。
     """
     card.title_field_follows_rename = True
     assert run_cli(

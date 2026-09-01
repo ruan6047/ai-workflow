@@ -1372,20 +1372,34 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
 
     # ---- 標題（`WF-REDESIGN-W1` 驗收 5b 的寫入集前兩項）----
     #
-    # ⭐ **一次寫入、三個 surface 分開讀回**（2026-08-31 依查核 R1-1 改寫）。
+    # ⭐ **一次寫入、三個 surface 分開讀回**（2026-08-31 依查核 R1-1 拆開；
+    # 2026-09-01 依需求方裁定**甲**調整 ③ 的處置）。
     #
     # (a) 現在的行為：發一次 `gh issue edit --title`，然後**各自**讀回
     #     ① Issue 本體的 `title`、② Project item 的 `content.title`、
-    #     ③ Project 內建 `Title` **欄**（`item.text("Title")`）。①② 不符 ⇒ rc=8；
-    #     ③ 不符 ⇒ 大聲警示但**放行**。
-    # (b) 為什麼 ③ 只警示不失敗：該欄**沒有 writer**——2026-08-31 對真 Project #4 實跑
-    #     `updateProjectV2ItemFieldValue`，平台回 "The title field can only be updated on
-    #     DraftIssues"；同日全量掃描 213 個 item，`content.title != Title 欄` 者 5 筆，
-    #     其中 `aiwf#177` 改名 18 小時後仍未收斂。⇒ 把它判成失敗會讓 `--feature` 在
-    #     issue-backed 卡上**永遠**回非零，那是拿一個做不到的要求癱瘓一個動詞。
-    # (c) ⚠️ **這代表 5b 的「三欄」退場 oracle 在本平台上機械不可達**，已列為阻塞發現
-    #     上呈；⛔ 本註解不宣稱它被滿足，也⛔ 不把 ①② 改名成兩個 surface 來湊數。
-    # (d) ⛔ 不得由「③ 只警示」推出「③ 不重要」：它是看板檢視上讀者實際看到的那一格。
+    #     ③ Project 內建 `Title` **欄**（`item.text("Title")`）。
+    #     **①② 是判準**（不符 ⇒ rc=8）；**③ 不是判準**，只印一行事實註記。
+    # (b) 為什麼 ③ 退出判準（需求方 2026-09-01 裁定甲，證據為下列四項實測）：
+    #     1. **沒有 writer，且窮舉過**：對真 Project #4 實跑 `updateProjectV2ItemFieldValue`
+    #        回 "The title field can only be updated on DraftIssues"；schema introspection
+    #        窮舉 32 個 `ProjectV2*` mutation，吃 `title` 的 5 個之中，兩個限 DraftIssue、
+    #        三個寫的是**專案自己**的標題。
+    #     2. **它是 add-time 快照**：把同一張 `aiwf#177` 加進一個新建的拋棄式 Project，
+    #        該處的 `Title` 欄＝當下的 `content.title`（新值），而 Project #4 的同一張
+    #        仍是舊值。同一 issue、同一時刻、兩個值。
+    #     3. **母體兩個方向零反例**：213 個 item 中有改名紀錄的恰 5 筆、5 筆全部不一致；
+    #        無改名的 208 筆全部一致。最舊的不一致已持續約 26 天。
+    #     4. **人類讀者看不到它**：實看 Projects UI 的 Title 欄，五筆不一致的 item
+    #        **全部**顯示 `content.title`（新值）。
+    #     ⇒ 把它留在判準裡＝讓 `--feature` 在 issue-backed 卡上**永遠**回非零，
+    #     而那個非零指向的是一個**沒有 writer、沒有 wfcli 消費者、讀者也看不到**的值。
+    # (c) ⚠️ **上一版在這裡寫過一句被自己量測推翻的話**：「它是看板檢視上讀者實際看到的
+    #     那一格」——**錯的**，見 (b)4。就地留證，⛔ 不靜默刪掉。
+    # (d) ⛔ **不得由「③ 退出判準」推出「③ 已同步」或「③ 不存在」**：它仍是一個對不上的
+    #     機讀值，讀得到它的是 GraphQL `fieldValueByName("Title")` 與
+    #     `gh project item-list` 的頂層 `title`。註記就是為了讓它保持被說出來。
+    # (e) ⛔ 也不得由此推出「可以改用 delete+re-add 修它」：那會清掉該 item 全部自訂
+    #     欄位值，且 `deleteProjectV2Item` 是 W2A 的「撤銷」語意。
     if args.feature is not None:
         expected_title = f"{args.card_id} {args.feature}"
         set_issue_title(runner, target.repo, item.issue_number, expected_title)
@@ -1420,16 +1434,18 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             )
             return 8
         if project_title_field != expected_title:
+            # ⚠️ 這是**註記不是警示**（需求方 2026-09-01 裁定甲）：它陳述一個已知且
+            # 無出口的平台事實，⛔ 不暗示本次寫入有問題、⛔ 也不要求任何後續動作。
             print(
-                f"[amend] ⚠️ 警示（**本次仍放行**）：Project 內建 `{PROJECT_TITLE_FIELD}` 欄"
-                f"讀回 {project_title_field!r}，與寫入值 {expected_title!r} 不同。\n"
-                "  ⚠️ 這一格 wfcli **寫不動**：平台對 issue-backed item 明文拒絕"
-                "（\"The title field can only be updated on DraftIssues\"），\n"
-                "  而它是**會過期的投影**——2026-08-31 實測全板 213 個 item 有 5 筆長期不一致，\n"
-                "  其中一筆改名 18 小時後仍是舊值。⇒ 這不是本次寫入失敗，是那一格沒有 writer。\n"
-                "  ⛔ 不得把它讀成「已同步」，也⛔ 不得重跑本指令期待它收斂。\n"
-                "  看板檢視上讀者看到的就是這一格 ⇒ 需要它正確時，今天唯一的出路是人工在"
-                " Projects UI 上處理，或由需求方裁定該欄退出判準。",
+                f"[amend] 註記：Project 內建 `{PROJECT_TITLE_FIELD}` 欄仍是 "
+                f"{project_title_field!r}（本次寫入值為 {expected_title!r}）。\n"
+                "  這一格是 item **上板當下**的快照，wfcli 與任何 API 呼叫都寫不動它"
+                "（平台逐字：\"The title field can only be updated on DraftIssues\"）。\n"
+                "  ⛔ 不是本次寫入失敗；⛔ 重跑本指令不會讓它收斂；⛔ Projects UI 上也沒有"
+                "這一格的控制項。\n"
+                "  ⚠️ 看板 UI 的 Title 欄顯示的是 content.title（＝新值）⇒ 這個舊值只有"
+                " GraphQL fieldValueByName(\"Title\")\n"
+                "  與 gh project item-list 的頂層 title 讀得到。⛔ 不得把它讀成「已同步」。",
                 file=sys.stderr,
             )
 

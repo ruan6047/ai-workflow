@@ -381,18 +381,31 @@ def create_repo_issue(runner: GhRunner, repo: str, title: str, body: str) -> tup
 #: ⛔ **它與 `ItemSnapshot.title`（＝GraphQL `content.title`）不是同一個東西**，而本 repo
 #: 曾經把它們當成同一個（`WF-REDESIGN-W1` R1-1）。兩個實測事實：
 #:
-#: 1. **寫不了**（2026-08-31 對真 Project #4 的 item `PVTI_lAHOAvJcys4BfXPrzg4nJLo` 實跑
-#:    `updateProjectV2ItemFieldValue`，fieldId=`PVTF_lAHOAvJcys4BfXPrzhZqqUk`）：平台回
-#:    `VALIDATION` 錯誤，訊息逐字 **"The title field can only be updated on DraftIssues"**。
-#:    ⇒ issue-backed item 的這一欄**沒有 writer**，wfcli 也不例外。
-#: 2. **它是會過期的投影**（同日全量掃描 213 個 item）：`content.title != Title 欄` 者
-#:    **5 筆**（`aiwf#177` 與四張 cpbl 卡）。`aiwf#177` 的改名事件在
-#:    `2026-08-31T02:41:39Z`（`RENAMED_TITLE_EVENT` 恰 1 筆），該欄 18 小時後仍是舊值
-#:    ⇒ **改名不會刷新它**。
+#: 1. **寫不了，而且沒有第二條路**。2026-08-31 對真 Project #4 的 item
+#:    `PVTI_lAHOAvJcys4BfXPrzg4nJLo` 實跑 `updateProjectV2ItemFieldValue`
+#:    （fieldId=`PVTF_lAHOAvJcys4BfXPrzhZqqUk`）：`VALIDATION` 錯誤，訊息逐字
+#:    **"The title field can only be updated on DraftIssues"**。
+#:    ⭐ 另以 schema introspection **窮舉**整個 mutation 面：32 個 `ProjectV2*` mutation
+#:    中只有 5 個吃 `title` input，其中 `addProjectV2DraftIssue`／`updateProjectV2DraftIssue`
+#:    限 DraftIssue，`createProjectV2`／`copyProjectV2`／`updateProjectV2` 寫的是
+#:    **專案自己**的標題。⇒ issue-backed item 的這一欄在 API 上**沒有任何 writer**。
+#: 2. **它是「上板當下的快照」，⛔ 不是投影**。2026-09-01 差分實驗：把**同一張** `aiwf#177`
+#:    加進一個新建的拋棄式 Project（item 建於 `2026-09-01T03:48:02Z`），該處 `Title` 欄
+#:    ＝當下的 `content.title`（新值）；而 Project #4 的同一張（item 建於
+#:    `2026-08-30T13:24:13Z`、改名於 `2026-08-31T02:41:39Z`）仍是舊值。同一 issue、
+#:    同一時刻、兩個值 ⇒ 快照在 `addProjectV2ItemById` 當下取一次，之後不再更新。
+#: 3. **母體切分完全吻合**（同日全量 213 個 item）：有 `RENAMED_TITLE_EVENT` 的恰 5 筆，
+#:    **5 筆全部**不一致；無改名的 208 筆，**208 筆全部**一致。⛔ 兩個方向都沒有反例。
+#:    最舊的不一致是 `cpbl#60`（改名於 `2026-08-06T04:40:57Z`）⇒ 已持續約 **26 天**。
+#: 4. ⭐ **它對人類讀者不可見**。2026-09-01 於登入的瀏覽器實看 Projects UI 的 Title 欄：
+#:    五筆不一致的 item（`aiwf#177` 與四張 cpbl）**全部**顯示 `content.title`（新值），
+#:    ⛔ 沒有一筆顯示這個欄位的舊值。⇒ 看得到舊值的只有 GraphQL 的
+#:    `fieldValueByName("Title")` 與 `gh project item-list` 的頂層 `title`。
 #:
-#: ⛔ **不得由此推出「它永不收斂」**——量到的是「≥18 小時未收斂」，⛔ 不是永不。
-#: ⛔ 也不得把 `content.title` 改名成「第二個 surface」來讓某條 oracle 成立：那是把
+#: ⛔ **不得把 `content.title` 改名成「第二個 surface」**來讓某條 oracle 成立：那是把
 #:    量不到的東西改個名字宣稱量到了。
+#: ⚠️ 唯一已知能刷新它的動作是 `deleteProjectV2Item` ＋ 重新 `addProjectV2ItemById`，
+#:    而那會**清掉該 item 全部自訂欄位值**（卡ID／級別／交付狀態…）⇒ ⛔ 不是修復路徑。
 PROJECT_TITLE_FIELD = "Title"
 
 
