@@ -1,0 +1,344 @@
+{
+ "_meta": {
+  "spec": "WF-REDESIGN-W2A AC4/AC5：污染符（決議 §二）與腐爛自述（AC5）的核准例外。逐 hit 綁 token＋path＋穩定 anchor(line_sha1)＋occurrences；唯一 pass criterion＝unapproved_count==0",
+  "anchor": "line_sha1 = sha1(line.strip())；⛔ 刻意不是行號——行號在插行時靜默失準"
+ },
+ "entries": [
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "control-plane",
+   "line_sha1": "30a93b107535fbf8a3134d0115e0de61b4196625",
+   "excerpt": "同一卡同一時間只能有一個階段所有者 [Stage Owner]；下一階段完成交接前不得動卡、分支或 worktree。查核者可寫入 PR review 或 co",
+   "occurrences": 1,
+   "rationale": "canonical §1 的階段所有者段落：取代清單 row 3 只涵蓋**角色表本體**，⛔ 不含此段；本卡⛔ 不動非該列的文字。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "d85bcfff439dac78861456e6110a5ef1ce326667",
+   "excerpt": "看板 `交付狀態` 欄的現有值，排列順序為 `💡需求 → 🔬研究中 → 🧭規劃中 → 📥Backlog → 🔨執行中 → 🔍待查核 → ✅通過 → 📦已合併 →",
+   "occurrences": 1,
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "🔍待查核",
+   "line_sha1": "d85bcfff439dac78861456e6110a5ef1ce326667",
+   "excerpt": "看板 `交付狀態` 欄的現有值，排列順序為 `💡需求 → 🔬研究中 → 🧭規劃中 → 📥Backlog → 🔨執行中 → 🔍待查核 → ✅通過 → 📦已合併 →",
+   "occurrences": 1,
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "⏳待執行",
+   "line_sha1": "fc83fbc5bc6ee1fa1a0f3f885efeddf6dcefd053",
+   "excerpt": "| b | **廢止的歷史值**（向後相容，已寫的卡留著，新寫入不得用）：`🚧進行中`、`⏳待執行` | **現行有效**（強制） | 切換 Initiativ",
+   "occurrences": 1,
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "🚧進行中",
+   "line_sha1": "fc83fbc5bc6ee1fa1a0f3f885efeddf6dcefd053",
+   "excerpt": "| b | **廢止的歷史值**（向後相容，已寫的卡留著，新寫入不得用）：`🚧進行中`、`⏳待執行` | **現行有效**（強制） | 切換 Initiativ",
+   "occurrences": 1,
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "部署狀態",
+   "line_sha1": "4ef0579a2a0fe22b6ac1ba64e324bf13dff88887",
+   "excerpt": "| e | 部署狀態獨立：`—不適用`，或 `⏸未部署 → 🚀待部署 → ⏳部署中 → ✅已部署 → 🧪驗證中 → ✅已驗證` | **敘述**（值域現況） |",
+   "occurrences": 1,
+   "rationale": "canonical §0.0 末尾「切換前的現行看板語彙與仍有效的約束」小節：決議 §一 row 2（看板實際狀態語彙）與 row 7（部署狀態欄）的領地，owner＝切換 Initiative。⛔ 非新規則文脈——該小節逐句標明效力與 owner（R1-001 後改），⛔ 不以整段非條文覆蓋。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "730a83b04ad0b712b613b35b5adcae1cd446bb1a",
+   "excerpt": "單欄把「階段」與「狀態」擠在一起：`🔬研究中` 是階段、`↩退回` 是狀態、`📥Backlog` 兩者都不是。",
+   "occurrences": 1,
+   "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "部署狀態",
+   "line_sha1": "2d1f0ccf8109090691f439cc2dc3caccac76fa57",
+   "excerpt": "部署狀態**，它取用的分支排在讀 `部署狀態` 的 `elif ... == \"release\"` 閘門**之前**",
+   "occurrences": 2,
+   "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "c05704cb9f7c6d4bce6359bdc088ad9c47a373c4",
+   "excerpt": "| `aiwf#66` | 📥Backlog（待指派） | 2026-08-12 | 列於 §3 的**必要**清單 |",
+   "occurrences": 1,
+   "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "58d8e42c78751b07f835efa980f681a4b0ab5f9f",
+   "excerpt": "| `aiwf#38` | 📥Backlog（待指派） | 2026-08-13 | 2026-08-12 裁定降級；逐字「很可能被 #66 取代」 |",
+   "occurrences": 1,
+   "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "188911e0818a8ba998b3cacc1ede9c3a0d1f9559",
+   "excerpt": "| `aiwf#86` | 📥Backlog（待指派） | 2026-08-13 | ⛔ 0 命中 |",
+   "occurrences": 1,
+   "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "4ae5bdf1f79f4be510627bd18aedee7eb5a3636e",
+   "excerpt": "| `aiwf#115` | 📥Backlog（待指派） | 2026-08-20 | ⛔ 0 命中 |",
+   "occurrences": 1,
+   "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "f1dee4e837ccd2f5af7b0a8dd6b92d42d9f82670",
+   "excerpt": "⭐ **四張在看板上都是 `📥Backlog`、owner 皆為待指派——實際排程數為零。**",
+   "occurrences": 1,
+   "rationale": "canonical §0.1 兩軸狀態模型的既有條文：決議 §一 row 4，owner＝切換 Initiative（cutover 後移除）。本卡⛔ 不動該節。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "control-plane",
+   "line_sha1": "eecc37eb47bffa0378dd149ed52025a3e8abacab",
+   "excerpt": "> **本節 2026-08-26 由 `templates/control-plane-contract.md` §2.1 原樣搬入**",
+   "occurrences": 1,
+   "rationale": "命中的是既有範本**檔名** `templates/control-plane-contract.md`（該檔真的叫這個名字），⛔ 非規則語彙的使用；改名⛔ 不在本卡射程。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "control-plane",
+   "line_sha1": "0b65e4d001751acce03cb0f18d4af389c997193d",
+   "excerpt": "沒有狀態轉移。⇒ `templates/control-plane-contract.md` 原 §2 的佔位符與 §7 的委派表",
+   "occurrences": 1,
+   "rationale": "命中的是既有範本**檔名** `templates/control-plane-contract.md`（該檔真的叫這個名字），⛔ 非規則語彙的使用；改名⛔ 不在本卡射程。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "行數自述",
+   "line_sha1": "640e76cef7ff0e2436ce6ff2f7f47681903e9da8",
+   "excerpt": "憑空寫）⇒ 條件不成立。實查佐證：`cpbl-analytics/docs/CONTROL_PLANE_CONTRACT.md`（220 行，",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "ff28165698f1a432d38d728a24661b132dc83aad",
+   "excerpt": "@ `3b470d70`）對 `轉移`／`⏸阻塞`／`📥Backlog`／`規劃中` 四個關鍵詞命中**全部是 0**；",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "部署狀態",
+   "line_sha1": "fad292487eb45b1312c144c614899576dae7cf9d",
+   "excerpt": "| | 軸一：**階段** | 軸二：**交付狀態** | 軸三：**部署狀態** |",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "89b1f11b83b8f4a6665d98f4810c67989a22b85d",
+   "excerpt": "| 4 | `🧭規劃中` → `📥Backlog`（**T2／T3／T4，及級別讀不到／為空／語彙外者**） | `handoff --next-stage b",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "3b8e0fe5397a767272074f08ab49978dc9d98675",
+   "excerpt": "| 5 | 任意 → `📥Backlog`（**T0／T1**） | 同上 | ⛔ **無，而且是刻意的** | ⛔ **無**：`handoff_cmd.py",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "🔍待查核",
+   "line_sha1": "5c8621345e6e446b95782b8c576bca70f9961151",
+   "excerpt": "| 7 | 任意 → `🔍待查核` | `handoff --next-stage review` | ⛔ 無 | ⛔ **無**：同 `else` 分支 | ",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "🔍待查核",
+   "line_sha1": "499efee7442871cffa1bc94d5cc774b0d77505ae",
+   "excerpt": "| 8 | `🔍待查核` → `✅通過` | `wfcli review --review-result APPROVE` | ⚠️ **只警示不擋** | ⚠",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "🔍待查核",
+   "line_sha1": "218c792827bfc505a97ccfa7a9e1201d0770e73e",
+   "excerpt": "| 9 | `🔍待查核` → `↩退回` | `wfcli review --review-result REQUEST_CHANGES` | 同上 | 同上；",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "⏳待執行",
+   "line_sha1": "e5012e21c327751a72491c1e9d21924d8f4e49d8",
+   "excerpt": "| 18 | 任意 → `⏳待執行`／`🚧進行中`（**廢止值**） | `--status` 自由文字 | ⛔ 無 | ⛔ **無** | canonical",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "🚧進行中",
+   "line_sha1": "e5012e21c327751a72491c1e9d21924d8f4e49d8",
+   "excerpt": "| 18 | 任意 → `⏳待執行`／`🚧進行中`（**廢止值**） | `--status` 自由文字 | ⛔ 無 | ⛔ **無** | canonical",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "aa13f5d551c92bbec637e9eb9dd746d27168a6de",
+   "excerpt": "| 進 `📥Backlog` 的前身狀態 | §3.1 | `handoff --next-stage backlog` | ✅ **有**（T2 以上）：見表",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "6ddd83ae646c71aacf8faef388b3f78d29e22f90",
+   "excerpt": "| 踩坑族清冊「離開閘門」 | §6.4 | `handoff --pitfall-report` | ✅ **有**：`handoff_cmd.run` 的 ",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "b943f84f91b4136e2ac4c408d52e24a2e5087aa7",
+   "excerpt": "| 2 | 需求方 2026-08-22 的流程意向：**`🧭規劃中` 必含 Design Gate** | 表二「Design Gate」列；以及表一第 4 ",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "⏳待執行",
+   "line_sha1": "15a59a30f4e0660ef837f0a32b341f50812de10c",
+   "excerpt": "| D4 | canonical §0：廢止值 `⏳待執行`／`🚧進行中` **新寫入不得用** | 兩者仍在 `project.FIELD_SPECS` 的選",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "🚧進行中",
+   "line_sha1": "15a59a30f4e0660ef837f0a32b341f50812de10c",
+   "excerpt": "| D4 | canonical §0：廢止值 `⏳待執行`／`🚧進行中` **新寫入不得用** | 兩者仍在 `project.FIELD_SPECS` 的選",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "be46cfdbe1f4b80a518646eb6a263e0372ebb645",
+   "excerpt": "| D5 | canonical §3.1 T3：**需求方批註放行**後才進 `📥Backlog` | 未實作，且 `handoff_cmd` 的 docst",
+   "occurrences": 1,
+   "rationale": "canonical §0.2 的逐位元凍結裁定原文——該節開頭逐字「下方全文是裁定當時的原文，本次搬遷⛔ 不改寫（改寫就失去逐位元可證性）」。改字即毀掉它的可證性。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "claim 事件",
+   "line_sha1": "49e0301bd0d756769ac36bed7a06dd555abd16bd",
+   "excerpt": "- **Plan** 回答「如何安全實作」：**執行者**（規劃階段內即技術規劃者，見 [`stage-rules/planning.md`](stage-ru",
+   "occurrences": 1,
+   "rationale": "⚠️ **登記為 finding，⛔ 不是乾淨的例外**：canonical §3 仍寫「偏離與理由記入 claim 事件」，而 claim event log 已於 2026-08-04 封存（決議 §一 row 5 只把 MODEL_ROUTING.md 的同句改掉，canonical §3 的這一句⛔ 沒有任何一列涵蓋）。本卡⛔ 不自行改它——那會是一條沒有 owner 的T4 規則變更；已於交付報告上呈需求方指派 owner。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "a036343f81020dab8d01f36998ea6018d78e1640",
+   "excerpt": "| T3 | **核心痛點三問**非同步輕質詢：痛點是什麼／成功怎麼觀察／最大的未驗證前提是什麼。需求方批註放行後才進 `📥Backlog` |",
+   "occurrences": 1,
+   "rationale": "canonical §3 規劃閘門與流程的既有條文，敘述的是現行看板值與現行契約名稱；⛔ 取代清單無對應列 ⇒ ⛔ 不在本卡射程。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "📥Backlog",
+   "line_sha1": "c5b6eed2363dfd062e19ab10e6cb209b4f645669",
+   "excerpt": "**進 `📥Backlog` 的狀態前提依級別分流**（需求方 2026-08-21 於 `ruan6047/ai-workflow#120` 的裁定）：**T",
+   "occurrences": 3,
+   "rationale": "canonical §3 規劃閘門與流程的既有條文，敘述的是現行看板值與現行契約名稱；⛔ 取代清單無對應列 ⇒ ⛔ 不在本卡射程。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "control-plane",
+   "line_sha1": "639a349bebd588b39bc3d1181b428515c582304a",
+   "excerpt": "每個有兩個以上人類／AI writer，或會並行操作共享資源的專案，必須在 Runbook 實作 control-plane adapter。採聯邦式混合架構：",
+   "occurrences": 1,
+   "rationale": "canonical §4.1 的節名與條文——該契約本身就叫 Control-plane Contract；⛔ 非「新規則文脈」，是既有專有名詞。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "control-plane",
+   "line_sha1": "43bf5db605aacef42395d1aa613c63e15b068af7",
+   "excerpt": "- lifecycle event 只能追加於受保護 main、或等價的共享 event store（採 Issues 狀態面時＝該卡的 Issue，見 §4.",
+   "occurrences": 1,
+   "rationale": "canonical §4.1 的節名與條文——該契約本身就叫 Control-plane Contract；⛔ 非「新規則文脈」，是既有專有名詞。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "control-plane",
+   "line_sha1": "39e17b452d53d62368e9790039339422f33b1746",
+   "excerpt": "`templates/control-plane-contract.md` §2 的**差異宣告**欄。⚠️ 該處原為 `<專案實作>` 空白",
+   "occurrences": 1,
+   "rationale": "命中的是既有範本**檔名** `templates/control-plane-contract.md`（該檔真的叫這個名字），⛔ 非規則語彙的使用；改名⛔ 不在本卡射程。"
+  },
+  {
+   "path": "AI_WORKFLOW.md",
+   "token": "control-plane",
+   "line_sha1": "cc21b994519d9282e9636275668ee933e39986a1",
+   "excerpt": "新專案依 [`ADOPTION.md`](ADOPTION.md) 建立 stub、Ledger、control-plane adapter，以及有 DB／部署",
+   "occurrences": 1,
+   "rationale": "canonical §7 專案採用段的既有條文，指的是既有 adapter 專有名詞；⛔ 取代清單無對應列 ⇒ ⛔ 不在本卡射程。"
+  },
+  {
+   "path": "docs/research/drafts/prose-number-inventory.json",
+   "token": "部署狀態",
+   "line_sha1": "0d957c090df43f3aaa5dee7ef74fe1713fd6321a",
+   "excerpt": "\"excerpt\": \"- 「部署狀態是正交軸」→ 7 值全部映射到通用狀態 ⇒ 退位成記錄\",",
+   "occurrences": 1,
+   "rationale": "prose-number inventory 的 excerpt／rationale 逐字轉錄自被釘住的原行；改一個字元該條目即脫鉤轉紅（守衛設計如此）。⛔ 非新規則文脈。"
+  },
+  {
+   "path": "docs/research/drafts/prose-number-inventory.json",
+   "token": "部署狀態",
+   "line_sha1": "70e424ac7ec33968c8249e64f95f163ad80dd13d",
+   "excerpt": "\"rationale\": \"「7 值」＝部署狀態舊選單枚舉基數（已推翻假設引用）\"",
+   "occurrences": 1,
+   "rationale": "prose-number inventory 的 excerpt／rationale 逐字轉錄自被釘住的原行；改一個字元該條目即脫鉤轉紅（守衛設計如此）。⛔ 非新規則文脈。"
+  },
+  {
+   "path": "docs/research/drafts/prose-number-inventory.json",
+   "token": "短版",
+   "line_sha1": "14fbaec95bd5d9829d5eda66b77e6aa638abfc2d",
+   "excerpt": "\"excerpt\": \"5. （P1-31 併判準）三個腐爛自述（「短版」／「最後核實：<日期>」／行數自述 `[0-9]{3,} ?行`）改為 **check",
+   "occurrences": 1,
+   "rationale": "prose-number inventory 的 excerpt／rationale 逐字轉錄自被釘住的原行；改一個字元該條目即脫鉤轉紅（守衛設計如此）。⛔ 非新規則文脈。"
+  },
+  {
+   "path": "docs/research/drafts/prose-number-inventory.json",
+   "token": "最後核實",
+   "line_sha1": "14fbaec95bd5d9829d5eda66b77e6aa638abfc2d",
+   "excerpt": "\"excerpt\": \"5. （P1-31 併判準）三個腐爛自述（「短版」／「最後核實：<日期>」／行數自述 `[0-9]{3,} ?行`）改為 **check",
+   "occurrences": 1,
+   "rationale": "prose-number inventory 的 excerpt／rationale 逐字轉錄自被釘住的原行；改一個字元該條目即脫鉤轉紅（守衛設計如此）。⛔ 非新規則文脈。"
+  }
+ ]
+}

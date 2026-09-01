@@ -75,9 +75,13 @@ def corpus_paths() -> list[Path]:
     paths = [REPO_ROOT / p for p in CORPUS]
     paths += sorted((REPO_ROOT / "docs/research/drafts/wave-specs").glob("*.md"))
     paths += sorted((REPO_ROOT / "docs/research/drafts/stage-rules").glob("*.md"))
-    # 生效後的 stage-rules 住 repo 根（W0 起：conduct 三檔＋收件條件搬出 drafts/）。
-    # 刻意兩個 glob 並存：drafts/ 下仍有未生效的其餘 stage 檔（波 2 才搬），
-    # ⛔ 不得由「根目錄已有 stage-rules」推出 drafts glob 可刪——刪了那些檔就脫離語料。
+    # 生效後的 stage-rules 住 repo 根（W0 搬 conduct 三檔＋收件條件，W2A 搬其餘八份階段檔）。
+    # ⚠️ 刻意保留 drafts glob，而它現在**掃到零個檔**——W2A 之後 drafts/stage-rules/ 已空。
+    # (a) 刻意如此，⛔ 不是忘了刪。
+    # (b) 為什麼：這條 glob 的職責是「drafts/ 下若再出現階段規則草稿，它自動納管」；
+    #     刪掉它，下一份草稿就會靜默脫離語料——而脫離語料⛔ 不會有任何東西轉紅。
+    # (c) ⛔ 不得由「它今天零命中」推出「它是死條目」——死條目的判準住 EXCLUSIONS
+    #     那一套（測試逐項實測），⛔ 不適用於語料 glob；語料要的是開放集合。
     paths += sorted((REPO_ROOT / "stage-rules").glob("*.md"))
     return paths
 
@@ -147,6 +151,10 @@ ID_PATS = [
     r"spec_version: ?\d+",
     r"\brc ?= ?\d+",
     r"WF_[A-Z_]+\d*",
+    # stage-rules 注意事項編號 F-<階段>-NN（W2A 全編號化）——識別子⛔ 非量測。
+    # 刻意收窄成「F- ＋ 中日韓字 ＋ - ＋ 數字」，⛔ 不放寬到任意前綴：決議 §三之二 另列的
+    # P-／T- 兩層本卡⛔ 未引入，先加樣式就是替一個還不存在的東西開剝除面。
+    r"F-[\u4e00-\u9fff]+-\d+",
 ]
 
 MEASURE_WORDS = (

@@ -649,20 +649,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/closeout.md",
-   "line_sha1": "116f6872ba565690eb981e5cd15091672e97c86e",
-   "excerpt": "產出物＝結案報告（一屏七段）＋封存（archiveProjectV2Item）。進入＝審核 APPROVE（直行卡由 PM 帶入）。離開＝終",
-   "claims": [
-    {
-     "token": "七",
-     "occurrence": 0,
-     "reason": "design-closed-set",
-     "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 逐段列明）"
-    }
-   ]
-  },
-  {
-   "path": "docs/research/drafts/stage-rules/closeout.md",
+   "path": "stage-rules/closeout.md",
    "line_sha1": "42f44999597747e73ba697a9392576721004a4bd",
    "excerpt": "通用 7 ＋ 停止（終態、⛔ 無出口；裁定必含決策／原因／可證偽復活條件；復活＝開新卡）。完成與停止都跑封存。",
    "claims": [
@@ -675,7 +662,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/closeout.md",
+   "path": "stage-rules/closeout.md",
    "line_sha1": "aa2eed6b77fca4d4a9be3907f96f36750d3aa125",
    "excerpt": "## 5 注意事項（7）",
    "claims": [
@@ -688,7 +675,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/deploy.md",
+   "path": "stage-rules/deploy.md",
    "line_sha1": "19ce87e7579923e5982bfa10af718a6cd784e884",
    "excerpt": "通用 7 狀態；固定紀律＝先備份後驗證、部署事實（環境／時間／SHA／驗證）為本階段產出物。",
    "claims": [
@@ -727,7 +714,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/implementation.md",
+   "path": "stage-rules/implementation.md",
    "line_sha1": "101f923481f3ea99118fec36b74a064381ca7058",
    "excerpt": "通用 7，不加不減。",
    "claims": [
@@ -740,7 +727,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/implementation.md",
+   "path": "stage-rules/implementation.md",
    "line_sha1": "d5c2e38b71d159ea50a41fa2732aec418f646199",
    "excerpt": "## 5 注意事項（12）",
    "claims": [
@@ -753,7 +740,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/implementation.md",
+   "path": "stage-rules/implementation.md",
    "line_sha1": "f7b03b91944cccb3d25393d29a984371dfb6f7f6",
    "excerpt": "② 派工包（規格＋三層注意事項＋13 族清冊＋上一輪退回理由＋信封模型行）。③ 執行者推分支＋交回交付報告——⭐ 報告是 ③ 的一部分：只推",
    "claims": [
@@ -1112,7 +1099,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/maintenance.md",
+   "path": "stage-rules/maintenance.md",
    "line_sha1": "1dfeb66cb829208e5249858365ebd00e552dc4bb",
    "excerpt": "通用 7 ＋ 運行中。ADD：`完成 → 運行中`（迴圈收口）、`運行中 → 待辦`（有事了）、`運行中 → 結案／完成`（服務下線）。自迴",
    "claims": [
@@ -1125,9 +1112,9 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/planning.md",
-   "line_sha1": "66482b39cf793d786014270f988f49ec47659738",
-   "excerpt": "8. 顆粒度三層（重／中／輕；試跑慣例⛔ 非定案制度）",
+   "path": "stage-rules/planning.md",
+   "line_sha1": "9b0389c285996b38583dd758e1b1523636e58e01",
+   "excerpt": "- **F-規劃-08** 顆粒度三層（重／中／輕；試跑慣例⛔ 非定案制度）",
    "claims": [
     {
      "token": "三",
@@ -1138,7 +1125,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/planning.md",
+   "path": "stage-rules/planning.md",
    "line_sha1": "721d953e3aac760434ade47a3a3a6f3f72348a8a",
    "excerpt": "通用 7，不加不減。⚠️ 本階段是「退回上一階段」的主要目的地。",
    "claims": [
@@ -1151,9 +1138,9 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/planning.md",
-   "line_sha1": "85819cd9250b412b27eff2dc5a6b867e4e289512",
-   "excerpt": "7. 同族第三輪＝形狀錯了；跳出法＝開放集合→封閉集合、追精確度→證明天花板",
+   "path": "stage-rules/planning.md",
+   "line_sha1": "93f74329b24dafd0b9bdcdcd2e5042e766d74d03",
+   "excerpt": "- **F-規劃-07** 同族第三輪＝形狀錯了；跳出法＝開放集合→封閉集合、追精確度→證明天花板",
    "claims": [
     {
      "token": "三",
@@ -1164,7 +1151,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/planning.md",
+   "path": "stage-rules/planning.md",
    "line_sha1": "a99b17a3c053922361fe515481b097140e1eec99",
    "excerpt": "## 5 注意事項（8）",
    "claims": [
@@ -1374,7 +1361,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/requirement.md",
+   "path": "stage-rules/requirement.md",
    "line_sha1": "0258df0790ad4e333e63f930c094bf6a71ae0e29",
    "excerpt": "把一個清單項變成一張可派工的卡。產出物＝開卡表單（全欄）＋收斂後的清單。進入＝清單項獲需求方點頭＋指派執行者。離開＝表單過 R1–R4，`o",
    "claims": [
@@ -1393,7 +1380,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/requirement.md",
+   "path": "stage-rules/requirement.md",
    "line_sha1": "16fbe8999ba5846a899c11f884d2d4abd7605e81",
    "excerpt": "## 5 注意事項（15）",
    "claims": [
@@ -1406,7 +1393,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/requirement.md",
+   "path": "stage-rules/requirement.md",
    "line_sha1": "1d61729e05a30f01b98196d2cecfcaf46e88f275",
    "excerpt": "通用 7。ADD：`待確認 → 撤銷降回清單`（固定動作 deleteProjectV2Item；卡ID 保留、iteration 延續）。",
    "claims": [
@@ -1419,9 +1406,9 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/requirement.md",
-   "line_sha1": "300f94da8f8faf903ed1459df273a1b833093006",
-   "excerpt": "10. 鏈深 ≤2；路由欄一次填齊",
+   "path": "stage-rules/requirement.md",
+   "line_sha1": "7517b80db694d01477c683b196edb048b3a89a58",
+   "excerpt": "- **F-需求-10** 鏈深 ≤2；路由欄一次填齊",
    "claims": [
     {
      "token": "2",
@@ -1438,9 +1425,9 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/requirement.md",
-   "line_sha1": "7259e1d683c13ef58da7b4ea73f593b900f25974",
-   "excerpt": "8. 驗收條件 ≥1，逐條可追溯回痛點原文",
+   "path": "stage-rules/requirement.md",
+   "line_sha1": "18b4c3b5ac64ee8a004a6d3daae4357e72bad70f",
+   "excerpt": "- **F-需求-08** 驗收條件 ≥1，逐條可追溯回痛點原文",
    "claims": [
     {
      "token": "1",
@@ -1451,7 +1438,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/requirement.md",
+   "path": "stage-rules/requirement.md",
    "line_sha1": "7be2403f336fe5a4bd6d8fb756515c63e80140c8",
    "excerpt": "description: 需求階段：把一個清單項變成一張可派工的卡。",
    "claims": [
@@ -1470,9 +1457,9 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/requirement.md",
-   "line_sha1": "9a3ae08a71c86f74c20e587ecccf346240cd4596",
-   "excerpt": "6. 同族第三張停手 ⇒ 一張窮舉卡，開之前先量母體",
+   "path": "stage-rules/requirement.md",
+   "line_sha1": "0bc14690711344e52b9f96078298e0d6328decdd",
+   "excerpt": "- **F-需求-06** 同族第三張停手 ⇒ 一張窮舉卡，開之前先量母體",
    "claims": [
     {
      "token": "三",
@@ -1489,9 +1476,9 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/research.md",
-   "line_sha1": "53bba759eaa39f73ed12943b38b2911cd8cd1226",
-   "excerpt": "12. 研究一張卡前先讀它自己的留言",
+   "path": "stage-rules/research.md",
+   "line_sha1": "50e55e15d8d9107890576985d1b37d938bf9965c",
+   "excerpt": "- **F-研究-12** 研究一張卡前先讀它自己的留言",
    "claims": [
     {
      "token": "一",
@@ -1502,7 +1489,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/research.md",
+   "path": "stage-rules/research.md",
    "line_sha1": "66029990c6e696af83d69692be297cca8af8e9b2",
    "excerpt": "③ 交回＝量測紀錄＋結論（討論形狀⛔ 非送審形狀）。⭐ ③ 與 ④ 之間插討論回合——需求方提問、執行者答；出口由討論定。④ 查核者只驗量測",
    "claims": [
@@ -1515,7 +1502,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/research.md",
+   "path": "stage-rules/research.md",
    "line_sha1": "775d4ee38db7b3b4da51fd670b134b2053d01021",
    "excerpt": "通用 7 ＋ 不可判定。ADD：`待確認 → 不可判定`、`不可判定 → 結案／完成`。不可判定與完成的行為差別＝能不能被後續卡引用（⛔ 禁",
    "claims": [
@@ -1528,7 +1515,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/research.md",
+   "path": "stage-rules/research.md",
    "line_sha1": "ad611790ade369d88421edb8e7c32e13b82bbad6",
    "excerpt": "## 5 注意事項（14）",
    "claims": [
@@ -1541,9 +1528,9 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/review.md",
-   "line_sha1": "4eb2e22cd69daf1b60e5dd89eb6a2ae9fd03d78f",
-   "excerpt": "7. root_cause_id 對照前輪（派審詞必列）；同根因第三輪 ⇒ 升級",
+   "path": "stage-rules/review.md",
+   "line_sha1": "c424f6c4f9e8c4b7e743845762d5f619eea82260",
+   "excerpt": "- **F-審核-07** root_cause_id 對照前輪（派審詞必列）；同根因第三輪 ⇒ 升級",
    "claims": [
     {
      "token": "三",
@@ -1554,7 +1541,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/review.md",
+   "path": "stage-rules/review.md",
    "line_sha1": "65a26dbf0c1ff8ac21f3b6d605d03875e5017a28",
    "excerpt": "② PM 派審詞（信封：merge-base 基線釘死、前輪 findings＋root_cause_id、模型／家族行、PM 已知未驗項）",
    "claims": [
@@ -1573,7 +1560,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/review.md",
+   "path": "stage-rules/review.md",
    "line_sha1": "c617c415a3846a470adfb74a98bbbabaee2df6de",
    "excerpt": "## 5 注意事項（9）",
    "claims": [
@@ -1586,7 +1573,7 @@
    ]
   },
   {
-   "path": "docs/research/drafts/stage-rules/review.md",
+   "path": "stage-rules/review.md",
    "line_sha1": "f19db5922cd88420a3d02e477704d410f4bfe085",
    "excerpt": "通用 7。「退回無效」⛔ 非本階段狀態——是升級裁定第 ④ 值。",
    "claims": [
@@ -1957,6 +1944,369 @@
      "occurrence": 0,
      "reason": "design-closed-set",
      "rationale": "「三格」＝db: 別名處置值域枚舉（行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "4cb9a63341f4d626321b004094ec85b31447b8a4",
+   "excerpt": "- 本檔注意事項的編號＝`F-結案-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/deploy.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/deploy.md",
+   "line_sha1": "cbeebf0be62cd20d137f6deaca2f00b116db242d",
+   "excerpt": "- 本檔注意事項的編號＝`F-部署-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/deploy.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/implementation.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/implementation.md",
+   "line_sha1": "41d8ca2dafd3dc2b8fd133400e84aae444392716",
+   "excerpt": "- 本檔注意事項的編號＝`F-執行-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/implementation.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/maintenance.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/maintenance.md",
+   "line_sha1": "9bdf82d0f2353590b7eb65ae9e0e3f292c356127",
+   "excerpt": "- 本檔注意事項的編號＝`F-維護-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/maintenance.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/planning.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/planning.md",
+   "line_sha1": "a37eb4e2036ba7507815bc4f765755b6acc24682",
+   "excerpt": "- 本檔注意事項的編號＝`F-規劃-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/planning.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/requirement.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/requirement.md",
+   "line_sha1": "2b9a34f80942f4a695b7f1c6b77a5c95b456e2c4",
+   "excerpt": "- 本檔注意事項的編號＝`F-需求-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/requirement.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/research.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/research.md",
+   "line_sha1": "4cacf719ed2189b0f245b4afd2348bef9cef02f1",
+   "excerpt": "- 本檔注意事項的編號＝`F-研究-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/research.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/review.md",
+   "line_sha1": "66a17a656250830567464d343622ff784059ea33",
+   "excerpt": "> ⚠️ 看板值仍為舊語彙（15 值），對照見決議 §一；切換於切換 Initiative",
+   "claims": [
+    {
+     "token": "15",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「15 值」＝切換前看板 `交付狀態` 欄的封閉選項基數（決議 §一 row 2 之被取代者）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/review.md",
+   "line_sha1": "e6bf2c8cc14c0d5074419f8862a60e93b559998d",
+   "excerpt": "- 本檔注意事項的編號＝`F-審核-NN`；① CLI 印出的三層編號清單即以此列印。",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三層」＝DI 注入層級枚舉（任務→專案→框架）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/review.md",
+   "line_sha1": "7ddfdb285faa704c1e8d952de5dae6ffdeb3d7d2",
+   "excerpt": "- ③ 交回必附**回應清冊**：對 ① 印出的清單**逐條**回應，三值＝`已遵循`／`不適用：<原因>`／`發現：<",
+   "claims": [
+    {
+     "token": "三",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「三值」＝回應清冊的封閉回應值域（已遵循／不適用／發現，行內列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "7497c309c0b7895efe8ef48bf805bd8022cb7a62",
+   "excerpt": "產出物＝結案報告（一屏七段）＋封存（archiveProjectV2Item）。",
+   "claims": [
+    {
+     "token": "七",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「七段」＝結案報告段落枚舉（pm-conduct 逐段列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "fa8426aa762d339dbfc4c139620cf38642a4dd1b",
+   "excerpt": "**進入＝最後一個適用階段進入 `完成`**，⛔ 不固定在某一個階段。實測三條入邊：",
+   "claims": [
+    {
+     "token": "一",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「最後一個適用階段」＝序數／慣用語非量測（本行語境）"
+    },
+    {
+     "token": "一",
+     "occurrence": 1,
+     "reason": "design-closed-set",
+     "rationale": "「某一個階段」＝序數／慣用語非量測（本行語境）"
+    },
+    {
+     "token": "三",
+     "occurrence": 2,
+     "reason": "design-closed-set",
+     "rationale": "「三條入邊」＝結案階段入邊枚舉（三條行內逐條列明）"
+    }
+   ]
+  },
+  {
+   "path": "stage-rules/closeout.md",
+   "line_sha1": "82231e65dfd55c6bafdeda307c1f350678bac22f",
+   "excerpt": "⚠️ 本段自 canonical §0.1 搬入（`WF-REDESIGN-W2A` AC8），⛔ 原處不留一份。舊文只",
+   "claims": [
+    {
+     "token": "一",
+     "occurrence": 0,
+     "reason": "design-closed-set",
+     "rationale": "「不留一份」＝序數／慣用語非量測（本行語境）"
     }
    ]
   }

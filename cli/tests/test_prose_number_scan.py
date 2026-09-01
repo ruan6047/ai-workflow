@@ -176,6 +176,7 @@ _ID_PAIR_TABLE = [
     "spec_version: 3",                         # frontmatter 欄
     "rc=0 回傳",                               # 退出碼字面
     "WF_RESOURCE_WRITESET1 語意",              # 常數名
+    "F-執行-12 交付紀律",                      # stage-rules 注意事項編號
 ]
 
 
