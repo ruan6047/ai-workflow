@@ -28,7 +28,7 @@ description: 缺陷（bug）走哪條路：級別怎麼判、留痕落在哪、�
 - ⛔ 沒有缺陷專屬的卡面範本。卡面形狀由 `wfcli open` 渲染，缺陷⛔ 不另有專屬形狀。
 - 重現步驟、預期 vs 實際、根因、回歸測試——這些**寫進卡面的核心痛點與驗收條件**，⛔ 不另立欄位。
 
-> **來源**：本節為 `WF-REDESIGN-W2B` 新立。它取代的是 `templates/bug-card.md` 與 `templates/bug-workflow.md`
+> **來源**：本節為 `WF-REDESIGN-W2B` 新立。它取代的是**已移除**的 `templates/bug-card.md` 與 `templates/bug-workflow.md`
 > 所隱含的「缺陷自成獨立卡種」模型；該檔群於本卡移除（對照見 [`../templates/template-migration-map.md`](../templates/template-migration-map.md)）。
 > ⚠️ 決議紀錄與 canonical **都沒有**寫下這個承接——`WF-REDESIGN-W2B` 交付時實跑
 > `grep -rn "缺陷走清單\|走清單＋一般卡" AI_WORKFLOW.md stage-rules/ tier-rules.md docs/research/WORKFLOW-REDESIGN-2026-08-30.md`
@@ -48,7 +48,7 @@ description: 缺陷（bug）走哪條路：級別怎麼判、留痕落在哪、�
 > **來源**：上表非紅線各列逐字承接 canonical §3 的分級句（「根因已知且局部的 bug 依 T1／T2 處理；不確定、跨檔或紅線 bug 至少 T3」）
 > 與已移除的 `templates/bug-workflow.md` 判斷表；紅線列承接 canonical §5。
 
-**硬規則**（前段自 `bug-workflow.md` 逐字承接，末條為其「立刻升級」句的改寫）：
+**硬規則**（前段自**已移除**的 `bug-workflow.md` 逐字承接，末條為其「立刻升級」句的改寫）：
 
 - ⛔ **不得因「很小」而略過風險判定。** 任何行為、契約、資料或安全影響皆⛔ 不得列 T1。
 - ⛔ **級別是單向門**：升自由；**降須需求方裁定並留痕**（`stage-rules/pm-conduct.md` 一）。
@@ -60,7 +60,7 @@ description: 缺陷（bug）走哪條路：級別怎麼判、留痕落在哪、�
 - **T2 以上**：走清單項 → 卡。狀態面唯一寫入通道是 `wfcli`（canonical §4.3），⛔ 不另開 log 檔。
 - ⚠️ **舊制的 `BUGS.md` 滾動 log 已不是本工作流的留痕面**。仍持有該檔的專案，其內容視為 cutover 前的凍結歷史，⛔ 不再新增。
 
-> **來源**：T1／T2 的分流承接 `bug-workflow.md` 的「留痕」列；`BUGS.md` 退位為本卡新立
+> **來源**：T1／T2 的分流承接**已移除**的 `bug-workflow.md` 的「留痕」列；`BUGS.md` 退位為本卡新立
 > ——`ADOPTION.md` 原 §2 要求另起 `BUGS.md`，而該段引用的 `templates/bug-card.md` 已移除，
 > ⇒ 留著會指向不存在的範本。⛔ 本卡未刪任何專案的既有 `BUGS.md`。
 
@@ -71,7 +71,7 @@ description: 缺陷（bug）走哪條路：級別怎麼判、留痕落在哪、�
 - 測試檔與測試名寫進卡面的驗證項；⛔ 不只寫「已加測試」。
 - 間歇型缺陷要**預先登記可證偽預測**（`stage-rules/planning.md` 的 `F-規劃-04`），⛔ 不以「重跑幾次沒再現」結案。
 
-> **來源**：「先紅後綠」逐字承接 `bug-workflow.md` 的 T2 流程列；其餘兩點指向既有條文。
+> **來源**：「先紅後綠」逐字承接**已移除**的 `bug-workflow.md` 的 T2 流程列；其餘兩點指向既有條文。
 
 ## 五 · 注意事項回應清冊
 
