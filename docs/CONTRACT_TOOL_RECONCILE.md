@@ -215,10 +215,20 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 > `absent` 翻成 `ok`（符號還在、多了 writer）；離開 universe 是符號本身消失（表上查無此列）。
 > 本次是後者——工具側的渲染能力**一行都沒有增加**。
 >
-> ⭐ **它們什麼時候回來**：卡面機讀改 fenced JSON 由 `WF-REDESIGN-W3` 承接。屆時
-> `card_field` 的 universe 由那份 schema 重新導出，本節所列的每一欄要重新判一次
-> 「渲染得出來嗎」。⛔ 在那之前，本 repo **沒有任何卡面欄位契約**——這是刻意的中間態，
-> ⛔ 不是漏掉。
+> ⭐ **這是對帳器的盲區，⛔ 不是「卡面欄位契約消失了」。**（本段 `WF-REDESIGN-W2B` 交付後自我更正；
+> 首版寫成「本 repo 沒有任何卡面欄位契約」，那是錯的。）契約仍在，只是搬到了本對帳器**看不到**的地方：
+> `cli/src/wf_cli/card_face.py` 的 `card-face-form:v1` 已實作並在跑，卡面 body 逐張帶
+> `resource-claims`／`card-face-form:v1`／`card-brief`／`wf-routing:v1` 四個標記。
+> 而 `CARD_TEMPLATE_GLOB` 只看 `templates/*card*.md` ⇒ 該 glob 今天匹配零個檔，於是
+> `card_field` 整類從表上消失。
+>
+> ⇒ **可觀察的後果**：本對帳器現在對「卡面欄位」這一軸**沒有覆蓋**，而它**不會因此轉紅**
+> ——`--check` 只比對「缺口有沒有登記」，一個不存在的 kind 沒有缺口可登記。這正是
+> `cli/tests/test_contract_tool_reconcile.py` 那條 ratchet 存在的理由：任何 `*card*.md`
+> 回歸即轉紅，逼下一張卡重建正控組。⛔ 不得把 ratchet 綠燈讀成「覆蓋還在」。
+> `WF-REDESIGN-W3` 的 AC2 逐字是「只擴充／消費 W1 的 v1 schema」——要恢復覆蓋，
+> 該做的是把 universe 的來源從範本 glob 改到那份 schema，而**那屬對帳器本身的變更**（`scripts/`），
+> ⛔ 不在 `WF-REDESIGN-W2B` 的寫入集內。
 
 <!-- w2b-historical:begin -->
 | 範本（`WF-REDESIGN-W2B` 已移除） | 欄位 |

@@ -18,7 +18,7 @@
 - **一件事一張卡**；卡由待審清單項升級而來（`wfcli open --from-issue` 是唯一路徑），收件條件見 [`stage-rules/list-intake-requirements.md`](stage-rules/list-intake-requirements.md)。
 - **狀態面唯一寫入通道＝ `wfcli`**（[`cli/README.md`](cli/README.md)）。不經它的狀態寫入即違規。
 - 每個階段跑同一個五步迴圈：① 印注意事項 → ② 派工 → ③ 交回 → ④ 對完整性 → ⑤ 路由。
-- **`stage-rules/＝八份 SOP，① 印給你、③ 逐條回`**——八份指八個階段（需求／研究／規劃／執行／審核／部署／維護／結案）各一份；同目錄另有三份角色準則（PM／執行者／查核者）與一份清單收件條件，那四份不是階段檔。
+- **`stage-rules/＝八份 SOP，① 印給你、③ 逐條回`**——八份指八個階段（需求／研究／規劃／執行／審核／部署／維護／結案）各一份；同目錄另有三份角色準則（PM／執行者／查核者）、一份清單收件條件與一份缺陷處理路徑（[`stage-rules/defect-path.md`](stage-rules/defect-path.md)），那五份不是階段檔。
   ⚠️ 「① 印給你」的**機械列印尚未生效**（機制歸 `WF-REDESIGN-W3`；沿 canonical §0.1 先例，⛔ 不啟用尚無 writer 的規則）。在那之前 ① 由 PM 人工交出該階段 §5 的編號清單，③ 的逐條回應照跑。
 - **交接一律走 [`templates/`](templates/) 的範本**：派工包／交付報告／派審詞／裁決／狀態變更裁定單，共用同一個四段信封（定義在 [`templates/handoff-contract.md`](templates/handoff-contract.md) §3.3）。
 

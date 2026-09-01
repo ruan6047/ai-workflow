@@ -7,10 +7,15 @@
 （stub 指向本 canonical + 核心鐵律速查；**不複製全文**，規則只有一個家。）
 
 ## 2. 起任務看板（一卡一檔）
-複製 [`templates/TASKS.md`](templates/TASKS.md) → `<專案>/docs/TASKS.md`（Ledger 索引 only），把 `<專案名>` 換掉；
-每張卡由 [`templates/tasks-card.md`](templates/tasks-card.md) 建 `<專案>/docs/tasks/<卡ID>.md`（結案卡 `git mv` 進 `docs/archive/tasks/`）。T3/T4 另由 [`templates/discovery-brief.md`](templates/discovery-brief.md) 建 Discovery brief；使用者可見的 T3/T4 再建 `templates/design-brief.md`（已移除，見 git 歷史），純技術卡則記錄 Design Gate `N/A` 的理由；研究不確定性時使用 `templates/research-plan.md`（已移除，見 git 歷史）。大型工作由 [`templates/initiative-card.md`](templates/initiative-card.md) 建 Initiative 父卡，先定 spec 基線與依賴圖再開子卡。
+
+> ⚠️ **本段有指令目前執行不到**：下列以「已移除」標註的範本，其檔案已由 `WF-REDESIGN-W2B` 移除，
+> 承接對照逐檔見 [`templates/template-migration-map.md`](templates/template-migration-map.md)。⛔ 本註記不改動本段的任何規則語意——
+> 「該不該照本段建 Ledger 與卡檔」屬切換 Initiative 的射程，⛔ 不在本註記處置。
+
+複製 `templates/TASKS.md`（**`WF-REDESIGN-W2B` 已移除**，對照見 [`templates/template-migration-map.md`](templates/template-migration-map.md)） → `<專案>/docs/TASKS.md`（Ledger 索引 only），把 `<專案名>` 換掉；
+每張卡由 `templates/tasks-card.md`（**`WF-REDESIGN-W2B` 已移除**，對照見 [`templates/template-migration-map.md`](templates/template-migration-map.md)） 建 `<專案>/docs/tasks/<卡ID>.md`（結案卡 `git mv` 進 `docs/archive/tasks/`）。T3/T4 另由 [`templates/discovery-brief.md`](templates/discovery-brief.md) 建 Discovery brief；使用者可見的 T3/T4 再建 `templates/design-brief.md`（已移除，見 git 歷史），純技術卡則記錄 Design Gate `N/A` 的理由；研究不確定性時使用 `templates/research-plan.md`（已移除，見 git 歷史）。大型工作由 `templates/initiative-card.md`（**`WF-REDESIGN-W2B` 已移除**，對照見 [`templates/template-migration-map.md`](templates/template-migration-map.md)） 建 Initiative 父卡，先定 spec 基線與依賴圖再開子卡。
 此後該專案所有任務卡／log 都住這裡（**不集中到本 repo**）。event log 保存狀態歷史，Ledger 是 current-state projection（見 canonical §6）。
-另起一份 `<專案>/docs/BUGS.md`（快線 bug 滾動 log，見 canonical §3；bug 卡範本 [`templates/bug-card.md`](templates/bug-card.md)）。
+另起一份 `<專案>/docs/BUGS.md`（快線 bug 滾動 log，見 canonical §3；bug 卡範本 `templates/bug-card.md` **`WF-REDESIGN-W2B` 已移除**，對照見 [`templates/template-migration-map.md`](templates/template-migration-map.md)）。
 
 ## 3. CLAUDE.md 加指引
 在 `<專案>/CLAUDE.md` 頂部加一行：

@@ -642,6 +642,13 @@ def test_control_5_card_field_universe_is_empty_until_the_fenced_json_card_face_
     universe 的**唯一**來源 ⇒ 該 kind 整類離開對帳表，``_row(live, "card_field", "需求")``
     不再有東西可取。
 
+    ⭐ **這是對帳器的盲區，⛔ 不是「卡面欄位契約消失了」。** 契約仍在，只是搬到本對帳器
+    看不到的地方：``cli/src/wf_cli/card_face.py`` 的 ``card-face-form:v1`` 已實作並在跑，
+    卡面 body 逐張帶 ``resource-claims``／``card-face-form:v1``／``card-brief``／``wf-routing:v1``。
+    ⇒ **本對帳器現在對「卡面欄位」這一軸沒有覆蓋，而它⛔ 不會因此轉紅**——``--check`` 只比對
+    「缺口有沒有登記」，一個不存在的 kind 沒有缺口可登記。⛔ 不得把下面兩條 assert 的綠燈
+    讀成「覆蓋還在」；它們釘的只是「這個盲區是刻意的、而且會在範本回歸時喊」。
+
     ⛔ **這不是把控制組刪掉，是把它換成一條會響的 ratchet。** 本測試現在釘的是
     「card_field 是空的，而且空得有機械理由」：
 

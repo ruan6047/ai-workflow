@@ -10,10 +10,10 @@
 
 | 舊檔 | 處置 | 承接者 | falsifier（什麼觀察會讓本列不成立） |
 |---|---|---|---|
-| `templates/tasks-card.md` | **移除** | 卡面 fenced JSON（`WF-REDESIGN-W3` 落地）；規格單一居所＝卡面 body ＋ `spec_version` | 檔案仍存在；或 `WF-REDESIGN-W3` 之後仍找不到卡面機讀 schema 的居所 |
-| `templates/bug-card.md` | **移除** | 缺陷走**待審清單項＋一般卡**，⛔ 不另立卡種 | 檔案仍存在；或有人被要求開一張 `BUG-` 卡而找不到範本 |
-| `templates/bug-workflow.md` | **移除** | 同上；分級判準已在 `tier-rules.md` 與 canonical §3 | 檔案仍存在；或 `tier-rules.md` 查不到「這個 bug 該是幾級」 |
-| `templates/initiative-card.md` | **移除** | 父卡模型住 [`../stage-rules/`](../stage-rules/)（父卡跑迴圈⛔ 不做事、子卡只在父卡規劃誕生、父卡⛔ 不宣告 `file:` 資源） | 檔案仍存在；或 `stage-rules/` 裡找不到父卡與子卡的關係規則 |
+| `templates/tasks-card.md` | **移除** | **卡面 fenced JSON——⭐ 今天就在跑**（`cli/src/wf_cli/card_face.py` 的 `card-face-form:v1`；卡面 `#220` body 實查含 `resource-claims:begin`／`card-face-form:v1:begin`／`card-brief:begin`／`wf-routing:v1` 四個標記）。`WF-REDESIGN-W3` 的 AC2 逐字是「**只擴充／消費 W1 的 v1 schema**」，⛔ 不是「屆時才落地」。規格單一居所＝卡面 body ＋ `spec_version` | 檔案仍存在；或 `card_face.py` 查不到 `card-face-form:v1` 的實作；或某張卡的 body 取不到那四個標記 |
+| `templates/bug-card.md` | **移除** | 缺陷走**待審清單項＋一般卡**，⛔ 不另立卡種——條文居所＝[`../stage-rules/defect-path.md`](../stage-rules/defect-path.md) 一（`WF-REDESIGN-W2B` 新寫，需求方 2026-09-01 裁定 1 授權） | 檔案仍存在；或 `stage-rules/defect-path.md` 查不到「⛔ 沒有 bug 專屬卡種」這條 |
+| `templates/bug-workflow.md` | **移除** | 分級判準與留痕分流移入 [`../stage-rules/defect-path.md`](../stage-rules/defect-path.md) 二／三；canonical §3 的分級句已同批**指路更正**指向該檔。⚠️ **更正本卡首版**：首版寫「判準已在 `tier-rules.md`」是**過度宣稱**——`grep -cin "bug\|缺陷" tier-rules.md` ⇒ **0** | 檔案仍存在；或 `stage-rules/defect-path.md` 查不到分級表；或 canonical §3 仍指向本檔 |
+| `templates/initiative-card.md` | **移除** | 父卡模型的本體住 **canonical §3**（目標／spec 基線／依賴圖／里程碑／決策與風險）＋ [`baseline-cascade.md`](baseline-cascade.md)（基線變更的凍結、影響評估與傳播）；[`../stage-rules/planning.md`](../stage-rules/planning.md) 承接「父卡：子卡切片與依賴序」。⚠️ **更正本卡首版**：首版寫「住 `stage-rules/`」是**位置錯**——該目錄只有切片與依賴序那半句 | 檔案仍存在；或 canonical §3 查不到父卡的目標／基線／依賴圖／里程碑／決策與風險 |
 | `templates/TASKS.md` | **移除** | 狀態面（GitHub Project）；現況一律用查詢指令取 | 檔案仍存在；或有專案被要求建一份 `docs/TASKS.md` Ledger |
 
 ⚠️ **移除 ≠ 修復。** 這五份的欄位有一批在契約 ↔ 工具對帳表上判為缺口（工具側完全不渲染）。
@@ -93,49 +93,69 @@ A 而不是靜默通過。
 
 <!-- old-entry-residual:begin -->
 
-> 本區塊由 `old_entry_residual.py` 產生，⛔ 非手寫。重跑即重生。
+> 本區塊由指令產生，⛔ 非手寫。重跑見本節末的完整指令。
 
-**逐 occurrence 命中總數：80**　A 現行入口殘留（授權內）**0**／B 移除紀錄與合成語料 58／C 授權外待裁決 22
+**單位＝唯一 `(檔, 行)`。** ⛔ 逐名 `git grep -c` 相加會把同一行含兩個檔名的情形重複計入——本卡首版即因此報出偏高的數字，已登記為失誤。
 
-⭐ **通過判準只有一條：A ＝ 0。** B 與 C ⛔ 不是豁免，是**分類**——逐筆列出、逐檔列計，⛔ 不從母體中拿掉。
+套用排除集後：**A 現行入口殘留（授權內）0**／B 移除紀錄與合成語料 50／C 授權外 15。
 
-### 3.1 A · 現行入口殘留（授權內）：**0**
+⭐ **通過判準只有一條：A ＝ 0。** B 與 C ⛔ 不是豁免，是**分類**——逐檔列計，⛔ 不從母體拿掉。
+
+### 3.1 排除集（具名＋理由＋load-bearing）
+
+⛔ **不得整目錄排除 `docs/research/`**——`scripts/prose_number_scan.py` 的語料**含** `docs/research/drafts/wave-specs/*.md`，整目錄排除與既有守衛的納管作法直接衝突（需求方 2026-09-01 裁定 3）。形狀沿用 `scripts/canonical_citation_scan.py` 的 `EXCLUSIONS`。
+
+| 排除項 | 本次命中 | 理由 |
+|---|---|---|
+| `templates/template-migration-map.md` | 10 | 卡面 AC1 逐字「mapping 文件自身除外」——本檔即該 mapping 文件。 |
+| `archive/` | 4 | 已結案卡的歷史紀錄⛔ 不是現行入口，改寫它等於改寫已結案的帳（需求方 2026-09-01 裁定 3 准）。另：`scripts/prose_number_scan.py` 的語料本就不含 `archive/`，兩個守衛的納管界線一致。 |
+| `docs/research/drafts/wave-specs/w2b.md` | 10 | 本卡自己的來源草稿；規格權威居所是卡面 body，該檔於結案時封存（PM 開卡留痕）。 |
+| `docs/research/drafts/wave-specs/baseline-universe.json` | 4 | AC2 自己釘死的基線 artifact——它逐字載著被移除範本的 doc_hits，把它算成「入口」等於要求 AC2 的基線刪掉自己的內容。 |
+
+⭐ **排除集⛔ 不是垃圾桶**：任一排除項的「本次命中」為 0 即判**死條目**，本節轉紅（沿 `canonical_citation_scan` 的 load-bearing 檢查）。　**本次：無死條目。**
+
+### 3.2 A · 現行入口殘留（授權內）：0
 
 （無）
 
-### 3.2 B · 移除紀錄與合成語料（58，在母體內、⛔ 非入口）
+### 3.3 B · 移除紀錄與合成語料（在母體內、⛔ 非入口）：50
 
-| 檔 | 命中的舊檔名 | 分類理由 |
+| 檔 | 唯一 (檔:行) 命中 | 分類理由 |
 |---|---|---|
-| `cli/tests/test_contract_tool_reconcile.py` | `bug-card.md`×1、`initiative-card.md`×1、`tasks-card.md`×2 | 對帳器合成語料（臨時目錄造同名檔），命中的是字串常數 |
-| `docs/CONTRACT_TOOL_RECONCILE.md` | `bug-card.md`×16、`bug-workflow.md`×1、`initiative-card.md`×13、`tasks-card.md`×24 | marker 界定的移除紀錄區塊（逐項處置表／歷史小節） |
+| `ADOPTION.md` | 3 | 已就地註記為「`WF-REDESIGN-W2B` 已移除」並指向本檔（需求方裁定 2） |
+| `AI_WORKFLOW.md` | 2 | 已就地註記為「`WF-REDESIGN-W2B` 已移除」並指向本檔（需求方裁定 2） |
+| `cli/tests/test_contract_tool_reconcile.py` | 3 | 對帳器合成語料（臨時目錄造同名檔），命中的是字串常數 |
+| `docs/CONTRACT_TOOL_RECONCILE.md` | 42 | marker 界定的移除紀錄區塊（逐項處置表／歷史小節） |
 
-⛔ **不得由此推出「這些地方可以藏東西」**：它們在母體內、每一筆都印得出來、逐檔逐檔名有計數。B(1) 以檔內 marker 界定 ⇒ 有人把新的引用寫在 marker 之外，它會落回 A 而不是靜默通過。
+### 3.4 C · 授權外：15
 
-### 3.3 C · 授權外、待需求方裁決（22）
-
-| 檔 | 命中的舊檔名 | 分類理由 |
+| 檔 | 唯一 (檔:行) 命中 | 分類理由 |
 |---|---|---|
-| `ADOPTION.md` | `bug-card.md`×1、`initiative-card.md`×1、`tasks-card.md`×1、`templates/TASKS.md`×1 | 未列入本卡寫入授權 |
-| `AI_WORKFLOW.md` | `bug-workflow.md`×1、`tasks-card.md`×1、`templates/TASKS.md`×1 | canonical 本體，`WF-REDESIGN-W2A` 已完成；派工包逐字標唯讀 |
-| `cli/README.md` | `tasks-card.md`×3 | 未列入本卡寫入授權（授權只到 `cli/tests/test_contract_tool_reconcile.py`） |
-| `cli/src/wf_cli/card.py` | `tasks-card.md`×7 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
-| `cli/src/wf_cli/card_face.py` | `tasks-card.md`×1 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
-| `cli/src/wf_cli/registry.py` | `templates/TASKS.md`×1 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
-| `cli/src/wf_cli/resources.py` | `tasks-card.md`×1 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
-| `cli/tests/test_card.py` | `tasks-card.md`×1 | 未列入本卡寫入授權 |
-| `cli/tests/test_commands_mocked.py` | `tasks-card.md`×1 | 未列入本卡寫入授權 |
+| `cli/README.md` | 3 | 未列入本卡寫入授權（授權只到 `cli/tests/test_contract_tool_reconcile.py`） |
+| `cli/src/wf_cli/card.py` | 7 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
+| `cli/src/wf_cli/card_face.py` | 1 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
+| `cli/src/wf_cli/registry.py` | 1 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
+| `cli/src/wf_cli/resources.py` | 1 | `cli/src/**`＝`WF-REDESIGN-W3` 射程；派工包逐字標唯讀 |
+| `cli/tests/test_card.py` | 1 | 未列入本卡寫入授權 |
+| `cli/tests/test_commands_mocked.py` | 1 | 未列入本卡寫入授權 |
 
-⭐ **C 的每一筆都是註解／敘述／文件指路，⛔ 沒有一處是會被執行的碼**（實測：移除五檔後 `cli/` 全套測試仍全綠）⇒ 它們是**懸空指標**，⛔ 不是功能缺陷。危害是讀者照著去找一個不存在的檔。本卡⛔ 不得自行擴權去改它們（`stage-rules/executor-conduct.md` 二：遇授權缺口停下）。
+⭐ C 的每一筆都是註解／docstring，⛔ 沒有一處是會被執行的碼（實測：移除五檔後 `cli/` 全套測試仍全綠）⇒ 懸空指標。⚠️ 本卡首版曾把 `ADOPTION.md` 一併說成「只是註解」——**那是錯的**，該檔 §2 是人工執行程序，已依需求方裁定 2 就地註記，現歸 B。
 
-重跑：
+### 3.5 完整重跑指令
 
 ```bash
+cd <worktree>
 for f in tasks-card.md bug-card.md bug-workflow.md initiative-card.md templates/TASKS.md; do
-  echo "---- $f ----"
-  git grep -n --fixed-strings -- "$f" \
-    | grep -Ev '^archive/|^docs/research/|^templates/template-migration-map\.md:'
-done
+  git grep -n --fixed-strings -- "$f"
+done \
+  | grep -Ev '^templates/template-migration-map\.md:' \
+  | grep -Ev '^archive/' \
+  | grep -Ev '^docs/research/drafts/wave-specs/w2b\.md:' \
+  | grep -Ev '^docs/research/drafts/wave-specs/baseline-universe\.json:' \
+  | cut -d: -f1,2 | sort -u | wc -l          # ⇐ 套排除集後的唯一 (檔:行) 總數
+
+# 各排除項是否 load-bearing（任一為 0 即死條目）：把上面某一條 grep -Ev 拿掉重跑，
+# 總數必須變大；沒變大就是該排除項沒有在擋任何東西。
 ```
 
 <!-- old-entry-residual:end -->
