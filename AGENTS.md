@@ -2,7 +2,34 @@
 
 本 repo 是**跨專案 AI 協作治理的 canonical 來源**。它**受自己定義的機制管理**（dogfooding）。
 
-> **規則本體＝ [`AI_WORKFLOW.md`](AI_WORKFLOW.md)**（唯一權威）。本 repo 的任務狀態面＝GitHub Project #4（`gh project item-list 4 --owner ruan6047`）；`TASKS.md` 已停用封存。
+## L0 · 進來先讀這三塊，其餘用查的
+
+⛔ **不要通讀 canonical。** 入門只有三塊：
+
+1. [`AI_WORKFLOW.md`](AI_WORKFLOW.md) **§1 角色與所有權**；
+2. [`AI_WORKFLOW.md`](AI_WORKFLOW.md) **§2 不可違反的規則**；
+3. 下面那張一分鐘心智模型。
+
+§1／§2 就排在 §0 之前，⛔ 不需要先捲過分類與狀態表。canonical 的其餘節次是**查詢對象**，⛔ 不是入門讀物。
+
+### 一分鐘心智模型
+
+- **規則本體＝ [`AI_WORKFLOW.md`](AI_WORKFLOW.md)**（唯一權威）。衝突時以它為準；程式碼與文件衝突時以程式碼為準。
+- **一件事一張卡**；卡由待審清單項升級而來（`wfcli open --from-issue` 是唯一路徑），收件條件見 [`stage-rules/list-intake-requirements.md`](stage-rules/list-intake-requirements.md)。
+- **狀態面唯一寫入通道＝ `wfcli`**（[`cli/README.md`](cli/README.md)）。不經它的狀態寫入即違規。
+- 每個階段跑同一個五步迴圈：① 印注意事項 → ② 派工 → ③ 交回 → ④ 對完整性 → ⑤ 路由。
+- **`stage-rules/＝八份 SOP，① 印給你、③ 逐條回`**——八份指八個階段（需求／研究／規劃／執行／審核／部署／維護／結案）各一份；同目錄另有三份角色準則（PM／執行者／查核者）與一份清單收件條件，那四份不是階段檔。
+  ⚠️ 「① 印給你」的**機械列印尚未生效**（機制歸 `WF-REDESIGN-W3`；沿 canonical §0.1 先例，⛔ 不啟用尚無 writer 的規則）。在那之前 ① 由 PM 人工交出該階段 §5 的編號清單，③ 的逐條回應照跑。
+- **交接一律走 [`templates/`](templates/) 的範本**：派工包／交付報告／派審詞／裁決／狀態變更裁定單，共用同一個四段信封（定義在 [`templates/handoff-contract.md`](templates/handoff-contract.md) §3.3）。
+
+### 現況要用查的
+
+⛔ 入口不指向會變的東西。活卡、SOP 與範本清單一律查：
+
+```bash
+gh project item-list 4 --owner ruan6047        # 本 repo 的活卡（狀態面）
+ls stage-rules/ templates/                     # SOP 與交接範本的實況
+```
 
 ## 在本 repo 工作時
 - 改規則（`AI_WORKFLOW.md`）＝一張任務卡：**開分支 `ai/<模型@工具>/<卡ID>` → 獨立審核（≠ 執行者）→ merge main**。規則屬「錯了影響全專案」→ 視為 **🔴紅線**，審核**必換模型家族或使用者 sign-off**。
@@ -74,4 +101,9 @@ wfcli doctor <repo> --registry none --commit-trailers --commit-range origin/main
 統一命名的真實價值是**同一張卡內**的重複可被辨識，以及人讀得出跨卡的復發。
 
 ## 模型路由
-本 repo 幾乎全是文件治理：規劃/改規則屬架構層 → Opus/Fable；純文字修訂 → Sonnet/Haiku。查核紅線（規則正確性）→ 換家族或人審。
+
+卡面只寫**能力層級**、⛔ 不寫模型名——模型名單會過期，層級才是穩定介面。合法值三個：**經濟型／主力型／高階型**（值域與判準見 [`MODEL_ROUTING.md`](MODEL_ROUTING.md) 與 [`tier-rules.md`](tier-rules.md)；`wfcli open` 以 `--exec-capability`／`--review-capability` 機械強制，缺欄即拒絕開卡）。
+
+本 repo 幾乎全是文件治理，判準逐條在 [`CLAUDE.md`](CLAUDE.md) 的「模型路由」節（工具中立的讀者照同一組判準：純機械文字＝經濟型；要讀懂既有條文才改得動、語意收斂在單一檔或單一動詞＝主力型；動到 `AI_WORKFLOW.md` 條文、跨模組語意、根因不明或不可逆＝高階型）。
+
+規則正確性屬紅線：不論選哪一層，查核**必換模型家族或由使用者 sign-off**。
