@@ -15,6 +15,10 @@ description: 審核階段：產出可稽核的裁決。本階段的執行者＝�
 ## 3 階段內流程
 ② PM 派審詞（信封：merge-base 基線釘死、前輪 findings＋root_cause_id、模型／家族行、PM 已知未驗項）。③ 查核者裁決，有通道者自己寫回。④ PM 對裁決完整性（段落＋身分自述）。⑤ 依裁決路由。⭐ 同 root_cause 第三輪 ⇒ ⛔ 不派第四輪，直接升級。
 
+> ⚠️ **升級觸發的權威居所＝ [`../templates/review-escalation.md`](../templates/review-escalation.md) §3–§4**（可計數 attempt 的各款要件＋累計與存活判準）。本檔的輪次寫法**只是指路，⛔ 不是判準**：
+> 純 `governance`／`coordination`／`environment` finding、planner／Coordinator 的錯誤前提、等待外部 sign-off、重複同 SHA 的 review 都⛔ 不消耗額度；已停止產出有效 open finding 的根因亦⛔ 不再觸發。
+> 且須先建 `escalation-checkpoint`，⛔ 不得逕寫升級。⛔ 本檔與該契約寫法不一致時，以該契約為準。
+
 ## 4 各角色
 | 角色 | 做 | ⛔ 不做 |
 |---|---|---|
