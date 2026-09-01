@@ -73,23 +73,22 @@ done
 
 AC1 要求被移除各舊檔於 post-image `git grep` 檔名驗零引用。
 
-**母體排除三項**（⛔ 只有這三項，⛔ 不得再加）：
+**排除集的唯一權威居所＝下方 §3.1**（機械產生），四項具名，依需求方 2026-09-01 裁定 3。
+⛔ **本節⛔ 不另立第二套排除規則**——`WF-REDESIGN-W2B` R1-2 抓到的正是本處曾與 §3.1 並存
+兩套互斥政策（舊版在此宣告「母體排除三項」且整個 `docs/research/` 都排除），讀者無法判定
+該跑哪一套。舊政策已刪除，⛔ 不得回寫。
 
-- **`archive/`**：歷史封存⛔ 不是現行入口，改寫它等於改寫已結案的紀錄。
-- **`docs/research/`**：規劃期草稿與 inventory，owner 非本卡。
-- **本檔**：AC1 逐字「mapping 文件自身除外」。
-
-母體內的命中**逐 occurrence 三分類，⛔ 全部可見列計**——分類⛔ 不是豁免（沿
-`scripts/pollution_check.py` 的自指命中設計）：
+母體內的命中**逐筆三分類，⛔ 全部可見列計**——分類⛔ 不是豁免（沿
+`scripts/pollution_check.py` 的自指命中設計）。**單位＝唯一 `(檔, 行)`**，⛔ 不是 occurrence：
 
 | 類 | 是什麼 | 判準 |
 |---|---|---|
 | **A** 現行入口殘留 | 本卡改得動、卻仍把被移除檔講得像現行 | ⭐ **必須為 0**；非 0 即本卡缺陷 |
-| **B** 移除紀錄／合成語料 | 逐項處置表與歷史小節（以檔內 marker 界定）；對帳器在臨時目錄造同名檔的合成語料 | 構造上⛔ 不是入口 |
+| **B** 移除紀錄／合成語料 | 同行逐字標明已移除者；逐項處置表與歷史小節（以檔內 marker 界定）；對帳器在臨時目錄造同名檔的合成語料 | 構造上⛔ 不是入口 |
 | **C** 授權外 | 本卡寫入授權外的檔（派工包 §2「其餘一律唯讀」） | ⛔ 不自行擴權，逐項上呈需求方 |
 
-⭐ **B 以檔內 marker 界定，⛔ 不以檔名整檔排除**——有人把新的引用寫在 marker 之外，它會落回
-A 而不是靜默通過。
+⭐ **B 以逐行判準與檔內 marker 界定，⛔ 不以檔名整檔排除**——有人把新的引用寫在 marker 之外、
+或寫一行沒有「已移除」字樣的引用，它會落回 A 而不是靜默通過。五條分類規則逐字見 §3.5。
 
 <!-- old-entry-residual:begin -->
 
@@ -97,7 +96,7 @@ A 而不是靜默通過。
 
 **單位＝唯一 `(檔, 行)`。** ⛔ 逐名 `git grep -c` 相加會把同一行含兩個檔名的情形重複計入——本卡首版即因此報出偏高的數字，已登記為失誤。
 
-套用排除集後：**A 現行入口殘留（授權內）0**／B 移除紀錄與合成語料 56／C 授權外 15。
+套用排除集後：**A 現行入口殘留（授權內）0**／B 移除紀錄與合成語料 54／C 授權外 15。
 
 ⭐ **通過判準只有一條：A ＝ 0。** B 與 C ⛔ 不是豁免，是**分類**——逐檔列計，⛔ 不從母體拿掉。
 
@@ -105,20 +104,20 @@ A 而不是靜默通過。
 
 ⛔ **不得整目錄排除 `docs/research/`**——`scripts/prose_number_scan.py` 的語料**含** `docs/research/drafts/wave-specs/*.md`，整目錄排除與既有守衛的納管作法直接衝突（需求方 2026-09-01 裁定 3）。形狀沿用 `scripts/canonical_citation_scan.py` 的 `EXCLUSIONS`。
 
-| 排除項 | 本次命中 | 理由 |
+| 排除項 | load-bearing 增量（唯一 `(檔,行)`） | 理由 |
 |---|---|---|
-| `templates/template-migration-map.md` | 10 | 卡面 AC1 逐字「mapping 文件自身除外」——本檔即該 mapping 文件。 |
-| `archive/` | 4 | 已結案卡的歷史紀錄⛔ 不是現行入口，改寫它等於改寫已結案的帳（需求方 2026-09-01 裁定 3 准）。另：`scripts/prose_number_scan.py` 的語料本就不含 `archive/`，兩個守衛的納管界線一致。 |
-| `docs/research/drafts/wave-specs/w2b.md` | 10 | 本卡自己的來源草稿；規格權威居所是卡面 body，該檔於結案時封存（PM 開卡留痕）。 |
-| `docs/research/drafts/wave-specs/baseline-universe.json` | 4 | AC2 自己釘死的基線 artifact——它逐字載著被移除範本的 doc_hits，把它算成「入口」等於要求 AC2 的基線刪掉自己的內容。 |
+| `templates/template-migration-map.md` | 6 | 卡面 AC1 逐字「mapping 文件自身除外」——本檔即該 mapping 文件。 |
+| `archive/` | 3 | 已結案卡的歷史紀錄⛔ 不是現行入口，改寫它等於改寫已結案的帳（需求方 2026-09-01 裁定 3 准）。另：`scripts/prose_number_scan.py` 的語料本就不含 `archive/`，兩個守衛的納管界線一致。 |
+| `docs/research/drafts/wave-specs/w2b.md` | 2 | 本卡自己的來源草稿；規格權威居所是卡面 body，該檔於結案時封存（PM 開卡留痕）。 |
+| `docs/research/drafts/wave-specs/baseline-universe.json` | 1 | AC2 自己釘死的基線 artifact——它逐字載著被移除範本的 doc_hits，把它算成「入口」等於要求 AC2 的基線刪掉自己的內容。 |
 
-⭐ **排除集⛔ 不是垃圾桶**：任一排除項的「本次命中」為 0 即判**死條目**，本節轉紅（沿 `canonical_citation_scan` 的 load-bearing 檢查）。　**本次：無死條目。**
+⭐ **欄位口徑逐字**：`load-bearing 增量` ＝**拿掉該排除項後，唯一 `(檔,行)` 總數的增加量**（⛔ 不是該項命中的 occurrence 數——`WF-REDESIGN-W2B` R1-3 抓到的正是這兩個口徑被混用）。⭐ **排除集⛔ 不是垃圾桶**：任一項增量為 0 即判**死條目**，本節轉紅（沿 `canonical_citation_scan` 的 load-bearing 檢查）。　**本次：無死條目。**
 
 ### 3.2 A · 現行入口殘留（授權內）：0
 
 （無）
 
-### 3.3 B · 移除紀錄與合成語料（在母體內、⛔ 非入口）：56
+### 3.3 B · 移除紀錄與合成語料（在母體內、⛔ 非入口）：54
 
 | 檔 | 唯一 (檔:行) 命中 | 分類理由 |
 |---|---|---|
@@ -126,7 +125,7 @@ A 而不是靜默通過。
 | `AI_WORKFLOW.md` | 2 | 本卡依需求方裁定 2 就地註記為「由 `WF-REDESIGN-W2B` 移除」並指向 mapping 文件 |
 | `cli/tests/test_contract_tool_reconcile.py` | 3 | 對帳器合成語料（臨時目錄造同名檔），命中的是字串常數 |
 | `docs/CONTRACT_TOOL_RECONCILE.md` | 42 | marker 界定的移除紀錄區塊（逐項處置表／歷史小節） |
-| `stage-rules/defect-path.md` | 6 | 同行逐字標明該檔已移除 |
+| `stage-rules/defect-path.md` | 4 | 同行逐字標明該檔已移除 |
 
 ### 3.4 C · 授權外：15
 

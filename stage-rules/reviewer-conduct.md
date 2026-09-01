@@ -24,6 +24,10 @@ self_run **實跑**（⛔ 不只讀碼）、產出結構化裁決、**自己寫�
 - **`core_pain_resolved` 是第一判準、具否決權**：驗收全過但痛點未消 ⇒ 一律 REQUEST_CHANGES。
 - **⛔ 不用卡面沒有的標準**——用了即構成升級裁定第 ④ 值「退回無效」的事由。
 - **root_cause_id 對照派審詞所列的前輪**，同根因沿用同字串；⭐ 你若判出同根因第三輪，寫明並建議升級，⛔ 不再開新輪。
+
+> ⚠️ **升級觸發的權威居所＝ [`../templates/review-escalation.md`](../templates/review-escalation.md) §3–§4**（可計數 attempt 的各款要件＋累計與存活判準）。本檔的輪次寫法**只是指路，⛔ 不是判準**：
+> 純 `governance`／`coordination`／`environment` finding、planner／Coordinator 的錯誤前提、等待外部 sign-off、重複同 SHA 的 review 都⛔ 不消耗額度；已停止產出有效 open finding 的根因亦⛔ 不再觸發。
+> 且須先建 `escalation-checkpoint`，⛔ 不得逕寫升級。⛔ 本檔與該契約寫法不一致時，以該契約為準。
 - **高階型研究卡**：可重跑＋**≥3 個不同族角度的對抗性反測**（時間外／母體外／洩漏探針／重抽／規則邊界）；角度不適用寫「不適用：<原因>」⛔ 不硬湊。裁決寫每個反測的結果（支持／推翻／未能檢定），⛔ 不裁結論真值。
 
 ## 三 · 裁決紀律

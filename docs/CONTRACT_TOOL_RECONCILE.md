@@ -471,14 +471,14 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 
 | 符號 | 判定 | 契約出處 | 寫入者 | 讀取者 | 備註 |
 |---|---|---|---|---|---|
-| `authoritative-artifact` | read-only | `templates/review-escalation.md §2. Finding 分類`<br>`templates/review-escalation.md §3. 可計數的退回`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | `cli/src/wf_cli/review.py::FINDING_CLASSES`<br>`cli/src/wf_cli/review.py::COUNTING_FINDING_CLASSES` | 相關動詞=無 |
+| `authoritative-artifact` | read-only | `templates/review-dispatch.md §3. 前輪 findings（必列）`<br>`templates/review-escalation.md §2. Finding 分類`<br>`templates/review-escalation.md §3. 可計數的退回`<br>…共 6 | — | `cli/src/wf_cli/review.py::FINDING_CLASSES`<br>`cli/src/wf_cli/review.py::COUNTING_FINDING_CLASSES` | 相關動詞=無 |
 | `baseline-change-request` | absent | `templates/baseline-cascade.md §程序` | — | — | 相關動詞=無 |
 | `carried-forward` | absent | `templates/review-escalation.md §4. 三次門檻`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | — | 相關動詞=無 |
 | `change-executor` | read-only | `templates/review-escalation.md §4. 三次門檻`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | `cli/src/wf_cli/review.py::CHECKPOINT_DECISIONS` | 相關動詞=無 |
 | `continue-same-executor` | absent | `templates/review-escalation.md §5. Adapter 必填欄位` | — | — | 相關動詞=無 |
 | `contract-baseline` | write-only | `templates/review-escalation.md §4. 三次門檻`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | `cli/src/wf_cli/commands/checkpoint_cmd.py::run_contract_baseline` | — | 相關動詞=無 |
 | `data-migration` | read-only | `AI_WORKFLOW.md §3.2 卡範圍與開卡條件`<br>`AI_WORKFLOW.md §4.2 Database Contract` | — | `cli/src/wf_cli/commands/open_cmd.py::add_parser`<br>`cli/src/wf_cli/resources.py::DB_SCOPES` | 相關動詞=無 |
-| `escalation-checkpoint` | mention-only | `templates/review-escalation.md §2. Finding 分類`<br>`templates/review-escalation.md §4. 三次門檻`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | — | 相關動詞=checkpoint |
+| `escalation-checkpoint` | mention-only | `templates/review-dispatch.md §3. 前輪 findings（必列）`<br>`templates/review-escalation.md §2. Finding 分類`<br>`templates/review-escalation.md §4. 三次門檻`<br>…共 6 | — | — | 相關動詞=checkpoint |
 | `escalation-epoch-change` | mention-only | `AI_WORKFLOW.md §4.1 Control-plane Contract`<br>`templates/review-escalation.md §4. 三次門檻`<br>`templates/review-escalation.md §5. Adapter 必填欄位` | — | — | 相關動詞=無 |
 | `escalation-resolution` | mention-only | `AI_WORKFLOW.md §0.2 允許的狀態轉移（canonical 本體；採用專案**引用不複製**）`<br>`AI_WORKFLOW.md §表一：交付狀態的允許轉移`<br>`` AI_WORKFLOW.md §表五：`🚨已升級` 的決策 owner ``<br>…共 5 | — | — | 相關動詞=無 |
 | `forged-rejected` | absent | `templates/handoff-contract.md §3.1.4 未知版本、缺欄與 fail-closed`<br>`templates/handoff-contract.md §5. 專案實作`<br>`templates/review-escalation.md §4. 三次門檻`<br>…共 4 | — | — | 相關動詞=無 |
@@ -581,8 +581,8 @@ removed, added = sorted(set(B) - set(C)), sorted(set(C) - set(B))
 - 基線 artifact：`docs/research/drafts/wave-specs/baseline-universe.json`（`_meta.source_sha` = `ce45a80f9dfe89d38e53d25a0b012e7bc8956003`）
 - 基線全文 sha256（＝卡面 AC2 釘死值）：`c1a1279324f2b5f40421eaa0408314a1afadae2c374c0c98782f66510af4bb68`
 - 基線 rows canonical sha256：`d13ba6c04f5954295c705f515dbc1f242bd513d00da2eb708777b940c98d45cc`
-- **本次 merge result rows canonical sha256：`13141b5d9b6e7188818d9df12a59ecfd42b43cb8f1a68af8b800ef69387a4421`**
-- 摘要（⛔ 非基線，集合與 hash 才是）：基線 rows 86 → 本次 50；removed 36／added 0／changed 23；缺口 54 → 33；守衛缺口 5 → 7
+- **本次 merge result rows canonical sha256：`117793f8cab5955bb414782e0b9b37816b1d2d976656cd07c97ca19c3460d73f`**
+- 摘要（⛔ 非基線，集合與 hash 才是）：基線 rows 86 → 本次 50；removed 36／added 0／changed 25；缺口 54 → 33；守衛缺口 5 → 7
 
 ### 7.1 removed（36）——符號離開 universe
 
@@ -629,7 +629,7 @@ removed, added = sorted(set(B) - set(C)), sorted(set(C) - set(B))
 
 （無。本卡新增的六份範本刻意不引入新的契約符號：反引號 kebab 一律沿用既有符號，emoji 後一律留空白以免被抽成交付狀態。）
 
-### 7.3 changed（23）——同 key、canonical row 不同
+### 7.3 changed（25）——同 key、canonical row 不同
 
 | kind | 符號 | 變動欄 | 判定 基線 → 本次 | 處置 |
 |---|---|---|---|---|
@@ -654,6 +654,8 @@ removed, added = sorted(set(B) - set(C)), sorted(set(C) - set(B))
 | `delivery_status` | `🛑已停止` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
 | `delivery_status` | `🧪驗證中` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
 | `delivery_status` | `🧭規劃中` | `doc_hits` | `ok` → `ok` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `event` | `authoritative-artifact` | `doc_hits` | `read-only` → `read-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
+| `event` | `escalation-checkpoint` | `doc_hits` | `mention-only` → `mention-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
 | `event` | `review-correction` | `doc_hits` | `mention-only` → `mention-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
 | `event` | `review-invalid` | `doc_hits` | `mention-only` → `mention-only` | `錨點漂移`：判定未變（`--check` 第 3 個方向不響） |
 

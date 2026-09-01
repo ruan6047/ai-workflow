@@ -47,7 +47,7 @@
 
 > 勾一類；一張裁定單⛔ 只裁一類。各類的必填欄在 §3。
 
-- [ ] **升級**（同一 `root_cause_id` 第三輪 ⇒ ⛔ 不派第四輪）——四選一
+- [ ] **升級**——四選一。⚠️ 觸發條件⛔ 不得以輪次認定：升級的觸發條件**權威居所＝[`review-escalation.md`](review-escalation.md) §3–§4**：attempt 以 `(card_id, escalation_epoch, source_sha)` 唯一識別，且**同時**滿足 §3 四款（preflight 通過且 review 有效／結論 `REQUEST_CHANGES`／至少一個 `accepted=true` 且 `status=open` 的 blocking finding 屬 `implementation` 或 `authoritative-artifact`／該 finding `attribution=executor`）才計數；再依 §4 同時要求**累計**（同一 `root_cause_id` 於本 epoch 的多個唯一可計數 attempt 產出 accepted blocking finding）**與存活**（trigger attempt 裁決落地當下該根因仍至少有一個有效 open finding）。⛔ **輪次本身⛔ 不是充分條件**——純 `governance`／`coordination`／`environment` finding、planner／Coordinator 的錯誤前提、等待外部 sign-off、重複同 SHA 的 review 都⛔ 不消耗額度；已停止產出有效 open finding 的根因亦⛔ 不再觸發。且須先建 `escalation-checkpoint`，⛔ 不得逕寫升級。
 - [ ] **停止**（結案階段專屬終態、⛔ 無出口）
 - [ ] **撤銷降回清單**（需求階段：`待確認 → 撤銷`；卡ID 保留、輪次延續）
 - [ ] **級別變更**——升自由⛔ 不需本單；**降須需求方裁定並留痕**（降級唯一效果是繞過閘門）

@@ -28,11 +28,19 @@ description: 缺陷（bug）走哪條路：級別怎麼判、留痕落在哪、�
 - ⛔ 沒有缺陷專屬的卡面範本。卡面形狀由 `wfcli open` 渲染，缺陷⛔ 不另有專屬形狀。
 - 重現步驟、預期 vs 實際、根因、回歸測試——這些**寫進卡面的核心痛點與驗收條件**，⛔ 不另立欄位。
 
-> **來源**：本節為 `WF-REDESIGN-W2B` 新立。它取代的是**已移除**的 `templates/bug-card.md` 與 `templates/bug-workflow.md`
-> 所隱含的「缺陷自成獨立卡種」模型；該檔群於本卡移除（對照見 [`../templates/template-migration-map.md`](../templates/template-migration-map.md)）。
-> ⚠️ 決議紀錄與 canonical **都沒有**寫下這個承接——`WF-REDESIGN-W2B` 交付時實跑
-> `grep -rn "缺陷走清單\|走清單＋一般卡" AI_WORKFLOW.md stage-rules/ tier-rules.md docs/research/WORKFLOW-REDESIGN-2026-08-30.md`
-> 得 `rc=1`、零命中。⇒ 本節是**補上那個缺口**，⛔ 不是抄寫既有條文。
+> **來源**：本節**承接 [`requirement.md`](requirement.md) 的 `F-需求-01`**（逐字「卡一律由清單項升級（`--from-issue`）；⛔ 不直接建 issue、⛔ 不走 DraftIssue」），
+> 併同該檔 §1「進入＝**清單項獲需求方點頭**＋指派執行者」、角色表「需求方｜**決定哪個清單項升級**」與 §3「R1 由需求方／人工」。
+> ⇒ 缺陷只是「問題的種類」，⛔ 不另闢入口——本節把既有入口規則對缺陷寫明，⛔ 不新立入口規則。
+> 它取代的是**已移除**的 `templates/bug-card.md` 與 `templates/bug-workflow.md` 所隱含的「缺陷自成獨立卡種」模型
+> （對照見 [`../templates/template-migration-map.md`](../templates/template-migration-map.md)）。
+>
+> ⚠️ **更正本檔首版**：首版寫「本節為 `WF-REDESIGN-W2B` 新立…決議紀錄與 canonical 都沒有寫下這個承接」。
+> 對決議紀錄與 canonical 而言那句成立（實跑 `grep -rn "缺陷走清單\|走清單＋一般卡" …` ⇒ `rc=1`、零命中），
+> **但它漏掉了 `requirement.md`**——入口的權威在那裡。需求方 2026-09-01 裁定據此改採本寫法。
+>
+> ⭐ **入口與級別彼此獨立**：`tier-rules.md` 自陳射程為「判**單張卡**該走多強的流程」⇒ 級別作用於卡**之後**；
+> canonical §3.2 的「開新卡僅限三情形」逐字為不同能力域／紅線隔離／可真平行——**級別不在其中**。
+> ⇒ ⛔ 不得把「開不開卡」綁回級別。
 
 ## 二 · 級別怎麼判
 
@@ -56,13 +64,24 @@ description: 缺陷（bug）走哪條路：級別怎麼判、留痕落在哪、�
 
 ## 三 · 留痕落在哪
 
-- **T1**：commit 說明即留痕，⛔ 不開卡。
-- **T2 以上**：走清單項 → 卡。狀態面唯一寫入通道是 `wfcli`（canonical §4.3），⛔ 不另開 log 檔。
-- ⚠️ **舊制的 `BUGS.md` 滾動 log 已不是本工作流的留痕面**。仍持有該檔的專案，其內容視為 cutover 前的凍結歷史，⛔ 不再新增。
+- **已開卡**：留痕走狀態面，唯一寫入通道是 `wfcli`（canonical §4.3），⛔ 不另開 log 檔。
+- **未開卡時**（該清單項尚未獲需求方升級）：留痕＝**commit 說明** ＋ canonical §6 的 trailer 下限
+  （逐字「T0／T1 的直接 commit 至少記錄 `Requested-by` 與 `Implemented-by`；T2 以上的實作 commit 必加…」）。
 
-> **來源**：T1／T2 的分流承接**已移除**的 `bug-workflow.md` 的「留痕」列；`BUGS.md` 退位為本卡新立
-> ——`ADOPTION.md` 原 §2 要求另起 `BUGS.md`，而該段引用的 `templates/bug-card.md` 已移除，
-> ⇒ 留著會指向不存在的範本。⛔ 本卡未刪任何專案的既有 `BUGS.md`。
+⭐ **「直接 commit」是「不開卡」時的合法路徑，⛔ 不是「某個級別不准開卡」。**
+開不開卡由需求方依 `F-需求-01` 決定（§一）；級別決定的是**開卡之後**走多強的流程。
+⛔ 本節⛔ 不設任何級別門檻——設了就會與 `F-需求-01` 牴觸。
+
+> **來源**：狀態面唯一寫入通道＝canonical §4.3；trailer 下限＝canonical §6 逐字。
+> 入口不綁級別＝`requirement.md` 的 `F-需求-01`（見 §一）。
+>
+> ⚠️ **更正本檔首版**：首版此節寫「T1：commit 說明即留痕，⛔ 不開卡／T2 以上：走清單項 → 卡」，
+> 那是**把入口綁回級別**，與 §一 承接的入口規則互相矛盾。
+> ⚠️ 各查核 finding 的 `root_cause_id` 逐字列於交付報告——⛔ 不寫在本檔，
+> 因為 `stage-rules/*.md` 在 `scripts/prose_number_scan.py` 的語料內，而那些字串內含數字，
+> 寫進本檔即需新增 inventory 條目，而該 inventory ⛔ 不在本卡寫入授權內。
+> 首版另有段落宣告 `BUGS.md` 退位，它依附於該被刪門檻，且與 `ADOPTION.md` 現行條文衝突
+> ⇒ **整段移除**；`BUGS.md` 的去留**⛔ 不由本檔宣稱**，另議。
 
 ## 四 · 先紅後綠
 

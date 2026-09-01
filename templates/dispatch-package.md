@@ -63,7 +63,8 @@
 
 1. **範圍外發現寫報告回 PM**：不得自行開卡、不得 spawn 背景任務或建立背景待辦 chip。範圍外的東西只能是報告的一節，由需求方裁決。
 2. **不得停等背景通知**：需要等待時前景輪詢或不結束回合；不得以「等背景通知」為由結束回合。
-3. **分支更新禁 `gh pr update-branch`**（產生 synthetic merge、污染歷史與守衛判讀）；一律本地 rebase ＋ `git push --force-with-lease`。
+3. **分支更新禁 `gh pr update-branch`**：它產生 synthetic merge、污染歷史與守衛判讀；一律**本地 rebase ＋ `git push --force-with-lease`**。**狹義例外**（需求方 2026-08-21 於 `ruan6047/ai-workflow#39` 的裁定留言，issuecomment-5367447565）：下列兩項**須同時成立**時不要求 rebase——(i) rebase 會使 **main 上已合併的碼**所引用的 SHA 失效；(ii) rebase 會把早於 `TRAILER_GUARD_EPOCH` 的 commit 推過界線，使其翻成無法修正的違規。例外**只免除「必須 rebase」，不免除任何 trailer**：該 merge commit 仍須帶 `merge_clean` 所要求的 `Reviewed-by`，無查核對象時填 canonical §6 的「不適用」形態。⚠️ **本例外沒有機械執行者**——「基線更新 merge」與整合 merge 在 commit 自身上都只是多個 parent，誰是 main 取決於你站在哪個 ref 上看，那是脈絡不是 commit 自身的性質。故它是**派工包層的約定**：由撰寫派工包者判定並**在本包內具名**、由查核者複核，⛔ 不得宣稱它已機械化。
+   - 本卡是否援引狹義例外：`<否／是——是則逐項寫出 (i)(ii) 各自成立的證據，並具名判定者>`
 4. **詭異數據標記「待人工判讀」交需求方**，不自行下結論。外部佐證走新聞／第三方通道時：**定性佐證 only**，數值以官方紀錄為權威，引用必附 URL ＋ 日期。
 5. **commit trailer ＝ commit message 末端的連續單一區塊，中間無空行**（`git interpret-trailers --parse` 遇空行即切斷解析，守衛必紅）：
 
