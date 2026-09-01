@@ -274,6 +274,7 @@ from ..project import (
     find_item_by_card_id,
     list_items,
     resolve_project,
+    PROJECT_TITLE_FIELD,
     set_field_value,
     set_issue_title,
     set_item_body,
@@ -940,6 +941,25 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         print("[amend] 拒絕：--reason 不得為空（每次修訂都要能回答為什麼）", file=sys.stderr)
         return 2
 
+    # ⭐ **空白 `--feature` 在任何遠端呼叫之前硬拒**（`WF-REDESIGN-W1` R1-1／R1-2）。
+    #
+    # (a) 現在的行為：`--feature '   '` 回 rc=2，⛔ 不解析 project、⛔ 不讀 item、
+    #     ⛔ 不寫任何東西。
+    # (b) 為什麼在這裡而不是下面的 try：那個 try 排在 `resolve_project` 與 `list_items`
+    #     之後，⇒ 走到那裡時已經對 GitHub 發過查詢。本檢查是純字串判斷，沒有理由晚跑。
+    #     判準與 `open` 的 `validate_open_fields`「功能 必填」**同一句話**——同一個欄位
+    #     在兩個寫入端不得有兩套鬆緊。
+    # (c) ⛔ 不得由此推出「amend 其餘旗標也各自有這種前置檢查」：它們沒有，
+    #     值層面的拒收多數落在下面那個 try 內（讀了 item 之後）。
+    if args.feature is not None and not args.feature.strip():
+        print(
+            "[amend] 拒絕（未寫入任何狀態，也未讀取任何遠端狀態）：--feature 不得為空或全空白"
+            f"（收到 {args.feature!r}）。⇒ 功能是卡面標題的後半段，"
+            "空值會寫出一個尾端帶空白、讀者認不出是哪張卡的標題。",
+            file=sys.stderr,
+        )
+        return 2
+
     wants_resources = args.db_scope is not None or args.resources is not None
     routing_updates = _routing_updates(args)
     field_flags = [
@@ -1086,7 +1106,18 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                     f"repo={target.repo!r}）：draft item 的標題走 "
                     "`gh project item-edit --id <DI_…> --title`，是另一條 ID 命名空間"
                 )
-            changes.append(("功能", item.text("功能") or "（未設定）", args.feature, None, False))
+            current_feature = item.text("功能")
+            if current_feature == args.feature:
+                # 形狀與同檔資源宣告／級別的 no-op 拒收**逐字相同**：值沒變就沒有
+                # 「修訂」可留痕，寫下去等於在 Log 上製造一筆不實的變更紀錄。
+                # ⚠️ 判準取 `功能` 欄而**不是** Issue 標題：標題是 `<卡ID> <功能>` 的
+                # 合成值，拿它比等於把卡ID 也算進「功能有沒有變」。
+                raise AmendError(
+                    f"功能與現值相同（{args.feature!r}）；拒絕寫入不實的修訂留痕。"
+                    "⇒ 若你要修的是**標題其餘部分**，那不是本旗標的射程——"
+                    "標題恆為 `<卡ID> <功能>`，卡ID 由 open 決定且 amend 不改它"
+                )
+            changes.append(("功能", current_feature or "（未設定）", args.feature, None, False))
             pending_field_writes["功能"] = args.feature
         if args.acceptance is not None:
             body, old = amend_acceptance(
@@ -1341,11 +1372,20 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
 
     # ---- 標題（`WF-REDESIGN-W1` 驗收 5b 的寫入集前兩項）----
     #
-    # ⭐ **一次寫入、兩處讀回**：Project item 的標題是 Issue 標題的平台導出
-    # （見 project.set_issue_title），⇒ 這裡只發一次 `gh issue edit --title`，
-    # 但**分別**讀回 Issue 自己的標題與 Project item 的標題。⛔ 不以「Issue 標題對了
-    # ⇒ item 標題也對了」代替量測：那個導出是平台行為，不是本指令的保證，而
-    # 5b 的寫入集把兩者**分列兩項**。
+    # ⭐ **一次寫入、三個 surface 分開讀回**（2026-08-31 依查核 R1-1 改寫）。
+    #
+    # (a) 現在的行為：發一次 `gh issue edit --title`，然後**各自**讀回
+    #     ① Issue 本體的 `title`、② Project item 的 `content.title`、
+    #     ③ Project 內建 `Title` **欄**（`item.text("Title")`）。①② 不符 ⇒ rc=8；
+    #     ③ 不符 ⇒ 大聲警示但**放行**。
+    # (b) 為什麼 ③ 只警示不失敗：該欄**沒有 writer**——2026-08-31 對真 Project #4 實跑
+    #     `updateProjectV2ItemFieldValue`，平台回 "The title field can only be updated on
+    #     DraftIssues"；同日全量掃描 213 個 item，`content.title != Title 欄` 者 5 筆，
+    #     其中 `aiwf#177` 改名 18 小時後仍未收斂。⇒ 把它判成失敗會讓 `--feature` 在
+    #     issue-backed 卡上**永遠**回非零，那是拿一個做不到的要求癱瘓一個動詞。
+    # (c) ⚠️ **這代表 5b 的「三欄」退場 oracle 在本平台上機械不可達**，已列為阻塞發現
+    #     上呈；⛔ 本註解不宣稱它被滿足，也⛔ 不把 ①② 改名成兩個 surface 來湊數。
+    # (d) ⛔ 不得由「③ 只警示」推出「③ 不重要」：它是看板檢視上讀者實際看到的那一格。
     if args.feature is not None:
         expected_title = f"{args.card_id} {args.feature}"
         set_issue_title(runner, target.repo, item.issue_number, expected_title)
@@ -1357,22 +1397,41 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             or {}
         ).get("title")
         after_item = find_item_by_card_id(list_items(runner, project), args.card_id)
-        item_title = after_item.title if after_item else None
-        mismatched = [
+        content_title = after_item.title if after_item else None
+        project_title_field = after_item.text(PROJECT_TITLE_FIELD) if after_item else None
+
+        writable = [
             f"{label}（預期 {expected_title!r}，實際 {actual!r}）"
-            for label, actual in (("Issue title", issue_title), ("Project item title", item_title))
+            for label, actual in (
+                ("Issue title", issue_title),
+                ("Project item content.title", content_title),
+            )
             if actual != expected_title
         ]
-        if mismatched:
+        if writable:
             print(
-                "[amend] body 已寫入，但標題寫入後讀回不符：" + "；".join(mismatched) + "。\n"
-                "  ⚠️ Project item 標題是 Issue 標題的平台導出，兩者不一致時通常是導出尚未\n"
-                "  收斂——⛔ 但本指令不猜，也不重試。重跑同一條 amend 即可再寫一次：\n"
+                "[amend] body 已寫入，但標題寫入後讀回不符：" + "；".join(writable) + "。\n"
+                "  ⚠️ 這兩個 surface 都是**寫得動**的（`gh issue edit --title` 直接寫 Issue，\n"
+                "  content.title 就是它）⇒ 不符代表這一次寫入沒生效，⛔ 不是平台投影延遲。\n"
+                "  本指令不猜，也不重試。重跑同一條 amend 即可再寫一次：\n"
                 f"     wfcli amend {args.card_id} --feature '{args.feature}' "
                 "--reason '<說明先前標題寫入為何中斷>'",
                 file=sys.stderr,
             )
             return 8
+        if project_title_field != expected_title:
+            print(
+                f"[amend] ⚠️ 警示（**本次仍放行**）：Project 內建 `{PROJECT_TITLE_FIELD}` 欄"
+                f"讀回 {project_title_field!r}，與寫入值 {expected_title!r} 不同。\n"
+                "  ⚠️ 這一格 wfcli **寫不動**：平台對 issue-backed item 明文拒絕"
+                "（\"The title field can only be updated on DraftIssues\"），\n"
+                "  而它是**會過期的投影**——2026-08-31 實測全板 213 個 item 有 5 筆長期不一致，\n"
+                "  其中一筆改名 18 小時後仍是舊值。⇒ 這不是本次寫入失敗，是那一格沒有 writer。\n"
+                "  ⛔ 不得把它讀成「已同步」，也⛔ 不得重跑本指令期待它收斂。\n"
+                "  看板檢視上讀者看到的就是這一格 ⇒ 需要它正確時，今天唯一的出路是人工在"
+                " Projects UI 上處理，或由需求方裁定該欄退出判準。",
+                file=sys.stderr,
+            )
 
     # ---- 雙居所欄位：body 之後補寫 Project 側，並讀回驗證 ----
     #

@@ -2170,21 +2170,110 @@ def _card_routing_line(runner) -> str:
     return next(line for line in head.splitlines() if line.startswith("- 執行："))
 
 
-def test_amend_feature_writes_all_three_derived_surfaces_and_reads_back(card):
-    """寫入集：Issue title ＋ Project item title ＋ ``功能`` 欄。
+def _world(runner) -> str:
+    """替身的全部世界狀態（items／issues／projects）的可比對快照。
 
-    ⚠️ 前兩者在 issue-backed 卡上是**同一次寫入**（Project item 的標題是 Issue 標題的
-    平台導出），⇒ 這裡讀回**兩處**分別驗，⛔ 不以其中一處代表另一處。
+    ⚠️ 用 ``pprint`` 而非 ``json``：``projects`` 的鍵是 ``(owner, number)`` tuple，
+    json 編不動。⛔ 不改成只比 items——那會漏掉 issues（標題就寫在那裡）。
     """
+    import copy, pprint
+
+    return pprint.pformat(
+        {"items": copy.deepcopy(runner.items), "issues": copy.deepcopy(runner.issues),
+         "projects": copy.deepcopy(runner.projects)},
+        width=200, sort_dicts=True,
+    )
+
+
+def test_amend_feature_writes_the_two_writable_surfaces_and_reads_all_three(card, capsys):
+    """寫入集：Issue title ＋ Project item title ＋ ``功能`` 欄——**三個分開讀回**。
+
+    ⭐ 上一版這條叫「three derived surfaces」並只讀回兩個（`content.title` 與 `功能`），
+    於是它對 Project 內建 `Title` **欄**結構性沉默——`WF-REDESIGN-W1` R1-1 就是這樣漏掉的。
+
+    ⚠️ 現在的斷言分兩類，⛔ 不混為一談：
+    - **寫得動的兩個**（Issue 本體的 title、GraphQL `content.title`）必須是新值；
+    - **寫不動的那一個**（Project 內建 `Title` 欄）必須**仍是舊值**，且指令必須印出警示。
+      平台實測逐字：`updateProjectV2ItemFieldValue` 對 issue-backed item 回
+      "The title field can only be updated on DraftIssues"。
+    """
+    before_title_field = _item(card).text("Title")
     rc = run_cli(
         ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "功能名收窄", "--feature", "待審清單與開卡閘"]
     )
     assert rc == 0
     item = _item(card)
-    assert item.title == "AMEND-DEMO1 待審清單與開卡閘"                      # Project item title
-    assert card.issues[item.issue_url]["title"] == "AMEND-DEMO1 待審清單與開卡閘"  # Issue title
-    assert item.text("功能") == "待審清單與開卡閘"                            # Project 欄位
-    assert "→ 功能：" in item.body and "理由 功能名收窄" in item.body          # Log 留痕
+    # 寫得動的兩個
+    assert card.issues[item.issue_url]["title"] == "AMEND-DEMO1 待審清單與開卡閘"
+    assert item.title == "AMEND-DEMO1 待審清單與開卡閘"
+    assert item.text("功能") == "待審清單與開卡閘"
+    assert "→ 功能：" in item.body and "理由 功能名收窄" in item.body
+    # 寫不動的那一個：仍是舊值，且被大聲說出來
+    assert item.text("Title") == before_title_field != "AMEND-DEMO1 待審清單與開卡閘"
+    err = capsys.readouterr().err
+    assert "Project 內建 `Title` 欄" in err
+    assert "can only be updated on DraftIssues" in err
+    assert "本次仍放行" in err
+
+
+def test_the_title_field_warning_is_conditional_not_unconditional(card, capsys):
+    """⛔ 負控：警示必須由**讀回值**決定，⛔ 不是無條件印。
+
+    把替身的旋鈕打開（模擬「若平台哪天讓該欄跟著改名走」）⇒ 三個 surface 一致 ⇒
+    ⛔ 不得再印警示。沒有這條，把警示寫成無條件 `print` 也會讓上一條全綠。
+    """
+    card.title_field_follows_rename = True
+    assert run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "同步三欄", "--feature", "跟著走的功能名"]
+    ) == 0
+    item = _item(card)
+    assert item.text("Title") == item.title == "AMEND-DEMO1 跟著走的功能名"
+    assert "Project 內建 `Title` 欄" not in capsys.readouterr().err
+
+
+def test_amend_feature_refuses_blank_before_touching_anything(card, capsys):
+    """R1-2（a）：空／全空白 feature ⇒ rc=2，且**連讀都沒讀**過遠端。"""
+    for blank in ("", "   ", "\u3000"):
+        before = _world(card)
+        rc = run_cli(
+            ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "想清空功能", "--feature", blank]
+        )
+        assert rc == 2, blank
+        err = capsys.readouterr().err
+        assert "不得為空或全空白" in err, blank
+        assert _world(card) == before, f"{blank!r}：拒收必須零寫入"
+
+
+def test_amend_feature_refuses_a_no_op_before_any_write(card, capsys):
+    """R1-2（b）：值未變 ⇒ rc=2，body／title／`功能` 欄／Log 全部零寫入。
+
+    ⚠️ 上一版對現值再給一次 `--feature` 會回 rc=0 並在 Log 寫出
+    「示範功能→示範功能」這種**不實**的修訂紀錄。
+    """
+    current = _item(card).text("功能")
+    assert current == "示範"
+    before = _world(card)
+    rc = run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "再寫一次同樣的值", "--feature", current]
+    )
+    assert rc == 2
+    assert "功能與現值相同" in capsys.readouterr().err
+    assert _world(card) == before, "拒收必須零寫入"
+    body = _item(card).body
+    assert "→ 功能：" not in body, "Log 不得出現這一筆"
+
+
+def test_amend_feature_no_op_check_reads_the_field_not_the_title(card):
+    """判準取 `功能` 欄、⛔ 不取 Issue 標題——標題是 `<卡ID> <功能>` 的合成值。
+
+    ⛔ 沒有這條，把判準寫成「標題相同才算 no-op」也會讓上一條綠：那個寫法會把
+    「功能沒變但卡ID 變了」誤放行，而卡ID 根本不歸 amend 改。
+    """
+    assert run_cli(
+        ["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "改成不同值", "--feature", "另一個功能"]
+    ) == 0
+    assert _item(card).text("功能") == "另一個功能"
+    assert _item(card).title == "AMEND-DEMO1 另一個功能"
 
 
 def test_amend_routing_updates_only_the_named_groups(card):

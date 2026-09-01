@@ -376,15 +376,38 @@ def create_repo_issue(runner: GhRunner, repo: str, title: str, body: str) -> tup
     return number, url
 
 
+#: Project 內建 `Title` 欄的欄位名。
+#:
+#: ⛔ **它與 `ItemSnapshot.title`（＝GraphQL `content.title`）不是同一個東西**，而本 repo
+#: 曾經把它們當成同一個（`WF-REDESIGN-W1` R1-1）。兩個實測事實：
+#:
+#: 1. **寫不了**（2026-08-31 對真 Project #4 的 item `PVTI_lAHOAvJcys4BfXPrzg4nJLo` 實跑
+#:    `updateProjectV2ItemFieldValue`，fieldId=`PVTF_lAHOAvJcys4BfXPrzhZqqUk`）：平台回
+#:    `VALIDATION` 錯誤，訊息逐字 **"The title field can only be updated on DraftIssues"**。
+#:    ⇒ issue-backed item 的這一欄**沒有 writer**，wfcli 也不例外。
+#: 2. **它是會過期的投影**（同日全量掃描 213 個 item）：`content.title != Title 欄` 者
+#:    **5 筆**（`aiwf#177` 與四張 cpbl 卡）。`aiwf#177` 的改名事件在
+#:    `2026-08-31T02:41:39Z`（`RENAMED_TITLE_EVENT` 恰 1 筆），該欄 18 小時後仍是舊值
+#:    ⇒ **改名不會刷新它**。
+#:
+#: ⛔ **不得由此推出「它永不收斂」**——量到的是「≥18 小時未收斂」，⛔ 不是永不。
+#: ⛔ 也不得把 `content.title` 改名成「第二個 surface」來讓某條 oracle 成立：那是把
+#:    量不到的東西改個名字宣稱量到了。
+PROJECT_TITLE_FIELD = "Title"
+
+
 def set_issue_title(runner: GhRunner, repo: str, issue_number: int, title: str) -> None:
     """改 Issue 標題。
 
-    ⭐ **Project item 的標題⛔ 沒有第二個 writer**：issue-backed item 的
-    ``content.title`` 就是 Issue 的標題（平台導出），⇒ 這一次寫入同時覆蓋
-    ``WF-REDESIGN-W1`` 驗收 5b 寫入集裡的「Issue title」與「Project item title」兩項。
-    ⛔ 不得由此推出「兩者是同一個欄位」——DraftIssue 上它們才是兩條路徑
-    （見 :func:`set_item_body`），只是 ``open`` 已不再產生 DraftIssue。
-    ⚠️ 呼叫端仍須**讀回驗證**：導出是平台行為，不是本函式的保證。
+    ⭐ 這一次寫入覆蓋兩個 surface 中的**一個半**：Issue 本體的標題（真的被寫），以及
+    GraphQL ``content.title``（它就是 Issue 標題，必然跟著）。
+
+    ⛔ **它碰不到第三個 surface**：Project 內建 `Title` **欄**（見
+    :data:`PROJECT_TITLE_FIELD`）——平台明文只允許在 DraftIssue 上寫它。
+    ⚠️ 2026-08-31 之前本檔的 docstring 逐字寫著「Project item 的標題⛔ 沒有第二個
+    writer」，那句話**是錯的**：它把 `content.title` 與 `Title` 欄當成同一個東西，
+    而實測全板 213 個 item 有 5 筆兩者不同。該句已刪。
+    ⚠️ 呼叫端仍須**讀回驗證**，且必須把三個 surface 分開讀。
     """
     runner.execute(["issue", "edit", str(issue_number), "--repo", repo, "--title", title])
 
@@ -623,6 +646,7 @@ __all__ = [
     "ProjectMeta",
     "add_issue_comment",
     "add_item_to_project",
+    "PROJECT_TITLE_FIELD",
     "create_draft_item",
     "set_issue_title",
     "create_repo_issue",

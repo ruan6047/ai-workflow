@@ -85,10 +85,29 @@ class FakeGhRunner(GhRunner):
         self._seq += 1
         return f"{prefix}{self._seq}"
 
+    #: ⭐ Project 內建 `Title` 欄的**測試旋鈕**，預設 ``False``＝不跟著 Issue 改名走。
+    #:
+    #: (a) 現在的行為：`gh issue edit --title` 更新 item 的 `content.title`，但**不動**
+    #:     `Title` 欄值。
+    #: (b) 為什麼：這是**實測到的平台行為**，⛔ 不是猜的——2026-08-31 對真 Project #4
+    #:     全量掃描 213 個 item，`content.title != Title 欄` 者 **5 筆**；其中 `aiwf#177`
+    #:     的改名發生在 `2026-08-31T02:41:39Z`（RENAMED_TITLE_EVENT 恰 1 筆），而該欄在
+    #:     18 小時後仍是舊值。⇒ 改名**不會**刷新這個投影。
+    #: (c) ⛔ 不得由此推出「它永遠不收斂」——量到的是「≥18 小時未收斂」，⛔ 不是永不。
+    #:     旋鈕留著就是為了讓「若平台哪天改成會收斂」也表達得出來。
+    #: ⚠️ 上一版的替身把兩者同步更新 ⇒ **測試在構造上表達不出這種分歧**，`WF-REDESIGN-W1`
+    #:     R1-1 就是這樣漏掉的。
+    title_field_follows_rename = False
+
     def _ensure_project(self, owner: str, number: str | int) -> dict[str, Any]:
         key = (owner, int(number))
         if key not in self.projects:
             self.projects[key] = {"id": self._next("PVT_"), "fields": {}}
+            # 內建 `Title` 欄（dataType=TITLE）在真 Project 上恆存在，⛔ 不是 field-create
+            # 出來的 ⇒ 這裡直接放進去，不經 `project field-create` 那條路。
+            self.projects[key]["fields"]["Title"] = {
+                "id": self._next("PVTF_TITLE_"), "gh_type": "ProjectV2Field", "options": [],
+            }
         return self.projects[key]
 
     def add_builtin_status(self, owner: str, number: int, options: list[str]) -> None:
@@ -214,7 +233,8 @@ class FakeGhRunner(GhRunner):
             self.items[item_id] = {
                 "content_type": "DraftIssue", "title": flags["--title"],
                 "body": flags.get("--body", ""), "issue_number": None, "issue_url": None,
-                "repo": None, "fields": {}, "_project_key": (owner, int(number)),
+                "repo": None, "fields": {"Title": flags["--title"]},
+                "_project_key": (owner, int(number)),
                 "content_id": content_id,
             }
             self.content_id_to_item_id[content_id] = item_id
@@ -231,7 +251,8 @@ class FakeGhRunner(GhRunner):
             self.items[item_id] = {
                 "content_type": "Issue", "title": issue["title"], "body": issue["body"],
                 "issue_number": issue["number"], "issue_url": url, "repo": issue["repo"],
-                "fields": {}, "_project_key": (owner, int(number)),
+                # `Title` 欄的值在**上板當下**取一次快照；之後由 title_field_follows_rename 決定跟不跟。
+                "fields": {"Title": issue["title"]}, "_project_key": (owner, int(number)),
             }
             return json.dumps({"id": item_id})
 
@@ -267,6 +288,9 @@ class FakeGhRunner(GhRunner):
                 item["body"] = flags["--body"]
             if "--title" in flags:
                 item["title"] = flags["--title"]
+                # ⚠️ draft item 是**唯一**平台允許寫 `Title` 欄的型別（實測錯誤訊息逐字：
+                # 「The title field can only be updated on DraftIssues」）⇒ 這裡兩者同寫。
+                item["fields"]["Title"] = flags["--title"]
             return json.dumps(
                 {"id": edit_id, "title": item["title"], "body": item["body"], "type": item["content_type"]}
             )
@@ -310,12 +334,16 @@ class FakeGhRunner(GhRunner):
             url = f"https://github.com/{repo}/issues/{number}"
             if "--title" in flags:
                 self.issues[url]["title"] = flags["--title"]
-                # Project item 的標題是 Issue 標題的平台**導出**：真實 GitHub 上改
-                # Issue 標題，看板上那一列跟著變。替身照做，否則 amend --feature 的
-                # 「Project item title 讀回驗證」在這裡永遠讀到舊值而假紅。
+                # ⭐ **兩個 surface 分開建模**（`WF-REDESIGN-W1` R1-1）：
+                # `content.title` 跟著改名走（GraphQL 讀 Issue 本體，必然是新值）；
+                # Project 內建 `Title` **欄**預設**不跟**——實測依據見
+                # ``title_field_follows_rename`` 上方那段。
+                # ⛔ 上一版把兩者一起更新，於是替身比真實平台**寬鬆**，測試表達不出分歧。
                 for item in self.items.values():
                     if item.get("issue_url") == url:
                         item["title"] = flags["--title"]
+                        if self.title_field_follows_rename:
+                            item["fields"]["Title"] = flags["--title"]
             if "--body" in flags:
                 # ⭐ 每次改 body 都留一版——這是真實 `userContentEdits` 的語意
                 # （2026-08-25 對 aiwf#16 實測：totalCount 50、first:100 全數取回、
