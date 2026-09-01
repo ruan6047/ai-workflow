@@ -99,6 +99,7 @@ worktree 的本地 main **會落後**。實例：2026-08-29 本 worktree 落後 
 - **推翻要在宣稱自己的母體上做。** 實例：2026-08-29 我斷言「Codex PM 沒有寫入通道」，依據是 memory 記的「Copilot 沒有 wfcli」—— 但 Copilot 跑在 GitHub 雲端沒有 shell，Codex 跑在本機。實查 `~/.codex/config.toml` 有 `[projects."/Users/ruanruan/Dev/ai-workflow"]` `trust_level = "trusted"`，`gh` 以 keyring 認證為 `ruan6047`（scopes 含 `repo`／`project`）⇒ **Codex 可以跑 wfcli**。
 
 ---
+- **⛔ 不為設計失誤硬改，⛔ 不為舊文件訂特殊規則。** 機制卡住時先講出「是設計錯了、還是我用錯了」；若是設計錯了就**登記它**，⛔ 不繞過、⛔ 不在旁邊補只為它成立的例外。舊文件擋住流程時同理：⛔ 不因為它舊就替它另訂規則，⛔ 也不為了讓舊卡通過而放寬既有條文——**要改的是內容，⛔ 不是規範**。實例：2026-09-02 PM 先建議「`w2b.md` 維持現狀、CI 自己是便條」，那是在遷就守衛硬綁任務文檔的設計錯誤（量測登記於 `#213`）；同日 PM 另提「改 AC ＋ 開 FIX 卡」以讓舊卡通過，需求方逐字擋下並給出本條原則。
 
 ## 五 · 第二 PM
 
