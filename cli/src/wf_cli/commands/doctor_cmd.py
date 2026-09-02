@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..doctor import (
     TRAILER_GUARD_EPOCH,
+    DoctorHelpersUnavailable,
     audit_commit_trailers,
     audit_review_channel,
     run_doctor,
@@ -119,6 +120,45 @@ def build_json_payload(report, review_channel_finding, commit_trailer_report=Non
 
 
 def run(args: argparse.Namespace) -> int:
+    """`wfcli doctor` 的入口。**只多做一件事：接住抽出腳本缺席**。
+
+    ⭐ **明示降級**（`WF-REDESIGN-W3` 驗收 2）：doctor 的一部分判定與渲染邏輯自本卡起
+    住在 `<repo>/scripts/doctor_pure.py`，指令本體只留委派（見 `doctor.py` 的
+    「抽出腳本的委派邊界」一節）。腳本載入不到時：**印警告 ＋ 明說本次未執行 ＋
+    ⛔ 不 fallback 回內建邏輯**（那份邏輯已經不在 `doctor.py` 了）。
+
+    ⚠️ **本函式對規格的一處歧義做了裁斷，明文登記於此：**
+    規格逐字是「印警告＋標『未執行』＋**rc 不變**」。若照字面在 `--strict` 下也回 0，
+    CI 會對一次**什麼都沒檢查**的執行亮綠燈——那是**假綠**，比擋人更糟。
+    ⇒ 取「降級本身⛔ 不改 rc；但 `--strict` 回 1」。理由：`--strict` 的語意是
+    「有 finding 就紅」，而「查不了」**⛔ 不等於「沒有 finding」**。
+    ⚠️ 這⛔ 不使 doctor 變成擋人點：`--strict` 本來就會回 1，本分支⛔ 沒有新增
+    任何**非** `--strict` 路徑上的非零 rc。
+
+    ⚠️ **降級的粒度是整次執行，⛔ 不是逐章節。** 六個委派名字分散在
+    `run_doctor`／`audit_review_channel`／`audit_commit_trailers` 三處 ⇒ 逐章節降級
+    要把旗標穿過三層。印半份報告比明說「未執行」更危險，⇒ 取粗粒度並明說。
+    """
+    try:
+        return _run_doctor_command(args)
+    except DoctorHelpersUnavailable as exc:
+        print(f"[doctor] ⚠️ 明示降級：{exc}", file=sys.stderr)
+        print(
+            "[doctor] ⇒ 本次檢查**未執行**（⛔ 不是「沒有 finding」）。"
+            "⛔ 不 fallback 回內建邏輯——那份邏輯已不在 wfcli 內。",
+            file=sys.stderr,
+        )
+        if args.strict:
+            print(
+                "[doctor] --strict 下回 1：查不了⛔ 不得亮綠燈。"
+                "⚠️ 非 --strict 路徑的 rc ⛔ 不受本次降級影響。",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+
+
+def _run_doctor_command(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root)
     if not repo_root.exists():
         print(f"[doctor] repo 路徑不存在：{repo_root}", file=sys.stderr)

@@ -145,7 +145,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
   （`CHECKPOINT_DECISIONS`），但它寫的是 checkpoint 留言，不改交付狀態——所以「該不該升級」
   的判斷與「卡真的變成已升級」之間沒有機械連線，中間靠人打 `assign --status`。
 - **`📦已合併`**：canonical §4.4 明訂「現役的定義含 `📦已合併`」「停在 `📦已合併` 不收尾
-  ＝假活卡」。工具**讀**它（`doctor.py:1269` 的比對）卻沒有專責寫入動詞。實務上這個狀態
+  ＝假活卡」。工具**讀**它（`doctor.py::run_doctor` 的比對）卻沒有專責寫入動詞。實務上這個狀態
   是怎麼被設定的（`assign --status`？看板 UI？），**工具帳上分不出來**；若是後者即違反
   §4.3「唯一寫入通道」紅線。**需求方裁定。**
 
@@ -256,7 +256,7 @@ tests/test_contract_tool_reconcile.py`、記錄紅綠、還原。基準是 33 pa
 - **`review-correction`**（`review-escalation.md` §2：finding 結構化狀態衝突須以此事件裁決；
   §4 的六格處置也引用它）。無 writer ⇒ 衝突無法閉合 ⇒ §2 的 fail loud 一旦觸發就無出口。
 - **`review-marker-clearance`**（§1 第五層次「留痕解析停機」的唯一解除表示法）。
-  `doctor.py:517` **偵測得到**停機，但沒有任何解除 writer。`review.py:1239` 自己寫著
+  `doctor.py::audit_review_channel` **偵測得到**停機，但沒有任何解除 writer。`review.py:1239` 自己寫著
   checkpoint 的機械推導「被 `review-marker-clearance` 的留痕解析停機（解除表示法未定義）
   擋住」。
 - **`baseline-change-request`**（`baseline-cascade.md` §1 凍結步驟要求在卡 Log 與 lifecycle

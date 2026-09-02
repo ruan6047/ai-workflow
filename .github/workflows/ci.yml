@@ -116,3 +116,37 @@ jobs:
         if: ${{ !cancelled() }}
         # 用 uv 釘住的直譯器，不用 runner 的預設 python3（那個沒有釘）。
         run: uv run --no-project --python 3.12 scripts/replay_escalation_rules.py
+
+  doctor-pure:
+    # ⚠️ **新 job、新名字。** `tests` 的 name ⛔ 未改也⛔ 未拆——ruleset 20768920 的
+    # required check 字面就是 `tests`（`strict: True`），改名或拆開會讓所有 PR 永遠
+    # 停在 pending。
+    #
+    # ⚠️ **本 job ⛔ 未接線為 required check**（`WF-REDESIGN-W3` 規劃階段裁定 8）。
+    # 它已具名，但把它加進 ruleset 是**需求方**的動作，⛔ 不由本卡代行。
+    #
+    # ⭐ **它守的東西⛔ 不與 `tests` 重疊**：`tests` 在裝好 `wf_cli` 的環境裡跑，因此
+    # 看不見「`scripts/doctor_pure.py` 偷偷 import 了 `wf_cli`」這個回歸——那個 import
+    # 在那裡永遠成功。本 job 用 `--no-project`（⛔ 不裝 `wf_cli`）跑同一支腳本，
+    # 收錄判準第 1 條一旦被破壞就立刻紅。
+    name: doctor-pure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: checkout
+        # v7.0.1；同 tests job，釘 commit SHA 而非 tag。
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: setup uv
+        # v9.0.0，同樣釘 SHA。⛔ 不設 working-directory：本 job 刻意**不進 cli/**，
+        # 也刻意**不裝**任何專案相依——那正是它要證明的事。
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version: "0.11.19"
+          python-version: "3.12"
+
+      - name: doctor 抽出腳本自檢（無 wf_cli）
+        # 退出碼即判定，形狀同 tests job 的 escalation replay。
+        run: uv run --no-project --python 3.12 scripts/doctor_pure.py
