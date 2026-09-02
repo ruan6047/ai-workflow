@@ -60,9 +60,9 @@ def with_pitfall_report(argv: list[str], card_id: str) -> list[str]:
     呼叫端已自備 ``--pitfall-report``、卡不存在（``handoff`` 先回 rc=3）、
     離開階段判不出來（閘門走明文豁免那條分流）。
     """
-    if "--pitfall-report" in argv:
-        return argv
-
+    # ⚠️ **⛔ 不在這裡對「已自備 --pitfall-report」提前 return**（首版是那樣寫的）：
+    # `WF-REDESIGN-W3` 加了**第二道**閘門，自備族清冊報告的呼叫點照樣需要注意事項
+    # 那一份 ⇒ 提前 return 會讓那五條測試在第二道閘門上轉紅。⇒ 兩份**各自**判斷。
     runner = handoff_cmd.default_runner
     owner = argv[argv.index("--owner") + 1]
     number = int(argv[argv.index("--project") + 1])
@@ -83,7 +83,18 @@ def with_pitfall_report(argv: list[str], card_id: str) -> list[str]:
     )
     if resolution.phase is None:
         return argv
-    return [*argv, "--pitfall-report", pitfalls.report_template(resolution.phase)]
+    if "--pitfall-report" not in argv:
+        argv = [*argv, "--pitfall-report", pitfalls.report_template(resolution.phase)]
+
+    # ⭐ `WF-REDESIGN-W3` 驗收 6 加了**第二道**必要前提（注意事項回應清冊）。
+    # 理由與上面那一段完全相同：既有呼叫點的契約又變了一次。
+    # ⚠️ **兩份清冊⛔ 不得互相代用**——值域第一格不同（`已檢查` vs `已遵循`），
+    # 所以這裡是**另一個樣板產生器**，⛔ 不是把同一份餵兩次。
+    # ⚠️ `project_root` 傳 `None`（＝專案層空集合）：既有測試都沒給 `--repo-path`，
+    # 而閘門在那種情形下本來就只要求框架層那 N 條。
+    if "--note-report" not in argv and pitfalls.note_roster_for(resolution.phase):
+        argv = [*argv, "--note-report", pitfalls.note_report_template(resolution.phase)]
+    return argv
 
 #: 踩坑清單那一節的標題**逐字**。標題被改寫時下面的擷取會拿不到節，測試轉紅
 #: ——那是要的：族清冊的來源不見了，碼側的清冊就沒有對照面。
@@ -443,11 +454,52 @@ def _handoff(card_id: str, sha: str, **overrides) -> int:
         "--to": "查核者", "--next-stage": "review",
         "--source-sha": sha, "--evidence": "pytest 全綠",
     }
+    # ⭐ `WF-REDESIGN-W3` 驗收 6 的第二道閘門（注意事項回應清冊）擋在這條路上。
+    # ⚠️ **這裡只補 `--note-report`，刻意⛔ 不補 `--pitfall-report`**：本檔下半那幾條
+    # 端到端測試量的就是**族清冊**閘門在各種輸入下的行為，自動補上族清冊報告會把
+    # 它們變成零資訊（`test_before_the_epoch_no_report_is_required` 首當其衝）。
+    # 兩份清冊⛔ 不得互相代用，這裡的處置也就必然分開。
+    if "--note-report" not in overrides:
+        note = _note_report_for(card_id)
+        if note is not None:
+            defaults["--note-report"] = note
     defaults.update(overrides)
     argv = ["handoff", *_TARGET, card_id]
     for k, v in defaults.items():
         argv += [k, v]
     return _run(argv)
+
+
+def _note_report_for(card_id: str) -> str | None:
+    """依卡此刻的離開階段產出注意事項樣板；判不出階段或清冊為空時回 ``None``。
+
+    ⚠️ 與 :func:`with_pitfall_report` 同樣的自陳：本函式與產線共用同一個
+    ``resolve_departing_phase`` ⇒ 它對「離開階段判得對不對」是**零資訊**的。
+    """
+    runner = handoff_cmd.default_runner
+    # ⚠️ **本函式的讀取⛔ 不得留在呼叫紀錄裡。** `CallLoggingRunner` 會把它們記下來，
+    # 而 `test_missing_report_makes_no_gh_write_call_at_all` 把**產線**的呼叫序列逐筆
+    # 釘死成兩筆——測試配件自己多打的兩筆會把那條變成假紅。⇒ 用完還原。
+    # ⛔ 這⛔ 不是在遮蔽產線的呼叫：還原的只有本函式自己新增的那幾筆。
+    watermark = len(runner.calls) if hasattr(runner, "calls") else None
+    try:
+        try:
+            project = resolve_project(runner, "acme", 1)
+        except ProjectError:
+            return None
+        item = find_item_by_card_id(list_items(runner, project), card_id)
+        if item is None:
+            return None
+        resolution = pitfalls.resolve_departing_phase(
+            item.text("階段"), item.fields.get("交付狀態"),
+            handoff_cmd.STAGE_STATUS, handoff_cmd.STAGE_PHASE,
+        )
+        if resolution.phase is None or not pitfalls.note_roster_for(resolution.phase):
+            return None
+        return pitfalls.note_report_template(resolution.phase)
+    finally:
+        if watermark is not None:
+            del runner.calls[watermark:]
 
 
 def _only_item(runner: FakeGhRunner):

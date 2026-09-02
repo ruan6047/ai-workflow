@@ -164,6 +164,8 @@ Issue 不關，**只記錄本次實際動作與阻擋原因**。守衛擋下、�
 from __future__ import annotations
 
 import argparse
+import os
+import shlex
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -201,6 +203,31 @@ from ..project import (
 from ..registry import RegisteredCard, TasksMdRegistry
 from ..validation import ValidationError, validate_evidence, validate_source_sha
 from .assign_cmd import TERMINAL_STATUSES
+
+#: **只有清理成功後由 CLI 自身寫下**的終態（`WF-REDESIGN-W3` 驗收 8）。
+#:
+#: canonical `AI_WORKFLOW.md` 〈執行者狀態表〉逐字：**結案不是任何角色可直接設定的
+#: 值，是 CLI 清理成功後自身寫下的結果**。
+#:
+#: ⚠️ **⛔ 不得改用既有的 `TERMINAL_STATUSES`**（那含兩個值）：
+#: `🛑已停止` 的條文是另一回事——canonical §0 逐字要求「必填**決策與原因**後封存」，
+#: 而那兩個必填今天**⛔ 沒有任何地方可驗** ⇒ 把它一起擋起來，等於用一個沒有出口的
+#: 閘門換一個沒有條文依據的限制。
+TERMINAL_BY_CLEANUP_ONLY = {"🏁完成"}
+
+#: `--status` 被使用時寫進 Log 行的**裸布林**（需求方 2026-09-02 裁定 B-2）。
+#:
+#: ⛔ **不記繞過哪個閘門、⛔ 不記狀態值、⛔ 不記 next-stage。** 理由是一個既有前提：
+#: `doctor.py` 的長註解逐字「其 Log 行只記 owner／iteration／SHA／證據，**不含
+#: next-stage** 也不含 `--status` 覆寫值，寫入的交付狀態無法由留痕反推」——
+#: 那個前提有**兩個**條件。而 `if args.status:` 之後的 `elif` 鏈裡，**有閘門
+#: （`return 4`）的只有 `release` 與 `backlog` 兩個分支** ⇒ 寫「繞過 release 閘門」
+#: 就洩漏了 `next_stage == "release"`，**直接破掉條件 (1)**。
+#:
+#: ✅ 卡面驗收 8 逐字要的是「**使用**可反推」，⛔ 不是「繞過哪個閘門可反推」——
+#: 裸布林已足夠：`grep 'status-override 是' <全部卡 body>` 即得使用次數。
+#: 未走該路徑時**完全⛔ 不加這一段**（沿 `PHASE_LOG_LABEL` 的既有形狀）。
+STATUS_OVERRIDE_LOG_MARK = "status-override 是"
 
 STAGE_STATUS = {
     "requirement": "💡需求",
@@ -585,6 +612,95 @@ def _pitfall_gate(args: argparse.Namespace, item: ItemSnapshot, ts: str) -> Pitf
     return PitfallGateResult(0, phase, parsed.digest())
 
 
+def _note_gate(
+    args: argparse.Namespace, resolution: pitfalls.PhaseResolution
+) -> PitfallGateResult:
+    """離開現階段的**注意事項回應清冊**閘門（`WF-REDESIGN-W3` 驗收 6）。
+
+    ⭐⭐ **這是與 :func:`_pitfall_gate` 完全分開的第二道閘門，⛔ 兩者不得互相代用。**
+    `templates/delivery-report.md` 逐字「⛔ 不得互相代用」；兩者的**值域第一格不同**
+    （`已檢查` vs `已遵循`）。⇒ 兩個旗標、兩個 parser、兩份樣板。
+
+    **⛔ 沒有 EPOCH 分流**（與族清冊閘門不同，規劃階段裁定 14 已撤）：
+    標記移除即生效。理由是 canonical §0.1 禁「條文生效但無人擋」的空窗——
+    給界線等於自己造一段那樣的空窗。
+    ⚠️ **代價明說且⛔ 不緩衝**：界線前的既有卡（含 cpbl 38 張活卡）下一次交接
+    就要交這份報告。這是登記，⛔ 不是待辦。
+
+    **兩條豁免，各自出聲**（⛔ 豁免不得是靜默的）：
+    1. **離開階段判不出來** ⇒ 明文豁免。理由與族清冊那道完全相同：清冊條數由階段
+       決定，CLI 自己都算不出正確條數卻要求對方交一份條數正確的報告，那是不可能的
+       要求⛔ 不是閘門。⚠️ **這是一個真實的口**，⛔ 不得讀成「這裡有檢查」。
+    2. **`部署`／`維護` 階段的框架層為 0 條**且無專案層 ⇒ 清冊為空，⛔ 不要求。
+       那是**結構性 0**（兩份 stage-rules 的 §5 各有 0 條 `F-`），⛔ 不是遺漏。
+
+    **`--repo-path` 未給 ⇒ 專案層視為空集合，且在 stderr 明示**（⛔ 不靜默）。
+    """
+    if resolution.phase is None:
+        print(
+            "[handoff] 注意：判不出正在離開哪個階段，**本次未要求注意事項回應清冊**"
+            f"（{resolution.basis}）。⛔ 這不是『檢查通過了』，是這條路上沒有檢查。",
+            file=sys.stderr,
+        )
+        return PitfallGateResult(0, resolution.phase or PHASE_UNDECIDABLE_MARK,
+                                 "注意事項回應 豁免（離開階段不可判定）")
+
+    phase = resolution.phase
+    project_root = getattr(args, "repo_path", None)
+    if project_root is None:
+        print(
+            "[handoff] 注意：未給 --repo-path ⇒ **專案層注意事項視為空集合**"
+            "（讀不到 `<專案 repo>/stage-rules/`）。⛔ 這⛔ 不代表該專案沒有加嚴條文。",
+            file=sys.stderr,
+        )
+    try:
+        roster = pitfalls.combined_note_roster(phase, project_root)
+    except pitfalls.ProjectNoteRosterError as exc:
+        print(f"[handoff] 拒絕：{exc}", file=sys.stderr)
+        return PitfallGateResult(2, phase, "")
+
+    if not roster:
+        print(
+            f"[handoff] 注意：「{phase}」階段的注意事項清冊為空"
+            f"（框架層 0 條、專案層 0 條）⇒ **本次未要求回應**。"
+            "⚠️ 那是結構性 0（該階段的 stage-rules §5 沒有條目），⛔ 不是遺漏。",
+            file=sys.stderr,
+        )
+        return PitfallGateResult(0, phase, "注意事項回應 清冊為空")
+
+    text = _read_pitfall_report(getattr(args, "note_report", None))
+    if text is None:
+        print(
+            pitfalls.note_refusal_message(phase, resolution.basis, project_root=project_root),
+            file=sys.stderr,
+        )
+        return PitfallGateResult(2, phase, "")
+
+    parsed = pitfalls.parse_note_report(text, roster)
+    if not parsed.ok:
+        print(
+            pitfalls.note_refusal_message(
+                phase, resolution.basis, parsed.errors, project_root=project_root
+            ),
+            file=sys.stderr,
+        )
+        return PitfallGateResult(2, phase, "")
+
+    counts = parsed.counts()
+    followed = sum(1 for row in parsed.rows if row.kind == "followed")
+    print(
+        f"[handoff] 注意事項回應清冊（離開「{phase}」，{len(parsed.rows)} 條）已收下："
+        f"已遵循 {followed}／不適用 {counts['not_applicable']}／發現 {counts['found']}。"
+        "⛔ CLI 只驗編號窮舉性、值域與非空，**分不出認真遵循與隨手打一行**；"
+        "**判內容的是檢閱那一環——人或另一個 AI。**"
+    )
+    return PitfallGateResult(
+        0, phase,
+        f"注意事項回應 {len(parsed.rows)} 條"
+        f"（已遵循 {followed}／不適用 {counts['not_applicable']}／發現 {counts['found']}）",
+    )
+
+
 def _before_epoch(ts: str, epoch: str) -> bool:
     """本次時戳是否早於界線。**解析失敗時回 False**（＝照樣要求報告）。
 
@@ -638,6 +754,18 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "（報告是多行的，逼成一行會弄丟「每族恰好一列」的形狀）。"
         "缺報告或格數不符時本指令 rc≠0 且狀態面一個字都不寫。"
         "⛔ 通過本閘門不代表內容被驗過——CLI 只驗窮舉性、值域與非空。",
+    )
+    p.add_argument(
+        "--note-report",
+        default=None,
+        help="離開現階段的**注意事項回應清冊**：對框架層 `F-<階段>-NN` 與專案層 "
+        "`P-<階段>-NN` **逐條**回應，每條恰好一行「編號：值」，值三選一"
+        "（已遵循／不適用：<原因>／發現：<處置>）。以 @<路徑> 開頭則讀檔。"
+        "⚠️ **與 --pitfall-report 是兩份不同的清冊、值域第一格不同**"
+        "（已遵循 vs 已檢查），⛔ 不得互相代用。"
+        "判準是**逐格序列相等**（格數不變量）⛔ 非集合相等：重複編號本身即拒收。"
+        "專案層由 --repo-path 決定；未給即視為空集合並在 stderr 明示。"
+        "⛔ 通過本閘門不代表內容被驗過——判內容的是檢閱那一環（人或另一個 AI）。",
     )
     p.add_argument(
         "--iteration",
@@ -699,6 +827,34 @@ def run(args: argparse.Namespace) -> int:
         return 3
 
     if args.status:
+        # ---- 結案閘門（`WF-REDESIGN-W3` 驗收 8）。**純計算、零遠端寫入** ----
+        #
+        # ⭐ `--status` 是 `if`／`elif` 鏈的**第一個**分支，且它是**無 `choices` 的
+        # 自由文字** ⇒ 走它就整個跳過下面兩個分支的前身狀態閘門，靜默繞過、人工審
+        # 抓不到。今日僅有事後偵測（`cleanup.classify_state`），⛔ 沒有事前閘門。
+        #
+        # ⚠️ **⛔ 不得由本閘門推出「結案已不可直接設定」**：
+        # `commands/assign_cmd.py` 的 `set_field_value(..., fields["交付狀態"],
+        # args.status)` 同為零驗證自由文字 ⇒ `wfcli assign --status 🏁完成` 照樣繞得過。
+        # 卡面驗收 8 逐字「射程逐字限 `handoff_cmd.py`」⇒ 那一側**⛔ 不在本條射程**，
+        # 也就是說本閘門在 `assign` 那一側**完全無效**。這是登記，⛔ 不是待辦。
+        if args.status in TERMINAL_BY_CLEANUP_ONLY:
+            repo_path = args.repo_path or os.getcwd()
+            print(
+                f"[handoff] 拒絕：{args.status} 不是任何角色可直接設定的值——canonical "
+                "`AI_WORKFLOW.md` 〈執行者狀態表〉逐字「結案不是任何角色可直接設定的值，"
+                "是 **CLI 清理成功後自身寫下的結果**」。\n"
+                "  ⇒ 改走 release ＋ 收尾清理（下面這行已代入你本次給的實際參數）：\n"
+                f"    wfcli handoff {args.card_id} --to {shlex.quote(args.to)} "
+                f"--next-stage release --source-sha {args.source_sha} "
+                f"--repo-path {shlex.quote(repo_path)} --cleanup "
+                f"--evidence {shlex.quote(args.evidence)}\n"
+                "  ⚠️ 上面代入的 --repo-path 是"
+                + ("你本次給的值" if args.repo_path else f"目前工作目錄 {repo_path}")
+                + "；⛔ 不對的話請改成該卡 worktree 的路徑。",
+                file=sys.stderr,
+            )
+            return 4
         new_status = args.status
     elif args.next_stage == "release":
         deployment_status = item.fields.get("部署狀態")
@@ -799,9 +955,24 @@ def run(args: argparse.Namespace) -> int:
     if gate.rc != 0:
         return gate.rc
 
+    # ⭐ 第二道閘門：注意事項回應清冊（`WF-REDESIGN-W3` 驗收 6）。
+    # ⛔ 與族清冊**分開**——值域第一格不同（`已檢查` vs `已遵循`），
+    # `templates/delivery-report.md` 逐字「⛔ 不得互相代用」。
+    note_resolution = pitfalls.resolve_departing_phase(
+        item.text("階段"), item.fields.get("交付狀態"), STAGE_STATUS, STAGE_PHASE
+    )
+    note_gate = _note_gate(args, note_resolution)
+    if note_gate.rc != 0:
+        return note_gate.rc
+
     trace = f"；{PHASE_LOG_LABEL} {gate.phase_mark}"
     if gate.report_mark:
         trace += f"；{gate.report_mark}"
+    if note_gate.report_mark:
+        trace += f"；{note_gate.report_mark}"
+    if args.status:
+        # ⭐ 裸布林，⛔ 不帶任何值（見 `STATUS_OVERRIDE_LOG_MARK` 的就地說明）。
+        trace += f"；{STATUS_OVERRIDE_LOG_MARK}"
 
     def prepare_card_log(entry: str) -> str:
         """**純計算**下一版 body 並過寫入邊界守衛；⛔ 一次遠端呼叫都不發。
