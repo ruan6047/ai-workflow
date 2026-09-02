@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
-from pathlib import Path
 
 from ..card import (
     CAPABILITY_TIERS,
@@ -36,7 +35,6 @@ from ..card import (
     append_log_line,
     now_iso8601,
     render_issue_body,
-    render_spec_markdown,
     validate_capability_routing,
     validate_routing_names,
 )
@@ -204,11 +202,6 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "格式 `<issue URL>=<covers|related>`。⭐ 預設空陣列是合法的。"
         "⛔ 同一個 URL 不得出現兩次。"
         "⚠️ ⛔ **不含 --from-issue 自己**：升級後那個 issue 就是本卡，指向自己沒有意義。",
-    )
-    p.add_argument(
-        "--spec-dir",
-        default=None,
-        help="git spec 檔骨架寫入目錄（慣例 tasks/）；未給則只改 Issue／上板，不寫檔",
     )
     p.set_defaults(func=run)
 
@@ -596,17 +589,16 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     if card.brief is not None:
         _verify_brief_field(runner, project, item_id, card.brief)
 
-    spec_path: Path | None = None
-    if args.spec_dir:
-        spec_dir = Path(args.spec_dir)
-        spec_dir.mkdir(parents=True, exist_ok=True)
-        spec_path = spec_dir / f"{card.card_id}.md"
-        spec_path.write_text(render_spec_markdown(card), encoding="utf-8")
-
+    # ⚠️ `--spec-dir` 於 2026-09-02 移除（`WF-REDESIGN-W3` 驗收 1，決議 §二 row 10）：
+    # 它把「規格」寫成一個**離卡的本機檔**，而 row 10 的取代者是「規格住卡面」
+    # （見 `card_spec.py` 的 `card-spec:v1` 哨兵）。兩者並存等於兩個真相源，
+    # 而離卡的那一份⛔ 沒有任何機械看得到它有沒有腐爛。
+    # ⛔ 不留過渡期旗標——`registry.py:614` 逐字「給逃生口等於把『沒注意到』
+    # 變成『按一下』」。`card.render_spec_markdown` 本身**保留**（`test_card.py`
+    # 與 `contract_tool_reconcile._CARD_RENDERERS` 仍消費它），移除的只是 open 這條
+    # 寫檔路徑。
     print(
         f"[open] 已由清單項升級為卡 {card.card_id}"
         f"（item_id={item_id}，type=Issue，issue=#{issue_number} {args.from_issue}）"
     )
-    if spec_path:
-        print(f"[open] git spec 檔骨架：{spec_path}")
     return 0

@@ -261,15 +261,18 @@ def test_open_rejects_duplicate_card_id(fake_runner):
     assert run_cli(_open_argv("DUP-CARD1")) == 3
 
 
-def test_open_writes_git_spec_file_skeleton(fake_runner, tmp_path: Path):
-    spec_dir = tmp_path / "tasks"
-    rc = run_cli(_open_argv("SPEC-CARD1", **{"--spec-dir": str(spec_dir)}))
-    assert rc == 0
-    spec_file = spec_dir / "SPEC-CARD1.md"
-    assert spec_file.exists()
-    text = spec_file.read_text(encoding="utf-8")
-    assert "# SPEC-CARD1" in text
-    assert "## 核心痛點" in text
+def test_open_no_longer_accepts_spec_dir(fake_runner):
+    """`--spec-dir` 於 2026-09-02 移除（`WF-REDESIGN-W3` 驗收 1，決議 §二 row 10）。
+
+    ⭐ 這一條**取代**了原本的 `test_open_writes_git_spec_file_skeleton`，⛔ 不是把它
+    刪掉了事：那條測的是「旗標給了會寫檔」，現在要釘的是**旗標不存在**——
+    argparse 對未知旗標以 `SystemExit(2)` 收場。
+    ⚠️ `card.render_spec_markdown` 本身**仍在**（`test_card.py` 另有覆蓋），移除的
+    只是 open 這條寫檔路徑。
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(_open_argv("SPEC-CARD1", **{"--spec-dir": "/tmp/tasks"}))
+    assert excinfo.value.code == 2
 
 
 def test_open_writes_chain_depth_zero_by_default(fake_runner):
@@ -305,8 +308,7 @@ def test_open_rejects_chain_depth_over_hard_cap(fake_runner, capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tmp_path: Path):
-    spec_dir = tmp_path / "tasks"
+def test_open_renders_routing_line_into_issue_body(fake_runner):
     rc = run_cli(
         _open_argv(
             "ROUTING-CARD1",
@@ -315,7 +317,6 @@ def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tm
                 "--exec-capability-reason": "跨模組、根因已知",
                 "--review-capability": "高階型",
                 "--review-capability-reason": "資料正確性紅線，須跨家族",
-                "--spec-dir": str(spec_dir),
             },
         )
     )
@@ -327,8 +328,9 @@ def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tm
     project = resolve_project(fake_runner, "acme", 1)
     item = find_item_by_card_id(list_items(fake_runner, project), "ROUTING-CARD1")
     assert item is not None
+    # ⚠️ 原本這裡還斷言 spec 檔也含同一行；`--spec-dir` 已於 2026-09-02 移除
+    # （`WF-REDESIGN-W3` 驗收 1）⇒ **只剩 body 這一面**，測試名字同步改窄。
     assert expected in item.body
-    assert expected in (spec_dir / "ROUTING-CARD1.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
