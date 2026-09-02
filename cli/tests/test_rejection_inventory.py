@@ -187,28 +187,114 @@ def test_keyword_regex_is_the_card_face_literal():
     assert re.search(ri.KEYWORD_RE, "print('[handoff] 拒絕：foo')")
 
 
-# ---- (6) 卡面驗收 3 的門檻：**≥37 則**（2026-09-02 落地）----
+# ---- (6) 三層母體與切界（需求方 2026-09-02 裁定：「≥37 則」已撤）----
 
 
-def test_at_least_thirty_seven_in_scope_messages_carry_a_runnable_remedy():
-    """卡面驗收 3 逐字「**≥37 則**拒絕訊息補『跑得出』補救」。
+def test_the_three_population_layers_are_nested_and_distinct():
+    """全集 ⊇ 可動母體 ⊇ 可補母體，且**三者的定義各不相同**。
 
-    ⚠️ **三件事必須一起讀，⛔ 不得只看這個數字：**
-
-    1. **這是必要非充分。** 三條機械條件說的是「值得 PM 看」，⛔ 不是「補救跑得出
-       來」。判定者是 PM（決議 `:70` 逐字）。
-    2. **母體在本卡執行期間變大了**：開卡時全集 73／可動 61，本卡自己新增的拒收
-       訊息（驗收 4／7／8 各帶新訊息）使它變成 77／65。門檻是**絕對數 37**，
-       ⛔ 不是比例，故母體變大⛔ 不放寬要求。
-    3. **可動母體裡有 7 則根本不是訊息**（5 則註解＋2 則 docstring，是**描述**訊息
-       形狀的文字）——釘死的 grep 口徑把它們算了進來。真訊息 **58 則**。
-       ⇒ 分母的性質與卡面寫下 61 時的假設不同，這一點已寫進交付報告。
+    ⚠️ 卡面原本的「**≥37 則**」門檻已由需求方 2026-09-02 **撤除**，改為「artifact
+    修對後的**實際可補數**」——因為原門檻本身建立在有缺陷的量測上（見下面兩條）。
+    ⇒ 本檔⛔ 不再斷言任何門檻數字，只釘**口徑**。
     """
-    rows = [r for r in ri.scan(_SRC) if r.in_scope]
-    passing = [r for r in rows if r.mechanical.passes]
-    assert len(passing) >= 37, (
-        f"只有 {len(passing)} 則通過三條機械必要條件，卡面門檻是 ≥37"
+    rows = ri.scan(_SRC)
+    in_scope = [r for r in rows if r.in_scope]
+    fixable = [r for r in in_scope if r.kind == "message"]
+    assert len(fixable) <= len(in_scope) <= len(rows)
+    # 全集的口徑**⛔ 不因分類而改**——它就是釘死的 grep。
+    assert len(rows) == len(_grep_rows())
+
+
+def test_comments_and_docstrings_are_not_messages():
+    """⭐ 需求方裁定：註解與 docstring **不是訊息**，移出可補母體。
+
+    釘死的 grep 抓的是**字面** ⇒ 它抓得到「描述這個格式的文字」：函式 docstring 在
+    說明檢查行為時會引用 ``[open] 拒絕：…``，`#:` 註解也會。那些補不了補救。
+    ⚠️ 它們**仍列進全集**（上一條已釘），⛔ 不因為分類而改 grep 口徑。
+    """
+    in_scope = [r for r in ri.scan(_SRC) if r.in_scope]
+    kinds = {r.kind for r in in_scope}
+    assert kinds <= {"message", "comment", "docstring"}
+    assert any(r.kind == "comment" for r in in_scope)
+    assert any(r.kind == "docstring" for r in in_scope)
+    # 分類是**互斥且窮盡**的：每一則恰好落在一格。
+    assert all(r.kind in ("message", "comment", "docstring") for r in in_scope)
+
+
+def test_a_hit_inside_a_comment_blows_the_statement_boundary():
+    """⭐ **根因**：`#` 註解對 AST **完全不可見**。
+
+    ⇒ 「包住命中行的最內層 statement」退化成整個 `FunctionDef`，片段被撐成幾百行，
+    而三條機械條件會從那幾百行的**別處**撈到一條指令、判成 `passes: true`。
+    實測（2026-09-02）：`open_cmd.py` 的三則各取到整個 `run()`，**324 行**。
+    """
+    in_scope = [r for r in ri.scan(_SRC) if r.in_scope]
+    blown = [r for r in in_scope if not r.mechanical.boundary_ok]
+    assert blown, "切界偵測沒有抓到任何東西 ⇒ 它是零資訊的"
+    assert all(r.kind == "comment" for r in blown), "切界失敗的根因應該只有一種"
+    assert all(r.span > ri.STATEMENT_SPAN_CEILING for r in blown)
+
+
+def test_a_blown_boundary_can_never_pass_however_the_three_conditions_look():
+    """切界失敗時，前三條看的**根本不是這一則訊息的文字** ⇒ `passes` 一律 `False`。"""
+    blown = [r for r in ri.scan(_SRC) if r.in_scope and not r.mechanical.boundary_ok]
+    assert blown
+    for row in blown:
+        assert row.mechanical.passes is False
+    # ⭐ 反證：其中至少有一則的前三條**單獨看是成立的**——那正是修補前它被誤判的原因。
+    assert any(
+        r.mechanical.has_command and r.mechanical.head_ok and r.mechanical.no_placeholder
+        for r in blown
     )
+
+
+def test_the_span_ceiling_is_justified_by_a_gap_not_by_taste():
+    """20 這個值的依據是**斷層**：中位數 6、第 5 大 15，而前 4 大是 324／324／324／54。
+
+    ⛔ 這條⛔ 不是在斷言那幾個數字（它們會隨碼變動），而是在斷言**斷層還在**：
+    門檻兩側必須有明顯的空隙，否則它就變成一個任選的數。
+    """
+    spans = sorted((r.span for r in ri.scan(_SRC) if r.in_scope), reverse=True)
+    below = [n for n in spans if n <= ri.STATEMENT_SPAN_CEILING]
+    above = [n for n in spans if n > ri.STATEMENT_SPAN_CEILING]
+    assert above and below
+    assert min(above) >= 2 * max(below), (
+        f"門檻兩側已經沒有斷層（上緣 {min(above)}／下緣 {max(below)}）⇒ "
+        f"{ri.STATEMENT_SPAN_CEILING} 這個值需要重新給依據"
+    )
+
+
+def test_the_boundary_detector_is_not_a_whitelist():
+    """⛔ **不得用白名單列那四個位置**——那是「開放集合→封閉集合」反過來走。
+
+    ⭐ 反證：對一段**新造**的、含註解命中的長函式，偵測器必須照樣響。
+    """
+    import inspect
+
+    source = inspect.getsource(ri)
+    for literal in ("open_cmd.py:358", "open_cmd.py:403", "open_cmd.py:410", "card.py:372"):
+        assert f'"{literal}"' not in source, f"碼裡出現了位置白名單：{literal}"
+
+    tmp = _REPO_ROOT / "cli" / "tests" / "__span_probe__"
+    tmp.mkdir(exist_ok=True)
+    try:
+        body = "\n".join(f"    x{i} = {i}" for i in range(60))
+        (tmp / "probe.py").write_text(
+            "def f():\n"
+            '    print("請改用 wfcli amend DEMO --reason foo")\n'
+            "    # 這一行在註解裡提到 [open] 拒絕： 的格式\n"
+            + body
+            + "\n",
+            encoding="utf-8",
+        )
+        rows = ri.scan(tmp)
+        assert len(rows) == 1
+        assert rows[0].kind == "comment"
+        assert rows[0].mechanical.boundary_ok is False
+        assert rows[0].mechanical.passes is False
+    finally:
+        (tmp / "probe.py").unlink(missing_ok=True)
+        tmp.rmdir()
 
 
 def test_the_remedy_commands_contain_no_placeholder_at_all():
@@ -216,10 +302,14 @@ def test_the_remedy_commands_contain_no_placeholder_at_all():
 
     ⚠️ ⛔ 不得用 `<在此填寫>` 這種**指令**佔位（`intake.py` 逐字）。訊息可以有
     **內容**佔位，但那必須寫在指令之外——本測試量的正是「指令本身」。
+    ⚠️ 只看**可補母體**：切界失敗那幾則的 `command` 是從無關的碼撈來的，量它沒有意義。
     """
     offenders = [
         (r.file, r.line, r.mechanical.command)
         for r in ri.scan(_SRC)
-        if r.in_scope and r.mechanical.has_command and not r.mechanical.no_placeholder
+        if r.in_scope
+        and r.kind == "message"
+        and r.mechanical.has_command
+        and not r.mechanical.no_placeholder
     ]
     assert offenders == [], offenders

@@ -69,6 +69,19 @@ KEYWORD_RE = re.compile(r"\[[a-z-]+\] 拒[絕收]")
 #: 它們的訊息**仍進全集**（盤點是唯讀的），只是 ``in_scope=False``。
 OUT_OF_SCOPE_FILES = frozenset({"deploy_state_cmd.py", "deploy_declare_cmd.py"})
 
+#: **切界上限**：一則訊息的 statement 跨行數超過它，即判定 AST 定位**切界失敗**。
+#:
+#: ⭐ **為什麼要有這一條**（`WF-REDESIGN-W3` R1／需求方 2026-09-02 裁定）：AST 只看得見
+#: **statement**，看不見 `#` 註解。命中行落在註解裡時，「包住它的最內層 statement」會
+#: 退化成整個 `FunctionDef` ⇒ 片段變成幾百行，而三條機械條件會從那幾百行的**別處**
+#: 撈到一條指令，判成 `passes: true`。實測：`open_cmd.py:358`／`:403`／`:410` 各取到
+#: 整個 `run()`（**324 行**），其 `command` 是從無關的地方撈來的。
+#:
+#: **20 這個值的依據是斷層，⛔ 不是品味**（量測日 2026-09-02，可動母體 66 則）：
+#: 跨行數中位數 **6**，第 5 大是 **15**，而前 4 大是 **324／324／324／54**。
+#: ⛔ **不得改成白名單列那四個位置**——那是「開放集合→封閉集合」反過來走。
+STATEMENT_SPAN_CEILING = 20
+
 #: 裁定 17 第 (ii) 條的首 token 封閉集合。⛔ 不得擴張——值域的 owner 是規劃階段的規格。
 RUNNABLE_HEADS = ("wfcli", "git", "gh")
 
@@ -92,9 +105,14 @@ class Mechanical:
     #: 撈到的第一條指令原文（供 PM 判定時直接看）；沒撈到為 ``None``。
     command: str | None = None
 
+    #: AST 定位有沒有切在合理的邊界上（見 :data:`STATEMENT_SPAN_CEILING`）。
+    #: ⚠️ 這**不是**裁定 17 的第四條——它是**前三條能不能被信任**的前提：切界失敗時
+    #: 那三條看的根本不是這一則訊息的文字。
+    boundary_ok: bool = True
+
     @property
     def passes(self) -> bool:
-        return self.has_command and self.head_ok and self.no_placeholder
+        return self.boundary_ok and self.has_command and self.head_ok and self.no_placeholder
 
 
 @dataclass
@@ -110,10 +128,40 @@ class Rejection:
     statement: str
     statement_lines: tuple[int, int]
     in_scope: bool
+    #: ``message``／``comment``／``docstring``。
+    #:
+    #: ⭐ **釘死的 grep 抓的是字面，抓得到「講這個格式的文字」**：函式 docstring 在
+    #: 描述檢查行為時會引用 ``[open] 拒絕：…``，`#:` 註解也會。那些**不是訊息**，
+    #: 補不了「跑得出的補救」。需求方 2026-09-02 裁定**移出可動母體**。
+    #: ⚠️ 它們**仍列進全集**——全集的定義是釘死的 grep，⛔ 不因為分類而改口徑。
+    kind: str
+    #: statement 跨行數。⚠️ 與 :data:`STATEMENT_SPAN_CEILING` 比對。
+    span: int
     mechanical: Mechanical
     #: PM 逐則判定的欄位，本腳本一律留空——⛔ 內容判斷不由機械代算。
     pm_verdict: str = ""
     pm_remedy: str = ""
+
+
+def _docstring_line_numbers(tree: ast.AST) -> set[int]:
+    """所有 docstring 佔用的行號。
+
+    ⛔ 只認**真正的 docstring**（模組／函式／類別 body 的第一個字串 `Expr`），
+    ⛔ 不認任何字串字面——訊息本身就是字串字面，認寬了會把訊息全部誤判掉。
+    """
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list) or not body:
+            continue
+        first = body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            lines.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+    return lines
 
 
 def _enclosing_statement_at(tree: ast.AST, lineno: int) -> ast.stmt | None:
@@ -139,16 +187,25 @@ def _enclosing_statement_at(tree: ast.AST, lineno: int) -> ast.stmt | None:
     return best
 
 
-def _evaluate(segment: str) -> Mechanical:
+def _evaluate(segment: str, span: int = 1) -> Mechanical:
+    """三條機械必要條件 ＋ **切界是否可信**。
+
+    ⚠️ `span` 超過 :data:`STATEMENT_SPAN_CEILING` 時，前三條看的根本不是這一則訊息的
+    文字（片段被撐成整個函式）⇒ `passes` 一律 `False`，⛔ 不論那三條長怎樣。
+    """
+    boundary_ok = span <= STATEMENT_SPAN_CEILING
     m = _COMMAND_RE.search(segment)
     if m is None:
-        return Mechanical(has_command=False, head_ok=False, no_placeholder=False)
+        return Mechanical(
+            has_command=False, head_ok=False, no_placeholder=False, boundary_ok=boundary_ok
+        )
     command = (m.group(1) + " " + m.group(2)).strip()
     return Mechanical(
         has_command=True,
         head_ok=m.group(1) in RUNNABLE_HEADS,
         no_placeholder=PLACEHOLDER_RE.search(command) is None,
         command=command,
+        boundary_ok=boundary_ok,
     )
 
 
@@ -161,16 +218,30 @@ def scan(src_root: Path) -> list[Rejection]:
         except SyntaxError as exc:  # pragma: no cover - 語料是本 repo 自己的碼
             print(f"[inventory] ⛔ 解析失敗 {path}: {exc}", file=sys.stderr)
             raise
+        docstring_lines = _docstring_line_numbers(tree)
         # ⭐ 定位＝grep 口徑：逐行、逐 occurrence。⛔ 不用 AST 走訪（會重複計數）。
         for lineno, line in enumerate(text.splitlines(), start=1):
             for match in KEYWORD_RE.finditer(line):
                 stmt = _enclosing_statement_at(tree, lineno)
                 if stmt is None:
                     segment = line.strip()
-                    span = (lineno, lineno)
+                    bounds = (lineno, lineno)
                 else:
                     segment = ast.get_source_segment(text, stmt) or line.strip()
-                    span = (stmt.lineno, stmt.end_lineno or stmt.lineno)
+                    bounds = (stmt.lineno, stmt.end_lineno or stmt.lineno)
+                span = bounds[1] - bounds[0] + 1
+
+                # ⭐ **命中落在註解或 docstring 裡 ⇒ 它不是一則訊息。**
+                # `#` 註解對 AST **完全不可見** ⇒ 「最內層 statement」退化成整個
+                # `FunctionDef`；docstring 是 `ast.Expr`，片段看起來正常但內容是
+                # **描述訊息格式的文字**，⛔ 不是訊息本身。兩者都補不了補救。
+                if line.lstrip().startswith("#"):
+                    kind = "comment"
+                elif lineno in docstring_lines:
+                    kind = "docstring"
+                else:
+                    kind = "message"
+
                 verb = match.group(0).split("]")[0].lstrip("[")
                 rows.append(
                     Rejection(
@@ -179,9 +250,11 @@ def scan(src_root: Path) -> list[Rejection]:
                         verb=verb,
                         keyword=match.group(0).split("] ")[1],
                         statement=segment,
-                        statement_lines=span,
+                        statement_lines=bounds,
                         in_scope=path.name not in OUT_OF_SCOPE_FILES,
-                        mechanical=_evaluate(segment),
+                        kind=kind,
+                        span=span,
+                        mechanical=_evaluate(segment, span),
                     )
                 )
     rows.sort(key=lambda r: (r.file, r.line))
@@ -189,15 +262,32 @@ def scan(src_root: Path) -> list[Rejection]:
 
 
 def summarise(rows: list[Rejection]) -> dict:
+    """三層母體，逐層各有各的定義，⛔ 不得互相代用。
+
+    | 層 | 定義 |
+    |---|---|
+    | **全集** | 釘死的 grep 的全部命中。⛔ 口徑不因任何分類而改。 |
+    | **可動母體** | 全集扣掉非射程的兩支 deploy 動詞檔。 |
+    | ⭐ **可補母體** | 可動母體再扣掉 `kind != "message"` 的那些——需求方 2026-09-02 裁定：註解與 docstring **不是訊息**，補不了「跑得出的補救」。 |
+    """
     in_scope = [r for r in rows if r.in_scope]
+    fixable = [r for r in in_scope if r.kind == "message"]
     per_file: dict[str, int] = {}
+    kinds: dict[str, int] = {}
     for r in rows:
         per_file[r.file] = per_file.get(r.file, 0) + 1
+    for r in in_scope:
+        kinds[r.kind] = kinds.get(r.kind, 0) + 1
     return {
         "total": len(rows),
         "in_scope": len(in_scope),
         "out_of_scope": len(rows) - len(in_scope),
+        "in_scope_by_kind": dict(sorted(kinds.items())),
+        "fixable": len(fixable),
+        "boundary_failures": sum(1 for r in in_scope if not r.mechanical.boundary_ok),
         "mechanical_pass_in_scope": sum(1 for r in in_scope if r.mechanical.passes),
+        "mechanical_pass_in_fixable": sum(1 for r in fixable if r.mechanical.passes),
+        "statement_span_ceiling": STATEMENT_SPAN_CEILING,
         "per_file": dict(sorted(per_file.items(), key=lambda kv: -kv[1])),
     }
 
@@ -225,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         "corpus": str(src),
         "out_of_scope_files": sorted(OUT_OF_SCOPE_FILES),
         "summary": summary,
+        "statement_span_ceiling": STATEMENT_SPAN_CEILING,
         "rows": [asdict(r) | {"mechanical": asdict(r.mechanical) | {"passes": r.mechanical.passes}} for r in rows],
     }
 
@@ -234,7 +325,16 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"拒絕訊息全集：{summary['total']} 則")
     print(f"  可動母體（扣非射程 {summary['out_of_scope']} 則）：{summary['in_scope']}")
-    print(f"  三條機械必要條件同時成立（可動母體內）：{summary['mechanical_pass_in_scope']}")
+    print(f"    逐類：{summary['in_scope_by_kind']}")
+    print(
+        f"  ⭐ 可補母體（再扣註解與 docstring）：{summary['fixable']}"
+        "　← 需求方 2026-09-02 裁定：那些**不是訊息**"
+    )
+    print(
+        f"  切界失敗（statement 跨行 > {summary['statement_span_ceiling']}）："
+        f"{summary['boundary_failures']} 則　← 命中落在註解裡，AST 片段被撐成整個函式"
+    )
+    print(f"  三條機械必要條件同時成立（可補母體內）：{summary['mechanical_pass_in_fixable']}")
     print("\n逐檔：")
     for f, n in summary["per_file"].items():
         mark = " ⛔非射程" if Path(f).name in OUT_OF_SCOPE_FILES else ""
