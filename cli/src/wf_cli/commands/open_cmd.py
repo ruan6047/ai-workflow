@@ -50,6 +50,8 @@ from ..project import (
     ensure_fields,
     find_item_by_card_id,
     list_items,
+    oversized_text_fields,
+    render_oversize_rejection,
     resolve_project,
     set_field_value,
     set_issue_title,
@@ -450,6 +452,52 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         return 2
 
     owner_repo, issue_number = _split_issue_url(args.from_issue)
+
+    # ---- 欄位值：**純計算**，⛔ 一次遠端呼叫都不發 ----
+    #
+    # ⭐ 這一塊 2026-09-02 由寫入處（上板之後）**上移到此**。理由是 AC7 的
+    # 「零遠端寫入拒收」：TEXT 欄有 1024 UTF-8 bytes 的伺服端硬上限，而 open 的寫入
+    # 順序是 body → title → 上板 → 欄位（見下方）。若在最後那一步才發現欄位超標，
+    # body 與 title 都已經寫出去了 ⇒ 半寫入（`#217`、`#219` 各發生過一次）。
+    # ⛔ 不得把它搬回去，也⛔ 不得在下方另抄一份——兩份會漂。
+    values = {
+        "卡ID": card.card_id,
+        "Initiative": card.initiative or "—",
+        "級別": card.tier,
+        "功能": card.feature,
+        "owner": card.owner,
+        "分支worktree": card.branch_worktree,
+        "iteration": card.iteration,
+        "交付狀態": card.delivery_status,
+        "部署狀態": card.deployment_status,
+        "最後交接": card.last_handoff,
+        "服務的原始目標": card.service_goal,
+        "鏈深": card.chain_depth,
+        "資源宣告": decl.summary(),
+    }
+    # 雙居所的**導出**那一半（canonical §6.3）：body 是權威，欄位是它的導出。
+    # ⚠️ 只在有簡介時寫——既有卡與不給 --brief 的新卡都不該被塞空字串，那會讓
+    # brief.drifted 把「兩居所皆空」誤判成「欄位有值而 body 沒有」。
+    if card.brief is not None:
+        values["簡介"] = card.brief
+    # 階段軸的初始值（canonical §0.1）：open 建的卡一律始於「需求」——
+    # ⚠️ 與交付狀態 💡需求 同源但**不是同一件事**：那是狀態，這是階段。
+    values["階段"] = "需求"
+
+    oversized = oversized_text_fields(values)
+    if oversized:
+        print(
+            render_oversize_rejection(
+                "open",
+                oversized,
+                "  ⇒ 縮短後重跑同一條 open。清單項原文可用下面這行取出來改"
+                "（已代入實際 repo 與編號）：\n"
+                f"    gh issue view {issue_number} --repo {owner_repo} "
+                f"--json body --jq .body > /tmp/intake-{issue_number}.md",
+            ),
+            file=sys.stderr,
+        )
+        return 2
     target = resolve_target(
         owner=args.owner, project=args.project, repo=args.repo, config=args.config
     )
@@ -541,29 +589,6 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     set_issue_title(runner, owner_repo, issue_number, title)
     item_id = add_item_to_project(runner, target.owner, target.project, args.from_issue)
 
-    values = {
-        "卡ID": card.card_id,
-        "Initiative": card.initiative or "—",
-        "級別": card.tier,
-        "功能": card.feature,
-        "owner": card.owner,
-        "分支worktree": card.branch_worktree,
-        "iteration": card.iteration,
-        "交付狀態": card.delivery_status,
-        "部署狀態": card.deployment_status,
-        "最後交接": card.last_handoff,
-        "服務的原始目標": card.service_goal,
-        "鏈深": card.chain_depth,
-        "資源宣告": decl.summary(),
-    }
-    # 雙居所的**導出**那一半（canonical §6.3）：body 已在上方寫成，欄位在此跟上。
-    # ⚠️ 只在有簡介時寫——既有卡與不給 --brief 的新卡都不該被塞空字串，那會讓
-    # brief.drifted 把「兩居所皆空」誤判成「欄位有值而 body 沒有」。
-    if card.brief is not None:
-        values["簡介"] = card.brief
-    # 階段軸的初始值（canonical §0.1）：open 建的卡一律始於「需求」——
-    # ⚠️ 與交付狀態 💡需求 同源但**不是同一件事**：那是狀態，這是階段。
-    values["階段"] = "需求"
     for name, value in values.items():
         set_field_value(runner, project, item_id, fields[name], value)
     # ⭐ 讀回驗證（§6.3 逐字「寫入順序 body 先、欄位後並讀回驗證」）。
