@@ -58,10 +58,10 @@ from .review import BASELINE_LOG_TAG, CHECKPOINT_LOG_TAG, STATUS_BY_RESULT
 # ⚠️ **明文登記兩件事**：
 # (a) 本卡使 `wfcli doctor` 從自足套件變成**依賴 repo 佈局**（editable 安裝＋目錄
 #     結構兩個前提）。這是取捨、⛔ 不是零成本。
-# (b) 這是**帳面**轉薄，而且帳面很小：`doctor.py` **+105 / −139 ⇒ 淨 −34 行**
-#     （3,039 → **3,005，−1.1%**）——委派層本身 105 行，吃掉大部分減量。執行時
-#     邊界⛔ 未改變（同一條指令、同樣輸出、同樣 rc，那些行照樣被載入執行）⇒ 痛點
-#     「doctor 邏輯駐留 CLI」**⛔ 未關**。新 CI job 是新入口，**0 個既有消費者遷移**。
+# (b) 這是**帳面**轉薄，且**減量比委派層本身還小**。⛔ 此處刻意不寫絕對行數：首版寫了，
+#     而**修那一行本身**就讓它失準（`pollution_check` 的 `行數自述` 腐爛符抓的正是這個）；
+#     確切數字見本卡 commit 訊息與交付報告。執行時邊界⛔ 未改變（同指令、同輸出、同 rc）
+#     ⇒ 痛點「doctor 邏輯駐留 CLI」**⛔ 未關**；新 CI job 是新入口、**0 個消費者遷移**。
 
 #: 抽出腳本的絕對路徑。`<repo>/cli/src/wf_cli/doctor.py` ⇒ `parents[3]` ＝ `<repo>`。
 DOCTOR_PURE_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "doctor_pure.py"
