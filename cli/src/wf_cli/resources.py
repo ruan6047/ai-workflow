@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 # db_scope 封閉列舉，來源 canonical AI_WORKFLOW.md §4.2。
@@ -289,39 +291,331 @@ def try_parse_block(body: str) -> ResourceDeclaration | None:
         return None
 
 
-def find_conflicts(
-    mine: ResourceDeclaration, other_card_id: str, other: ResourceDeclaration
-) -> list[str]:
-    """回傳 mine 與 other 之間互斥衝突的資源字串清單（可能為空）。
+# ===========================================================================
+# `file:` 相交判定（`WF-REDESIGN-W3` 驗收 4(b)）
+# ===========================================================================
+#
+# ⭐ **這一節取代的不是 `find_conflicts` 的謹慎，而是它的射程。**
+# 舊 docstring 逐字「完全相同字串才算撞（**不做路徑前綴模糊比對，避免誤判**）」——
+# 它迴避的是**字串前綴**；本節實作的是**分量序列前綴**，兩者⛔ 不是同一個運算：
+#
+#   `file:templates` × `file:templates2/a.md`
+#       字串前綴 → **誤判相交**（原作者要避的就是這個）
+#       分量序列 → `('templates',)` vs `('templates2','a.md')`，首分量不同 → **不相交**
+#
+#   `file:./templates/` × `file:templates/a.md`
+#       字串前綴 → 不相交（**漏放**）
+#       分量序列 → 相交
+#
+# ⇒ **原作者迴避的失敗面，這個既定語意本身就不產生。**
+#
+# ⚠️ **⛔ 不得照抄 `docs/WF_RESOURCE_WRITESET1.md` §8.5 的斷言方向**：該節把
+# `templates` × `templates2/a.md` 斷言為**相交**，那是它的**立即階段**；本卡採
+# **目標階段**（§2.2），同一對的正確斷言是**不相交**。
 
-    規則：完全相同字串才算撞（不做路徑前綴模糊比對，避免誤判）。
-    ``db:*`` 資源在雙方 db_scope 皆為 ``read`` 時視為可共用（canonical §4.1
-    「read-only 才可共用」）；file/port/container 一律互斥，因為那些天生代表
-    「這段時間我會寫」的獨佔宣告，db_scope 只對 db 資源本身有意義。
+#: §2.1 的比對鍵：分量序列。⛔ 不含 `file:` 前綴、⛔ 不含空分量與 `.` 分量。
+def comparison_key(resource: str) -> tuple[str, ...]:
+    """把一個 ``file:`` 資源轉成 §2.1 的**比對鍵**（分量序列）。
+
+    逐字依 ``docs/WF_RESOURCE_WRITESET1.md`` §2.1 四步：
+    1. 去 ``file:`` 前綴；2. 以 ``/`` 切分並**捨棄空分量與 ``.`` 分量**
+    （這摺疊了重複斜線與 ``./``）；3. 每個分量做 NFC 再 ``casefold()``；4. 成 tuple。
+
+    ⚠️ **結尾斜線⛔ 不影響比對鍵**（§2.1 末段逐字）：它只表達宣告意圖，
+    ⛔ 不參與相交判定。
+    ⚠️ ``casefold`` 是**刻意的 fail-closed 側**（§2.3(2) 逐字）：開發機檔案系統實測
+    大小寫不敏感 ⇒ 判定服從「實際會被寫的是什麼」，⛔ 不是「git 怎麼記」。
+    代價明說：大小寫敏感的檔案系統上會**誤拒**兩個確實不同的檔案。
+    """
+    path = resource[len("file:"):] if resource.startswith("file:") else resource
+    return tuple(
+        unicodedata.normalize("NFC", part).casefold()
+        for part in path.split("/")
+        if part not in ("", ".")
+    )
+
+
+def file_resources_intersect(x: str, y: str) -> bool:
+    """§2.2 的相交謂詞：兩個比對鍵其中之一為另一之**前綴**（含相等）。
+
+    ⭐ **路徑邊界由「比對分量序列而非字串」自動保證**（§2.2 逐字）——⛔ 不需要另加
+    一道邊界檢查，``startswith`` 的陷阱在切分那一步就消失了。
+    """
+    kx, ky = comparison_key(x), comparison_key(y)
+    n = min(len(kx), len(ky))
+    return kx[:n] == ky[:n]
+
+
+#: §4.2：從 Issue URL 解析 repo 歸屬。⛔ 形狀不符即回 None（⇒ **不套用** repo 限定詞）。
+_ISSUE_URL_REPO_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/issues/\d+")
+
+
+def repo_of_issue_url(issue_url: str | None) -> str | None:
+    """回傳 ``owner/repo``，解析不出來回 ``None``。
+
+    ⚠️ ``None`` 的語意是「**歸屬無法確立**」，⛔ 不是「屬於別的 repo」——§4.2 逐字
+    「歸屬必須**正向確立**，否則⛔ 不得套用此限定」，因為 repo 限定詞是**放行方向**
+    的規則。誤拒的代價是排隊，漏放的代價是兩張卡同寫一檔，取前者。
+    """
+    if not issue_url:
+        return None
+    match = _ISSUE_URL_REPO_RE.match(issue_url.strip())
+    return f"{match.group(1)}/{match.group(2)}" if match else None
+
+
+# ===========================================================================
+# `db:` 環境別名（`WF-REDESIGN-W3` 驗收 4(c)）
+# ===========================================================================
+#
+# **別名表內嵌進碼、⛔ 不讀外部檔**（規劃階段裁定 7）。依據：`registry.py:605`–`:607`
+# 逐字「守衛⛔ 不新增任何網路相依，也⛔ 不新增任何檔案系統相依——這是 fail-closed
+# 站得住的前提」。
+#
+# ⚠️ **論證形狀明說**：今日別名**需求量未知**，⛔ 不是 0——這個機制從來沒上線過，
+# 「0 筆需求」是因果倒置（⛔ 不得拿它當「不需要」的證據）。真正確定的是**打破
+# fail-closed 前提的代價**，⇒ 取代價確定的那一側。
+
+#: canonical 環境。**來源＝`templates/database-contract.md` §2 的表，逐字四列。**
+#:
+#: ⚠️ **這是本卡對「已登記」的解讀，卡面⛔ 未列舉 canonical 集合。** 若只把
+#: `DB_ENVIRONMENT_ALIASES` 當「已登記」，今日表空 ⇒ 連 `db:production:schema` 這種
+#: **正確拼法**都會吃到警示 ⇒ 三格中的「未登記」格會退化成「全部」。⇒ 已登記
+#: ＝ canonical ∪ 別名。⛔ 若需求方認為 canonical 集合另有出處，本常數作廢。
+DB_CANONICAL_ENVIRONMENTS: tuple[str, ...] = ("local", "test", "staging", "production")
+
+#: 別名 → canonical 環境。**今日空**（⚠️ 新生 0：機制未曾存在，⛔ 不得讀成「不需要」）。
+DB_ENVIRONMENT_ALIASES: dict[str, str] = {}
+
+
+def _selfcheck_db_alias_schema() -> None:
+    """**模組載入期 schema 自檢**（沿 `card_face._assert_schema_is_understood` 先例）。
+
+    ⭐ **這是卡面第三格「registry 載入或解析失敗 → 在任何遠端寫入前拒絕 assign
+    （fail-loud）」的落地形狀，⛔ 不是它的逐字。** 逐字在內嵌實作下**無法實作**：
+    碼常數的「載入失敗」＝ Python import 失敗＝**整個 wfcli 起不來**，那⛔ 不是
+    「拒絕 assign」。⇒ 改成載入即炸——同樣是 fail-loud，且同樣**早於任何遠端寫入**。
+    ⛔ 不得降級為警告（需求方 2026-09-02 裁定 A-5）。
+    """
+    canonical = set(DB_CANONICAL_ENVIRONMENTS)
+    if len(canonical) != len(DB_CANONICAL_ENVIRONMENTS):
+        raise ResourceDeclarationError("DB_CANONICAL_ENVIRONMENTS 有重複值")
+    for alias, target in DB_ENVIRONMENT_ALIASES.items():
+        if not isinstance(alias, str) or not alias:
+            raise ResourceDeclarationError(f"別名鍵必須是非空字串：{alias!r}")
+        if target not in canonical:
+            raise ResourceDeclarationError(
+                f"別名 {alias!r} 指向 {target!r}，⛔ 不在 canonical 環境 {DB_CANONICAL_ENVIRONMENTS}"
+            )
+        if alias in canonical:
+            raise ResourceDeclarationError(
+                f"別名 {alias!r} 與 canonical 環境同名——那會讓「已登記」有兩個答案"
+            )
+
+
+_selfcheck_db_alias_schema()
+
+#: `db:<env>:…` 的 env 分量。⚠️ 與 `_RESOURCE_PREFIX_RE` 的 `db:[^:]+:` 同一個口徑。
+_DB_ENV_RE = re.compile(r"^db:(?P<env>[^:]+):(?P<rest>.+)$")
+
+
+def normalize_db_resource(resource: str) -> tuple[str, bool]:
+    """回傳 ``(正規化後的字面, env 是否已登記)``。
+
+    封閉三格的前兩格：
+    - **已登記別名** → 換成 canonical 環境（正規化命中）
+    - **已登記 canonical** → 原樣（也算已登記，⛔ 不吃警示）
+    - **未登記** → **按字面**回傳，第二元回 ``False``（呼叫端據此發 stderr 警示）
+
+    ⛔ **別名表⛔ 不得用來正規化非法字面**（`0c629ac` 逐字「⛔ 不為舊文件訂特殊
+    規則」）：不符 `_RESOURCE_PREFIX_RE` 的字面歸 `ResourceDeclarationError` 拒收，
+    ⛔ 不在此處救。
+    """
+    match = _DB_ENV_RE.match(resource)
+    if match is None:
+        return resource, True  # ⛔ 非 db: 資源，本函式不管它
+    env = match.group("env")
+    if env in DB_ENVIRONMENT_ALIASES:
+        return f"db:{DB_ENVIRONMENT_ALIASES[env]}:{match.group('rest')}", True
+    return resource, env in DB_CANONICAL_ENVIRONMENTS
+
+
+def unregistered_db_environments(resources: Sequence[str]) -> list[str]:
+    """挑出 env 分量未登記的 `db:` 資源（供呼叫端印 stderr 警示）。"""
+    return [r for r in resources if not normalize_db_resource(r)[1]]
+
+
+# ===========================================================================
+# 衝突的結構化結果
+# ===========================================================================
+
+#: 拒絕訊息四要件的第二項「觸發哪一來源」的封閉值域。
+#: ⚠️ 一對資源可能同時滿足多條，判定**依下列順序取第一個命中**，⛔ 不並列。
+CONFLICT_SOURCES: tuple[str, ...] = (
+    "完全相同",
+    "分量序列前綴",
+    "casefold 等價",
+    "NFC 等價",
+    "db 資源相同",
+)
+
+
+@dataclass(frozen=True)
+class ResourceConflict:
+    """一組相交，攜帶拒絕訊息四要件所需的全部資料。
+
+    ⛔ 這個 dataclass 存在的理由是**訊息**，⛔ 不是判定：判定仍由
+    `file_resources_intersect` 一個謂詞說了算。
+    """
+
+    other_card_id: str
+    #: 本卡的**原始字面**（⛔ 非比對鍵——四要件逐字要求原始字面）。
+    mine: str
+    #: 對方的原始字面。
+    theirs: str
+    source: str
+
+    @property
+    def key_mine(self) -> tuple[str, ...]:
+        return comparison_key(self.mine)
+
+    @property
+    def key_theirs(self) -> tuple[str, ...]:
+        return comparison_key(self.theirs)
+
+    def narrowing_hint(self) -> str:
+        """可貼進 `wfcli amend --resources` 的**收窄**寫法。
+
+        ⭐ 收窄是本卡**唯一**的逃生口：⛔ 不給 `--force`（`registry.py:614` 先例逐字
+        「給逃生口等於把『沒注意到』變成『按一下』」）、⛔ 不分級。
+        """
+        n = min(len(self.key_mine), len(self.key_theirs))
+        if not self.mine.startswith("file:") or n == 0:
+            return "改宣告不重疊的資源"
+        deeper = self.mine if len(self.key_mine) >= len(self.key_theirs) else self.theirs
+        return f"把宣告收窄到 {deeper} 之下更深的路徑，或改宣告不重疊的資源"
+
+
+def _conflict_source(mine: str, theirs: str) -> str:
+    if mine == theirs:
+        return "完全相同"
+    if not mine.startswith("file:"):
+        return "db 資源相同"
+    raw_mine = mine[len("file:"):].split("/")
+    raw_theirs = theirs[len("file:"):].split("/")
+    nfc_mine = tuple(unicodedata.normalize("NFC", p) for p in raw_mine if p not in ("", "."))
+    nfc_theirs = tuple(unicodedata.normalize("NFC", p) for p in raw_theirs if p not in ("", "."))
+    if nfc_mine == nfc_theirs:
+        # NFC 之後就相等 ⇒ 差別在 Unicode 組合形式，⛔ 不是大小寫也⛔ 不是深度。
+        return "NFC 等價"
+    if len(nfc_mine) == len(nfc_theirs):
+        # 深度相同卻仍相交 ⇒ 只可能是 casefold 把它們拉在一起。
+        return "casefold 等價"
+    return "分量序列前綴"
+
+
+def detailed_conflicts(
+    mine: ResourceDeclaration,
+    other_card_id: str,
+    other: ResourceDeclaration,
+    *,
+    mine_repo: str | None = None,
+    other_repo: str | None = None,
+) -> list[ResourceConflict]:
+    """回傳 mine 與 other 之間互斥衝突的**結構化**清單（可能為空）。
+
+    **判定規則（2026-09-02 起，`WF-REDESIGN-W3` 驗收 4(b)）：**
+
+    - ``file:`` 資源 —— **分量序列前綴**相交（``file_resources_intersect``，逐字依
+      ``docs/WF_RESOURCE_WRITESET1.md`` §2.1／§2.2）。⛔ **不再是**完全相同字串；
+      舊做法的假陰性實測 **19 對**（2026-09-02，全活卡 406 組合）。
+    - ``file:`` 另受 **§4.2 repo 限定詞**：兩方歸屬**皆經正向確立**且不同時⛔ 不相交。
+      任一方確立不了就**不套用**該限定（⇒ 視同同 repo，fail-closed 側）。
+      ⚠️ ``port:``／``container:``／``db:`` **不適用** repo 限定（§4.3 逐字：它們是主機
+      或環境層級資源，兩個 repo 搶同一個 ``port:4001`` 是真的搶）。
+    - ``db:`` 資源 —— 先過 ``normalize_db_resource``（別名 → canonical）再比字面；
+      雙方 ``db_scope`` 皆為 ``read`` 時視為可共用（canonical §4.1）。
+    - ``port:``／``container:`` —— 完全相同字串。它們⛔ 沒有路徑結構，前綴語意在
+      它們身上⛔ 不成立。
+
+    ``file``／``port``／``container`` 一律互斥（即使雙方 ``db_scope`` 皆 ``read``），
+    因為那些天生代表「這段時間我會寫」的獨佔宣告，``db_scope`` 只對 db 資源有意義。
     """
     both_read_only = mine.db_scope == "read" and other.db_scope == "read"
-    mine_set = set(mine.resources)
-    other_set = set(other.resources)
-    shared = mine_set & other_set
-    if not shared:
-        return []
-    if both_read_only:
-        # 雙方都宣告唯讀，db:* 資源可共用；但 file/port/container 本質仍是獨佔宣告。
-        shared = {r for r in shared if not r.startswith("db:")}
-    return sorted(shared)
+    repos_are_different = (
+        mine_repo is not None and other_repo is not None and mine_repo != other_repo
+    )
+
+    found: list[ResourceConflict] = []
+    seen: set[tuple[str, str]] = set()
+    for a in mine.resources:
+        for b in other.resources:
+            if a.startswith("file:") and b.startswith("file:"):
+                if repos_are_different:
+                    continue  # §4.2：歸屬皆確立且不同 ⇒ 不相交
+                hit = file_resources_intersect(a, b)
+            elif a.startswith("db:") and b.startswith("db:"):
+                if both_read_only:
+                    continue  # canonical §4.1：雙方唯讀 ⇒ db 資源可共用
+                hit = normalize_db_resource(a)[0] == normalize_db_resource(b)[0]
+            else:
+                hit = a == b
+            if hit and (a, b) not in seen:
+                seen.add((a, b))
+                found.append(
+                    ResourceConflict(
+                        other_card_id=other_card_id,
+                        mine=a,
+                        theirs=b,
+                        source=_conflict_source(a, b),
+                    )
+                )
+    return sorted(found, key=lambda c: (c.mine, c.theirs))
+
+
+def find_conflicts(
+    mine: ResourceDeclaration,
+    other_card_id: str,
+    other: ResourceDeclaration,
+    *,
+    mine_repo: str | None = None,
+    other_repo: str | None = None,
+) -> list[str]:
+    """``detailed_conflicts`` 的字串投影（回**本卡側**的原始字面）。
+
+    ⛔ **本函式⛔ 不含任何自己的判定邏輯**——它只是投影。既有呼叫端與測試靠它，
+    而拒絕訊息的四要件需要 ``ResourceConflict`` ⇒ 判定只有一份，在 detailed 那裡。
+    """
+    return sorted(
+        {
+            c.mine
+            for c in detailed_conflicts(
+                mine, other_card_id, other, mine_repo=mine_repo, other_repo=other_repo
+            )
+        }
+    )
 
 
 __all__ = [
     "CLAIMS_BEGIN_MARKER",
     "CLAIMS_END_MARKER",
+    "CONFLICT_SOURCES",
+    "DB_CANONICAL_ENVIRONMENTS",
+    "DB_ENVIRONMENT_ALIASES",
     "DB_SCOPES",
     "MIGRATION_SECTION_HEADING",
     "SECTION_HEADING_VARIANTS",
+    "ResourceConflict",
     "ResourceDeclaration",
     "ResourceDeclarationError",
     "declaration_heading",
+    "comparison_key",
+    "file_resources_intersect",
     "find_conflicts",
+    "detailed_conflicts",
+    "normalize_db_resource",
     "parse_block",
     "render_block",
+    "repo_of_issue_url",
     "try_parse_block",
+    "unregistered_db_environments",
 ]

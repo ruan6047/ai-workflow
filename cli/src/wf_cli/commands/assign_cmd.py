@@ -60,6 +60,7 @@ from ..card import (
     append_log_line,
     compare_capability_to_card,
     format_branch_worktree,
+    parse_branch_worktree,
     is_owner_assigned,
     now_iso8601,
 )
@@ -80,13 +81,66 @@ from ..registry import (
     observe_local_worktree,
 )
 from ..resources import (
+    DB_CANONICAL_ENVIRONMENTS,
+    ResourceConflict,
     ResourceDeclarationError,
-    find_conflicts,
+    detailed_conflicts,
     parse_block,
+    repo_of_issue_url,
     try_parse_block,
+    unregistered_db_environments,
 )
 
 TERMINAL_STATUSES = {"🏁完成", "🛑已停止"}
+
+
+def is_intersection_candidate(other) -> bool:
+    """交集檢查的候選母體判準（`WF-REDESIGN-W3` 驗收 4(a)）。
+
+    ⭐ **判準是聯集，⛔ 不是替換**：``owner`` 非佔位 **OR** ``分支worktree`` 有值。
+    卡面逐字寫的是「old→new」，讀成**替換**會漏放——2026-09-02 實測（活卡 55）
+    舊判準 33 張、新判準 15 張、**聯集 44 張**、交集 4 張 ⇒ 替換版**漏放 29 張**。
+    需求方 2026-09-02 裁定 A-3 照准聯集。
+
+    ⚠️ **為什麼兩個都要**：``owner`` 說「有人認領」、``分支worktree`` 說「已經有一條
+    分支或工作樹在動」。兩者⛔ 不互相蘊含——assign 之外還有別的路徑會寫其中一欄。
+    """
+    if is_owner_assigned(other.owner_field):
+        return True
+    branch, worktree = parse_branch_worktree(other.branch_worktree or "")
+    return bool(branch or worktree)
+
+
+def render_conflict_refusal(card_id: str, conflicts: list[ResourceConflict]) -> str:
+    """拒絕訊息。**四要件逐條齊全**（卡面驗收 4(b)）：
+
+    ① 哪兩個分量序列互為前綴（含**雙方卡 ID 與原始字面**）
+    ② 觸發哪一來源（`resources.CONFLICT_SOURCES` 的封閉值域）
+    ③ 可貼進 `wfcli amend --resources` 的收窄寫法
+    ④ 本則計入 `WF-REDESIGN-W3` 驗收 3 的「補可跑補救」母體
+
+    ⛔ **⛔ 不給 `--force`**：`registry.py:614` 先例逐字「給逃生口等於把『沒注意到』
+    變成『按一下』」。⛔ 也不分級——誤判母體是**結構性 0**（前身 matcher 是嚴格字串
+    相等，構造上產不出前綴誤判）。**替代逃生口＝收窄宣告**，即要件 ③。
+    """
+    lines = [f"[assign] 拒絕：{card_id} 的資源宣告與下列活卡衝突"]
+    for c in conflicts:
+        lines.append(
+            f"  - {c.other_card_id}：{c.mine}  ×  {c.theirs}"
+        )
+        lines.append(
+            f"      分量序列 {c.key_mine} 與 {c.key_theirs} 互為前綴；來源＝{c.source}"
+        )
+        lines.append(f"      收窄：{c.narrowing_hint()}")
+    lines.append(
+        "  ⇒ 改宣告後重跑（已代入實際卡 ID；引號內換成收窄後的資源清單）："
+    )
+    lines.append(
+        f"    wfcli amend {card_id} --resources file:收窄後的路徑 "
+        f"--reason '收窄資源宣告以解除與上列活卡的交集'"
+    )
+    return "\n".join(lines)
+
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -225,22 +279,61 @@ def run(args: argparse.Namespace) -> int:
     if observation.action == "warn":
         print(f"[assign] {observation.message()}", file=sys.stderr)
 
-    conflicts: list[tuple[str, list[str]]] = []
+    # ---- §4.2 座標原點：本卡歸屬必須先確立 ----
+    #
+    # `WF_RESOURCE_WRITESET1` §4.2 逐字：「**本卡自身歸屬無法確立**且其宣告含任何
+    # `file:` 資源：`assign` **拒絕派工**，要求先轉為真 Issue。本卡的歸屬是整個比對
+    # 平面的**座標原點**，座標未定時整個比對沒有意義，退回『視同同 repo』也救不了。」
+    mine_repo = repo_of_issue_url(item.issue_url)
+    if mine_repo is None and any(r.startswith("file:") for r in mine.resources):
+        print(
+            f"[assign] 拒絕：{args.card_id} 的 repo 歸屬無法由 issue_url 確立"
+            f"（實際值 {item.issue_url!r}），而它宣告了 file: 資源。\n"
+            "  repo 歸屬是 file: 相交判定的座標原點（WF_RESOURCE_WRITESET1 §4.2）；"
+            "座標未定時整個比對沒有意義，⛔ 退回「視同同 repo」也救不了。\n"
+            "  ⇒ 先把這張 DraftIssue 轉成真 Issue 再派工。看目前狀態：\n"
+            f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+            "--out-dir /tmp/wfcli-snapshot",
+            file=sys.stderr,
+        )
+        return 4
+
+    # ---- db: 環境未登記 ⇒ **按字面＋stderr 警示**（驗收 4(c) 第二格）----
+    # ⛔ 不擋派工：未登記只代表「本表不認得這個環境」，⛔ 不代表宣告非法
+    #（非法字面在 parse_block 就被 ResourceDeclarationError 擋掉了）。
+    unregistered = unregistered_db_environments(mine.resources)
+    if unregistered:
+        print(
+            "[assign] 警告：下列 db: 資源的環境分量未登記，交集檢查**按字面**比對"
+            f"（⛔ 不做別名正規化）：{'、'.join(unregistered)}。\n"
+            f"  已登記的 canonical 環境：{'、'.join(DB_CANONICAL_ENVIRONMENTS)}"
+            f"（別名表今日為空）。若這是別名，須先登記進 "
+            "`cli/src/wf_cli/resources.py::DB_ENVIRONMENT_ALIASES`。",
+            file=sys.stderr,
+        )
+
+    conflicts: list[ResourceConflict] = []
     skipped_unparseable: list[str] = []
     for other in items:
         if other.item_id == item.item_id or not other.card_id:
             continue
         if (other.delivery_status or "") in TERMINAL_STATUSES:
             continue
-        if not is_owner_assigned(other.owner_field):
-            continue  # 尚未認領，無實際執行中的分支／worktree 可爭資源
+        if not is_intersection_candidate(other):
+            continue  # 既未認領、也沒有分支／工作樹在動 ⇒ 無實際執行中的東西可爭資源
         other_decl = try_parse_block(other.body)
         if other_decl is None:
             skipped_unparseable.append(other.card_id)
             continue
-        overlap = find_conflicts(mine, other.card_id, other_decl)
-        if overlap:
-            conflicts.append((other.card_id, overlap))
+        conflicts.extend(
+            detailed_conflicts(
+                mine,
+                other.card_id,
+                other_decl,
+                mine_repo=mine_repo,
+                other_repo=repo_of_issue_url(other.issue_url),
+            )
+        )
 
     if skipped_unparseable:
         print(
@@ -250,9 +343,7 @@ def run(args: argparse.Namespace) -> int:
         )
 
     if conflicts:
-        print(f"[assign] 拒絕：{args.card_id} 的資源宣告與下列活卡衝突", file=sys.stderr)
-        for cid, overlap in conflicts:
-            print(f"  - {cid}：{', '.join(overlap)}", file=sys.stderr)
+        print(render_conflict_refusal(args.card_id, conflicts), file=sys.stderr)
         return 4
 
     branch_worktree = format_branch_worktree(args.branch, args.worktree)
