@@ -123,7 +123,12 @@ def render_conflict_refusal(card_id: str, conflicts: list[ResourceConflict]) -> 
     變成『按一下』」。⛔ 也不分級——誤判母體是**結構性 0**（前身 matcher 是嚴格字串
     相等，構造上產不出前綴誤判）。**替代逃生口＝收窄宣告**，即要件 ③。
     """
-    lines = [f"[assign] 拒絕：{card_id} 的資源宣告與下列活卡衝突"]
+    lines = [
+        f"[assign] 拒絕：{card_id} 的資源宣告與下列活卡衝突。"
+        "改宣告後重跑（下面這行已代入實際卡 ID；引號內換成收窄後的資源清單）：\n"
+        f"    wfcli amend {card_id} --resources file:收窄後的路徑 "
+        "--reason '收窄資源宣告以解除與下列活卡的交集'"
+    ]
     for c in conflicts:
         lines.append(
             f"  - {c.other_card_id}：{c.mine}  ×  {c.theirs}"
@@ -216,6 +221,15 @@ def _ownership_log_fragment(
 
 
 def run(args: argparse.Namespace) -> int:
+    # ⚠️ **`shlex` 刻意在函式體內 import，⛔ 不在模組層。** 模組層多一行會把整個檔
+    # 往下推一行，而 `docs/WF_EVENT_IDEMPOTENCY1.md` 有一條指向 `assign_cmd.py:58`
+    # 的行號指標——它**今天就已經腐爛**（那一行是 `from ..card import (`，而該句說的
+    # 是 `--status` 的宣告；它連預設值都寫錯：說 `🚧進行中`、實際是 `🔨執行中`），
+    # 位移只是讓 `qualified_pointer_scan` 偵測得到。修它要動 `docs/`，而那⛔ 不在本卡
+    # write-set ⇒ 已登記為另案。先例：`doctor._build_reachability_probes` 同樣在
+    # 函式體內 import。⛔ 這**不是**在遮蔽那條腐爛指標——它被寫進交付報告與另案清單。
+    import shlex
+
     target = resolve_target(
         owner=args.owner, project=args.project, repo=args.repo, config=args.config
     )
@@ -231,7 +245,16 @@ def run(args: argparse.Namespace) -> int:
     try:
         mine = parse_block(item.body)
     except ResourceDeclarationError as exc:
-        print(f"[assign] 拒絕：目標卡資源宣告解析失敗（{exc}），無法安全派工", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：目標卡資源宣告解析失敗（{exc}），無法安全派工——"
+            "交集檢查讀不到宣告就等於沒有檢查，⛔ 不放行。\n"
+            "  ⇒ 先看 body 現在長什麼樣（已代入實際 repo 與編號）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --json body --jq .body\n"
+            "  ⇒ 修好之後重寫宣告（引號內換成實際資源）：\n"
+            f"    wfcli amend {args.card_id} --resources file:cli/src/ "
+            "--reason '修復資源宣告區塊的排版'",
+            file=sys.stderr,
+        )
         return 2
 
     # 規劃期路由的派工端閘門。刻意排在所有 set_field_value 之前：拒絕時必須零寫入，
@@ -246,7 +269,15 @@ def run(args: argparse.Namespace) -> int:
     comparison = compare_capability_to_card(item.body, args.actual_capability)
     deviation_reason = (args.capability_deviation_reason or "").strip()
     if comparison.requires_reason and not deviation_reason:
-        print(f"[assign] 拒絕：{comparison.refusal_message()}", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：{comparison.refusal_message()}\n"
+            "  ⇒ 補上偏離理由後重跑（已代入你本次給的實際參數；引號內換成真的理由）：\n"
+            f"    wfcli assign {args.card_id} --assignee {shlex.quote(args.assignee)} "
+            f"--branch {shlex.quote(args.branch)} --worktree {shlex.quote(args.worktree)} "
+            f"--actual-capability {shlex.quote(args.actual_capability)} "
+            "--capability-deviation-reason '偏離卡面建議層級的理由寫在這裡'",
+            file=sys.stderr,
+        )
         return 2
 
     # 跨 repo 歸屬閘門（#57）。與能力閘門同理排在所有 set_field_value／set_item_body
@@ -263,7 +294,12 @@ def run(args: argparse.Namespace) -> int:
         worktree_source_repo=args.worktree_source_repo,
     )
     if ownership.blocked:
-        print(f"[assign] 拒絕：{ownership.refusal_message()}", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：{ownership.refusal_message()}\n"
+            "  ⇒ 先確認這張卡實際屬於哪個 repo（歸屬由 issue URL 決定）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --json url --jq .url",
+            file=sys.stderr,
+        )
         return 5
 
     # 軸 B（機器局部）：路徑在這台機器上是什麼。它**不參與歸屬判定**，回傳碼刻意與
@@ -274,7 +310,13 @@ def run(args: argparse.Namespace) -> int:
         args.worktree, expected_repo=ownership.worktree_repo
     )
     if observation.refuses:
-        print(f"[assign] 拒絕：{observation.message()}", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：{observation.message()}\n"
+            "  ⇒ 先看這台機器上那條路徑到底屬於哪個 repo（已代入你本次給的路徑）：\n"
+            f"    git -C {shlex.quote(args.worktree)} rev-parse --show-toplevel\n"
+            f"    git -C {shlex.quote(args.worktree)} remote get-url origin",
+            file=sys.stderr,
+        )
         return 6
     if observation.action == "warn":
         print(f"[assign] {observation.message()}", file=sys.stderr)

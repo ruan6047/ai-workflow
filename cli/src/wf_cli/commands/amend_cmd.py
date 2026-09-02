@@ -1063,7 +1063,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 runner, target, item, args, "、".join(needs_ruling_for)
             )
         except (RulingError, RequesterUnparseable) as exc:
-            print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
+            print(
+                f"[amend] 拒收（未寫入任何狀態）：{exc}\n"
+                "  ⇒ 先看那則裁定留言長什麼樣（已代入實際 repo 與編號）：\n"
+                f"    gh issue view {item.issue_number} --repo {target.repo} --comments",
+                file=sys.stderr,
+            )
             return 2
     elif args.ruling_url:
         # 刻意**不**把未經核對的 URL 寫進 Log：一個指標不證明它指向什麼，
@@ -1180,7 +1185,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                     "拒絕寫入不實的修訂留痕"
                 )
     except (AmendError, ResourceDeclarationError) as exc:
-        print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
+        print(
+            f"[amend] 拒收（未寫入任何狀態）：{exc}\n"
+            "  ⇒ 先看 body 現在長什麼樣（已代入實際 repo 與編號）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --json body --jq .body",
+            file=sys.stderr,
+        )
         if _is_layout_failure(exc):
             print(_LAYOUT_RUNBOOK.format(card_id=args.card_id, verify=_LAYOUT_VERIFY_SNIPPET), file=sys.stderr)
             if args.escalate:

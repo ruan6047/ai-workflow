@@ -194,12 +194,19 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     if not args.reviewer.strip():
-        print("[review] 拒絕：--reviewer 不得為空（裁決必須可歸屬到查核者）", file=sys.stderr)
+        print(
+            "[review] 拒絕：--reviewer 不得為空（裁決必須可歸屬到查核者）\n"
+            "  ⇒ 補上查核者後重跑（已代入你本次給的卡 ID；引號內換成真的查核者）：\n"
+            f"    wfcli review {args.card_id} --reviewer '查核者的帳號或模型@工具'",
+            file=sys.stderr,
+        )
         return 2
     if args.escalation_epoch < 0:
         print(
             f"[review] 拒絕：--escalation-epoch 不得為負（收到 {args.escalation_epoch}）；"
-            "epoch 只能由 escalation-epoch-change 逐一遞增（review-escalation.md §4）",
+            "epoch 只能由 escalation-epoch-change 逐一遞增（review-escalation.md §4）。\n"
+            "  ⇒ 先看這張卡目前在第幾個 epoch（已代入實際卡 ID）：\n"
+            f"    wfcli doctor --owner {args.owner} --project {args.project}",
             file=sys.stderr,
         )
         return 2
@@ -208,14 +215,24 @@ def run(args: argparse.Namespace) -> int:
         raw_text = _read_input(args.input)
         data = parse_structured_block(raw_text)
     except ReviewParseError as exc:
-        print(f"[review] 拒收：{exc}", file=sys.stderr)
+        print(
+            f"[review] 拒收：{exc}\n"
+            + "  ⇒ 旗標與值域（可整行複製）：\n"
+            "    wfcli review --help",
+            file=sys.stderr,
+        )
         return 2
 
     # review-invalid 先判：它在 §1 是獨立層次（不計 iteration、不建立 attempt），
     # 與「格式不合」的處置不同，必須能被呼叫端用退出碼分辨。
     invalid = review_invalid_reasons(data)
     if invalid:
-        print("[review] 拒收（review-invalid，不計 iteration、卡片狀態不變）：", file=sys.stderr)
+        print(
+            "[review] 拒收（review-invalid，不計 iteration、卡片狀態不變）：\n"
+            + "  ⇒ 契約原文在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:stage-rules/review.md",
+            file=sys.stderr,
+        )
         for reason in invalid:
             print(f"  - {reason}", file=sys.stderr)
         return 4
@@ -223,7 +240,12 @@ def run(args: argparse.Namespace) -> int:
     try:
         report = validate_review_report(data)
     except ValidationError as exc:
-        print("[review] 拒收：查核輸出不符契約（未寫入任何遠端狀態）", file=sys.stderr)
+        print(
+            "[review] 拒收：查核輸出不符契約（未寫入任何遠端狀態）\n"
+            + "  ⇒ 契約原文在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:stage-rules/review.md",
+            file=sys.stderr,
+        )
         for error in exc.errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
@@ -239,7 +261,12 @@ def run(args: argparse.Namespace) -> int:
     try:
         overrides = validate_accepted_overrides(args.mark_not_accepted, report.findings)
     except ValidationError as exc:
-        print("[review] 拒收：accepted 標記不合格（未寫入任何遠端狀態）", file=sys.stderr)
+        print(
+            "[review] 拒收：accepted 標記不合格（未寫入任何遠端狀態）\n"
+            + "  ⇒ 契約原文在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:stage-rules/review.md",
+            file=sys.stderr,
+        )
         for error in exc.errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
@@ -268,7 +295,9 @@ def run(args: argparse.Namespace) -> int:
         # 可留言的對象，寧可不寫也不要只翻板狀態、留下沒有裁決全文的「已通過」。
         print(
             "[review] 拒絕：裁決留言需要真實 repo Issue，請給 --repo owner/repo"
-            "（或設定檔 repo／環境變數 WFCLI_REPO）",
+            "（或設定檔 repo／環境變數 WFCLI_REPO）。\n"
+            "  ⇒ 目前這台機器上的預設 repo 是哪一個：\n"
+            "    git remote get-url origin",
             file=sys.stderr,
         )
         return 2
@@ -284,7 +313,10 @@ def run(args: argparse.Namespace) -> int:
     if item.content_type != "Issue" or item.issue_number is None:
         print(
             f"[review] 拒絕：卡 {args.card_id} 是 Project draft item，沒有可留言的 Issue timeline；"
-            "請先以真實 repo Issue 承載此卡（canonical §4.3：卡狀態＝Issue）",
+            "請先以真實 repo Issue 承載此卡（canonical §4.3：卡狀態＝Issue）。\n"
+            "  ⇒ 先看這張 draft item 現在的內容（已代入實際 owner 與 project）：\n"
+            f"    wfcli snapshot --owner {args.owner} --project {args.project} "
+            "--out-dir /tmp/wfcli-snapshot",
             file=sys.stderr,
         )
         return 2
@@ -316,7 +348,12 @@ def run(args: argparse.Namespace) -> int:
             history, escalation_epoch=args.escalation_epoch, card_body=item.body
         )
     except ValidationError as exc:
-        print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+        print(
+            "[review] 拒絕（未寫入任何遠端狀態）：升級 checkpoint 閘門未過。\n"
+            "  ⇒ 先看這張卡已有哪些 checkpoint 事件（已代入實際 repo 與編號）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --comments",
+            file=sys.stderr,
+        )
         for error in exc.errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
@@ -327,7 +364,12 @@ def run(args: argparse.Namespace) -> int:
         try:
             validate_marked_by(marked_by, item.owner_field)
         except ValidationError as exc:
-            print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+            print(
+                "[review] 拒絕（未寫入任何遠端狀態）：accepted 標記的署名不合格。\n"
+                "  ⇒ 確認你現在是以哪個帳號在操作：\n"
+                "    gh api user --jq .login",
+                file=sys.stderr,
+            )
             for error in exc.errors:
                 print(f"  - {error}", file=sys.stderr)
             return 2

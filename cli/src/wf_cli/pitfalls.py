@@ -389,7 +389,11 @@ def refusal_message(phase: str, resolution_basis: str, errors: list[str] | None 
     lines = [
         (
             f"[handoff] 拒絕：離開「{phase}」階段須附踩坑族清冊回應，本次沒有合格的回應"
-            "（狀態面一個字都沒寫）。"
+            "（狀態面一個字都沒寫）。\n"
+            "  ⇒ 樣板可從指令自己印出來（下面這行已代入實際階段，可整行複製）：\n"
+            "    wfcli handoff --help\n"
+            "  ⇒ 條文原文在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:AI_WORKFLOW.md"
         ),
         f"  - 階段判定依據：{resolution_basis}",
         (
@@ -683,7 +687,11 @@ def note_refusal_message(
     lines = [
         (
             f"[handoff] 拒絕：離開「{phase}」階段須附注意事項回應清冊，本次沒有合格的"
-            "回應（狀態面一個字都沒寫）。"
+            "回應（狀態面一個字都沒寫）。\n"
+            "  ⇒ 旗標與值域：\n"
+            "    wfcli handoff --help\n"
+            "  ⇒ 本階段的條文原文（已代入實際檔名，⛔ 不必連網）：\n"
+            f"    git show HEAD:stage-rules/{STAGE_RULE_FILES.get(phase, 'planning')}.md"
         ),
         f"  - 階段判定依據：{resolution_basis}",
         f"  - 框架層 {len(framework)} 條（本 repo `stage-rules/{STAGE_RULE_FILES.get(phase, '?')}.md` §5）",

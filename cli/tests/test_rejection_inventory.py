@@ -185,3 +185,41 @@ def test_keyword_regex_is_the_card_face_literal():
     assert ri.KEYWORD_RE.pattern == r"\[[a-z-]+\] 拒[絕收]"
     # 正控：該樣式確實命中今日語料
     assert re.search(ri.KEYWORD_RE, "print('[handoff] 拒絕：foo')")
+
+
+# ---- (6) 卡面驗收 3 的門檻：**≥37 則**（2026-09-02 落地）----
+
+
+def test_at_least_thirty_seven_in_scope_messages_carry_a_runnable_remedy():
+    """卡面驗收 3 逐字「**≥37 則**拒絕訊息補『跑得出』補救」。
+
+    ⚠️ **三件事必須一起讀，⛔ 不得只看這個數字：**
+
+    1. **這是必要非充分。** 三條機械條件說的是「值得 PM 看」，⛔ 不是「補救跑得出
+       來」。判定者是 PM（決議 `:70` 逐字）。
+    2. **母體在本卡執行期間變大了**：開卡時全集 73／可動 61，本卡自己新增的拒收
+       訊息（驗收 4／7／8 各帶新訊息）使它變成 77／65。門檻是**絕對數 37**，
+       ⛔ 不是比例，故母體變大⛔ 不放寬要求。
+    3. **可動母體裡有 7 則根本不是訊息**（5 則註解＋2 則 docstring，是**描述**訊息
+       形狀的文字）——釘死的 grep 口徑把它們算了進來。真訊息 **58 則**。
+       ⇒ 分母的性質與卡面寫下 61 時的假設不同，這一點已寫進交付報告。
+    """
+    rows = [r for r in ri.scan(_SRC) if r.in_scope]
+    passing = [r for r in rows if r.mechanical.passes]
+    assert len(passing) >= 37, (
+        f"只有 {len(passing)} 則通過三條機械必要條件，卡面門檻是 ≥37"
+    )
+
+
+def test_the_remedy_commands_contain_no_placeholder_at_all():
+    """裁定 17 第 (iii) 條的全域複查。
+
+    ⚠️ ⛔ 不得用 `<在此填寫>` 這種**指令**佔位（`intake.py` 逐字）。訊息可以有
+    **內容**佔位，但那必須寫在指令之外——本測試量的正是「指令本身」。
+    """
+    offenders = [
+        (r.file, r.line, r.mechanical.command)
+        for r in ri.scan(_SRC)
+        if r.in_scope and r.mechanical.has_command and not r.mechanical.no_placeholder
+    ]
+    assert offenders == [], offenders

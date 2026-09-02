@@ -374,14 +374,26 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         card_face = _build_card_face(args)
         validate_card_face(card_face)
     except (ValueError, CardFaceError) as exc:
-        print(f"[open] 拒絕：{exc}", file=sys.stderr)
+        print(
+            f"[open] 拒絕：{exc}\n"
+            "  ⇒ 旗標、必填欄與值域一次看完（可整行複製）：\n"
+            "    wfcli open --help\n"
+            "  ⇒ 卡面表單的欄位定義在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:templates/tasks-card.md",
+            file=sys.stderr,
+        )
         return 2
 
     try:
         validate_chain_depth(args.chain_depth)
     except ValidationError as exc:
         for e in exc.errors:
-            print(f"[open] 拒絕：{e}", file=sys.stderr)
+            print(
+                f"[open] 拒絕：{e}\n"
+                "  ⇒ 鏈深的合法範圍見旗標說明（可整行複製）：\n"
+                "    wfcli open --help",
+                file=sys.stderr,
+            )
         return 2
 
     # ⭐ **``Card(...)`` 刻意包進錯誤處理，⛔ 不是防禦性 try**
@@ -441,7 +453,14 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         #     換掉舊缺陷。
         # (c) ⛔ **不得由此推出「其他 ValueError 的拒收是乾淨的」**：它們的乾淨度來自
         #     上面那兩道前置檢查，⛔ 不是來自這裡。
-        print(f"[open] 拒絕：{exc}", file=sys.stderr)
+        print(
+            f"[open] 拒絕：{exc}\n"
+            "  ⇒ 旗標、必填欄與值域一次看完（可整行複製）：\n"
+            "    wfcli open --help\n"
+            "  ⇒ 卡面表單的欄位定義在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:templates/tasks-card.md",
+            file=sys.stderr,
+        )
         return 2
 
     owner_repo, issue_number = _split_issue_url(args.from_issue)
@@ -498,7 +517,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         print(
             f"[open] 拒絕：--from-issue 指向 {owner_repo}，但目標設定的 repo 是 "
             f"{target.repo}。⇒ 卡所屬的 repo 由 issue URL 決定（registry 的軸 A 讀的就是它），"
-            "兩者不一致時⛔ 不猜哪一個算數。請改 --repo 或改 --from-issue。",
+            "兩者不一致時⛔ 不猜哪一個算數。\n"
+            "  ⇒ 兩條路二選一（下面兩行已代入實際值，各自可整行複製）：\n"
+            f"    wfcli open {args.card_id} --repo {owner_repo} --from-issue {args.from_issue} "
+            "  # 讓設定跟著 issue 走\n"
+            f"    gh issue list --repo {target.repo} --limit 20  "
+            "# 或改 --from-issue，先在目標 repo 找對的清單項",
             file=sys.stderr,
         )
         return 2
@@ -534,7 +558,11 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     existing = list_items(runner, project)
     if find_item_by_card_id(existing, card.card_id):
         print(
-            f"[open] 拒絕：卡ID {card.card_id} 已存在於 project {target.owner}/{target.project}",
+            f"[open] 拒絕：卡ID {card.card_id} 已存在於 project "
+            f"{target.owner}/{target.project}。⇒ 卡 ID 在同一個 project 內唯一。\n"
+            "  ⇒ 先看既有那張是什麼（已代入實際 owner 與 project）：\n"
+            f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+            "--out-dir /tmp/wfcli-snapshot",
             file=sys.stderr,
         )
         return 3
@@ -545,7 +573,9 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             print(
                 f"[open] 拒絕：{args.from_issue} 已在 project "
                 f"{target.owner}/{target.project} 上（item_id={snap.item_id}）"
-                f"，⇒ 它已經是卡、⛔ 不是待審清單項。",
+                f"，⇒ 它已經是卡、⛔ 不是待審清單項。\n"
+                "  ⇒ 要改它請用 amend，⛔ 不是重開一次（已代入實際卡 ID）：\n"
+                f"    wfcli amend {card.card_id} --reason '說明這次要改什麼'",
                 file=sys.stderr,
             )
             return 3

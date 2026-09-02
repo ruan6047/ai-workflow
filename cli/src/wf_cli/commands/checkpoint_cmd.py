@@ -182,7 +182,14 @@ def run_checkpoint(args: argparse.Namespace) -> int:
             deferred_findings=args.defer_finding,
         )
     except ValidationError as exc:
-        print("[checkpoint] 拒收：不符 review-escalation.md §5（未寫入任何遠端狀態）", file=sys.stderr)
+        print(
+            "[checkpoint] 拒收：不符 review-escalation.md §5（未寫入任何遠端狀態）\n"
+            "  ⇒ 改正下列欄位後重跑同一條指令。旗標與值域：\n"
+            "    wfcli checkpoint --help\n"
+            "  ⇒ 條文原文（本 repo 內，⛔ 不必連網）：\n"
+            "    git show HEAD:stage-rules/review.md",
+            file=sys.stderr,
+        )
         for error in exc.errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
@@ -205,7 +212,11 @@ def run_checkpoint(args: argparse.Namespace) -> int:
             f"[checkpoint] 拒絕：找不到 attempt {args.trigger_attempt_id} 已落地的 review 裁決"
             "（判準為兩面一致：timeline 上的合格 marker ＋ Issue body ## Log 的同行索引）。"
             "review-escalation.md §4：trigger attempt 必須是已記錄且已判定 counts_toward_escalation"
-            "=true 的 attempt；在其裁決落地前建 checkpoint 會讓第二條件恆真而失去鑑別力。",
+            "=true 的 attempt；在其裁決落地前建 checkpoint 會讓第二條件恆真而失去鑑別力。\n"
+            "  ⇒ 先看這張卡的 review 留痕實際有哪些 attempt（下面兩行已代入實際值）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} "
+            "--json body --jq .body | grep 'review by wf-cli'\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --comments",
             file=sys.stderr,
         )
         return 2
@@ -217,7 +228,16 @@ def run_checkpoint(args: argparse.Namespace) -> int:
             print(
                 f"[checkpoint] 拒絕：attempt {args.trigger_attempt_id} 已有 checkpoint"
                 f"（decision={existing.checkpoint_decision}）。一個可計數 attempt 一則 checkpoint；"
-                "要改變裁定請追加事件，不得重寫（append-only，review-escalation.md:272）。",
+                "要改變裁定請追加事件，不得重寫（append-only，review-escalation.md §5）。\n"
+                "  ⇒ 先看既有那一則寫了什麼（已代入實際值）：\n"
+                f"    gh issue view {item.issue_number} --repo {target.repo} --comments\n"
+                "  ⇒ 要改變裁定時，用**新的** --escalation-epoch 重跑，⛔ 不要重寫舊的：\n"
+                f"    wfcli checkpoint {args.card_id} --escalation-epoch "
+                f"{args.escalation_epoch + 1} --trigger-attempt-id {args.trigger_attempt_id} "
+                f"--unique-attempt-count {args.unique_attempt_count} "
+                f"--decision {args.decision} --rationale '改判理由寫在這裡'",
+                "  ⚠️ 上面 --rationale 的引號內是**佔位內容**，請換成真的理由；"
+                "指令其餘部分已代入實際值、可整行複製。",
                 file=sys.stderr,
             )
             return 2
@@ -275,7 +295,14 @@ def run_checkpoint(args: argparse.Namespace) -> int:
 
 def run_contract_baseline(args: argparse.Namespace) -> int:
     if not (args.rationale or "").strip():
-        print("[contract-baseline] 拒絕：--rationale 不得為空", file=sys.stderr)
+        print(
+            "[contract-baseline] 拒絕：--rationale 不得為空——它是「為何在此刻切 baseline」"
+            "的唯一留痕，空字串會讓那個判斷事後不可重建。\n"
+            "  ⇒ 補上理由後重跑（下面這行已代入你本次給的卡 ID）：\n"
+            f"    wfcli contract-baseline {args.card_id} --rationale '切 baseline 的理由寫在這裡'\n"
+            "  ⚠️ 引號內是**佔位內容**，請換成真的理由；指令其餘部分已代入實際值。",
+            file=sys.stderr,
+        )
         return 2
 
     loaded = _load_item(args, "contract-baseline")
@@ -292,7 +319,11 @@ def run_contract_baseline(args: argparse.Namespace) -> int:
         print(
             f"[contract-baseline] 拒絕：本 Issue 已有 {history.baseline_count} 則 contract-baseline "
             "事件。該 marker 是 one-shot cutover，啟用後再次出現必須 fail loud"
-            "（語意見 review-escalation.md §5「該 marker 為 one-shot cutover」）。",
+            "（語意見 review-escalation.md §5「該 marker 為 one-shot cutover」）。\n"
+            "  ⇒ 先看既有那幾則是什麼時候切的（已代入實際 repo 與編號）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --comments\n"
+            "  ⛔ 這一格**沒有**重切的合法路徑：one-shot 的語意就是不得再來一次。"
+            "真的需要再切，請把它當成契約變更上呈需求方。",
             file=sys.stderr,
         )
         return 2
