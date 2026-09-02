@@ -208,7 +208,9 @@ def render_conflict_refusal(card_id: str, conflicts: list[ResourceConflict]) -> 
     """
     lines = [
         f"[assign] 拒絕：{card_id} 的資源宣告與下列活卡衝突。"
-        "改宣告後重跑（下面這行已代入實際卡 ID；引號內換成收窄後的資源清單）：\n"
+        "改宣告後重跑（下面這行已代入實際卡 ID）。\n"
+        "  ⚠️ `--resources` 後面那一段是**佔位內容**，請換成收窄後的真實路徑；"
+        "指令其餘部分可整行複製：\n"
         f"    wfcli amend {card_id} --resources file:收窄後的路徑 "
         "--reason '收窄資源宣告以解除與下列活卡的交集'"
     ]

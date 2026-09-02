@@ -213,10 +213,12 @@ def run_checkpoint(args: argparse.Namespace) -> int:
             "（判準為兩面一致：timeline 上的合格 marker ＋ Issue body ## Log 的同行索引）。"
             "review-escalation.md §4：trigger attempt 必須是已記錄且已判定 counts_toward_escalation"
             "=true 的 attempt；在其裁決落地前建 checkpoint 會讓第二條件恆真而失去鑑別力。\n"
-            "  ⇒ 先看這張卡的 review 留痕實際有哪些 attempt（下面兩行已代入實際值）：\n"
+            "  ⇒ 先看這張卡的 review 留痕實際有哪些 attempt（已代入實際值）。\n"
+            "  ⚠️ **`--comments` 不可省**：attempt id 寫在**留言**裡，⛔ 不在 body ——\n"
+            "     少了它 `attempt_id` 的命中數是 0（2026-09-03 實測）。\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --comments\n"
             f"    gh issue view {item.issue_number} --repo {target.repo} "
-            "--json body --jq .body | grep 'review by wf-cli'\n"
-            f"    gh issue view {item.issue_number} --repo {target.repo} --comments",
+            "--json body --jq .body | grep 'review by wf-cli'",
             file=sys.stderr,
         )
         return 2

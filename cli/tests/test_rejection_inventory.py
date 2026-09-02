@@ -106,18 +106,22 @@ def test_locating_does_not_use_ast_walk_over_string_nodes():
 @pytest.mark.parametrize(
     "segment,expected",
     [
-        # 三條全過
-        ('print("[x] 拒絕：請改用 wfcli amend WF-1 --reason foo")', True),
-        ('print("[x] 拒絕：請跑 git rev-parse HEAD")', True),
-        ('print("[x] 拒絕：請跑 gh issue view 221")', True),
+        # 三條全過。⚠️ 指令**自成一行**——那是本 repo 訊息的真實形狀，也是判準要的
+        # （見 `_command_lines`：以行首判定，散文提及因此落選）。
+        ('print("[x] 拒絕：改用\n    wfcli amend WF-1 --reason foo")', True),
+        ('print("[x] 拒絕：先跑\n    git rev-parse HEAD")', True),
+        ('print("[x] 拒絕：先看\n    gh issue view 221")', True),
         # (i) 無指令
         ('print("[x] 拒絕：欄位不得為空")', False),
+        # ⭐ (i) 的第二種：**散文裡提到**指令 ⇒ ⛔ 不算可整行複製的補救。
+        # 實例來源：`amend_cmd` 逐字「唯一的出路是走 `gh issue edit --body-file` 手動截斷」。
+        ('print("[x] 拒絕：唯一的出路是走 `gh issue edit --body-file` 手動截斷")', False),
         # (ii) 首 token 不在封閉集合內
-        ('print("[x] 拒絕：請跑 python foo.py")', False),
-        ('print("[x] 拒絕：請跑 make check")', False),
+        ('print("[x] 拒絕：請跑\n    python foo.py")', False),
+        ('print("[x] 拒絕：請跑\n    make check")', False),
         # (iii) 含佔位符
-        ('print("[x] 拒絕：請改用 wfcli amend <卡ID> --reason foo")', False),
-        ('print("[x] 拒絕：請跑 git show <SHA>")', False),
+        ('print("[x] 拒絕：改用\n    wfcli amend <卡ID> --reason foo")', False),
+        ('print("[x] 拒絕：請跑\n    git show <SHA>")', False),
     ],
 )
 def test_three_mechanical_conditions(segment: str, expected: bool):
@@ -131,7 +135,7 @@ def test_runnable_heads_is_a_closed_set():
 
 def test_mechanical_records_each_condition_separately():
     """⛔ 不得把三條併成一個布林——PM 判定時要看得出是哪一條沒過。"""
-    m = ri._evaluate('print("[x] 拒絕：請改用 wfcli amend <卡ID>")')
+    m = ri._evaluate('print("[x] 拒絕：改用\n    wfcli amend <卡ID>")')
     assert m.has_command is True
     assert m.head_ok is True
     assert m.no_placeholder is False
@@ -235,17 +239,20 @@ def test_a_hit_inside_a_comment_blows_the_statement_boundary():
     assert all(r.span > ri.STATEMENT_SPAN_CEILING for r in blown)
 
 
-def test_a_blown_boundary_can_never_pass_however_the_three_conditions_look():
-    """切界失敗時，前三條看的**根本不是這一則訊息的文字** ⇒ `passes` 一律 `False`。"""
+def test_a_blown_boundary_reports_no_command_at_all():
+    """切界失敗時**⛔ 不再擷取指令**，`command` 一律 `None`。
+
+    ⭐ 為什麼從「擷取但判 False」改成「根本不擷取」：片段是整個函式，把它的字串全
+    串起來只會得到一串亂碼（實測：`open_cmd` 的三則會串出
+    ``gh issue list …--limit 20issueview--repo--json…``）。留一個假指令在 artifact 裡，
+    PM 逐則裁定時會拿它去跑——**那正是本輪要收的形態**。
+    """
     blown = [r for r in ri.scan(_SRC) if r.in_scope and not r.mechanical.boundary_ok]
-    assert blown
+    assert blown, "切界偵測沒有抓到任何東西 ⇒ 它是零資訊的"
     for row in blown:
         assert row.mechanical.passes is False
-    # ⭐ 反證：其中至少有一則的前三條**單獨看是成立的**——那正是修補前它被誤判的原因。
-    assert any(
-        r.mechanical.has_command and r.mechanical.head_ok and r.mechanical.no_placeholder
-        for r in blown
-    )
+        assert row.mechanical.command is None
+        assert row.mechanical.has_command is False
 
 
 def test_the_span_ceiling_is_justified_by_a_gap_not_by_taste():
@@ -313,3 +320,70 @@ def test_the_remedy_commands_contain_no_placeholder_at_all():
         and not r.mechanical.no_placeholder
     ]
     assert offenders == [], offenders
+
+
+# ---- (7) 第四／五／六個 artifact 缺陷（PM 逐則裁定 2026-09-03）----
+
+
+def test_a_command_produced_by_a_helper_is_visible():
+    """⭐ **第四個缺陷**：機械**看不見**真的有補救。
+
+    `open_cmd` 的兩則把補救接在末尾的函式呼叫上
+    （`+ _resume_runbook(...)`／`+ remediation(...)`），指令在那兩個函式的**函式體**裡。
+    ⇒ 對本 statement 呼叫到的模組級函式展開**一層**（同檔優先、亦跨語料內其他模組）。
+
+    ⚠️ 這與 `--help` 那個病**互為鏡像**：一個是看不見真的有補救，一個是看不見
+    「跑得出但答案不在輸出裡」。⛔ 兩者都⛔ 不得用來灌數字——⛔ 也不得用來把合格的
+    算成不合格。
+    """
+    via = {
+        (Path(r.file).name, r.line): r.mechanical.command_via
+        for r in ri.scan(_SRC)
+        if r.mechanical.command_via
+    }
+    assert via, "沒有任何一則的指令是由 helper 產生 ⇒ 展開邏輯是零資訊的"
+    assert set(via.values()) >= {"_resume_runbook", "remediation"}
+
+
+def test_a_command_split_across_string_literals_is_not_truncated():
+    """⭐ **第五個缺陷**：多行字串串接的指令被**在換行處截斷**。
+
+    實測（修補前）：三則 `wfcli snapshot` 的 `--out-dir` 在下一個字面上 ⇒ 被切掉、
+    誤判成「缺 `--out-dir`」，而訊息本身是完整的。
+    """
+    tmp = _REPO_ROOT / "cli" / "tests" / "__split_probe__"
+    tmp.mkdir(exist_ok=True)
+    try:
+        (tmp / "probe.py").write_text(
+            'def f():\n'
+            '    print(\n'
+            '        "[x] 拒絕：看目前狀態：\\n"\n'
+            '        "    wfcli snapshot --owner acme --project 1 "\n'
+            '        "--out-dir /tmp/o",\n'
+            '    )\n',
+            encoding="utf-8",
+        )
+        rows = ri.scan(tmp)
+        assert len(rows) == 1
+        assert rows[0].mechanical.command == "wfcli snapshot --owner acme --project 1 --out-dir /tmp/o"
+        assert rows[0].mechanical.passes is True
+    finally:
+        (tmp / "probe.py").unlink(missing_ok=True)
+        tmp.rmdir()
+
+
+def test_a_command_mentioned_inside_prose_does_not_count():
+    """⭐ **第六個缺陷**：散文裡**用反引號提到**一個指令⛔ 不是可複製的補救。
+
+    實例來源：`amend_cmd` 逐字「唯一的出路是走 `gh issue edit --body-file` 手動截斷」
+    ——那句話在講一條**手動**路徑，⛔ 不是給人整行貼上去跑的。
+    ⇒ 判準改以**行首**判定，散文提及自然落選。
+    """
+    prose = 'print("[x] 拒絕：唯一的出路是走 `gh issue edit --body-file` 手動截斷")'
+    assert ri._evaluate(prose).has_command is False
+    # 正控：同一條指令**自成一行**時算數 ⇒ 判準是**位置**、⛔ 不是把 `gh` 列黑名單。
+    own_line = (
+        'print("[x] 拒絕：先跑\n'
+        '    gh issue edit 1 --repo a/b --body-file /tmp/x.md")'
+    )
+    assert ri._evaluate(own_line).passes is True

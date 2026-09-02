@@ -104,6 +104,9 @@ class Mechanical:
     no_placeholder: bool
     #: 撈到的第一條指令原文（供 PM 判定時直接看）；沒撈到為 ``None``。
     command: str | None = None
+    #: 指令若是由**呼叫到的同檔函式**產生，記下那個函式名；直接在本 statement 內為 ``None``。
+    #: ⭐ 這一欄讓「機械看不見的補救」變成看得見的（第四個 artifact 缺陷）。
+    command_via: str | None = None
 
     #: AST 定位有沒有切在合理的邊界上（見 :data:`STATEMENT_SPAN_CEILING`）。
     #: ⚠️ 這**不是**裁定 17 的第四條——它是**前三條能不能被信任**的前提：切界失敗時
@@ -187,30 +190,139 @@ def _enclosing_statement_at(tree: ast.AST, lineno: int) -> ast.stmt | None:
     return best
 
 
-def _evaluate(segment: str, span: int = 1) -> Mechanical:
+def _render_text(node: ast.AST) -> str:
+    """把一個 statement 內的字串字面**依原始順序**串成「訊息大致長什麼樣」。
+
+    ⭐ **為什麼非做不可**（`WF-REDESIGN-W3` 驗收 3，第五與第六個 artifact 缺陷）：
+
+    - **第五**：本 repo 的訊息是**多行字串串接**，而可複製的指令常常橫跨兩個字面
+      （``f"    wfcli snapshot --owner {o} --project {p} "`` ＋ ``"--out-dir /tmp/x"``）。
+      直接對原始碼跑正規式會**在換行處截斷** ⇒ 把一條完整的指令誤判成缺旗標。
+      實測：`assign_cmd.py`／`open_cmd.py`／`review_cmd.py` 的三則 `wfcli snapshot`
+      被切成「缺 `--out-dir`」，而訊息本身是完整的。
+    - **第六**：散文裡**用反引號提到**一個指令（例：「唯一的出路是走
+      `gh issue edit --body-file` 手動截斷」）**不是**可複製的指令行。串好之後改以
+      **行首**判定（見 :func:`_command_lines`），散文提及自然落選。
+
+    ⚠️ **能力上界**：``{變數}`` 以原樣的佔位形式保留（⛔ 不求值——本腳本讀的是原始碼
+    字面，見模組 docstring）。⇒ 這是「訊息**大致**長什麼樣」，⛔ 不是執行期輸出。
+    """
+    parts: list[str] = []
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.JoinedStr):
+            for value in sub.values:
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    parts.append(value.value)
+                elif isinstance(value, ast.FormattedValue):
+                    # ⛔ 不求值；保留一個**不含 `<…>`** 的佔位，免得誤觸第 (iii) 條。
+                    parts.append("{…}")
+        elif isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+            if not any(sub is v for j in ast.walk(node)
+                       if isinstance(j, ast.JoinedStr) for v in j.values):
+                parts.append(sub.value)
+    return "".join(parts)
+
+
+def _command_lines(text: str) -> list[str]:
+    """從串好的訊息裡挑出**可整行複製**的指令行。
+
+    判準：該行 strip 之後**以** :data:`RUNNABLE_HEADS` 之一**起首**。
+    ⭐ 這一條把「散文裡提到指令」擋在外面——散文行不會以 ``wfcli``／``git``／``gh``
+    起首。⛔ 不改回「行內任意位置出現」，那正是第六個缺陷的來源。
+    """
+    found: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip().strip("`")
+        for head in RUNNABLE_HEADS:
+            if line.startswith(head + " "):
+                found.append(line)
+                break
+    return found
+
+
+def _evaluate(
+    segment: str,
+    span: int = 1,
+    node: ast.AST | None = None,
+    helpers: dict[str, ast.AST] | None = None,
+) -> Mechanical:
     """三條機械必要條件 ＋ **切界是否可信**。
 
     ⚠️ `span` 超過 :data:`STATEMENT_SPAN_CEILING` 時，前三條看的根本不是這一則訊息的
     文字（片段被撐成整個函式）⇒ `passes` 一律 `False`，⛔ 不論那三條長怎樣。
+
+    ⭐ **`helpers` 讓判準看得見「補救由函式產生」**（第四個 artifact 缺陷）：
+    ``print(f"…拒絕…" + _resume_runbook(owner, n), …)`` 的指令在 `_resume_runbook`
+    的**函式體**裡，⛔ 不在本 statement 內。⇒ 對本 statement 呼叫到的**同檔模組級
+    函式**展開**一層**，把它們的字串一併算進來。
+    ⚠️ **只展開一層**——遞迴會讓「這一則訊息到底印了什麼」變成一個要解整個呼叫圖
+    才答得出的問題。⚠️ 展開範圍含**同檔**與**語料內其他模組**的模組級函式（實例：
+    `open_cmd` 的 `remediation` 來自 `intake`）；同名時**同檔優先**。
     """
     boundary_ok = span <= STATEMENT_SPAN_CEILING
-    m = _COMMAND_RE.search(segment)
-    if m is None:
+    if not boundary_ok:
+        # ⛔ **切界失敗時⛔ 不再擷取指令**：片段是整個函式，把它的字串全串起來只會
+        # 得到一串亂碼（實測：`open_cmd` 的三則會串出
+        # ``gh issue list …--limit 20issueview--repo--json…``）。留一個假指令在
+        # artifact 裡，PM 逐則裁定時會拿它去跑——那正是本輪要收的形態。
+        return Mechanical(
+            has_command=False, head_ok=False, no_placeholder=False, boundary_ok=False
+        )
+
+    text = _render_text(node) if node is not None else segment
+    lines = _command_lines(text)
+    via: str | None = None
+    if not lines and node is not None and helpers:
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name):
+                helper = helpers.get(sub.func.id)
+                if helper is None:
+                    continue
+                helper_lines = _command_lines(_render_text(helper))
+                if helper_lines:
+                    lines = helper_lines
+                    via = sub.func.id
+                    break
+
+    if not lines:
         return Mechanical(
             has_command=False, head_ok=False, no_placeholder=False, boundary_ok=boundary_ok
         )
-    command = (m.group(1) + " " + m.group(2)).strip()
+    command = lines[0]
+    head = command.split(" ", 1)[0]
     return Mechanical(
         has_command=True,
-        head_ok=m.group(1) in RUNNABLE_HEADS,
+        head_ok=head in RUNNABLE_HEADS,
         no_placeholder=PLACEHOLDER_RE.search(command) is None,
         command=command,
+        command_via=via,
         boundary_ok=boundary_ok,
     )
 
 
+def _collect_helpers(src_root: Path) -> dict[str, ast.AST]:
+    """語料內**全部**模組級函式，供 :func:`_evaluate` 展開一層用。
+
+    ⭐ 為什麼要跨檔：`open_cmd` 的補救由 `intake.remediation` 產生——只掃同檔會判成
+    「沒有補救」，而那是**機械看不見真的有補救**（artifact 第四個缺陷的另一半）。
+    ⚠️ **同名以最後掃到的為準，且同檔優先**（見 :func:`scan`）；⛔ 不解 import 別名圖
+    ——那要解整個模組圖，而本腳本的定位是盤點器⛔ 不是型別檢查器。此上界明說於此。
+    """
+    helpers: dict[str, ast.AST] = {}
+    for path in sorted(src_root.rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:  # pragma: no cover - 語料是本 repo 自己的碼
+            continue
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                helpers.setdefault(node.name, node)
+    return helpers
+
+
 def scan(src_root: Path) -> list[Rejection]:
     rows: list[Rejection] = []
+    global_helpers = _collect_helpers(src_root)
     for path in sorted(src_root.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
         try:
@@ -219,6 +331,15 @@ def scan(src_root: Path) -> list[Rejection]:
             print(f"[inventory] ⛔ 解析失敗 {path}: {exc}", file=sys.stderr)
             raise
         docstring_lines = _docstring_line_numbers(tree)
+        helpers: dict[str, ast.AST] = dict(global_helpers)
+        # ⚠️ 同名時**同檔優先**——同檔的那一個才是這則訊息真正呼叫到的。
+        helpers.update(
+            {
+                n.name: n
+                for n in tree.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            }
+        )
         # ⭐ 定位＝grep 口徑：逐行、逐 occurrence。⛔ 不用 AST 走訪（會重複計數）。
         for lineno, line in enumerate(text.splitlines(), start=1):
             for match in KEYWORD_RE.finditer(line):
@@ -254,7 +375,7 @@ def scan(src_root: Path) -> list[Rejection]:
                         in_scope=path.name not in OUT_OF_SCOPE_FILES,
                         kind=kind,
                         span=span,
-                        mechanical=_evaluate(segment, span),
+                        mechanical=_evaluate(segment, span, stmt, helpers),
                     )
                 )
     rows.sort(key=lambda r: (r.file, r.line))

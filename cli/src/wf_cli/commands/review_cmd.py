@@ -198,8 +198,9 @@ def run(args: argparse.Namespace) -> int:
     if not args.reviewer.strip():
         print(
             "[review] 拒絕：--reviewer 不得為空（裁決必須可歸屬到查核者）\n"
-            "  ⇒ 補上查核者後重跑（已代入你本次給的卡 ID；引號內換成真的查核者）：\n"
-            f"    wfcli review {args.card_id} --reviewer '查核者的帳號或模型@工具'",
+            "  ⇒ 補上查核者後重跑（已代入你本次給的卡 ID 與 SHA；引號內換成真的查核者）：\n"
+            f"    wfcli review {args.card_id} --reviewer '查核者的帳號或模型@工具' "
+            f"--source-sha {args.source_sha}",
             file=sys.stderr,
         )
         return 2
@@ -207,8 +208,8 @@ def run(args: argparse.Namespace) -> int:
         print(
             f"[review] 拒絕：--escalation-epoch 不得為負（收到 {args.escalation_epoch}）；"
             "epoch 只能由 escalation-epoch-change 逐一遞增（review-escalation.md §4）。\n"
-            "  ⇒ 先看這張卡目前在第幾個 epoch（已代入實際卡 ID）：\n"
-            f"    wfcli doctor --owner {args.owner} --project {args.project}",
+            "  ⇒ 先看這張卡目前在第幾個 epoch（已代入實際值；`.` 是必填的 repo 路徑）：\n"
+            f"    wfcli doctor . --owner {args.owner} --project {args.project}",
             file=sys.stderr,
         )
         return 2
@@ -219,8 +220,8 @@ def run(args: argparse.Namespace) -> int:
     except ReviewParseError as exc:
         print(
             f"[review] 拒收：{exc}\n"
-            + "  ⇒ 旗標與值域（可整行複製）：\n"
-            "    wfcli review --help",
+            "  ⇒ 值域**⛔ 不在 --help 裡**（實測 30 行、關鍵字 0 次）；它在查核提示範本：\n"
+            "    git show HEAD:templates/review-prompt.md",
             file=sys.stderr,
         )
         return 2

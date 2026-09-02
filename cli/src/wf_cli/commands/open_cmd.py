@@ -379,7 +379,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             "  ⇒ 旗標、必填欄與值域一次看完（可整行複製）：\n"
             "    wfcli open --help\n"
             "  ⇒ 卡面表單的欄位定義在本 repo 內，⛔ 不必連網：\n"
-            "    git show HEAD:templates/tasks-card.md",
+            "    git show HEAD:cli/src/wf_cli/card_face.py",
             file=sys.stderr,
         )
         return 2
@@ -458,7 +458,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             "  ⇒ 旗標、必填欄與值域一次看完（可整行複製）：\n"
             "    wfcli open --help\n"
             "  ⇒ 卡面表單的欄位定義在本 repo 內，⛔ 不必連網：\n"
-            "    git show HEAD:templates/tasks-card.md",
+            "    git show HEAD:cli/src/wf_cli/card_face.py",
             file=sys.stderr,
         )
         return 2
@@ -518,11 +518,10 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             f"[open] 拒絕：--from-issue 指向 {owner_repo}，但目標設定的 repo 是 "
             f"{target.repo}。⇒ 卡所屬的 repo 由 issue URL 決定（registry 的軸 A 讀的就是它），"
             "兩者不一致時⛔ 不猜哪一個算數。\n"
-            "  ⇒ 兩條路二選一（下面兩行已代入實際值，各自可整行複製）：\n"
-            f"    wfcli open {args.card_id} --repo {owner_repo} --from-issue {args.from_issue} "
-            "  # 讓設定跟著 issue 走\n"
-            f"    gh issue list --repo {target.repo} --limit 20  "
-            "# 或改 --from-issue，先在目標 repo 找對的清單項",
+            "  ⇒ 這一格的補救是**改一個旗標**，⛔ 不是重跑一次完整的 open：\n"
+            f"     ・讓設定跟著 issue 走 ⇒ 把 --repo 改成 {owner_repo}\n"
+            "     ・或改 --from-issue，先在目標 repo 找對的清單項：\n"
+            f"    gh issue list --repo {target.repo} --limit 20",
             file=sys.stderr,
         )
         return 2
