@@ -36,7 +36,7 @@ from wf_cli.project import (
 from .conftest import git
 from .fake_gh import FakeGhRunner, open_required_argv, seed_legacy_draft_card
 from .test_card import ROUTING_LINE_RE
-from .test_pitfalls import with_pitfall_report
+from .test_pitfalls import with_pitfall_report, with_pm_note_report
 
 #: 跨 repo 歸屬閘門（#57）接上之後，assign 的卡必須是**真 Issue**（卡的 repo 只認
 #: Issue URL），而 ``--worktree`` 必須落在可判定的 repo 上。本檔原本全用 DraftIssue ＋
@@ -460,7 +460,9 @@ def _assign_argv(
         # 省略即宣告「屬於卡自己的 repo」，那是生產常態。留著這個參數是為了測**明示**
         # 那一格（相符與不相符各一）與「給目錄要響」。
         argv += ["--worktree-source-repo", str(source_repo)]
-    return argv
+    # ⚠️ `WF-REDESIGN-W3` R1-003 讓 `assign` 多了一道必要前提（PM 派審詞的注意事項
+    # 回應清冊）。理由與 `with_pitfall_report` 同型，⛔ 不在此重打一份樣板產生器。
+    return with_pm_note_report(argv, card_id)
 
 
 # --- assign 偏離專項：三種情形（卡面驗證明列）-------------------------------

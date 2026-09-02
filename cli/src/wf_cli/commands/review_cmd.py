@@ -73,6 +73,8 @@ from ..project import (
     ensure_fields,
     find_item_by_card_id,
     list_items,
+    oversized_text_fields,
+    render_oversize_rejection,
     resolve_project,
     set_field_value,
     set_item_body,
@@ -455,6 +457,22 @@ def run(args: argparse.Namespace) -> int:
     # 先留言、後翻狀態：反過來若留言失敗，板上會出現沒有裁決全文的 ✅通過，
     # 那正是本卡要消滅的「宣稱與證據脫節」。
     add_issue_comment(runner, target.repo, item.issue_number, comment)
+    # ---- TEXT 欄位元上限：預檢，純計算、⛔ 一次遠端呼叫都不發（`R1-002`）----
+    # ⚠️ `review` 只寫一個欄，所以「整批」在這裡就是這一格；⛔ 不因為只有一格就略過
+    # ——`R1-002` 的判準是「**所有** writer 在任何遠端呼叫前預檢」，⛔ 不是「多欄才要」。
+    oversized_here = oversized_text_fields({"交付狀態": report.delivery_status})
+    if oversized_here:
+        print(
+            render_oversize_rejection(
+                "review",
+                oversized_here,
+                "  ⇒ 縮短後重跑同一條 review。看目前的欄位值（已代入實際 owner 與 project）：\n"
+                f"    wfcli snapshot --owner {args.owner} --project {args.project} "
+                "--out-dir /tmp/wfcli-snapshot",
+            ),
+            file=sys.stderr,
+        )
+        return 2
     set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
     set_item_body(
         runner, item.content_type, item.content_id, project, target.repo, item.issue_number, new_body

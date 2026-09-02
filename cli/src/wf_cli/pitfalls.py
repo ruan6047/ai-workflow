@@ -498,8 +498,15 @@ NOTE_VERDICT_FOLLOWED = "已遵循"
 #: `## 5 注意事項` 的標題形狀。⛔ 只認 `## 5` 開頭的獨立標題行。
 _SECTION_5_RE = re.compile(r"^##\s+5(\s|$)")
 
-#: 專案層條目的行形狀：`- **P-<階段>-NN**`。⛔ 逐字，⛔ 不接受別的裝飾。
-_PROJECT_NOTE_RE = re.compile(r"^[-*]\s+\*\*(?P<id>P-[^\s*-]+-\d+)\*\*")
+#: 專案層條目的**行形狀**：`- **P-<階段>-NN**`。⛔ 逐字，⛔ 不接受別的裝飾。
+#:
+#: ⚠️ **本樣式刻意收任何階段的 ID**——它負責的是「這一行是不是一則專案層條目」。
+#: 「階段對不對」由 :func:`project_roster_for` **另外**判，且**錯階段 fail-closed**
+#: （丟例外，⛔ 不靜默丟棄）。兩件事分開的理由：靜默丟棄會讓「寫錯階段」與
+#: 「這個階段沒有條目」在事後長得一模一樣，而那正是本卡在收的失敗形態。
+#: ⭐ **這一格是 `R1-004` 補的**：修補前 `project_roster_for("規劃", …)` 對
+#: `P-審核-01` 回 `('P-審核-01',)`（查核者實測 rc=0）。
+_PROJECT_NOTE_RE = re.compile(r"^[-*]\s+\*\*(?P<id>P-(?P<phase>[^\s*-]+)-\d+)\*\*")
 
 #: ⭐ **A3 預先登記的退化否證條件**（注意事項清冊版）。
 #:
@@ -572,8 +579,21 @@ def project_roster_for(phase: str, project_root: "Path | str | None") -> tuple[s
         return ()
     start = starts[0]
     end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
-    found = [m.group("id") for m in map(_PROJECT_NOTE_RE.match, lines[start + 1 : end]) if m]
-    return tuple(found)
+    matched = [m for m in map(_PROJECT_NOTE_RE.match, lines[start + 1 : end]) if m]
+    # ⭐ **階段前綴必須等於當前階段，錯了就 fail-closed**（`R1-004`）。
+    # ⛔ 不靜默丟棄：那會讓「條文寫錯階段」與「這個階段沒有條目」在事後**完全
+    # 無法分辨**——專案以為自己的加嚴生效了，而實際上一條都沒被讀到。
+    wrong = [m.group("id") for m in matched if m.group("phase") != phase]
+    if wrong:
+        raise ProjectNoteRosterError(
+            f"{path} 的 §5 有 {len(wrong)} 條**階段前綴不符**的條目"
+            f"（{'、'.join(wrong)}），但本次離開的是「{phase}」階段 ⇒ 它們一條都不會"
+            f"被讀到。⛔ 這裡刻意⛔ 不靜默丟棄。\n"
+            f"  ⇒ 專案層編號必須是 `P-{phase}-NN`，且住在 `stage-rules/{filename}.md`。\n"
+            f"  ⇒ 看目前寫了哪些：\n"
+            f"    git -C {project_root} grep -n '\\*\\*P-' -- stage-rules/{filename}.md"
+        )
+    return tuple(m.group("id") for m in matched)
 
 
 class ProjectNoteRosterError(ValueError):

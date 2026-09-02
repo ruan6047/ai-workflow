@@ -965,6 +965,43 @@ def run(args: argparse.Namespace) -> int:
     if note_gate.rc != 0:
         return note_gate.rc
 
+    # ---- TEXT 欄位元上限：**整批**預檢，純計算、⛔ 一次遠端呼叫都不發（`R1-002`）----
+    #
+    # ⭐ **修補前 `handoff` 完全沒有這道檢查**：`write_status_face` 依序寫 owner／
+    # 交付狀態／最後交接／iteration／階段，任何一欄撞 GraphQL 都會留下前面幾欄已寫、
+    # 後面沒寫的半寫入。⇒ 檢查**整批**，且排在本函式第一次遠端**寫入**之前。
+    # ⚠️ `iteration` 是 NUMBER 欄，`oversized_text_fields` 依 `FIELD_SPECS` 自動略過它。
+    # ⛔ 更關鍵：`--cleanup` 路徑上 effect writer 是在 `gh issue close` ＋ worktree 移除
+    # ＋ 分支刪除**之後**才寫欄位 ⇒ 那條路上「寫欄位才發現超標」的代價是**不可逆的**。
+    # ⚠️ **兩個名字刻意在函式體內 import，⛔ 不在模組層**：模組層多兩行會把整個檔
+    # 往下推，而 `docs/WF_CLEANUP_GUARD1.md` 有一條指向 `handoff_cmd.py:277` 的行號
+    # 指標，位移會讓 `qualified_pointer_scan` 轉紅——而該檔⛔ 不在本卡 write-set。
+    # ⭐ 這是 `ruan6047/ai-workflow#240`（write-set 與記錄機制狀態的文件分離）在本卡
+    # 的**第四次**命中，已逐次登記。先例：`assign_cmd.run()` 的 `shlex`、
+    # `doctor._build_reachability_probes`。⛔ 這不是遮蔽——每一次都寫進交付報告。
+    from ..project import oversized_text_fields, render_oversize_rejection
+
+    oversized = oversized_text_fields(
+        {
+            "owner": args.to,
+            "交付狀態": new_status,
+            "最後交接": ts,
+            **({"階段": STAGE_PHASE[args.next_stage]} if args.next_stage in STAGE_PHASE else {}),
+        }
+    )
+    if oversized:
+        print(
+            render_oversize_rejection(
+                "handoff",
+                oversized,
+                "  ⇒ 縮短後重跑同一條 handoff。看目前的欄位值（已代入實際 owner 與 project）：\n"
+                f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+                "--out-dir /tmp/wfcli-snapshot",
+            ),
+            file=sys.stderr,
+        )
+        return 2
+
     trace = f"；{PHASE_LOG_LABEL} {gate.phase_mark}"
     if gate.report_mark:
         trace += f"；{gate.report_mark}"

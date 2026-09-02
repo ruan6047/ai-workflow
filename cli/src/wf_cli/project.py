@@ -550,7 +550,26 @@ def set_field_value(
         "--format", "json",
     ]
     if field_meta.type == "TEXT":
-        args += ["--text", str(value)]
+        # ---- 最後防線（`R1-002`）。⚠️ **這⛔ 不是閘門，是網。** ----
+        #
+        # ⭐ 真正的閘門是各動詞在**任何遠端寫入之前**做的整批預檢
+        # （`oversized_text_fields`，見它的 docstring）。本處排在寫入序列**之中** ⇒
+        # 它響的時候，同一輪先前的欄位（甚至 body）可能已經寫出去了 ⇒ **它擋不住
+        # 半寫入**，只擋「把超標值真的送到遠端」。
+        # ⛔ **不得因為有這一道就把上游的預檢拿掉**：那會把「零寫入拒收」降級成
+        # 「半寫入後才拒」，正好是 `WF-REDESIGN-W3` 驗收 7 要消滅的形態。
+        # ⚠️ 修補前此處對 1025-byte 值直接送出且 rc=0（查核者 `R1-002` 實測）。
+        text = str(value)
+        size = len(text.encode("utf-8"))
+        if size > TEXT_FIELD_BYTE_LIMIT:
+            raise ProjectError(
+                f"欄位 {field_meta.name!r} 的值 {size} bytes，超過 GitHub 伺服端硬上限 "
+                f"{TEXT_FIELD_BYTE_LIMIT} UTF-8 bytes 共 {size - TEXT_FIELD_BYTE_LIMIT} bytes。"
+                "⚠️ 走到這裡代表**上游動詞漏了整批預檢**——本輪先前的寫入可能已經送出，"
+                "⇒ 這一則⛔ 不保證零寫入。修：先讓該動詞在任何遠端寫入前呼叫 "
+                "`project.oversized_text_fields()`。"
+            )
+        args += ["--text", text]
     elif field_meta.type == "NUMBER":
         args += ["--number", str(value)]
     elif field_meta.type == "SINGLE_SELECT":

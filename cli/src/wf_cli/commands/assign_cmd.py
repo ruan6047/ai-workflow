@@ -70,6 +70,8 @@ from ..project import (
     ensure_fields,
     find_item_by_card_id,
     list_items,
+    oversized_text_fields,
+    render_oversize_rejection,
     resolve_project,
     set_field_value,
     set_item_body,
@@ -109,6 +111,87 @@ def is_intersection_candidate(other) -> bool:
         return True
     branch, worktree = parse_branch_worktree(other.branch_worktree or "")
     return bool(branch or worktree)
+
+
+def _pm_note_gate(args, item, target) -> int:
+    """PM 派審詞的注意事項回應清冊閘門（`WF-REDESIGN-W3` `R1-003`）。
+
+    **與 `handoff` 走同一個 validator**（`pitfalls.parse_note_report`），⛔ 不是另寫
+    一份——那會讓兩邊的格數判準漂開，而「⛔ 不得互相代用」正是這份清冊的核心紀律。
+
+    清冊＝這張卡**當前階段**的那一份，也就是 PM 正要交給執行者的同一份
+    （`planning.md` §6 ① 逐字「CLI 印出的三層編號清單」）。
+
+    **兩條豁免，各自出聲**（⛔ 豁免不得是靜默的）：判不出當前階段、或該階段的清冊
+    為空（`部署`／`維護` 的框架層是**結構性 0**）。
+    """
+    # ⚠️ **函式體內 import，⛔ 不在模組層**：`handoff_cmd` 已經 import 本模組的
+    # `TERMINAL_STATUSES`，模組層反向 import 會成環。順帶也避開 `#240` 的行號位移。
+    import pathlib
+
+    from .. import pitfalls
+    from . import handoff_cmd as _hc
+
+    resolution = pitfalls.resolve_departing_phase(
+        item.text("階段"),
+        item.fields.get("交付狀態"),
+        _hc.STAGE_STATUS,
+        _hc.STAGE_PHASE,
+    )
+    if resolution.phase is None:
+        print(
+            "[assign] 注意：判不出這張卡目前在哪個階段，**本次未要求 PM 注意事項回應清冊**"
+            f"（{resolution.basis}）。⛔ 這不是『檢查通過了』，是這條路上沒有檢查。",
+            file=sys.stderr,
+        )
+        return 0
+
+    phase = resolution.phase
+    try:
+        roster = pitfalls.combined_note_roster(phase, getattr(args, "repo_path", None))
+    except pitfalls.ProjectNoteRosterError as exc:
+        print(f"[assign] 拒絕：{exc}", file=sys.stderr)
+        return 2
+
+    if not roster:
+        print(
+            f"[assign] 注意：「{phase}」階段的注意事項清冊為空 ⇒ **本次未要求回應**。"
+            "⚠️ 那是結構性 0（該階段的 stage-rules §5 沒有條目），⛔ 不是遺漏。",
+            file=sys.stderr,
+        )
+        return 0
+
+    raw = getattr(args, "note_report", None)
+    text = None
+    if raw is not None:
+        text = pathlib.Path(raw[1:]).read_text(encoding="utf-8") if raw.startswith("@") else raw
+    if text is None:
+        print(
+            pitfalls.note_refusal_message(phase, resolution.basis).replace(
+                "[handoff]", "[assign]"
+            ).replace("--note-report 傳入", "--note-report 傳入（PM 派審詞，R1-003）"),
+            file=sys.stderr,
+        )
+        return 2
+
+    parsed = pitfalls.parse_note_report(text, roster)
+    if not parsed.ok:
+        print(
+            pitfalls.note_refusal_message(phase, resolution.basis, parsed.errors).replace(
+                "[handoff]", "[assign]"
+            ),
+            file=sys.stderr,
+        )
+        return 2
+
+    followed = sum(1 for row in parsed.rows if row.kind == "followed")
+    counts = parsed.counts()
+    print(
+        f"[assign] PM 注意事項回應清冊（「{phase}」，{len(parsed.rows)} 條）已收下："
+        f"已遵循 {followed}／不適用 {counts['not_applicable']}／發現 {counts['found']}。"
+        "⛔ CLI 只驗編號窮舉性、值域與非空；**判內容的是檢閱那一環——人或另一個 AI。**"
+    )
+    return 0
 
 
 def render_conflict_refusal(card_id: str, conflicts: list[ResourceConflict]) -> str:
@@ -174,6 +257,17 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "只有真的要登記跨 repo 時才需要打，而那時它會被擋下並指向 #16 §7.1 的連結卡做法。"
         "它不是 --force：給了之後仍要通過同一組比對，指錯 repo 照樣被拒。"
         "⚠️ 它是**宣告**：本閘門不觀測、也不綁定後續真正的 git worktree add。",
+    )
+    p.add_argument(
+        "--note-report",
+        default=None,
+        help="**PM 派審詞的注意事項回應清冊**（`WF-REDESIGN-W3` R1-003）。"
+        "對這張卡**當前階段**的框架層 `F-<階段>-NN` 與專案層 `P-<階段>-NN` 逐條回應，"
+        "每條恰好一行「編號：值」，值三選一（已遵循／不適用：<原因>／發現：<處置>）。"
+        "以 @<路徑> 開頭則讀檔。⚠️ 這份與執行者交回時的 `handoff --note-report` "
+        "**走同一個 validator**（`pitfalls.parse_note_report`）——`pm-conduct` 逐字"
+        "「PM 產出也有檢核清冊……發出前逐條回應」，而修補前 PM 派審是唯一繞得過的路。"
+        "⛔ 通過本閘門不代表內容被驗過——判內容的是檢閱那一環（人或另一個 AI）。",
     )
     p.add_argument(
         "--status", default="🔨執行中", help="assign 後的交付狀態；預設 🔨執行中"
@@ -343,16 +437,21 @@ def run(args: argparse.Namespace) -> int:
     # ---- db: 環境未登記 ⇒ **按字面＋stderr 警示**（驗收 4(c) 第二格）----
     # ⛔ 不擋派工：未登記只代表「本表不認得這個環境」，⛔ 不代表宣告非法
     #（非法字面在 parse_block 就被 ResourceDeclarationError 擋掉了）。
-    unregistered = unregistered_db_environments(mine.resources)
-    if unregistered:
-        print(
-            "[assign] 警告：下列 db: 資源的環境分量未登記，交集檢查**按字面**比對"
-            f"（⛔ 不做別名正規化）：{'、'.join(unregistered)}。\n"
-            f"  已登記的 canonical 環境：{'、'.join(DB_CANONICAL_ENVIRONMENTS)}"
-            f"（別名表今日為空）。若這是別名，須先登記進 "
-            "`cli/src/wf_cli/resources.py::DB_ENVIRONMENT_ALIASES`。",
-            file=sys.stderr,
-        )
+    #
+    # ⭐ **判定對比對的雙方都做**（`R1-005`）。修補前只對 `mine.resources` 做 ⇒
+    # 「未登記的環境只出現在**別卡**」時完全沒有警示，而那正是最危險的一半：
+    # 本卡自己拼對了、別卡拼錯了，兩者於是被按字面判為**不相交**而雙雙放行。
+    # 收集後**去重且保序**再輸出，⛔ 不逐卡各印一行（同一個環境會被印 N 次）。
+    unregistered: list[str] = []
+    seen_unregistered: set[str] = set()
+
+    def _note_unregistered(resources: list[str]) -> None:
+        for token in unregistered_db_environments(resources):
+            if token not in seen_unregistered:
+                seen_unregistered.add(token)
+                unregistered.append(token)
+
+    _note_unregistered(mine.resources)
 
     conflicts: list[ResourceConflict] = []
     skipped_unparseable: list[str] = []
@@ -367,6 +466,7 @@ def run(args: argparse.Namespace) -> int:
         if other_decl is None:
             skipped_unparseable.append(other.card_id)
             continue
+        _note_unregistered(other_decl.resources)
         conflicts.extend(
             detailed_conflicts(
                 mine,
@@ -375,6 +475,18 @@ def run(args: argparse.Namespace) -> int:
                 mine_repo=mine_repo,
                 other_repo=repo_of_issue_url(other.issue_url),
             )
+        )
+
+    if unregistered:
+        print(
+            "[assign] 警告：下列 db: 資源的環境分量未登記，交集檢查**按字面**比對"
+            f"（⛔ 不做別名正規化）：{'、'.join(unregistered)}。\n"
+            "  ⚠️ 本行涵蓋**本卡與所有候選活卡兩側**（`R1-005`）——未登記的環境只要"
+            "出現在任何一邊，兩張卡就會被按字面判為不相交而雙雙放行。\n"
+            f"  已登記的 canonical 環境：{'、'.join(DB_CANONICAL_ENVIRONMENTS)}"
+            f"（別名表今日為空）。若這是別名，須先登記進 "
+            "`cli/src/wf_cli/resources.py::DB_ENVIRONMENT_ALIASES`。",
+            file=sys.stderr,
         )
 
     if skipped_unparseable:
@@ -389,6 +501,51 @@ def run(args: argparse.Namespace) -> int:
         return 4
 
     branch_worktree = format_branch_worktree(args.branch, args.worktree)
+
+    # ---- PM 派審詞的注意事項回應清冊（`R1-003`）。純計算、⛔ 零遠端寫入 ----
+    #
+    # ⭐ **修補前 PM 派審是唯一繞得過 validator 的路**：`handoff` 有 `--note-report`，
+    # `assign` 沒有 ⇒ `pm-conduct` 逐字「PM 產出也有檢核清冊……發出前逐條回應」在
+    # 機械上完全沒有承接（查核者 R1-003 的證據逐字：「本次 PM 派審正是經 assign
+    # 完成，未經 validator」）。
+    #
+    # **清冊＝這張卡當前階段的那一份**——也就是 PM 正要交給執行者的同一份
+    # （`planning.md` §6 ① 逐字「CLI 印出的三層編號清單」）。⇒ PM 逐條回應，等於
+    # 機械保證他**讀過自己交出去的清單**。
+    # ⚠️ **⛔ 不是 PM 自己的 `F-PM-NN` 清冊**——`stage-rules/pm-conduct.md` 的 §5 今日
+    # 有 **0** 條 `F-`，那份清冊⛔ 不存在。這一點已登記，⛔ 不由本卡發明。
+    #
+    # ⚠️ **擋人點 +1**（本卡總增量由 +3 變 +4）。這是 R1-003 disposition 的直接後果
+    # （逐字要求「缺報告／錯格數時零寫入測試」⇒ 缺報告必須是拒收），⛔ 非本卡自選。
+    note_rc = _pm_note_gate(args, item, target)
+    if note_rc != 0:
+        return note_rc
+
+    # ---- TEXT 欄位元上限：**整批**預檢，純計算、⛔ 一次遠端呼叫都不發（`R1-002`）----
+    #
+    # ⭐ **修補前 `assign` 完全沒有這道檢查**：它先寫 owner、再寫可能超標的分支欄
+    # ⇒ 第二個 `set_field_value` 撞 GraphQL 時 owner 已經寫進去了，留下半寫入。
+    # ⇒ 檢查**整批**（三個欄一起），且排在本函式第一次遠端**寫入**之前。
+    # ⛔ 不得改成逐欄檢查後逐欄寫——那等於把半寫入原樣留著。
+    oversized = oversized_text_fields(
+        {
+            "owner": args.assignee,
+            "分支worktree": branch_worktree,
+            "交付狀態": args.status,
+        }
+    )
+    if oversized:
+        print(
+            render_oversize_rejection(
+                "assign",
+                oversized,
+                "  ⇒ 縮短後重跑同一條 assign。看目前的欄位值（已代入實際 owner 與 project）：\n"
+                f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+                "--out-dir /tmp/wfcli-snapshot",
+            ),
+            file=sys.stderr,
+        )
+        return 2
 
     # ⭐ **Log 行的組裝與寫入邊界守衛刻意排在所有遠端寫入之前**
     #    （WF-MARKER-WRITE-BOUNDARY1，2026-08-27 依查核 R2-02

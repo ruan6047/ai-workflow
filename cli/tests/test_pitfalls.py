@@ -17,6 +17,7 @@ import pytest
 from wf_cli import pitfalls
 from wf_cli.cli import build_parser
 from wf_cli.commands import assign_cmd, handoff_cmd, open_cmd
+from wf_cli.gh import GhError
 from wf_cli.project import (
     FIELD_SPECS,
     ProjectError,
@@ -95,6 +96,45 @@ def with_pitfall_report(argv: list[str], card_id: str) -> list[str]:
     if "--note-report" not in argv and pitfalls.note_roster_for(resolution.phase):
         argv = [*argv, "--note-report", pitfalls.note_report_template(resolution.phase)]
     return argv
+
+def with_pm_note_report(argv: list[str], card_id: str) -> list[str]:
+    """把 **PM 派審詞的注意事項回應清冊**補進一組 ``assign`` argv（`R1-003`）。
+
+    ⚠️ 理由與 :func:`with_pitfall_report` 完全同型：`WF-REDESIGN-W3` 的 R1 修補讓
+    `assign` 多了一道必要前提，於是「這組 argv 回 0」這個契約對**所有**既有呼叫點
+    都變了。那不是新測試該去的地方，是既有測試要適應的新前提。
+
+    ⛔ **不塞固定字串**：清冊由卡**當前階段**導出，而那是卡此刻的狀態決定的。
+
+    三種情況原樣回傳（此時閘門構造上也不會要求，⇒ ⛔ 不是放水）：
+    呼叫端已自備 ``--note-report``、卡不存在、判不出階段或該階段清冊為空。
+    """
+    if "--note-report" in argv:
+        return argv
+    runner = assign_cmd.default_runner
+    watermark = len(runner.calls) if hasattr(runner, "calls") else None
+    try:
+        try:
+            project = resolve_project(runner, "acme", 1)
+        except (ProjectError, GhError):
+            # ⚠️ 也收 `GhError`：有測試只 `parse_args`（⛔ 不跑指令），那時
+            # `assign_cmd.default_runner` **還沒被 monkeypatch**，會打到真的 `gh`。
+            # 那種情形下閘門構造上也不會跑，⇒ 原樣回傳⛔ 不是放水。
+            return argv
+        item = find_item_by_card_id(list_items(runner, project), card_id)
+        if item is None:
+            return argv
+        resolution = pitfalls.resolve_departing_phase(
+            item.text("階段"), item.fields.get("交付狀態"),
+            handoff_cmd.STAGE_STATUS, handoff_cmd.STAGE_PHASE,
+        )
+        if resolution.phase is None or not pitfalls.note_roster_for(resolution.phase):
+            return argv
+        return [*argv, "--note-report", pitfalls.note_report_template(resolution.phase)]
+    finally:
+        if watermark is not None:
+            del runner.calls[watermark:]
+
 
 #: 踩坑清單那一節的標題**逐字**。標題被改寫時下面的擷取會拿不到節，測試轉紅
 #: ——那是要的：族清冊的來源不見了，碼側的清冊就沒有對照面。
