@@ -36,7 +36,7 @@ from wf_cli.project import (
 from .conftest import git
 from .fake_gh import FakeGhRunner, open_required_argv, seed_legacy_draft_card
 from .test_card import ROUTING_LINE_RE
-from .test_pitfalls import with_pitfall_report
+from .test_pitfalls import with_pitfall_report, with_pm_note_report
 
 #: 跨 repo 歸屬閘門（#57）接上之後，assign 的卡必須是**真 Issue**（卡的 repo 只認
 #: Issue URL），而 ``--worktree`` 必須落在可判定的 repo 上。本檔原本全用 DraftIssue ＋
@@ -261,15 +261,18 @@ def test_open_rejects_duplicate_card_id(fake_runner):
     assert run_cli(_open_argv("DUP-CARD1")) == 3
 
 
-def test_open_writes_git_spec_file_skeleton(fake_runner, tmp_path: Path):
-    spec_dir = tmp_path / "tasks"
-    rc = run_cli(_open_argv("SPEC-CARD1", **{"--spec-dir": str(spec_dir)}))
-    assert rc == 0
-    spec_file = spec_dir / "SPEC-CARD1.md"
-    assert spec_file.exists()
-    text = spec_file.read_text(encoding="utf-8")
-    assert "# SPEC-CARD1" in text
-    assert "## 核心痛點" in text
+def test_open_no_longer_accepts_spec_dir(fake_runner):
+    """`--spec-dir` 於 2026-09-02 移除（`WF-REDESIGN-W3` 驗收 1，決議 §二 row 10）。
+
+    ⭐ 這一條**取代**了原本的 `test_open_writes_git_spec_file_skeleton`，⛔ 不是把它
+    刪掉了事：那條測的是「旗標給了會寫檔」，現在要釘的是**旗標不存在**——
+    argparse 對未知旗標以 `SystemExit(2)` 收場。
+    ⚠️ `card.render_spec_markdown` 本身**仍在**（`test_card.py` 另有覆蓋），移除的
+    只是 open 這條寫檔路徑。
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(_open_argv("SPEC-CARD1", **{"--spec-dir": "/tmp/tasks"}))
+    assert excinfo.value.code == 2
 
 
 def test_open_writes_chain_depth_zero_by_default(fake_runner):
@@ -305,8 +308,7 @@ def test_open_rejects_chain_depth_over_hard_cap(fake_runner, capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tmp_path: Path):
-    spec_dir = tmp_path / "tasks"
+def test_open_renders_routing_line_into_issue_body(fake_runner):
     rc = run_cli(
         _open_argv(
             "ROUTING-CARD1",
@@ -315,7 +317,6 @@ def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tm
                 "--exec-capability-reason": "跨模組、根因已知",
                 "--review-capability": "高階型",
                 "--review-capability-reason": "資料正確性紅線，須跨家族",
-                "--spec-dir": str(spec_dir),
             },
         )
     )
@@ -327,8 +328,9 @@ def test_open_renders_routing_line_into_issue_body_and_spec_file(fake_runner, tm
     project = resolve_project(fake_runner, "acme", 1)
     item = find_item_by_card_id(list_items(fake_runner, project), "ROUTING-CARD1")
     assert item is not None
+    # ⚠️ 原本這裡還斷言 spec 檔也含同一行；`--spec-dir` 已於 2026-09-02 移除
+    # （`WF-REDESIGN-W3` 驗收 1）⇒ **只剩 body 這一面**，測試名字同步改窄。
     assert expected in item.body
-    assert expected in (spec_dir / "ROUTING-CARD1.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -458,7 +460,9 @@ def _assign_argv(
         # 省略即宣告「屬於卡自己的 repo」，那是生產常態。留著這個參數是為了測**明示**
         # 那一格（相符與不相符各一）與「給目錄要響」。
         argv += ["--worktree-source-repo", str(source_repo)]
-    return argv
+    # ⚠️ `WF-REDESIGN-W3` R1-003 讓 `assign` 多了一道必要前提（PM 派審詞的注意事項
+    # 回應清冊）。理由與 `with_pitfall_report` 同型，⛔ 不在此重打一份樣板產生器。
+    return with_pm_note_report(argv, card_id)
 
 
 # --- assign 偏離專項：三種情形（卡面驗證明列）-------------------------------

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, Literal
@@ -450,6 +451,90 @@ def add_item_to_project(runner: GhRunner, owner: str, number: int, issue_url: st
     return data["id"]
 
 
+#: GitHub Projects v2 對 ``TEXT`` 欄值的伺服端硬上限（**UTF-8 bytes**，⛔ 非字元數）。
+#:
+#: 實測（2026-09-01，`gh api graphql` 對 Project #4 逐次寫入）：ASCII 1024 bytes rc=0／
+#: 1025 rc=1；中文 ×341（恰 1024B）rc=0／×342（1026B）rc=1；**換行非拒因**。
+#: ⚠️ 這是**伺服端**限制：板上三個自由文字欄（``簡介``／``服務的原始目標``／``資源宣告``）
+#: 的 ``dataType`` 皆為 ``TEXT``，⛔ 無 long-text 欄型可換、⛔ 無設定可調。
+TEXT_FIELD_BYTE_LIMIT = 1024
+
+
+@dataclass(frozen=True)
+class OversizedTextField:
+    """一欄超標的**量測**結果。
+
+    ⛔ 不含處置——處置需要實際的 repo 與編號，只有呼叫端知道（見
+    ``render_oversize_rejection`` 的 ``remedy``）。
+    """
+
+    name: str
+    actual_bytes: int
+    limit: int = TEXT_FIELD_BYTE_LIMIT
+
+    @property
+    def excess_bytes(self) -> int:
+        return self.actual_bytes - self.limit
+
+
+def oversized_text_fields(values: Mapping[str, Any]) -> list[OversizedTextField]:
+    """**純函式**：挑出超過 TEXT 位元上限的欄位。⛔ 一次遠端呼叫都不發。
+
+    ⭐ **為什麼是純函式、且必須在第一次遠端寫入之前呼叫**：雙居所欄位的寫入順序是
+    「body 先、欄位後並讀回驗證」（``brief.py:19`` 逐字）。若把長度檢查放在欄位寫入
+    那一步，body **已經寫出去了** ⇒ 半寫入照樣發生（``#217``、``#219`` 各一次，兩次
+    都由人工補欄收尾）。⇒ 檢查點前移到任何遠端寫入之前，拒收時**零遠端寫入**。
+    形狀沿 ``handoff_cmd.prepare_card_log`` 逐字「純計算……⛔ 一次遠端呼叫都不發」。
+
+    ⛔ **不截斷。** ``brief.py:19``／``:59`` 逐字「body 哨兵區塊為權威、Project TEXT
+    欄位為**恆等導出**（非摘要、**非截斷**）」是**規範句**；``:22`` 的「偵測最簡單：
+    直接字串比對」只是**理由句**。理由句不涵蓋位元組截斷⛔ 不等於規範句可以放寬
+    （需求方 2026-09-02 裁定 B-1 逐字）。而截斷 ``簡介`` 會使該卡的 ``brief.drifted``
+    **恆為 True** ⇒ doctor 對它永遠報漂移。
+
+    ⚠️ **只量 ``FIELD_SPECS`` 標為 ``TEXT`` 的欄**；``NUMBER``／``SINGLE_SELECT`` 的值域
+    另有閘門，⛔ 不在本檢查射程。未登記在 ``FIELD_SPECS`` 的名字**⛔ 不靜默略過**——
+    那代表別處有缺陷，此處一併量（寧可多一則可讀訊息，也⛔ 不讓它裸撞 GraphQL）。
+
+    ⚠️ 量的是 ``str(value)`` 的 UTF-8 位元組數，與 ``set_field_value`` 實際送出的字串
+    **同一個口徑**；⛔ 不得改成字元數或改成先正規化再量。
+    """
+    found: list[OversizedTextField] = []
+    for name, value in values.items():
+        spec = FIELD_SPECS.get(name)
+        if spec is not None and spec[0] != "TEXT":
+            continue
+        size = len(str(value).encode("utf-8"))
+        if size > TEXT_FIELD_BYTE_LIMIT:
+            found.append(OversizedTextField(name=name, actual_bytes=size))
+    return found
+
+
+def render_oversize_rejection(
+    verb: str, found: Sequence[OversizedTextField], remedy: str
+) -> str:
+    """組出拒收訊息。四項要件齊全：**哪一欄**／**實際 bytes**／**超出多少**／**縮到多少**。
+
+    ``remedy`` 由呼叫端提供，且**必須是已代入實際參數的真指令**——``intake.py:112``
+    逐字「⛔ 不是 ``<在此填寫>`` 這種示意」。只有呼叫端知道實際的 repo 與編號。
+    """
+    lines = [
+        f"[{verb}] 拒絕（零遠端寫入）：下列 Project TEXT 欄超過 GitHub 伺服端硬上限 "
+        f"{TEXT_FIELD_BYTE_LIMIT} UTF-8 bytes——"
+    ]
+    for item in found:
+        lines.append(
+            f"  ・{item.name}：實際 {item.actual_bytes} bytes，"
+            f"超出 {item.excess_bytes} bytes（須縮短到 {item.limit} bytes 以內）"
+        )
+    lines.append(
+        "  ⛔ wfcli **不截斷**：TEXT 欄是 body 哨兵區塊的恆等導出（非摘要、非截斷），"
+        "截斷會讓 doctor 對這張卡永遠報簡介漂移。"
+    )
+    lines.append(remedy)
+    return "\n".join(lines)
+
+
 def set_field_value(
     runner: GhRunner,
     project: ProjectMeta,
@@ -465,7 +550,26 @@ def set_field_value(
         "--format", "json",
     ]
     if field_meta.type == "TEXT":
-        args += ["--text", str(value)]
+        # ---- 最後防線（`R1-002`）。⚠️ **這⛔ 不是閘門，是網。** ----
+        #
+        # ⭐ 真正的閘門是各動詞在**任何遠端寫入之前**做的整批預檢
+        # （`oversized_text_fields`，見它的 docstring）。本處排在寫入序列**之中** ⇒
+        # 它響的時候，同一輪先前的欄位（甚至 body）可能已經寫出去了 ⇒ **它擋不住
+        # 半寫入**，只擋「把超標值真的送到遠端」。
+        # ⛔ **不得因為有這一道就把上游的預檢拿掉**：那會把「零寫入拒收」降級成
+        # 「半寫入後才拒」，正好是 `WF-REDESIGN-W3` 驗收 7 要消滅的形態。
+        # ⚠️ 修補前此處對 1025-byte 值直接送出且 rc=0（查核者 `R1-002` 實測）。
+        text = str(value)
+        size = len(text.encode("utf-8"))
+        if size > TEXT_FIELD_BYTE_LIMIT:
+            raise ProjectError(
+                f"欄位 {field_meta.name!r} 的值 {size} bytes，超過 GitHub 伺服端硬上限 "
+                f"{TEXT_FIELD_BYTE_LIMIT} UTF-8 bytes 共 {size - TEXT_FIELD_BYTE_LIMIT} bytes。"
+                "⚠️ 走到這裡代表**上游動詞漏了整批預檢**——本輪先前的寫入可能已經送出，"
+                "⇒ 這一則⛔ 不保證零寫入。修：先讓該動詞在任何遠端寫入前呼叫 "
+                "`project.oversized_text_fields()`。"
+            )
+        args += ["--text", text]
     elif field_meta.type == "NUMBER":
         args += ["--number", str(value)]
     elif field_meta.type == "SINGLE_SELECT":
@@ -659,7 +763,9 @@ def find_item_by_card_id(items: list[ItemSnapshot], card_id: str) -> ItemSnapsho
 __all__ = [
     "CARD_FIELD_MAP",
     "FIELD_SPECS",
+    "TEXT_FIELD_BYTE_LIMIT",
     "FieldMeta",
+    "OversizedTextField",
     "ItemSnapshot",
     "ProjectError",
     "ProjectMeta",
@@ -673,6 +779,8 @@ __all__ = [
     "find_item_by_card_id",
     "list_fields",
     "list_items",
+    "oversized_text_fields",
+    "render_oversize_rejection",
     "resolve_project",
     "set_field_value",
     "set_item_body",

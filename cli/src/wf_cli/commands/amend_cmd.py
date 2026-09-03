@@ -273,6 +273,8 @@ from ..project import (
     ensure_fields,
     find_item_by_card_id,
     list_items,
+    oversized_text_fields,
+    render_oversize_rejection,
     resolve_project,
     PROJECT_TITLE_FIELD,
     set_field_value,
@@ -1061,7 +1063,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 runner, target, item, args, "、".join(needs_ruling_for)
             )
         except (RulingError, RequesterUnparseable) as exc:
-            print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
+            print(
+                f"[amend] 拒收（未寫入任何狀態）：{exc}\n"
+                "  ⇒ 先看那則裁定留言長什麼樣（已代入實際 repo 與編號）：\n"
+                f"    gh issue view {item.issue_number} --repo {target.repo} --comments",
+                file=sys.stderr,
+            )
             return 2
     elif args.ruling_url:
         # 刻意**不**把未經核對的 URL 寫進 Log：一個指標不證明它指向什麼，
@@ -1178,7 +1185,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                     "拒絕寫入不實的修訂留痕"
                 )
     except (AmendError, ResourceDeclarationError) as exc:
-        print(f"[amend] 拒收（未寫入任何狀態）：{exc}", file=sys.stderr)
+        print(
+            f"[amend] 拒收（未寫入任何狀態）：{exc}\n"
+            "  ⇒ 先看 body 現在長什麼樣（已代入實際 repo 與編號）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --json body --jq .body",
+            file=sys.stderr,
+        )
         if _is_layout_failure(exc):
             print(_LAYOUT_RUNBOOK.format(card_id=args.card_id, verify=_LAYOUT_VERIFY_SNIPPET), file=sys.stderr)
             if args.escalate:
@@ -1188,6 +1200,33 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 "[amend] --escalate 只對排版損壞生效；本次是一般拒收，不留升級紀錄",
                 file=sys.stderr,
             )
+        return 2
+
+    # ---- TEXT 欄位元上限：**純計算**，⛔ 一次遠端呼叫都不發（AC7）----
+    #
+    # ⭐ **為什麼擺在這裡**：`pending_field_writes` 到上一段為止就齊了，而本函式的
+    # 第一次遠端**寫入**在下方（級別欄／`set_item_body`）。擺在這一格 ⇒ 超標時
+    # 零遠端寫入。⛔ 不得下移到欄位補寫那一段——那已經在 `set_item_body` 之後，
+    # body 早就寫出去了，正是 AC7 要消滅的半寫入形狀。
+    # ⚠️ 也刻意排在 `--dry-run` **之前**：dry-run 必須看得到這則拒收。
+    oversized = oversized_text_fields(pending_field_writes)
+    if oversized:
+        if item.issue_number is not None and target.repo:
+            remedy = (
+                "  ⇒ 縮短後重跑同一條 amend。權威值在 body，可用下面這行取出來改"
+                "（已代入實際 repo 與編號）：\n"
+                f"    gh issue view {item.issue_number} --repo {target.repo} "
+                f"--json body --jq .body > /tmp/card-{item.issue_number}-body.md"
+            )
+        else:
+            # DraftIssue 沒有 issue number，`gh issue view` 對它不適用。
+            remedy = (
+                "  ⇒ 縮短後重跑同一條 amend。本卡是 DraftIssue（無 issue 編號），"
+                "現值用下面這行導出來看（已代入實際 owner 與 project）：\n"
+                f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+                "--out-dir /tmp/wfcli-snapshot"
+            )
+        print(render_oversize_rejection("amend", oversized, remedy), file=sys.stderr)
         return 2
 
     if args.tier is not None:
@@ -1489,8 +1528,13 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 + "；".join(stale)
                 + "。\n"
                 "  卡片現在處於「body 已更新、Project 欄位過期」——這是可直接偵測的\n"
-                "  不一致（兩個居所的值可互比），且**重跑同一條 amend 即會收斂**：\n"
-                f"     wfcli amend {args.card_id} --reason '<說明先前補寫為何中斷>' <原本的旗標>\n"
+                "  不一致（兩個居所的值可互比），且**重跑同一條 amend 即會收斂**。\n"
+                "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+                "    wfcli amend --help\n"
+                f"  ⇒ 重跑＝卡 ID {args.card_id} ＋你本次原本那些旗標照舊，"
+                "再補一個 --reason，值＝先前補寫為何中斷的一句話。\n"
+                "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：原本的旗標與中斷原因\n"
+                "  都是你手上的資訊，機械寫不出來；填空樣板只會被照貼。\n"
                 "  重跑時 body 已是目標值，本指令會走欄位補寫路徑而非拒為 no-op。",
                 file=sys.stderr,
             )

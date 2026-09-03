@@ -615,10 +615,19 @@ def test_duplicate_log_headings_also_get_runbook(card, capsys):
 
 
 def test_healthy_body_does_not_print_runbook(card, capsys):
-    """一般的拒收（例如 no-op）不該噴出排版 runbook，避免訊息噪音。"""
+    """一般的拒收（例如 no-op）不該噴出排版 runbook，避免訊息噪音。
+
+    ⚠️ **代理字串 2026-09-02 由 `gh issue view` 改為 `gh issue edit`**
+    （`WF-REDESIGN-W3` 驗收 3）：一般拒收現在也會印一條 `gh issue view … --json body`
+    當可跑補救，於是舊代理對「runbook 有沒有印」失去鑑別力。`gh issue edit` 只出現在
+    runbook 裡（上一條測試正面斷言的就是它）⇒ 換成它，本條測的仍是同一件事。
+    """
     rc = run_cli(["amend", *BASE_TARGET, "AMEND-DEMO1", "--reason", "同值", "--spec-baseline", "原基線"])
     assert rc == 2
-    assert "gh issue view" not in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "gh issue edit" not in err
+    # 正控：一般拒收**仍有**可跑補救，⛔ 不是整段訊息消失了。
+    assert "gh issue view" in err
 
 
 @pytest.fixture

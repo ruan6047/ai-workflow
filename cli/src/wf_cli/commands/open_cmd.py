@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
-from pathlib import Path
 
 from ..card import (
     CAPABILITY_TIERS,
@@ -36,7 +35,6 @@ from ..card import (
     append_log_line,
     now_iso8601,
     render_issue_body,
-    render_spec_markdown,
     validate_capability_routing,
     validate_routing_names,
 )
@@ -50,6 +48,8 @@ from ..project import (
     ensure_fields,
     find_item_by_card_id,
     list_items,
+    oversized_text_fields,
+    render_oversize_rejection,
     resolve_project,
     set_field_value,
     set_issue_title,
@@ -203,11 +203,6 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "⛔ 同一個 URL 不得出現兩次。"
         "⚠️ ⛔ **不含 --from-issue 自己**：升級後那個 issue 就是本卡，指向自己沒有意義。",
     )
-    p.add_argument(
-        "--spec-dir",
-        default=None,
-        help="git spec 檔骨架寫入目錄（慣例 tasks/）；未給則只改 Issue／上板，不寫檔",
-    )
     p.set_defaults(func=run)
 
 
@@ -301,8 +296,16 @@ def _verify_brief_field(runner, project, item_id: str, expected: str) -> None:
             return
         print(
             f"[open] 警示：簡介欄位讀回不符——body 為權威、欄位是恆等導出，"
-            f"兩者現在不一致（欄位={actual!r}）。卡已建立，⛔ 請以 "
-            f"`wfcli amend <卡ID> --brief` 重寫欄位後再派工。",
+            f"兩者現在不一致（欄位={actual!r}）。卡已建立，⛔ 請重寫欄位後再派工。\n"
+            # ⚠️ **⛔ 不得寫回 `<卡ID>`**：卡 ID 就在 `snap` 上，機械填得出來。
+            # ⚠️ **也⛔ 不得把 `<新的簡介>` 塞進指令行** —— 首版這樣寫，`R5-002` 的守衛
+            # 當場轉紅（與失誤 #41 同一形狀）。⇒ 指令行只放**乾淨可跑**的，要人填的
+            # 值寫成散文。這一則是修 `_peel()` 之後**新曝光**的，⛔ 查核者未點名。
+            "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+            "    wfcli amend --help\n"
+            f"  ⇒ 重寫＝卡 ID {snap.text('卡ID')}，補一個 --brief，值＝新的簡介全文。\n"
+            "  ⚠️ ⛔ 這裡刻意不給一行可照貼的重跑指令：簡介內容是**你要寫的**，"
+            "機械寫不出來。",
             file=sys.stderr,
         )
         return
@@ -379,14 +382,26 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         card_face = _build_card_face(args)
         validate_card_face(card_face)
     except (ValueError, CardFaceError) as exc:
-        print(f"[open] 拒絕：{exc}", file=sys.stderr)
+        print(
+            f"[open] 拒絕：{exc}\n"
+            "  ⇒ 旗標、必填欄與值域一次看完（可整行複製）：\n"
+            "    wfcli open --help\n"
+            "  ⇒ 卡面表單的欄位定義在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:cli/src/wf_cli/card_face.py",
+            file=sys.stderr,
+        )
         return 2
 
     try:
         validate_chain_depth(args.chain_depth)
     except ValidationError as exc:
         for e in exc.errors:
-            print(f"[open] 拒絕：{e}", file=sys.stderr)
+            print(
+                f"[open] 拒絕：{e}\n"
+                "  ⇒ 鏈深的合法範圍見旗標說明（可整行複製）：\n"
+                "    wfcli open --help",
+                file=sys.stderr,
+            )
         return 2
 
     # ⭐ **``Card(...)`` 刻意包進錯誤處理，⛔ 不是防禦性 try**
@@ -446,10 +461,63 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         #     換掉舊缺陷。
         # (c) ⛔ **不得由此推出「其他 ValueError 的拒收是乾淨的」**：它們的乾淨度來自
         #     上面那兩道前置檢查，⛔ 不是來自這裡。
-        print(f"[open] 拒絕：{exc}", file=sys.stderr)
+        print(
+            f"[open] 拒絕：{exc}\n"
+            "  ⇒ 旗標、必填欄與值域一次看完（可整行複製）：\n"
+            "    wfcli open --help\n"
+            "  ⇒ 卡面表單的欄位定義在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:cli/src/wf_cli/card_face.py",
+            file=sys.stderr,
+        )
         return 2
 
     owner_repo, issue_number = _split_issue_url(args.from_issue)
+
+    # ---- 欄位值：**純計算**，⛔ 一次遠端呼叫都不發 ----
+    #
+    # ⭐ 這一塊 2026-09-02 由寫入處（上板之後）**上移到此**。理由是 AC7 的
+    # 「零遠端寫入拒收」：TEXT 欄有 1024 UTF-8 bytes 的伺服端硬上限，而 open 的寫入
+    # 順序是 body → title → 上板 → 欄位（見下方）。若在最後那一步才發現欄位超標，
+    # body 與 title 都已經寫出去了 ⇒ 半寫入（`#217`、`#219` 各發生過一次）。
+    # ⛔ 不得把它搬回去，也⛔ 不得在下方另抄一份——兩份會漂。
+    values = {
+        "卡ID": card.card_id,
+        "Initiative": card.initiative or "—",
+        "級別": card.tier,
+        "功能": card.feature,
+        "owner": card.owner,
+        "分支worktree": card.branch_worktree,
+        "iteration": card.iteration,
+        "交付狀態": card.delivery_status,
+        "部署狀態": card.deployment_status,
+        "最後交接": card.last_handoff,
+        "服務的原始目標": card.service_goal,
+        "鏈深": card.chain_depth,
+        "資源宣告": decl.summary(),
+    }
+    # 雙居所的**導出**那一半（canonical §6.3）：body 是權威，欄位是它的導出。
+    # ⚠️ 只在有簡介時寫——既有卡與不給 --brief 的新卡都不該被塞空字串，那會讓
+    # brief.drifted 把「兩居所皆空」誤判成「欄位有值而 body 沒有」。
+    if card.brief is not None:
+        values["簡介"] = card.brief
+    # 階段軸的初始值（canonical §0.1）：open 建的卡一律始於「需求」——
+    # ⚠️ 與交付狀態 💡需求 同源但**不是同一件事**：那是狀態，這是階段。
+    values["階段"] = "需求"
+
+    oversized = oversized_text_fields(values)
+    if oversized:
+        print(
+            render_oversize_rejection(
+                "open",
+                oversized,
+                "  ⇒ 縮短後重跑同一條 open。清單項原文可用下面這行取出來改"
+                "（已代入實際 repo 與編號）：\n"
+                f"    gh issue view {issue_number} --repo {owner_repo} "
+                f"--json body --jq .body > /tmp/intake-{issue_number}.md",
+            ),
+            file=sys.stderr,
+        )
+        return 2
     target = resolve_target(
         owner=args.owner, project=args.project, repo=args.repo, config=args.config
     )
@@ -457,7 +525,11 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
         print(
             f"[open] 拒絕：--from-issue 指向 {owner_repo}，但目標設定的 repo 是 "
             f"{target.repo}。⇒ 卡所屬的 repo 由 issue URL 決定（registry 的軸 A 讀的就是它），"
-            "兩者不一致時⛔ 不猜哪一個算數。請改 --repo 或改 --from-issue。",
+            "兩者不一致時⛔ 不猜哪一個算數。\n"
+            "  ⇒ 這一格的補救是**改一個旗標**，⛔ 不是重跑一次完整的 open：\n"
+            f"     ・讓設定跟著 issue 走 ⇒ 把 --repo 改成 {owner_repo}\n"
+            "     ・或改 --from-issue，先在目標 repo 找對的清單項：\n"
+            f"    gh issue list --repo {target.repo} --limit 20",
             file=sys.stderr,
         )
         return 2
@@ -493,7 +565,11 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     existing = list_items(runner, project)
     if find_item_by_card_id(existing, card.card_id):
         print(
-            f"[open] 拒絕：卡ID {card.card_id} 已存在於 project {target.owner}/{target.project}",
+            f"[open] 拒絕：卡ID {card.card_id} 已存在於 project "
+            f"{target.owner}/{target.project}。⇒ 卡 ID 在同一個 project 內唯一。\n"
+            "  ⇒ 先看既有那張是什麼（已代入實際 owner 與 project）：\n"
+            f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+            "--out-dir /tmp/wfcli-snapshot",
             file=sys.stderr,
         )
         return 3
@@ -504,7 +580,14 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
             print(
                 f"[open] 拒絕：{args.from_issue} 已在 project "
                 f"{target.owner}/{target.project} 上（item_id={snap.item_id}）"
-                f"，⇒ 它已經是卡、⛔ 不是待審清單項。",
+                f"，⇒ 它已經是卡、⛔ 不是待審清單項。\n"
+                "  ⇒ 要改它請用 amend，⛔ 不是重開一次。旗標與值域（可整行複製，"
+                "⛔ 無需填任何欄位）：\n"
+                "    wfcli amend --help\n"
+                f"  ⇒ 重跑＝卡 ID {card.card_id}，加上你要改的那些旗標，"
+                "再補一個 --reason ＝ 這次要改什麼的一句話。\n"
+                "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：修訂理由是**你的判斷**，"
+                "機械寫不出來；給一行填空樣板只會被照貼，寫進一筆無意義的 reason。",
                 file=sys.stderr,
             )
             return 3
@@ -541,29 +624,6 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     set_issue_title(runner, owner_repo, issue_number, title)
     item_id = add_item_to_project(runner, target.owner, target.project, args.from_issue)
 
-    values = {
-        "卡ID": card.card_id,
-        "Initiative": card.initiative or "—",
-        "級別": card.tier,
-        "功能": card.feature,
-        "owner": card.owner,
-        "分支worktree": card.branch_worktree,
-        "iteration": card.iteration,
-        "交付狀態": card.delivery_status,
-        "部署狀態": card.deployment_status,
-        "最後交接": card.last_handoff,
-        "服務的原始目標": card.service_goal,
-        "鏈深": card.chain_depth,
-        "資源宣告": decl.summary(),
-    }
-    # 雙居所的**導出**那一半（canonical §6.3）：body 已在上方寫成，欄位在此跟上。
-    # ⚠️ 只在有簡介時寫——既有卡與不給 --brief 的新卡都不該被塞空字串，那會讓
-    # brief.drifted 把「兩居所皆空」誤判成「欄位有值而 body 沒有」。
-    if card.brief is not None:
-        values["簡介"] = card.brief
-    # 階段軸的初始值（canonical §0.1）：open 建的卡一律始於「需求」——
-    # ⚠️ 與交付狀態 💡需求 同源但**不是同一件事**：那是狀態，這是階段。
-    values["階段"] = "需求"
     for name, value in values.items():
         set_field_value(runner, project, item_id, fields[name], value)
     # ⭐ 讀回驗證（§6.3 逐字「寫入順序 body 先、欄位後並讀回驗證」）。
@@ -571,17 +631,16 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
     if card.brief is not None:
         _verify_brief_field(runner, project, item_id, card.brief)
 
-    spec_path: Path | None = None
-    if args.spec_dir:
-        spec_dir = Path(args.spec_dir)
-        spec_dir.mkdir(parents=True, exist_ok=True)
-        spec_path = spec_dir / f"{card.card_id}.md"
-        spec_path.write_text(render_spec_markdown(card), encoding="utf-8")
-
+    # ⚠️ `--spec-dir` 於 2026-09-02 移除（`WF-REDESIGN-W3` 驗收 1，決議 §二 row 10）：
+    # 它把「規格」寫成一個**離卡的本機檔**，而 row 10 的取代者是「規格住卡面」
+    # （見 `card_spec.py` 的 `card-spec:v1` 哨兵）。兩者並存等於兩個真相源，
+    # 而離卡的那一份⛔ 沒有任何機械看得到它有沒有腐爛。
+    # ⛔ 不留過渡期旗標——`registry.py:614` 逐字「給逃生口等於把『沒注意到』
+    # 變成『按一下』」。`card.render_spec_markdown` 本身**保留**（`test_card.py`
+    # 與 `contract_tool_reconcile._CARD_RENDERERS` 仍消費它），移除的只是 open 這條
+    # 寫檔路徑。
     print(
         f"[open] 已由清單項升級為卡 {card.card_id}"
         f"（item_id={item_id}，type=Issue，issue=#{issue_number} {args.from_issue}）"
     )
-    if spec_path:
-        print(f"[open] git spec 檔骨架：{spec_path}")
     return 0

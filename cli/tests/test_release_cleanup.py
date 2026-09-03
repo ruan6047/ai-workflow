@@ -41,6 +41,7 @@ from wf_cli.project import (
 )
 
 from .conftest import git
+from .test_pitfalls import with_pm_note_report
 from .fake_gh import FakeGhRunner, _parse_flags, open_required_argv
 from .test_pitfalls import with_pitfall_report
 
@@ -278,13 +279,15 @@ def env(tmp_path: Path, sandbox_repo: Path, monkeypatch: pytest.MonkeyPatch) -> 
     # ls-remote／push --delete 打向真實網路）；它現在只會讓軸 B 判
     # `observed_repo_unidentifiable`——也就是「這台機器說不出這個 worktree 屬於誰」，
     # 而那不擋人。
-    assert run_cli([
+    # ⚠️ `with_pm_note_report` 是 `WF-REDESIGN-W3` R1-003 加的必要前提（PM 派審詞的
+    # 注意事項回應清冊）；形狀與 `with_pitfall_report` 同型。
+    assert run_cli(with_pm_note_report([
         "assign", *BASE_TARGET, CARD_ID,
         "--assignee", "Claude@Claude Code",
         "--branch", BRANCH,
         "--worktree", str(wt),
         "--actual-capability", "高階型",
-    ]) == 0
+    ], CARD_ID)) == 0
     set_field_value(runner, project, item.item_id, fields["交付狀態"], "📦已合併")
     assert card_fields(runner)["分支worktree"] == format_branch_worktree(BRANCH, str(wt))
 

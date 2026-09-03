@@ -60,6 +60,7 @@ from ..card import (
     append_log_line,
     compare_capability_to_card,
     format_branch_worktree,
+    parse_branch_worktree,
     is_owner_assigned,
     now_iso8601,
 )
@@ -69,6 +70,8 @@ from ..project import (
     ensure_fields,
     find_item_by_card_id,
     list_items,
+    oversized_text_fields,
+    render_oversize_rejection,
     resolve_project,
     set_field_value,
     set_item_body,
@@ -80,13 +83,213 @@ from ..registry import (
     observe_local_worktree,
 )
 from ..resources import (
+    DB_CANONICAL_ENVIRONMENTS,
+    ResourceConflict,
     ResourceDeclarationError,
-    find_conflicts,
+    detailed_conflicts,
     parse_block,
+    repo_of_issue_url,
     try_parse_block,
+    unregistered_db_environments,
 )
 
 TERMINAL_STATUSES = {"🏁完成", "🛑已停止"}
+
+
+def is_intersection_candidate(other) -> bool:
+    """交集檢查的候選母體判準（`WF-REDESIGN-W3` 驗收 4(a)）。
+
+    ⭐ **判準是聯集，⛔ 不是替換**：``owner`` 非佔位 **OR** ``分支worktree`` 有值。
+    卡面逐字寫的是「old→new」，讀成**替換**會漏放——2026-09-02 實測（活卡 55）
+    舊判準 33 張、新判準 15 張、**聯集 44 張**、交集 4 張 ⇒ 替換版**漏放 29 張**。
+    需求方 2026-09-02 裁定 A-3 照准聯集。
+
+    ⚠️ **為什麼兩個都要**：``owner`` 說「有人認領」、``分支worktree`` 說「已經有一條
+    分支或工作樹在動」。兩者⛔ 不互相蘊含——assign 之外還有別的路徑會寫其中一欄。
+    """
+    if is_owner_assigned(other.owner_field):
+        return True
+    branch, worktree = parse_branch_worktree(other.branch_worktree or "")
+    return bool(branch or worktree)
+
+
+def _pm_note_gate(args, item, target) -> int:
+    """PM 派審詞的注意事項回應清冊閘門（`WF-REDESIGN-W3` `R1-003`）。
+
+    **與 `handoff` 走同一個 validator**（`pitfalls.parse_note_report`），⛔ 不是另寫
+    一份——那會讓兩邊的格數判準漂開，而「⛔ 不得互相代用」正是這份清冊的核心紀律。
+
+    清冊＝這張卡**當前階段**的那一份，也就是 PM 正要交給執行者的同一份
+    （`planning.md` §6 ① 逐字「CLI 印出的三層編號清單」）。
+
+    **兩條豁免，各自出聲**（⛔ 豁免不得是靜默的）：判不出當前階段、或該階段的清冊
+    為空（`部署`／`維護` 的框架層是**結構性 0**）。
+    """
+    # ⚠️ **函式體內 import，⛔ 不在模組層**：`handoff_cmd` 已經 import 本模組的
+    # `TERMINAL_STATUSES`，模組層反向 import 會成環。順帶也避開 `#240` 的行號位移。
+    import pathlib
+
+    from .. import pitfalls
+    from . import handoff_cmd as _hc
+
+    resolution = pitfalls.resolve_departing_phase(
+        item.text("階段"),
+        item.fields.get("交付狀態"),
+        _hc.STAGE_STATUS,
+        _hc.STAGE_PHASE,
+    )
+    if resolution.phase is None:
+        print(
+            "[assign] 注意：判不出這張卡目前在哪個階段，**本次未要求 PM 注意事項回應清冊**"
+            f"（{resolution.basis}）。⛔ 這不是『檢查通過了』，是這條路上沒有檢查。",
+            file=sys.stderr,
+        )
+        return 0
+
+    phase = resolution.phase
+
+    # ---- 專案層根目錄：**經驗證**才送進 reader 與 renderer（`R2-001`）----
+    #
+    # ⭐ **修補前這裡讀的是一個不存在的旗標**：`getattr(args, "repo_path", None)` 在
+    # `assign` 上永遠回 `None`（`assign` parser 當時⛔ 無 `--repo-path`，查核者複驗
+    # `grep -c '"--repo-path"' assign_cmd.py` ＝ 0）⇒ **真實入口永遠把專案層清冊視為
+    # 空集合**，而 `--note-report` 的 help 卻承諾會讀 `P-<階段>-NN`。
+    # ⇒ 補的是**輸入通道**；「用當前階段選清冊」那個裁斷經查核者確認為對，⛔ 未改。
+    #
+    # ⚠️ 驗證只做到「是一個存在的目錄」，⛔ 不驗它是不是 git repo：
+    # `project_roster_for` 讀的是 `<root>/stage-rules/<階段>.md` 這個**單一具名檔**，
+    # 一個非 git 的目錄照樣可以合法地擺著那份檔。要求 git repo 會把一條⛔ 不存在的
+    # 前提寫進閘門。此上界明說於此，⛔ 不隱含。
+    project_root = getattr(args, "repo_path", None)
+    if project_root is not None:
+        candidate = pathlib.Path(project_root)
+        if not candidate.is_dir():
+            print(
+                f"[assign] 拒絕：--repo-path 指的不是一個存在的目錄：{project_root}\n"
+                "  ⇒ 專案層注意事項讀的是 `<repo-path>/stage-rules/<階段>.md` 的 §5；"
+                "先確認你要指的根目錄是哪一個：\n"
+                "    git rev-parse --show-toplevel",
+                file=sys.stderr,
+            )
+            return 2
+        project_root = str(candidate)
+    else:
+        # ⛔ 豁免不得是靜默的——形狀沿 `handoff_cmd._note_gate`。
+        print(
+            "[assign] 注意：未給 --repo-path ⇒ **專案層注意事項視為空集合**"
+            "（讀不到 `<專案 repo>/stage-rules/`）。⛔ 這⛔ 不代表該專案沒有加嚴條文。",
+            file=sys.stderr,
+        )
+
+    try:
+        roster = pitfalls.combined_note_roster(phase, project_root)
+    except pitfalls.ProjectNoteRosterError as exc:
+        print(f"[assign] 拒絕：{exc}", file=sys.stderr)
+        return 2
+
+    if not roster:
+        print(
+            f"[assign] 注意：「{phase}」階段的注意事項清冊為空 ⇒ **本次未要求回應**。"
+            "⚠️ 那是結構性 0（該階段的 stage-rules §5 沒有條目），⛔ 不是遺漏。",
+            file=sys.stderr,
+        )
+        return 0
+
+    raw = getattr(args, "note_report", None)
+    text = None
+    if raw is not None:
+        text = pathlib.Path(raw[1:]).read_text(encoding="utf-8") if raw.startswith("@") else raw
+    if text is None:
+        print(
+            pitfalls.note_refusal_message(
+                phase, resolution.basis, project_root=project_root
+            ).replace(
+                "[handoff]", "[assign]"
+            ).replace("--note-report 傳入", "--note-report 傳入（PM 派審詞，R1-003）"),
+            file=sys.stderr,
+        )
+        return 2
+
+    parsed = pitfalls.parse_note_report(text, roster)
+    if not parsed.ok:
+        print(
+            pitfalls.note_refusal_message(
+                phase, resolution.basis, parsed.errors, project_root=project_root
+            ).replace("[handoff]", "[assign]"),
+            file=sys.stderr,
+        )
+        return 2
+
+    followed = sum(1 for row in parsed.rows if row.kind == "followed")
+    counts = parsed.counts()
+    print(
+        f"[assign] PM 注意事項回應清冊（「{phase}」，{len(parsed.rows)} 條）已收下："
+        f"已遵循 {followed}／不適用 {counts['not_applicable']}／發現 {counts['found']}。"
+        "⛔ CLI 只驗編號窮舉性、值域與非空；**判內容的是檢閱那一環——人或另一個 AI。**"
+    )
+    return 0
+
+
+def render_conflict_refusal(card_id: str, conflicts: list[ResourceConflict]) -> str:
+    """拒絕訊息。**四要件逐條齊全**。
+
+    ⚠️ **四要件的居所⛔ 不是卡面。** 它們住在規劃階段規格 `W3-PLANNING-8AC.md`
+    ——那是**執行者 scratchpad，⛔ 不在本 repo 內** ⇒ 這裡**刻意⛔ 不給行號**
+    （指不到的檔配行號 = 一個保證會腐爛的指標）。**可長期查證的居所是下面那則裁定的
+    URL**，⛔ 不是那個檔。
+    本 docstring 原本寫「（卡面驗收 4(b)）」——那個歸屬**已證為錯**：卡面 AC4(b) 逐字
+    只講 `file:` 前綴包含語意與四個測試，**⛔ 完全沒有「拒絕訊息四要件」**
+    （PM 對卡面 body 34,917 bytes 逐字檢索）。
+
+    ① 哪兩個分量序列互為前綴（含**雙方卡 ID 與原始字面**）
+    ② 觸發哪一來源（`resources.CONFLICT_SOURCES` 的封閉值域）
+    ③ **收窄方向**：指名要改的旗標（`--resources`），並**每則衝突各附一句可據以判斷
+       的收窄方向**（`narrowing_hint()`）。⛔ 不要求輸出一行可照貼的完整指令——收窄到
+       哪個路徑構造上是**人的判斷**；⛔ 亦不得以填空樣板代替（`R3-001`）。
+    ④ 本則計入 `WF-REDESIGN-W3` 驗收 3 的「補可跑補救」母體
+
+    ⚠️ **③ 於 2026-09-03 由需求方裁定收窄**（`ruan6047/ai-workflow#221`
+    `issuecomment-5523123629`）。原逐字是「**可貼進** `wfcli amend --resources` 的收窄
+    **寫法**」。裁定逐字登記「**這是射程收窄，⛔ 不是澄清**」，並附
+    `stage-rules/pm-conduct.md` §四紅線自檢與「⚠️ 若日後認為這就是為做不到而改射程，
+    本裁定即為該判斷的證據所在」。⛔ 引用時不得省略這個界線。
+
+    ⛔ **⛔ 不給 `--force`**：`registry.py:614` 先例逐字「給逃生口等於把『沒注意到』
+    變成『按一下』」。⛔ 也不分級——誤判母體是**結構性 0**（前身 matcher 是嚴格字串
+    相等，構造上產不出前綴誤判）。**替代逃生口＝收窄宣告**，即要件 ③。
+    """
+    lines = [
+        f"[assign] 拒絕：{card_id} 的資源宣告與下列活卡衝突。改宣告後重跑。\n"
+        "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+        "    wfcli amend --help\n"
+        f"  ⇒ 重跑要帶的三樣：卡 ID ＝ {card_id}；"
+        "`--reason` ＝ 收窄資源宣告以解除與下列活卡的交集；"
+        "`--resources` ＝ **收窄後的真實路徑**。\n"
+        "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：收窄到哪個路徑是**你的判斷**"
+        "（下面每一則衝突各附一句收窄方向），機械推不出來。給一行填空樣板只會被照貼，"
+        "寫進一筆無意義的資源宣告。"
+    ]
+    for c in conflicts:
+        lines.append(
+            f"  - {c.other_card_id}：{c.mine}  ×  {c.theirs}"
+        )
+        lines.append(
+            f"      分量序列 {c.key_mine} 與 {c.key_theirs} 互為前綴；來源＝{c.source}"
+        )
+        lines.append(f"      收窄：{c.narrowing_hint()}")
+    # ⛔ **這裡刻意什麼都不 append**（`R3-001`）。
+    #
+    # ⭐ 修補前這裡還 append 了一行 `wfcli amend {card_id} --resources file:收窄後的路徑
+    # --reason '…'`，而**同一則訊息的開頭**（見上方 `lines[0]`）逐字寫著「⛔ 這裡刻意
+    # 不給一行可照貼的重跑指令……給一行填空樣板只會被照貼，寫進一筆無意義的資源宣告」
+    # ⇒ **同一則訊息自我矛盾**。查核者 R3-001 逐字：「刪除殘留的填空命令」。
+    #
+    # ⚠️ 成因登記（⛔ 不美化）：R2 那一輪只換掉了 `lines = [...]` 這個**頭**，⛔ 沒讀完
+    # 函式尾巴。而本檔的測試也沒抓到——它只看 `placeholder_lines`（**只認 `<…>` 樣式**，
+    # 中文 `file:收窄後的路徑` 進不去），另一條只要求「以乾淨 command 開頭」。
+    # ⇒ 判準是**整則最終輸出的每一條指令行**，⛔ 不是第一條、⛔ 不是角括號樣式。
+    return "\n".join(lines)
+
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -115,6 +318,25 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "只有真的要登記跨 repo 時才需要打，而那時它會被擋下並指向 #16 §7.1 的連結卡做法。"
         "它不是 --force：給了之後仍要通過同一組比對，指錯 repo 照樣被拒。"
         "⚠️ 它是**宣告**：本閘門不觀測、也不綁定後續真正的 git worktree add。",
+    )
+    p.add_argument(
+        "--note-report",
+        default=None,
+        help="**PM 派審詞的注意事項回應清冊**（`WF-REDESIGN-W3` R1-003）。"
+        "對這張卡**當前階段**的框架層 `F-<階段>-NN` 與專案層 `P-<階段>-NN` 逐條回應，"
+        "每條恰好一行「編號：值」，值三選一（已遵循／不適用：<原因>／發現：<處置>）。"
+        "以 @<路徑> 開頭則讀檔。⚠️ 這份與執行者交回時的 `handoff --note-report` "
+        "**走同一個 validator**（`pitfalls.parse_note_report`）——`pm-conduct` 逐字"
+        "「PM 產出也有檢核清冊……發出前逐條回應」，而修補前 PM 派審是唯一繞得過的路。"
+        "⛔ 通過本閘門不代表內容被驗過——判內容的是檢閱那一環（人或另一個 AI）。",
+    )
+    p.add_argument(
+        "--repo-path",
+        default=None,
+        help="**本機專案根目錄**（`WF-REDESIGN-W3` `R2-001`）。有給則從 "
+        "`<repo-path>/stage-rules/<階段>.md` 的 §5 讀專案層注意事項 `P-<階段>-NN`，"
+        "累加在框架層 `F-<階段>-NN` 之後。**未給即視為空集合**，且會在 stderr 明示"
+        "（⛔ 不靜默）。⚠️ 只驗「是一個存在的目錄」，⛔ 不驗它是不是 git repo。",
     )
     p.add_argument(
         "--status", default="🔨執行中", help="assign 後的交付狀態；預設 🔨執行中"
@@ -162,6 +384,15 @@ def _ownership_log_fragment(
 
 
 def run(args: argparse.Namespace) -> int:
+    # ⚠️ **`shlex` 刻意在函式體內 import，⛔ 不在模組層。** 模組層多一行會把整個檔
+    # 往下推一行，而 `docs/WF_EVENT_IDEMPOTENCY1.md` 有一條指向 `assign_cmd.py:58`
+    # 的行號指標——它**今天就已經腐爛**（那一行是 `from ..card import (`，而該句說的
+    # 是 `--status` 的宣告；它連預設值都寫錯：說 `🚧進行中`、實際是 `🔨執行中`），
+    # 位移只是讓 `qualified_pointer_scan` 偵測得到。修它要動 `docs/`，而那⛔ 不在本卡
+    # write-set ⇒ 已登記為另案。先例：`doctor._build_reachability_probes` 同樣在
+    # 函式體內 import。⛔ 這**不是**在遮蔽那條腐爛指標——它被寫進交付報告與另案清單。
+    import shlex
+
     target = resolve_target(
         owner=args.owner, project=args.project, repo=args.repo, config=args.config
     )
@@ -177,7 +408,16 @@ def run(args: argparse.Namespace) -> int:
     try:
         mine = parse_block(item.body)
     except ResourceDeclarationError as exc:
-        print(f"[assign] 拒絕：目標卡資源宣告解析失敗（{exc}），無法安全派工", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：目標卡資源宣告解析失敗（{exc}），無法安全派工——"
+            "交集檢查讀不到宣告就等於沒有檢查，⛔ 不放行。\n"
+            "  ⇒ 先看 body 現在長什麼樣（已代入實際 repo 與編號）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --json body --jq .body\n"
+            "  ⇒ 修好之後重寫宣告（引號內換成實際資源）：\n"
+            f"    wfcli amend {args.card_id} --resources file:cli/src/ "
+            "--reason '修復資源宣告區塊的排版'",
+            file=sys.stderr,
+        )
         return 2
 
     # 規劃期路由的派工端閘門。刻意排在所有 set_field_value 之前：拒絕時必須零寫入，
@@ -192,7 +432,18 @@ def run(args: argparse.Namespace) -> int:
     comparison = compare_capability_to_card(item.body, args.actual_capability)
     deviation_reason = (args.capability_deviation_reason or "").strip()
     if comparison.requires_reason and not deviation_reason:
-        print(f"[assign] 拒絕：{comparison.refusal_message()}", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：{comparison.refusal_message()}\n"
+            "  ⇒ 先看卡面第 4 行的建議執行層級是什麼（已代入實際 issue 與 repo，"
+            "可整行複製）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} "
+            "--json body --jq .body\n"
+            "  ⇒ 重跑＝你本次那一行原封不動，再補一個 --capability-deviation-reason，"
+            "值＝**為什麼實際派的層級可以偏離卡面建議**的一句話。\n"
+            "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：偏離理由是**你的判斷**，"
+            "機械寫不出來。給一行填空樣板只會被照貼，寫進一筆無意義的偏離理由。",
+            file=sys.stderr,
+        )
         return 2
 
     # 跨 repo 歸屬閘門（#57）。與能力閘門同理排在所有 set_field_value／set_item_body
@@ -209,7 +460,12 @@ def run(args: argparse.Namespace) -> int:
         worktree_source_repo=args.worktree_source_repo,
     )
     if ownership.blocked:
-        print(f"[assign] 拒絕：{ownership.refusal_message()}", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：{ownership.refusal_message()}\n"
+            "  ⇒ 先確認這張卡實際屬於哪個 repo（歸屬由 issue URL 決定）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --json url --jq .url",
+            file=sys.stderr,
+        )
         return 5
 
     # 軸 B（機器局部）：路徑在這台機器上是什麼。它**不參與歸屬判定**，回傳碼刻意與
@@ -220,27 +476,90 @@ def run(args: argparse.Namespace) -> int:
         args.worktree, expected_repo=ownership.worktree_repo
     )
     if observation.refuses:
-        print(f"[assign] 拒絕：{observation.message()}", file=sys.stderr)
+        print(
+            f"[assign] 拒絕：{observation.message()}\n"
+            "  ⇒ 先看這台機器上那條路徑到底屬於哪個 repo（已代入你本次給的路徑）：\n"
+            f"    git -C {shlex.quote(args.worktree)} rev-parse --show-toplevel\n"
+            f"    git -C {shlex.quote(args.worktree)} remote get-url origin",
+            file=sys.stderr,
+        )
         return 6
     if observation.action == "warn":
         print(f"[assign] {observation.message()}", file=sys.stderr)
 
-    conflicts: list[tuple[str, list[str]]] = []
+    # ---- §4.2 座標原點：本卡歸屬必須先確立 ----
+    #
+    # `WF_RESOURCE_WRITESET1` §4.2 逐字：「**本卡自身歸屬無法確立**且其宣告含任何
+    # `file:` 資源：`assign` **拒絕派工**，要求先轉為真 Issue。本卡的歸屬是整個比對
+    # 平面的**座標原點**，座標未定時整個比對沒有意義，退回『視同同 repo』也救不了。」
+    mine_repo = repo_of_issue_url(item.issue_url)
+    if mine_repo is None and any(r.startswith("file:") for r in mine.resources):
+        print(
+            f"[assign] 拒絕：{args.card_id} 的 repo 歸屬無法由 issue_url 確立"
+            f"（實際值 {item.issue_url!r}），而它宣告了 file: 資源。\n"
+            "  repo 歸屬是 file: 相交判定的座標原點（WF_RESOURCE_WRITESET1 §4.2）；"
+            "座標未定時整個比對沒有意義，⛔ 退回「視同同 repo」也救不了。\n"
+            "  ⇒ 先把這張 DraftIssue 轉成真 Issue 再派工。看目前狀態：\n"
+            f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+            "--out-dir /tmp/wfcli-snapshot",
+            file=sys.stderr,
+        )
+        return 4
+
+    # ---- db: 環境未登記 ⇒ **按字面＋stderr 警示**（驗收 4(c) 第二格）----
+    # ⛔ 不擋派工：未登記只代表「本表不認得這個環境」，⛔ 不代表宣告非法
+    #（非法字面在 parse_block 就被 ResourceDeclarationError 擋掉了）。
+    #
+    # ⭐ **判定對比對的雙方都做**（`R1-005`）。修補前只對 `mine.resources` 做 ⇒
+    # 「未登記的環境只出現在**別卡**」時完全沒有警示，而那正是最危險的一半：
+    # 本卡自己拼對了、別卡拼錯了，兩者於是被按字面判為**不相交**而雙雙放行。
+    # 收集後**去重且保序**再輸出，⛔ 不逐卡各印一行（同一個環境會被印 N 次）。
+    unregistered: list[str] = []
+    seen_unregistered: set[str] = set()
+
+    def _note_unregistered(resources: list[str]) -> None:
+        for token in unregistered_db_environments(resources):
+            if token not in seen_unregistered:
+                seen_unregistered.add(token)
+                unregistered.append(token)
+
+    _note_unregistered(mine.resources)
+
+    conflicts: list[ResourceConflict] = []
     skipped_unparseable: list[str] = []
     for other in items:
         if other.item_id == item.item_id or not other.card_id:
             continue
         if (other.delivery_status or "") in TERMINAL_STATUSES:
             continue
-        if not is_owner_assigned(other.owner_field):
-            continue  # 尚未認領，無實際執行中的分支／worktree 可爭資源
+        if not is_intersection_candidate(other):
+            continue  # 既未認領、也沒有分支／工作樹在動 ⇒ 無實際執行中的東西可爭資源
         other_decl = try_parse_block(other.body)
         if other_decl is None:
             skipped_unparseable.append(other.card_id)
             continue
-        overlap = find_conflicts(mine, other.card_id, other_decl)
-        if overlap:
-            conflicts.append((other.card_id, overlap))
+        _note_unregistered(other_decl.resources)
+        conflicts.extend(
+            detailed_conflicts(
+                mine,
+                other.card_id,
+                other_decl,
+                mine_repo=mine_repo,
+                other_repo=repo_of_issue_url(other.issue_url),
+            )
+        )
+
+    if unregistered:
+        print(
+            "[assign] 警告：下列 db: 資源的環境分量未登記，交集檢查**按字面**比對"
+            f"（⛔ 不做別名正規化）：{'、'.join(unregistered)}。\n"
+            "  ⚠️ 本行涵蓋**本卡與所有候選活卡兩側**（`R1-005`）——未登記的環境只要"
+            "出現在任何一邊，兩張卡就會被按字面判為不相交而雙雙放行。\n"
+            f"  已登記的 canonical 環境：{'、'.join(DB_CANONICAL_ENVIRONMENTS)}"
+            f"（別名表今日為空）。若這是別名，須先登記進 "
+            "`cli/src/wf_cli/resources.py::DB_ENVIRONMENT_ALIASES`。",
+            file=sys.stderr,
+        )
 
     if skipped_unparseable:
         print(
@@ -250,12 +569,55 @@ def run(args: argparse.Namespace) -> int:
         )
 
     if conflicts:
-        print(f"[assign] 拒絕：{args.card_id} 的資源宣告與下列活卡衝突", file=sys.stderr)
-        for cid, overlap in conflicts:
-            print(f"  - {cid}：{', '.join(overlap)}", file=sys.stderr)
+        print(render_conflict_refusal(args.card_id, conflicts), file=sys.stderr)
         return 4
 
     branch_worktree = format_branch_worktree(args.branch, args.worktree)
+
+    # ---- PM 派審詞的注意事項回應清冊（`R1-003`）。純計算、⛔ 零遠端寫入 ----
+    #
+    # ⭐ **修補前 PM 派審是唯一繞得過 validator 的路**：`handoff` 有 `--note-report`，
+    # `assign` 沒有 ⇒ `pm-conduct` 逐字「PM 產出也有檢核清冊……發出前逐條回應」在
+    # 機械上完全沒有承接（查核者 R1-003 的證據逐字：「本次 PM 派審正是經 assign
+    # 完成，未經 validator」）。
+    #
+    # **清冊＝這張卡當前階段的那一份**——也就是 PM 正要交給執行者的同一份
+    # （`planning.md` §6 ① 逐字「CLI 印出的三層編號清單」）。⇒ PM 逐條回應，等於
+    # 機械保證他**讀過自己交出去的清單**。
+    # ⚠️ **⛔ 不是 PM 自己的 `F-PM-NN` 清冊**——`stage-rules/pm-conduct.md` 的 §5 今日
+    # 有 **0** 條 `F-`，那份清冊⛔ 不存在。這一點已登記，⛔ 不由本卡發明。
+    #
+    # ⚠️ **擋人點 +1**（本卡總增量由 +3 變 +4）。這是 R1-003 disposition 的直接後果
+    # （逐字要求「缺報告／錯格數時零寫入測試」⇒ 缺報告必須是拒收），⛔ 非本卡自選。
+    note_rc = _pm_note_gate(args, item, target)
+    if note_rc != 0:
+        return note_rc
+
+    # ---- TEXT 欄位元上限：**整批**預檢，純計算、⛔ 一次遠端呼叫都不發（`R1-002`）----
+    #
+    # ⭐ **修補前 `assign` 完全沒有這道檢查**：它先寫 owner、再寫可能超標的分支欄
+    # ⇒ 第二個 `set_field_value` 撞 GraphQL 時 owner 已經寫進去了，留下半寫入。
+    # ⇒ 檢查**整批**（三個欄一起），且排在本函式第一次遠端**寫入**之前。
+    # ⛔ 不得改成逐欄檢查後逐欄寫——那等於把半寫入原樣留著。
+    oversized = oversized_text_fields(
+        {
+            "owner": args.assignee,
+            "分支worktree": branch_worktree,
+            "交付狀態": args.status,
+        }
+    )
+    if oversized:
+        print(
+            render_oversize_rejection(
+                "assign",
+                oversized,
+                "  ⇒ 縮短後重跑同一條 assign。看目前的欄位值（已代入實際 owner 與 project）：\n"
+                f"    wfcli snapshot --owner {target.owner} --project {target.project} "
+                "--out-dir /tmp/wfcli-snapshot",
+            ),
+            file=sys.stderr,
+        )
+        return 2
 
     # ⭐ **Log 行的組裝與寫入邊界守衛刻意排在所有遠端寫入之前**
     #    （WF-MARKER-WRITE-BOUNDARY1，2026-08-27 依查核 R2-02

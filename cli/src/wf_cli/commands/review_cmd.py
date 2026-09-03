@@ -73,6 +73,8 @@ from ..project import (
     ensure_fields,
     find_item_by_card_id,
     list_items,
+    oversized_text_fields,
+    render_oversize_rejection,
     resolve_project,
     set_field_value,
     set_item_body,
@@ -194,12 +196,27 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     if not args.reviewer.strip():
-        print("[review] 拒絕：--reviewer 不得為空（裁決必須可歸屬到查核者）", file=sys.stderr)
+        input_clause, note = _retry_input_clause(args)
+        print(
+            "[review] 拒絕：--reviewer 不得為空（裁決必須可歸屬到查核者）\n"
+            "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+            "    wfcli review --help\n"
+            f"  ⇒ 重跑要帶的四樣：卡 ID ＝ {args.card_id}；"
+            f"--source-sha ＝ {args.source_sha}；{input_clause}；"
+            "--reviewer ＝ 查核者的帳號或「模型@工具」。\n"
+            f"{note}"
+            "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：查核者身分是**你要宣告的**，"
+            "機械填不出來——拿 `gh api user` 代入會寫進一個**錯的**歸屬，"
+            "給一行填空樣板只會被照貼。",
+            file=sys.stderr,
+        )
         return 2
     if args.escalation_epoch < 0:
         print(
             f"[review] 拒絕：--escalation-epoch 不得為負（收到 {args.escalation_epoch}）；"
-            "epoch 只能由 escalation-epoch-change 逐一遞增（review-escalation.md §4）",
+            "epoch 只能由 escalation-epoch-change 逐一遞增（review-escalation.md §4）。\n"
+            "  ⇒ 先看這張卡目前在第幾個 epoch（已代入實際值；`.` 是必填的 repo 路徑）：\n"
+            f"    wfcli doctor . --owner {args.owner} --project {args.project}",
             file=sys.stderr,
         )
         return 2
@@ -208,14 +225,24 @@ def run(args: argparse.Namespace) -> int:
         raw_text = _read_input(args.input)
         data = parse_structured_block(raw_text)
     except ReviewParseError as exc:
-        print(f"[review] 拒收：{exc}", file=sys.stderr)
+        print(
+            f"[review] 拒收：{exc}\n"
+            "  ⇒ 值域**⛔ 不在 --help 裡**（實測 30 行、關鍵字 0 次）；它在查核提示範本：\n"
+            "    git show HEAD:templates/review-prompt.md",
+            file=sys.stderr,
+        )
         return 2
 
     # review-invalid 先判：它在 §1 是獨立層次（不計 iteration、不建立 attempt），
     # 與「格式不合」的處置不同，必須能被呼叫端用退出碼分辨。
     invalid = review_invalid_reasons(data)
     if invalid:
-        print("[review] 拒收（review-invalid，不計 iteration、卡片狀態不變）：", file=sys.stderr)
+        print(
+            "[review] 拒收（review-invalid，不計 iteration、卡片狀態不變）：\n"
+            + "  ⇒ 契約原文在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:stage-rules/review.md",
+            file=sys.stderr,
+        )
         for reason in invalid:
             print(f"  - {reason}", file=sys.stderr)
         return 4
@@ -223,7 +250,12 @@ def run(args: argparse.Namespace) -> int:
     try:
         report = validate_review_report(data)
     except ValidationError as exc:
-        print("[review] 拒收：查核輸出不符契約（未寫入任何遠端狀態）", file=sys.stderr)
+        print(
+            "[review] 拒收：查核輸出不符契約（未寫入任何遠端狀態）\n"
+            + "  ⇒ 契約原文在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:stage-rules/review.md",
+            file=sys.stderr,
+        )
         for error in exc.errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
@@ -239,7 +271,12 @@ def run(args: argparse.Namespace) -> int:
     try:
         overrides = validate_accepted_overrides(args.mark_not_accepted, report.findings)
     except ValidationError as exc:
-        print("[review] 拒收：accepted 標記不合格（未寫入任何遠端狀態）", file=sys.stderr)
+        print(
+            "[review] 拒收：accepted 標記不合格（未寫入任何遠端狀態）\n"
+            + "  ⇒ 契約原文在本 repo 內，⛔ 不必連網：\n"
+            "    git show HEAD:stage-rules/review.md",
+            file=sys.stderr,
+        )
         for error in exc.errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
@@ -268,7 +305,9 @@ def run(args: argparse.Namespace) -> int:
         # 可留言的對象，寧可不寫也不要只翻板狀態、留下沒有裁決全文的「已通過」。
         print(
             "[review] 拒絕：裁決留言需要真實 repo Issue，請給 --repo owner/repo"
-            "（或設定檔 repo／環境變數 WFCLI_REPO）",
+            "（或設定檔 repo／環境變數 WFCLI_REPO）。\n"
+            "  ⇒ 目前這台機器上的預設 repo 是哪一個：\n"
+            "    git remote get-url origin",
             file=sys.stderr,
         )
         return 2
@@ -284,7 +323,10 @@ def run(args: argparse.Namespace) -> int:
     if item.content_type != "Issue" or item.issue_number is None:
         print(
             f"[review] 拒絕：卡 {args.card_id} 是 Project draft item，沒有可留言的 Issue timeline；"
-            "請先以真實 repo Issue 承載此卡（canonical §4.3：卡狀態＝Issue）",
+            "請先以真實 repo Issue 承載此卡（canonical §4.3：卡狀態＝Issue）。\n"
+            "  ⇒ 先看這張 draft item 現在的內容（已代入實際 owner 與 project）：\n"
+            f"    wfcli snapshot --owner {args.owner} --project {args.project} "
+            "--out-dir /tmp/wfcli-snapshot",
             file=sys.stderr,
         )
         return 2
@@ -316,7 +358,12 @@ def run(args: argparse.Namespace) -> int:
             history, escalation_epoch=args.escalation_epoch, card_body=item.body
         )
     except ValidationError as exc:
-        print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+        print(
+            "[review] 拒絕（未寫入任何遠端狀態）：升級 checkpoint 閘門未過。\n"
+            "  ⇒ 先看這張卡已有哪些 checkpoint 事件（已代入實際 repo 與編號）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} --comments",
+            file=sys.stderr,
+        )
         for error in exc.errors:
             print(f"  - {error}", file=sys.stderr)
         return 2
@@ -327,7 +374,12 @@ def run(args: argparse.Namespace) -> int:
         try:
             validate_marked_by(marked_by, item.owner_field)
         except ValidationError as exc:
-            print("[review] 拒絕（未寫入任何遠端狀態）：", file=sys.stderr)
+            print(
+                "[review] 拒絕（未寫入任何遠端狀態）：accepted 標記的署名不合格。\n"
+                "  ⇒ 確認你現在是以哪個帳號在操作：\n"
+                "    gh api user --jq .login",
+                file=sys.stderr,
+            )
             for error in exc.errors:
                 print(f"  - {error}", file=sys.stderr)
             return 2
@@ -413,6 +465,22 @@ def run(args: argparse.Namespace) -> int:
     # 先留言、後翻狀態：反過來若留言失敗，板上會出現沒有裁決全文的 ✅通過，
     # 那正是本卡要消滅的「宣稱與證據脫節」。
     add_issue_comment(runner, target.repo, item.issue_number, comment)
+    # ---- TEXT 欄位元上限：預檢，純計算、⛔ 一次遠端呼叫都不發（`R1-002`）----
+    # ⚠️ `review` 只寫一個欄，所以「整批」在這裡就是這一格；⛔ 不因為只有一格就略過
+    # ——`R1-002` 的判準是「**所有** writer 在任何遠端呼叫前預檢」，⛔ 不是「多欄才要」。
+    oversized_here = oversized_text_fields({"交付狀態": report.delivery_status})
+    if oversized_here:
+        print(
+            render_oversize_rejection(
+                "review",
+                oversized_here,
+                "  ⇒ 縮短後重跑同一條 review。看目前的欄位值（已代入實際 owner 與 project）：\n"
+                f"    wfcli snapshot --owner {args.owner} --project {args.project} "
+                "--out-dir /tmp/wfcli-snapshot",
+            ),
+            file=sys.stderr,
+        )
+        return 2
     set_field_value(runner, project, item.item_id, fields["交付狀態"], report.delivery_status)
     set_item_body(
         runner, item.content_type, item.content_id, project, target.repo, item.issue_number, new_body
@@ -460,3 +528,52 @@ def run(args: argparse.Namespace) -> int:
                 "下一輪裁決寫入前若仍缺此 checkpoint，`wfcli review` 會拒絕。"
             )
     return 0
+
+
+
+def _retry_input_clause(args: argparse.Namespace) -> tuple[str, str]:
+    """重跑指令的 ``--input`` 子句與一行說明（`WF-REDESIGN-W3` `R2-002`）。
+
+    ⭐ **修補前的重跑指令只有 reviewer 與 source SHA**：⛔ 無 ``--input``、也⛔ 沒
+    保留 stdin ⇒ 查核者逐字執行得 ``rc=2``「查核輸出是空的」。那則訊息因此**看起來
+    有補救、實際跑不動**——正是本卡驗收 3 要收的形態。
+
+    三條路，各自誠實：
+
+    1. 本次給了 ``--input <檔案>`` ⇒ 原樣回填該路徑（⛔ 不改寫、⛔ 不 resolve
+       成絕對路徑：呼叫端下次多半仍在同一個工作目錄，改寫反而讓它認不出來）。
+    2. 本次由 **stdin** 送入 ⇒ **stdin ⛔ 讀不回來**（它不是檔案，重跑時那份輸入
+       已經沒了）。⇒ 就地把它原樣**落到一個暫存檔**並回填該路徑。
+       ⚠️ 這是拒絕路徑上**唯一的副作用**，且只寫本機暫存目錄、⛔ 不碰任何遠端狀態；
+       ⛔ 不靜默——訊息會明說存到哪裡。
+    3. 兩者皆無（stdin 是終端機）⇒ 本次根本沒有報告輸入。此時⛔ 不能假造一個路徑，
+       子句留 ``<…>`` 明示要填。
+
+    ⚠️ 本函式**會讀 stdin**（第 2 條）。它排在 :func:`_read_input` 之前，而該分支
+    一律 ``return 2`` ⇒ ⛔ 不會有第二個讀者。
+    """
+    # ⚠️ **函式體內 import，⛔ 不在模組層**：模組層多兩行會把整個檔往下推，而
+    # `docs/CONTRACT_TOOL_RECONCILE.md` 有指向 `review_cmd.py:214`／`:218` 的行號
+    # 指標，而該檔在本卡 write-set 內**只開放那兩行 `doctor.py:NNN`**（#240）。
+    import shlex
+    import tempfile
+
+    if args.input and args.input != "-":
+        return f"--input ＝ {shlex.quote(args.input)}（你本次給的路徑，原樣沿用）", ""
+    if sys.stdin.isatty():
+        return (
+            "--input ＝ 查核報告檔路徑",
+            "  ⚠️ 本次⛔ 無查核報告輸入（stdin 是終端機）⇒ --input 的值也要你自己給。\n",
+        )
+    raw = sys.stdin.read()
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".md",
+        prefix="wfcli-review-input-", delete=False,
+    ) as fh:
+        fh.write(raw)
+        spilled = fh.name
+    return (
+        f"--input ＝ {shlex.quote(spilled)}",
+        f"  ⚠️ 本次的查核報告由 stdin 送入，**stdin ⛔ 讀不回來** ⇒ 已原樣存到 "
+        f"{spilled}（{len(raw)} 字元），重跑時 --input 直接指它。\n",
+    )

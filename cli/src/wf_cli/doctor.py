@@ -37,6 +37,112 @@ from .cleanup import (
 from .registry import RegisteredCard, TasksMdRegistry
 from .review import BASELINE_LOG_TAG, CHECKPOINT_LOG_TAG, STATUS_BY_RESULT
 
+# ===========================================================================
+# 抽出腳本的委派邊界（`WF-REDESIGN-W3` 驗收 2「轉薄」）
+# ===========================================================================
+#
+# 下面六個名字的**本體**住在 `<repo>/scripts/doctor_pure.py`，本檔只留委派。
+# 卡面逐字：「邏輯抽至 `scripts/`＋`ci.yml` 具名 job；`wfcli doctor` **保留名稱／
+# 旗標／rc／輸出契約**、委派至抽出腳本」。收錄判準與**七個排除**逐條寫在該腳本的
+# 模組 docstring，⛔ 不在此處複述（複述就是第二份會漂的清單）。
+#
+# **腳本定位＝從 `wf_cli.__file__` 往上推導 repo 根**（`parents[3]/scripts`）。
+# ⛔ **不從 `args.repo_root` 推導**——`doctor <repo>` 對別的 repo 跑時
+# `<那個 repo>/scripts/` 不存在，用它推導會在完全正常的情境下誤判成「腳本不在」。
+#
+# **腳本不在時＝明示降級**（印警告＋標「未執行」＋**rc 不變**），⛔ 不是 fail-closed：
+# `commands/doctor_cmd.py` 的 `--help` 逐字「唯讀」、且 doctor ⛔ 不阻擋任何動詞。
+# ⛔ 也**不得靜默 fallback 回內建邏輯**——那份邏輯已經不在本檔了，寫一份等價的
+# 回來就是第二個真相源。
+#
+# ⚠️ **明文登記兩件事**：
+# (a) 本卡使 `wfcli doctor` 從自足套件變成**依賴 repo 佈局**（editable 安裝＋目錄
+#     結構兩個前提）。這是取捨、⛔ 不是零成本。
+# (b) 這是**帳面**轉薄，且**減量比委派層本身還小**。⛔ 此處刻意不寫絕對行數：首版寫了，
+#     而**修那一行本身**就讓它失準（`pollution_check` 的 `行數自述` 腐爛符抓的正是這個）；
+#     確切數字見本卡 commit 訊息與交付報告。執行時邊界⛔ 未改變（同指令、同輸出、同 rc）
+#     ⇒ 痛點「doctor 邏輯駐留 CLI」**⛔ 未關**；新 CI job 是新入口、**0 個消費者遷移**。
+
+#: 抽出腳本的絕對路徑。`<repo>/cli/src/wf_cli/doctor.py` ⇒ `parents[3]` ＝ `<repo>`。
+DOCTOR_PURE_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "doctor_pure.py"
+
+#: 委派出去的六個名字。⚠️ **這份 tuple 是契約**：`tests/test_doctor_pure.py` 拿它
+#: 逐一比對本檔的委派與腳本的本體，⛔ 不得只改一邊。
+DELEGATED_TO_DOCTOR_PURE: tuple[str, ...] = (
+    "classify_commit_shape",
+    "_expected_delivery_status",
+    "_check_third_face",
+    "render_field_surface",
+    "_identity_annotation",
+    "_short_event",
+)
+
+
+class DoctorHelpersUnavailable(RuntimeError):
+    """抽出腳本載入不到。
+
+    ⛔ **本例外⛔ 不代表 doctor 失敗**——`commands/doctor_cmd.py` 接住它、印警告、
+    把受影響的章節標「未執行」，**rc 不變**。⛔ 不得把它改成讓動詞回非零。
+    """
+
+
+_doctor_pure_module: Any = None
+_doctor_pure_error: str | None = None
+
+
+def load_doctor_pure() -> Any:
+    """載入抽出腳本；載入不到就丟 `DoctorHelpersUnavailable`。
+
+    ⚠️ **成功與失敗都會被記住**：檔案不在時六個委派會各觸發一次，快取讓它⛔ 不重複
+    打檔案系統，也讓警告在 `doctor_cmd` 只需印一次。
+    """
+    global _doctor_pure_module, _doctor_pure_error
+    if _doctor_pure_module is not None:
+        return _doctor_pure_module
+    if _doctor_pure_error is not None:
+        raise DoctorHelpersUnavailable(_doctor_pure_error)
+
+    import importlib.util
+
+    path = DOCTOR_PURE_SCRIPT
+    if not path.exists():
+        _doctor_pure_error = (
+            f"找不到抽出腳本 {path}。⇒ `wfcli doctor` 的一部分判定與渲染邏輯自 "
+            "`WF-REDESIGN-W3` 起住在 repo 的 `scripts/` 下，指令本體只留委派 ⇒ "
+            "wfcli 須**從 repo 內以 editable 安裝**執行。修：\n"
+            "    wfcli doctor --help    # 先確認裝的是哪一份\n"
+            "    git -C . rev-parse --show-toplevel    # repo 根，scripts/ 應在其下"
+        )
+        raise DoctorHelpersUnavailable(_doctor_pure_error)
+    spec = importlib.util.spec_from_file_location("wf_cli_doctor_pure", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - 檔案存在但 loader 取不到
+        _doctor_pure_error = f"抽出腳本 {path} 存在但無法載入（spec/loader 為 None）"
+        raise DoctorHelpersUnavailable(_doctor_pure_error)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _doctor_pure_module = module
+    return module
+
+
+def _delegate(name: str):
+    """做一個薄轉呼。⛔ 不在本檔留任何等價實作（那會是第二個真相源）。"""
+
+    def call(*args: Any, **kwargs: Any) -> Any:
+        return getattr(load_doctor_pure(), name)(*args, **kwargs)
+
+    call.__name__ = name
+    call.__qualname__ = name
+    call.__doc__ = f"委派至 `scripts/doctor_pure.py::{name}`（本體在那裡，⛔ 不在本檔）。"
+    return call
+
+
+classify_commit_shape = _delegate("classify_commit_shape")
+_expected_delivery_status = _delegate("_expected_delivery_status")
+_check_third_face = _delegate("_check_third_face")
+render_field_surface = _delegate("render_field_surface")
+_identity_annotation = _delegate("_identity_annotation")
+_short_event = _delegate("_short_event")
+
 WorktreeClass = Literal[
     "registered_active", "orphan_prunable", "orphan_untracked", "detached_sandbox"
 ]
@@ -429,92 +535,13 @@ def _verdict_of(body: str) -> str | None:
     return STATUS_BY_RESULT.get(headings[0])
 
 
-def _expected_delivery_status(
-    verdicts: dict[str, str | None], deciding_attempts: list[str]
-) -> tuple[str | None, str | None]:
-    """由**據以放行的那些事件自己的結論**決定交付狀態應有的值。
-
-    回傳 ``(expected, 歧義說明)``：兩者恰有一個為 None。
-
-    先前是事後重掃全部留言、以「有沒有提到這個 attempt」決定誰有資格提供結論，
-    因而兩種誤報：討論串引用裁決標題並提及該 attempt 會被算進來；以及 ``in``
-    子字串比對讓 ``…-e0-<sha>`` 命中 ``…-e0-<sha>x``（同一個陷阱第三次）。
-    改為在第一輪分類時就從該事件留言自身取下結論，不再有「誰有資格」的問題。
-
-    **不得依留言順序決定**（``review-escalation.md`` §2）：同一 SHA 在 replan 後
-    重審時，e0 與 e1 可能都被正確索引且結論相反，取「第一則」會讓結果隨排序而變。
-    """
-    results = {verdicts.get(a) for a in deciding_attempts}
-    if None in results:
-        return None, (
-            "據以放行的事件中，有留言的 `## 查核裁決：` 結論無法辨識或不唯一"
-            "（缺標題、結論非列舉值、或同一則留言出現多個結論），無從比對交付狀態。"
-        )
-    if not results:
-        return None, None
-    if len(results) > 1:
-        return None, (
-            "據以放行的 attempt 對應到多種裁決結論"
-            f"（{'、'.join(sorted(r for r in results if r))}），無從判斷交付狀態應為何。"
-            "同一 SHA 在 replan 後重審且結論相反時會出現此形態；依 review-escalation.md "
-            "§2 不得依留言順序決定，請人工裁定。"
-        )
-    return results.pop(), None
 
 
-def _check_third_face(expected: str | None, actual: str | None) -> str | None:
-    """三面一致的第三面。回傳不一致的說明；一致則回 None。
-
-    ``wfcli review`` 先寫 Issue 留言、再寫交付狀態、最後寫 body Log，三次遠端呼叫
-    沒有交易性。留言與 Log 都成功而狀態欄失敗，就是半寫入——先前兩面一致即回
-    ``recorded``，這種卡因此看起來完全正常，實際上看板上仍是待查核。
-    """
-    if actual is None:
-        return (
-            "無法讀取 Project 交付狀態欄，第三面未能驗證。契約 §3.1.3 要求三面一致，"
-            "只驗到留言與 Log 兩面時不得宣稱已有裁決。"
-        )
-    if expected is None:
-        return (
-            f"找到裁決留言與 Log 索引，但留言中沒有可辨識的 `## 查核裁決：` 結論，"
-            f"無從比對 Project 交付狀態（現為 {actual!r}）。"
-        )
-    if expected != actual:
-        return (
-            f"半寫入：裁決留言與 Log 索引都在，但 Project 交付狀態為 {actual!r}，"
-            f"與裁決結論應有的 {expected!r} 不符。`wfcli review` 的三次遠端寫入沒有"
-            "交易性，留言成功而狀態欄失敗即為此形態；請補齊狀態欄，不要重跑查核。"
-        )
-    return None
 
 
-_IDENTITY_ENDORSED_NOTE = (
-    "身分基礎：需求方背書，非機械可驗。本卡找不到可對帳的外部收據，"
-    "「誰查核的」只有 review event 的 reviewer 自由字串為憑，而該欄只驗非空——"
-    "GitHub 平台層無從證明裁決確實出自該查核者。跨家族查核者沒有 GitHub 寫入通道，"
-    "收據構造上取不到，**故這不是缺陷**：不改變上面的判定、不改變 exit code，"
-    "也不表示查核沒做。它只界定上面那個結論的效力範圍——已進狀態面的是「裁決內容」，"
-    "不是「查核者身分」。"
-)
-
-_IDENTITY_RECEIPT_NOTE = (
-    "身分基礎：外部收據的 GitHub comment author（平台可驗證）。"
-    "收據內文的模型／工具名稱仍只是自述，不是身分證明。"
-)
 
 
-def _identity_annotation(receipt_urls: list[str]) -> tuple[str, str]:
-    """回傳 ``(identity_basis, 附註文字)``。
 
-    唯一判準是「有沒有可對帳的收據」，因為那是這條通道上唯一由平台（而非由
-    寫入者自己）產生的身分證據。刻意**不**做成警告或阻擋：需求方 2026-08-19
-    裁定走「丙＋甲的殘留」，理由是收據在跨家族通道上構造上拿不到，凡以它為
-    條件的警告必然每次都響、內容永遠一樣，資訊量等於靜默（ai-workflow#31
-    停卡理由）。所以這裡只據實標明依據，不改判定。
-    """
-    if receipt_urls:
-        return "receipt_backed", _IDENTITY_RECEIPT_NOTE
-    return "requester_endorsed", _IDENTITY_ENDORSED_NOTE
 
 
 def audit_review_channel(
@@ -974,43 +1001,6 @@ class CommitTrailerReport:
         return "\n".join(lines)
 
 
-def classify_commit_shape(record: CommitRecord) -> CommitShape:
-    """判定 commit 形狀。**判準全部從 commit 自身導出**，不看卡面、不看人工標註。
-
-    四種被明確裁定的形狀（卡面驗收第 2 條）：
-
-    - **merge commit**（`parents >= 2`）：分兩種。combined diff（`--cc`）為空的是
-      `merge_clean`——它的 tree 完全由 parent 解釋得出，**沒有自己著作的內容**，
-      故不是實作 commit。combined diff 非空的是 `merge_with_content`：那些行與
-      **每一個** parent 都不同，是在 merge 當下寫下的（衝突解法／evil merge），
-      屬著作內容，故照實作 commit 辦。這也順手堵掉「把改動塞進 merge commit」
-      這條規避路徑。
-    - **基線更新 merge**：也是 merge commit，同一格處理。本模組**刻意不區分**
-      它與整合 merge——兩者都只是 `parents >= 2`，誰是 main 取決於你站在哪個
-      ref 上看，那是脈絡不是 commit 自身的性質。既然導不出來就不假裝導得出來；
-      何況兩者要求相同（`ANCHOR_MERGE` 對 merge commit 一視同仁），區分了
-      也不改變判定。
-    - **cherry-pick**：不設特例，一律當普通實作 commit。理由是它**認不出來**：
-      `-x` 才會留 `(cherry picked from commit …)`，而 `-x` 是選配，沒帶就與原生
-      commit 完全無法區分。認不出來就 fail-closed。代價為零——cherry-pick 連
-      訊息一起複製，來源合規則結果也合規；`-x` 那一行不是 `key: value`，
-      `only=true` 會濾掉它，不影響同區塊其他 trailer 的解析。
-    - **空 commit**（單 parent 且無任何路徑改動）：不是實作 commit。它沒有著作
-      任何內容，也就沒有內容的來歷需要宣告——與 `merge_clean` 同一條原則
-      （**要求 trailer 的是內容，不是 commit 這個容器**），不是兩條臨時規則。
-      推論一：空 commit 藏不了東西，豁免它不開洞。推論二：本檢查器**逐 commit
-      獨立判定、不繼承**——一筆帶齊 trailer 的空 commit 不會使它前面那筆裸的
-      commit 變綠（git metadata 本來就不由 descendant 繼承）。至於治理層要不要
-      **採認**那種補記，是規則層裁定，**不在本卡射程**（見卡面射程說明）；本模組
-      只提供分流能力，不代替需求方裁定。
-
-    root commit（`parents` 為空）走 `implementation`：它相對空樹的差異就是它的內容。
-    """
-    if len(record.parents) >= 2:
-        return "merge_with_content" if record.merge_content_paths else "merge_clean"
-    if not record.changed_paths:
-        return "empty"
-    return "implementation"
 
 
 def required_trailers(shape: CommitShape, *, require_planned_by: bool = False) -> tuple[str, ...]:
@@ -1672,10 +1662,6 @@ def derive_expected_status(
     return None, UNDECIDABLE_NO_EVENT, None, skipped
 
 
-def _short_event(first_line: str | None, limit: int = 96) -> str | None:
-    if first_line is None:
-        return None
-    return first_line if len(first_line) <= limit else first_line[: limit - 1] + "…"
 
 
 _UNDECIDABLE_DETAILS: dict[str, str] = {
@@ -2590,25 +2576,6 @@ def audit_field_surface(
     return report
 
 
-def render_field_surface(report: FieldSurfaceReport) -> str:
-    lines = ["## 5.8 欄位層對帳（看板實際欄位 vs 宣告；與逐卡 findings 正交）"]
-    if report.status != "scanned":
-        lines.append("（未掃描：本次未取得 Project 欄位值。**這不等於沒有**。）")
-        return "\n".join(lines)
-    lines.append(
-        f"已比對 {report.scanned_cards} 張卡的欄位值；"
-        f"已知內建欄位 {len(report.builtin_fields_seen)} 個"
-        f"（{'、'.join(report.builtin_fields_seen) or '—'}）已排除。"
-    )
-    if not report.findings:
-        lines.append("- 孤兒欄位：無；宣告但零值的欄位：無")
-        return "\n".join(lines)
-    for finding in report.findings:
-        lines.append(
-            f"- [{finding.kind}] `{finding.field_name}`（{finding.cards_with_value} 張有值）"
-            f"　{finding.detail}"
-        )
-    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------

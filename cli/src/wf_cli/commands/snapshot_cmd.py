@@ -33,7 +33,7 @@ def run(args: argparse.Namespace) -> int:
     rows = build_rows(items)
 
     ts = now_iso8601()
-    json_str = render_json(rows, ts)
+    json_str = render_json(rows, ts, project_id=project.id)
     md_str = render_markdown(rows, ts)
 
     out_dir = Path(args.out_dir)
