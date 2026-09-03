@@ -337,25 +337,29 @@ def _assert_requirement_three(card_id: str, conflicts, text: str) -> None:
 
     # (3) **逐則對應該衝突**——第 k 行必須說得出第 k 則衝突自己的東西。
     #
-    # ⚠️ **`file:` 與非 `file:` 兩種形狀刻意分開判**，理由⛔ 不是寬鬆：
-    # `narrowing_hint()` 對 `file:` 衝突回「把宣告收窄到 <較深的那一個> 之下更深的
-    # 路徑…」——那句話帶著**這一則衝突自己的字面** ⇒ 可逐則驗。對非 `file:`（db／
-    # port／container）它回一個**常數句**「改宣告不重疊的資源」，構造上⛔ 沒有可指名
-    # 的路徑 ⇒ **那類衝突的收窄方向在本實作下⛔ 逐則不可分辨**。
-    # ⭐ 這是一個**登記在案的上界，⛔ 不是本斷言放水**：見
-    # `test_a_db_conflict_narrowing_direction_is_structurally_indistinguishable`。
+    # ⚠️ **2026-09-03（`R4-001`）改寫：對「所有資源種類」一體適用，⛔ 不再分流。**
+    # 舊版對非 `file:` 衝突 `continue`，理由是 `narrowing_hint()` 當時回一個**常數句**
+    # ⇒ 那類衝突逐則不可分辨。查核者判定那與需求方裁定逐字「讓兩則衝突印出相同方向，
+    # 斷言必須轉紅」**直接相反**——**⛔ 一個跳過該類的斷言，正是它自己要禁的東西**。
+    # ⇒ 需求方裁定甲：`narrowing_hint()` 改為**每一種資源都帶入該衝突自己的字面**
+    # （識別資訊本來就在 `mine`／`theirs` 裡）⇒ 這裡的 `continue` 移除。
     for index, (conflict, hint) in enumerate(zip(conflicts, hints)):
-        if not conflict.mine.startswith("file:"):
-            continue
-        deeper = (
-            conflict.mine
-            if len(conflict.key_mine) >= len(conflict.key_theirs)
-            else conflict.theirs
-        )
-        assert deeper in hint, (
-            f"第 {index} 則衝突的收窄方向⛔ 沒說到它自己的 {deeper!r}：{hint!r}。"
-            f"⇒ 這正是代理條件會放過的形態（裁定：{_REQUIREMENT_THREE_RULING}）"
-        )
+        if conflict.mine.startswith("file:"):
+            # `file:` 有深淺可言 ⇒ 指名**較深的那一個**。
+            expected = (
+                conflict.mine
+                if len(conflict.key_mine) >= len(conflict.key_theirs)
+                else conflict.theirs
+            )
+            wanted = [expected]
+        else:
+            # 非 `file:` ⛔ 沒有「更深的路徑」⇒ 指名**雙方字面**。
+            wanted = [conflict.mine, conflict.theirs]
+        for token in wanted:
+            assert token in hint, (
+                f"第 {index} 則衝突的收窄方向⛔ 沒說到它自己的 {token!r}：{hint!r}。"
+                f"⇒ 這正是代理條件會放過的形態（裁定：{_REQUIREMENT_THREE_RULING}）"
+            )
 
 
 # ---- 反證：③ 的斷言**必須**在下列三種破壞下轉紅 ----
@@ -411,12 +415,17 @@ def test_requirement_three_is_not_satisfied_by_the_proxy_conditions_alone():
         _assert_requirement_three("MY-CARD", conflicts, proxy)
 
 
-def test_a_db_conflict_narrowing_direction_is_structurally_indistinguishable():
-    """⚠️ **登記在案的上界，⛔ 不是斷言放水。**
+def test_two_db_conflicts_get_distinguishable_narrowing_directions():
+    """⭐ **`R4-001` 的正向斷言**（2026-09-03 由負向登記翻轉）。
 
-    `narrowing_hint()` 對非 `file:` 衝突回一個**常數句**——構造上⛔ 沒有可指名的路徑
-    ⇒ 兩則 db 衝突的收窄方向**逐字相同**，「逐則對應」在那一類上⛔ 驗不到。
-    ⛔ 這⛔ 不是缺陷登記完就算修好；它是要件③ 在 db 資源上的**射程缺口**。
+    ⚠️ 本測試**前一版是反過來寫的**：它斷言兩則 db 衝突的方向**逐字相同**，並把那
+    登記成「要件③ 在 db 資源上的射程缺口」。查核者逐字：那**釘住了裁定明文禁止的
+    行為並讓它通過** ⇒ `R4-001` 未關閉。
+    ⛔ **這不是把一條測試改成會過**——是 `narrowing_hint()` 真的改了：非 `file:` 的
+    分支現在帶入 `mine`／`theirs` 兩個字面（識別資訊**本來就在物件裡**）。
+
+    ⚠️ 兩則衝突的方向**⛔ 不得只是「字串不同」**——每一則都必須說得出**它自己的**
+    那一對字面，否則「逐則對應」只是換個形式的代理條件。
     """
     conflicts = detailed_conflicts(
         _decl("db:production:schema", "db:test:schema"),
@@ -425,7 +434,21 @@ def test_a_db_conflict_narrowing_direction_is_structurally_indistinguishable():
     )
     assert len(conflicts) == 2
     hints = _narrowing_lines(render_conflict_refusal("MY-CARD", conflicts))
-    assert hints == ["改宣告不重疊的資源", "改宣告不重疊的資源"], hints
+    assert hints[0] != hints[1], hints
+    for conflict, hint in zip(conflicts, hints):
+        assert conflict.mine in hint and conflict.theirs in hint, (conflict, hint)
+
+
+@pytest.mark.parametrize(
+    "resource", ["db:production:schema", "port:8080", "container:pg"]
+)
+def test_every_non_file_resource_kind_carries_its_own_literals(resource):
+    """⛔ 不只 `db:`——裁定逐字要求「**所有資源種類**」。"""
+    conflicts = detailed_conflicts(_decl(resource), "OTHER", _decl(resource))
+    assert len(conflicts) == 1
+    hint = conflicts[0].narrowing_hint()
+    assert resource in hint, hint
+    assert hint != "改宣告不重疊的資源", "⛔ 不得回到那個不帶字面的常數句"
 
 
 def test_the_refusal_message_carries_all_four_requirements():

@@ -176,35 +176,145 @@ def test_the_two_population_layers_are_nested_and_distinct():
     assert len(rows) == len(_grep_rows())
 
 
-# ---- ⚠️ 全語料 `<…>` 掃描：**實測後⛔ 不採**，理由逐條在下 ----
+# ---- (7) `<…>` 佔位禁令：全語料掃描 ＋ **明文 allowlist ＋ 負向 fixture** ----
 #
-# PM 於 2026-09-03 指定把 `test_the_remedy_commands_contain_no_placeholder_at_all`
-# 改成「**直接 grep 原始碼**、⛔ 不經任何重建」。⭐ 方向是對的（那樣就沒有衍生欄位的
-# 疑慮），但**實作出來之後量到它 100% 誤報**，⇒ ⛔ 不採，改由下面說的地方承接。
-#
-# 實測（`cli/src`，扣兩支非射程 deploy 檔，判準＝行首是 wfcli/git/gh 且含 `<…>`）：
-# **4 命中，0 個是真的違規**——
-#   card.py:470        `"""git spec 檔骨架（寫入目標 repo ``tasks/<CARD_ID>.md``）。"""`
-#                      ⇒ docstring 第一個詞剛好是「git」，**純散文**
-#   amend_cmd.py:693   `gh issue view <N> --repo <owner/repo> --json body --jq .body > …`
-#   amend_cmd.py:706   `wfcli amend {card_id} --repo <owner/repo> … --spec-baseline '<現值>'`
-#                      ⇒ 兩者都在 **docstring** 裡，是**寫給人看的手動 runbook**，
-#                        `<N>`／`<owner/repo>` 在那裡是**正確**的寫法
-#   amend_cmd.py:1114  訊息裡用反引號**提到** `gh project item-edit --id <DI_…>`
-#                      ⇒ 「散文提及」，舊判準以行首排除，原始碼層排除不掉
-#
-# ⚠️ **根因**：要分辨「一行看起來像指令的字」到底是**訊息**、**docstring** 還是
-# **散文提及**，需要 `kind`／AST——而那正是本輪依需求方裁定移除的東西。
-# ⇒ 原始碼層的 `<…>` 掃描**在構造上做不到**，⛔ 不是實作沒寫好。
-#
-# ⇒ **`<…>` 禁令改由「訊息實際輸出」那一層承接**，⛔ 沒有消失：
-#   `test_r2_fixes.test_that_refusal_carries_a_runnable_remedy`（真 stderr）
-#   `test_r2_fixes.test_the_review_refusal_still_offers_a_runnable_command`（真 stderr）
-#   `test_note_roster.test_the_refusal_message_carries_no_placeholder`（真 stderr）
-#   `test_r3_fixes` 的可證偽 ③ 斷言（`render_conflict_refusal()` 的真回傳值）
-# ⚠️ **射程明說**：那四處只涵蓋**它們各自觸發的那幾則**，⛔ 不是全語料。
-#   ⇒ **全語料的 `<…>` 覆蓋⛔ 已失去**，⛔ 不得由「還有四處在守」推出「全都守住了」。
+# ⚠️ **本節 2026-09-03 recovered（`R5-002`）。** 它一度被移除，理由是「原始碼層的掃描
+# 在構造上做不到」——**那個結論是錯的**。查核者逐字：「**四個合法命中⛔ 不代表掃描
+# 構造上做不到**」，處置是 **allowlist ＋ 負向 fixture**：既有命中**逐筆核准**、
+# **任何新增命中必須轉紅**。
+# ⭐ 為什麼那個反駁成立：它把**開放集合換成封閉集合**。要判「這一行是碼還是散文」
+# 需要 AST（本卡已依裁定刪除）；但要判「這一行**在不在那四筆逐字黃金值裡**」
+# **⛔ 不需要分辨任何東西**。⛔ 執行者與 PM 都沒想到，查核者想到了。
 
+#: 指令佔位樣式。``<…>`` 之間⛔ 不含換行與 ``>``。
+_ANGLE_SLOT_RE = re.compile(r"<[^<>\n]{1,60}>")
+
+#: 可整行複製的指令行的首 token（封閉集合，規劃階段規格裁定 17）。
+_RUNNABLE_HEADS = ("wfcli", "git", "gh")
+
+#: ⭐ **逐筆核准的既有命中**，鍵是 ``(檔名, 該行的逐字內容)``。
+#:
+#: ⚠️ **鍵刻意⛔ 不含行號**：行號會漂（本卡已因此腐爛過三條 docs 指標）。用**逐字
+#: 黃金值**當鍵 ⇒ 那一行只要被改動一個字，它就從 allowlist 掉出來、必須重新核准。
+#:
+#: ⚠️ **核准的是「這一行不是拒絕訊息裡的指令」，⛔ 不是「這個佔位沒問題」。**
+#: 四筆各自的理由寫在 value 裡，⛔ 不得只寫「已知」。
+_APPROVED_ANGLE_SLOT_HITS: dict[tuple[str, str], str] = {
+    (
+        "card.py",
+        "git spec 檔骨架（寫入目標 repo ``tasks/<CARD_ID>.md``）。",
+    ): "`render_spec_markdown` 的 docstring 第一句；首詞剛好是 `git` ⇒ 純散文，⛔ 非指令行",
+    (
+        "amend_cmd.py",
+        "gh issue view <N> --repo <owner/repo> --json body --jq .body > /tmp/body.md",
+    ): "docstring 裡**寫給人看的手動 runbook**；`<N>`／`<owner/repo>` 在那裡是正確寫法",
+    (
+        "amend_cmd.py",
+        "wfcli amend {card_id} --repo <owner/repo> --reason 驗證排版 --dry-run "
+        "--spec-baseline '<現值>",
+    ): "同一段手動 runbook 的第二行；`<owner/repo>`／`<現值>` 要人代入，那是 runbook 的用途",
+    (
+        "amend_cmd.py",
+        "gh project item-edit --id <DI_…> --title`，是另一條 ID 命名空間",
+    ): "訊息裡用反引號**提到**一條指令（散文提及）⇒ ⛔ 不是給人整行貼上去跑的",
+}
+
+
+def _peel(raw: str) -> str:
+    """把一行原始碼剝到「它印出來時長什麼樣」——**反覆**剝空白與引號直到不再變。
+
+    ⚠️ **⛔ 不得寫成一次性的 `.strip().strip('"')`**：訊息的真實形狀是
+    ``    "    wfcli amend … "``——**引號內側還有縮排**。剝一次只會剝掉外層引號，
+    留下的 ``    wfcli …`` 因為前導空白而**不以 runnable head 起首** ⇒ 整條檢查對
+    **最該抓的那個形狀**視而不見。
+    ⭐ 這個洞是 2026-09-03 寫負向 fixture 時**當場量到**的（第一版探針沒轉紅），
+    ⛔ 不是事後推理出來的。
+    """
+    line = raw
+    while True:
+        peeled = line.strip().strip('"').strip("'").strip("`")
+        if peeled == line:
+            return peeled
+        line = peeled
+
+
+def _angle_slot_hits(root: Path) -> list[tuple[str, int, str]]:
+    """全語料掃描：行首是三個 runnable head 之一、且含 ``<…>`` 的行。
+
+    ⚠️ **能力上界，明說**：它看的是**原始碼的行**，⛔ 不是執行期輸出。被字串拼接
+    切斷的指令、以及執行期才組出來的那些，本檢查**看不到**。
+    ⛔ 這是「是否有」層級的檢查，⛔ 不是完備性保證。
+    """
+    hits: list[tuple[str, int, str]] = []
+    for path in sorted(root.rglob("*.py")):
+        if path.name in ri.OUT_OF_SCOPE_FILES:
+            continue
+        for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            line = _peel(raw)
+            if line.startswith(_RUNNABLE_HEADS) and _ANGLE_SLOT_RE.search(line):
+                hits.append((path.name, lineno, line))
+    return hits
+
+
+def test_no_unapproved_angle_bracket_slot_in_any_command_line():
+    """⭐ **承重**：任何**新增**的 `<…>` 指令佔位必須轉紅（`R5-002`）。
+
+    `intake.py` 逐字禁止 `<在此填寫>` 這種**指令**佔位；本卡的失誤 #41 也是這一條
+    抓到的（首版把填空改成 `<…>` 放進指令行，該測試立刻轉紅）。
+    """
+    unapproved = [
+        (name, lineno, line)
+        for name, lineno, line in _angle_slot_hits(_SRC)
+        if (name, line) not in _APPROVED_ANGLE_SLOT_HITS
+    ]
+    assert unapproved == [], unapproved
+
+
+def test_every_approved_entry_still_matches_a_real_line():
+    """⛔ allowlist 自己⛔ 不得腐爛：核准了卻已不存在的項目一律轉紅。
+
+    ⭐ 方向刻意與上一條**相反**——上一條擋「多出來的」，這一條擋「留下來的死條目」。
+    ⛔ 少了這一條，allowlist 會變成一份只進不出的清單。
+    """
+    live = {(name, line) for name, _lineno, line in _angle_slot_hits(_SRC)}
+    stale = sorted(set(_APPROVED_ANGLE_SLOT_HITS) - live)
+    assert stale == [], stale
+
+
+def test_every_approved_entry_carries_a_reason():
+    """⛔ 核准必須說得出理由——`已知`／空字串⛔ 不算。"""
+    for key, reason in _APPROVED_ANGLE_SLOT_HITS.items():
+        assert len(reason) >= 20, (key, reason)
+
+
+def test_the_scan_actually_fires_on_a_new_hit(tmp_path):
+    """⭐ **負向 fixture**（裁定逐字要求）：注入一行新的佔位指令，掃描必須抓到。
+
+    ⛔ 少了這一條，上面那三條全部可能是**零資訊的**——一個永遠掃不到東西的掃描
+    也會讓 `unapproved == []` 成立。
+    """
+    src = tmp_path / "wf_cli"
+    src.mkdir()
+    # ⚠️ 刻意寫成**訊息的真實形狀**：指令自成一行、**且在引號內側還有縮排**。
+    # 第一版 fixture 沒有那層縮排 ⇒ 它通過了，而真語料裡的形狀會被漏掉。
+    (src / "probe.py").write_text(
+        'def f():\n'
+        '    print(\n'
+        '        "[x] 拒絕：改用\\n"\n'
+        '        "    wfcli amend <卡ID> --reason foo",\n'
+        '    )\n',
+        encoding="utf-8",
+    )
+    hits = _angle_slot_hits(tmp_path)
+    assert len(hits) == 1, hits
+    assert hits[0][0] == "probe.py"
+    assert "<卡ID>" in hits[0][2]
+    assert (hits[0][0], hits[0][2]) not in _APPROVED_ANGLE_SLOT_HITS
+
+
+def test_out_of_scope_files_are_skipped_by_the_scan():
+    """兩支 deploy 動詞檔是卡面逐字排除的射程外 ⇒ 掃描⛔ 不看它們。"""
+    assert all(name not in ri.OUT_OF_SCOPE_FILES for name, _l, _t in _angle_slot_hits(_SRC))
 
 
 # ---- (7) ⚠️ 原「第四／五／六個 artifact 缺陷」那一組已隨擷取器一起刪除 ----
