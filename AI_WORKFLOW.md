@@ -824,14 +824,15 @@ flowchart LR
 
 ### 6.1 派工包標準條款
 
-每份派工包 [dispatch package] 必須帶下列六條，執行者一體適用。骨架見 [`dispatch-package.md`](templates/dispatch-package.md)。
+每份派工包 [dispatch package] 必須帶下列七條，執行者一體適用。骨架見 [`dispatch-package.md`](templates/dispatch-package.md)。
 
 1. **範圍外發現寫報告回祕書／需求方**：不得自行開卡、不得 spawn 背景任務或建立背景待辦 chip。範圍外的東西只能是報告的一節，由需求方裁決。
 2. **不得停等背景通知**：需要等待時前景輪詢或不結束回合；不得以「等背景通知」為由結束回合——通知叫不醒已結束的回合。
 3. **分支更新禁 `gh pr update-branch`**：它產生 synthetic merge、污染歷史與守衛判讀；一律**本地 rebase ＋ `git push --force-with-lease`**。**狹義例外**（需求方 2026-08-21 於 `ruan6047/ai-workflow#39` 的裁定留言，issuecomment-5367447565）：下列兩項**須同時成立**時不要求 rebase——(i) rebase 會使 **main 上已合併的碼**所引用的 SHA 失效；(ii) rebase 會把早於 `TRAILER_GUARD_EPOCH` 的 commit 推過界線，使其翻成無法修正的違規。例外**只免除「必須 rebase」，不免除任何 trailer**：該 merge commit 仍須帶 `merge_clean` 所要求的 `Reviewed-by`，無查核對象時填 §6 的「不適用」形態。⚠️ **本例外沒有機械執行者**——「基線更新 merge」與整合 merge 在 commit 自身上都只是多個 parent，誰是 main 取決於你站在哪個 ref 上看，那是脈絡不是 commit 自身的性質，導不出來就不假裝導得出來（commit 形狀判定的實作明文如此）。故它是**派工包層的約定**：由撰寫派工包者判定並在派工包內具名、由查核者複核，⛔ 不得宣稱它已機械化。
 4. **詭異數據標記「待人工判讀」交需求方**，不自行下結論。需要外部佐證時走新聞／第三方通道，但**定性佐證 only**：數值一律以官方紀錄為權威，引用必附 URL ＋ 日期。
 5. **commit trailer ＝末端連續單一區塊**（§6），中間無空行。
-6. **CLI 探索紅線**：查核／驗證環境不得真跑爬蟲、訓練等有副作用的 CLI（§5.2）。專案須在 stub 或 Runbook 列出**當前仍有副作用的入口清單**，派工包逐案帶入。
+6. **共用資料先讀後撈**：派工包須指出已備妥的共用資料（例如 PM 已匯出的 issue 全量、對帳器輸出）與其路徑；受派者**先讀檔**，需要更新才自己撈，並在報告說明為什麼。⚠️ 這條治的是**額度**不是效能：Projects v2 只有 GraphQL 介面，而該額度是 5000 點／小時且與 REST 分開計算；2026-08-18 實測一次 152 item 的 `project item-list` 為 2 點、單張卡直查 1 點——單次都很便宜，**燒光額度的是同一份資料被多個受派者各撈一遍**。額度見底時每個 `wfcli` 動詞都會失敗（它們一律先跑 `ensure_fields`）。
+7. **CLI 探索紅線**：查核／驗證環境不得真跑爬蟲、訓練等有副作用的 CLI（§5.2）。專案須在 stub 或 Runbook 列出**當前仍有副作用的入口清單**，派工包逐案帶入。
 
 ### 6.2 交付宣稱的證據紀律
 
