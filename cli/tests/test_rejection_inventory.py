@@ -208,5 +208,3 @@ def test_the_two_population_layers_are_nested_and_distinct():
 
 
 # ---- (7) ⚠️ 原「第四／五／六個 artifact 缺陷」那一組已隨擷取器一起刪除 ----
-
-
