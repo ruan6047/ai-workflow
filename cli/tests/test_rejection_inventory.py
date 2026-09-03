@@ -220,19 +220,52 @@ _APPROVED_ANGLE_SLOT_HITS: dict[tuple[str, str], str] = {
 }
 
 
-def _peel(raw: str) -> str:
-    """把一行原始碼剝到「它印出來時長什麼樣」——**反覆**剝空白與引號直到不再變。
+#: Python 字串**前綴**的封閉集合（小寫；比對時 casefold）。
+#:
+#: ⚠️ 值域取自 Python 語法本身，⛔ 不是挑幾個常見的：`r`／`u`／`f`／`b` 及其兩兩合法
+#: 組合 `fr`／`rf`／`br`／`rb`。⛔ 不含 `bf`（Python ⛔ 不接受 bytes ＋ f-string）。
+_STRING_PREFIXES = frozenset({"r", "u", "f", "b", "fr", "rf", "br", "rb"})
 
-    ⚠️ **⛔ 不得寫成一次性的 `.strip().strip('"')`**：訊息的真實形狀是
+
+def _strip_string_prefix(text: str) -> str:
+    """剝掉緊接在引號前的 Python 字串前綴（`f"…`／`rb"…`）。⛔ 不動其他東西。"""
+    for size in (2, 1):
+        if (
+            len(text) > size
+            and text[size] in "\"'"
+            and text[:size].casefold() in _STRING_PREFIXES
+        ):
+            return text[size:]
+    return text
+
+
+def _peel(raw: str) -> str:
+    """把一行原始碼剝到「它印出來時長什麼樣」——**反覆**剝到不動點。
+
+    每一輪剝三種東西：**空白**、**字串前綴**、**引號／反引號**。
+
+    ⚠️ **⛔ 不得寫成一次性的 `.strip().strip(chr(34))`**：訊息的真實形狀是
     ``    "    wfcli amend … "``——**引號內側還有縮排**。剝一次只會剝掉外層引號，
     留下的 ``    wfcli …`` 因為前導空白而**不以 runnable head 起首** ⇒ 整條檢查對
     **最該抓的那個形狀**視而不見。
-    ⭐ 這個洞是 2026-09-03 寫負向 fixture 時**當場量到**的（第一版探針沒轉紅），
-    ⛔ 不是事後推理出來的。
+    ⭐ 那個洞是 2026-09-03 寫負向 fixture 時**當場量到**的（第一版探針沒轉紅）。
+
+    ⚠️ ⭐ **字串前綴這一層是 `R5-002` 第二輪補的，成因同型**：修補前本函式
+    **⛔ 無任何前綴處理** ⇒ 查核者的唯讀探針量到
+    `plain → 偵測到`、**`f-string ／ raw ／ raw-f 全部 → []`**。
+    而 f-string **⛔ 不是邊角**：PM 實測光 `amend_cmd.py` 一檔就有 **62** 個
+    f-string 起首的字串行（普通引號起首 175）。
+    ⇒ 這一層漏掉，等於整條守衛對**四分之一以上的訊息行**視而不見。
+
+    ⚠️ ⭐ **兩次都是「加了新的負控才看得見」，⛔ 兩次都不是讀碼看出來的**：
+    第一個洞由執行者的負向 fixture 量到，第二個由查核者的新負控量到。
+    ⇒ 負向 fixture 的判準是「**這個形狀最可能打穿守衛嗎**」，
+    ⛔ 不是「這個形狀合不合法」——PM 上一輪挑了一個**會通過**的變異（普通字串），
+    因而寫下一個過寬的概括並已收回。
     """
     line = raw
     while True:
-        peeled = line.strip().strip('"').strip("'").strip("`")
+        peeled = _strip_string_prefix(line.strip()).strip(chr(34)).strip("'").strip("`")
         if peeled == line:
             return peeled
         line = peeled
@@ -287,29 +320,64 @@ def test_every_approved_entry_carries_a_reason():
         assert len(reason) >= 20, (key, reason)
 
 
-def test_the_scan_actually_fires_on_a_new_hit(tmp_path):
+#: 負向 fixture 要覆蓋的字串**寫法**。⚠️ 值域取自 Python 語法，⛔ 不是挑常見的。
+#:
+#: ⭐ **判準是「這個形狀最可能打穿守衛嗎」，⛔ 不是「這個形狀合不合法」。**
+#: `R5-002` 第一輪的變異檢驗只注入**普通字串**、得 1 failed，就據以寫下「該守衛抓得到
+#: 最該抓的那個形狀」——**那是挑了一個會通過的變異**。查核者以唯讀探針量到
+#: `plain → 偵測到`、**f-string／raw／raw-f 全部 → []**，該概括已收回。
+#: ⚠️ f-string **⛔ 不是邊角**：實測光 `amend_cmd.py` 一檔就有 **62** 個 f-string 起首的
+#: 字串行（普通引號起首 175）⇒ 漏掉它等於對四分之一以上的訊息行視而不見。
+_STRING_FORMS = ["", "f", "r", "rf", "fr", "u", "b", "br", "rb", "F", "R", "rF"]
+
+
+@pytest.mark.parametrize("prefix", _STRING_FORMS)
+def test_the_scan_actually_fires_on_a_new_hit(tmp_path, prefix):
     """⭐ **負向 fixture**（裁定逐字要求）：注入一行新的佔位指令，掃描必須抓到。
 
     ⛔ 少了這一條，上面那三條全部可能是**零資訊的**——一個永遠掃不到東西的掃描
     也會讓 `unapproved == []` 成立。
+
+    ⚠️ **逐一覆蓋每一種字串前綴**（`R5-002` 第二輪）。修補前 `_peel()` ⛔ 無前綴處理
+    ⇒ 只有 `prefix == ""` 那一格會過，其餘全部漏。
     """
     src = tmp_path / "wf_cli"
     src.mkdir()
     # ⚠️ 刻意寫成**訊息的真實形狀**：指令自成一行、**且在引號內側還有縮排**。
     # 第一版 fixture 沒有那層縮排 ⇒ 它通過了，而真語料裡的形狀會被漏掉。
     (src / "probe.py").write_text(
-        'def f():\n'
-        '    print(\n'
-        '        "[x] 拒絕：改用\\n"\n'
-        '        "    wfcli amend <卡ID> --reason foo",\n'
-        '    )\n',
+        "def f():\n"
+        "    print(\n"
+        f'        {prefix}"[x] 拒絕：改用",\n'
+        f'        {prefix}"    wfcli amend <卡ID> --reason foo",\n'
+        "    )\n",
         encoding="utf-8",
     )
     hits = _angle_slot_hits(tmp_path)
-    assert len(hits) == 1, hits
+    assert len(hits) == 1, (prefix, hits)
     assert hits[0][0] == "probe.py"
     assert "<卡ID>" in hits[0][2]
     assert (hits[0][0], hits[0][2]) not in _APPROVED_ANGLE_SLOT_HITS
+
+
+@pytest.mark.parametrize("prefix", _STRING_FORMS)
+def test_the_prefix_stripper_reaches_the_command(prefix):
+    """`_peel()` 對每一種前綴都要剝到指令本身，⛔ 不是只對普通字串。"""
+    assert _peel(f'        {prefix}"    wfcli amend <卡ID> --reason foo"').startswith(
+        "wfcli amend"
+    )
+
+
+def test_the_prefix_set_is_closed_and_matches_python():
+    """⛔ 值域是封閉的，且⛔ 不含 Python ⛔ 不接受的組合。"""
+    assert "bf" not in _STRING_PREFIXES, "Python ⛔ 不接受 bytes ＋ f-string"
+    assert _STRING_PREFIXES == frozenset({"r", "u", "f", "b", "fr", "rf", "br", "rb"})
+    # 大小寫不敏感：`F"` 與 `f"` 同樣要被剝掉。
+    assert _strip_string_prefix('F"x') == '"x'
+    assert _strip_string_prefix('RB"x') == '"x'
+    # ⛔ 不得誤剝**不是前綴**的東西。
+    assert _strip_string_prefix('xy"z') == 'xy"z'
+    assert _strip_string_prefix("wfcli") == "wfcli"
 
 
 def test_out_of_scope_files_are_skipped_by_the_scan():
