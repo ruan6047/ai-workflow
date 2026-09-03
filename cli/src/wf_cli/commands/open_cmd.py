@@ -573,8 +573,13 @@ def run(args: argparse.Namespace) -> int:  # noqa: C901 - 逐旗標的前置檢�
                 f"[open] 拒絕：{args.from_issue} 已在 project "
                 f"{target.owner}/{target.project} 上（item_id={snap.item_id}）"
                 f"，⇒ 它已經是卡、⛔ 不是待審清單項。\n"
-                "  ⇒ 要改它請用 amend，⛔ 不是重開一次（已代入實際卡 ID）：\n"
-                f"    wfcli amend {card.card_id} --reason '說明這次要改什麼'",
+                "  ⇒ 要改它請用 amend，⛔ 不是重開一次。旗標與值域（可整行複製，"
+                "⛔ 無需填任何欄位）：\n"
+                "    wfcli amend --help\n"
+                f"  ⇒ 重跑＝卡 ID {card.card_id}，加上你要改的那些旗標，"
+                "再補一個 --reason ＝ 這次要改什麼的一句話。\n"
+                "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：修訂理由是**你的判斷**，"
+                "機械寫不出來；給一行填空樣板只會被照貼，寫進一筆無意義的 reason。",
                 file=sys.stderr,
             )
             return 3

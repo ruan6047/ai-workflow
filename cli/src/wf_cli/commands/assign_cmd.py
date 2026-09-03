@@ -147,8 +147,42 @@ def _pm_note_gate(args, item, target) -> int:
         return 0
 
     phase = resolution.phase
+
+    # ---- 專案層根目錄：**經驗證**才送進 reader 與 renderer（`R2-001`）----
+    #
+    # ⭐ **修補前這裡讀的是一個不存在的旗標**：`getattr(args, "repo_path", None)` 在
+    # `assign` 上永遠回 `None`（`assign` parser 當時⛔ 無 `--repo-path`，查核者複驗
+    # `grep -c '"--repo-path"' assign_cmd.py` ＝ 0）⇒ **真實入口永遠把專案層清冊視為
+    # 空集合**，而 `--note-report` 的 help 卻承諾會讀 `P-<階段>-NN`。
+    # ⇒ 補的是**輸入通道**；「用當前階段選清冊」那個裁斷經查核者確認為對，⛔ 未改。
+    #
+    # ⚠️ 驗證只做到「是一個存在的目錄」，⛔ 不驗它是不是 git repo：
+    # `project_roster_for` 讀的是 `<root>/stage-rules/<階段>.md` 這個**單一具名檔**，
+    # 一個非 git 的目錄照樣可以合法地擺著那份檔。要求 git repo 會把一條⛔ 不存在的
+    # 前提寫進閘門。此上界明說於此，⛔ 不隱含。
+    project_root = getattr(args, "repo_path", None)
+    if project_root is not None:
+        candidate = pathlib.Path(project_root)
+        if not candidate.is_dir():
+            print(
+                f"[assign] 拒絕：--repo-path 指的不是一個存在的目錄：{project_root}\n"
+                "  ⇒ 專案層注意事項讀的是 `<repo-path>/stage-rules/<階段>.md` 的 §5；"
+                "先確認你要指的根目錄是哪一個：\n"
+                "    git rev-parse --show-toplevel",
+                file=sys.stderr,
+            )
+            return 2
+        project_root = str(candidate)
+    else:
+        # ⛔ 豁免不得是靜默的——形狀沿 `handoff_cmd._note_gate`。
+        print(
+            "[assign] 注意：未給 --repo-path ⇒ **專案層注意事項視為空集合**"
+            "（讀不到 `<專案 repo>/stage-rules/`）。⛔ 這⛔ 不代表該專案沒有加嚴條文。",
+            file=sys.stderr,
+        )
+
     try:
-        roster = pitfalls.combined_note_roster(phase, getattr(args, "repo_path", None))
+        roster = pitfalls.combined_note_roster(phase, project_root)
     except pitfalls.ProjectNoteRosterError as exc:
         print(f"[assign] 拒絕：{exc}", file=sys.stderr)
         return 2
@@ -167,7 +201,9 @@ def _pm_note_gate(args, item, target) -> int:
         text = pathlib.Path(raw[1:]).read_text(encoding="utf-8") if raw.startswith("@") else raw
     if text is None:
         print(
-            pitfalls.note_refusal_message(phase, resolution.basis).replace(
+            pitfalls.note_refusal_message(
+                phase, resolution.basis, project_root=project_root
+            ).replace(
                 "[handoff]", "[assign]"
             ).replace("--note-report 傳入", "--note-report 傳入（PM 派審詞，R1-003）"),
             file=sys.stderr,
@@ -177,9 +213,9 @@ def _pm_note_gate(args, item, target) -> int:
     parsed = pitfalls.parse_note_report(text, roster)
     if not parsed.ok:
         print(
-            pitfalls.note_refusal_message(phase, resolution.basis, parsed.errors).replace(
-                "[handoff]", "[assign]"
-            ),
+            pitfalls.note_refusal_message(
+                phase, resolution.basis, parsed.errors, project_root=project_root
+            ).replace("[handoff]", "[assign]"),
             file=sys.stderr,
         )
         return 2
@@ -207,12 +243,15 @@ def render_conflict_refusal(card_id: str, conflicts: list[ResourceConflict]) -> 
     相等，構造上產不出前綴誤判）。**替代逃生口＝收窄宣告**，即要件 ③。
     """
     lines = [
-        f"[assign] 拒絕：{card_id} 的資源宣告與下列活卡衝突。"
-        "改宣告後重跑（下面這行已代入實際卡 ID）。\n"
-        "  ⚠️ `--resources` 後面那一段是**佔位內容**，請換成收窄後的真實路徑；"
-        "指令其餘部分可整行複製：\n"
-        f"    wfcli amend {card_id} --resources file:收窄後的路徑 "
-        "--reason '收窄資源宣告以解除與下列活卡的交集'"
+        f"[assign] 拒絕：{card_id} 的資源宣告與下列活卡衝突。改宣告後重跑。\n"
+        "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+        "    wfcli amend --help\n"
+        f"  ⇒ 重跑要帶的三樣：卡 ID ＝ {card_id}；"
+        "`--reason` ＝ 收窄資源宣告以解除與下列活卡的交集；"
+        "`--resources` ＝ **收窄後的真實路徑**。\n"
+        "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：收窄到哪個路徑是**你的判斷**"
+        "（下面每一則衝突各附一句收窄方向），機械推不出來。給一行填空樣板只會被照貼，"
+        "寫進一筆無意義的資源宣告。"
     ]
     for c in conflicts:
         lines.append(
@@ -270,6 +309,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "**走同一個 validator**（`pitfalls.parse_note_report`）——`pm-conduct` 逐字"
         "「PM 產出也有檢核清冊……發出前逐條回應」，而修補前 PM 派審是唯一繞得過的路。"
         "⛔ 通過本閘門不代表內容被驗過——判內容的是檢閱那一環（人或另一個 AI）。",
+    )
+    p.add_argument(
+        "--repo-path",
+        default=None,
+        help="**本機專案根目錄**（`WF-REDESIGN-W3` `R2-001`）。有給則從 "
+        "`<repo-path>/stage-rules/<階段>.md` 的 §5 讀專案層注意事項 `P-<階段>-NN`，"
+        "累加在框架層 `F-<階段>-NN` 之後。**未給即視為空集合**，且會在 stderr 明示"
+        "（⛔ 不靜默）。⚠️ 只驗「是一個存在的目錄」，⛔ 不驗它是不是 git repo。",
     )
     p.add_argument(
         "--status", default="🔨執行中", help="assign 後的交付狀態；預設 🔨執行中"
@@ -367,11 +414,14 @@ def run(args: argparse.Namespace) -> int:
     if comparison.requires_reason and not deviation_reason:
         print(
             f"[assign] 拒絕：{comparison.refusal_message()}\n"
-            "  ⇒ 補上偏離理由後重跑（已代入你本次給的實際參數；引號內換成真的理由）：\n"
-            f"    wfcli assign {args.card_id} --assignee {shlex.quote(args.assignee)} "
-            f"--branch {shlex.quote(args.branch)} --worktree {shlex.quote(args.worktree)} "
-            f"--actual-capability {shlex.quote(args.actual_capability)} "
-            "--capability-deviation-reason '偏離卡面建議層級的理由寫在這裡'",
+            "  ⇒ 先看卡面第 4 行的建議執行層級是什麼（已代入實際 issue 與 repo，"
+            "可整行複製）：\n"
+            f"    gh issue view {item.issue_number} --repo {target.repo} "
+            "--json body --jq .body\n"
+            "  ⇒ 重跑＝你本次那一行原封不動，再補一個 --capability-deviation-reason，"
+            "值＝**為什麼實際派的層級可以偏離卡面建議**的一句話。\n"
+            "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：偏離理由是**你的判斷**，"
+            "機械寫不出來。給一行填空樣板只會被照貼，寫進一筆無意義的偏離理由。",
             file=sys.stderr,
         )
         return 2

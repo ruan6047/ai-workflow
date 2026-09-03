@@ -196,11 +196,18 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     if not args.reviewer.strip():
+        input_clause, note = _retry_input_clause(args)
         print(
             "[review] 拒絕：--reviewer 不得為空（裁決必須可歸屬到查核者）\n"
-            "  ⇒ 補上查核者後重跑（已代入你本次給的卡 ID 與 SHA；引號內換成真的查核者）：\n"
-            f"    wfcli review {args.card_id} --reviewer '查核者的帳號或模型@工具' "
-            f"--source-sha {args.source_sha}",
+            "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+            "    wfcli review --help\n"
+            f"  ⇒ 重跑要帶的四樣：卡 ID ＝ {args.card_id}；"
+            f"--source-sha ＝ {args.source_sha}；{input_clause}；"
+            "--reviewer ＝ 查核者的帳號或「模型@工具」。\n"
+            f"{note}"
+            "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：查核者身分是**你要宣告的**，"
+            "機械填不出來——拿 `gh api user` 代入會寫進一個**錯的**歸屬，"
+            "給一行填空樣板只會被照貼。",
             file=sys.stderr,
         )
         return 2
@@ -521,3 +528,52 @@ def run(args: argparse.Namespace) -> int:
                 "下一輪裁決寫入前若仍缺此 checkpoint，`wfcli review` 會拒絕。"
             )
     return 0
+
+
+
+def _retry_input_clause(args: argparse.Namespace) -> tuple[str, str]:
+    """重跑指令的 ``--input`` 子句與一行說明（`WF-REDESIGN-W3` `R2-002`）。
+
+    ⭐ **修補前的重跑指令只有 reviewer 與 source SHA**：⛔ 無 ``--input``、也⛔ 沒
+    保留 stdin ⇒ 查核者逐字執行得 ``rc=2``「查核輸出是空的」。那則訊息因此**看起來
+    有補救、實際跑不動**——正是本卡驗收 3 要收的形態。
+
+    三條路，各自誠實：
+
+    1. 本次給了 ``--input <檔案>`` ⇒ 原樣回填該路徑（⛔ 不改寫、⛔ 不 resolve
+       成絕對路徑：呼叫端下次多半仍在同一個工作目錄，改寫反而讓它認不出來）。
+    2. 本次由 **stdin** 送入 ⇒ **stdin ⛔ 讀不回來**（它不是檔案，重跑時那份輸入
+       已經沒了）。⇒ 就地把它原樣**落到一個暫存檔**並回填該路徑。
+       ⚠️ 這是拒絕路徑上**唯一的副作用**，且只寫本機暫存目錄、⛔ 不碰任何遠端狀態；
+       ⛔ 不靜默——訊息會明說存到哪裡。
+    3. 兩者皆無（stdin 是終端機）⇒ 本次根本沒有報告輸入。此時⛔ 不能假造一個路徑，
+       子句留 ``<…>`` 明示要填。
+
+    ⚠️ 本函式**會讀 stdin**（第 2 條）。它排在 :func:`_read_input` 之前，而該分支
+    一律 ``return 2`` ⇒ ⛔ 不會有第二個讀者。
+    """
+    # ⚠️ **函式體內 import，⛔ 不在模組層**：模組層多兩行會把整個檔往下推，而
+    # `docs/CONTRACT_TOOL_RECONCILE.md` 有指向 `review_cmd.py:214`／`:218` 的行號
+    # 指標，而該檔在本卡 write-set 內**只開放那兩行 `doctor.py:NNN`**（#240）。
+    import shlex
+    import tempfile
+
+    if args.input and args.input != "-":
+        return f"--input ＝ {shlex.quote(args.input)}（你本次給的路徑，原樣沿用）", ""
+    if sys.stdin.isatty():
+        return (
+            "--input ＝ 查核報告檔路徑",
+            "  ⚠️ 本次⛔ 無查核報告輸入（stdin 是終端機）⇒ --input 的值也要你自己給。\n",
+        )
+    raw = sys.stdin.read()
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".md",
+        prefix="wfcli-review-input-", delete=False,
+    ) as fh:
+        fh.write(raw)
+        spilled = fh.name
+    return (
+        f"--input ＝ {shlex.quote(spilled)}",
+        f"  ⚠️ 本次的查核報告由 stdin 送入，**stdin ⛔ 讀不回來** ⇒ 已原樣存到 "
+        f"{spilled}（{len(raw)} 字元），重跑時 --input 直接指它。\n",
+    )

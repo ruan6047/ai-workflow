@@ -59,7 +59,7 @@ import ast
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 #: 關鍵字集。**逐字取自卡面核心痛點**，⛔ 不得改寫——改了就不是同一個母體。
@@ -88,6 +88,21 @@ RUNNABLE_HEADS = ("wfcli", "git", "gh")
 #: 裁定 17 第 (iii) 條：佔位符樣式。``<…>`` 之間⛔ 不含換行與 ``>``。
 PLACEHOLDER_RE = re.compile(r"<[^<>\n]{1,60}>")
 
+#: f-string 欄位在 :func:`_render_text` 之後的字面。它**執行時會被代入真值**
+#: ⇒ ⛔ **不是佔位內容**。R2 前 PM 曾把它與人工佔位混為一談，因而漏掉 `assign` 那列。
+FSTRING_FIELD_RE = re.compile(r"\{…\}")
+
+#: 指令行裡**扣掉 ``<…>`` 與 ``{…}`` 之後**仍剩下的 CJK 字元。
+#:
+#: ⚠️ **這⛔ 不是判準，是候選清單。** 它會誤中**真的值**——例如
+#: ``--reason '收窄資源宣告以解除與下列活卡的交集'`` 是一句寫好的理由，⛔ 不是佔位。
+#: ⇒ 它只寫進 artifact 供人逐列看，**⛔ 不進 :attr:`Mechanical.passes`**。
+#: 這一欄的存在理由是 PM 於 `issuecomment-5520098925` 登記「佔位偵測用的是自訂中文
+#: 樣式 ⇒ ⛔ 非窮舉」——⇒ 這裡給出一個**結構性的上界**（凡人工填的中文值必在其中），
+#: 代價是它同時含真值；⛔ 不得反過來把它當成佔位清單。
+#: ⛔ **殘留缺口明說**：純拉丁的佔位（``'your reason here'``）**不在**本樣式射程內。
+CJK_VALUE_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
 #: 從訊息片段裡撈「看起來像可整行複製的指令」。**下界**：只認以三個首 token 起首、
 #: 且該 token 前面只有空白或引號的位置。⚠️ 認不出被字串拼接切斷的指令。
 _COMMAND_RE = re.compile(
@@ -107,6 +122,16 @@ class Mechanical:
     #: 指令若是由**呼叫到的同檔函式**產生，記下那個函式名；直接在本 statement 內為 ``None``。
     #: ⭐ 這一欄讓「機械看不見的補救」變成看得見的（第四個 artifact 缺陷）。
     command_via: str | None = None
+
+    #: 本則訊息裡**含 ``<…>`` 的每一條指令行**（⛔ 不只第一條）。
+    #: ⭐ **R2-003 之後這裡從「只看第一條」改成「看全部」**：訊息可以先給一條乾淨的
+    #: ``--help``、再給一條要人填欄位的重跑形狀；只看第一條會把後者藏起來，那正是
+    #: `assign_cmd` 那列被誤判成 `passes=true` 的同一個形態（只是換了個方向）。
+    placeholder_lines: list[str] = field(default_factory=list)
+
+    #: 扣掉 ``<…>``／``{…}`` 後仍含 CJK 的指令行。**候選，⛔ 非判準**——見
+    #: :data:`CJK_VALUE_RE`：它同時含真值，⛔ 不進 :attr:`passes`。
+    cjk_value_lines: list[str] = field(default_factory=list)
 
     #: AST 定位有沒有切在合理的邊界上（見 :data:`STATEMENT_SPAN_CEILING`）。
     #: ⚠️ 這**不是**裁定 17 的第四條——它是**前三條能不能被信任**的前提：切界失敗時
@@ -204,11 +229,24 @@ def _render_text(node: ast.AST) -> str:
       `gh issue edit --body-file` 手動截斷」）**不是**可複製的指令行。串好之後改以
       **行首**判定（見 :func:`_command_lines`），散文提及自然落選。
 
+    - **第七**（R2 這一輪量到的）：舊版用 ``ast.walk`` 攤平整個 statement 再
+      ``"".join`` ⇒ **相鄰但語意上分開的字面被黏成一行**。實測 `pitfalls.py:391`：
+      清單裡 ``"…\\n    git show HEAD:AI_WORKFLOW.md"`` 這個元素，被黏上下一個元素
+      ``"  - 階段判定依據：…"`` 與再下一個含 ``<原因>``／``<處置>`` 的元素 ⇒ 產出一條
+      **實際不存在**的「指令行」，且該行因此誤觸第 (iii) 條。
+      ⇒ 改成**遞迴、依欄位順序**走訪，並在兩種邊界補分隔字元：
+      **容器元素（list／tuple／set）補 ``\\n``**（本語料的訊息容器實測一律
+      ``"\\n".join(lines)``——`pitfalls.py:412`／`:743`、`review.py:566` 等）、
+      **呼叫的每個引數補一個空白**（``print(a, b)`` 的實際輸出就是 ``a`` 空白 ``b``）。
+      ⚠️ 上界明說：``"；".join(parts)`` 那兩處（`cleanup.py:1431`／`doctor.py:1084`）
+      會被記成 ``\\n`` ⇒ **⛔ 不是逐字重建輸出**；那兩處不含指令行，本輪⛔ 未受影響。
+
     ⚠️ **能力上界**：``{變數}`` 以原樣的佔位形式保留（⛔ 不求值——本腳本讀的是原始碼
     字面，見模組 docstring）。⇒ 這是「訊息**大致**長什麼樣」，⛔ 不是執行期輸出。
     """
     parts: list[str] = []
-    for sub in ast.walk(node):
+
+    def emit(sub: ast.AST) -> None:
         if isinstance(sub, ast.JoinedStr):
             for value in sub.values:
                 if isinstance(value, ast.Constant) and isinstance(value.value, str):
@@ -216,10 +254,28 @@ def _render_text(node: ast.AST) -> str:
                 elif isinstance(value, ast.FormattedValue):
                     # ⛔ 不求值；保留一個**不含 `<…>`** 的佔位，免得誤觸第 (iii) 條。
                     parts.append("{…}")
-        elif isinstance(sub, ast.Constant) and isinstance(sub.value, str):
-            if not any(sub is v for j in ast.walk(node)
-                       if isinstance(j, ast.JoinedStr) for v in j.values):
+            return
+        if isinstance(sub, ast.Constant):
+            if isinstance(sub.value, str):
                 parts.append(sub.value)
+            return
+        if isinstance(sub, (ast.List, ast.Tuple, ast.Set)):
+            for elt in sub.elts:
+                emit(elt)
+                parts.append("\n")
+            return
+        if isinstance(sub, ast.Call):
+            for arg in sub.args:
+                emit(arg)
+                parts.append(" ")
+            for kw in sub.keywords:
+                emit(kw.value)
+                parts.append(" ")
+            return
+        for child in ast.iter_child_nodes(sub):
+            emit(child)
+
+    emit(node)
     return "".join(parts)
 
 
@@ -290,12 +346,23 @@ def _evaluate(
         )
     command = lines[0]
     head = command.split(" ", 1)[0]
+    # ⭐ **判準 (iii) 掃的是本則訊息的每一條指令行，⛔ 不只第一條**（R2-003 之後）。
+    # ⛔ 不得改回只看 `lines[0]`：那會讓「第一行乾淨、第二行要人填」的訊息被判成合格，
+    # 而那是 R2-003 那個誤判的鏡像。⚠️ 代價明說：一則已經給出乾淨補救、只是**另外**
+    # 附了填空形狀的訊息，在本判準下**仍然不計數**。這是判準的直接後果，⛔ 非量測誤差。
+    placeholder_lines = [ln for ln in lines if PLACEHOLDER_RE.search(ln)]
+    cjk_value_lines = [
+        ln for ln in lines
+        if CJK_VALUE_RE.search(FSTRING_FIELD_RE.sub("", PLACEHOLDER_RE.sub("", ln)))
+    ]
     return Mechanical(
         has_command=True,
         head_ok=head in RUNNABLE_HEADS,
-        no_placeholder=PLACEHOLDER_RE.search(command) is None,
+        no_placeholder=not placeholder_lines,
         command=command,
         command_via=via,
+        placeholder_lines=placeholder_lines,
+        cjk_value_lines=cjk_value_lines,
         boundary_ok=boundary_ok,
     )
 

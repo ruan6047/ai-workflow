@@ -233,13 +233,13 @@ def run_checkpoint(args: argparse.Namespace) -> int:
                 "要改變裁定請追加事件，不得重寫（append-only，review-escalation.md §5）。\n"
                 "  ⇒ 先看既有那一則寫了什麼（已代入實際值）：\n"
                 f"    gh issue view {item.issue_number} --repo {target.repo} --comments\n"
-                "  ⇒ 要改變裁定時，用**新的** --escalation-epoch 重跑，⛔ 不要重寫舊的：\n"
-                f"    wfcli checkpoint {args.card_id} --escalation-epoch "
-                f"{args.escalation_epoch + 1} --trigger-attempt-id {args.trigger_attempt_id} "
-                f"--unique-attempt-count {args.unique_attempt_count} "
-                f"--decision {args.decision} --rationale '改判理由寫在這裡'",
-                "  ⚠️ 上面 --rationale 的引號內是**佔位內容**，請換成真的理由；"
-                "指令其餘部分已代入實際值、可整行複製。",
+                "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+                "    wfcli checkpoint --help\n"
+                f"  ⇒ 要改變裁定時用**新的** --escalation-epoch ＝ {args.escalation_epoch + 1} "
+                f"重跑（--trigger-attempt-id {args.trigger_attempt_id}、--unique-attempt-count "
+                f"{args.unique_attempt_count}、--decision {args.decision} 照舊），"
+                "並自己寫 --rationale ＝ 改判理由。⛔ 不要重寫舊的那一則。\n"
+                "  ⚠️ ⛔ 刻意**不給可照貼的重跑指令**：改判理由是你的判斷，填空樣板只會被照貼。",
                 file=sys.stderr,
             )
             return 2
@@ -300,9 +300,12 @@ def run_contract_baseline(args: argparse.Namespace) -> int:
         print(
             "[contract-baseline] 拒絕：--rationale 不得為空——它是「為何在此刻切 baseline」"
             "的唯一留痕，空字串會讓那個判斷事後不可重建。\n"
-            "  ⇒ 補上理由後重跑（下面這行已代入你本次給的卡 ID）：\n"
-            f"    wfcli contract-baseline {args.card_id} --rationale '切 baseline 的理由寫在這裡'\n"
-            "  ⚠️ 引號內是**佔位內容**，請換成真的理由；指令其餘部分已代入實際值。",
+            "  ⇒ 旗標與值域（可整行複製，⛔ 無需填任何欄位）：\n"
+            "    wfcli contract-baseline --help\n"
+            f"  ⇒ 重跑＝卡 ID {args.card_id} 照舊，補一個 --rationale，"
+            "值＝「為何在此刻切 baseline」的一句話。\n"
+            "  ⚠️ ⛔ 這裡刻意**不給一行可照貼的重跑指令**：理由是**你的判斷**，"
+            "機械寫不出來；給一行填空樣板只會被照貼，寫進一筆無意義的 rationale。",
             file=sys.stderr,
         )
         return 2
