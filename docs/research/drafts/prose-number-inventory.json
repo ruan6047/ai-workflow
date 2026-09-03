@@ -863,25 +863,6 @@
   },
   {
    "path": "stage-rules/list-intake-requirements.md",
-   "line_sha1": "498b2b1b2b3778442a1446146708a8128fd985cf",
-   "excerpt": "⛔ **PM 不得檢查自己的提案。** 由**另一個 PM** 做這四項的收件檢查，裁決逐字寫進 issue body，含裁決者身分自述與時",
-   "claims": [
-    {
-     "token": "一",
-     "occurrence": 0,
-     "reason": "design-closed-set",
-     "rationale": "「另一個」＝序數／慣用語非量測（本行語境）"
-    },
-    {
-     "token": "四",
-     "occurrence": 1,
-     "reason": "design-closed-set",
-     "rationale": "「四項」＝收件條件枚舉引用（本檔逐節列明）"
-    }
-   ]
-  },
-  {
-   "path": "stage-rules/list-intake-requirements.md",
    "line_sha1": "6624fc57b6d32aede5b6cae73b5e6d1d6dcd4658",
    "excerpt": "**寫什麼**：一個連結，或逐字引文加來源。",
    "claims": [
@@ -979,19 +960,6 @@
      "occurrence": 2,
      "reason": "design-closed-set",
      "rationale": "「寫入仍由第一個PM執」＝序數／慣用語非量測（本行語境）"
-    }
-   ]
-  },
-  {
-   "path": "stage-rules/list-intake-requirements.md",
-   "line_sha1": "a2ae14548ba945333665f94a0016b895e927abc9",
-   "excerpt": "⛔ 第二個 PM 由誰擔任、原始輸出需求方看不看得到 —— **未定**。",
-   "claims": [
-    {
-     "token": "二",
-     "occurrence": 0,
-     "reason": "design-closed-set",
-     "rationale": "「第二個PM由誰擔任」＝序數／慣用語非量測（本行語境）"
     }
    ]
   },
