@@ -389,12 +389,19 @@ _FORMERLY_PLACEHOLDER = {
 }
 
 
-def test_no_command_line_in_the_corpus_carries_a_human_fill_slot():
+def test_no_command_line_in_the_corpus_carries_an_angle_bracket_slot():
     """全語料複查：**⛔ 沒有任何指令行**含 `<…>`。
 
-    ⭐ 這一條是「把填空寫進指令行」那個作法的**反面**：本輪 6 則的重跑形狀刻意寫成
-    散文，於是這裡維持 0。⛔ 不得為了讓那 6 則「計數」而把填空塞回指令行——
-    `intake.py` 逐字禁止 `<在此填寫>` 這種**指令**佔位。
+    ⚠️ **2026-09-03（`R3-001`）更名**。本測試舊名是
+    `test_no_command_line_in_the_corpus_carries_a_human_fill_slot`——那個名字**宣稱得
+    比它做的多**：它只看 `placeholder_lines`，而該欄**只認角括號樣式** ⇒ 中文填空
+    `file:收窄後的路徑` 構造上進不去，於是 `R3-001` 從它底下走過去。
+    ⛔ 名字宣稱的射程大於實作，比沒有這條測試更糟——它會讓人以為那一面被守住了。
+    ⇒ 更名為它**真正**做的事；「人工填空」那一面由
+    `test_r3_fixes.test_no_command_line_in_the_corpus_carries_a_cjk_written_value` 承接。
+
+    ⭐ 本條仍有意義：`intake.py` 逐字禁止 `<在此填寫>` 這種**指令**佔位，⛔ 不得為了讓
+    那 6 則「計數」而把填空塞回指令行。
     """
     offenders = [
         (r.file, r.line, r.mechanical.placeholder_lines)
@@ -409,6 +416,10 @@ def test_every_formerly_placeholder_message_now_leads_with_a_clean_command():
 
     ⚠️ 第六則（`checkpoint_cmd.py:231` 的 `--rationale '改判理由寫在這裡'`）**⛔ 不在
     PM 點名的 5 則裡**——它是本輪窮舉時量出來的，PM 的 59 列對帳把它記成 ✅ 合格。
+
+    ⛔ **本條只管第一條指令行，⛔ 不足以宣稱整則乾淨。** 查核者 `R3-001` 逐字指出
+    「只要求以乾淨 command 開頭，所以前面加 `wfcli amend --help` 就過」——**那正是
+    這一條**。⇒ 整則的判定在 `test_r3_fixes`，本條⛔ 不得被引為整則的證據。
     """
     heads = {
         (r.file.split("/")[-1], (r.mechanical.command or "").split(" --")[0].strip())

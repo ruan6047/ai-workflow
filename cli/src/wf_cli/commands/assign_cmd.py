@@ -261,13 +261,17 @@ def render_conflict_refusal(card_id: str, conflicts: list[ResourceConflict]) -> 
             f"      分量序列 {c.key_mine} 與 {c.key_theirs} 互為前綴；來源＝{c.source}"
         )
         lines.append(f"      收窄：{c.narrowing_hint()}")
-    lines.append(
-        "  ⇒ 改宣告後重跑（已代入實際卡 ID；引號內換成收窄後的資源清單）："
-    )
-    lines.append(
-        f"    wfcli amend {card_id} --resources file:收窄後的路徑 "
-        f"--reason '收窄資源宣告以解除與上列活卡的交集'"
-    )
+    # ⛔ **這裡刻意什麼都不 append**（`R3-001`）。
+    #
+    # ⭐ 修補前這裡還 append 了一行 `wfcli amend {card_id} --resources file:收窄後的路徑
+    # --reason '…'`，而**同一則訊息的開頭**（見上方 `lines[0]`）逐字寫著「⛔ 這裡刻意
+    # 不給一行可照貼的重跑指令……給一行填空樣板只會被照貼，寫進一筆無意義的資源宣告」
+    # ⇒ **同一則訊息自我矛盾**。查核者 R3-001 逐字：「刪除殘留的填空命令」。
+    #
+    # ⚠️ 成因登記（⛔ 不美化）：R2 那一輪只換掉了 `lines = [...]` 這個**頭**，⛔ 沒讀完
+    # 函式尾巴。而本檔的測試也沒抓到——它只看 `placeholder_lines`（**只認 `<…>` 樣式**，
+    # 中文 `file:收窄後的路徑` 進不去），另一條只要求「以乾淨 command 開頭」。
+    # ⇒ 判準是**整則最終輸出的每一條指令行**，⛔ 不是第一條、⛔ 不是角括號樣式。
     return "\n".join(lines)
 
 

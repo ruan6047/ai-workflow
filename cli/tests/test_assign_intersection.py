@@ -302,9 +302,17 @@ def test_the_refusal_message_carries_all_four_requirements():
     assert "('cli', 'src')" in text
     # ② 觸發哪一來源
     assert "來源＝分量序列前綴" in text
-    # ③ 可貼進 `wfcli amend --resources` 的收窄寫法
-    assert "wfcli amend MY-CARD --resources" in text
-    assert "收窄" in text
+    # ③ 可貼進 `wfcli amend --resources` 的收窄**寫法**
+    #
+    # ⚠️ **2026-09-03（`R3-001`）改寫**：原斷言是 `"wfcli amend MY-CARD --resources" in text`
+    # ——那一行實作成 `wfcli amend MY-CARD --resources file:收窄後的路徑 …`，而**同一則
+    # 訊息的開頭**逐字寫著「⛔ 不給填空樣板」⇒ **自我矛盾**，查核者 R3-001 命其刪除。
+    # ⛔ **這⛔ 不是把要件 ③ 拿掉**：③ 逐字是「收窄**寫法**」，⛔ 不是「一行可照貼的
+    # 完整指令」。收窄到哪個路徑構造上是**人的判斷** ⇒ 寫法＝(a) 指名要動哪個旗標、
+    # (b) 每一則衝突各附一句收窄方向。兩者現在都在，且⛔ 不含任何填空指令。
+    assert "`--resources` ＝ **收窄後的真實路徑**" in text
+    assert "wfcli amend --help" in text, "旗標與值域的入口仍要給，且它是可跑的"
+    assert "收窄：" in text, "每一則衝突各附一句收窄方向"
 
 
 def test_the_refusal_message_offers_no_force_escape_hatch():

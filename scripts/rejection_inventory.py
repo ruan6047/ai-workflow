@@ -123,6 +123,13 @@ class Mechanical:
     #: ⭐ 這一欄讓「機械看不見的補救」變成看得見的（第四個 artifact 缺陷）。
     command_via: str | None = None
 
+    #: 本則訊息的**每一條**指令行，依出現順序。⭐ **`R2-003` disposition 逐字要求
+    #: 「artifact 或 PM 輸入必須涵蓋完整實際輸出」** ⇒ PM 做 60 列逐列裁定時看這一欄，
+    #: ⛔ 不是只看 :attr:`command`（那只是第一條，供表格壓縮用）。
+    #: 實測：`assign_cmd.render_conflict_refusal` 修補前有 2 條，第一條乾淨、第二條是
+    #: 填空——只看第一條就是 `R3-001` 沒被 artifact 抓到的原因。
+    command_lines: list[str] = field(default_factory=list)
+
     #: 本則訊息裡**含 ``<…>`` 的每一條指令行**（⛔ 不只第一條）。
     #: ⭐ **R2-003 之後這裡從「只看第一條」改成「看全部」**：訊息可以先給一條乾淨的
     #: ``--help``、再給一條要人填欄位的重跑形狀；只看第一條會把後者藏起來，那正是
@@ -215,6 +222,71 @@ def _enclosing_statement_at(tree: ast.AST, lineno: int) -> ast.stmt | None:
     return best
 
 
+def _accumulator_name(stmt: ast.stmt) -> str | None:
+    """這個 statement 是不是在**寫一個訊息累加器**？是就回那個變數名。
+
+    三種寫法（本語料只用到這三種）：``lines = [...]``／``lines.append(...)``／
+    ``lines += [...]``。⛔ 不認 `dict`／`set`——本語料的訊息累加器一律是 list。
+    """
+    if isinstance(stmt, ast.Assign):
+        for target in stmt.targets:
+            if isinstance(target, ast.Name):
+                return target.id
+    if isinstance(stmt, ast.AugAssign) and isinstance(stmt.target, ast.Name):
+        return stmt.target.id
+    if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+        func = stmt.value.func
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr in ("append", "extend", "insert")
+            and isinstance(func.value, ast.Name)
+        ):
+            return func.value.id
+    return None
+
+
+def _message_statements(tree: ast.AST, stmt: ast.stmt) -> list[ast.stmt]:
+    """一則訊息的**全部** statement。⭐ **`R2-003`／`R3-001` 的成因就在這裡。**
+
+    ⚠️ 舊版只取「包含關鍵字的最近一個 statement」。查核者逐字：「**不能再把『包含
+    關鍵字的單一 statement』當成整則訊息**」。實測 `assign_cmd.render_conflict_refusal`：
+    關鍵字落在 ``lines = [...]`` 裡，而尾端另有兩個 ``lines.append(...)``——其中一個
+    append 的正是一行填空指令。⇒ artifact 看不見它，於是把該列判成 `passes=true`，
+    而訊息的開頭同時逐字寫著「⛔ 不給填空樣板」。**同一則訊息自我矛盾，機械卻說它合格。**
+
+    ⇒ 命中的 statement 若在寫一個累加器（見 :func:`_accumulator_name`），就把**同一個
+    函式體內對同一個變數的每一次寫入**一併算進來，依原始碼順序。
+
+    ⚠️ **三個上界，逐條明說：**
+
+    1. **取的是所有分支的聯集**，⛔ 不是任何單一次執行的逐字輸出。對「有沒有佔位」
+       這個問題，聯集是**安全方向**（寧可誤報）；但它⛔ 不解「一則多態」——
+       同一則 `print` 依執行期分支印出不同內容時，母體單位該不該改成
+       （訊息 × 分支）**是規格層的問題**，⛔ 不由本腳本自行決定。
+    2. ⛔ 不跨函式：累加器被傳進別的函式再被寫時看不見。
+    3. ⛔ 不做別名分析：``other = lines`` 之後對 `other` 的寫入看不見。
+    """
+    name = _accumulator_name(stmt)
+    if name is None:
+        return [stmt]
+    owner: ast.AST | None = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            lo, hi = node.lineno, node.end_lineno or node.lineno
+            if lo <= stmt.lineno <= hi:
+                if owner is None or node.lineno > owner.lineno:  # type: ignore[attr-defined]
+                    owner = node
+    if owner is None:
+        return [stmt]
+    found = [
+        node
+        for node in ast.walk(owner)
+        if isinstance(node, ast.stmt) and _accumulator_name(node) == name
+    ]
+    found.sort(key=lambda n: n.lineno)
+    return found or [stmt]
+
+
 def _render_text(node: ast.AST) -> str:
     """把一個 statement 內的字串字面**依原始順序**串成「訊息大致長什麼樣」。
 
@@ -301,6 +373,7 @@ def _evaluate(
     span: int = 1,
     node: ast.AST | None = None,
     helpers: dict[str, ast.AST] | None = None,
+    extra_nodes: "list[ast.stmt] | None" = None,
 ) -> Mechanical:
     """三條機械必要條件 ＋ **切界是否可信**。
 
@@ -325,7 +398,11 @@ def _evaluate(
             has_command=False, head_ok=False, no_placeholder=False, boundary_ok=False
         )
 
-    text = _render_text(node) if node is not None else segment
+    if extra_nodes:
+        # ⭐ 一則訊息可以由**多個 statement** 累加而成（見 :func:`_message_statements`）。
+        text = "\n".join(_render_text(n) for n in extra_nodes)
+    else:
+        text = _render_text(node) if node is not None else segment
     lines = _command_lines(text)
     via: str | None = None
     if not lines and node is not None and helpers:
@@ -360,6 +437,7 @@ def _evaluate(
         head_ok=head in RUNNABLE_HEADS,
         no_placeholder=not placeholder_lines,
         command=command,
+        command_lines=list(lines),
         command_via=via,
         placeholder_lines=placeholder_lines,
         cjk_value_lines=cjk_value_lines,
@@ -414,10 +492,24 @@ def scan(src_root: Path) -> list[Rejection]:
                 if stmt is None:
                     segment = line.strip()
                     bounds = (lineno, lineno)
+                    parts: list[ast.stmt] = []
+                    span = 1
                 else:
-                    segment = ast.get_source_segment(text, stmt) or line.strip()
-                    bounds = (stmt.lineno, stmt.end_lineno or stmt.lineno)
-                span = bounds[1] - bounds[0] + 1
+                    parts = _message_statements(tree, stmt)
+                    segment = "\n".join(
+                        ast.get_source_segment(text, n) or "" for n in parts
+                    ) or line.strip()
+                    bounds = (
+                        min(n.lineno for n in parts),
+                        max(n.end_lineno or n.lineno for n in parts),
+                    )
+                    # ⚠️ **切界上限逐條套在每個 statement 上，⛔ 不套在總和。**
+                    # 那條上限量的是「這**一個** statement 被撐成了整個函式」
+                    # （命中落在 `#` 註解時）；一則訊息由多個 append 累加而成是
+                    # **正常形狀**，把它們的行數加總去撞上限會把合格的判成切界失敗。
+                    span = max(
+                        (n.end_lineno or n.lineno) - n.lineno + 1 for n in parts
+                    )
 
                 # ⭐ **命中落在註解或 docstring 裡 ⇒ 它不是一則訊息。**
                 # `#` 註解對 AST **完全不可見** ⇒ 「最內層 statement」退化成整個
@@ -442,7 +534,7 @@ def scan(src_root: Path) -> list[Rejection]:
                         in_scope=path.name not in OUT_OF_SCOPE_FILES,
                         kind=kind,
                         span=span,
-                        mechanical=_evaluate(segment, span, stmt, helpers),
+                        mechanical=_evaluate(segment, span, stmt, helpers, parts),
                     )
                 )
     rows.sort(key=lambda r: (r.file, r.line))
