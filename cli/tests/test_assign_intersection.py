@@ -289,6 +289,145 @@ def test_the_alias_table_must_not_normalise_an_illegal_literal():
 
 # ============================================================ 拒絕訊息四要件
 
+#: 要件③ 的現行逐字出處。**2026-09-03 需求方裁定**（`R4-001` disposition 的第二條路）。
+_REQUIREMENT_THREE_RULING = (
+    "https://github.com/ruan6047/ai-workflow/issues/221#issuecomment-5523123629"
+)
+
+
+def _narrowing_lines(text: str) -> list[str]:
+    """訊息裡每一行 ``收窄：`` 之後的內容，依出現順序。"""
+    return [
+        line.split("收窄：", 1)[1].strip()
+        for line in text.splitlines()
+        if "收窄：" in line
+    ]
+
+
+def _assert_requirement_three(card_id: str, conflicts, text: str) -> None:
+    """要件③ 的**可證偽**斷言（裁定 `issuecomment-5523123629` 逐字）。
+
+    裁定的新 ③ 逐字：
+
+    > ③ **收窄方向**：指名要改的旗標（``--resources``），並**每則衝突各附一句可據以
+    > 判斷的收窄方向**（``narrowing_hint()``）。⛔ 不要求輸出一行可照貼的完整指令——
+    > 收窄到哪個路徑構造上是**人的判斷**；⛔ 亦不得以填空樣板代替（`R3-001`）。
+
+    ⚠️ **裁定同時逐字登記「這是射程收窄、⛔ 不是澄清」**：原 ③ 要的是「**可貼進**
+    ``wfcli amend --resources`` 的收窄**寫法**」，新 ③ 只要「方向＋旗標名」——
+    **這是把要件改小，⛔ 不是把原要件講清楚**。裁定所附的 `pm-conduct.md` §四紅線
+    自檢，以及「⚠️ 若日後認為這就是為做不到而改射程，本裁定即為該判斷的證據所在」
+    一句，⛔ 不得在引用時省略。
+
+    ⛔ **⛔ 不得退回代理條件**——`R4-001` 逐字點名的正是那個病：只檢查旗標名稱、
+    ``--help`` 輸出或「收窄：」字樣**存在**，那些代理條件通過時**原要件仍可為假**。
+    ⇒ 這裡逐則比對**該衝突自己的**收窄方向。
+
+    三格，逐格可證偽（反證見 `test_requirement_three_is_falsifiable_*`）：
+    """
+    # (1) 指名要改的旗標
+    assert "--resources" in text, f"③ 要求指名旗標；裁定：{_REQUIREMENT_THREE_RULING}"
+
+    # (2) 每則衝突各有一行 `收窄：`，且內容非空
+    hints = _narrowing_lines(text)
+    assert len(hints) == len(conflicts), (
+        f"③ 要求**每則衝突各一行**收窄方向：衝突 {len(conflicts)} 則、收窄行 {len(hints)} 行"
+    )
+    assert all(hints), f"③ 要求收窄方向**非空**：{hints}"
+
+    # (3) **逐則對應該衝突**——第 k 行必須說得出第 k 則衝突自己的東西。
+    #
+    # ⚠️ **`file:` 與非 `file:` 兩種形狀刻意分開判**，理由⛔ 不是寬鬆：
+    # `narrowing_hint()` 對 `file:` 衝突回「把宣告收窄到 <較深的那一個> 之下更深的
+    # 路徑…」——那句話帶著**這一則衝突自己的字面** ⇒ 可逐則驗。對非 `file:`（db／
+    # port／container）它回一個**常數句**「改宣告不重疊的資源」，構造上⛔ 沒有可指名
+    # 的路徑 ⇒ **那類衝突的收窄方向在本實作下⛔ 逐則不可分辨**。
+    # ⭐ 這是一個**登記在案的上界，⛔ 不是本斷言放水**：見
+    # `test_a_db_conflict_narrowing_direction_is_structurally_indistinguishable`。
+    for index, (conflict, hint) in enumerate(zip(conflicts, hints)):
+        if not conflict.mine.startswith("file:"):
+            continue
+        deeper = (
+            conflict.mine
+            if len(conflict.key_mine) >= len(conflict.key_theirs)
+            else conflict.theirs
+        )
+        assert deeper in hint, (
+            f"第 {index} 則衝突的收窄方向⛔ 沒說到它自己的 {deeper!r}：{hint!r}。"
+            f"⇒ 這正是代理條件會放過的形態（裁定：{_REQUIREMENT_THREE_RULING}）"
+        )
+
+
+# ---- 反證：③ 的斷言**必須**在下列三種破壞下轉紅 ----
+#
+# ⭐ **為什麼把反證寫成測試、⛔ 不是手跑一次就宣稱**：`R3-001` 那一輪我用「把碼改回去
+# 再跑一次」證明測試非空，但查核者⛔ 未複跑（理由：⛔ 不修改唯讀的 source branch），
+# 於是那個「7 failed」到今天仍**只有執行者自報**。⇒ 把證偽性搬進測試本體，任何人跑
+# `pytest` 就同時驗到「斷言存在」與「斷言擋得住」。
+
+def test_requirement_three_is_falsifiable_by_dropping_one_narrowing_line():
+    """拿掉任一則衝突的 `收窄：` 行 ⇒ 必須轉紅（裁定逐字要求）。"""
+    conflicts = detailed_conflicts(
+        _decl("file:a", "file:c"), "OTHER", _decl("file:a/b", "file:c/d")
+    )
+    assert len(conflicts) == 2
+    lines = render_conflict_refusal("MY-CARD", conflicts).splitlines()
+    first_hint = next(i for i, line in enumerate(lines) if "收窄：" in line)
+    broken = "\n".join(lines[:first_hint] + lines[first_hint + 1 :])
+    assert sum("收窄：" in line for line in broken.splitlines()) == 1, "反證前提：真的少一行"
+    with pytest.raises(AssertionError, match="每則衝突各一行"):
+        _assert_requirement_three("MY-CARD", conflicts, broken)
+
+
+def test_requirement_three_is_falsifiable_by_an_empty_narrowing_line():
+    """收窄方向是空字串 ⇒ 必須轉紅。"""
+    conflicts = detailed_conflicts(_decl("file:a"), "OTHER", _decl("file:a/b"))
+    with pytest.raises(AssertionError, match="非空"):
+        _assert_requirement_three("MY-CARD", conflicts, "--resources\n      收窄：")
+
+
+def test_requirement_three_is_falsifiable_when_two_conflicts_share_one_direction():
+    """⭐ 裁定逐字：「讓兩則衝突印出**相同的**方向，斷言必須轉紅」。"""
+    conflicts = detailed_conflicts(
+        _decl("file:a", "file:c"), "OTHER", _decl("file:a/b", "file:c/d")
+    )
+    same = "把宣告收窄到 file:a/b 之下更深的路徑，或改宣告不重疊的資源"
+    text = "--resources\n      收窄：" + same + "\n      收窄：" + same
+    with pytest.raises(AssertionError, match="⛔ 沒說到它自己的"):
+        _assert_requirement_three("MY-CARD", conflicts, text)
+
+
+def test_requirement_three_is_not_satisfied_by_the_proxy_conditions_alone():
+    """⛔ **承重**：只有旗標名 ＋ `--help` ＋「收窄：」字樣 ⇒ **⛔ 不得通過**。
+
+    這一組字面正是 `R4-001` 之前那版斷言檢查的全部內容。它們同時成立時，原要件
+    （逐則的收窄方向）**仍然為假** ⇒ 代理條件⛔ 不得替代要件。
+    """
+    conflicts = detailed_conflicts(
+        _decl("file:a", "file:c"), "OTHER", _decl("file:a/b", "file:c/d")
+    )
+    proxy = "wfcli amend --help\n  `--resources` ＝ **收窄後的真實路徑**\n      收窄：x"
+    with pytest.raises(AssertionError):
+        _assert_requirement_three("MY-CARD", conflicts, proxy)
+
+
+def test_a_db_conflict_narrowing_direction_is_structurally_indistinguishable():
+    """⚠️ **登記在案的上界，⛔ 不是斷言放水。**
+
+    `narrowing_hint()` 對非 `file:` 衝突回一個**常數句**——構造上⛔ 沒有可指名的路徑
+    ⇒ 兩則 db 衝突的收窄方向**逐字相同**，「逐則對應」在那一類上⛔ 驗不到。
+    ⛔ 這⛔ 不是缺陷登記完就算修好；它是要件③ 在 db 資源上的**射程缺口**。
+    """
+    conflicts = detailed_conflicts(
+        _decl("db:production:schema", "db:test:schema"),
+        "OTHER",
+        _decl("db:production:schema", "db:test:schema"),
+    )
+    assert len(conflicts) == 2
+    hints = _narrowing_lines(render_conflict_refusal("MY-CARD", conflicts))
+    assert hints == ["改宣告不重疊的資源", "改宣告不重疊的資源"], hints
+
+
 def test_the_refusal_message_carries_all_four_requirements():
     conflicts = detailed_conflicts(
         _decl("file:cli/src/"), "OTHER-CARD", _decl("file:cli/src/wf_cli/doctor.py")
@@ -302,17 +441,8 @@ def test_the_refusal_message_carries_all_four_requirements():
     assert "('cli', 'src')" in text
     # ② 觸發哪一來源
     assert "來源＝分量序列前綴" in text
-    # ③ 可貼進 `wfcli amend --resources` 的收窄**寫法**
-    #
-    # ⚠️ **2026-09-03（`R3-001`）改寫**：原斷言是 `"wfcli amend MY-CARD --resources" in text`
-    # ——那一行實作成 `wfcli amend MY-CARD --resources file:收窄後的路徑 …`，而**同一則
-    # 訊息的開頭**逐字寫著「⛔ 不給填空樣板」⇒ **自我矛盾**，查核者 R3-001 命其刪除。
-    # ⛔ **這⛔ 不是把要件 ③ 拿掉**：③ 逐字是「收窄**寫法**」，⛔ 不是「一行可照貼的
-    # 完整指令」。收窄到哪個路徑構造上是**人的判斷** ⇒ 寫法＝(a) 指名要動哪個旗標、
-    # (b) 每一則衝突各附一句收窄方向。兩者現在都在，且⛔ 不含任何填空指令。
-    assert "`--resources` ＝ **收窄後的真實路徑**" in text
-    assert "wfcli amend --help" in text, "旗標與值域的入口仍要給，且它是可跑的"
-    assert "收窄：" in text, "每一則衝突各附一句收窄方向"
+    # ③ 收窄方向（**2026-09-03 需求方裁定收窄後**的逐字，見 _REQUIREMENT_THREE_RULING）
+    _assert_requirement_three("MY-CARD", conflicts, text)
 
 
 def test_the_refusal_message_offers_no_force_escape_hatch():
