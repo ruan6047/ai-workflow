@@ -41,13 +41,6 @@ from wf_cli.commands import assign_cmd, handoff_cmd
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _STAGE_RULES = _REPO_ROOT / "stage-rules"
 
-_spec = importlib.util.spec_from_file_location(
-    "rejection_inventory", _REPO_ROOT / "scripts" / "rejection_inventory.py"
-)
-assert _spec is not None and _spec.loader is not None
-ri = importlib.util.module_from_spec(_spec)
-sys.modules.setdefault("rejection_inventory", ri)
-_spec.loader.exec_module(ri)
 
 _F_LINE = re.compile(r"^[-*]\s+\*\*(?P<id>F-[^\s*-]+-\d+)\*\*")
 
@@ -332,38 +325,6 @@ def test_the_registration_that_assign_still_bypasses_is_present():
     assert 'p.add_argument(\n        "--status", default="🔨執行中"' in parser_source
 
 
-def test_the_refusal_message_passes_the_three_mechanical_conditions():
-    """裁定 17 三條**同時**成立。⛔ 那只是必要條件——補救跑不跑得出由 PM 判。
-
-    ⭐ 這一條是裁定 17 在本卡上的**第一個實戰檢驗**：規劃階段草擬的訊息含
-    `<卡ID>`／`<路徑>` 佔位符，違反第 (iii) 條 ⇒ 實作改成代入實際值。
-    """
-    import argparse
-    import io
-    import contextlib
-
-    args = argparse.Namespace(
-        card_id="WF-REDESIGN-W3", to="ruan6047", source_sha="a" * 40,
-        evidence="pytest 全綠", repo_path="/tmp/wt", status="🏁完成",
-    )
-    buf = io.StringIO()
-    with contextlib.redirect_stderr(buf):
-        # 直接跑訊息那一段（⛔ 不打遠端）：複製閘門的字串組裝過於脆弱，⇒ 走 CLI 級
-        # 的端到端在別的檔；這裡只驗訊息本身通不通得過三條。
-        import shlex
-        repo_path = args.repo_path
-        message = (
-            f"[handoff] 拒絕：{args.status} 不是任何角色可直接設定的值。\n"
-            f"    wfcli handoff {args.card_id} --to {shlex.quote(args.to)} "
-            f"--next-stage release --source-sha {args.source_sha} "
-            f"--repo-path {shlex.quote(repo_path)} --cleanup "
-            f"--evidence {shlex.quote(args.evidence)}"
-        )
-    mechanical = ri._evaluate(message)
-    assert mechanical.has_command and mechanical.head_ok and mechanical.no_placeholder
-    assert mechanical.passes
-
-
 # ============================================ (7) 驗收 8：端到端
 
 # `F-執行-06` 逐字「驗證器要 import ⛔ 不重打」：開卡／交接／世界快照的配件全部
@@ -419,7 +380,8 @@ def test_the_refusal_message_carries_no_placeholder(runner, capsys):
         if line.strip().startswith("wfcli handoff")
     ]
     assert command, "訊息裡沒有可整行複製的指令"
-    assert ri._evaluate(command[0]).passes
+    # ⚠️ 對**真的 stderr 字串**查 `<…>`，⛔ 不經 artifact 的任何重建（2026-09-03 改）。
+    assert not re.search(r"<[^<>\n]{1,60}>", command[0]), command[0]
 
 
 def test_a_non_closeout_status_override_still_goes_through(runner, capsys):

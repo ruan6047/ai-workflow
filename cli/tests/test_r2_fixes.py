@@ -22,9 +22,14 @@
 本檔證明的是**訊息裡給得出可跑的東西、且原報告來源沒有遺失**。它⛔ 不證明
 「這 6 則訊息在驗收 3 的三條判準下計數」——`--reviewer`／`--rationale`／`--reason`
 這類值**在構造上就是人要填的**，⛔ 沒有任何機械能代它決定。⇒ 那幾則訊息的
-「重跑形狀」刻意寫成**散文**、⛔ 不寫成可整行複製的指令行；判準 (iii) 的既有全域
-複查（`test_rejection_inventory.test_the_remedy_commands_contain_no_placeholder_at_all`）
-因此仍然全綠，⛔ 不是被放寬。
+「重跑形狀」刻意寫成**散文**、⛔ 不寫成可整行複製的指令行。
+
+⚠️ **2026-09-03 更新**：判準 (iii) 的**全語料**複查已不存在——它倚賴的
+`mechanical` 欄位隨 artifact 砍成純清單而移除，而改寫成「直接 grep 原始碼」的版本
+實測 **4 命中、0 個是真的違規**（全落在 docstring 與散文提及）⇒ ⛔ 不採。
+⇒ `<…>` 禁令現在只在**訊息實際輸出**那一層守（本檔兩條 ＋ `test_note_roster`
+＋ `test_r3_fixes`），⛔ 不再有全語料覆蓋。理由與量測寫在
+`test_rejection_inventory.py` 的「全語料 `<…>` 掃描」那一段。
 """
 
 from __future__ import annotations
@@ -57,13 +62,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 #: ⛔ 不是 `python -m wf_cli`（那個入口今天不存在，用它會量到一個假的 rc）。
 _WFCLI = Path(sys.executable).parent / "wfcli"
 
-_spec = importlib.util.spec_from_file_location(
-    "rejection_inventory", _REPO_ROOT / "scripts" / "rejection_inventory.py"
-)
-assert _spec is not None and _spec.loader is not None
-ri = importlib.util.module_from_spec(_spec)
-sys.modules.setdefault("rejection_inventory", ri)
-_spec.loader.exec_module(ri)
 
 
 def _assign(card_id: str, **overrides) -> int:
@@ -217,14 +215,30 @@ def test_that_refusal_carries_a_runnable_remedy(runner, tmp_path, capsys):
     _assign("R2-PROJ6", **{"--repo-path": str(tmp_path / "nope")})
     command = _remedy_lines(capsys.readouterr().err)
     assert command, "訊息裡沒有可整行複製的指令"
-    assert ri._evaluate(command[0]).passes
+    assert not _ANGLE_SLOT_RE.search(command[0]), command[0]
+    # ⭐ 承重的是**這一行**：實跑 rc=0。上面那句只查「有沒有 `<…>`」。
     assert subprocess.run(command[0], shell=True, cwd=_REPO_ROOT,
                           capture_output=True).returncode == 0
 
 
+#: 指令佔位樣式（與 `test_rejection_inventory` 同一個字面）。
+_ANGLE_SLOT_RE = re.compile(r"<[^<>\n]{1,60}>")
+
+#: 可整行複製的指令行的首 token（封閉集合，規劃階段規格裁定 17）。
+_RUNNABLE_HEADS = ("wfcli", "git", "gh")
+
+
 def _remedy_lines(text: str) -> list[str]:
-    """從 stderr 撈出**可整行複製**的指令行，判準與 artifact 產生器同一支。"""
-    return ri._command_lines(text)
+    """從**真的 stderr 字串**撈出可整行複製的指令行。
+
+    ⚠️ **2026-09-03 改為就地實作**：原本呼叫 `rejection_inventory._command_lines`，
+    但那支已隨 artifact 砍成純清單而移除（需求方逐字「有疑慮的機械產生資訊寧願不要」）。
+    ⭐ 這裡**⛔ 沒有那個疑慮**——它讀的是指令實際印出來的 stderr，⛔ 不是任何重建。
+    """
+    return [
+        line for line in (raw.strip().strip("`") for raw in text.splitlines())
+        if line.startswith(_RUNNABLE_HEADS)
+    ]
 
 
 # ============================== (4) R2-002：重跑指令帶得走原報告來源
@@ -315,66 +329,10 @@ def test_the_review_refusal_still_offers_a_runnable_command(tmp_path, monkeypatc
     assert rc == 2
     lines = _remedy_lines(err)
     assert lines and lines[0] == "wfcli review --help"
-    assert ri._evaluate(lines[0]).passes
+    assert not _ANGLE_SLOT_RE.search(lines[0]), lines[0]
 
 
 # ================================= (5) 第七個 artifact 缺陷：字面被黏住
-
-def test_render_text_does_not_glue_separate_list_elements():
-    """⭐ **第七個 artifact 缺陷**（R2 這一輪量到的）。
-
-    舊版 `ast.walk` ＋ `"".join` 會把清單的相鄰元素黏成一行 ⇒ 產出一條**實際不存在**
-    的「指令行」。實測 `pitfalls.py:391` 因此被黏出
-    `git show HEAD:AI_WORKFLOW.md  - 階段判定依據：…<原因>…`，誤觸判準 (iii)。
-    """
-    import ast
-
-    tree = ast.parse('x = ["a\\n    git show HEAD:f.md", "  - 值三選一：<原因>"]')
-    rendered = ri._render_text(tree.body[0])
-    command_lines = ri._command_lines(rendered)
-    assert command_lines == ["git show HEAD:f.md"], rendered
-    assert "<原因>" not in command_lines[0]
-
-
-def test_render_text_separates_call_arguments_with_a_space():
-    """`print(a, b)` 的實際輸出是 ``a`` 空白 ``b`` ⇒ ⛔ 不得黏成一個 token。"""
-    import ast
-
-    tree = ast.parse('print("wfcli x --help", "尾巴")')
-    assert ri._render_text(tree.body[0]) == "wfcli x --help 尾巴 "
-
-
-def test_criterion_three_scans_every_command_line_not_just_the_first():
-    """⭐ 判準 (iii) 掃**每一條**指令行。
-
-    ⛔ 不得只看 `lines[0]`：那會讓「第一行乾淨、第二行要人填」的訊息被判成合格——
-    那是 `R2-003` 那個誤判的**鏡像**。
-    """
-    text = "wfcli a --help\nwfcli b --reason <你要填的>"
-    verdict = ri._evaluate(text)
-    assert verdict.command == "wfcli a --help"
-    assert verdict.placeholder_lines == ["wfcli b --reason <你要填的>"]
-    assert verdict.no_placeholder is False
-    assert verdict.passes is False
-
-
-def test_the_cjk_candidate_list_is_recorded_but_never_changes_the_verdict():
-    """⚠️ CJK 候選是**清單⛔ 不是判準**——它會誤中**真的值**。
-
-    `wfcli amend … --reason '修復資源宣告區塊的排版'` 是一句寫好的理由，⛔ 不是佔位。
-    ⇒ 它進 `cjk_value_lines`、**⛔ 不進** `passes`。
-    """
-    verdict = ri._evaluate("wfcli amend C1 --reason '修復資源宣告區塊的排版'")
-    assert verdict.cjk_value_lines == ["wfcli amend C1 --reason '修復資源宣告區塊的排版'"]
-    assert verdict.no_placeholder is True
-    assert verdict.passes is True
-
-
-def test_an_fstring_field_is_not_a_placeholder():
-    """⚠️ `{…}` 執行時會被代入真值 ⇒ ⛔ 非佔位。PM 上一輪把兩者混為一談才漏掉一列。"""
-    verdict = ri._evaluate("wfcli amend {…} --reason {…}")
-    assert verdict.no_placeholder is True
-    assert verdict.cjk_value_lines == []
 
 
 # ============================ (6) 六則曾含人工佔位的訊息，現況逐則釘住
@@ -387,48 +345,6 @@ _FORMERLY_PLACEHOLDER = {
     ("open_cmd.py", "wfcli amend --help"),
     ("review_cmd.py", "wfcli review --help"),
 }
-
-
-def test_no_command_line_in_the_corpus_carries_an_angle_bracket_slot():
-    """全語料複查：**⛔ 沒有任何指令行**含 `<…>`。
-
-    ⚠️ **2026-09-03（`R3-001`）更名**。本測試舊名是
-    `test_no_command_line_in_the_corpus_carries_a_human_fill_slot`——那個名字**宣稱得
-    比它做的多**：它只看 `placeholder_lines`，而該欄**只認角括號樣式** ⇒ 中文填空
-    `file:收窄後的路徑` 構造上進不去，於是 `R3-001` 從它底下走過去。
-    ⛔ 名字宣稱的射程大於實作，比沒有這條測試更糟——它會讓人以為那一面被守住了。
-    ⇒ 更名為它**真正**做的事；「人工填空」那一面由
-    `test_r3_fixes.test_no_command_line_in_the_corpus_carries_a_cjk_written_value` 承接。
-
-    ⭐ 本條仍有意義：`intake.py` 逐字禁止 `<在此填寫>` 這種**指令**佔位，⛔ 不得為了讓
-    那 6 則「計數」而把填空塞回指令行。
-    """
-    offenders = [
-        (r.file, r.line, r.mechanical.placeholder_lines)
-        for r in ri.scan(_REPO_ROOT / "cli" / "src")
-        if r.in_scope and r.kind == "message" and r.mechanical.placeholder_lines
-    ]
-    assert offenders == [], offenders
-
-
-def test_every_formerly_placeholder_message_now_leads_with_a_clean_command():
-    """六則各自的第一條指令行現在都乾淨且**實跑 rc=0**。
-
-    ⚠️ 第六則（`checkpoint_cmd.py:231` 的 `--rationale '改判理由寫在這裡'`）**⛔ 不在
-    PM 點名的 5 則裡**——它是本輪窮舉時量出來的，PM 的 59 列對帳把它記成 ✅ 合格。
-
-    ⛔ **本條只管第一條指令行，⛔ 不足以宣稱整則乾淨。** 查核者 `R3-001` 逐字指出
-    「只要求以乾淨 command 開頭，所以前面加 `wfcli amend --help` 就過」——**那正是
-    這一條**。⇒ 整則的判定在 `test_r3_fixes`，本條⛔ 不得被引為整則的證據。
-    """
-    heads = {
-        (r.file.split("/")[-1], (r.mechanical.command or "").split(" --")[0].strip())
-        for r in ri.scan(_REPO_ROOT / "cli" / "src")
-        if r.in_scope and r.kind == "message" and r.mechanical.command
-    }
-    for expected in _FORMERLY_PLACEHOLDER:
-        assert any(f == expected[0] and c.startswith(expected[1].split(" --")[0])
-                   for f, c in heads), (expected, sorted(heads))
 
 
 @pytest.mark.parametrize(

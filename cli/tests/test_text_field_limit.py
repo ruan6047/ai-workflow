@@ -44,13 +44,6 @@ from .test_amend import (  # noqa: F401  (fake_runner／card 是 fixture，pytes
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "rejection_inventory", _REPO_ROOT / "scripts" / "rejection_inventory.py"
-)
-assert _spec is not None and _spec.loader is not None
-ri = importlib.util.module_from_spec(_spec)
-sys.modules.setdefault("rejection_inventory", ri)
-_spec.loader.exec_module(ri)
 
 
 # ------------------------------------------------------------------ 純函式：邊界
@@ -126,15 +119,6 @@ def test_the_message_names_the_field_the_actual_bytes_the_excess_and_the_target(
     assert "1200 bytes" in text                       # 實際
     assert f"超出 {1200 - TEXT_FIELD_BYTE_LIMIT} bytes" in text  # 超出多少
     assert f"縮短到 {TEXT_FIELD_BYTE_LIMIT} bytes" in text        # 縮到多少
-
-
-def test_the_message_passes_the_three_mechanical_conditions():
-    """裁定 17 三條**同時**成立。⛔ 那只是必要條件——「補救跑不跑得出」由 PM 判。"""
-    mechanical = ri._evaluate(_message())
-    assert mechanical.has_command is True
-    assert mechanical.head_ok is True
-    assert mechanical.no_placeholder is True
-    assert mechanical.passes is True
 
 
 def test_the_message_says_it_does_not_truncate():

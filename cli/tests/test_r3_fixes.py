@@ -14,8 +14,10 @@
 
 查核者逐字：
 
-1. `test_r2_fixes.py:392` 宣稱「沒有任何指令行含人工填空」，實際只檢查
-   `placeholder_lines`，而該欄**只認角括號樣式** ⇒ 中文 `file:收窄後的路徑` 進不去。
+1. `test_r2_fixes` 的 `..._carries_a_human_fill_slot` 宣稱「沒有任何指令行含人工
+   填空」，實際只檢查 `placeholder_lines`，而該欄**只認角括號樣式** ⇒ 中文
+   `file:收窄後的路徑` 進不去。（⚠️ 那條測試 2026-09-03 已隨擷取器一起刪除；
+   ⛔ 此處⛔ 不寫行號——它已經漂過一次了。）
 2. 另一條只要求「以乾淨 command 開頭」⇒ 前面加 `wfcli amend --help` 就過。
 
 ⇒ disposition 逐字：「測試須檢查 `render_conflict_refusal()` 的**最終輸出及其中所有
@@ -45,13 +47,6 @@ from wf_cli.resources import ResourceDeclaration, detailed_conflicts
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_spec = importlib.util.spec_from_file_location(
-    "rejection_inventory", _REPO_ROOT / "scripts" / "rejection_inventory.py"
-)
-assert _spec is not None and _spec.loader is not None
-ri = importlib.util.module_from_spec(_spec)
-sys.modules.setdefault("rejection_inventory", ri)
-_spec.loader.exec_module(ri)
 
 #: 測試側的**嚴格**填空判準：一條指令行扣掉 f-string 欄位之後還剩 CJK ⇒ 可疑。
 #:
@@ -64,6 +59,23 @@ def _fill_slots(command_line: str) -> str:
     """扣掉執行期會被代入真值的部分，回傳剩下的可疑字元。"""
     stripped = command_line.replace("{…}", "")
     return "".join(_CJK.findall(stripped)) + "".join(re.findall(r"<[^<>\n]{1,60}>", stripped))
+
+
+#: 可整行複製的指令行的首 token（封閉集合，規劃階段規格裁定 17）。
+_RUNNABLE_HEADS = ("wfcli", "git", "gh")
+
+
+def _command_lines(text: str) -> list[str]:
+    """從**真的訊息輸出**撈出可整行複製的指令行。
+
+    ⚠️ **2026-09-03 改為就地實作**：原本呼叫 `rejection_inventory._command_lines`，
+    那支已隨 artifact 砍成純清單而移除。⭐ 這裡讀的是
+    `render_conflict_refusal()` 的**實際回傳字串**，⛔ 不是任何 AST 重建。
+    """
+    return [
+        line for line in (raw.strip().strip("`") for raw in text.splitlines())
+        if line.startswith(_RUNNABLE_HEADS)
+    ]
 
 
 def _decl(*resources: str) -> ResourceDeclaration:
@@ -94,7 +106,7 @@ def test_no_command_line_in_the_final_output_carries_a_fill_slot(mine, theirs):
 
     offenders = {
         line: _fill_slots(line)
-        for line in ri._command_lines(text)
+        for line in _command_lines(text)
         if _fill_slots(line)
     }
     assert offenders == {}, offenders
@@ -105,7 +117,7 @@ def test_the_final_output_still_offers_at_least_one_runnable_command():
     conflicts = detailed_conflicts(
         _decl("file:cli/src/"), "OTHER-CARD", _decl("file:cli/src/wf_cli/doctor.py")
     )
-    lines = ri._command_lines(render_conflict_refusal("MY-CARD", conflicts))
+    lines = _command_lines(render_conflict_refusal("MY-CARD", conflicts))
     assert lines == ["wfcli amend --help"], lines
 
 
@@ -129,98 +141,21 @@ def test_the_narrowing_direction_is_still_there_for_every_conflict():
 
 # ============ (2) R2-003 的 artifact 那一半：一則訊息 ≠ 一個 statement
 
-def test_a_message_built_by_appends_is_read_whole():
-    """⭐ **`R2-003` 的病灶**：舊版只取含關鍵字的**最近一個 statement**。
 
-    ⇒ `lines = [...]` 之後的 `lines.append(...)` 完全看不見，而 `R3-001` 的填空
-    指令正是 append 上去的。
-    """
-    src = (
-        "def f(card_id):\n"
-        "    lines = ['[assign] 拒絕：x\\n    wfcli amend --help']\n"
-        "    lines.append('    wfcli amend C1 --resources file:收窄後的路徑')\n"
-        "    return '\\n'.join(lines)\n"
-    )
-    tree = ast.parse(src)
-    stmt = ri._enclosing_statement_at(tree, 2)
-    parts = ri._message_statements(tree, stmt)
-    assert len(parts) == 2, ast.dump(stmt)
-    verdict = ri._evaluate("", 1, stmt, None, parts)
-    assert verdict.command_lines == [
-        "wfcli amend --help",
-        "wfcli amend C1 --resources file:收窄後的路徑",
-    ]
+# ==================== (3) ⚠️ 一條**已刪除**的檢查，⛔ 無承接者
 
-
-def test_a_plain_print_message_is_unchanged_by_the_accumulator_expansion():
-    """⛔ 不得波及那 50 幾則 `print(...)` 形狀的訊息——它們沒有累加器。"""
-    tree = ast.parse("def f():\n    print('[x] 拒絕：y\\n    wfcli x --help')\n")
-    stmt = ri._enclosing_statement_at(tree, 2)
-    assert ri._message_statements(tree, stmt) == [stmt]
-
-
-def test_the_span_ceiling_is_per_statement_not_the_sum():
-    """⚠️ 切界上限量的是「**一個** statement 被撐成整個函式」。
-
-    一則訊息由多個 append 累加而成是**正常形狀**；把它們的行數加總去撞上限，會把
-    合格的判成切界失敗。⇒ 上限逐條套在每個 statement 上。
-    """
-    body = "\n".join(f"    lines.append('    wfcli x{i} --help')" for i in range(30))
-    tree = ast.parse(f"def f():\n    lines = ['[x] 拒絕：y']\n{body}\n")
-    stmt = ri._enclosing_statement_at(tree, 2)
-    parts = ri._message_statements(tree, stmt)
-    assert len(parts) == 31
-    span = max((n.end_lineno or n.lineno) - n.lineno + 1 for n in parts)
-    assert span == 1
-    assert ri._evaluate("", span, stmt, None, parts).boundary_ok is True
-
-
-def test_the_artifact_now_exposes_every_command_line_for_the_pm_reconciliation():
-    """`R2-003` disposition 逐字「artifact 或 PM 輸入必須涵蓋**完整實際輸出**」。
-
-    ⇒ `command_lines` 是 PM 做 60 列逐列裁定時該看的欄；`command` 只是第一條。
-    實測全語料**有 11 則的指令行超過一條** ⇒ 只看 `command` 會漏掉那 11 則的後半。
-    """
-    multi = [
-        (r.file.split("/")[-1], r.line, r.mechanical.command_lines)
-        for r in ri.scan(_REPO_ROOT / "cli" / "src")
-        if r.in_scope and r.kind == "message" and len(r.mechanical.command_lines) > 1
-    ]
-    assert multi, "若這裡變成空的，代表 command_lines 又退回只記一條"
-    for _file, _line, lines in multi:
-        assert len(set(lines)) == len(lines), (_file, _line, lines)
-
-
-# ==================== (3) 本輪明文修過的那幾則：整則⛔ 無中文填空
-
-#: 本輪（R2＋R3）明文改過重跑形狀的訊息。⛔ 不是全語料——見模組 docstring 的上界。
-_REWRITTEN = {
-    ("assign_cmd.py", 246),
-    ("assign_cmd.py", 420),
-    ("checkpoint_cmd.py", 231),
-    ("checkpoint_cmd.py", 301),
-    ("open_cmd.py", 573),
-    ("review_cmd.py", 201),
-}
-
-
-def test_no_command_line_in_the_corpus_carries_a_cjk_written_value():
-    """本輪改過的六則，**每一條**指令行都⛔ 不得含中文填空或 `<…>`。
-
-    ⚠️ 射程只有這六則，⛔ 不是全語料：全語料裡有**真的**中文值
-    （`--reason '修復資源宣告區塊的排版'`），把它們一併判紅是把合格的算成不合格。
-    ⇒ 這一條與 artifact 的判準 (iii) **刻意不同**，差別寫在模組 docstring。
-    """
-    rows = {
-        (r.file.split("/")[-1], r.line): r
-        for r in ri.scan(_REPO_ROOT / "cli" / "src")
-        if r.in_scope and r.kind == "message"
-    }
-    missing = _REWRITTEN - set(rows)
-    assert not missing, f"行號漂了，先更新 _REWRITTEN：{sorted(missing)}"
-    offenders = {}
-    for key in sorted(_REWRITTEN):
-        for line in rows[key].mechanical.command_lines:
-            if _fill_slots(line):
-                offenders[f"{key[0]}:{key[1]}"] = line
-    assert offenders == {}, offenders
+# ⛔ 這裡原本有 `test_no_command_line_in_the_corpus_carries_a_cjk_written_value`：
+# 它對本輪改過的六則訊息（`assign_cmd:246`／`:420`／`checkpoint_cmd:231`／`:301`／
+# `open_cmd:573`／`review_cmd:201`）逐條檢查指令行**⛔ 不含中文填空**。
+#
+# ⚠️ **2026-09-03 刪除，且⛔ 沒有承接者。** 它唯一的機制是 artifact 的
+# `mechanical.command_lines`，而 artifact 已依需求方裁定砍成純清單
+# （逐字「有疑慮的機械產生資訊寧願不要」）。
+#
+# ⛔ **⛔ 不改寫成「直接 grep 原始碼」**：那會誤中**真的**中文值——同一個檔裡就有
+# `--reason '修復資源宣告區塊的排版'`，那是一句寫好的理由、⛔ 不是佔位。機械上
+# **⛔ 沒有規則**分得開「描述要填什麼」與「就是那個值」。
+#
+# ⇒ **中文填空這一面現在⛔ 無機械檢查。** `render_conflict_refusal` 那一則由本檔
+# 上方的可證偽 ③ 斷言涵蓋；**其餘五則⛔ 無涵蓋**，只剩 PM／查核者的人工判斷。
+# ⛔ 不得由「`<…>` 那條還在」推出「填空這一面守住了」——那兩者是不同的樣式。
