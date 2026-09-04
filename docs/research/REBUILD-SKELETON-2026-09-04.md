@@ -12,7 +12,7 @@ core/                      定義層（C8）。只放定義與機械語意，⛔
   state-machine.md         階段、核心狀態值域、核心轉移表、模組 delta 合成規則
   tiers.md                 T0–T4 表、紅線域、能力層級判準、單向門、缺陷級別套用
   card-schema.md           卡面 fenced JSON 欄位集（JSON Schema 逐字）
-  verbs.md                 六動詞：open / move / edit / notes / brief / snapshot
+  verbs.md                 七動詞：open / move / edit / notes / brief / review / snapshot
   handoff.md               三份交接文件的段落表＋交回單 JSON schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
 stages/                    一階段一檔；研究、部署、維護三個可跳過的站住模組
@@ -150,6 +150,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | branch | string | CLI（move 到進行中時寫） | — | brief、H11 |
 | iteration | int | CLI | — | brief |
 | modules | string[]（此卡實際生效的模組） | CLI 由 `.wf/modules.json` 導出 | 建卡 | notes、brief |
+| notes | {id: `T-<階段>-NN`, text, origin: 留言 URL}[]（任務層注意事項） | 任何有 shell 的角色經 `edit --set notes+=`，來源為 `wf:note` 留言（§十二） | 否 | notes、brief |
 
 未定義鍵 ⇒ fail-closed（H10）。`schema_version` 升版規則：加選填欄不升、改既有欄語意或值域才升；舊版卡由 `edit` 逐張遷，⛔ 不批次改寫。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`、`卡ID` 五個投影欄，全由 CLI 回寫。
 
@@ -160,8 +161,9 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | `open <issue>` | 清單 issue 號 | 不是 issue、已在板上、鏈深 >2、JSON 鍵不合法（H9、H10） | 缺欄清單、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
 | `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時仍有 TODO | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 card_id（H10） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
-| `notes <card> [--stage]` | — | — | 三層編號清單（core＋已啟用模組＋專案層＋卡面任務層）＋ pitfalls-13 樣板（若啟用） | 無 |
+| `notes <card> [--stage]` | — | — | 四層編號清單（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言） |
+| `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法、H13 欄位不一致（資料有效性） | 缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態；有 shell 的查核者與執行者用它，沒 shell 者手貼同格式（C14） |
 | `snapshot` | — | — | — | 本機 JSON＋Markdown |
 
 實作規則（05 揭露、K2、K3）：所有檢查在第一次遠端寫入之前完成；每次寫入後回讀；拒收留痕一行；⛔ 不讀散文、⛔ 不產生任何統計數字進文件。
@@ -269,7 +271,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 1. `core/` 六檔（定義層先定，其他檔才有東西可引）
 2. `roles/common.md` → 四角色檔
 3. 五階段檔（研究住模組）
-4. `modules/` 十一個宣告區塊（條文可先空）
+4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
 5. README、ADOPTION 重寫
 6. 新 CLI `wf`（另一張 T3 卡；測試只測 GitHub 寫入與轉移表；fake gh 錄放）
 7. aiwf 新 Project 建立、舊卡關閉＋移出、舊檔移 archive
@@ -302,6 +304,11 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-01：C10 計數被第零條取代一事補進決策紀錄「補充裁定」，骨架 §三改為引用它，不再自行重判。
 - R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
+
+第四輪（被審 61feebf）：
+- R1-01：§六補 `notes` 欄；§七 `notes` 動詞改為四層來源。
+- R1-02：§一、§七補第七動詞 `review`：驗交回單 schema 與 H13 一致性、貼成留言、不動狀態（C14）。
+- R1-03：§十三第 4 步改逐名引用 §九，不記總數。
 
 第三輪（被審 d8fc77b）：
 - R1-01：交回單人填欄與 schema 補未驗清單三分類（§八）。
