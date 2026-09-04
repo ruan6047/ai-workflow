@@ -72,7 +72,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | D1 | 轉移在合成表內；終態無出邊；無自由文字狀態 | CLI `move` |
 | D2 | `open` 只從清單 issue；不在板上 | CLI `open` |
 | D3 | JSON 合法、鍵集合封閉；解析失敗整卡拒；寫後回讀 | CLI 全動詞 |
-| D4 | `--source-sha` 在遠端存在；`--ruling` URL 存在且含 `wf-return`／`wf-ruling` 區塊 | CLI `move`／`edit` |
+| D4 | `--source-sha` 在遠端存在；`--ruling` URL 存在 | CLI `move`／`edit`；URL 存在但無 `wf-return`／`wf-ruling` 區塊＝印 |
 
 判準：**CLI 拒的範圍＝「寫壞資料」與「指向不存在的東西」（＝決策紀錄的資料有效性、寫入順序、平台委託三類）；其餘＝印，交 AI 或人判。** 降為印的比對：HEAD 與 `source_sha`、`merge-tree` 衝突、交回單欄位一致性、鏈深、終態前 PR 與分支狀態、裁定留言作者；降為注意事項的：一人一角、跨家族。
 
@@ -159,7 +159,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 動詞 | 輸入 | 硬擋（rc≠0 並寫一則拒收留言，C13） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
 | `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration` | 不是 issue、已在板上、`--parent` 不存在、JSON 鍵不合法（D2、D3；全部在首次遠端寫入前） | 缺欄清單、鏈深（沿父鏈算，>2 印「上限 2」）、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
-| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在或無 `wf-return`／`wf-ruling` 區塊（D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言作者 login、缺欄（阻塞四欄、停止三欄）、離開規劃時 `acceptance` 或 `verification` 為空 | Project 欄、JSON owner／branch／iteration／source_sha、轉移記錄留言（純散文） |
+| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言無 `wf-return`／`wf-ruling` 區塊、裁定留言作者 login、缺欄（阻塞四欄、停止三欄）、離開規劃時 `acceptance` 或 `verification` 為空 | Project 欄、JSON owner／branch／iteration／source_sha、轉移記錄留言（純散文） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡（D3、D2、C11）；鏈深沿父鏈算後只印 | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 無 | `--for reviewer`：分支 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 有衝突（印）；`--for reviewer` 另印本 iteration 的執行者 actor（PM 判一人一角與跨家族的資訊）；`--for closeout`：merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段來源標記帶該檔 `last_confirmed` | 無（stdout；PM 貼進留言）。每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]` |
@@ -223,7 +223,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID 形狀：`<AREA>-<NNN>`；AREA＝專案層封閉枚舉（aiwf 種子：WF、CLI、DOC、OPS）；NNN＝`open` 依 repo 遞增；語意 slug 的位置＝issue 標題（需求方 2026-09-04 裁定不進卡ID）。修復卡形狀 `<原卡>-FIX<n>`。
 - 分支：`wf/<card_id>`；由 `move` 到進行中時寫回卡面。
-- 留言的形狀：CLI 寫的留言（`wf:move`／`wf:edit`／`wf:reject`／`wf:log`）＝純散文，只寫不讀；人貼的 `wf:note`／`wf:verdict`／`wf:ruling`＝首行給人讀＋一個 `json wf-note`／`wf-return`／`wf-ruling` 區塊給 CLI 讀（決策 1；乙案：CLI 只讀這三種）；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼他人裁決或裁定時，末段固定一行 `代貼裁定・授權來源：<session 或留言 URL>`（C12）。研究與量測全文的落點＝`wf:log` 留言；卡面 JSON 放判準與指向（K8、K9；需求方裁定，核心留言規則不是模組）。
+- 留言的形狀：CLI 寫的留言（`wf:move`／`wf:edit`／`wf:reject`／`wf:log`）＝純散文，只寫不讀；人貼的 `wf:note`／`wf:verdict`／`wf:ruling`＝首行給人讀＋一個 `json wf-note`／`wf-return`／`wf-ruling` 區塊給 CLI 讀（決策 1；乙案：CLI 只讀這三種）；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼需求方裁定時，留言首行固定 `代貼裁定・授權來源：<session 或留言 URL>`（C12）；代貼裁決是否沿用同一標記＝待裁（§十五）。研究與量測全文的落點＝`wf:log` 留言；卡面 JSON 放判準與指向（K8、K9；需求方裁定，核心留言規則不是模組）。
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔的位置＝`.wf/`。
 
@@ -289,7 +289,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 3. 五階段檔（研究住模組）
 4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
 5. README、ADOPTION 重寫
-6. 新 CLI `wf`（另一張 T3 卡）。形狀：四個目錄 `schema/`（card、intake、return、ruling、note 的 JSON Schema，與 `core/` 同源）、`gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
+6. 新 CLI `wf`（另一張 T3 卡）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊，CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
 7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 核心值＋結案 delta「停止」＋已啟用模組的值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟全部動作可逆（關閉 issue、移出 Project、封存皆可逆；無硬刪）。
 
 停損：任一檔超過 §二上限 ⇒ 停下拆；`cli/src` 超過 3,000 行 ⇒ 停下重看分桶；第 6 步超過 3 輪查核 ⇒ 需求方裁定是否縮射程。三個數字都是設計值。
@@ -309,6 +309,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 研究與量測全文的落點＝`wf:log` 留言（核心留言標頭，§十）；`log-comments` 模組取消（§十一）。
 - Project 投影欄五個（§六）。
 - 第 3 次退回的預設處置已進 §四與 §十一。
+- 待裁（第二十一輪 R1-01）：PM 代貼**裁決**（非裁定）時是否沿用 C12 的首行標記。
 
 
 ## 十六 · 審核修改紀錄
