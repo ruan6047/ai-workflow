@@ -17,4 +17,12 @@
 
 ## 交回格式
 
-一則 GitHub 留言，貼在本 repo 對應的 PR 上，首行 `wf:verdict`。內容：`review_result: APPROVE|REQUEST_CHANGES`；`findings` 逐條：id、severity、blocking、attribution（planner＝骨架作者）、evidence（引骨架節次逐字）、disposition。無 finding 逐字寫「無」。⛔ 不代改文件。⛔ 不用骨架沒寫的標準。
+一則 GitHub 留言，貼在 PR #245。第一行逐字 `wf:verdict`，第二行 `reviewer: <模型名>@<工具名>`（例如 `gpt-5@Codex`、`gemini-2.5-pro@Gemini CLI`）。內容：`review_result: APPROVE|REQUEST_CHANGES`；`findings` 逐條：id（`R1-01` 形式）、severity、blocking、attribution（planner＝骨架作者）、evidence（引骨架節次逐字）、disposition。無 finding 逐字寫「無」。⛔ 不代改文件。⛔ 不用骨架沒寫的標準。
+
+貼法（有 shell 時自己貼；沒有就把留言全文交給需求方貼）：
+
+```bash
+gh pr comment 245 --repo ruan6047/ai-workflow --body-file /path/to/verdict.md
+```
+
+兩位審查者互不知道對方；⛔ 不讀 PR 上已有的另一則裁決。
