@@ -164,7 +164,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 `tier_basis` 值域：sensitive 多選＝public_contract／security／payment／data_write／migration／production／rules／statistics（＝`core/tiers.md` §紅線域）；recoverable＝reversible／rollback_only／irreversible；blast＝file／module／repo／cross_repo。
 
-未定義鍵 ⇒ fail-closed（D3）。`schema_version` 的升版判準與舊版卡遷移方式住 `core/card-schema.md` §版本（來源：P1-30；形狀＝升版觸發條件一句、遷移路徑一句）。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`、`卡ID` 五個投影欄，全由 CLI 回寫；逐欄 `max_bytes` 與寫入順序見 §十一（05 新洞）。
+未定義鍵 ⇒ fail-closed（D3）。`schema_version` 的升版判準與舊版卡遷移方式住 `core/card-schema.md` §版本（來源：P1-30；形狀＝升版觸發條件一句、遷移路徑一句）。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`（TEXT，`role:actor`）、`卡ID` 五個投影欄，全由 CLI 回寫；逐欄 `max_bytes` 與寫入順序見 §十一（05 新洞）。
 
 ## 七 · `core/verbs.md` 的內容
 
@@ -355,7 +355,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 需求方、PM、執行者、查核者 | 四角色 | 祕書、Coordinator、第二 PM、人工查核、規劃者 |
 | 實體、家族 | 跑角色的 session／模型家族 | 帳號、人、instance |
 | 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境）、難度、等級 |
-| 紅線 | 至少 T3 的變更域 | 敏感、高風險 |
+| 紅線 | 至少 T3 的變更域 | 敏感（作為紅線的同義）、高風險 |
 | 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | 目標、需求、範圍、scope、AC |
 | 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | backlog、inbox、待辦池 |
 | 規格、規格欄 | 卡面會使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources`（C11）；核心痛點另受裁定連結約束，不在此列 | 需求文件、spec |
@@ -389,6 +389,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 失誤登記 | 交回單裡執行者自報的錯誤與修正（非查核者 finding） | 自首、錯誤清單、bug list |
 | 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 重啟條件、reopen |
 | 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | 上訴、appeal、反證 |
+| 三軸 | 級別判準的三個軸：敏感面／可復原性／影響面＝`tier_basis` 的 sensitive／recoverable／blast（來源 tier-rules L58–60） | 風險軸、維度 |
 | 分支 | 卡面 `branch`：該卡工作所在的 git 分支名 | feature、工作區 |
 | SHA 四種：被審／來源／合併基底／合併 | 被審＝代貼裁決首行所記、查核者讀到的 commit；來源＝卡面 `source_sha`，交回時的分支頭；合併基底＝派工單的 merge-base；合併＝結案時 main 上的 merge commit | 目標 SHA、版本、HEAD（作為名詞） |
 | 獨立查核 | 查核者實體不同於本 iteration 執行者實體（P2） | 第二雙眼、peer review |
@@ -398,7 +399,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 單向門 | 級別只升不降的門檻：降級需裁定（`core/tiers.md` §單向門） | 不可逆、one-way |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | merge 策略、合併策略 |
 | 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 寫入規則、transaction |
-| 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | 影響面、blast list |
+| 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | 影響面（作為副作用入口的同義）、blast list |
 | 退回理由 | 裁定單裡每輪退回引用的 `wf-return` finding | 駁回原因、reject reason |
 
 ## 未驗
