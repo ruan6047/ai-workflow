@@ -18,6 +18,7 @@ core/                      定義檔（C8）。只放定義與機械語意，⛔
   handoff.md               三份交接文件的段落表＋交回單 JSON schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
   params.md                設計值參數表（§十二），一列一參數：名、種子值、用在哪
+  platform.md              平台委託五條 P1–P5（§三）：每條＝規則一句＋執行 artifact（ruleset 項目或 CI job 檔名）；ruleset 與 CI 只是它的執行面
   glossary.md              通用語言（Ubiquitous Language）：每個詞一行——詞、一句定義、⛔ 不是什麼、禁用同義詞；規則檔、CLI enum、審核提示只准用表內的詞（§十八）
 stages/                    一階段一檔；研究、部署、維護三個可跳過的階段住模組
   requirement.md  planning.md  implementation.md  review.md  closeout.md
@@ -60,7 +61,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 **第零條（README 心智模型第一行）**：CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不做內容判讀。舊 ROADMAP 目標 1「有機械執行者擋下才算達成」廢止。目標的排序與關係住決策紀錄第零條，本檔不重述。
 
-硬擋現況（決策紀錄「硬擋收縮」；重判歷史與降級理由見 `REBUILD-SKELETON-REVIEW-LOG.md`）：
+硬擋現況（決策紀錄「硬擋收縮」；重判歷史與降級理由見 `REBUILD-SKELETON-REVIEW-LOG.md`）。P1–P5 的條文居所＝`core/platform.md`，GitHub ruleset 與 CI job 為其執行 artifact 並在檔內指回；D1–D4 的條文居所＝`core/verbs.md` §寫入契約：
 
 | # | 硬擋 | 執行者 |
 |---|---|---|
@@ -113,7 +114,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 結案／退回 | 結案／待確認 | 補驗後重交結案報告 |
 | 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling`（缺即印）；兩者皆封存 |
 
-**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），對「無模組」「每個帶 delta 的模組單獨啟用」「全部啟用」各跑一次，每次涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
+**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試矩陣隨被測物累加：第 1 步只有「無模組」；第 4 步每個帶 delta 的模組進 repo 的同一 PR 加「該模組單獨啟用」，最後一個模組的 PR 再加「全部啟用」；每個案例涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
 
 ## 五 · `core/tiers.md` 的內容
 
@@ -291,10 +292,10 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）：
 0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；`archive/issues/` 重新納入 git。新 CI 在本步只剩兩個 job：secret scanner（P4）、commit trailer 檢查（P5）；⛔ 不再有掃描 docs 的 job；⛔ 不預先加沒有被測物的空 job。其餘兩個 job 隨被測物同一 PR 進場：轉移表可達性（§四）在第 1 步 `core/state-machine.md` 的 PR、新 CLI 測試在第 6 步。CI 最終形狀＝四個 job。三個入口檔已先清成 stub。
-1. `core/` 八檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）；`state-machine.md` 進 repo 的同一 PR 加轉移表可達性 job
+1. `core/` 九檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）；`state-machine.md` 進 repo 的同一 PR 加轉移表可達性 job
 2. `roles/conduct-common.md` → 四角色檔
 3. 五階段檔（研究住模組）
-4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
+4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數；帶 `transitions` delta 的模組同 PR 加該模組的可達性案例（§四）
 5. README、ADOPTION 重寫
 6. 新 CLI `wf`（另一張 T3 卡；同 PR 加新 CLI 測試 job）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊，CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
 7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 核心值＋結案 delta「停止」＋已啟用模組的值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟全部動作可逆（關閉 issue、移出 Project、封存皆可逆；無硬刪）。
@@ -368,6 +369,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數（>2 只印） | 母卡、子卡、family、epic |
 | 資源宣告 | 卡面 `resources` 欄的字串陣列；文法住 db-contract／resource-lock 模組 | 依賴、鎖 |
 | owner | 卡當下的 {role, actor}，由 `move --actor` 寫 | 負責人、assignee、承辦 |
+| 失誤登記 | 交回單裡執行者自報的錯誤與修正（非查核者 finding） | 自首、錯誤清單、bug list |
+| 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 重啟條件、reopen |
+| 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | 上訴、appeal、反證 |
 
 ## 未驗
 
