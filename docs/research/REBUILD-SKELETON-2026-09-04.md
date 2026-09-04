@@ -51,6 +51,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | module.md | 0 宣告區塊（§九） · 1 條文 · 2 該模組加的注意事項 | 80 行 |
 | README | 1 心智模型（≤12 行） · 2 角色一句話 · 3 查詢指令 | 40 行 |
 
+**每個規則檔、模組檔、core 檔統一 frontmatter 四欄**（沿舊 stage-rules 與卡片簡介的 skill 式檔頭，決策 9）：`name`、`when`（適用時機一句）、`non_scope`（⛔ 不是什麼一句）、`last_confirmed`（日期，§十一 規則文件自身過期）。`brief` 每段首行 `[來源: …]` 印該檔 `name`＋`when`；`notes` 印清單時同。
+
 每條規則一句祈使句，⛔ 不帶「因為」；⛔ 不出現 ⚠️／⭐／⛔ 以外的符號；⛔ 不寫現況數字（要寫就帶日期，`common.md` 書寫紀律）。
 
 ## 三 · 核心迴圈與角色（定案摘要）
@@ -147,7 +149,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | exec_capability / review_capability | enum＋reason | PM | 建卡 | brief |
 | db_scope | enum none/read/write/schema/data-migration | PM | 建卡 | tiers |
 | resources | string[]（文法住 db-contract／resource-lock） | PM | 建卡 | resource-lock 模組 |
-| brief | {when, non_scope} | PM | 建卡 | 清單搜尋 |
+| brief | {when, non_scope}（卡片簡介，與規則檔 frontmatter 同形） | PM | 建卡 | 清單搜尋、`brief` 卡與身分段 |
 | spec_version | int | CLI（edit 自動 +1） | — | 派工單、initiative |
 | owner | {role, actor} | CLI（move） | — | brief |
 | branch | string | CLI（move 到進行中時寫） | — | brief、H11 |
