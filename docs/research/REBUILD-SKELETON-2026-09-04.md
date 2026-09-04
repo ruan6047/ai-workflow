@@ -8,6 +8,7 @@
 
 ```
 README.md                  L0 入口：一分鐘心智模型＋查詢指令；⛔ 不列會變的東西（04#158）
+ADOPTION.md                L1 導入：新專案接上框架的步驟；來源舊 ADOPTION 五行
 .github/ISSUE_TEMPLATE/
   list-intake.yml          待審清單收件表單：預填一個 `json wf-intake` 區塊，四欄 source／observation／dedupe（關鍵字＋命中號）／repo；`open` 只讀該區塊（決策 1），散文欄給人看
 core/                      定義檔（C8）。只放定義與機械語意，⛔ 不放理由
@@ -19,7 +20,7 @@ core/                      定義檔（C8）。只放定義與機械語意，⛔
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
   params.md                設計值參數表（§十二），一列一參數：名、種子值、用在哪
   platform.md              平台委託五條 P1–P5（§三）：每條＝規則一句＋執行 artifact（ruleset 項目或 CI job 檔名）；ruleset 與 CI 只是它的執行面
-  glossary.md              通用語言（Ubiquitous Language）：每個詞一行——詞、一句定義、⛔ 不是什麼、禁用同義詞；規則檔、CLI enum、審核提示只准用表內的詞（§十八）
+  glossary.md              通用語言（Ubiquitous Language）：每個詞一行——詞、一句定義、⛔ 不是什麼、禁用同義詞；消費者＝規則檔、CLI enum、審核提示（§十八）
 stages/                    一階段一檔；研究、部署、維護三個可跳過的階段住模組
   requirement.md  planning.md  implementation.md  review.md  closeout.md
 roles/                     一角色一檔＋共用一檔
@@ -52,6 +53,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | core 各檔 | 依檔（§三–§八、§十八） | 120 行 |
 | module.md | 0 宣告區塊（§九） · 1 條文 · 2 該模組加的注意事項 | 80 行 |
 | README | 1 心智模型（≤12 行） · 2 角色一句話 · 3 查詢指令 | 40 行 |
+| ADOPTION | 1 repo 前置（ruleset、merge_method） · 2 `.wf/modules.json` 種子 · 3 Project 五欄 · 4 第一張卡 | 60 行 |
 
 **每個規則檔、模組檔、core 檔統一 frontmatter 四欄**（沿舊 stage-rules 與卡片簡介的 skill 式檔頭，決策 9）：`name`、`when`（適用時機一句）、`non_scope`（⛔ 不是什麼一句）、`last_confirmed`（日期，§十一 規則文件自身過期）。`brief` 每段首行 `[來源: …]` 印該檔 `name`＋`when`；`notes` 印清單時同。
 
@@ -107,12 +109,12 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段（結案除外）／待確認 | 下一階段／待辦 | ⑤ 過；審核階段 `--ruling` 種類＝`wf-return`（缺即印）；下一階段為結案時走「最後一個階段」列 |
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；審核階段 `--ruling` 種類＝`wf-return`，結案階段＝`wf-ruling`（缺即印） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
-| 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1、`source_sha` 清為 null（S7）；第 3 次退回的預設處置住 `roles/pm.md` §4 |
-| 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 記 from；無 `--ruling` 印提示 |
+| 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1、`source_sha` 清為 null（S7）；同一 iteration 第 3 次退回的預設處置＝換人，需求方可否決（PM 減重 4）；條文住 `roles/pm.md` §4 |
+| 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 寫 `blocked.from`；`--ruling` 種類＝`wf-ruling` kind=block，缺留言或缺鍵皆印 |
 | 阻塞 | from（必為非終態） | 解除 |
 | 最後一個階段／待確認 | 結案／待確認 | 結案報告 |
 | 結案／退回 | 結案／待確認 | 補驗後重交結案報告 |
-| 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling`（缺即印）；兩者皆封存 |
+| 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling` kind=stop（缺留言或缺鍵皆印）；兩者皆封存 |
 
 **模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試矩陣隨被測物累加：第 1 步只有「無模組」；第 4 步每個帶 delta 的模組進 repo 的同一 PR 加「該模組單獨啟用」，最後一個模組的 PR 再加「全部啟用」；每個案例涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
 
@@ -145,6 +147,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | list_convergence | int[]（清單 issue 號） | PM | 建卡 | 結案核對 |
 | service_goal | string | 需求方 | 建卡 | R1 |
 | parent | card_id | PM（`open --parent` 或 `edit --set parent=`；兩者皆算鏈深並印） | 有父卡時 | 鏈深（印）、initiative 模組 |
+| blocked | {from: 狀態, ruling: 留言 URL} 或 null | CLI（`move --to 阻塞` 寫，解除時清 null） | — | brief、Project 狀態欄 |
+| grilling | 留言 URL 或 null（T4 質詢紀錄所在的 `wf:log` 留言；00 §四「T4 卡附 grilling 質詢紀錄」） | PM（`edit --set grilling=`） | T4 離開規劃前（缺＝`move` 印） | brief、裁定單 |
 | tier | enum T0–T4 | PM | 建卡 | move、tiers |
 | tier_basis | {sensitive: enum[], recoverable: enum, blast: enum}（值域見表下） | PM 或執行 AI 選值 | 建卡 | 印；stat-redline 模組看 `statistics ∈ sensitive` |
 | exec_capability / review_capability | enum＋reason | PM | 建卡 | brief |
@@ -166,8 +170,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 | 動詞 | 輸入 | 硬擋（rc≠0 並寫一則拒收留言，C13） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
-| `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration` | 不是 issue、已在板上、JSON 鍵不合法、`--parent` 不存在（D2、D3、D4；全部在首次遠端寫入前） | 缺欄清單、鏈深（沿父鏈算，>2 印「上限 2」）、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
-| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 卡面 JSON 解析失敗、轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D3、D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言無 `wf-return`／`wf-ruling` 區塊、裁定留言作者 login、缺欄（阻塞四欄、停止三欄）、離開規劃時 `acceptance` 或 `verification` 為空 | Project 欄、JSON owner／branch／iteration／source_sha（進執行時 iteration +1 且 source_sha=null；交回時寫 `--source-sha`）、轉移記錄留言（純散文） |
+| `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration` | 不是 issue、已在板上、JSON 鍵不合法、`--parent` 不存在（D2、D3、D4；全部在首次遠端寫入前） | 缺欄清單（§六必填時點＝建卡的欄）、鏈深（沿父鏈算，>2 印「上限 2」）、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
+| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 卡面 JSON 解析失敗、轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D3、D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言無 `wf-return`／`wf-ruling` 區塊、裁定留言作者 login、`wf-ruling` 依 kind 的必要鍵缺（block 四鍵、stop 三鍵，§八）、離開規劃時 `acceptance` 或 `verification` 為空、T4 而 `grilling` 為 null | Project 欄、JSON owner／branch／iteration／source_sha（進執行時 iteration +1 且 source_sha=null；交回時寫 `--source-sha`）、轉移記錄留言（純散文） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡、`--set source_sha=` 不在遠端、已給的 `--ruling` URL 不存在（D3、D4、C11）；鏈深沿父鏈算後只印 | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | 卡面 JSON 解析失敗（D3） | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 卡面 JSON 解析失敗（D3） | `--for reviewer`：分支 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 有衝突（印）；`--for closeout`：merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段來源標記帶該檔 `last_confirmed` | 無（stdout；PM 貼進留言）。每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]` |
@@ -187,6 +191,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 交回單各段的必填性依級別分兩檔：T0／T1 只要 `self_run` 與逐 AC 證據；T2 以上全段（形狀，流程順暢；來源 03#24、決策第零條三目標）。`brief --for executor` 與 `--for reviewer` 同時印一份交回單 JSON 樣板（id、AC 條文、注意事項 id 預填），人只填判斷欄。
 
 交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄與 `unverified: [{item, kind, reason}]`（`kind` 封閉值域 `cannot`／`skipped`／`deferred`，`reason` 非空）；同一 schema 執行者與查核者共用。**注意事項回應的三值唯一定義居所＝本檔**：`note_responses: [{id, value, text}]`，`value` 封閉值域 `followed`／`not_applicable`／`found`（人讀顯示 已遵循／不適用／發現），`not_applicable` 與 `found` 的 `text` 非空；§十二與各階段檔只引用不複製；CLI 只查 id 是否覆蓋 `notes` 印出的清單、value 在值域、text 非空，⛔ 不判內容。
+
+`wf-ruling` JSON schema（唯一居所＝本檔）：`{kind, reason, waiting_on?, unblock_condition?, revive_condition?, reversal_handle?}`；`kind` 封閉值域 `block`／`stop`／`withdraw`／`tier_change`／`signoff`／`other`；依 kind 的必要鍵：block＝reason、waiting_on、unblock_condition（加 CLI 寫的 `blocked.from` 共四欄）；stop＝reason、revive_condition、reversal_handle（三欄）；其餘 kind 只要 reason。CLI 只驗鍵存在與型別（缺＝印），內容交人判。裁定單的「復活條件」「翻案把手」即 stop 的後兩鍵。
 
 留言的形狀＝append-only 事件（一事件一則、無可編輯日誌留言；來源：決議 §五、P1-33），條文住 `core/verbs.md` §寫入契約。派工單完整性由收件的查核者判（C4）；裁定單完整性由需求方 ④ 判。
 
@@ -255,7 +261,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 查核者資訊邊界 | `roles/reviewer.md` §1（來源 02#966–968、04#41） |
 | 常態誰 merge | `stages/closeout.md` §4（來源 03#93） |
 | Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
-| 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`；未啟用時第 3 次退回的預設處置落點 `roles/pm.md` §4（PM 減重 4） |
+| 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`；未啟用時同一 iteration 第 3 次退回預設＝換人、需求方可否決（PM 減重 4），條文落點 `roles/pm.md` §4 |
 | 專案層級別數字 | `core/tiers.md` §專案層（形狀：文字加嚴介面；數字未定，沿 tier-rules §四） |
 | 簡介必填時點 | `core/card-schema.md`：建卡即必填（印） |
 | 必填欄集中 | `core/card-schema.md` |
@@ -264,7 +270,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十二 · 注意事項的生命週期（只定資料、參數、管道、落點）
 
-**資料形狀**：三個加嚴層級 F-（框架）／P-（專案）／T-（卡面 `notes` 欄）；每條 `{id, text, origin, last_cited}`；合成形狀＝三個加嚴層級累加、不覆寫、專案層與任務層只能加嚴不能豁免（B1；條文住 `roles/pm.md` §4 與 `core/verbs.md` §notes）；輸出永遠是單一份清單、一套三值（§八）。
+**資料形狀**：三個加嚴層級 F-（框架）／P-（專案）／T-（卡面 `notes` 欄）；每條 `{id, text, origin, last_cited}`；合成形狀＝三個加嚴層級單向累加、不覆寫、無豁免鍵（B1；「只能加嚴」的條文住 `roles/pm.md` §4 與 `core/verbs.md` §notes）；輸出永遠是單一份清單、一套三值（§八）。
 
 **參數**（皆設計值，住 `core/params.md`，填規則時可調）：
 
@@ -290,12 +296,12 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十三 · 填規則的順序與停損
 
-順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）：
+順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）。每步完成點＝跨實體審 APPROVE＋需求方 sign-off，下一步才開：
 0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；`archive/issues/` 重新納入 git。新 CI 在本步只剩兩個 job：secret scanner（P4）、commit trailer 檢查（P5）；⛔ 不再有掃描 docs 的 job；⛔ 不預先加沒有被測物的空 job。其餘兩個 job 隨被測物同一 PR 進場：轉移表可達性（§四）在第 1 步 `core/state-machine.md` 的 PR、新 CLI 測試在第 6 步。CI 最終形狀＝四個 job。三個入口檔已先清成 stub。
 1. `core/` 九檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）；`state-machine.md` 進 repo 的同一 PR 加轉移表可達性 job
 2. `roles/conduct-common.md` → 四角色檔
 3. 五階段檔（研究住模組）
-4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數；帶 `transitions` delta 的模組同 PR 加該模組的可達性案例（§四）
+4. `modules/` 分兩段：4a 每模組宣告區塊（§九清單全部，條文可先空），帶 `transitions` delta 的模組同 PR 加該模組的可達性案例（§四）；4b 條文回填，一模組一 PR，§十一有來源條文的模組全部回填後本步才算完成；`deploy`／`maintenance` 留「待實例」標記帶日期，第一張實例卡出現時回填（§十一）。⛔ 不另記總數
 5. README、ADOPTION 重寫
 6. 新 CLI `wf`（另一張 T3 卡；同 PR 加新 CLI 測試 job）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊，CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
 7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 核心值＋結案 delta「停止」＋已啟用模組的值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟全部動作可逆（關閉 issue、移出 Project、封存皆可逆；無硬刪）。
@@ -316,7 +322,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 新 CLI 名 `wf`（§一）。
 - 研究與量測全文的落點＝`wf:log` 留言（核心留言標頭，§十）；`log-comments` 模組取消（§十一）。
 - Project 投影欄五個（§六）。
-- 第 3 次退回的預設處置已進 §四與 §十一。
+- 同一 iteration 第 3 次退回的預設處置＝換人，已進 §四與 §十一。
 - PM 代貼**裁決**沿用 C12 首行標記，並加被審 SHA（§十；需求方 2026-09-04 裁定，第二十一輪 R1-01）。
 
 
@@ -372,6 +378,12 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 失誤登記 | 交回單裡執行者自報的錯誤與修正（非查核者 finding） | 自首、錯誤清單、bug list |
 | 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 重啟條件、reopen |
 | 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | 上訴、appeal、反證 |
+| 分支 | 卡面 `branch`：該卡工作所在的 git 分支名 | feature、工作區 |
+| 被審 SHA | 代貼裁決首行所記、查核者實際讀到的 commit | 目標 SHA、版本 |
+| 合併方式 | 專案層 `merge_method`，由平台強制 | merge 策略、合併策略 |
+| 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 寫入規則、transaction |
+| 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | 影響面、blast list |
+| 退回理由 | 裁定單裡每輪退回引用的 `wf-return` finding | 駁回原因、reject reason |
 
 ## 未驗
 
