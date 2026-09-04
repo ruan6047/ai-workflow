@@ -214,9 +214,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | pitfalls-13 | 專案 `.wf/modules.json` 列出 | modules.json | 00 §六 |
 | identity | 專案 `.wf/modules.json` 列出（多實體共用同一帳號時該列） | modules.json | 00 §六 |
 | snapshot | 專案 `.wf/modules.json` 列出（狀態面在 GitHub 時該列） | modules.json | 00 §六 |
-| db-contract | 專案 `.wf/modules.json` 列出（有 DB 時該列）且 `.wf/contracts/DATABASE_CONTRACT.md` 存在（兩者 AND；缺契約檔＝未啟用，`notes` 印警示） | modules.json＋契約檔 | 02#45–50、04#129–132 |
+| db-contract | 專案 `.wf/modules.json` 列出（有 DB 時該列）；已啟用而 `.wf/contracts/DATABASE_CONTRACT.md` 不存在＝模組自己的資料完整性提示（`notes` 印，模組行為） | modules.json | 02#45–50、04#129–132 |
 
-合成語意：卡級模組看卡面欄；`resource-lock` 看 Project 投影欄；其餘專案層模組看 `modules.json`；`db-contract` 是唯一 AND。`modules.json` 對 `resource-lock` 只提供參數。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
+合成語意：卡級模組看卡面欄；`resource-lock` 看 Project 投影欄；其餘專案層模組看 `modules.json`，每個模組恰一個 predicate。`modules.json` 對 `resource-lock` 只提供參數。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
 
 
 ## 十 · `core/naming.md` 的內容（新；舊規則只有四條，00 空洞 9）
