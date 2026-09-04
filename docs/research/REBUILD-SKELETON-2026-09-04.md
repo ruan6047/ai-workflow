@@ -223,7 +223,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID 形狀：`<AREA>-<NNN>`；AREA＝專案層封閉枚舉（aiwf 種子：WF、CLI、DOC、OPS）；NNN＝`open` 依 repo 遞增；語意 slug 的位置＝issue 標題（需求方 2026-09-04 裁定不進卡ID）。修復卡形狀 `<原卡>-FIX<n>`。
 - 分支：`wf/<card_id>`；由 `move` 到進行中時寫回卡面。
-- 留言的形狀：CLI 寫的留言（`wf:move`／`wf:edit`／`wf:reject`／`wf:log`）＝純散文，只寫不讀；人貼的 `wf:note`／`wf:verdict`／`wf:ruling`＝首行給人讀＋一個 `json wf-note`／`wf-return`／`wf-ruling` 區塊給 CLI 讀（決策 1；乙案：CLI 只讀這三種）；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼需求方裁定時，留言首行固定 `代貼裁定・授權來源：<session 或留言 URL>`（C12）；代貼裁決是否沿用同一標記＝待裁（§十五）。研究與量測全文的落點＝`wf:log` 留言；卡面 JSON 放判準與指向（K8、K9；需求方裁定，核心留言規則不是模組）。
+- 留言的形狀：CLI 寫的留言（`wf:move`／`wf:edit`／`wf:reject`／`wf:log`）＝純散文，只寫不讀；人貼的 `wf:note`／`wf:verdict`／`wf:ruling`＝首行給人讀＋一個 `json wf-note`／`wf-return`／`wf-ruling` 區塊給 CLI 讀（決策 1；乙案：CLI 只讀這三種）；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼需求方裁定時，留言首行固定 `代貼裁定・授權來源：<session 或留言 URL>`（C12）；PM 代貼查核者裁決時同形：首行 `代貼裁決・來源：<模型名>@<工具名>・被審 SHA：<sha>`，第二行起才是查核者原文（需求方 2026-09-04 裁定；CLI 不讀首行，只讀 `json wf-return`）。研究與量測全文的落點＝`wf:log` 留言；卡面 JSON 放判準與指向（K8、K9；需求方裁定，核心留言規則不是模組）。
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔的位置＝`.wf/`。
 
@@ -309,7 +309,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 研究與量測全文的落點＝`wf:log` 留言（核心留言標頭，§十）；`log-comments` 模組取消（§十一）。
 - Project 投影欄五個（§六）。
 - 第 3 次退回的預設處置已進 §四與 §十一。
-- 待裁（第二十一輪 R1-01）：PM 代貼**裁決**（非裁定）時是否沿用 C12 的首行標記。
+- PM 代貼**裁決**沿用 C12 首行標記，並加被審 SHA（§十；需求方 2026-09-04 裁定，第二十一輪 R1-01）。
 
 
 ## 十六 · 審核修改紀錄
