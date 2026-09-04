@@ -158,7 +158,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | modules | string[]（此卡實際生效的模組） | CLI 由 `.wf/modules.json` 導出 | 建卡 | notes、brief |
 | notes | {id: `T-<階段>-NN`, text, origin: 留言 URL}[]（任務層注意事項） | 任何有 shell 的角色經 `edit --set notes+=`，來源為 `wf:note` 留言（§十二） | 否 | notes、brief |
 
-未定義鍵 ⇒ fail-closed（H10）。`schema_version` 升版規則：加選填欄不升、改既有欄語意或值域才升；舊版卡由 `edit` 逐張遷，⛔ 不批次改寫。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`、`卡ID` 五個投影欄，全由 CLI 回寫；逐欄 `max_bytes` 與寫入順序見 §十一（05 新洞）。
+未定義鍵 ⇒ fail-closed（H10）。`schema_version` 的升版判準與舊版卡遷移方式住 `core/card-schema.md` §版本（來源：P1-30；形狀＝升版觸發條件一句、遷移路徑一句）。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`、`卡ID` 五個投影欄，全由 CLI 回寫；逐欄 `max_bytes` 與寫入順序見 §十一（05 新洞）。
 
 ## 七 · `core/verbs.md` 的內容
 
@@ -184,7 +184,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄與 `unverified: [{item, kind, reason}]`（`kind` 封閉值域 `cannot`／`skipped`／`deferred`，`reason` 非空）；同一 schema 執行者與查核者共用。**注意事項回應的三值唯一定義居所＝本檔**：`note_responses: [{id, value, text}]`，`value` 封閉值域 `followed`／`not_applicable`／`found`（人讀顯示 已遵循／不適用／發現），`not_applicable` 與 `found` 的 `text` 非空；§十二與各階段檔只引用不複製；CLI 只查 id 是否覆蓋 `notes` 印出的清單、value 在值域、text 非空，⛔ 不判內容。
 
-留言一事件一則、寫後不改（決議 §五、P1-33）；⛔ 不用可編輯的固定留言當日誌，故無併發與 rollover 問題。派工單完整性由收件的查核者判（C4）；裁定單完整性由需求方 ④ 判。
+留言的形狀＝append-only 事件（一事件一則、無可編輯日誌留言；來源：決議 §五、P1-33），條文住 `core/verbs.md` §寫入契約。派工單完整性由收件的查核者判（C4）；裁定單完整性由需求方 ④ 判。
 
 ## 九 · 模組宣告格式與清單
 
@@ -262,7 +262,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 加嚴層級三個：框架 `F-<階段|角色>-NN`、專案 `P-`、任務 `T-`（卡面 JSON `notes` 欄）；累加不覆寫、只能加嚴（B1）。輸出永遠是單一份清單、一套三值。回應三值定義在 `core/handoff.md`（§八），此處不重寫。
 - 來源：05 反覆失誤表（17 形狀）與 03 保留的 49 條是第一版母體。
-- 退場：每條記 `last_cited`（最近一次在交回單 findings 的 `note_id` 被引用的卡）；連續 20 張結案卡未被引用 ⇒ 移到 `archive/notes/`。數字 20 是設計值，⛔ 不是量測值。
+- 退場的形狀：每條 F-／P- 帶 `last_cited`（最近一次被交回單 `note_id` 引用的卡）；退場閾值是參數（設計值 20 張結案卡，住 `core/glossary.md` 旁的參數表或 `.wf/modules.json`，填規則時定）；退場動作與判定條文住 `roles/pm.md` §4。
 - 升遷：同一條在 3 張卡的 T- 出現 ⇒ P-；跨專案 ⇒ F-。判定是語意比對，由 PM 提、需求方點頭。
 
 **回饋迴路**（問題怎麼變成注意事項、注意事項怎麼變成守衛）：
@@ -317,6 +317,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
 
+第十輪（被審 cd09b1d，R1 過）：
+- R2-01：§六 schema 升版、§八 留言不可變、§十二 退場、§十八 詞表違規四句改為形狀＋落點，條文移目標檔。
+
 Gemini 第三輪（被審 4a09c8c）：APPROVE，findings 無；詞表補六列（db_scope、trailer、falsifier、sign-off、self_run、attribution）。
 
 第九輪（被審 a8e1722）：
@@ -364,7 +367,7 @@ Gemini 第二輪（被審 ce651ca，留言 5536360697）：
 
 ## 十八 · `core/glossary.md` 的內容（通用語言；需求方 2026-09-04 提議）
 
-每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。CLI 的 enum 值、Project 選項名、留言標頭、規則檔正文只准用「詞」欄的字面；禁用同義詞欄的字出現在規則檔即為 finding。種子（填規則時逐列補定義）：
+每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。消費者三個：CLI enum 與 Project 選項名（取「詞」欄字面）、規則檔正文、審核提示；禁用同義詞的違規判定條文住 `roles/conduct-common.md` §2。種子（填規則時逐列補定義）：
 
 | 詞 | 涵蓋 | 禁用同義詞 |
 |---|---|---|
