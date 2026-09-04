@@ -189,7 +189,7 @@
 
 | # | 衝突 | 兩邊 |
 |---|---|---|
-| C1 | 需求站 R1 由誰判 | requirement.md:16,21 寫需求方（03 空洞）vs 決策 3「PM 判 R1」 |
+| C1 | 需求站 R1 由誰判 | requirement.md L16,21 寫需求方（03 空洞）vs 決策 3「PM 判 R1」 |
 | C2 | blocking finding 與驗收 | ROADMAP:412「core_pain yes ＋ blocking 全屬細節 → 驗收」vs verdict:55／closeout:59「open blocking ⇒ 不得 APPROVE」（04 未驗 4；H13 vs 04#146） |
 | C3 | `gh pr update-branch` | 禁令理由是 synthetic merge 污染歷史 vs 一律 squash 後該 merge commit 會被壓掉（04 未驗 5；H19） |
 | C4 | PM 自產物誰查 | 第二 PM 砍掉後，清單提案、開卡表單、派審詞、結案報告沒有承接者（03 空洞） |

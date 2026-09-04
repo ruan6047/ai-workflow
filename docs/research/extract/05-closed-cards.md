@@ -3,7 +3,7 @@
 > 輸入：`archive/issues/` 內 72 張 `state: closed` 的卡；只讀留言，⛔ 未讀 Log 與卡面 body。
 > 讀法：先以 `## Comment <id>` 切段建索引，再 grep「結案報告／七段／失誤登記／review_result／裁決／REQUEST_CHANGES／未驗／擋下／若無」定位，讀命中的段。246 則結構化 finding（`severity=… root_cause_id=…` 形狀）另以機械抽出，只讀 evidence 前 150 字。
 > 用途：找 `01–04` 讀不到的東西——只存在於留言裡的教訓。`01–04` 與 `00-consolidated.md` 只用來查重，未改動。
-> 來源寫法：`<檔號> · Comment <id>`；檔號對應完整檔名見末節「檔名索引」。事故一句是我的濃縮，⛔ 非逐字，逐字請以 Comment id 回查。
+> 來源寫法：`<檔號> · Comment <id>`；檔號即 `archive/issues/<檔號>.md`（2026-09-04 改為純號碼檔名；標題在檔內第一行；該目錄封存第 1 步前不納入 git，匯出指令見本 session）。事故一句是我的濃縮，⛔ 非逐字，逐字請以 Comment id 回查。
 
 ## 規則候選
 
@@ -11,36 +11,36 @@
 
 | # | 規則（一句祈使句） | 來源 | 事故一句 | 已在既有規則檔？ | 建議住哪 |
 |---|---|---|---|---|---|
-| 1 | 派審詞的基線、被審 SHA、iteration、階段一律由狀態面產出，執行者交回後必須重產，⛔ 不手抄、⛔ 不沿用上一輪 | 021 · 5256205014；009 · 5265662315；039 · 5266794821 | 五份派審詞抄當下 `origin/main` 當基線，害 #23 查核者判 `review-invalid`；#9 派審詞載舊 SHA 使查核者審上一輪交付；#39 派審詞寫 iteration 2 實為 1 | 是但薄：`templates/review-dispatch.md:28` 只釘 merge-base；未寫「重產」與「與狀態面一致」 | 核心 CLI `brief`（由狀態面組，人不填 SHA） |
+| 1 | 派審詞的基線、被審 SHA、iteration、階段一律由狀態面產出，執行者交回後必須重產，⛔ 不手抄、⛔ 不沿用上一輪 | 021 · 5256205014；009 · 5265662315；039 · 5266794821 | 五份派審詞抄當下 `origin/main` 當基線，害 #23 查核者判 `review-invalid`；#9 派審詞載舊 SHA 使查核者審上一輪交付；#39 派審詞寫 iteration 2 實為 1 | 是但薄：`templates/review-dispatch.md L28` 只釘 merge-base；未寫「重產」與「與狀態面一致」 | 核心 CLI `brief`（由狀態面組，人不填 SHA） |
 | 2 | 查核退回後先寫轉移記錄（退回→執行）再派修；只存在於對話的交接不算交接 | 039 · 5266794821；073 · 5273807501 | PM 跳過 `handoff --next-stage implementation` 直接派修，Log 無「誰接手修」；同錯五次（#38／#47／#52／#57／#73），第五次讓查核者白跑一輪 | 是但薄：00 稿 S5／S7 有轉移記錄；未寫「每次角色交接必寫、對話交接無效」 | role-pm |
 | 3 | 需求方裁定必須落進卡面規範欄（bump spec_version）才生效；留言、handoff 證據、對話裡的裁定不算 | 025 · 5262342420、5259964693；035 · 5260396516；221 · 5524000028；219 · 5492768223 §四 | 需求方 8/11 裁「只接 release」PM 只寫留言，查核者對著卡面判 critical；#221 四則裁定改 AC3 一次都沒 amend（R5-001）；#219 T4 sign-off 只存在對話、卡上無留言 | 是但薄：`stage-rules/planning.md` 有「規格只能在這裡改」；未寫「留言／對話裁定不生效」 | stage-planning ＋ role-requester |
 | 4 | 引用裁定或規則時逐字；⛔ 不強化約束力（選言不得轉述成禁令）、⛔ 不節略、⛔ 不改變其所述事實狀態 | 037 · 5262064584；221 · 5524563626 | 「既有卡永久 absent **或**附條件遷移」被 PM 轉述成「已裁定不新增遷移入口」並擴散進測試註解；PM 派工詞把裁定 ③ 引成節略版，執行者拒收改採完整逐字 | 否（`pm-conduct.md` §四無此條；原載於 #11 驗收 (d)，該卡 open） | role-pm |
 | 5 | 登記不是處置：自己登記過的缺口⛔ 不因「登記了」而免修；登記後繞過去是失誤 | 161 · 5441530219；221 · 5524563626、5525404365 | 執行者未驗清單第 3 項自指「只涵蓋 origin 一個 repo」卻留給查核者發現（R1-01）；#221 執行者用 `continue` 繞過裁定明文要求的斷言、還寫測試把該行為釘住（#44） | 否 | role-executor |
 | 6 | 更正任何事實前先 grep 出它的全部居所（卡面各欄、canonical、碼、commit 訊息、測試註解、第二居所），一次改完 | 130 · 5396017883；161 · 5441530219；122 · 5433927435；150 · 5433923349 | 同夜三次「只修看到的那幾處」，第三次漏掉核心痛點欄；#161 在留言更正「1439 全綠」卻沒改自己 commit 訊息的「1309 全綠」；#122 逐字轉引 #150 的一句，來源修了第二居所不會跟著修 | 否（stage-rules 的「居所契約」是另一件事） | 三角色共用操作紀律（00 稿衝突 C7） |
-| 7 | 文件與碼的引用⛔ 不寫行號；用「檔名＋符號」或「節次＋逐字片段」 | 150 · 5433923349；122 · 5433927435；221 · 5521741449 #37 #42 | 標題為「移除所有行號引用」的卡，交付 commit 自己寫下兩個新行號，26 小時失效；#221 多插一行使三處 docs 指標落到空行 | 是但薄：`AI_WORKFLOW.md:435-439` 只約束一張表（「本表的壽命以年計，行號的壽命以次計」）；stage-rules 零條 | 三角色共用操作紀律 |
+| 7 | 文件與碼的引用⛔ 不寫行號；用「檔名＋符號」或「節次＋逐字片段」 | 150 · 5433923349；122 · 5433927435；221 · 5521741449 #37 #42 | 標題為「移除所有行號引用」的卡，交付 commit 自己寫下兩個新行號，26 小時失效；#221 多插一行使三處 docs 指標落到空行 | 是但薄：`AI_WORKFLOW.md L435-439` 只約束一張表（「本表的壽命以年計，行號的壽命以次計」）；stage-rules 零條 | 三角色共用操作紀律 |
 | 8 | 變異／負控要選最可能打穿守衛的形狀，⛔ 不是會通過的形狀；只跑正向是零資訊 | 221 · 5524738008、5524898481 §17.4；105 · 5406030867 | PM 注入 plain 字串證「守衛抓得到最該抓的」，f-string（同檔 62 行）漏網；需求方裁定變異檢驗「只跑正向是零資訊」 | 否 | role-reviewer ＋ role-executor |
 | 9 | 變異對照的基準要對等、母體要對：整個機制 vs 一道守衛不可比；拿別卡的攻擊形態評本卡風險＝母體選錯 | 105 · 5409752542 | 「變異 C 殺 8/10、A 殺 1/10」被讀成「兩層定位才擋劫持」，對本卡情境重跑後恰好相反；兩筆更正差點寫進卡面 | 否 | role-pm |
-| 10 | 驗證器先於被測物受懷疑：三輪變異印同一則訊息＝變異沒生效；身分檢查驗執行行為⛔ 不驗原始碼文字 | 161 · 5440642694 #1–#4；141 · 5439832989 #14 #19 | 三處不同變異印逐字相同的失敗訊息被讀成「三處轉紅」；`inspect.getsource` 回「一致」而執行的是舊 pyc | 是但薄：`executor-conduct.md:40`「算術不可能的結果最先響」一句 | role-executor |
-| 11 | 用 zsh 傳含反引號的字串必須用引號界定（heredoc 加引號），否則命令替換靜默吃字 | 161 · 5440137820；094 · 5315518506；078 · 5275397142；130 · 5391882309 | `wfcli open --core-pain` 內 11 個識別符被替換成空字串，卡面痛點損壞；#92 關閉留言卡號被吃；#78 handoff evidence 缺一段 | 否（`AI_WORKFLOW.md:343` 是另一件事） | role-pm 操作紀律 |
+| 10 | 驗證器先於被測物受懷疑：三輪變異印同一則訊息＝變異沒生效；身分檢查驗執行行為⛔ 不驗原始碼文字 | 161 · 5440642694 #1–#4；141 · 5439832989 #14 #19 | 三處不同變異印逐字相同的失敗訊息被讀成「三處轉紅」；`inspect.getsource` 回「一致」而執行的是舊 pyc | 是但薄：`executor-conduct.md L40`「算術不可能的結果最先響」一句 | role-executor |
+| 11 | 用 zsh 傳含反引號的字串必須用引號界定（heredoc 加引號），否則命令替換靜默吃字 | 161 · 5440137820；094 · 5315518506；078 · 5275397142；130 · 5391882309 | `wfcli open --core-pain` 內 11 個識別符被替換成空字串，卡面痛點損壞；#92 關閉留言卡號被吃；#78 handoff evidence 缺一段 | 否（`AI_WORKFLOW.md L343` 是另一件事） | role-pm 操作紀律 |
 | 12 | `$?` 立刻存變數再印；stdout／stderr／rc 三者分開落檔 | 219 · 5491714806 #2、5492768223 §5.5 | `…; echo "####"; echo "rc=$?"` 取到中間 echo 的 0，回 1 的負控被印成 rc=0；`2>&1 \| tail -4` 吃掉 `rc=5`，該 session 27% 呼叫是此形狀 | 是但薄：F-執行-03／pm-conduct 有「不接管線」；缺「先存變數」 | 已在；補一句 |
 | 13 | 封存／收尾／合併前跑全套（pytest ＋ 全部掃描器）；跑一部分當全部是失誤 | 220 · 5496975935、5494957694；219 · 5492768223 §5.5 | 封存 commit 只跑掃描器沒跑 pytest，CI 抓到；W2A 封存只跑 prose 漏 `pollution_check`，靜默轉紅 | 否 | stage-closeout |
 | 14 | 守衛必須進 CI；不在 CI 的守衛靜默轉紅 | 220 · 5496975935、5494957694 | `pollution_check` 不在 `ci.yml`，封存打破它無人知；「在 CI 內的守衛與不在 CI 內的守衛，後果差一個數量級」 | 否 | 核心-硬擋（守衛登記制） |
 | 15 | 以 `git ls-files` 為射程的守衛在 commit 前對新增檔構造上不會失敗；先 `git add -N`（或 `--others`）再跑 | 147 · 5430500570、5430683267；219 · 5490217865 #4 | commit 訊息記「掃 150 檔命中 0」是零資訊：新測試檔尚未追蹤 | 否 | role-executor |
 | 16 | 測試⛔ 不得依賴 repo 歷史存在（CI shallow checkout）；判準搬到合成樹上驗 | 219 · 5491714806 #1 | 本機綠 CI 紅：`git diff … <舊 SHA>` 在 `fetch-depth 1` 直接拋錯 | 否 | stage-implementation |
-| 17 | 已被派審詞或事件引用的 SHA ⛔ 不得 amend／覆寫；要改寫已推送內容先停下回報 | 023 · 5260190558；161 · 5441530219 | 執行者 amend＋force-push 覆寫 82 秒前的 commit，派工紅線沒寫到這條；#161 R1 被審 SHA 因 `--amend` 不再是分支祖先 | 是但薄：`AI_WORKFLOW.md:831` 要求 rebase＋`--force-with-lease`，未區分「被引用的 SHA」 | 核心-硬擋（與 00 稿 H19 一併裁） |
+| 17 | 已被派審詞或事件引用的 SHA ⛔ 不得 amend／覆寫；要改寫已推送內容先停下回報 | 023 · 5260190558；161 · 5441530219 | 執行者 amend＋force-push 覆寫 82 秒前的 commit，派工紅線沒寫到這條；#161 R1 被審 SHA 因 `--amend` 不再是分支祖先 | 是但薄：`AI_WORKFLOW.md L831` 要求 rebase＋`--force-with-lease`，未區分「被引用的 SHA」 | 核心-硬擋（與 00 稿 H19 一併裁） |
 | 18 | PR body ⛔ 不寫 `Closes #N`；Issue 關閉只由收尾動詞觸發 | 025 · 5265955378 | 合併自動關 Issue ⇒ `illegal_terminal_before_cleanup`；「守衛擋住了後果，但沒有東西擋住那個成因」 | 否 | 核心-語意（終態只由 CLI 寫） |
 | 19 | 動不可逆操作前先查既有裁定，⛔ 不從第一原理推 | 154 · 5433546240 | PM 用 `--merge` 合併並向需求方論證，而 ROADMAP §3.5 早裁 squash 且理由更好 | 否 | role-pm |
 | 20 | 守衛類 finding 先問「防誰」；威脅模型逐字寫進碼與卡，涵蓋到了就停 | 062 · 5311176521 | 四輪 finding 前三輪打守衛不足（成立），第四輪打蓄意繞過（也成立，但不在威脅模型內） | 否 | stage-review ＋ role-reviewer |
 | 21 | 拒絕分支必須留痕（拒絕計數）；「未證明擋過」⛔ 不推出「機制無價值」 | 031 · 5330954365、5330286630 | `assign` 拒絕只 `print`＋`return 4`，110 次派工 0 次拒絕留痕，效益不可觀測；PM 據此宣稱機制無用，被跨家族查核撤回 | 否 | 核心 CLI ＋ 資源互斥模組 |
-| 22 | 能靠結構排除的⛔ 不靠偵測器補；純文件卡結構上修不好「命名了但沒接線」 | 088 · 5300325486、5300394805；130 · 5395230302 | 第八個「命名了但沒接線」：label 與狀態欄兩個事實靠人同步；純文件卡的射程定義上不含碼 | 是但薄：`AI_WORKFLOW.md:433`「沒有執行者的偵測器不算達成」 | 核心-語意 |
+| 22 | 能靠結構排除的⛔ 不靠偵測器補；純文件卡結構上修不好「命名了但沒接線」 | 088 · 5300325486、5300394805；130 · 5395230302 | 第八個「命名了但沒接線」：label 與狀態欄兩個事實靠人同步；純文件卡的射程定義上不含碼 | 是但薄：`AI_WORKFLOW.md L433`「沒有執行者的偵測器不算達成」 | 核心-語意 |
 | 23 | 開卡前讀清單項的全部留言（含「供開卡時採用」的裁定），⛔ 不只讀 body | 221 · 5508136680 | 三則射程追加裁定全部漏列，其中一則正是 PM 在開卡留痕裡標「待釐清」的答案 | 是但薄：`research.md` F-研究-12 只在研究階段 | 核心 CLI `open`（印留言數與未讀警示）＋ role-pm |
 | 24 | 派工單／派審詞裡已知會使其不可用的阻擋寫在最前面，⛔ 不藏進一條待跑指令 | 221 · 5521579807、5522339838 | PM 已量到 SHA 未 push，卻只寫「遠端狀態請自行核」，燒掉一輪派審 | 否 | role-pm |
 | 25 | 送審後修訂卡面必須明文告知查核者：改了什麼、為什麼、原值在哪 | 022 · 5255778571 | 待查核期間 amend 驗證欄，PM 另貼留言告知並自承「中途改卡面本身有問題」 | 否 | stage-review |
 | 26 | 資源宣告⛔ 不是射程上界，核心痛點才是；痛點涵蓋的讀取端不在宣告內時擴宣告，⛔ 不縮痛點 | 141 · 5439805124 | PM 准執行者「F7 不修因 review.py 不在宣告內」，查核者判 planner：「讀取端未列入資源宣告不能推翻核心痛點否決權」 | 否 | role-pm |
 | 27 | 核心痛點的成功條件與裁定矛盾時更正痛點（逐字列排除與歸屬），⛔ 不縮射程、⛔ 不隱瞞 | 105 · 5407018546；025 · 5262342420 | 四段全落地仍 5 張不可達 ⇒ `core_pain_resolved` 必為 no；#25 更正後的痛點須自己寫下「reconcile 未被本卡關閉」 | 是但薄：planning R2（射程 vs 痛點） | stage-planning |
 | 28 | 純文字交付只能關關於文字的痛點；痛點是關於世界的卡，`core_pain_resolved` 構造上答不成 yes | 130 · 5395230302 | 卡面痛點承認要到 S1／S6 落地才消失，卻要求本卡答 yes，連兩輪 critical | 否 | stage-review R3 判準 |
-| 29 | 寫進權威欄位的數字改由不可變快照 artifact 導出；寫入後、送審前每組數字重跑一次；標「實測」的時點必須是真的量測時點 | 130 · 5396017883、5395279865 | 187／110／59% 沿用舊值標「今日實測」，且「最久九天」方向反了 | 是但薄：`pm-conduct.md:86`「敘述不承載現況數字」；未寫「重跑」與「時點造假」 | role-pm |
-| 30 | 轉錄裁決時查核者身分無來源即寫「未知」；`root_cause_id` 先查既有 id，⛔ 不自造 | 150 · 5420537778；154 · 5427318873、5427375574 | 查核者欄「Codex@跨家族查核」是 PM 腦補；自造 `missing-provenance-trailers` 蓋掉既有 `commit-trailer-required-but-missing`，同族被切成兩堆 | 否（`templates/verdict.md:98` 只承認洞） | role-pm ＋ 身分自述模組 |
+| 29 | 寫進權威欄位的數字改由不可變快照 artifact 導出；寫入後、送審前每組數字重跑一次；標「實測」的時點必須是真的量測時點 | 130 · 5396017883、5395279865 | 187／110／59% 沿用舊值標「今日實測」，且「最久九天」方向反了 | 是但薄：`pm-conduct.md L86`「敘述不承載現況數字」；未寫「重跑」與「時點造假」 | role-pm |
+| 30 | 轉錄裁決時查核者身分無來源即寫「未知」；`root_cause_id` 先查既有 id，⛔ 不自造 | 150 · 5420537778；154 · 5427318873、5427375574 | 查核者欄「Codex@跨家族查核」是 PM 腦補；自造 `missing-provenance-trailers` 蓋掉既有 `commit-trailer-required-but-missing`，同族被切成兩堆 | 否（`templates/verdict.md L98` 只承認洞） | role-pm ＋ 身分自述模組 |
 | 31 | 驗收條件⛔ 不寫成自我指涉的字面 grep；指定掃描面並明示排除 | 088 · 5300325486 | 「`git grep 決策佇列` = 0」被寫下該條件的 spec 檔自己命中 | 否 | stage-planning R3 |
 | 32 | 回歸宣稱須全套且用 repo 宣告的工具鏈；跑子集或 `uvx` 外部工具⛔ 不得記為驗證 | 167 · 5449985839；161 · 5444962598 | `test_amend.py` 178 passed 被寫成全套回歸；`uvx ruff` 記成「Ruff 通過」 | 是但薄：`executor-conduct.md`「全部須附窮舉證據」 | role-executor |
 | 33 | 警示文字⛔ 不是分類結果、docstring ⛔ 不是實際輸出；「看起來像缺陷」先讀就地註解是否寫著刻意 | 105 · 5414010935；147 · 5421087840、5430683267 | PM 兩次誤報「造成不可修復非法終態」（把無條件印的警示當分類結果）；同 session 第四次把記錄在案的刻意取捨當缺陷 | 否 | role-pm ＋ role-reviewer |
@@ -67,7 +67,7 @@
 | 查核者的前置核對（基線是否祖先／handoff 事件是否存在）⇒ `review-invalid` | 021 · 5256205014：基線 SHA 錯，#23 查核者停下；073 · 5273807501：卡沒有 handoff 事件，查核者「依契約查權威來源、查不到、停手」；221 · 5521579807：SHA 未 push，R3 判 `review-invalid` | 073：「若它（#65）已落地，本次漏跑會在 `doctor` 上當場現形——但它今天還在 Backlog，所以這一次仍然是靠一位查核者發現的」 |
 | GitHub ruleset（main 需 PR＋`tests`） | 219 · 5492768223 §5.5：「封存 commit 直推 main 被 ruleset 擋（GH013）」；221 · 5525404365 §3：「直接 `push main` 曾被 ruleset 擋下」 | 221：`ci.yml` 就地註解說分支頭 run「永遠不是 required check，**該擋是刻意設計**，PM push 前⛔ 未讀該註解」 |
 | CI pytest（不在本機跑的那半） | 220 · 5496975935：封存 PR 本地四支掃描器全綠，CI pytest 轉紅（`test_w2b_six_claim_is_pinned_to_negation_form`）；219 · 5491714806 #1：shallow checkout 讓守衛在 CI 拋錯 | 220：「⛔ 不以『這次被 CI 擋下了』淡化——擋下它的是 CI，⛔ 不是 PM」；「在 CI 內的守衛與不在 CI 內的守衛，後果差一個數量級」 |
-| 佔位符守衛測試 `test_the_remedy_commands_contain_no_placeholder_at_all` | 221 · 5521741449 #41（首版把填空改成 `<…>` 放進指令行，測試轉紅）；5524898481 §17.5（修 `open_cmd.py:300` 時第二次同樣塞進去，「當場轉紅」） | 「⛔ 不得寫成『守衛運作良好』——**運作良好的是守衛，⛔ 不是我**。⚠️ 這是本卡第二次由同一條測試擋下同一個我」 |
+| 佔位符守衛測試 `test_the_remedy_commands_contain_no_placeholder_at_all` | 221 · 5521741449 #41（首版把填空改成 `<…>` 放進指令行，測試轉紅）；5524898481 §17.5（修 `open_cmd.py L300` 時第二次同樣塞進去，「當場轉紅」） | 「⛔ 不得寫成『守衛運作良好』——**運作良好的是守衛，⛔ 不是我**。⚠️ 這是本卡第二次由同一條測試擋下同一個我」 |
 | `validate_exemptions` 理由字串長度 ≥ 40 的 fail-closed | 146 · 5441349273 M2：PM 目測 CJK 長度，實際 37／35，兩條測試第一次執行即 FAILED | 「這一筆的性質是『fail-closed 擋下了我自己』，⛔ 不是守衛有誤；但它證明我在下數字前沒有量」 |
 | manifest 產生器的保險絲「⛔ 不得以泛用理由充數」 | 219 · 5491714806 #4：`SELF_REFERENCE_PATHS` 初版只放兩檔，新測試檔一寫出來產生器拒絕分類 | 「我放在產生器裡的『⛔ 不得以泛用理由充數』保險絲響了」 |
 | hermetic 測試與負向半邊測試（執行者自加） | 141 · 5434779224 #1：預壞判準拿全部讀取路徑當基準 ⇒ 攔截率恆真 100%；#2：第二版仍錯，「抓到它的是負向半邊測試（拿掉守衛後應報 leaked，卻報了 0）」 | #1：「抓到它的不是我讀碼，是我自己加的 hermetic 測試轉紅」 |
@@ -121,7 +121,7 @@
 7. **升級梯的計數從未成立。** 129 · 5391441964 review event 正文：「escalation 自動計數在承接卡落地前不可用，**包括三振門檻**」；221 · 5521741449 §9.6：「⛔ 不得讀成『可以無限輪』」；220 · 5496842413：PM 把查核輪次當可計數 attempt。00 稿升級梯模組條件「退回達第 3 次」——誰數、數什麼，留言證明舊制一直沒有答案。
 8. **`amend` 半寫入與 Project TEXT 1024 bytes 上限。** 023 · 5421090772：三張卡雙居所漂移 35 分鐘，rc=2 同時是「零寫入」與「寫到一半」；221 · 5491438788：實測上限 1024 UTF-8 bytes，wfcli 無截斷邏輯。核心 CLI 的寫入順序契約無承接。
 9. **統計閘門的 undecidable 與「機械只檢查是否有」的邊界。** 147 · 5422461485：「這個閘門構造上無法在決策前給出答案」；221 · 5523356697、5523391470（需求方原話）：「機械只要檢查是否有，其他交給 AI」「有疑慮的機械產生資訊寧願不要」。前者是研究站規則，後者是核心 CLI 的設計原則——與決策「新 CLI 不判內容」一致，但「提供資訊的機械並非必須」（artifact 工具的地位）沒有住處。
-10. **卡 ID／衍生卡承接的可證性。** 023 · 5421090772：「『衍生實作卡承接』這句話在看板上沒有對應物」；`AI_WORKFLOW.md:231` 已寫「寫下承接卡號不構成有著落的證據」，但沒有機械查法。
+10. **卡 ID／衍生卡承接的可證性。** 023 · 5421090772：「『衍生實作卡承接』這句話在看板上沒有對應物」；`AI_WORKFLOW.md L231` 已寫「寫下承接卡號不構成有著落的證據」，但沒有機械查法。
 
 ## 未驗
 
@@ -137,64 +137,64 @@
 
 | 檔號 | 檔名 |
 |---|---|
-| 007 | `007-WF-22-CANON1-Wave-2-13-決議-實戰教訓寫入-canonical-正文-WF-22-子卡.md` |
-| 009 | `009-WF-22-CLI4-wfcli-escalation-帳承接-accepted-標記-attempt-去重-check.md` |
-| 010 | `010-WF-23-STAT-PRINCIPLES1-統計結果解讀三通則入-canonical-statistical-redl.md` |
-| 012 | `012-WF-CLI-TIER-MUTATION1-wfcli-補上已開卡的-tier-更正能力-現在只能在-open-時設定.md` |
-| 013 | `013-WF-25-REVIEW-WRITE-CHANNEL1-跨家族查核者的裁決缺乏寫入通道-使-已查核-與-未查核-在狀態面.md` |
-| 017 | `017-WF-REVIEW-EVENT-MARKER-ENFORCE1-doctor-落實-wf-review-event-v1.md` |
-| 019 | `019-WF-CLI-CARD-AMEND1-wfcli-補上開卡後的通用卡面修訂能力.md` |
-| 021 | `021-WF-CLI-ROUTING-TIER1-wfcli-open-補上建議執行-查核能力層級與理由.md` |
-| 022 | `022-WF-ESCALATION-DEFERRED-FINDINGS1-查核規格變更會誤觸三次門檻-補-deferred-fi.md` |
-| 023 | `023-WF-EVENT-IDEMPOTENCY1-lifecycle-事件的排序與冪等-state_version-取號-決定.md` |
-| 024 | `024-WF-RESOURCE-WRITESET1-資源宣告的互斥語意-寫入集相交-封閉-path-namespace-syml.md` |
-| 025 | `025-WF-CLEANUP-GUARD1-破壞性收尾操作的守衛-reconcile-與-release-刪-worktree.md` |
-| 031 | `031-OPS-MIG1-CLAIMS-BACKFILL1-補齊-33-張-MIG1-佔位卡的資源宣告-讓-WF-RESOURC.md` |
-| 035 | `035-WF-EVENT-MARKER-V2-SCOPE1-lifecycle-事件的-marker-覆蓋與版本升級-v1-鍵集.md` |
-| 037 | `037-WF-CARD-FIELD-CORRECTION1-開卡欄位的更正通道-核心痛點須授權綁定-tier-降級不對稱-資源宣.md` |
-| 039 | `039-WF-ESCALATION-RESOLUTION-GAP1-escalate-之後需求方選擇維持同執行者-在契約裡沒有表.md` |
-| 047 | `047-DEV-MAIN-RED-CAPABILITY-FLAGS1-main-為紅-test_release_cleanup.md` |
-| 048 | `048-DEV-AIWF-MINIMAL-CI1-ai-workflow-完全沒有-CI-合併後沒有任何東西會跑測試.md` |
-| 053 | `053-DEV-CLI-VERB-REGISTRY1-每個新動詞都要在-cli-py-改兩處-使新動詞卡彼此互相衝突.md` |
-| 062 | `062-WF-AMEND-AUTHZ-BINDING1-amend-的授權欄無條件宣稱-comment-author-已核對-而.md` |
-| 063 | `063-DEV-COMMIT-TRAILER-GUARD1-必填-commit-trailer-沒有守衛-今日-31-筆全漏-三.md` |
-| 065 | `065-DEV-STATE-FACE-DRIFT-GUARD1-Project-交付狀態與-Log-最後一筆事件推導出的狀態可以.md` |
-| 073 | `073-DEV-MAIN-RED-CAPABILITY-FLAGS1-FIX1-47-的核心痛點只成立一半-main-回綠已證.md` |
-| 078 | `078-WF-CLEANUP-SQUASH-AWARE1-收尾守衛用祖先關係驗合併-而-squash-合併永遠不產生祖先關係-兩.md` |
-| 085 | `085-DEV-REVIEW-PARSER-QUOTED-SCALAR1-查核報告解析器-引號純量內的引號字元不應整份拒收.md` |
-| 087 | `087-資源與狀態詞彙-文件在用的-token-在機器上不存在-且失效方向是靜默.md` |
-| 088 | `088-WF-DISPOSITION-FIX1-已登記的發現與排隊中的工作用同一個物件-動詞與清單-且預設視圖上完全一樣.md` |
-| 092 | `092-WF-AMEND-RESOURCE-CONFLICT1-amend-擴大資源宣告時不跑互斥檢查-assign-建立的不變.md` |
-| 094 | `094-WF-REVIEW-INVALID-TRACE1-review-invalid-被機械偵測到卻不留痕-拒收只印-stde.md` |
-| 103 | `103-WF-STATUS-VOCAB-GATE1-寫入面閘門-preflight-零寫入-assign---status-收斂.md` |
-| 105 | `105-WF-RESOURCE-HEADING-SUFFIX1-資源宣告的標題比對容許後綴-讓帶說明的標題不再整份拒收.md` |
-| 106 | `106-WF-CLEANUP-SUBMODULE-AWARE1-收尾守衛對含-submodule-的-repo-構造性失敗-空.md` |
-| 107 | `107-OPS-DAILY-SNAPSHOT1-把-canonical-宣稱的每日-snapshot-export-做成真的.md` |
-| 111 | `111-WF-REVIEW-RECEIPT-CHANNEL1-收據紀律假設查核者能寫-GitHub-而跨家族查核者沒有寫入通道.md` |
-| 118 | `118-WF-OPEN-INITIAL-STATUS1-open-的初始交付狀態改為-需求-並讓-doctor-不再把合規的補救.md` |
-| 119 | `119-WF-CANONICAL-STALE-SYNC1-canonical-三處與現實不符的同步-序列內的廢止值-rebase.md` |
-| 120 | `120-WF-BACKLOG-STAGE1-handoff-補上-backlog-階段-讓-閘門過了-進待辦池-有一個受檢查的專.md` |
-| 122 | `122-WF-TRANSITION-TABLE-UNWRITTEN1-允許的狀態轉移表-契約明文下放給各專案-兩個專案都沒寫-而.md` |
-| 124 | `124-DEV-ISO-MUTATION-TEST-CLAIM1-回歸測試宣稱能殺掉一個它殺不掉的變異-而它就在證明守衛有牙齒的.md` |
-| 129 | `129-WF-RELEASE-NO-CLEANUP-REFUSE1-release-明知會產生自己拒修的非法終態-卻只印警示就照.md` |
-| 130 | `130-WF-STAGE-STATE-TWO-AXIS1-階段與狀態擠在同一個欄位-於是退回退到哪-走沒走過研究都表達不出來-而.md` |
-| 134 | `134-WF-CARD-BRIEF-AND-TWO-AXIS-WRITE1-wfcli-寫入端-簡介欄位與雙居所導出-兩軸欄位.md` |
-| 138 | `138-WF-POSTHOC-CONFORMANCE1-doctor-增通用的事後重驗-既有卡是否仍合乎現行-canonical.md` |
-| 139 | `139-WF-CARD-BODY-BUDGET1-amend-寫入路徑上的卡面容量預算-量測-預警-硬線-並以指紋取代-Log.md` |
-| 141 | `141-WF-MARKER-WRITE-BOUNDARY1-寫入邊界拒收會偽造分界型控制標記的欄位值.md` |
-| 146 | `146-WF-CANONICAL-SELF-STALENESS1-權威文件自身的過期宣稱沒有事後偵測.md` |
-| 147 | `147-WF-CARD-BRIEF-BACKFILL1-198-張卡中-190-張沒有簡介.md` |
-| 148 | `148-WF-STAGE-PITFALL-LIST1-canonical-6-4-的踩坑清單零實作.md` |
-| 150 | `150-DOC-CANON-01-ENFORCER-STALE1-canonical-0-1-執行者狀態表有五處今日為假-且全檔.md` |
-| 151 | `151-WF-CLI-ENSURE-FIELDS-DOUBLE-READ1-每個-wfcli-寫入動詞都跑兩次-list_fie.md` |
-| 154 | `154-WF-ENSURE-FIELDS-READONLY-BY-DEFAULT1-ensure_fields-會送-field.md` |
-| 159 | `159-DOC-STALE-FILE-LINE-POINTERS1-全-repo-27-個-file-line-指標指向空行或不.md` |
-| 161 | `161-WF-BLOCK-VERSION-REGRESSION1-升-BLOCK_VERSION-會讓既有-review-事件全.md` |
-| 165 | `165-DOC-STALE-DEGREE-WORDS1-canonical-與-project-py-四處宣稱今天為假-其中兩處.md` |
-| 166 | `166-DOC-CITATION-POINTS-ELSEWHERE1-兩處引用指不到它們說的東西-其中一處從出生就錯-132-行.md` |
-| 167 | `167-DOC-CANON-QUOTE-CARD-PY1-card-py-的-amend_brief-docstring-引一句.md` |
-| 219 | `219-WF-REDESIGN-W2A-規則面整套-canonical-本體-stage-rules-生效-tier-rules.md` |
-| 220 | `220-WF-REDESIGN-W2B-配套與-contract-templates-四波五卡-W2B.md` |
-| 221 | `221-WF-REDESIGN-W3-CLI-內部改造-四波五卡-W3.md` |
-| 231 | `231-WF-POLLUTION-MANIFEST-STALE1-守衛回綠與-manifest-的失效偵測.md` |
-| 243 | `243-清單-規則檔與上游-與自身逐字矛盾而無任何機械檢查會響-同族第三張-改窮舉.md` |
+| 007 | `archive/issues/007.md` |
+| 009 | `archive/issues/009.md` |
+| 010 | `archive/issues/010.md` |
+| 012 | `archive/issues/012.md` |
+| 013 | `archive/issues/013.md` |
+| 017 | `archive/issues/017.md` |
+| 019 | `archive/issues/019.md` |
+| 021 | `archive/issues/021.md` |
+| 022 | `archive/issues/022.md` |
+| 023 | `archive/issues/023.md` |
+| 024 | `archive/issues/024.md` |
+| 025 | `archive/issues/025.md` |
+| 031 | `archive/issues/031.md` |
+| 035 | `archive/issues/035.md` |
+| 037 | `archive/issues/037.md` |
+| 039 | `archive/issues/039.md` |
+| 047 | `archive/issues/047.md` |
+| 048 | `archive/issues/048.md` |
+| 053 | `archive/issues/053.md` |
+| 062 | `archive/issues/062.md` |
+| 063 | `archive/issues/063.md` |
+| 065 | `archive/issues/065.md` |
+| 073 | `archive/issues/073.md` |
+| 078 | `archive/issues/078.md` |
+| 085 | `archive/issues/085.md` |
+| 087 | `archive/issues/087.md` |
+| 088 | `archive/issues/088.md` |
+| 092 | `archive/issues/092.md` |
+| 094 | `archive/issues/094.md` |
+| 103 | `archive/issues/103.md` |
+| 105 | `archive/issues/105.md` |
+| 106 | `archive/issues/106.md` |
+| 107 | `archive/issues/107.md` |
+| 111 | `archive/issues/111.md` |
+| 118 | `archive/issues/118.md` |
+| 119 | `archive/issues/119.md` |
+| 120 | `archive/issues/120.md` |
+| 122 | `archive/issues/122.md` |
+| 124 | `archive/issues/124.md` |
+| 129 | `archive/issues/129.md` |
+| 130 | `archive/issues/130.md` |
+| 134 | `archive/issues/134.md` |
+| 138 | `archive/issues/138.md` |
+| 139 | `archive/issues/139.md` |
+| 141 | `archive/issues/141.md` |
+| 146 | `archive/issues/146.md` |
+| 147 | `archive/issues/147.md` |
+| 148 | `archive/issues/148.md` |
+| 150 | `archive/issues/150.md` |
+| 151 | `archive/issues/151.md` |
+| 154 | `archive/issues/154.md` |
+| 159 | `archive/issues/159.md` |
+| 161 | `archive/issues/161.md` |
+| 165 | `archive/issues/165.md` |
+| 166 | `archive/issues/166.md` |
+| 167 | `archive/issues/167.md` |
+| 219 | `archive/issues/219.md` |
+| 220 | `archive/issues/220.md` |
+| 221 | `archive/issues/221.md` |
+| 231 | `archive/issues/231.md` |
+| 243 | `archive/issues/243.md` |

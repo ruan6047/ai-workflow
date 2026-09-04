@@ -37,7 +37,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 二 · 每個檔的固定節與行數上限
 
-密度不均是上一版的病（01 空洞、03 空洞）。每種檔固定節次、固定上限；寫不滿就留短，⛔ 不塞理由。理由一律寫成 `→ archive/…` 或 `→ extract/05#n` 連結。
+密度不均是上一版的病（01 空洞、03 空洞）。每種檔固定節次、固定上限；寫不滿就留短，⛔ 不塞理由。理由與來歷一律寫成 `→ archive/…` 連結（決策 9）；萃取稿 `docs/research/extract/` 是填規則的輸入，填完後整目錄移入 `archive/research/`，規則正文⛔ 不引用它。
 
 | 檔種 | 固定節（順序不可換） | 上限 |
 |---|---|---|
@@ -127,8 +127,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 欄 | 型別 | 誰填 | 何時必填（`open` 印缺欄） | 誰讀 |
 |---|---|---|---|---|
 | schema_version | int | CLI | 建卡 | CLI |
-| card_id | string | CLI 配（naming） | 建卡 | 全部 |
-| source_issue | int | CLI | 建卡 | CLI |
+| card_id | string | CLI 配（naming；建後不可改） | 建卡 | 全部 |
+| source_issue | int | CLI（建後不可改） | 建卡 | CLI |
 | feature | string | PM | 建卡 | brief |
 | core_pain | string | CLI 從清單 issue 逐字帶入 | 建卡 | 所有交接文件 |
 | origin | url | CLI 帶入 | 建卡 | brief |
@@ -160,7 +160,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 |---|---|---|---|---|
 | `open <issue>` | 清單 issue 號 | 不是 issue、已在板上、鏈深 >2、JSON 鍵不合法（H9、H10） | 缺欄清單、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
 | `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時仍有 TODO | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
-| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 card_id（H10） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
+| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`（H10、C11） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 四層編號清單（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言） |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法、H13 欄位不一致（資料有效性） | 缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態；有 shell 的查核者與執行者用它，沒 shell 者手貼同格式（C14） |
@@ -267,7 +267,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十三 · 填規則的順序與停損
 
-順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；第 6 步例外：執行者另派、PM 不兼）：
+順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）：
+0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；CI 換成只跑新 CLI 測試的最小 workflow；`archive/issues/` 重新納入 git。三個入口檔已先清成 stub。
 1. `core/` 六檔（定義層先定，其他檔才有東西可引）
 2. `roles/common.md` → 四角色檔
 3. 五階段檔（研究住模組）
@@ -305,6 +306,10 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-01：C10 計數被第零條取代一事補進決策紀錄「補充裁定」，骨架 §三改為引用它，不再自行重判。
 - R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
+
+第五輪（被審 80e3c46）：
+- R1-01：§二理由連結只指 `archive/`；萃取稿定位為輸入、填完移入 archive（決策 9）。
+- R1-02：`edit` 硬擋加 `source_issue`；§六兩欄標「建後不可改」（C11）。
 
 第四輪（被審 61feebf）：
 - R1-01：§六補 `notes` 欄；§七 `notes` 動詞改為四層來源。
