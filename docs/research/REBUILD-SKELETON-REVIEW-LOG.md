@@ -2,6 +2,10 @@
 
 乙案（需求方 2026-09-04）：硬擋收縮為 11 條，H5 H6 H13 K10 與 KR 的作者比對降為印；CLI 只讀三種留言區塊；本紀錄自骨架拆出。
 
+## PM 自審（需求方 2026-09-04 指示：先自審幾輪、⛔ 不再擴 CLI）
+
+用「印清單／確認有沒有填／GitHub 機械操作／資料有效性」四類過每個 CLI 表面：砍 `roles`、`counters`、`modules`、`origin`、`brief.non_scope`（欄 28→23）；砍 `--family`；砍 `.wf/actors.json`（KR 作者只印 login）；`move` 的印縮到四項，merge SHA 與 CI 狀態歸 `brief --for closeout`；`review` 不再自動產生 `wf-note`；`snapshot` 不讀規則檔，過期改由 `brief` 來源標記帶日期；H5 H6 從印再降為 PM 注意事項；第 3 次退回的預設處置改為 PM 條文，核心 CLI 不數。
+
 ## 逐輪處置
 
 第一輪（留言 5535340214）：
