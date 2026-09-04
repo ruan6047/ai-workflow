@@ -64,7 +64,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H4 | secrets 不進 git | 平台委託 | CI secret scanner（需求方裁定必備） |
 | H12 | commit trailer 鍵與連續區塊 | 平台委託 | CI |
 | H5 | 同卡同輪一人一角；執行者欄≠查核者欄 | 資料有效性 | CLI 比對兩欄相等 |
-| H6 | T4 查核者家族≠執行者家族，或 sign-off 留言存在 | 資料有效性 | CLI 比對家族欄或驗 URL |
+| H6 | T4 查核者家族≠執行者家族，或已給的 sign-off URL 存在且作者相符 | 資料有效性 | CLI 比對家族欄或驗已給的 URL；缺 URL 只印 |
 | H7 | 轉移在合成表內；終態無出邊；無自由文字狀態 | 資料有效性 | CLI `move` |
 | H8 | 進終態前分支已刪、PR 已合併（worktree 部分屬 resource-lock 模組） | 資料有效性（平台事實） | CLI `move` 讀 GitHub |
 | H9 | `open` 只從清單 issue；不在板上；鏈深 ≤2 | 資料有效性 | CLI `open` |
@@ -83,30 +83,30 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 - 四角色：需求方、PM、執行者、查核者（決策 5）。第二 PM、人工查核不存在（C4）。
 - 每階段五步：① `notes` 印三層清單 ② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
 - 查核者判 R3 R4；查核者的裁決同時覆蓋派工單（attribution: coordinator／planner）（C4）。
-- 裁決與裁定＝GitHub 留言；動詞只收 `--ruling <URL>`（C12–C14）。
+- 裁決與裁定＝GitHub 留言；動詞只收 `--ruling <URL>`：缺即印，已給但不存在或作者不符才拒（C12–C14）。
 
 ## 四 · `core/state-machine.md` 的內容
 
 **階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；部署、維護是模組，未啟用時階段計畫的值域裡沒有它（S3、C6）。
 
-**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回／停止（結案專屬終態，S6）＋正交 阻塞。模組可加：`escalation` 加 升級；研究站 delta 加 不可判定；`maintenance` 加 運行中。
+**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案站加 停止（終態，S6）；研究站加 不可判定。模組可加：`escalation` 加 升級；`maintenance` 加 運行中。
 
 **核心轉移表**（每列＝一條允許的邊；`move` 只接受表內轉移，H7）：
 
 | from | to | 條件 |
 |---|---|---|
 | 需求／待確認 | 研究或規劃或執行／待辦 | 依階段計畫的下一站；T2+ 不得跳過規劃（S3） |
-| 需求／待確認 | 清單（撤銷） | `--ruling`；卡ID 保留、iteration 延續（S6、C5） |
+| 需求／待確認 | 清單（撤銷） | 卡ID 保留、iteration 延續（S6、C5）；無 `--ruling` 印提示 |
 | 任一階段／待辦 | 同階段／進行中 | 派工 |
 | 任一階段／進行中 | 同階段／待確認 | 交回 |
 | 任一階段／待確認 | 下一站／待辦 | ⑤ 過 |
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
 | 任一階段／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7） |
-| 任一狀態 | 阻塞 | `--ruling`；記 from |
+| 任一狀態 | 阻塞 | 記 from；無 `--ruling` 印提示 |
 | 阻塞 | from | 解除 |
 | 最後一站／待確認 | 結案／待確認 | 結案報告 |
-| 結案／待確認 | 完成 或 停止 | 完成需 H8 收尾；停止需 `--ruling`；兩者皆封存 |
+| 結案／待確認 | 完成 或 停止（結案站 delta） | 完成需 H8 收尾；停止無 `--ruling` 印提示；兩者皆封存 |
 
 **模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求）。
 
@@ -115,7 +115,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 - T0–T4 表：各級最低閘門（01#66–68）。
 - 判準：敏感面／可復原性／影響面取最高（03#44）；⛔ 不按難度、估時、檔案數。
 - 紅線域：public contract、權限與安全、金流、資料寫入或 migration、production、規則本體；紅線至少 T3，`db_scope ∈ {schema, data-migration}` ⇒ T4（C9）；T4 查核跨家族或使用者 sign-off（H6）。
-- 單向門：升自由，降須 `--ruling`（03#31）。
+- 單向門：升自由；降級收 `--ruling`，缺即印（03#31、C12）。
 - 缺陷級別套用表（03#45）。
 - 能力層級判準：經濟型／主力型／高階型（03#49）。
 - 專案層只能加嚴（03#48）。
@@ -158,7 +158,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 動詞 | 輸入 | 硬擋（rc≠0 並寫一則拒收留言，C13） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
 | `open <issue>` | 清單 issue 號 | 不是 issue、已在板上、鏈深 >2、JSON 鍵不合法（H9、H10） | 缺欄清單、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
-| `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、需裁定而 URL 不存在或作者不符（H7、H8、C12） | 缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、級別下修無裁定、離開規劃時仍有 TODO | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
+| `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時仍有 TODO | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 card_id（H10） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 三層編號清單（core＋已啟用模組＋專案層＋卡面任務層）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言） |
@@ -234,7 +234,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 退回上一站條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
 | 命名與目錄 | `core/naming.md` |
 | 研究站討論回合出口 | `stages/research.md` §4：討論以一則留言收口，`move` 收該 URL |
-| 停止裁定由誰 | `roles/requester.md`；`move` 要 `--ruling` |
+| 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
 | Design gate 記錄位 | `stages/planning.md` §1：設計判斷寫進 verification 欄；N/A 寫理由 |
 | 規則文件自身過期 | `roles/common.md` 書寫紀律「數字帶日期、不寫行號」；⛔ 不建掃描器 |
 | 查核者資訊邊界 | `roles/reviewer.md` §1：只看派工單與分支；派工單就是全部 |
@@ -291,7 +291,12 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 五個 Project 投影欄是否夠（view 只靠它們篩選）。
 - `escalation` 未啟用時，同輪第 3 次退回的預設動作（決策「預設升級①換人、需求方否決」要住哪）。
 
-## 十六 · 對 #177 規劃審 38 個 P1 finding 的自審
+## 十六 · Codex R1 裁決（2026-09-04，PR #245 留言 5535340214）的處置
+
+- R1-01：`停止` 移出核心值域，改為結案站 delta（§四）。
+- R1-02：`--ruling` 缺席一律印；只有已給但不存在或作者不符的 URL 才拒（§三、§四、§五、§七、§十一）。
+
+## 十七 · 對 #177 規劃審 38 個 P1 finding 的自審
 
 已對照並修正 6 處：狀態值域一處兩答（P1-11／34）、硬擋計數三居所（P1-23／38）、CLI 讀留言的範圍（P1-27）、schema 升版規則（P1-30）、留言併發（P1-33）、填規則各步 owner 與本檔驗收條件（P1-14／22／35）。未套用：producer 可重現（P1-29／32／37）——本檔無 artifact。
 
