@@ -102,7 +102,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段／待確認 | 下一站／待辦 | ⑤ 過 |
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
-| 任一階段／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7） |
+| 任一階段／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）。同階段連續第 3 次退回時 `move` 印「預設處置＝換執行者（升級①）；需求方可否決」（PM 減重 4）；escalation 模組未啟用時只印不擋 |
 | 任一狀態 | 阻塞 | 記 from；無 `--ruling` 印提示 |
 | 阻塞 | from | 解除 |
 | 最後一站／待確認 | 結案／待確認 | 結案報告 |
@@ -243,7 +243,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 查核者資訊邊界 | `roles/reviewer.md` §1：只看派工單與分支；派工單就是全部 |
 | 常態誰 merge | `stages/closeout.md` §4：PM 在四停下條件內直行（03#93） |
 | Log 移留言 | 模組 `log-comments`＋核心留言標頭（§十） |
-| 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`，由 `move` 數 |
+| 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`，由 `move` 數；未啟用時第 3 次退回的預設處置住 `stages/review.md` §4 與 `roles/pm.md`（PM 減重 4） |
 | 專案層級別數字 | `core/tiers.md` §專案層：只能文字加嚴，數字⛔ 不開放 |
 | 簡介必填時點 | `core/card-schema.md`：建卡即必填（印） |
 | 必填欄集中 | `core/card-schema.md` |
@@ -292,7 +292,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 新 CLI 名稱 `wf`。
 - `log-comments` 的啟用條件用 body 閾值還是一律啟用。
 - 五個 Project 投影欄是否夠（view 只靠它們篩選）。
-- `escalation` 未啟用時，同輪第 3 次退回的預設動作（決策「預設升級①換人、需求方否決」要住哪）。
+- （已收：第 3 次退回預設處置寫進 §四轉移表與 §十一，不再未定。）
 
 ## 十六 · Codex R1 裁決的處置
 
