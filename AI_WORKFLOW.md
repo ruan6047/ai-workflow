@@ -1,3 +1,5 @@
+> ⛔ **本檔為舊制規則，2026-09-04 起凍結，僅供 archive 前對照。** 第三輪重構期間一切以 `docs/research/REBUILD-DECISIONS-2026-09-04.md`（決策與第零條）與 `docs/research/REBUILD-SKELETON-2026-09-04.md`（骨架）為準；查核者與執行者⛔ 不得以本檔任何條文為判準。舊 `wfcli` 同時凍結。全檔封存歸重構第 7 步。
+
 # AI 協作工作流與職責歸屬準則 (AI Collaboration Workflow) — CANONICAL
 
 > 本檔是跨專案 AI 協作的**權威規則**：定義不可違反的不變量與專案必須實作的契約。操作命令、事故脈絡與供應商細節一律不放這裡；它們住在 [`templates/`](templates/) 與各專案 Runbook。程式碼與文件衝突時，以程式碼為準並修正文件。
