@@ -46,6 +46,32 @@ H8（進終態前 PR 與分支狀態）與 H9 的鏈深上限降為印；硬擋 
 結構性原因三個：送審前無對照表（涵蓋 25 條）；有序閘門一輪只抓一題（20 輪中 13 輪停在 R1）；改法是替換不是重讀（11 條）。
 填規則各檔送審前固定三步：決策→節次對照表、整篇重讀、AC4 祈使句掃描——皆為印資訊給自己看，⛔ 不新增機制。
 
+## 硬擋逐條重判表（自骨架 §三搬出，最終狀態＝cab1820）
+
+| 舊編號 | 一句 | 重判 | 落點 |
+|---|---|---|---|
+| H1 | main ruleset 禁改史禁刪 | 平台委託 | ruleset |
+| H2＋H15 | T2 以上走分支＋獨立查核；執行者不 merge | 平台委託 | ruleset required check＋PR |
+| H3 | 合併方式由專案層 `merge_method` 決定並以平台設定強制（squash ⇒ ruleset `required_linear_history`＋關閉 merge／rebase；merge ⇒ 關閉 squash／rebase） | 平台委託（值歸專案層，C3） | repo 設定＋ruleset；aiwf 的 `.wf/modules.json` 選 squash |
+| H4 | secrets 不進 git | 平台委託 | CI secret scanner（需求方裁定必備） |
+| H12 | commit trailer 鍵與連續區塊 | 平台委託 | CI |
+| H5 | 同卡同 iteration 一人一角 | **注意事項**（乙案；自審收縮） | `roles/pm.md` F-pm；CLI 無資料來源，不印 |
+| H6 | T4 查核者家族≠執行者家族，或 sign-off 留言存在 | **注意事項**（乙案；自審收縮） | `roles/pm.md` F-pm＋`roles/requester.md`；CLI 不印 |
+| H7 | 轉移在合成表內；終態無出邊；無自由文字狀態 | 資料有效性 | CLI `move` |
+| H8 | 進終態前：以卡面 `branch` 查 GitHub（PR merged、分支存在）；封存本身可逆 | **印**（自審第二輪：資訊給 AI 判） | `move` 到終態時印 PR 與分支狀態，PM 判 |
+| H9 | `open` 只從清單 issue；不在板上（建不出第二張） | 資料有效性 | CLI `open`；鏈深 >2 改為印（「鏈深 N，上限 2」），整鏈重審由 PM／需求方判 |
+| H10 | JSON 合法、鍵集合封閉、解析失敗整卡拒、寫後回讀 | 資料有效性＋寫入順序 | CLI 全動詞 |
+| H11＋K5 | 交回時 `--source-sha` 40 碼且在遠端存在（硬擋）；審核期間分支 HEAD 與卡面 `source_sha`、交回單 `source_sha` 與卡面值的比對（印，PM 判；K5） | 資料有效性（存在）＋印（比對） | CLI `move`（寫、存在檢查）、`brief --for reviewer`／`review`（比對並印） |
+| K10 | 派審前分支與 main 的 `merge-tree` 有衝突 | **印**（乙案） | `brief --for reviewer` 印，PM 判 |
+| KR（C12–C14） | 已給的 `--ruling` URL 存在且含 `wf-return` 或 `wf-ruling` 區塊 | 資料有效性（存在） | CLI `move`／`edit`；留言作者 login 只印出，是否是對的人由 PM 判（無名單檔） |
+| H13 | 交回單欄位一致性（C2 三含意：RC 須 blocking 或 core_pain no；APPROVE 不得帶 blocking／core_pain no） | **印**（乙案） | `review` 印不一致警示，PM 判 |
+| H14 | 查核唯讀、不代改 | **紀律** | `roles/reviewer.md`；分支變動由 H11 抓 |
+| H16 | 事件只寫該卡 Issue | **語意** | `core/verbs.md` |
+| H17 | 狀態面不可用時暫停 | **紀律** | `roles/conduct-common.md` |
+| H18 | 結案四停下條件 | **降為印** | PM 判 |
+| H19 | 禁 `gh pr update-branch` | **砍** | C3 |
+| K4 | 守衛必須進 CI | **紀律** | `roles/conduct-common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
+
 ## 逐輪處置
 
 第一輪（留言 5535340214）：

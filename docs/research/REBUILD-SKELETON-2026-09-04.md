@@ -67,7 +67,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | P1 | main ruleset 禁改史禁刪 | GitHub ruleset |
 | P2 | T2 以上走分支＋獨立查核；執行者不 merge | ruleset required check＋PR |
 | P3 | 合併方式＝專案層 `merge_method`，由平台設定強制 | repo 設定＋ruleset（C3） |
-| P4 | secrets 不進 git | CI secret scanner（H4） |
+| P4 | secrets 不進 git | CI secret scanner（補充裁定 H4） |
 | P5 | commit trailer 鍵與連續區塊 | CI |
 | D1 | 轉移在合成表內；終態無出邊；無自由文字狀態 | CLI `move` |
 | D2 | `open` 只從清單 issue；不在板上 | CLI `open` |
@@ -96,15 +96,15 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 撤銷卡（不在板、帶 `wf-card`） | 需求／待辦 | `open` 復板，沿用 `card_id`／`iteration`（§十八） |
 | 任一階段（結案除外）／待辦 | 同階段／進行中 | 派工 |
 | 任一階段（結案除外）／進行中 | 同階段／待確認 | 交回 |
-| 任一階段（結案除外）／待確認 | 下一階段／待辦 | ⑤ 過；審核階段須 `wf-return`（reviewer）；下一階段為結案時走「最後一個階段」列 |
-| 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；審核階段須 `wf-return`；結案階段須 `wf-ruling` |
+| 任一階段（結案除外）／待確認 | 下一階段／待辦 | ⑤ 過；審核階段 `--ruling` 種類＝`wf-return`（缺即印）；下一階段為結案時走「最後一個階段」列 |
+| 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；審核階段 `--ruling` 種類＝`wf-return`，結案階段＝`wf-ruling`（缺即印） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
 | 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）；第 3 次退回的預設處置住 `roles/pm.md` §4 |
 | 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 記 from；無 `--ruling` 印提示 |
 | 阻塞 | from（必為非終態） | 解除 |
 | 最後一個階段／待確認 | 結案／待確認 | 結案報告 |
 | 結案／退回 | 結案／待確認 | 補驗後重交結案報告 |
-| 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：須 `wf-ruling`（缺印）；兩者皆封存 |
+| 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling`（缺即印）；兩者皆封存 |
 
 **模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
 
@@ -289,8 +289,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 3. 五階段檔（研究住模組）
 4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
 5. README、ADOPTION 重寫
-6. 新 CLI `wf`（另一張 T3 卡）。形狀：四個目錄 `schema/`（card、intake、return、ruling、note 的 JSON Schema，與 `core/` 同源）、`gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。上限 3,000 行含測試以外的 src。
-7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 值＋模組值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟是唯一含不可逆動作的一步（關閉 issue 可逆、移出 Project 可逆、封存可逆——確認無硬刪）。
+6. 新 CLI `wf`（另一張 T3 卡）。形狀：四個目錄 `schema/`（card、intake、return、ruling、note 的 JSON Schema，與 `core/` 同源）、`gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
+7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 核心值＋結案 delta「停止」＋已啟用模組的值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟全部動作可逆（關閉 issue、移出 Project、封存皆可逆；無硬刪）。
 
 停損：任一檔超過 §二上限 ⇒ 停下拆；`cli/src` 超過 3,000 行 ⇒ 停下重看分桶；第 6 步超過 3 輪查核 ⇒ 需求方裁定是否縮射程。三個數字都是設計值。
 
