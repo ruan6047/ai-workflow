@@ -17,6 +17,7 @@ core/                      定義層（C8）。只放定義與機械語意，⛔
   verbs.md                 七動詞：open / move / edit / notes / brief / review / snapshot
   handoff.md               三份交接文件的段落表＋交回單 JSON schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
+  params.md                設計值參數表（§十二），一列一參數：名、種子值、用在哪
   glossary.md              通用語言（Ubiquitous Language）：每個詞一行——詞、一句定義、⛔ 不是什麼、禁用同義詞；規則檔、CLI enum、審核提示只准用表內的詞（§十八）
 stages/                    一階段一檔；研究、部署、維護三個可跳過的階段住模組
   requirement.md  planning.md  implementation.md  review.md  closeout.md
@@ -259,26 +260,37 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 05 揭露的三個新洞：封存與釘死路徑守衛互斥 → `stages/closeout.md` §2；Project TEXT 上限 → `core/card-schema.md` §投影欄逐欄標 `max_bytes`（`owner`、`卡ID` 為 TEXT 欄，上限 1024 bytes UTF-8；`階段`、`狀態`、`級別` 為單選欄無此限）；多欄寫入順序契約 → `core/verbs.md` §寫入契約（順序＝卡面 JSON → 五個投影欄 → 回讀；中途失敗的表示＝一則 `wf:reject` 留言＋下一次動詞先對帳）；升級計數誰數 → escalation 模組由 `move` 數。
 
-## 十二 · 注意事項的生命週期
+## 十二 · 注意事項的生命週期（只定資料、參數、管道、落點）
 
-- 加嚴層級三個：框架 `F-<階段|角色>-NN`、專案 `P-`、任務 `T-`（卡面 JSON `notes` 欄）；累加不覆寫、只能加嚴（B1）。輸出永遠是單一份清單、一套三值。回應三值定義在 `core/handoff.md`（§八），此處不重寫。
-- 來源：05 反覆失誤表（17 形狀）與 03 保留的 49 條是第一版母體。
-- 退場的形狀：每條 F-／P- 帶 `last_cited`（最近一次被交回單 `note_id` 引用的卡）；退場閾值是參數（設計值 20 張結案卡，住 `core/glossary.md` 旁的參數表或 `.wf/modules.json`，填規則時定）；退場動作與判定條文住 `roles/pm.md` §4。
-- 升遷：同一條在 3 張卡的 T- 出現 ⇒ P-；跨專案 ⇒ F-。判定是語意比對，由 PM 提、需求方點頭。
+**資料形狀**：三個加嚴層級 F-（框架）／P-（專案）／T-（卡面 `notes` 欄）；每條 `{id, text, origin, last_cited}`；輸出永遠是單一份清單、一套三值（§八）。
 
-**回饋迴路**（問題怎麼變成注意事項、注意事項怎麼變成守衛）：
+**參數**（皆設計值，住 `core/params.md`，填規則時可調）：
 
-1. 管道：卡上一則首行 `wf:note` 的留言，**任何角色都能貼**（執行者、查核者、需求方、PM）；交回單的失誤登記或 finding 標 `note: new` 時，CLI 替它產生同樣一則並附 `origin: <finding_id>`。框架只提供這條管道，要不要加是貼的人的判斷。
-2. 呈現與計數：下一輪 `notes` 印出該卡全部 `wf:note` 為 T- 候選；`snapshot` 匯出所有卡的 `wf:note` 與 origin。同義判定由人或執行 AI 做，⛔ 不建掃描器。
-3. 正式化（T- → P- 或 F-）的形狀：提案＝一則清單項，固定三格（條文、來源 `wf:note` 清單、處理手段，值域＝只印／進派工單／退回條件）；確認者＝需求方；P- 的落點＝採用專案 `.wf/stages/<階段>.md`（T1），F- 的落點＝本 repo 卡（T3 以上跨實體審）。條文住 `roles/requester.md` §1 與 `stages/requirement.md` §2（需求方 2026-09-04 裁定為來源）。
-4. 守衛化的形狀：入口只有一個＝處理手段被裁定為「不可逆或平台層事故」且指得出執行者（§三的三類）；預設值＝不做；引用次數不是輸入。條文住 `core/tiers.md` §紅線與 `roles/requester.md` §1（需求方 2026-09-04 裁定為來源）。
-5. 反向：硬擋拒收留言（C13）累計 0 次的閘門，每 20 張結案卡由 PM 列出一次，交需求方判留或降為印。
+| 參數 | 種子值 | 用在 |
+|---|---|---|
+| promote_threshold | 3 張卡 | T- → P- 的提案門檻 |
+| retire_threshold | 20 張結案卡 | `last_cited` 過期即候選退場 |
+| guard_review_period | 20 張結案卡 | 零拒收硬擋的回看週期 |
+| rule_confirm_days | 90 天 | 規則檔 `last_confirmed` 過期即印（§十一） |
+
+**管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；交回單 finding 標 `note: new` 時由 `review` 動詞產生同樣一則並附 origin）→ `notes` 印候選 → `snapshot` 匯出全部候選與 `last_cited`。
+
+**落點**（條文在填規則時寫）：
+
+| 事 | 落點 | 來源 |
+|---|---|---|
+| 正式化（提案三格：條文、來源、處理手段；確認者需求方） | `roles/requester.md` §1；提案形狀 `stages/requirement.md` §2 | 需求方 2026-09-04 |
+| 升遷 T-→P-→F-（同義判定、誰提誰點頭） | `roles/pm.md` §4 | 決議 §八 |
+| 退場（過期候選的處置） | `roles/pm.md` §4 | PM 減重 5 |
+| 守衛化的唯一入口與預設值 | `core/tiers.md` §紅線；`roles/requester.md` §1 | 需求方 2026-09-04 |
+| 零拒收硬擋的回看 | `roles/pm.md` §4 | C13 |
+| 回應三值與 `notes` 欄 schema | `core/handoff.md`、`core/card-schema.md` | §八、§六 |
 
 ## 十三 · 填規則的順序與停損
 
 順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）：
 0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；CI 換成只跑新 CLI 測試的最小 workflow；`archive/issues/` 重新納入 git。三個入口檔已先清成 stub。
-1. `core/` 七檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）
+1. `core/` 八檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）
 2. `roles/conduct-common.md` → 四角色檔
 3. 五階段檔（研究住模組）
 4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
@@ -317,6 +329,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+第十一輪（被審 cd45361，R1 過）：
+- R2-01：§十二 整節改寫為資料形狀、參數表（`core/params.md`）、管道、落點四塊，條文全部移目標檔。
 
 PM 自審（3e613ce 後）：§五 tiers 改為固定節＋來源；§十 卡ID、專案層位置、§十一 專案層級別、§十五 wf:log、§九 模組 verbs 欄六處改形狀。
 
