@@ -13,4 +13,8 @@
 | `archive/issues/`（原未納入 git） | `../issues/` | aiwf 112 張舊 issue 匯出，本步起納入 git |
 | `snapshots/` | `snapshots/` | 舊每日快照的維運說明；產生者 `scripts/daily_snapshot.sh` 已在本目錄，launchd `com.wf.daily-snapshot` 需在本機卸載（需求方） |
 
-未搬：`tasks/`、`docs/research/`（骨架與萃取，仍在用）。
+| `tasks/`（5 份舊卡規格） | `../tasks/` | 與既有 `archive/tasks/` 同族；需求方 2026-09-05 裁定封存 |
+
+| `docs/research/WORKFLOW-REDESIGN-2026-08-30.md`、`docs/research/drafts/` | `../research/` | 上一輪重構的決議紀錄與草稿；引用舊 CLI 與舊規則路徑（第 1 步審核 R4-01） |
+
+未搬：`docs/research/REBUILD-*.md`、`docs/research/extract/`（本輪骨架與萃取，仍在用；萃取填完後整目錄移入 `archive/research/`）。
