@@ -73,7 +73,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H5 | 同卡同 iteration 一人一角：`roles` 內同 iteration 的 executor.actor ≠ reviewer.actor | 資料有效性 | CLI 讀 `roles` 陣列比對 |
 | H6 | T4：`roles` 內同 iteration 的 reviewer.family ≠ executor.family，或已給的 sign-off URL 存在且作者 ∈ `.wf/actors.json` `requesters` | 資料有效性 | CLI 讀 `roles` 陣列或驗已給的 URL；缺 URL 只印 |
 | H7 | 轉移在合成表內；終態無出邊；無自由文字狀態 | 資料有效性 | CLI `move` |
-| H8 | 進終態前分支已刪、PR 已合併（worktree 部分屬 resource-lock 模組） | 資料有效性（平台事實） | CLI `move` 讀 GitHub |
+| H8 | 進終態前：以卡面 `branch` 查 GitHub（PR by head ref、PR `merged`、merge commit、分支存在）——PR 已合併且分支已刪（worktree 部分屬 resource-lock 模組） | 資料有效性（平台事實，來源＝`branch` 欄＋GitHub API，不另設 PR 欄） | CLI `move` |
 | H9 | `open` 只從清單 issue；不在板上；鏈深 ≤2 | 資料有效性 | CLI `open` |
 | H10 | JSON 合法、鍵集合封閉、解析失敗整卡拒、寫後回讀 | 資料有效性＋寫入順序 | CLI 全動詞 |
 | H11＋K5 | 交回時 `source_sha` 40 碼且在遠端；審核期間分支 HEAD＝卡面 `source_sha`；交回單 `source_sha`＝卡面值 | 資料有效性 | CLI `move`（寫）、`brief --for reviewer`／`review`（比） |
@@ -333,6 +333,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+PM 自審（b3ca6d6 後）：H8 的事實來源明寫為卡面 `branch`＋GitHub API（PR by head ref、merged、merge commit、分支存在），不另設 PR 欄。
 
 第十五輪（被審 82727da，R1 R2 過）：
 - R3-01：卡面加 `source_sha`（交回時由 `move --source-sha` 寫，同 iteration 不可變，`edit` 不可改）；H11＋K5 改為對此值比對。
