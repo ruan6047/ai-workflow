@@ -41,7 +41,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 二 · 每個檔的固定節與行數上限
 
-密度不均是上一版的病（01 空洞、03 空洞）。每種檔固定節次、固定上限；寫不滿就留短，⛔ 不塞理由。理由與來歷一律寫成 `→ archive/…` 連結（決策 9）；萃取稿 `docs/research/extract/` 是填規則的輸入，填完後整目錄移入 `archive/research/`，規則正文⛔ 不引用它。
+密度不均是上一版的病（01 空洞、03 空洞）。每種檔固定節次、固定上限（上限＝天花板，不是配額）。理由與來歷的形狀＝`→ archive/…` 連結（決策 9）；萃取稿 `docs/research/extract/` 是填規則的輸入，填完後整目錄移入 `archive/research/`，規則正文⛔ 不引用它。
 
 | 檔種 | 固定節（順序不可換） | 上限 |
 |---|---|---|
@@ -54,7 +54,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 **每個規則檔、模組檔、core 檔統一 frontmatter 四欄**（沿舊 stage-rules 與卡片簡介的 skill 式檔頭，決策 9）：`name`、`when`（適用時機一句）、`non_scope`（⛔ 不是什麼一句）、`last_confirmed`（日期，§十一 規則文件自身過期）。`brief` 每段首行 `[來源: …]` 印該檔 `name`＋`when`；`notes` 印清單時同。
 
-每條規則一句祈使句，⛔ 不帶「因為」；⛔ 不出現 ⚠️／⭐／⛔ 以外的符號；⛔ 不寫現況數字（要寫就帶日期，`conduct-common.md` 書寫紀律）。
+規則條文的形狀：一條＝一句祈使句、無理由子句；符號集＝⚠️／⭐／⛔；數字帶日期。書寫紀律的條文住 `roles/conduct-common.md` §書寫。
 
 ## 三 · 核心迴圈與角色（定案摘要）
 
@@ -274,7 +274,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | guard_review_period | 20 張結案卡 | 需求方定期回看的週期（零拒收硬擋、正式化候選、規則檔過期三類合併） |
 | rule_confirm_days | 90 天 | `brief` 來源標記把過期規則檔標出來（§十一） |
 
-**管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；內容＝一個 `json wf-note {text, origin}` 區塊，首行 `wf:note` 只給人讀；finding 要成為候選由人另貼一則，`origin` 填該 finding 的留言 URL）→ `notes` 只讀 `wf-note` 區塊印候選 → `snapshot` 匯出全部候選與 `last_cited`。
+**管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；內容＝一個 `json wf-note {text, origin}` 區塊，首行 `wf:note` 只給人讀；候選的形狀＝一則 `wf:note` 留言，`origin`＝來源 finding 的留言 URL；誰在何時貼的條文住 `roles/conduct-common.md` §注意事項）→ `notes` 只讀 `wf-note` 區塊印候選 → `snapshot` 匯出全部候選與 `last_cited`。
 
 **落點**（條文在填規則時寫）：
 
@@ -284,7 +284,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 升遷 T-→P-→F-（同義判定、誰提誰點頭） | `roles/pm.md` §4 | 決議 §八 |
 | 退場（過期候選的處置） | `roles/pm.md` §4 | PM 減重 5 |
 | 守衛化的唯一入口與預設值 | `core/tiers.md` §紅線；`roles/requester.md` §1 | 需求方 2026-09-04 |
-| 零拒收硬擋的回看、注意事項正式化候選、規則檔 `last_confirmed` 過期 | 合成一次「需求方定期回看」：PM 每 `guard_review_period` 張結案卡整理一份，需求方一次裁；落點 `roles/pm.md` §4＋`roles/requester.md` §1 | C13、PM 減重 4、自審角度一 |
+| 零拒收硬擋的回看、注意事項正式化候選、規則檔 `last_confirmed` 過期 | 合成一次「需求方定期回看」，形狀＝一份回看清單（週期參數 `guard_review_period`）＋一則裁定留言；落點 `roles/pm.md` §4＋`roles/requester.md` §1 | C13、PM 減重 4、自審角度一 |
 | 回應三值與 `notes` 欄 schema | `core/handoff.md`、`core/card-schema.md` | §八、§六 |
 
 ## 十三 · 填規則的順序與停損
