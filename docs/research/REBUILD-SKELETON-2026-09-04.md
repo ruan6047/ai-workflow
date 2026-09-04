@@ -283,13 +283,13 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 ## 十三 · 填規則的順序與停損
 
 順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）：
-0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；`archive/issues/` 重新納入 git。新 CI 形狀＝三個 job：新 CLI 測試、secret scanner（P4）、轉移表可達性（§四）；⛔ 不再有掃描 docs 的 job。三個入口檔已先清成 stub。
-1. `core/` 八檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）
+0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；`archive/issues/` 重新納入 git。新 CI 在本步只剩兩個 job：secret scanner（P4）、commit trailer 檢查（P5）；⛔ 不再有掃描 docs 的 job；⛔ 不預先加沒有被測物的空 job。其餘兩個 job 隨被測物同一 PR 進場：轉移表可達性（§四）在第 1 步 `core/state-machine.md` 的 PR、新 CLI 測試在第 6 步。CI 最終形狀＝四個 job。三個入口檔已先清成 stub。
+1. `core/` 八檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）；`state-machine.md` 進 repo 的同一 PR 加轉移表可達性 job
 2. `roles/conduct-common.md` → 四角色檔
 3. 五階段檔（研究住模組）
 4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
 5. README、ADOPTION 重寫
-6. 新 CLI `wf`（另一張 T3 卡）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊，CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
+6. 新 CLI `wf`（另一張 T3 卡；同 PR 加新 CLI 測試 job）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊，CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
 7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 核心值＋結案 delta「停止」＋已啟用模組的值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟全部動作可逆（關閉 issue、移出 Project、封存皆可逆；無硬刪）。
 
 停損：任一檔超過 §二上限 ⇒ 停下拆；`cli/src` 超過 3,000 行 ⇒ 停下重看分桶；第 6 步超過 3 輪查核 ⇒ 需求方裁定是否縮射程。三個數字都是設計值。
@@ -322,7 +322,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十八 · `core/glossary.md` 的內容（通用語言；需求方 2026-09-04 提議）
 
-每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。消費者三個：CLI enum 與 Project 選項名（取「詞」欄字面）、規則檔正文、審核提示；禁用同義詞的違規判定條文住 `roles/conduct-common.md` §2。種子（填規則時逐列補定義）：
+每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。消費者三個：CLI enum 與 Project 選項名（取「詞」欄字面）、規則檔正文、審核提示；禁用同義詞的違規判定條文住 `roles/conduct-common.md` §2。約束邊界：詞表管中文正文用詞；schema 鍵名（§六英文識別字，如 `spec_version`、`stage_plan`）與 GitHub 平台詞（issue、PR、Project、ruleset、comment）不入表、不受禁用同義詞約束，中文正文指涉它們時用表內對應詞。種子（填規則時逐列補定義）：
 
 | 詞 | 涵蓋 | 禁用同義詞 |
 |---|---|---|
@@ -355,6 +355,12 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | sign-off | 需求方對 T4 卡的最終授權裁定 | approve、核准 |
 | self_run | 交回單內實跑指令與原始輸出 | 本地測試、手動驗證 |
 | attribution | finding 責任歸屬 enum executor／coordinator／planner／reviewer／external | 責任方、責任者 |
+| 狀態面 | 卡當下的階段＋狀態＋阻塞，唯一居所＝issue body JSON 與 Project 投影欄 | 看板狀態、board、進度 |
+| 階段計畫 | 卡面 `stage_plan`：這張卡要走的階段子集（研究／部署／維護為模組選配） | 流程、pipeline、路線 |
+| 終態 | 出邊為空的狀態：完成、停止 | 結束、closed、done |
+| 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數（>2 只印） | 母卡、子卡、family、epic |
+| 資源宣告 | 卡面 `resources` 欄的字串陣列；文法住 db-contract／resource-lock 模組 | 依賴、鎖 |
+| owner | 卡當下的 {role, actor}，由 `move --actor` 寫 | 負責人、assignee、承辦 |
 
 ## 未驗
 
