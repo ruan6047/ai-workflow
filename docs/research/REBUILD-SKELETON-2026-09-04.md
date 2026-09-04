@@ -17,7 +17,7 @@ core/                      定義層（C8）。只放定義與機械語意，⛔
   verbs.md                 七動詞：open / move / edit / notes / brief / review / snapshot
   handoff.md               三份交接文件的段落表＋交回單 JSON schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
-  glossary.md              通用語言（Ubiquitous Language）：每個詞一行——詞、一句定義、⛔ 不是什麼、禁用同義詞；規則檔、CLI enum、審核提示只准用表內的詞（§十七）
+  glossary.md              通用語言（Ubiquitous Language）：每個詞一行——詞、一句定義、⛔ 不是什麼、禁用同義詞；規則檔、CLI enum、審核提示只准用表內的詞（§十八）
 stages/                    一階段一檔；研究、部署、維護三個可跳過的階段住模組
   requirement.md  planning.md  implementation.md  review.md  closeout.md
 roles/                     一角色一檔＋共用一檔
@@ -47,7 +47,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 階段檔 | 1 目標與產出 · 2 進入／離開條件 · 3 狀態 delta（引用 core） · 4 階段內迴圈（①–⑤ 在本階段的形狀） · 5 各角色做／⛔ 不做 · 6 注意事項 `F-<階段>-NN` | 60 行 |
 | 角色檔 | 1 職責 · 2 紅線 · 3 動作前自檢 · 4 注意事項 `F-<角色>-NN` | 60 行 |
 | conduct-common.md | 1 操作紀律（實跑、fetch、不截斷、rc、負控、逐字、多居所、驗原件） · 2 書寫紀律（數字帶日期、不寫行號、引用逐字） | 40 行 |
-| core 各檔 | 依檔（§四–§八、§十七） | 120 行 |
+| core 各檔 | 依檔（§四–§八、§十八） | 120 行 |
 | module.md | 0 宣告區塊（§九） · 1 條文 · 2 該模組加的注意事項 | 80 行 |
 | README | 1 心智模型（≤12 行） · 2 角色一句話 · 3 查詢指令 | 40 行 |
 
@@ -75,6 +75,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H9 | `open` 只從清單 issue；不在板上；鏈深 ≤2 | 資料有效性 | CLI `open` |
 | H10 | JSON 合法、鍵集合封閉、解析失敗整卡拒、寫後回讀 | 資料有效性＋寫入順序 | CLI 全動詞 |
 | H11＋K5 | SHA 40 碼且在遠端；報告入口 SHA＝分支 head；被引用 SHA 不得改寫 | 資料有效性 | CLI `brief`／`move` |
+| K10 | 派審前分支與 main 的 `merge-tree` 無衝突 | 資料有效性（git 事實） | CLI `brief --for reviewer` |
 | H13 | 交回單欄位一致性（C2 三含意）：`REQUEST_CHANGES` 須有 `blocking: true` 或 `core_pain_resolved: no`，兩者皆無即拒收為無效裁決；`APPROVE` 不得有 `blocking: true` 或 `core_pain_resolved: no` | 資料有效性（JSON 欄位間一致） | CLI 讀交回單 JSON |
 | H14 | 查核唯讀、不代改 | **紀律** | `roles/reviewer.md`；分支變動由 H11 抓 |
 | H16 | 事件只寫該卡 Issue | **語意** | `core/verbs.md` |
@@ -83,7 +84,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H19 | 禁 `gh pr update-branch` | **砍** | C3 |
 | K4 | 守衛必須進 CI | **紀律** | `roles/conduct-common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
 
-硬擋淨數 **13**：平台委託 5、CLI 資料有效性 8。CLI 層的 8 條沒有一條讀散文，全部是欄位存在、相等、在表內、在遠端。
+硬擋淨數 **14**：平台委託 5、CLI 資料有效性 9。CLI 層的 9 條沒有一條讀散文，全部是欄位存在、相等、在表內、在遠端、可合併。
 
 - 四角色：需求方、PM、執行者、查核者（決策 5）。第二 PM、人工查核不存在（C4）。
 - 每階段五步：① `notes` 印一份清單（四個來源：框架核心 → 已啟用模組 → 專案層 → 卡面，決策 11 逐字順序）② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
@@ -167,7 +168,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時仍有 TODO | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`（H10、C11） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
-| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言）。輸出形狀：每一段首行固定 `[來源: <層>/<檔>#<節>]`，層值域＝core／module:<名>／project／card（決策 11「每段標來源」） |
+| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言）。輸出形狀：每一段首行固定 `[來源: <來源>/<檔>#<節>]`，來源值域＝core／module:<名>／project／card（決策 11「每段標來源」） |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法、H13 欄位不一致（資料有效性） | 缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態；有 shell 的查核者與執行者用它，沒 shell 者手貼同格式（C14） |
 | `snapshot` | — | — | — | 本機 JSON＋Markdown |
 
@@ -312,7 +313,13 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
-需求方提議後補：§十七 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+Gemini 第二輪（被審 ce651ca，留言 5536360697）：
+- R3-01：K10 補進 §三重判表，硬擋 14／CLI 9。
+- R4-01：重複的 §十七 改為 §十八。
+- R4-02：來源標記改 `<來源>`，不用「層」。
+- 詞表補五列（來源、七動詞、未驗三分類、回應三值、投影欄）。
 
 第七輪（被審 702daf7）：
 - R1-01：§三 `notes` 改為一份清單、四個來源，逐字決策 11 順序。
@@ -344,7 +351,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 已對照並修正 6 處：狀態值域一處兩答（P1-11／34）、硬擋計數三居所（P1-23／38）、CLI 讀留言的範圍（P1-27）、schema 升版規則（P1-30）、留言併發（P1-33）、填規則各步 owner 與本檔驗收條件（P1-14／22／35）。未套用：producer 可重現（P1-29／32／37）——本檔無 artifact。
 
-## 十七 · `core/glossary.md` 的內容（通用語言；需求方 2026-09-04 提議）
+## 十八 · `core/glossary.md` 的內容（通用語言；需求方 2026-09-04 提議）
 
 每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。CLI 的 enum 值、Project 選項名、留言標頭、規則檔正文只准用「詞」欄的字面；禁用同義詞欄的字出現在規則檔即為 finding。種子（填規則時逐列補定義）：
 
@@ -368,6 +375,11 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | 目標、需求、範圍、scope |
 | 封存、撤銷、停止 | 三個離開動作 | 關閉、刪除、歸檔（作為封存以外的意思） |
 | 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
+| 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
+| 七動詞 open／move／edit／notes／brief／review／snapshot | CLI 的全部入口 | amend、改卡、handoff、assign、pitfalls、踩坑、verdict（作為動詞） |
+| 未驗清單三分類 cannot／skipped／deferred | 驗不了／沒去驗／刻意不驗 | 未驗（裸列）、TODO |
+| 回應三值 followed／not_applicable／found | 已遵循／不適用／發現 | 已檢查、已遵守、N/A |
+| 投影欄（5）：階段／狀態／級別／owner／卡ID | Project 上由 CLI 回寫的欄 | 看板欄位、Ledger 欄 |
 
 ## 未驗
 
