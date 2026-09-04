@@ -310,7 +310,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 第七輪（被審 702daf7）：
-- R1-01：§三 `notes` 改四層、逐字決策 11 順序。
+- R1-01：§三 `notes` 改為一份清單、四個來源，逐字決策 11 順序。
 - R1-02：`brief` 輸出每段首行 `[來源: …]`；派工單標同形（§七、§八）。
 - R1-03：升級計數鍵改同卡同 iteration 累積，不分階段不要求連續（§四、§九）。
 
@@ -326,7 +326,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-02：`edit` 硬擋加 `source_issue`；§六兩欄標「建後不可改」（C11）。
 
 第四輪（被審 61feebf）：
-- R1-01：§六補 `notes` 欄；§七 `notes` 動詞改為四層來源。
+- R1-01：§六補 `notes` 欄；§七 `notes` 動詞改為四個來源。
 - R1-02：§一、§七補第七動詞 `review`：驗交回單 schema 與 H13 一致性、貼成留言、不動狀態（C14）。
 - R1-03：§十三第 4 步改逐名引用 §九，不記總數。
 
