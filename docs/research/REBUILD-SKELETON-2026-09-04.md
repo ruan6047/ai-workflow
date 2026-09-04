@@ -186,6 +186,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 八欄、**未驗清單（三分類：驗不了／沒去驗／刻意不驗，各附原因）**、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
 | 裁定單 | PM→需求方 | 事件序（以 `wf-return` 留言的時間序推，CLI 不讀散文留言）、各輪退回理由與 findings（讀 `wf-return`）、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
+交回單各段的必填性依級別分兩檔：T0／T1 只要 `self_run` 與逐 AC 證據；T2 以上全段（形狀，流程順暢；來源 03#24、決策第零條三目標）。`brief --for executor` 與 `--for reviewer` 同時印一份交回單 JSON 樣板（id、AC 條文、注意事項 id 預填），人只填判斷欄。
+
 交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄與 `unverified: [{item, kind, reason}]`（`kind` 封閉值域 `cannot`／`skipped`／`deferred`，`reason` 非空）；同一 schema 執行者與查核者共用。**注意事項回應的三值唯一定義居所＝本檔**：`note_responses: [{id, value, text}]`，`value` 封閉值域 `followed`／`not_applicable`／`found`（人讀顯示 已遵循／不適用／發現），`not_applicable` 與 `found` 的 `text` 非空；§十二與各階段檔只引用不複製；CLI 只查 id 是否覆蓋 `notes` 印出的清單、value 在值域、text 非空，⛔ 不判內容。
 
 留言的形狀＝append-only 事件（一事件一則、無可編輯日誌留言；來源：決議 §五、P1-33），條文住 `core/verbs.md` §寫入契約。派工單完整性由收件的查核者判（C4）；裁定單完整性由需求方 ④ 判。
@@ -272,7 +274,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 |---|---|---|
 | promote_threshold | 3 張卡 | T- → P- 的提案門檻 |
 | retire_threshold | 20 張結案卡 | `last_cited` 過期即候選退場 |
-| guard_review_period | 20 張結案卡 | 零拒收硬擋的回看週期 |
+| guard_review_period | 20 張結案卡 | 需求方定期回看的週期（零拒收硬擋、正式化候選、規則檔過期三類合併） |
 | rule_confirm_days | 90 天 | `brief` 來源標記把過期規則檔標出來（§十一） |
 
 **管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；內容＝一個 `json wf-note {text, origin}` 區塊，首行 `wf:note` 只給人讀；finding 要成為候選由人另貼一則，`origin` 填該 finding 的留言 URL）→ `notes` 只讀 `wf-note` 區塊印候選 → `snapshot` 匯出全部候選與 `last_cited`。
@@ -285,7 +287,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 升遷 T-→P-→F-（同義判定、誰提誰點頭） | `roles/pm.md` §4 | 決議 §八 |
 | 退場（過期候選的處置） | `roles/pm.md` §4 | PM 減重 5 |
 | 守衛化的唯一入口與預設值 | `core/tiers.md` §紅線；`roles/requester.md` §1 | 需求方 2026-09-04 |
-| 零拒收硬擋的回看 | `roles/pm.md` §4 | C13 |
+| 零拒收硬擋的回看、注意事項正式化候選、規則檔 `last_confirmed` 過期 | 合成一次「需求方定期回看」：PM 每 `guard_review_period` 張結案卡整理一份，需求方一次裁；落點 `roles/pm.md` §4＋`roles/requester.md` §1 | C13、PM 減重 4、自審角度一 |
 | 回應三值與 `notes` 欄 schema | `core/handoff.md`、`core/card-schema.md` | §八、§六 |
 
 ## 十三 · 填規則的順序與停損
@@ -368,3 +370,4 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 目錄樹與節次是設計，未經任何試填；行數上限是估計。
 - 轉移表未跑可達性檢查；模組 delta 格式未實作。
 - 卡面 schema 的欄位集由 00 §四 open 段推得，未與 cpbl 現有 118 張卡的欄位對照。
+- PM 每卡的 CLI 呼叫次數（約 8–10）與舊制相近；本輪省的是每次呼叫的旗標數、拒絕迴圈與手抄信封，⛔ 未量測。
