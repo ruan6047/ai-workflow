@@ -8,6 +8,8 @@
 
 ```
 README.md                  L0 入口：一分鐘心智模型＋查詢指令；⛔ 不列會變的東西（04#158）
+.github/ISSUE_TEMPLATE/
+  list-intake.yml          待審清單收件表單：預填一個 `json wf-intake` 區塊，四欄 source／observation／dedupe（關鍵字＋命中號）／repo；`open` 只讀該區塊（決策 1），散文欄給人看
 core/                      定義層（C8）。只放定義與機械語意，⛔ 不放理由
   state-machine.md         階段、核心狀態值域、核心轉移表、模組 delta 合成規則
   tiers.md                 T0–T4 表、紅線域、能力層級判準、單向門、缺陷級別套用
@@ -152,7 +154,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | modules | string[]（此卡實際生效的模組） | CLI 由 `.wf/modules.json` 導出 | 建卡 | notes、brief |
 | notes | {id: `T-<階段>-NN`, text, origin: 留言 URL}[]（任務層注意事項） | 任何有 shell 的角色經 `edit --set notes+=`，來源為 `wf:note` 留言（§十二） | 否 | notes、brief |
 
-未定義鍵 ⇒ fail-closed（H10）。`schema_version` 升版規則：加選填欄不升、改既有欄語意或值域才升；舊版卡由 `edit` 逐張遷，⛔ 不批次改寫。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`、`卡ID` 五個投影欄，全由 CLI 回寫。
+未定義鍵 ⇒ fail-closed（H10）。`schema_version` 升版規則：加選填欄不升、改既有欄語意或值域才升；舊版卡由 `edit` 逐張遷，⛔ 不批次改寫。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`、`卡ID` 五個投影欄，全由 CLI 回寫；逐欄 `max_bytes` 與寫入順序見 §十一（05 新洞）。
 
 ## 七 · `core/verbs.md` 的內容
 
@@ -166,7 +168,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法、H13 欄位不一致（資料有效性） | 缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態；有 shell 的查核者與執行者用它，沒 shell 者手貼同格式（C14） |
 | `snapshot` | — | — | — | 本機 JSON＋Markdown |
 
-實作規則（05 揭露、K2、K3）：所有檢查在第一次遠端寫入之前完成；每次寫入後回讀；拒收留痕一行；⛔ 不讀散文、⛔ 不產生任何統計數字進文件。
+`core/verbs.md` 另有固定節「寫入契約」，內容來源＝K2（檢查先於首次遠端寫入、寫後回讀）、K3／C13（拒收留痕）、決策 1（只讀 fenced JSON）、第零條（不產生統計數字）；條文在填規則步驟寫，本檔只定節名與來源。
 
 ## 八 · `core/handoff.md` 的內容（04 §範本欄位）
 
@@ -228,9 +230,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 空洞 | 落點 |
 |---|---|
 | 部署、維護 0 條 | 模組 `deploy`、`maintenance`；條文從 ADOPTION 五行與 01#45 49 60–62 73 起草，其餘留空標「待實例」 |
-| 缺陷路徑 | 橫切：三條核心進 `core/verbs.md`（無專屬卡種）與 `core/naming.md`（FIX 後綴）、`roles/common.md`（未開卡走 trailer）；其餘分住 requirement／planning／implementation（03 §缺陷路徑） |
+| 缺陷路徑 | 橫切：三條核心各一落點——無專屬卡種 → `core/card-schema.md`（單一形狀）；留痕走狀態面、不另開 log → `core/verbs.md` §寫入契約；未開卡走 commit trailer 下限 → `roles/common.md` §2。FIX 後綴屬命名洞 → `core/naming.md`。其餘分住 requirement／planning／implementation（03 §缺陷路徑） |
 | 需求方角色薄 | `roles/requester.md`：裁升級、撤銷、停止、T4 sign-off、結案 ④、清單條件 2；每條一句 |
-| 待審清單無形狀 | `stages/requirement.md` §2 進入條件＋`core/verbs.md` open 的印；收件動詞⛔ 不加（清單項＝手建 issue，四欄由 issue template 承載） |
+| 待審清單無形狀 | 形狀＝`.github/ISSUE_TEMPLATE/list-intake.yml` 的 `json wf-intake` 四欄（§一）；schema 逐字住 `core/card-schema.md` §intake；`open` 讀它並印缺欄；收件動詞⛔ 不加 |
 | 交付報告 schema 散 | `core/handoff.md` |
 | 一卡一分支無明文 | `core/naming.md`＋`core/verbs.md` move |
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
@@ -239,7 +241,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 研究站討論回合出口 | `modules/research/module.md` §1：討論以一則留言收口，`move` 收該 URL |
 | 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
 | Design gate 記錄位 | `stages/planning.md` §1：設計判斷寫進 verification 欄；N/A 寫理由 |
-| 規則文件自身過期 | `roles/common.md` 書寫紀律「數字帶日期、不寫行號」；⛔ 不建掃描器 |
+| 規則文件自身過期 | 生命週期落點：每個規則檔 frontmatter `last_confirmed: <日期>`；`snapshot` 印超過 90 天未確認的規則檔清單（印，不擋；90 是設計值）；確認者＝需求方，確認動作＝改日期一次 commit。引用寫法另住 `roles/common.md` §2 |
 | 查核者資訊邊界 | `roles/reviewer.md` §1：只看派工單與分支；派工單就是全部 |
 | 常態誰 merge | `stages/closeout.md` §4：PM 在四停下條件內直行（03#93） |
 | Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
@@ -248,7 +250,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 簡介必填時點 | `core/card-schema.md`：建卡即必填（印） |
 | 必填欄集中 | `core/card-schema.md` |
 
-05 揭露的三個新洞：封存與釘死路徑守衛互斥 → `stages/closeout.md` §2「封存前跑全套」；Project TEXT 1024 bytes → `core/card-schema.md` 註明投影欄只放五個短欄；升級計數誰數 → escalation 模組由 `move` 數。
+05 揭露的三個新洞：封存與釘死路徑守衛互斥 → `stages/closeout.md` §2；Project TEXT 上限 → `core/card-schema.md` §投影欄逐欄標 `max_bytes`（`owner`、`卡ID` 為 TEXT 欄，上限 1024 bytes UTF-8；`階段`、`狀態`、`級別` 為單選欄無此限）；多欄寫入順序契約 → `core/verbs.md` §寫入契約（順序＝卡面 JSON → 五個投影欄 → 回讀；中途失敗的表示＝一則 `wf:reject` 留言＋下一次動詞先對帳）；升級計數誰數 → escalation 模組由 `move` 數。
 
 ## 十二 · 注意事項的生命週期
 
@@ -261,8 +263,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 1. 管道：卡上一則首行 `wf:note` 的留言，**任何角色都能貼**（執行者、查核者、需求方、PM）；交回單的失誤登記或 finding 標 `note: new` 時，CLI 替它產生同樣一則並附 `origin: <finding_id>`。框架只提供這條管道，要不要加是貼的人的判斷。
 2. 呈現與計數：下一輪 `notes` 印出該卡全部 `wf:note` 為 T- 候選；`snapshot` 匯出所有卡的 `wf:note` 與 origin。同義判定由人或執行 AI 做，⛔ 不建掃描器。
-3. 正式化（T- → P- 或 F-）：**AI 可列，人確認**。AI 提一則清單項，內容固定三格：條文一句、來源（哪幾張卡的 `wf:note`）、**處理手段**（違反時怎麼處理：只印／進派工單／退回條件；⛔ 不得留空）。需求方確認三格後才成為規則。升 P- ＝ 改採用專案 `.wf/stages/<階段>.md`，T1 直接 commit；升 F- ＝ 本 repo 開卡 → T3 以上跨實體審 → merge。
-4. 守衛：**預設不做**。只有處理手段落在「不可逆或平台層事故」時，需求方才可裁定寫成硬擋（§三重判表的三類判準），且必須指得出執行者（ruleset、CI、CLI 拒收）。引用次數多⛔ 不是守衛化的理由——上一版的 CLI 就是這樣長出來的。
+3. 正式化（T- → P- 或 F-）的形狀：提案＝一則清單項，固定三格（條文、來源 `wf:note` 清單、處理手段，值域＝只印／進派工單／退回條件）；確認者＝需求方；P- 的落點＝採用專案 `.wf/stages/<階段>.md`（T1），F- 的落點＝本 repo 卡（T3 以上跨實體審）。條文住 `roles/requester.md` §1 與 `stages/requirement.md` §2（需求方 2026-09-04 裁定為來源）。
+4. 守衛化的形狀：入口只有一個＝處理手段被裁定為「不可逆或平台層事故」且指得出執行者（§三三類）；預設值＝不做；引用次數不是輸入。條文住 `core/tiers.md` §紅線與 `roles/requester.md` §1（需求方 2026-09-04 裁定為來源）。
 5. 反向：硬擋拒收留言（C13）累計 0 次的閘門，每 20 張結案卡由 PM 列出一次，交需求方判留或降為印。
 
 ## 十三 · 填規則的順序與停損
@@ -306,6 +308,13 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-01：C10 計數被第零條取代一事補進決策紀錄「補充裁定」，骨架 §三改為引用它，不再自行重判。
 - R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
+
+第六輪（被審 a5dbe68，R1 過、R2 五條）：
+- R2-01：§七寫入契約與 §十二正式化／守衛化改為節名＋來源指向，條文移到目標檔。
+- R2-02：缺陷路徑三條核心各給落點，FIX 後綴歸命名洞。
+- R2-03：`.github/ISSUE_TEMPLATE/list-intake.yml` 進目錄樹，四欄改 `json wf-intake` 區塊，schema 住 card-schema §intake。
+- R2-04：規則檔 `last_confirmed` frontmatter＋`snapshot` 印過期清單。
+- R2-05：投影欄逐欄 `max_bytes`；多欄寫入順序契約住 verbs §寫入契約。
 
 第五輪（被審 80e3c46）：
 - R1-01：§二理由連結只指 `archive/`；萃取稿定位為輸入、填完移入 archive（決策 9）。
