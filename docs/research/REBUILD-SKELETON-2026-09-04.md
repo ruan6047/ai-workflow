@@ -65,7 +65,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 |---|---|---|---|
 | H1 | main ruleset 禁改史禁刪 | 平台委託 | ruleset |
 | H2＋H15 | T2 以上走分支＋獨立查核；執行者不 merge | 平台委託 | ruleset required check＋PR |
-| H3 | 一律 squash | 平台委託 | ruleset `required_linear_history`＋repo 設定（C3） |
+| H3 | 合併方式由專案層 `merge_method` 決定並以平台設定強制（squash ⇒ ruleset `required_linear_history`＋關閉 merge／rebase；merge ⇒ 關閉 squash／rebase） | 平台委託（值歸專案層，C3） | repo 設定＋ruleset；aiwf 的 `.wf/modules.json` 選 squash |
 | H4 | secrets 不進 git | 平台委託 | CI secret scanner（需求方裁定必備） |
 | H12 | commit trailer 鍵與連續區塊 | 平台委託 | CI |
 | H5 | 同卡同輪一人一角；執行者欄≠查核者欄 | 資料有效性 | CLI 比對兩欄相等 |
@@ -93,7 +93,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 四 · `core/state-machine.md` 的內容
 
-**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是模組（啟用條件皆為「階段計畫含該階段」），未啟用時階段計畫的值域裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
+**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是卡層模組（唯一啟用條件＝該卡 `stage_plan` 含該階段；事實來源＝卡面 JSON），未啟用時該卡的階段序列裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
 
 **核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案階段加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。
 
@@ -192,7 +192,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ```yaml
 name: resource-lock
-enable_when: 專案宣告同時有 ≥2 個執行者（決策 6）
+enable_when: 專案 `.wf/modules.json` 列出本模組  # 決策 6：同時 ≥2 執行者時該列；這句是判斷依據不是條件
 adds:
   fields: [worktree, lease_expires_at]
   stages: []
@@ -206,11 +206,21 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 `.wf/modules.json` 列啟用的模組名與參數；`notes`／`brief`／`move` 依它合成清單、段落、轉移表與狀態值域。模組未啟用＝上面每一項都不存在。
 
-| 模組 | 啟用條件 | 收的萃取列 |
-|---|---|---|
-| research | 階段計畫含研究 | 03#50–60 |
-| resource-lock | 同時 ≥2 執行者（決策 6） | 00 §六 |
-| escalation | 同卡同 iteration 累積退回達第 3 次（誰數：`move` 數該 iteration 內全部退回） | 00 §六；05 空洞 7 |
+| 模組 | 唯一啟用條件（一個 predicate） | 事實來源 | 收的萃取列 |
+|---|---|---|---|
+| research | 卡的 `stage_plan` 含研究 | 卡面 JSON | 03#50–60 |
+| deploy | 卡的 `stage_plan` 含部署 | 卡面 JSON | 00 §六 |
+| maintenance | 卡的 `stage_plan` 含維護（PM 何時該列維護，例如交付物是排程、爬蟲、告警，是 `stages/requirement.md` 的注意事項，⛔ 不是條件） | 卡面 JSON | 00 §六 |
+| initiative | 卡的 `parent` 非空 | 卡面 JSON | 02#10、04#44 117–120 |
+| stat-redline | 卡的 `tier_basis.sensitive` 含統計／ML／資料正確性 | 卡面 JSON | 04#135–138、03#57 |
+| escalation | 專案 `.wf/modules.json` 列出（計數由 `move` 在該 iteration 內做） | modules.json | 00 §六；05 空洞 7 |
+| resource-lock | 專案 `.wf/modules.json` 列出（決策 6：同時 ≥2 執行者時該列） | modules.json | 00 §六 |
+| pitfalls-13 | 專案 `.wf/modules.json` 列出 | modules.json | 00 §六 |
+| identity | 專案 `.wf/modules.json` 列出（多實體共用同一帳號時該列） | modules.json | 00 §六 |
+| snapshot | 專案 `.wf/modules.json` 列出（狀態面在 GitHub 時該列） | modules.json | 00 §六 |
+| db-contract | 專案 `.wf/modules.json` 列出（有 DB 時該列）且 `.wf/contracts/DATABASE_CONTRACT.md` 存在（兩者 AND；缺契約檔＝未啟用，`notes` 印警示） | modules.json＋契約檔 | 02#45–50、04#129–132 |
+
+合成語意：專案層模組只看 `modules.json`；卡層模組只看卡面欄；`db-contract` 是唯一 AND。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
 
 | deploy | 階段計畫含部署 | 00 §六 |
 | maintenance | 交付物為排程、爬蟲、告警 | 00 §六 |
@@ -314,6 +324,10 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+第八輪（被審 b378bfe）：
+- R1-01：H3 改為「合併方式由專案層 `merge_method` 決定、平台設定強制」；aiwf 選 squash 是專案層值（C3）。
+- R1-02：§九每模組唯一 predicate＋事實來源；maintenance 的「排程、爬蟲、告警」降為需求階段注意事項；db-contract 是唯一 AND。
 
 Gemini 第二輪（被審 ce651ca，留言 5536360697）：
 - R3-01：K10 補進 §三重判表，硬擋 14／CLI 9。
