@@ -20,7 +20,7 @@ stages/                    一階段一檔；研究、部署、維護三個可�
 roles/                     一角色一檔＋共用一檔
   requester.md  pm.md  executor.md  reviewer.md  common.md
 modules/                   每模組一目錄；module.md 開頭是宣告區塊（§九）
-  research/  resource-lock/  escalation/  log-comments/  deploy/  maintenance/
+  research/  resource-lock/  escalation/  deploy/  maintenance/
   pitfalls-13/  identity/  snapshot/  db-contract/  initiative/  stat-redline/
 cli/                       新 CLI（名稱 `wf`，與凍結的 `wfcli` 區分）
 archive/                   舊 canonical、stage-rules、templates、docs、cli、issues；唯讀
@@ -205,7 +205,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | research | 階段計畫含研究 | 03#50–60 |
 | resource-lock | 同時 ≥2 執行者（決策 6） | 00 §六 |
 | escalation | 同卡同輪退回達第 3 次（誰數：`move` 數同階段連續退回） | 00 §六；05 空洞 7 |
-| log-comments | 卡面 body 超過閾值或研究卡 | K8、K9 |
+
 | deploy | 階段計畫含部署 | 00 §六 |
 | maintenance | 交付物為排程、爬蟲、告警 | 00 §六 |
 | pitfalls-13 | 專案宣告 | 00 §六 |
@@ -219,7 +219,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID：`<AREA>-<NNN>`。AREA 是專案層封閉枚舉（aiwf 建議：WF、CLI、DOC、OPS）；NNN 由 `open` 依 repo 遞增配發，⛔ 不帶語意 slug（slug 住 issue 標題）。修復卡 `<原卡>-FIX<n>` 保留。
 - 分支：`wf/<card_id>`；由 `move` 到進行中時寫回卡面。
-- 留言標頭：轉移記錄 `wf:move`、修訂 `wf:edit`、拒收 `wf:reject`、裁決與裁定由人貼但首行固定 `wf:verdict`／`wf:ruling`。
+- 留言標頭：轉移記錄 `wf:move`、修訂 `wf:edit`、拒收 `wf:reject`、注意事項候選 `wf:note`、研究與量測全文 `wf:log`；裁決與裁定由人貼但首行固定 `wf:verdict`／`wf:ruling`。研究與量測全文一律進 `wf:log` 留言，卡面 JSON 只放判準與指向（K8、K9；需求方裁定，核心規則不是模組）。
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔一律在 `.wf/` 之下。
 
@@ -242,7 +242,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 規則文件自身過期 | `roles/common.md` 書寫紀律「數字帶日期、不寫行號」；⛔ 不建掃描器 |
 | 查核者資訊邊界 | `roles/reviewer.md` §1：只看派工單與分支；派工單就是全部 |
 | 常態誰 merge | `stages/closeout.md` §4：PM 在四停下條件內直行（03#93） |
-| Log 移留言 | 模組 `log-comments`＋核心留言標頭（§十） |
+| Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
 | 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`，由 `move` 數；未啟用時第 3 次退回的預設處置住 `stages/review.md` §4 與 `roles/pm.md`（PM 減重 4） |
 | 專案層級別數字 | `core/tiers.md` §專案層：只能文字加嚴，數字⛔ 不開放 |
 | 簡介必填時點 | `core/card-schema.md`：建卡即必填（印） |
@@ -286,13 +286,14 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 4. 本檔不含任何一句祈使句形式的規則正文（只含形狀）；含即不過。
 5. §三第零條與 §七每一列硬擋一致：硬擋只落在資料有效性、寫入順序、平台委託三類；不一致即不過。
 
-## 十五 · 未定（Codex 審與 sign-off 時要答）
+## 十五 · 原未定五題（需求方 2026-09-04 裁定）
 
-- 卡ID 是否採 `<AREA>-<NNN>` 而不帶 slug。
-- 新 CLI 名稱 `wf`。
-- `log-comments` 的啟用條件用 body 閾值還是一律啟用。
-- 五個 Project 投影欄是否夠（view 只靠它們篩選）。
-- （已收：第 3 次退回預設處置寫進 §四轉移表與 §十一，不再未定。）
+- 卡ID `<AREA>-<NNN>` 不帶 slug（§十）。
+- 新 CLI 名 `wf`（§一）。
+- 研究與量測全文一律進 `wf:log` 留言，屬核心留言規則，`log-comments` 模組取消（§十、§十一）。
+- Project 投影欄五個（§六）。
+- 第 3 次退回的預設處置已進 §四與 §十一。
+
 
 ## 十六 · Codex R1 裁決的處置
 
