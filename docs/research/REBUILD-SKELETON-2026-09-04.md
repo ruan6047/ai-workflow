@@ -361,7 +361,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 規格、規格欄 | 卡面會使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources`（C11）；核心痛點另受裁定連結約束，不在此列 | 需求文件、spec |
 | 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | 驗證、校驗、guard |
 | 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性、品質 |
-| finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷、bug |
+| finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷（作為 finding 的同義）、bug |
+| 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種（§五 缺陷套用表、§十一 缺陷路徑） | bug（作為卡種）、BUG- 前綴 |
 | 合成表 | 核心轉移表 ∪ 已啟用模組 add − remove，再按該卡 `stage_plan` 展開 | 狀態表、workflow 圖 |
 | 模組 delta | 模組宣告區塊裡對狀態值域、轉移、欄位、注意事項的增減 | 外掛、patch、覆寫 |
 | 設計閘（Design gate） | 規劃階段離開前 `verification` 欄填齊的檢查點；正式中文詞＝設計閘 | 設計審、design review |
