@@ -6,6 +6,10 @@
 
 用「印清單／確認有沒有填／GitHub 機械操作／資料有效性」四類過每個 CLI 表面：砍 `roles`、`counters`、`modules`、`origin`、`brief.non_scope`（欄 28→23）；砍 `--family`；砍 `.wf/actors.json`（KR 作者只印 login）；`move` 的印縮到四項，merge SHA 與 CI 狀態歸 `brief --for closeout`；`review` 不再自動產生 `wf-note`；`snapshot` 不讀規則檔，過期改由 `brief` 來源標記帶日期；H5 H6 從印再降為 PM 注意事項；第 3 次退回的預設處置改為 PM 條文，核心 CLI 不數。
 
+## PM 自審第二輪（需求方：「寧願把資訊交給 AI 判斷，比硬寫 CLI 高效且有品質，前提是資訊要足」）
+
+H8（進終態前 PR 與分支狀態）與 H9 的鏈深上限降為印；硬擋 11→9，判準收成一句「CLI 拒的只有寫壞資料與指向不存在的東西」。資訊面補：派審詞印本 iteration 執行者 actor，PM 判 H5 H6 有料。
+
 ## 逐輪處置
 
 第一輪（留言 5535340214）：
