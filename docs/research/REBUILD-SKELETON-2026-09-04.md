@@ -17,6 +17,7 @@ core/                      定義層（C8）。只放定義與機械語意，⛔
   verbs.md                 七動詞：open / move / edit / notes / brief / review / snapshot
   handoff.md               三份交接文件的段落表＋交回單 JSON schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
+  glossary.md              通用語言（Ubiquitous Language）：每個詞一行——詞、一句定義、⛔ 不是什麼、禁用同義詞；規則檔、CLI enum、審核提示只准用表內的詞（§十七）
 stages/                    一階段一檔；研究、部署、維護三個可跳過的階段住模組
   requirement.md  planning.md  implementation.md  review.md  closeout.md
 roles/                     一角色一檔＋共用一檔
@@ -46,7 +47,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 階段檔 | 1 目標與產出 · 2 進入／離開條件 · 3 狀態 delta（引用 core） · 4 階段內迴圈（①–⑤ 在本階段的形狀） · 5 各角色做／⛔ 不做 · 6 注意事項 `F-<階段>-NN` | 60 行 |
 | 角色檔 | 1 職責 · 2 紅線 · 3 動作前自檢 · 4 注意事項 `F-<角色>-NN` | 60 行 |
 | conduct-common.md | 1 操作紀律（實跑、fetch、不截斷、rc、負控、逐字、多居所、驗原件） · 2 書寫紀律（數字帶日期、不寫行號、引用逐字） | 40 行 |
-| core 各檔 | 依檔（§四–§八） | 120 行 |
+| core 各檔 | 依檔（§四–§八、§十七） | 120 行 |
 | module.md | 0 宣告區塊（§九） · 1 條文 · 2 該模組加的注意事項 | 80 行 |
 | README | 1 心智模型（≤12 行） · 2 角色一句話 · 3 查詢指令 | 40 行 |
 
@@ -271,7 +272,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）：
 0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；CI 換成只跑新 CLI 測試的最小 workflow；`archive/issues/` 重新納入 git。三個入口檔已先清成 stub。
-1. `core/` 六檔（定義層先定，其他檔才有東西可引）
+1. `core/` 七檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）
 2. `roles/conduct-common.md` → 四角色檔
 3. 五階段檔（研究住模組）
 4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
@@ -309,6 +310,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
+需求方提議後補：§十七 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
 第七輪（被審 702daf7）：
 - R1-01：§三 `notes` 改為一份清單、四個來源，逐字決策 11 順序。
 - R1-02：`brief` 輸出每段首行 `[來源: …]`；派工單標同形（§七、§八）。
@@ -338,6 +341,31 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 ## 十七 · 對 #177 規劃審 38 個 P1 finding 的自審
 
 已對照並修正 6 處：狀態值域一處兩答（P1-11／34）、硬擋計數三居所（P1-23／38）、CLI 讀留言的範圍（P1-27）、schema 升版規則（P1-30）、留言併發（P1-33）、填規則各步 owner 與本檔驗收條件（P1-14／22／35）。未套用：producer 可重現（P1-29／32／37）——本檔無 artifact。
+
+## 十七 · `core/glossary.md` 的內容（通用語言；需求方 2026-09-04 提議）
+
+每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。CLI 的 enum 值、Project 選項名、留言標頭、規則檔正文只准用「詞」欄的字面；禁用同義詞欄的字出現在規則檔即為 finding。種子（填規則時逐列補定義）：
+
+| 詞 | 涵蓋 | 禁用同義詞 |
+|---|---|---|
+| 卡、清單項 | 在板 issue／不在板 issue | Backlog、task、票 |
+| 階段（8） | 需求…結案 | 站、phase、gate |
+| 狀態（核心 5＋阻塞；模組加值） | 待辦…退回、阻塞、停止、升級、不可判定、運行中 | 交付狀態、部署狀態、Status |
+| 轉移、轉移記錄 | `move` 的一次寫入與其留言 | 事件、event、handoff |
+| iteration | 卡進入執行階段的次數 | 輪次、輪、round |
+| 查核輪 R1–R4 | 前提／射程／內容／影響面 | 輪次、pass |
+| 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源 | 踩坑清冊、清單（作為注意事項的同義）、層（作為來源） |
+| 硬擋、印、語意 | 機械層三類行為 | 守衛、閘門、偵測器、拒收（作為類別名） |
+| 模組、啟用條件 | opt-in 機制與其條件 | 外掛、plugin、功能旗標 |
+| 裁定、裁決 | 需求方的決定／查核者的結論，皆為留言 | 批准、核可、sign-off（除 T4 外） |
+| 派工單、交回單、裁定單 | 三份交接文件 | 派工包、派審詞、交付報告、結案報告、狀態變更裁定單 |
+| 需求方、PM、執行者、查核者 | 四角色 | 祕書、Coordinator、第二 PM、人工查核、規劃者 |
+| 實體、家族 | 跑角色的 session／模型家族 | 帳號、人、instance |
+| 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境）、難度、等級 |
+| 紅線 | 至少 T3 的變更域 | 敏感、高風險 |
+| 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | 目標、需求、範圍、scope |
+| 封存、撤銷、停止 | 三個離開動作 | 關閉、刪除、歸檔（作為封存以外的意思） |
+| 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
 
 ## 未驗
 
