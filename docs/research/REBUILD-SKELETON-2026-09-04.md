@@ -108,7 +108,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段（結案除外）／進行中 | 同階段／待確認 | 交回 |
 | 任一階段（結案除外）／待確認 | 下一階段／待辦 | ⑤ 過；審核階段 `--ruling` 種類＝`wf-return`（缺即印）；下一階段為結案時走「最後一個階段」列 |
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；審核階段 `--ruling` 種類＝`wf-return`，結案階段＝`wf-ruling`（缺即印） |
-| 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
+| 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10）；`stage_plan` 含規劃→規劃／退回，否則→需求／退回（合成表按該卡 `stage_plan` 展開，不存在的階段沒有邊） |
 | 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1、`source_sha` 清為 null（S7）；同一 iteration 第 3 次退回的預設處置＝換人，需求方可否決（PM 減重 4）；條文住 `roles/pm.md` §4 |
 | 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 寫 `blocked.from`；`--ruling` 種類＝`wf-ruling` kind=block，缺留言或缺鍵皆印 |
 | 阻塞 | from（必為非終態） | 解除 |
@@ -237,7 +237,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID 形狀：`<AREA>-<NNN>`；AREA＝專案層封閉枚舉（aiwf 種子：WF、CLI、DOC、OPS）；NNN＝`open` 依 repo 遞增；語意 slug 的位置＝issue 標題（需求方 2026-09-04 裁定不進卡ID）。修復卡形狀 `<原卡>-FIX<n>`。
 - 分支：`wf/<card_id>`；由 `move` 到進行中時寫回卡面。
-- 留言的形狀：CLI 寫的留言（`wf:move`／`wf:edit`／`wf:reject`／`wf:log`）＝純散文，只寫不讀；人貼的 `wf:note`／`wf:verdict`／`wf:ruling`＝首行給人讀＋一個 `json wf-note`／`wf-return`／`wf-ruling` 區塊給 CLI 讀（決策 1；乙案：CLI 只讀這三種）；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼需求方裁定時，留言首行固定 `代貼裁定・授權來源：<session 或留言 URL>`（C12）；PM 代貼查核者裁決時同形：首行 `代貼裁決・來源：<模型名>@<工具名>・被審 SHA：<sha>`，第二行起才是查核者原文（需求方 2026-09-04 裁定；CLI 不讀首行，只讀 `json wf-return`）。研究與量測全文的落點＝`wf:log` 留言；卡面 JSON 放判準與指向（K8、K9；需求方裁定，核心留言規則不是模組）。
+- 留言的形狀：CLI 寫的留言（`wf:move`／`wf:edit`／`wf:reject`）＝純散文，只寫不讀；人貼的 `wf:note`／`wf:verdict`／`wf:ruling`＝首行給人讀＋一個 `json wf-note`／`wf-return`／`wf-ruling` 區塊給 CLI 讀（決策 1；乙案：CLI 只讀這三種）；人貼的 `wf:log`＝純散文（研究與量測全文），任何角色用 `gh` 直接貼，CLI 不寫不讀，只在 `grilling` 等欄以 URL 指向它（單一寫入通道管的是卡面 JSON 與 Project 欄，留言本就有人貼的三種；⚠️ PM 判讀，需求方 sign-off 時一併確認）；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼需求方裁定時，留言首行固定 `代貼裁定・授權來源：<session 或留言 URL>`（C12）；PM 代貼查核者裁決時同形：首行 `代貼裁決・來源：<模型名>@<工具名>・被審 SHA：<sha>`，第二行起才是查核者原文（需求方 2026-09-04 裁定；CLI 不讀首行，只讀 `json wf-return`）。研究與量測全文的落點＝`wf:log` 留言；卡面 JSON 放判準與指向（K8、K9；需求方裁定，核心留言規則不是模組）。
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔的位置＝`.wf/`。
 
@@ -260,7 +260,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 規則文件自身過期 | 資料＝規則檔 frontmatter `last_confirmed`（§二）；印＝`brief` 來源標記（§七）；參數＝`rule_confirm_days`（§十二）；確認者落點 `roles/requester.md` §1 |
 | 查核者資訊邊界 | `roles/reviewer.md` §1（來源 02#966–968、04#41） |
 | 常態誰 merge | `stages/closeout.md` §4（來源 03#93） |
-| Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
+| Log 移留言 | 核心留言標頭 `wf:log`（§十），人貼、CLI 不寫不讀，不是模組 |
 | 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`；未啟用時同一 iteration 第 3 次退回預設＝換人、需求方可否決（PM 減重 4），條文落點 `roles/pm.md` §4 |
 | 專案層級別數字 | `core/tiers.md` §專案層（形狀：文字加嚴介面；數字未定，沿 tier-rules §四） |
 | 簡介必填時點 | `core/card-schema.md`：建卡即必填（印） |
@@ -296,7 +296,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十三 · 填規則的順序與停損
 
-順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）。每步完成點＝跨實體審 APPROVE＋需求方 sign-off，下一步才開：
+順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）。每步完成點＝跨實體審 APPROVE＋需求方 sign-off，下一步才開。PR 粒度：0、1、2、3、4a、5、6、7 各一 PR；4b 每模組一 PR，第 4 步在全部 4b PR 完成後才算完成：
 0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；`archive/issues/` 重新納入 git。新 CI 在本步只剩兩個 job：secret scanner（P4）、commit trailer 檢查（P5）；⛔ 不再有掃描 docs 的 job；⛔ 不預先加沒有被測物的空 job。其餘兩個 job 隨被測物同一 PR 進場：轉移表可達性（§四）在第 1 步 `core/state-machine.md` 的 PR、新 CLI 測試在第 6 步。CI 最終形狀＝四個 job。三個入口檔已先清成 stub。
 1. `core/` 九檔，`glossary.md` 最先（其他檔的每個詞都要能在表內找到）；`state-machine.md` 進 repo 的同一 PR 加轉移表可達性 job
 2. `roles/conduct-common.md` → 四角色檔
@@ -320,7 +320,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID `<AREA>-<NNN>` 不帶 slug（§十）。
 - 新 CLI 名 `wf`（§一）。
-- 研究與量測全文的落點＝`wf:log` 留言（核心留言標頭，§十）；`log-comments` 模組取消（§十一）。
+- 研究與量測全文的落點＝`wf:log` 留言（核心留言標頭，人貼，§十）；`log-comments` 模組取消（§十一）。
 - Project 投影欄五個（§六）。
 - 同一 iteration 第 3 次退回的預設處置＝換人，已進 §四與 §十一。
 - PM 代貼**裁決**沿用 C12 首行標記，並加被審 SHA（§十；需求方 2026-09-04 裁定，第二十一輪 R1-01）。
@@ -355,7 +355,12 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 實體、家族 | 跑角色的 session／模型家族 | 帳號、人、instance |
 | 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境）、難度、等級 |
 | 紅線 | 至少 T3 的變更域 | 敏感、高風險 |
-| 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | 目標、需求、範圍、scope |
+| 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | 目標、需求、範圍、scope、AC |
+| 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | backlog、inbox、待辦池 |
+| 規格、規格欄 | 卡面會使 `spec_version` +1 的欄（核心痛點、驗收條件、非射程、when） | 需求文件、spec |
+| 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | 驗證、校驗、guard |
+| 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性、品質 |
+| finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷、bug |
 | 封存、撤銷、停止 | 三個離開動作 | 關閉、刪除、歸檔（作為封存以外的意思） |
 | 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
 | 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
