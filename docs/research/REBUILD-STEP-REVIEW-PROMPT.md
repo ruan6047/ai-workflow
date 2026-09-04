@@ -19,7 +19,7 @@
 
 一則 GitHub 留言，貼在該 PR。第一行逐字 `wf:verdict`，第二行 `reviewer: <模型名>@<工具名>`，第三行 `reviewed_sha: <被審 HEAD 的 40 位 SHA>`。內容：`review_result: APPROVE|REQUEST_CHANGES`；`findings` 逐條：id（`R1-01` 形式）、severity、blocking、attribution、evidence（引檔名與逐字）、disposition。無 finding 逐字寫「無」。⛔ 不代改文件。⛔ 不用骨架沒寫的標準。
 
-貼法（有 shell 時自己貼；沒有就把留言全文交給需求方貼；由 PM 代貼時，PM 會在最前面加一行 `代貼裁決・來源：<模型名>@<工具名>・被審 SHA：<sha>`，你的原文不動）：
+貼法（有網路的 shell 時自己貼；沒有網路時把留言全文原樣印在你的最後一則回覆裡交給需求方，⛔ 不寫檔到 repo 外、⛔ 不用瀏覽器代貼、⛔ 不停下來問是否送出；由 PM 代貼時，PM 會在最前面加一行 `代貼裁決・來源：<模型名>@<工具名>・被審 SHA：<sha>`，你的原文不動）：
 
 ```bash
 gh pr comment <PR#> --repo ruan6047/ai-workflow --body-file /path/to/verdict.md
