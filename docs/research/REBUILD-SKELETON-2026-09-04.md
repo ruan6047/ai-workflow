@@ -289,7 +289,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 3. 五階段檔（研究住模組）
 4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
 5. README、ADOPTION 重寫
-6. 新 CLI `wf`（另一張 T3 卡）。形狀：四層目錄 `schema/`（card、intake、return、ruling、note 的 JSON Schema，與 `core/` 同源）、`gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。上限 3,000 行含測試以外的 src。
+6. 新 CLI `wf`（另一張 T3 卡）。形狀：四個目錄 `schema/`（card、intake、return、ruling、note 的 JSON Schema，與 `core/` 同源）、`gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。上限 3,000 行含測試以外的 src。
 7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 值＋模組值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟是唯一含不可逆動作的一步（關閉 issue 可逆、移出 Project 可逆、封存可逆——確認無硬刪）。
 
 停損：任一檔超過 §二上限 ⇒ 停下拆；`cli/src` 超過 3,000 行 ⇒ 停下重看分桶；第 6 步超過 3 輪查核 ⇒ 需求方裁定是否縮射程。三個數字都是設計值。
