@@ -149,7 +149,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | service_goal | string | 需求方 | 建卡 | R1 |
 | parent | card_id | PM | 有父卡時 | 鏈深、initiative 模組 |
 | tier | enum T0–T4 | PM | 建卡 | move、tiers |
-| tier_basis | {sensitive, recoverable, blast} | PM | 建卡 | 印 |
+| tier_basis | {sensitive: enum[]（封閉多選：public_contract／security／payment／data_write／migration／production／rules／statistics，值域＝`core/tiers.md` §紅線域）, recoverable: enum（reversible／rollback_only／irreversible）, blast: enum（file／module／repo／cross_repo）} | PM 或執行 AI 選值 | 建卡 | 印；tiers 由值推最低級別；stat-redline 模組看 `statistics` 是否在集合內 |
 | exec_capability / review_capability | enum＋reason | PM | 建卡 | brief |
 | db_scope | enum none/read/write/schema/data-migration | PM | 建卡 | tiers |
 | resources | string[]（文法住 db-contract／resource-lock） | PM | 建卡 | resource-lock 模組 |
@@ -215,7 +215,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | deploy | 卡的 `stage_plan` 含部署 | 卡面 JSON | 00 §六 |
 | maintenance | 卡的 `stage_plan` 含維護（PM 何時該列維護，例如交付物是排程、爬蟲、告警，是 `stages/requirement.md` 的注意事項，⛔ 不是條件） | 卡面 JSON | 00 §六 |
 | initiative | 卡的 `parent` 非空 | 卡面 JSON | 02#10、04#44 117–120 |
-| stat-redline | 卡的 `tier_basis.sensitive` 含統計／ML／資料正確性 | 卡面 JSON | 04#135–138、03#57 |
+| stat-redline | `statistics ∈ tier_basis.sensitive`（集合成員比對，值域封閉） | 卡面 JSON | 04#135–138、03#57 |
 | escalation | 專案 `.wf/modules.json` 列出（計數由 `move` 在該 iteration 內做） | modules.json | 00 §六；05 空洞 7 |
 | resource-lock | 同時 ≥2 執行者：`move` 派工當下，板上狀態＝進行中且 `owner.actor` 與本卡不同的卡 ≥1 張（決策 6） | Project 投影欄 狀態＋owner（`modules.json` 只放參數，如 lease TTL，⛔ 不是條件） | 00 §六 |
 | pitfalls-13 | 專案 `.wf/modules.json` 列出 | modules.json | 00 §六 |
@@ -330,6 +330,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+第十三輪（被審 3ed83dc）：
+- R1-01：`tier_basis` 三欄改封閉值域（sensitive 多選、recoverable、blast 各 enum）；stat-redline 條件改集合成員比對，CLI 不讀內容。
 
 第十二輪（被審 17fd49c）：
 - R1-01：§四「任一狀態 → 阻塞」改為任一非終態；可達性測試加「終態出邊為空」斷言。
