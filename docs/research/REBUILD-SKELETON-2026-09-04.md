@@ -226,8 +226,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 **回饋迴路**（問題怎麼變成注意事項、注意事項怎麼變成守衛）：
 
-1. 寫入點：⑤ 退回時，交回單每個 finding 帶 `note: <既有編號>` 或 `note: new`。`new` ⇒ PM 以 `edit --set notes+=` 在卡面加一條 T-，CLI 自動附 `origin: <finding_id>`。任務層只由這條路產生。
-2. 計數：`snapshot` 匯出全部卡的 T- 條文與 origin；同義判定由 PM 提、需求方點頭，⛔ 不建掃描器。
+1. 管道：卡上一則首行 `wf:note` 的留言，**任何角色都能貼**（執行者、查核者、需求方、PM）；交回單的失誤登記或 finding 標 `note: new` 時，CLI 替它產生同樣一則並附 `origin: <finding_id>`。框架只提供這條管道，要不要加是貼的人的判斷。
+2. 呈現與計數：下一輪 `notes` 印出該卡全部 `wf:note` 為 T- 候選；`snapshot` 匯出所有卡的 `wf:note` 與 origin。同義判定由人或執行 AI 做，⛔ 不建掃描器。
 3. 升遷路徑：升 P- ＝ 改採用專案的 `.wf/stages/<階段>.md`，T1 直接 commit；升 F- ＝ 清單項 → 本 repo 開卡 → T3 以上跨實體審 → merge（改規則＝一張卡）。
 4. 守衛化：同一條 F- 或 P- 被 finding 的 `note` 引用達 3 次 ⇒ PM 開清單項「是否寫成守衛」。清單不擋任何東西，擋的是守衛（05 §機制承重）；這一步是注意事項畢業成硬擋的唯一入口。
 5. 反向：硬擋拒收留言（C13）累計 0 次的閘門，每 20 張結案卡由 PM 列出一次，交需求方判留或降為印。
