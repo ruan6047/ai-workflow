@@ -49,7 +49,7 @@ sensitive 值域＝public_contract／security／payment／data_write／migration
 | 已知 typo、文案，無行為影響 | T1 |
 | 根因已知、局部、可逆、無紅線 | T2 |
 | 根因不明、跨檔、契約／資料／安全影響 | 至少 T3 |
-| 資料正確性紅線 | T4 |
+| sensitive 含 statistics | T4 |
 
 ⛔ 不因「很小」略過三軸判定。缺陷不配專屬卡種；重現步驟、預期與實際、根因、回歸測試寫進核心痛點與驗收條件。
 
@@ -60,9 +60,9 @@ sensitive 值域＝public_contract／security／payment／data_write／migration
 | 工作 | 建議 |
 |---|---|
 | 純文字、格式、狀態同步 | 經濟型；語意會改規則時升主力型 |
-| 一般規劃、實作、查核 | 主力型；跨模組、未知根因、含紅線域升高階型 |
+| 一般規劃、執行、查核 | 主力型；跨模組、未知根因、含紅線域升高階型 |
 | security、payment、statistics、data_write | 高階型＋跨家族查核 |
-| 部署與 migration 異常 | 主力型；不可逆或根因不明升高階型 |
+| 部署與 migration 異常 | 主力型；recoverable＝irreversible 或根因不明升高階型 |
 
 - 先依風險定層級，再挑實際跑的模型名（住專案層）；高能力層級不取代測試、平台委託、獨立查核。
 - 派工實際層級低於卡面建議時，派工單寫偏離理由。
