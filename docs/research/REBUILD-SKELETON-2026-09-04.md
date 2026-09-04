@@ -317,6 +317,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
 
+Gemini 第三輪（被審 4a09c8c）：APPROVE，findings 無；詞表補六列（db_scope、trailer、falsifier、sign-off、self_run、attribution）。
+
 第九輪（被審 a8e1722）：
 - R1-01：`resource-lock` 的 predicate 改為「派工當下板上進行中且 owner 不同的卡 ≥1 張」，事實來源＝Project 投影欄；`modules.json` 只放參數。
 
@@ -389,6 +391,12 @@ Gemini 第二輪（被審 ce651ca，留言 5536360697）：
 | 未驗清單三分類 cannot／skipped／deferred | 驗不了／沒去驗／刻意不驗 | 未驗（裸列）、TODO |
 | 回應三值 followed／not_applicable／found | 已遵循／不適用／發現 | 已檢查、已遵守、N/A |
 | 投影欄（5）：階段／狀態／級別／owner／卡ID | Project 上由 CLI 回寫的欄 | 看板欄位、Ledger 欄 |
+| db_scope | 卡對資料庫的變更範圍 enum none／read／write／schema／data-migration；後兩者連動 T4 | db_permission、資料庫權限 |
+| trailer | commit 訊息末端連續的結構化標籤區塊（Requested-by、Planned-by、Implemented-by、Reviewed-by） | footer、git-tag |
+| falsifier | 交回單逐條 AC 的證偽條件 | 反測（保留給統計紅線模組的對抗性反測）、反向案例 |
+| sign-off | 需求方對 T4 卡的最終授權裁定 | approve、核准 |
+| self_run | 交回單內實跑指令與原始輸出 | 本地測試、手動驗證 |
+| attribution | finding 責任歸屬 enum executor／coordinator／planner／reviewer／external | 責任方、責任者 |
 
 ## 未驗
 
