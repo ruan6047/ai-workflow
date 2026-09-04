@@ -15,12 +15,12 @@ core/                      定義層（C8）。只放定義與機械語意，⛔
   verbs.md                 六動詞：open / move / edit / notes / brief / snapshot
   handoff.md               三份交接文件的段落表＋交回單 JSON schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
-stages/                    一階段一檔；部署與維護住模組
-  requirement.md  research.md  planning.md  implementation.md  review.md  closeout.md
+stages/                    一階段一檔；研究、部署、維護三個可跳過的站住模組
+  requirement.md  planning.md  implementation.md  review.md  closeout.md
 roles/                     一角色一檔＋共用一檔
   requester.md  pm.md  executor.md  reviewer.md  common.md
 modules/                   每模組一目錄；module.md 開頭是宣告區塊（§九）
-  resource-lock/  escalation/  log-comments/  deploy/  maintenance/
+  research/  resource-lock/  escalation/  log-comments/  deploy/  maintenance/
   pitfalls-13/  identity/  snapshot/  db-contract/  initiative/  stat-redline/
 cli/                       新 CLI（名稱 `wf`，與凍結的 `wfcli` 區分）
 archive/                   舊 canonical、stage-rules、templates、docs、cli、issues；唯讀
@@ -87,9 +87,9 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 四 · `core/state-machine.md` 的內容
 
-**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；部署、維護是模組，未啟用時階段計畫的值域裡沒有它（S3、C6）。
+**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是模組（啟用條件皆為「階段計畫含該站」），未啟用時階段計畫的值域裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
 
-**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案站加 停止（終態，S6）；研究站加 不可判定。模組可加：`escalation` 加 升級；`maintenance` 加 運行中。
+**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案站加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。
 
 **核心轉移表**（每列＝一條允許的邊；`move` 只接受表內轉移，H7）：
 
@@ -171,10 +171,10 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 文件 | 誰→誰 | CLI 填 | 人填 |
 |---|---|---|---|
 | 派工單 | PM→執行者或查核者 | 卡與身分、核心痛點、驗收逐條、非射程、merge-base SHA、前輪 findings、能力層級建議、注意事項編號清單、副作用入口清單 | 寫入授權、唯讀範圍、實際模型與偏離理由、未驗項（三分類）、本文件落差 |
-| 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 八欄、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
+| 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 八欄、**未驗清單（三分類：驗不了／沒去驗／刻意不驗，各附原因）**、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
 | 裁定單 | PM→需求方 | 事件序、退回理由、findings、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
-交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄；同一 schema 執行者與查核者共用。**注意事項回應的三值唯一定義居所＝本檔**：`note_responses: [{id, value, text}]`，`value` 封閉值域 `followed`／`not_applicable`／`found`（人讀顯示 已遵循／不適用／發現），`not_applicable` 與 `found` 的 `text` 非空；§十二與各階段檔只引用不複製；CLI 只查 id 是否覆蓋 `notes` 印出的清單、value 在值域、text 非空，⛔ 不判內容。
+交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄與 `unverified: [{item, kind, reason}]`（`kind` 封閉值域 `cannot`／`skipped`／`deferred`，`reason` 非空）；同一 schema 執行者與查核者共用。**注意事項回應的三值唯一定義居所＝本檔**：`note_responses: [{id, value, text}]`，`value` 封閉值域 `followed`／`not_applicable`／`found`（人讀顯示 已遵循／不適用／發現），`not_applicable` 與 `found` 的 `text` 非空；§十二與各階段檔只引用不複製；CLI 只查 id 是否覆蓋 `notes` 印出的清單、value 在值域、text 非空，⛔ 不判內容。
 
 留言一事件一則、寫後不改（決議 §五、P1-33）；⛔ 不用可編輯的固定留言當日誌，故無併發與 rollover 問題。派工單完整性由收件的查核者判（C4）；裁定單完整性由需求方 ④ 判。
 
@@ -184,7 +184,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ```yaml
 name: resource-lock
-enable_when: 專案宣告同時有 ≥2 個執行者，或共享可寫資源
+enable_when: 專案宣告同時有 ≥2 個執行者（決策 6）
 adds:
   fields: [worktree, lease_expires_at]
   stages: []
@@ -200,7 +200,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 | 模組 | 啟用條件 | 收的萃取列 |
 |---|---|---|
-| resource-lock | 並行 ≥2 執行者或共享可寫資源 | 00 §六 |
+| research | 階段計畫含研究 | 03#50–60 |
+| resource-lock | 同時 ≥2 執行者（決策 6） | 00 §六 |
 | escalation | 同卡同輪退回達第 3 次（誰數：`move` 數同階段連續退回） | 00 §六；05 空洞 7 |
 | log-comments | 卡面 body 超過閾值或研究卡 | K8、K9 |
 | deploy | 階段計畫含部署 | 00 §六 |
@@ -233,7 +234,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
 | 退回上一站條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
 | 命名與目錄 | `core/naming.md` |
-| 研究站討論回合出口 | `stages/research.md` §4：討論以一則留言收口，`move` 收該 URL |
+| 研究站討論回合出口 | `modules/research/module.md` §1：討論以一則留言收口，`move` 收該 URL |
 | 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
 | Design gate 記錄位 | `stages/planning.md` §1：設計判斷寫進 verification 欄；N/A 寫理由 |
 | 規則文件自身過期 | `roles/common.md` 書寫紀律「數字帶日期、不寫行號」；⛔ 不建掃描器 |
@@ -267,7 +268,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；第 6 步例外：執行者另派、PM 不兼）：
 1. `core/` 六檔（定義層先定，其他檔才有東西可引）
 2. `roles/common.md` → 四角色檔
-3. 六階段檔
+3. 五階段檔（研究住模組）
 4. `modules/` 十一個宣告區塊（條文可先空）
 5. README、ADOPTION 重寫
 6. 新 CLI `wf`（另一張 T3 卡；測試只測 GitHub 寫入與轉移表；fake gh 錄放）
@@ -301,6 +302,11 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-01：C10 計數被第零條取代一事補進決策紀錄「補充裁定」，骨架 §三改為引用它，不再自行重判。
 - R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
+
+第三輪（被審 d8fc77b）：
+- R1-01：交回單人填欄與 schema 補未驗清單三分類（§八）。
+- R1-02：resource-lock 啟用條件收回決策 6「同時 ≥2 執行者」（§九）。
+- R1-03：研究站改為模組 `research`（與部署、維護同形），`不可判定` 隨它存在；C6 不動（§一、§四、§九、§十一、§十三）。
 
 ## 十七 · 對 #177 規劃審 38 個 P1 finding 的自審
 
