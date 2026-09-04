@@ -21,30 +21,30 @@ last_confirmed: 2026-09-05
   "schema_version": {"type": "integer", "const": 1},
   "card_id": {"type": "string", "pattern": "^[A-Z]+-[0-9]{3,}(-FIX[0-9]+)?$"},
   "source_issue": {"type": "integer"},
-  "feature": {"type": "string", "minLength": 1},
-  "core_pain": {"type": "string", "minLength": 1},
-  "non_scope": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+  "feature": {"type": "string"},
+  "core_pain": {"type": "string"},
+  "non_scope": {"type": "array", "items": {"type": "string"}},
   "stage_plan": {"type": "array", "items": {"enum": ["需求", "研究", "規劃", "執行", "審核", "部署", "維護", "結案"]}, "uniqueItems": true},
   "acceptance": {"type": "array", "items": {"type": "string"}},
   "verification": {"type": "array", "items": {"type": "object", "required": ["item", "who"], "additionalProperties": false,
                     "properties": {"item": {"type": "string"}, "who": {"enum": ["executor", "reviewer", "requester", "ci"]}}}},
   "list_convergence": {"type": "array", "items": {"type": "integer"}},
-  "service_goal": {"type": "string", "minLength": 1},
+  "service_goal": {"type": "string"},
   "parent": {"type": ["string", "null"]},
   "blocked": {"type": ["object", "null"], "required": ["from", "ruling"], "additionalProperties": false,
               "properties": {"from": {"$ref": "#/$defs/nonterminal"}, "ruling": {"type": "string", "format": "uri"}}},
   "grilling": {"type": ["string", "null"], "format": "uri"},
-  "tier": {"enum": ["T0", "T1", "T2", "T3", "T4"]},
+  "tier": {"enum": ["T0", "T1", "T2", "T3", "T4", ""]},
   "tier_basis": {"type": "object", "required": ["sensitive", "recoverable", "blast"], "additionalProperties": false,
     "properties": {
       "sensitive": {"type": "array", "uniqueItems": true, "items": {"enum": ["public_contract", "security", "payment", "data_write", "migration", "production", "rules", "statistics"]}},
-      "recoverable": {"enum": ["reversible", "rollback_only", "irreversible"]},
-      "blast": {"enum": ["file", "module", "repo", "cross_repo"]}}},
+      "recoverable": {"enum": ["reversible", "rollback_only", "irreversible", ""]},
+      "blast": {"enum": ["file", "module", "repo", "cross_repo", ""]}}},
   "exec_capability": {"$ref": "#/$defs/capability"},
   "review_capability": {"$ref": "#/$defs/capability"},
-  "db_scope": {"enum": ["none", "read", "write", "schema", "data-migration"]},
+  "db_scope": {"enum": ["none", "read", "write", "schema", "data-migration", ""]},
   "resources": {"type": "array", "items": {"type": "string"}},
-  "when": {"type": "string", "minLength": 1},
+  "when": {"type": "string"},
   "spec_version": {"type": "integer", "minimum": 1},
   "owner": {"type": ["object", "null"], "required": ["role", "actor"], "additionalProperties": false,
             "properties": {"role": {"enum": ["requester", "pm", "executor", "reviewer"]}, "actor": {"type": "string", "minLength": 1}}},
@@ -55,11 +55,11 @@ last_confirmed: 2026-09-05
             "properties": {"id": {"type": "string", "pattern": "^T-(需求|研究|規劃|執行|審核|部署|維護|結案)-[0-9]{2}$"}, "text": {"type": "string", "minLength": 1}, "origin": {"type": "string", "format": "uri"}}}}
  },
  "$defs": {"capability": {"type": "object", "required": ["level", "reason"], "additionalProperties": false,
-           "properties": {"level": {"enum": ["經濟型", "主力型", "高階型"]}, "reason": {"type": "string", "minLength": 1}}},
+           "properties": {"level": {"enum": ["經濟型", "主力型", "高階型", ""]}, "reason": {"type": "string"}}},
           "nonterminal": {"enum": ["待辦", "進行中", "待確認", "退回"]}}}
 ```
 
-合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum 再驗；未啟用模組的值因此仍拒。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum 再驗；未啟用模組的值因此仍拒。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；PM 與需求方欄＝空字串或空陣列；`parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 
@@ -83,14 +83,14 @@ last_confirmed: 2026-09-05
 {"$id": "wf-intake", "type": "object", "additionalProperties": false,
  "required": ["source", "observation", "dedupe", "repo"],
  "properties": {
-  "source": {"type": "string", "minLength": 1},
-  "observation": {"type": "string", "minLength": 1},
+  "source": {"type": "string"},
+  "observation": {"type": "string"},
   "dedupe": {"type": "object", "required": ["keywords", "hits"], "additionalProperties": false,
-             "properties": {"keywords": {"type": "array", "items": {"type": "string"}, "minItems": 1}, "hits": {"type": "array", "items": {"type": "integer"}}}},
-  "repo": {"type": "string", "minLength": 1}}}
+             "properties": {"keywords": {"type": "array", "items": {"type": "string"}}, "hits": {"type": "array", "items": {"type": "integer"}}}},
+  "repo": {"type": "string"}}}
 ```
 
-`open` 只讀此區塊；缺欄印缺欄清單，處置由收件方判。
+`open` 只讀此區塊；schema 只管四鍵的結構；空值＝未填，`open` 印缺欄清單，處置由收件方判。
 
 ## 4 · `wf-note`
 

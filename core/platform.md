@@ -7,15 +7,15 @@ last_confirmed: 2026-09-05
 
 # 平台委託 P1–P5
 
-每條＝規則一句＋執行 artifact。ruleset 與 CI 只是執行面；改 artifact 前先改本檔。
+每條＝規則一句＋執行 artifact。ruleset 與 CI 只是執行面；改 artifact 前先改本檔。artifact 的現況⛔ 不寫在本檔，用 `gh api` 查。
 
-| # | 規則 | 執行 artifact | 2026-09-05 現況 |
-|---|---|---|---|
-| P1 | main 禁改史、禁刪 | ruleset 20768920：`deletion`、`non_fast_forward`、`required_linear_history`，bypass 清空 | ⚠️ 未設；第 7 步 |
-| P2 | T2 以上走分支＋獨立查核；執行者不 merge | ruleset 20768920：required status checks `secret-scan`、`commit-trailer`、`reachability`＋PR | required checks 已設三個（需求方 2026-09-05 裁定加 `reachability`） |
-| P3 | 合併方式＝專案層 `merge_method`，由平台強制 | repo 設定：aiwf 只留 squash，關 merge 與 rebase 按鈕 | ⚠️ 三者皆開；第 7 步 |
-| P4 | secrets 不進 git | CI job `secret-scan`（`.github/workflows/ci.yml`，gitleaks v3.0.0） | 已在 |
-| P5 | commit trailer 鍵在允許集合且為末端連續單一區塊 | CI job `commit-trailer`（`.github/scripts/trailer_check.py`） | 已在 |
+| # | 規則 | 執行 artifact |
+|---|---|---|
+| P1 | main 禁改史、禁刪 | ruleset 20768920：`deletion`、`non_fast_forward`、`required_linear_history`，bypass 清空 |
+| P2 | T2 以上走分支＋獨立查核；執行者不 merge | ruleset 20768920：required status checks `secret-scan`、`commit-trailer`、`reachability`＋PR |
+| P3 | 合併方式＝專案層 `merge_method`，由平台強制 | repo 設定：aiwf 只留 squash，關 merge 與 rebase 按鈕 |
+| P4 | secrets 不進 git | CI job `secret-scan`（`.github/workflows/ci.yml`，gitleaks v3.0.0） |
+| P5 | commit trailer 鍵在允許集合且為末端連續單一區塊 | CI job `commit-trailer`（`.github/scripts/trailer_check.py`） |
 
 - P5 允許集合＝Requested-by、Planned-by、Implemented-by、Reviewed-by、Co-Authored-By；哪些必須出現＝約定，住 `roles/conduct-common.md` §2，CI ⛔ 不驗。
 - P2 的獨立性判定（不同實體、跨家族）是 PM 注意事項，⛔ 不機械化。

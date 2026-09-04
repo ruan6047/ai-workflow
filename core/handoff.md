@@ -73,7 +73,7 @@ last_confirmed: 2026-09-05
   "reason": {"type": "string"}}}
 ```
 
-一則留言只有一個 `wf-return` 區塊。T2 以上：`unverified`、`note_responses` 必填；`role=reviewer` 另必填 `review_result`、`core_pain_resolved`、`findings`；`role=executor` 另必填 `mistakes`。以上皆由 `review` 印缺段。CLI 只驗 id 覆蓋、值在值域、text 非空，⛔ 不判內容。
+一則留言只有一個 `wf-return` 區塊。T2 以上：`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）必填；`role=reviewer` 另必填 `review_result`、`core_pain_resolved`、`findings`；`role=executor` 另必填 `mistakes`。以上皆由 `review` 印缺段。CLI 只驗 id 覆蓋、值在值域、text 非空，⛔ 不判內容。
 
 ## 3 · 裁定單（PM → 需求方；`brief --for closeout` 或人手組）
 

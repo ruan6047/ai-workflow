@@ -39,7 +39,7 @@ last_confirmed: 2026-09-05
     {"from": "**/待確認", "to": "same/退回", "when": "⑤ 不過（R2–R4）；審核階段 wf-return、結案階段 wf-ruling，缺即印"},
     {"from": "**/待確認", "to": "規劃/退回", "when": "⑤ R1 不過且 stage_plan 含規劃"},
     {"from": "**/待確認", "to": "需求/退回", "when": "⑤ R1 不過且 stage_plan 缺規劃"},
-    {"from": "*/退回", "to": "same/進行中", "when": "再派；同 iteration 第 3 次退回預設換人，需求方可否決"},
+    {"from": "*/退回", "to": "same/進行中", "when": "再派；進執行時 iteration +1、source_sha=null；同 iteration 第 3 次退回預設換人，需求方可否決"},
     {"from": "結案/退回", "to": "結案/待確認", "when": "補驗後重交裁定單"},
     {"from": "**/待辦|進行中|待確認|退回", "to": "same/阻塞", "when": "寫 blocked.from；--ruling 種類＝wf-ruling kind=block，缺留言或缺鍵皆印"},
     {"from": "**/阻塞", "to": "same/<from>", "when": "解除；清 blocked"},
