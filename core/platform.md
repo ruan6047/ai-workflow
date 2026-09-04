@@ -12,7 +12,7 @@ last_confirmed: 2026-09-05
 | # | 規則 | 執行 artifact | 2026-09-05 現況 |
 |---|---|---|---|
 | P1 | main 禁改史、禁刪 | ruleset 20768920：`deletion`、`non_fast_forward`、`required_linear_history`，bypass 清空 | ⚠️ 未設；第 7 步 |
-| P2 | T2 以上走分支＋獨立查核；執行者不 merge | ruleset 20768920：required status checks `secret-scan`、`commit-trailer`＋PR | required checks 已設 `secret-scan`、`commit-trailer`（2026-09-05）；`reachability` 是否列入待需求方裁定 |
+| P2 | T2 以上走分支＋獨立查核；執行者不 merge | ruleset 20768920：required status checks `secret-scan`、`commit-trailer`、`reachability`＋PR | required checks 已設三個（需求方 2026-09-05 裁定加 `reachability`） |
 | P3 | 合併方式＝專案層 `merge_method`，由平台強制 | repo 設定：aiwf 只留 squash，關 merge 與 rebase 按鈕 | ⚠️ 三者皆開；第 7 步 |
 | P4 | secrets 不進 git | CI job `secret-scan`（`.github/workflows/ci.yml`，gitleaks v3.0.0） | 已在 |
 | P5 | commit trailer 鍵在允許集合且為末端連續單一區塊 | CI job `commit-trailer`（`.github/scripts/trailer_check.py`） | 已在 |
