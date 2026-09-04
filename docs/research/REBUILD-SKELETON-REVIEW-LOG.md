@@ -72,6 +72,10 @@ H8（進終態前 PR 與分支狀態）與 H9 的鏈深上限降為印；硬擋 
 | H19 | 禁 `gh pr update-branch` | **砍** | C3 |
 | K4 | 守衛必須進 CI | **紀律** | `roles/conduct-common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
 
+## 第三十三輪（被審 e3f8401，留言 5541906583）：APPROVE
+
+- R4-01（minor，非擋）：§十八補 SHA 四種、獨立查核、拒收（事件）、寫壞資料／指向不存在四列。
+
 ## 第三十二輪（被審 56610b3，留言 5541776007）
 
 - R1-01：規格欄改回 C11 四欄 acceptance／verification／non_scope／resources（§六、§七、§十八）。上輪 §十八那列是我自己寫錯。

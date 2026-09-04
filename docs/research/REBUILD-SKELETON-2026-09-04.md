@@ -390,7 +390,10 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 重啟條件、reopen |
 | 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | 上訴、appeal、反證 |
 | 分支 | 卡面 `branch`：該卡工作所在的 git 分支名 | feature、工作區 |
-| 被審 SHA | 代貼裁決首行所記、查核者實際讀到的 commit | 目標 SHA、版本 |
+| SHA 四種：被審／來源／合併基底／合併 | 被審＝代貼裁決首行所記、查核者讀到的 commit；來源＝卡面 `source_sha`，交回時的分支頭；合併基底＝派工單的 merge-base；合併＝結案時 main 上的 merge commit | 目標 SHA、版本、HEAD（作為名詞） |
+| 獨立查核 | 查核者實體不同於本 iteration 執行者實體（P2） | 第二雙眼、peer review |
+| 拒收（事件） | CLI rc≠0 並寫一則 `wf:reject` 留言的那次事件；作為硬擋類別名仍禁用 | 駁回、reject（作為類別名） |
+| 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 驗證失敗、invalid |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | merge 策略、合併策略 |
 | 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 寫入規則、transaction |
 | 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | 影響面、blast list |
