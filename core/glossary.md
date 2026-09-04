@@ -76,7 +76,7 @@ last_confirmed: 2026-09-05
 | self_run | 交回單內實跑的指令與原始輸出 | 不是讀碼推論 | 本地測試、手動驗證 |
 | falsifier | 交回單逐條驗收條件的證偽條件 | 不是反測 | 反向案例、反測（保留給統計紅線模組的對抗性反測） |
 | 失誤登記 | 交回單裡執行者自報的錯誤與修正 | 不是 finding | 自首、bug list、錯誤清單 |
-| finding | 查核者交回單裡一條帶 id、severity、blocking、attribution 的問題 | 不是 GitHub issue、不是缺陷 | 缺陷、bug、issue（與 GitHub issue 衝突） |
+| finding | 查核者交回單裡一條帶 id、severity、blocking、attribution 的問題 | 不是 GitHub issue、不是缺陷 | 缺陷（作為 finding 的同義）、bug、issue（與 GitHub issue 衝突） |
 | attribution | finding 責任歸屬：executor／coordinator／planner／reviewer／external | 不是 blame | 責任方、責任者 |
 | 退回理由 | 裁定單裡每輪退回引用的 finding | 不是散文 | 駁回原因、reject reason |
 | 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 不是重試 | 重啟條件、reopen |

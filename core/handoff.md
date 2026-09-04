@@ -7,7 +7,7 @@ last_confirmed: 2026-09-05
 
 # 三份交接文件
 
-每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]`。CLI 段由 `brief` 從卡面 JSON、git、規則檔組；人填段只由該角色本人填；缺段印。
+每段首行 `[來源: <來源>/<檔>#<節> · <name>：<when> · confirmed <日期>]`（`name`、`when` 取該檔 frontmatter）。CLI 段由 `brief` 從卡面 JSON、git、規則檔組；人填段只由該角色本人填；缺段印。
 
 ## 1 · 派工單（PM → 執行者或查核者；`brief --for executor|reviewer`）
 

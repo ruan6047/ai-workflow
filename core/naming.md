@@ -9,7 +9,7 @@ last_confirmed: 2026-09-05
 
 ## 1 · 卡ID
 
-- 形狀 `<AREA>-<NNN>`；AREA＝專案層 `.wf/modules.json` 的 `areas` 封閉枚舉；NNN＝`open` 依 repo 遞增，三位起、不補零上限。
+- 形狀 `<AREA>-<NNN>`；AREA＝專案層 `.wf/modules.json` 的 `areas` 封閉枚舉；NNN＝`open` 依 repo 遞增，三位數起，只增不重用。
 - 標題 slug 只放 issue 標題；⛔ 不進卡ID。
 - 修復卡 `<原卡>-FIX<n>`，n 從 1 起；只在碼已進 main 的事後查核時開。
 - aiwf 種子 areas：WF、CLI、DOC、OPS。
