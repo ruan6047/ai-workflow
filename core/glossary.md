@@ -29,7 +29,7 @@ last_confirmed: 2026-09-05
 | 硬擋 | CLI rc≠0 或平台拒絕的行為 | 不是印 | 守衛、閘門、偵測器、拒收（作為類別名） |
 | 印 | CLI rc=0 並列出資訊的行為 | 不是判斷 | 警告（作為類別名） |
 | 語意 | 動詞的固定行為 | 不是拒絕 | 邏輯、實作 |
-| 拒收 | 一次硬擋事件與其 `wf:reject` 留言 | 不是硬擋類別名 | 駁回、reject（作為類別名） |
+| 拒收 | 一次硬擋與其 `wf:reject` 留言 | 不是硬擋類別名 | 駁回、reject（作為類別名） |
 | 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 不含內容判讀 | 驗證失敗、invalid |
 | 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | 不是內容判讀 | 驗證、校驗、guard |
 | 完整性 | 必要欄或必要段齊不齊 | 不是對不對 | 正確性、品質 |
@@ -46,7 +46,7 @@ last_confirmed: 2026-09-05
 | 實體 | 跑角色的一個 session | 不是帳號 | 帳號、人、instance |
 | 家族 | 模型家族 | 不是工具 | 供應商、vendor |
 | 獨立查核 | 查核者實體不同於本 iteration 執行者實體 | 同家族不同工具不算跨家族 | 第二雙眼、peer review |
-| 級別 | T0–T4 風險軸 | 不是難度 | tier（中文語境）、難度、等級 |
+| 級別 | T0–T4，由三軸取最高 | 不是難度 | tier（中文語境）、難度、等級 |
 | 能力層級 | 經濟型／主力型／高階型 | 不是模型名 | 模型、model |
 | 三軸 | 級別判準的三個軸：敏感面／可復原性／影響面＝卡面 `tier_basis` 的 sensitive／recoverable／blast | 不是級別本身 | 風險軸、維度 |
 | 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種 | 不是 finding | bug（作為卡種）、BUG- 前綴 |
@@ -89,5 +89,5 @@ last_confirmed: 2026-09-05
 | 留言標頭 wf:* | CLI 與人留言的首行 | 不是 marker | marker、事件型別 |
 | 投影欄 | Project 上由 CLI 回寫的五欄：階段／狀態／級別／owner／卡ID | 不是事實來源 | 看板欄位、Ledger 欄 |
 | 封存、撤銷、停止 | 三個離開動作：終態封存／回清單／終態 | 封存不是刪除 | 關閉、刪除、歸檔（作為封存以外的意思） |
-| db_scope | 卡對資料庫的變更範圍：none／read／write／schema／data-migration | 不是資源宣告 | db_permission、資料庫權限 |
+| db_scope | 卡對資料庫的變更域：none／read／write／schema／data-migration | 不是資源宣告 | db_permission、資料庫權限 |
 | trailer | commit 訊息末端連續的 `Key: value` 區塊 | 不是 footer 散文 | footer、git-tag |
