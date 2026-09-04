@@ -158,7 +158,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | spec_version | int | CLI（edit 自動 +1） | — | 派工單、initiative |
 | owner | {role, actor, family}＝`roles` 陣列最後一筆的投影（現值） | CLI（move） | — | brief、Project owner 欄 |
 | branch | string | CLI（move 到進行中時寫） | — | brief、H11 |
-| source_sha | string（40 hex）＋ `source_sha_iteration` | CLI：`move` 進行中→待確認（交回）時由 `--source-sha` 寫入，須在遠端存在（H11）；在同一 iteration 內不可變，下一個 iteration 的交回才覆寫；`edit` 不可改 | 交回時 | `brief --for reviewer`（比對分支 HEAD＝此值，K5）、`review`（交回單 `source_sha` 須等於此值）、裁定單 |
+| source_sha | string（40 hex）＋ `source_sha_iteration` | CLI：`move` 進行中→待確認（交回）時由 `--source-sha` 寫入，須在遠端存在（H11）；正常路徑由下一個 iteration 的交回覆寫；`edit` 可改（C11），審核期改動另貼 `edit during review` 留言且 `brief --for reviewer` 重比 | 交回時 | `brief --for reviewer`（比對分支 HEAD＝此值，K5）、`review`（交回單 `source_sha` 須等於此值）、裁定單 |
 | iteration | int | CLI | — | brief |
 | roles | {iteration, role: enum, actor, family: enum, since}[]（append-only；每次 `move` 帶 `--actor --family` 時追加一筆） | CLI（move） | — | H5（同 iteration 內 executor.actor ≠ reviewer.actor）、H6（同 iteration 內 reviewer.family ≠ executor.family）、brief |
 | modules | string[]（此卡實際生效的模組） | CLI 由 `.wf/modules.json` 導出 | 建卡 | notes、brief |
@@ -172,7 +172,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 |---|---|---|---|---|
 | `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 開卡時的結構化輸入，⛔ 不在 intake 四欄） | 不是 issue、已在板上、`--parent` 不存在或沿父鏈算得鏈深 >2、JSON 鍵不合法（H9、H10；全部在首次遠端寫入前） | 缺欄清單、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
 | `move <card> --to <階段/狀態> [--actor A --family F] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor 與 family、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時 `acceptance` 或 `verification` 為空陣列或含空字串（存在性，不讀內容） | Project 欄、JSON `roles` 追加一筆並投影到 owner／branch／iteration、轉移記錄留言（S5，含 role／actor／family） |
-| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id`／`source_issue`／`source_sha`、`--set parent=` 後沿父鏈重算鏈深 >2（H10、H9、C11） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
+| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 後沿父鏈重算鏈深 >2（H10、H9、C11） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言）。輸出形狀：每一段首行固定 `[來源: <來源>/<檔>#<節>]`，來源值域＝core／module:<名>／project／card（決策 11「每段標來源」） |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法、H13 欄位不一致（資料有效性） | 缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態；有 shell 的查核者與執行者用它，沒 shell 者手貼同格式（C14） |
@@ -333,6 +333,10 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+第十六輪（被審 1231d7b）：
+- R1-02：`source_sha` 從 `edit` 例外移除（C11 只有兩個例外）；不可變改由審核期留言與 `brief` 重比守。
+- R1-01：「層」的架構用法待需求方裁（見下）。
 
 PM 自審（b3ca6d6 後）：H8 的事實來源明寫為卡面 `branch`＋GitHub API（PR by head ref、merged、merge commit、分支存在），不另設 PR 欄。
 
