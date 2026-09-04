@@ -239,23 +239,23 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 | 空洞 | 落點 |
 |---|---|
-| 部署、維護 0 條 | 模組 `deploy`、`maintenance`；條文從 ADOPTION 五行與 01#45 49 60–62 73 起草，其餘留空標「待實例」 |
+| 部署、維護 0 條 | 模組 `deploy`、`maintenance`（來源 ADOPTION 五行、01#45 49 60–62 73；其餘節留空標「待實例」） |
 | 缺陷路徑 | 橫切：三條核心各一落點——無專屬卡種 → `core/card-schema.md`（單一形狀）；留痕走狀態面、不另開 log → `core/verbs.md` §寫入契約；未開卡走 commit trailer 下限 → `roles/conduct-common.md` §2。FIX 後綴屬命名洞 → `core/naming.md`。其餘分住 requirement／planning／implementation（03 §缺陷路徑） |
-| 需求方角色薄 | `roles/requester.md`：裁升級、撤銷、停止、T4 sign-off、結案 ④、清單條件 2；每條一句 |
-| 待審清單無形狀 | 形狀＝`.github/ISSUE_TEMPLATE/list-intake.yml` 的 `json wf-intake` 四欄（§一）；schema 逐字住 `core/card-schema.md` §intake；`open` 讀它並印缺欄；收件動詞⛔ 不加 |
+| 需求方角色薄 | `roles/requester.md` §1（來源 03#133 38 66 81 84 137、01#3 4、02#5 68） |
+| 待審清單無形狀 | 形狀＝`.github/ISSUE_TEMPLATE/list-intake.yml` 的 `json wf-intake` 四欄（§一）；schema 住 `core/card-schema.md` §intake；讀它的動詞＝`open`（§七）；動詞集合固定於 §七 |
 | 交付報告 schema 散 | `core/handoff.md` |
 | 一卡一分支無明文 | `core/naming.md`＋`core/verbs.md` move |
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
 | 退回上一階段的條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
 | 命名與目錄 | `core/naming.md` |
 | 研究階段討論回合出口 | `modules/research/module.md` §1（來源 03#52） |
-| 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
-| Design gate 記錄位 | `stages/planning.md` §1：設計判斷寫進 verification 欄；N/A 寫理由 |
-| 規則文件自身過期 | 生命週期落點：每個規則檔 frontmatter `last_confirmed: <日期>`；`brief` 在每段來源標記帶該檔 `last_confirmed`，超過 `rule_confirm_days` 的標「過期」（印，不擋）；確認者＝需求方，確認動作＝改日期一次 commit。引用寫法另住 `roles/conduct-common.md` §2 |
+| 停止裁定由誰 | `roles/requester.md` §1（來源 03 空洞）；`move` 的 `--ruling` 形狀見 §七 |
+| Design gate 記錄位 | `stages/planning.md` §1（來源 01#90、02#4）；欄位＝`verification` |
+| 規則文件自身過期 | 資料＝規則檔 frontmatter `last_confirmed`（§二）；印＝`brief` 來源標記（§七）；參數＝`rule_confirm_days`（§十二）；確認者落點 `roles/requester.md` §1 |
 | 查核者資訊邊界 | `roles/reviewer.md` §1（來源 02#966–968、04#41） |
 | 常態誰 merge | `stages/closeout.md` §4（來源 03#93） |
 | Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
-| 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`，啟用時由 `move` 數；未啟用時第 3 次退回的預設處置是 `roles/pm.md` §4 的條文，PM 自己數 |
+| 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`；未啟用時第 3 次退回的預設處置落點 `roles/pm.md` §4（PM 減重 4） |
 | 專案層級別數字 | `core/tiers.md` §專案層（形狀：文字加嚴介面；數字未定，沿 tier-rules §四） |
 | 簡介必填時點 | `core/card-schema.md`：建卡即必填（印） |
 | 必填欄集中 | `core/card-schema.md` |
