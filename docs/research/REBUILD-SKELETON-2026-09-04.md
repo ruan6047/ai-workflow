@@ -110,12 +110,12 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
 | 任一階段／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）。同卡同 iteration 累積第 3 次退回（不分階段、不要求連續）時 `move` 印「預設處置＝換執行者（升級①）；需求方可否決」（PM 減重 4）；escalation 模組未啟用時只印不擋 |
-| 任一狀態 | 阻塞 | 記 from；無 `--ruling` 印提示 |
-| 阻塞 | from | 解除 |
+| 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 記 from；無 `--ruling` 印提示 |
+| 阻塞 | from（必為非終態） | 解除 |
 | 最後一個階段／待確認 | 結案／待確認 | 結案報告 |
 | 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成需 H8 收尾；停止無 `--ruling` 印提示；兩者皆封存 |
 
-**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求）。
+**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
 
 ## 五 · `core/tiers.md` 的內容
 
@@ -329,6 +329,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+第十二輪（被審 17fd49c）：
+- R1-01：§四「任一狀態 → 阻塞」改為任一非終態；可達性測試加「終態出邊為空」斷言。
 
 第十一輪（被審 cd45361，R1 過）：
 - R2-01：§十二 整節改寫為資料形狀、參數表（`core/params.md`）、管道、落點四塊，條文全部移目標檔。
