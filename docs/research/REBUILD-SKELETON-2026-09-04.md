@@ -116,7 +116,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 阻塞 | from（必為非終態） | 解除 |
 | 最後一個階段／待確認 | 結案／待確認 | 結案報告 |
 | 結案／退回 | 結案／待確認 | 補驗後重交結案報告 |
-| 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成需 H8 收尾；停止無 `--ruling` 印提示；兩者皆封存 |
+| 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：`move` 印 PR 與分支狀態（H8 印），PM 判收尾是否完成；停止無 `--ruling` 印提示；兩者皆封存 |
 
 **模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
 
@@ -184,7 +184,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 |---|---|---|---|
 | 派工單（每段首行 `[來源: …]`，決策 11） | PM→執行者或查核者 | 卡與身分、核心痛點、驗收逐條、非射程、merge-base SHA、前輪 findings、能力層級建議、注意事項編號清單、副作用入口清單 | 寫入授權、唯讀範圍、實際模型與偏離理由、未驗項（三分類）、本文件落差 |
 | 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 八欄、**未驗清單（三分類：驗不了／沒去驗／刻意不驗，各附原因）**、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
-| 裁定單 | PM→需求方 | 事件序、退回理由、findings、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
+| 裁定單 | PM→需求方 | 事件序（以 `wf-return` 留言的時間序推，CLI 不讀散文留言）、各輪退回理由與 findings（讀 `wf-return`）、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
 交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄與 `unverified: [{item, kind, reason}]`（`kind` 封閉值域 `cannot`／`skipped`／`deferred`，`reason` 非空）；同一 schema 執行者與查核者共用。**注意事項回應的三值唯一定義居所＝本檔**：`note_responses: [{id, value, text}]`，`value` 封閉值域 `followed`／`not_applicable`／`found`（人讀顯示 已遵循／不適用／發現），`not_applicable` 與 `found` 的 `text` 非空；§十二與各階段檔只引用不複製；CLI 只查 id 是否覆蓋 `notes` 印出的清單、value 在值域、text 非空，⛔ 不判內容。
 

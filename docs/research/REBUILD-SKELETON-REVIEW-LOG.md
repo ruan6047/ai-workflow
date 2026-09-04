@@ -10,6 +10,10 @@
 
 H8（進終態前 PR 與分支狀態）與 H9 的鏈深上限降為印；硬擋 11→9，判準收成一句「CLI 拒的只有寫壞資料與指向不存在的東西」。資訊面補：派審詞印本 iteration 執行者 actor，PM 判 H5 H6 有料。
 
+## PM 自審第三輪（資訊要足）
+
+逐角色核對 `brief` 給的資訊：執行者（規格、驗收、非射程、注意事項、前輪 findings、副作用入口）、查核者（merge-base、source_sha 與 HEAD 比對、前輪 findings、本 iteration 執行者 actor）、結案（merge SHA、CI、findings 狀態）、需求方裁定單（事件序改由 `wf-return` 時間序推，CLI 不讀散文留言）。§四結案列與 §八裁定單同步 H8 降印的字。
+
 ## 逐輪處置
 
 第一輪（留言 5535340214）：
