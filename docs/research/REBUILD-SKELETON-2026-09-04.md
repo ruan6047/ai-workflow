@@ -118,13 +118,14 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 五 · `core/tiers.md` 的內容
 
-- T0–T4 表：各級最低閘門（01#66–68）。
-- 判準：敏感面／可復原性／影響面取最高（03#44）；⛔ 不按難度、估時、檔案數。
-- 紅線域：public contract、權限與安全、金流、資料寫入或 migration、production、規則本體；紅線至少 T3，`db_scope ∈ {schema, data-migration}` ⇒ T4（C9）；T4 查核跨家族或使用者 sign-off（H6）。
-- 單向門：升自由；降級收 `--ruling`，缺即印（03#31、C12）。
-- 缺陷級別套用表（03#45）。
-- 能力層級判準：經濟型／主力型／高階型（03#49）。
-- 專案層只能加嚴（03#48）。
+固定節與各節來源（條文在填規則時寫）：
+- §級別表：T0–T4 五列 × 最低閘門（來源 01#66–68）。
+- §判準：三軸（敏感面／可復原性／影響面）與合成方式（來源 03#44）。
+- §紅線域：清單（來源 01#64、02#63）；`db_scope` 與 T4 的連動（C9）；T4 查核的獨立性條件（H6）。
+- §單向門：升與降的形狀（來源 03#31、C12）。
+- §缺陷套用表（來源 03#45）。
+- §能力層級：三值與判準（來源 03#49）。
+- §專案層：加嚴介面（來源 03#48；數字未定，tier-rules §四）。
 
 ## 六 · `core/card-schema.md` 的內容
 
@@ -198,7 +199,7 @@ adds:
   stages: []
   states: []
   transitions: {add: [], remove: []}
-  verbs: []            # 只能加旗標，⛔ 不能加動詞（動詞新增須需求方裁定）
+  flags: []            # 模組只能宣告旗標；動詞集合固定於 core/verbs.md（決議 §七：動詞新增須需求方裁定）
   notes: [F-resource-01, F-resource-02]
   handoff_sections: [資源宣告逐條]
 project_inputs: [.wf/contracts/CONTROL_PLANE.md]
@@ -225,11 +226,11 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十 · `core/naming.md` 的內容（新；舊規則只有四條，00 空洞 9）
 
-- 卡ID：`<AREA>-<NNN>`。AREA 是專案層封閉枚舉（aiwf 建議：WF、CLI、DOC、OPS）；NNN 由 `open` 依 repo 遞增配發，⛔ 不帶語意 slug（slug 住 issue 標題）。修復卡 `<原卡>-FIX<n>` 保留。
+- 卡ID 形狀：`<AREA>-<NNN>`；AREA＝專案層封閉枚舉（aiwf 種子：WF、CLI、DOC、OPS）；NNN＝`open` 依 repo 遞增；語意 slug 的位置＝issue 標題（需求方 2026-09-04 裁定不進卡ID）。修復卡形狀 `<原卡>-FIX<n>`。
 - 分支：`wf/<card_id>`；由 `move` 到進行中時寫回卡面。
 - 留言標頭：轉移記錄 `wf:move`、修訂 `wf:edit`、拒收 `wf:reject`、注意事項候選 `wf:note`、研究與量測全文 `wf:log`；裁決與裁定由人貼但首行固定 `wf:verdict`／`wf:ruling`；PM 代貼他人裁決或裁定時，末段固定一行 `代貼裁定・授權來源：<session 或留言 URL>`（C12）。研究與量測全文一律進 `wf:log` 留言，卡面 JSON 只放判準與指向（K8、K9；需求方裁定，核心規則不是模組）。
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
-- 專案層檔一律在 `.wf/` 之下。
+- 專案層檔的位置＝`.wf/`。
 
 ## 十一 · 空洞落點（00 §十的 20 項）
 
@@ -252,7 +253,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 常態誰 merge | `stages/closeout.md` §4：PM 在四停下條件內直行（03#93） |
 | Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
 | 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`，由 `move` 數；未啟用時第 3 次退回的預設處置住 `stages/review.md` §4 與 `roles/pm.md`（PM 減重 4） |
-| 專案層級別數字 | `core/tiers.md` §專案層：只能文字加嚴，數字⛔ 不開放 |
+| 專案層級別數字 | `core/tiers.md` §專案層（形狀：文字加嚴介面；數字未定，沿 tier-rules §四） |
 | 簡介必填時點 | `core/card-schema.md`：建卡即必填（印） |
 | 必填欄集中 | `core/card-schema.md` |
 
@@ -299,7 +300,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID `<AREA>-<NNN>` 不帶 slug（§十）。
 - 新 CLI 名 `wf`（§一）。
-- 研究與量測全文一律進 `wf:log` 留言，屬核心留言規則，`log-comments` 模組取消（§十、§十一）。
+- 研究與量測全文的落點＝`wf:log` 留言（核心留言標頭，§十）；`log-comments` 模組取消（§十一）。
 - Project 投影欄五個（§六）。
 - 第 3 次退回的預設處置已進 §四與 §十一。
 
@@ -316,6 +317,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+PM 自審（3e613ce 後）：§五 tiers 改為固定節＋來源；§十 卡ID、專案層位置、§十一 專案層級別、§十五 wf:log、§九 模組 verbs 欄六處改形狀。
 
 第十輪（被審 cd09b1d，R1 過）：
 - R2-01：§六 schema 升版、§八 留言不可變、§十二 退場、§十八 詞表違規四句改為形狀＋落點，條文移目標檔。
