@@ -155,7 +155,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | resources | string[]（文法住 db-contract／resource-lock） | PM | 建卡 | resource-lock 模組 |
 | brief | {when, non_scope}（卡片簡介，與規則檔 frontmatter 同形） | PM | 建卡 | 清單搜尋、`brief` 卡與身分段 |
 | spec_version | int | CLI（edit 自動 +1） | — | 派工單、initiative |
-| owner | {role, actor} | CLI（move） | — | brief |
+| owner | {role: enum（requester／pm／executor／reviewer）, actor: string, family: enum（anthropic／openai／google／human／other；值域住 `core/glossary.md`）} | CLI（move；family 由 `--family` 旗標給，缺即印） | — | brief、H5、H6 |
 | branch | string | CLI（move 到進行中時寫） | — | brief、H11 |
 | iteration | int | CLI | — | brief |
 | modules | string[]（此卡實際生效的模組） | CLI 由 `.wf/modules.json` 導出 | 建卡 | notes、brief |
@@ -168,7 +168,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 動詞 | 輸入 | 硬擋（rc≠0 並寫一則拒收留言，C13） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
 | `open <issue>` | 清單 issue 號 | 不是 issue、已在板上、鏈深 >2、JSON 鍵不合法（H9、H10） | 缺欄清單、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
-| `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時仍有 TODO | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
+| `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時 `acceptance` 或 `verification` 為空陣列或含空字串（存在性，不讀內容） | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`（H10、C11） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言）。輸出形狀：每一段首行固定 `[來源: <來源>/<檔>#<節>]`，來源值域＝core／module:<名>／project／card（決策 11「每段標來源」） |
@@ -330,6 +330,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+PM 自審（f3140f3 後）：owner 補 `family` 封閉值域（H5、H6 的比對欄）；`move` 的「TODO」佔位符檢查改為存在性檢查。
 
 第十三輪（被審 3ed83dc）：
 - R1-01：`tier_basis` 三欄改封閉值域（sensitive 多選、recoverable、blast 各 enum）；stat-redline 條件改集合成員比對，CLI 不讀內容。
