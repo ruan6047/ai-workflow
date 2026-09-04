@@ -36,8 +36,14 @@ def legal_plans(sm: dict) -> list[list[str]]:
 
 def states_of(sm: dict, stage: str) -> list[str]:
     only = sm.get("only_in_stage", {})
-    core = [s for s in sm["states"] if only.get(s, stage) == stage]
-    return core + sm.get("stage_delta", {}).get(stage, {}).get("states_add", [])
+    delta = sm.get("stage_delta", {}).get(stage, {})
+    core = [s for s in sm["states"] if only.get(s, stage) == stage and s not in delta.get("states_remove", [])]
+    return core + delta.get("states_add", [])
+
+
+def blocked_node(stage: str, frm: str) -> str:
+    """阻塞節點保留確切 blocked.from：每個非終態各一個。"""
+    return f"{stage}/阻塞←{frm}"
 
 
 def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
@@ -74,25 +80,37 @@ def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
             for st in f_states.split("|"):
                 if st not in states_of(sm, fs):
                     continue
+                t_stage_tok, t_state = to.split("/", 1) if to != "清單" else ("清單", "")
+                if st == "阻塞":
+                    # 解除：每個阻塞節點只回自己的 from
+                    if t_state == "<from>":
+                        for frm in states_of(sm, fs):
+                            if frm not in sm["terminal"] and frm != "阻塞":
+                                edges[blocked_node(fs, frm)].add(f"{fs}/{frm}")
+                    continue
                 src = f"{fs}/{st}"
                 if to == "清單":
                     edges[src].add("清單")
                     continue
-                t_stage_tok, t_state = to.split("/", 1)
                 ts = to_stage(t_stage_tok, fs)
                 if ts is None:
                     continue
-                if t_state == "<from>":
-                    for back in states_of(sm, ts):
-                        if back not in sm["terminal"] and back != "阻塞":
-                            edges[src].add(f"{ts}/{back}")
+                if t_state == "阻塞":
+                    edges[src].add(blocked_node(ts, st))
                 elif t_state in states_of(sm, ts):
                     edges[src].add(f"{ts}/{t_state}")
     return edges
 
 
 def universe(sm: dict, plan: list[str]) -> set[str]:
-    nodes = {f"{st}/{s}" for st in plan for s in states_of(sm, st)}
+    nodes: set[str] = set()
+    for st in plan:
+        ss = states_of(sm, st)
+        for s in ss:
+            if s == "阻塞":
+                nodes.update(blocked_node(st, frm) for frm in ss if frm not in sm["terminal"] and frm != "阻塞")
+            else:
+                nodes.add(f"{st}/{s}")
     nodes.add("清單")
     return nodes
 
@@ -129,7 +147,7 @@ def check(sm: dict, plan: list[str]) -> list[str]:
 
 
 def selftest(sm: dict) -> int:
-    """負控三件：砍終態邊必 FAIL；不可達終態帶出邊必 FAIL；定義集合內孤立非終態必 FAIL。"""
+    """負控四件：砍終態邊；終態帶出邊；孤立非終態；只有阻塞往返的狀態。皆必 FAIL。"""
     import copy
     plan = [s for s in sm["stages"] if s in sm["required_stages"]]
     bad = 0
@@ -137,12 +155,17 @@ def selftest(sm: dict) -> int:
     b1["transitions"] = [t for t in b1["transitions"] if not t["to"].startswith("結案/完成") and not t["to"].startswith("結案/停止")]
     e1 = check(b1, plan); ok1 = any("不可達結案" in e or "無出邊" in e for e in e1)
     b2 = copy.deepcopy(sm)
-    b2["transitions"].append({"from": "結案/停止", "to": "結案/待辦", "when": "負控：終態出邊"})
+    b2["transitions"].append({"from": "結案/停止", "to": "結案/待確認", "when": "負控：終態出邊"})
     e2 = check(b2, plan); ok2 = any(e.startswith("終態 結案/停止 有出邊") for e in e2)
     b3 = copy.deepcopy(sm)
     b3["states"] = b3["states"] + ["孤立"]
     e3 = check(b3, plan); ok3 = any("非終態 需求/孤立 無出邊" in e for e in e3)
-    for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3)):
+    # 只有 阻塞 往返、無其他出邊的狀態：必 FAIL（第 1 步審核 R3-01 的假陽性）
+    b4 = copy.deepcopy(sm)
+    b4["states"] = b4["states"] + ["孤島"]
+    b4["transitions"].append({"from": "**/孤島", "to": "same/阻塞", "when": "負控"})
+    e4 = check(b4, plan); ok4 = any("非終態 需求/孤島 不可達結案" in e for e in e4)
+    for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3), ("blocked_loop_only", ok4, e4)):
         print(f"selftest_{name}: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
         bad += not ok
     return 1 if bad else 0

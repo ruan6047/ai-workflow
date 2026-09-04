@@ -13,7 +13,7 @@ body:
       value: |
         **這張 issue 是清單項，⛔ 不是卡。** 它不在板上、⛔ 不配卡ID。
 
-        四欄缺任一項，`open` 印缺欄清單，處置由收件方判；⛔ PM 不代填。
+        四欄缺任一項，PM 退回提案者補；⛔ PM 不代填。
 
   - type: textarea
     id: intake

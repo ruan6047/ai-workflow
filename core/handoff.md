@@ -19,7 +19,8 @@ last_confirmed: 2026-09-05
 | 非射程 | CLI | `non_scope` 逐條 |
 | 基線 | CLI | 合併基底 SHA（merge-base，釘死字面）；`--for reviewer` 另列被審分支與 `source_sha` |
 | 前輪 findings | CLI | 上一輪 `wf-return` 的 findings 逐條；無則逐字「無前輪」 |
-| 能力層級 | CLI＋人 | 卡面建議（CLI）／實際（人）／偏離理由（人，相符時逐字「相符」） |
+| 能力層級建議 | CLI | 卡面 `exec_capability` 或 `review_capability` 的層級與理由 |
+| 實際模型 | 人 | 實際跑的模型名＋偏離理由；與建議相符時逐字「相符」 |
 | 注意事項 | CLI | `notes` 的編號清單全文 |
 | 副作用入口 | CLI | 專案層 `.wf/contracts/` 所列；缺檔印「專案層未宣告」 |
 | 寫入授權、唯讀路徑 | 人（PM） | 逐條列出；其餘唯讀 |

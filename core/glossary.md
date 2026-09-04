@@ -56,7 +56,7 @@ last_confirmed: 2026-09-05
 | 非射程 | 卡面 `non_scope`：這張卡不做什麼 | 不是未驗 | 非目標、out of scope |
 | 服務的原始目標 | 卡面 `service_goal`，需求方填 | 不是核心痛點 | 目的、initiative 目標 |
 | 規格、規格欄 | 規格＝卡面判準與規格欄的總稱；規格欄＝使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources` | 核心痛點不在此列 | 需求文件、spec |
-| 清單收斂宣告 | 卡面 `list_convergence`：這張卡吸收哪些清單項 | 不是查重 | 合併宣告、去重 |
+| 清單收斂宣告 | 這張卡吸收哪些清單項：卡面 `source_issue`＋收件表單 `dedupe` 欄，落卡面 `list_convergence` | 不是查重 | 合併宣告、去重 |
 | 設計閘（Design gate） | 規劃離開前 `verification` 填齊的檢查點 | 不是設計審查會 | 設計審、design review |
 | 質詢 | T4 卡離開規劃前需求方與 PM 逐題定案的紀錄，落 `wf:log` | 不是 code review | grilling、訪談、審問 |
 | 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數 | 鏈深 >2 只印 | 母卡、子卡、family、epic |
@@ -76,7 +76,7 @@ last_confirmed: 2026-09-05
 | finding | 查核者交回單裡一條帶 id、severity、blocking、attribution 的問題 | 不是 GitHub issue | 缺陷、bug、issue（中文語境） |
 | attribution | finding 責任歸屬：executor／coordinator／planner／reviewer／external | 不是 blame | 責任方 |
 | 退回理由 | 裁定單裡每輪退回引用的 finding | 不是散文 | 駁回原因 |
-| 復活條件 | 裁定單裡停止後可重開的條件 | 不是重試 | 重啟條件、reopen |
+| 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 不是重試 | 重啟條件、reopen |
 | 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | 不是上訴程序 | 上訴、appeal、反證 |
 | 副作用入口 | 派工單列的、改動會外溢的檔或設定 | 不是影響面泛稱 | blast list |
 | 派工、交回 | 五步迴圈的 ②（`move` 到進行中）與 ③（`move` 到待確認） | 不是聊天通知 | 認領、assign、handoff |

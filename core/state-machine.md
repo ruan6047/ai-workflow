@@ -13,11 +13,11 @@ last_confirmed: 2026-09-05
 
 ## 2 · 狀態值域
 
-核心：待辦／進行中／待確認／退回／完成，加正交的 阻塞。階段 delta：結案加 停止（終態）。模組 delta：research 加 不可判定、escalation 加 升級、maintenance 加 運行中。完成 只在結案階段有值（`only_in_stage`），其他階段沒有 `<階段>/完成` 節點。CLI 的 choices＝核心 ∪ 階段 delta ∪ 已啟用模組的值；未啟用的值寫不進去（→ [archive/rules-2026-09/AI_WORKFLOW.md §0.0 狀態值域](../archive/rules-2026-09/AI_WORKFLOW.md)；決策紀錄 C6）。
+核心：待辦／進行中／待確認／退回／完成，加正交的 阻塞。階段 delta：結案加 停止（終態）。模組 delta：research 加 不可判定、escalation 加 升級、maintenance 加 運行中。完成 只在結案階段有值（`only_in_stage`）；結案階段沒有 待辦、進行中（`states_remove`），入口＝結案／待確認。CLI 的 choices＝核心 ∪ 階段 delta ∪ 已啟用模組的值；未啟用的值寫不進去（→ [archive/rules-2026-09/AI_WORKFLOW.md §0.0 狀態值域](../archive/rules-2026-09/AI_WORKFLOW.md)；決策紀錄 C6）。
 
 ## 3 · 核心轉移表
 
-唯一居所＝下方區塊；`move` 只接受合成表內的邊（D1）。`from`／`to` 的階段記法：`*`＝該卡階段計畫內任一非結案階段；`same`＝同階段；`next`＝階段計畫的下一階段（下一階段為結案時走 `last` 列）；`last`＝階段計畫內最後一個非結案階段；`清單`＝不在板。`state` 的 `<from>`＝進阻塞前的狀態。`when` 是給 PM 讀的條件與印，⛔ 不是機械條件。
+唯一居所＝下方區塊；`move` 只接受合成表內的邊（D1）。`from`／`to` 的階段記法：`*`＝該卡階段計畫內任一非結案階段；`same`＝同階段；`next`＝階段計畫的下一階段（下一階段為結案時走 `last` 列）；`last`＝階段計畫內最後一個非結案階段；`清單`＝不在板。`state` 的 `<from>`＝進阻塞前的狀態，解除只回那一個狀態（每個非終態各有自己的阻塞節點）。`when` 是給 PM 讀的條件與印，⛔ 不是機械條件。
 
 ```json wf-state-machine
 {
@@ -25,7 +25,7 @@ last_confirmed: 2026-09-05
   "required_stages": ["需求", "執行", "審核", "結案"],
   "states": ["待辦", "進行中", "待確認", "退回", "完成", "阻塞"],
   "only_in_stage": {"完成": "結案"},
-  "stage_delta": {"結案": {"states_add": ["停止"]}},
+  "stage_delta": {"結案": {"states_add": ["停止"], "states_remove": ["待辦", "進行中"]}},
   "terminal": ["完成", "停止"],
   "initial": "需求/待辦",
   "transitions": [

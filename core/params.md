@@ -15,5 +15,3 @@ last_confirmed: 2026-09-05
 | retire_threshold | 20 張結案卡 | 注意事項 `last_cited` 落後 20 張結案卡即列為退場候選（`roles/pm.md` §4） |
 | guard_review_period | 20 張結案卡 | 需求方定期回看的週期（`roles/requester.md` §1） |
 | rule_confirm_days | 90 天 | 規則檔 `last_confirmed` 超過即由 `brief` 標 ⚠️ 過期 |
-| chain_depth_print | 2 | 鏈深超過即 `open`／`edit` 印「上限 2」 |
-| project_text_max_bytes | 1024 | Project TEXT 欄上限（`core/card-schema.md` §5） |
