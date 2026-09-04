@@ -83,7 +83,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 硬擋淨數 **13**：平台委託 5、CLI 資料有效性 8。CLI 層的 8 條沒有一條讀散文，全部是欄位存在、相等、在表內、在遠端。
 
 - 四角色：需求方、PM、執行者、查核者（決策 5）。第二 PM、人工查核不存在（C4）。
-- 每階段五步：① `notes` 印三層清單 ② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
+- 每階段五步：① `notes` 印四層清單（框架核心 → 已啟用模組 → 專案層 → 卡面，決策 11 逐字順序）② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
 - 查核者判 R3 R4；查核者的裁決同時覆蓋派工單（attribution: coordinator／planner）（C4）。
 - 裁決與裁定＝GitHub 留言；動詞只收 `--ruling <URL>`：缺即印，已給但不存在或作者不符才拒（C12–C14）。
 
@@ -104,7 +104,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段／待確認 | 下一站／待辦 | ⑤ 過 |
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
-| 任一階段／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）。同階段連續第 3 次退回時 `move` 印「預設處置＝換執行者（升級①）；需求方可否決」（PM 減重 4）；escalation 模組未啟用時只印不擋 |
+| 任一階段／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）。同卡同 iteration 累積第 3 次退回（不分階段、不要求連續）時 `move` 印「預設處置＝換執行者（升級①）；需求方可否決」（PM 減重 4）；escalation 模組未啟用時只印不擋 |
 | 任一狀態 | 阻塞 | 記 from；無 `--ruling` 印提示 |
 | 阻塞 | from | 解除 |
 | 最後一站／待確認 | 結案／待確認 | 結案報告 |
@@ -164,7 +164,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | `move <card> --to <階段/狀態> [--ruling URL]` | 目標、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時仍有 TODO | Project 欄、JSON owner／branch／iteration、轉移記錄留言（S5） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`（H10、C11） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 四層編號清單（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
-| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言） |
+| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 分支 HEAD ≠ source_sha、SHA 未 push、`merge-tree` 有衝突（H11、K10） | 缺人填段的提示 | 無（輸出到 stdout；PM 貼進留言）。輸出形狀：每一段首行固定 `[來源: <層>/<檔>#<節>]`，層值域＝core／module:<名>／project／card（決策 11「每段標來源」） |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法、H13 欄位不一致（資料有效性） | 缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態；有 shell 的查核者與執行者用它，沒 shell 者手貼同格式（C14） |
 | `snapshot` | — | — | — | 本機 JSON＋Markdown |
 
@@ -174,7 +174,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 | 文件 | 誰→誰 | CLI 填 | 人填 |
 |---|---|---|---|
-| 派工單 | PM→執行者或查核者 | 卡與身分、核心痛點、驗收逐條、非射程、merge-base SHA、前輪 findings、能力層級建議、注意事項編號清單、副作用入口清單 | 寫入授權、唯讀範圍、實際模型與偏離理由、未驗項（三分類）、本文件落差 |
+| 派工單（每段首行 `[來源: …]`，決策 11） | PM→執行者或查核者 | 卡與身分、核心痛點、驗收逐條、非射程、merge-base SHA、前輪 findings、能力層級建議、注意事項編號清單、副作用入口清單 | 寫入授權、唯讀範圍、實際模型與偏離理由、未驗項（三分類）、本文件落差 |
 | 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 八欄、**未驗清單（三分類：驗不了／沒去驗／刻意不驗，各附原因）**、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
 | 裁定單 | PM→需求方 | 事件序、退回理由、findings、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
@@ -206,7 +206,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 |---|---|---|
 | research | 階段計畫含研究 | 03#50–60 |
 | resource-lock | 同時 ≥2 執行者（決策 6） | 00 §六 |
-| escalation | 同卡同輪退回達第 3 次（誰數：`move` 數同階段連續退回） | 00 §六；05 空洞 7 |
+| escalation | 同卡同 iteration 累積退回達第 3 次（誰數：`move` 數該 iteration 內全部退回） | 00 §六；05 空洞 7 |
 
 | deploy | 階段計畫含部署 | 00 §六 |
 | maintenance | 交付物為排程、爬蟲、告警 | 00 §六 |
@@ -308,6 +308,11 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-01：C10 計數被第零條取代一事補進決策紀錄「補充裁定」，骨架 §三改為引用它，不再自行重判。
 - R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
+
+第七輪（被審 702daf7）：
+- R1-01：§三 `notes` 改四層、逐字決策 11 順序。
+- R1-02：`brief` 輸出每段首行 `[來源: …]`；派工單標同形（§七、§八）。
+- R1-03：升級計數鍵改同卡同 iteration 累積，不分階段不要求連續（§四、§九）。
 
 第六輪（被審 a5dbe68，R1 過、R2 五條）：
 - R2-01：§七寫入契約與 §十二正式化／守衛化改為節名＋來源指向，條文移到目標檔。
