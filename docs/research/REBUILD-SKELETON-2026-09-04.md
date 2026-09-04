@@ -71,8 +71,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | P5 | commit trailer 鍵與連續區塊 | CI |
 | D1 | 轉移在合成表內；終態無出邊；無自由文字狀態 | CLI `move` |
 | D2 | `open` 只從清單 issue；不在板上 | CLI `open` |
-| D3 | JSON 合法、鍵集合封閉；解析失敗整卡拒；寫後回讀 | CLI 全動詞 |
-| D4 | `--source-sha` 在遠端存在；`--ruling` URL 存在 | CLI `move`／`edit`；URL 存在但無 `wf-return`／`wf-ruling` 區塊＝印 |
+| D3 | JSON 合法、鍵集合封閉；`card_id`／`source_issue` 建卡後不可改；解析失敗整卡拒；寫後回讀 | CLI 全動詞 |
+| D4 | `--source-sha` 在遠端存在；`--ruling` URL 存在；`parent` 指到板上存在的卡 | CLI `move`／`edit`／`open`；URL 存在但無 `wf-return`／`wf-ruling` 區塊＝印 |
 
 判準：**CLI 拒的範圍＝「寫壞資料」與「指向不存在的東西」（＝決策紀錄的資料有效性、寫入順序、平台委託三類）；其餘＝印，交 AI 或人判。** 降為印的比對：HEAD 與 `source_sha`、`merge-tree` 衝突、交回單欄位一致性、鏈深、終態前 PR 與分支狀態、裁定留言作者；降為注意事項的：一人一角、跨家族。
 
@@ -99,7 +99,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段（結案除外）／待確認 | 下一階段／待辦 | ⑤ 過；審核階段 `--ruling` 種類＝`wf-return`（缺即印）；下一階段為結案時走「最後一個階段」列 |
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；審核階段 `--ruling` 種類＝`wf-return`，結案階段＝`wf-ruling`（缺即印） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
-| 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）；第 3 次退回的預設處置住 `roles/pm.md` §4 |
+| 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1、`source_sha` 清為 null（S7）；第 3 次退回的預設處置住 `roles/pm.md` §4 |
 | 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 記 from；無 `--ruling` 印提示 |
 | 阻塞 | from（必為非終態） | 解除 |
 | 最後一個階段／待確認 | 結案／待確認 | 結案報告 |
@@ -146,7 +146,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | spec_version | int | CLI（edit 自動 +1） | — | 派工單、initiative |
 | owner | {role: enum（requester／pm／executor／reviewer）, actor: string} | CLI（move `--actor`） | — | brief、Project owner 欄 |
 | branch | string | CLI（move 到進行中時寫） | — | brief、D4 |
-| source_sha | string（40 hex）＋ `source_sha_iteration` | CLI（`move --source-sha` 於交回時寫；須在遠端存在，D4）；`edit` 可改（C11） | 交回時 | `brief --for reviewer`／`review`（比對並印）、裁定單 |
+| source_sha | string（40 hex）或 null；恆屬當前 `iteration`（`move` 進執行時 iteration +1 並清為 null） | CLI（`move --source-sha` 於交回時寫；須在遠端存在，D4）；`edit` 可改（C11） | 交回時 | `brief --for reviewer`／`review`（比對並印）、裁定單 |
 | iteration | int | CLI | — | brief |
 | notes | {id: `T-<階段>-NN`, text, origin: 留言 URL}[]（卡面 `notes` 欄，T- 加嚴層級） | 任何有 shell 的角色經 `edit --set notes+=`，來源為 `wf:note` 留言（§十二） | 否 | notes、brief |
 
@@ -158,9 +158,9 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 | 動詞 | 輸入 | 硬擋（rc≠0 並寫一則拒收留言，C13） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
-| `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration` | 不是 issue、已在板上、`--parent` 不存在、JSON 鍵不合法（D2、D3；全部在首次遠端寫入前） | 缺欄清單、鏈深（沿父鏈算，>2 印「上限 2」）、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
-| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言無 `wf-return`／`wf-ruling` 區塊、裁定留言作者 login、缺欄（阻塞四欄、停止三欄）、離開規劃時 `acceptance` 或 `verification` 為空 | Project 欄、JSON owner／branch／iteration／source_sha、轉移記錄留言（純散文） |
-| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡（D3、D2、C11）；鏈深沿父鏈算後只印 | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
+| `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration` | 不是 issue、已在板上、JSON 鍵不合法、`--parent` 不存在（D2、D3、D4；全部在首次遠端寫入前） | 缺欄清單、鏈深（沿父鏈算，>2 印「上限 2」）、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
+| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言無 `wf-return`／`wf-ruling` 區塊、裁定留言作者 login、缺欄（阻塞四欄、停止三欄）、離開規劃時 `acceptance` 或 `verification` 為空 | Project 欄、JSON owner／branch／iteration／source_sha（進執行時 iteration +1 且 source_sha=null；交回時寫 `--source-sha`）、轉移記錄留言（純散文） |
+| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡（D3、D4、C11）；鏈深沿父鏈算後只印 | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 無 | `--for reviewer`：分支 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 有衝突（印）；`--for reviewer` 另印本 iteration 的執行者 actor（PM 判一人一角與跨家族的資訊）；`--for closeout`：merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段來源標記帶該檔 `last_confirmed` | 無（stdout；PM 貼進留言）。每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]` |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法（D3） | 交回單欄位不一致（PM 判）、缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態、⛔ 不另產生其他留言 |

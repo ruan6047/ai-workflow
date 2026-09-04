@@ -72,6 +72,11 @@ H8（進終態前 PR 與分支狀態）與 H9 的鏈深上限降為印；硬擋 
 | H19 | 禁 `gh pr update-branch` | **砍** | C3 |
 | K4 | 守衛必須進 CI | **紀律** | `roles/conduct-common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
 
+## 第二十二輪（被審 b1bd0a4，留言 5540084169）
+
+- R3-01：砍 `source_sha_iteration`；`source_sha` 定為 string，恆屬當前 `iteration`：`move` 進執行時 iteration +1 並清為 null，交回時寫（§四、§六、§七）。少一個鍵而不是多一個。
+- R3-02：`card_id`／`source_issue` 不可改列入 D3；`parent` 指到存在的卡列入 D4，`open` 納入 D4 動詞；§七 `open`／`edit` 改引 D2、D3、D4（§三、§七）。
+
 ## 第二十一輪（被審 2fcd298）
 
 - R1-01：代貼標記回首行、限裁定；代貼裁決是否沿用列 §十五 待裁。
