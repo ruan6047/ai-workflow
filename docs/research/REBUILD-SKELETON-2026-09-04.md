@@ -73,7 +73,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | P4 | secrets 不進 git | CI secret scanner（補充裁定 H4） |
 | P5 | commit trailer 鍵與連續區塊 | CI |
 | D1 | 轉移在合成表內；終態無出邊；無自由文字狀態 | CLI `move` |
-| D2 | `open` 只從清單 issue；不在板上 | CLI `open` |
+| D2 | `open` 只從清單項或撤銷卡（§十八），兩者皆不在板上 | CLI `open` |
 | D3 | JSON 合法、鍵集合封閉；`card_id`／`source_issue` 建卡後不可改；解析失敗整卡拒；寫後回讀 | CLI 全動詞 |
 | D4 | `--source-sha` 在遠端存在；`--ruling` URL 存在；`parent` 指到板上存在的卡 | CLI `move`／`edit`／`open`；URL 存在但無 `wf-return`／`wf-ruling` 區塊＝印 |
 
@@ -131,7 +131,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 六 · `core/card-schema.md` 的內容
 
-卡面＝Issue body 的一個 fenced JSON 區塊（`json wf-card`）＋人讀散文段。CLI 只讀寫 JSON（決策 1）；讀留言時只讀三種 fenced JSON 區塊（`json wf-return`、`json wf-ruling`、`json wf-note`），散文與首行不在讀取範圍；CLI 自己寫的留言（`wf:move`／`wf:edit`／`wf:reject`／`wf:log`）是純散文、只寫不讀，iteration 住卡面 JSON；退回次數不由核心 CLI 數（escalation 模組的事）。
+卡面＝Issue body 的一個 fenced JSON 區塊（`json wf-card`）＋人讀散文段。CLI 只讀寫 JSON（決策 1）；讀留言時只讀三種 fenced JSON 區塊（`json wf-return`、`json wf-ruling`、`json wf-note`），散文與首行不在讀取範圍；CLI 自己寫的留言（`wf:move`／`wf:edit`／`wf:reject`）是純散文、只寫不讀；`wf:log` 人貼（§十），iteration 住卡面 JSON；退回次數不由核心 CLI 數（escalation 模組的事）。
 
 | 欄 | 型別 | 誰填 | 何時必填（`open` 印缺欄） | 誰讀 |
 |---|---|---|---|---|
@@ -155,7 +155,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | db_scope | enum none/read/write/schema/data-migration | PM | 建卡 | tiers |
 | resources | string[]（文法住 db-contract／resource-lock） | PM | 建卡 | resource-lock 模組 |
 | when | string（卡片簡介的「適用時機」一句；非射程已在 `non_scope`） | PM | 建卡 | 清單搜尋、派工單卡與身分段 |
-| spec_version | int | CLI（edit 自動 +1） | — | 派工單、initiative |
+| spec_version | int | CLI（`edit` 改 `acceptance`／`verification`／`non_scope`／`resources` 任一欄時自動 +1，C11） | — | 派工單、initiative |
 | owner | {role: enum（requester／pm／executor／reviewer）, actor: string} | CLI（move `--actor`） | — | brief、Project owner 欄 |
 | branch | string | CLI（move 到進行中時寫） | — | brief、D4 |
 | source_sha | string（40 hex）或 null；恆屬當前 `iteration`（`move` 進執行時 iteration +1 並清為 null） | CLI（`move --source-sha` 於交回時寫；須在遠端存在，D4）；`edit` 可改（C11） | 交回時 | `brief --for reviewer`／`review`（比對並印）、裁定單 |
@@ -170,9 +170,9 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 | 動詞 | 輸入 | 硬擋（rc≠0 並寫一則拒收留言，C13） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
-| `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration` | 不是 issue、已在板上、JSON 鍵不合法、`--parent` 不存在（D2、D3、D4；全部在首次遠端寫入前） | 缺欄清單（§六必填時點＝建卡的欄）、鏈深（沿父鏈算，>2 印「上限 2」）、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
+| `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration` | 不是清單項也不是撤銷卡、已在板上、JSON 鍵不合法、`--parent` 不存在（D2、D3、D4；全部在首次遠端寫入前） | 缺欄清單（§六必填時點＝建卡的欄）、鏈深（沿父鏈算，>2 印「上限 2」）、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
 | `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 卡面 JSON 解析失敗、轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D3、D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言無 `wf-return`／`wf-ruling` 區塊、裁定留言作者 login、`wf-ruling` 依 kind 的必要鍵缺（block 四鍵、stop 三鍵，§八）、離開規劃時 `acceptance` 或 `verification` 為空、T4 而 `grilling` 為 null | Project 欄、JSON owner／branch／iteration／source_sha（進執行時 iteration +1 且 source_sha=null；交回時寫 `--source-sha`）、轉移記錄留言（純散文） |
-| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡、`--set source_sha=` 不在遠端、已給的 `--ruling` URL 不存在（D3、D4、C11）；鏈深沿父鏈算後只印 | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
+| `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡、`--set source_sha=` 不在遠端、已給的 `--ruling` URL 不存在（D3、D4、C11）；鏈深沿父鏈算後只印 | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄（C11 四欄）變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | 卡面 JSON 解析失敗（D3） | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 卡面 JSON 解析失敗（D3） | `--for reviewer`：分支 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 有衝突（印）；`--for closeout`：merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段來源標記帶該檔 `last_confirmed` | 無（stdout；PM 貼進留言）。每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]` |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法（D3） | 交回單欄位不一致（PM 判）、缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態、⛔ 不另產生其他留言 |
@@ -246,6 +246,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 空洞 | 落點 |
 |---|---|
 | 部署、維護 0 條 | 模組 `deploy`、`maintenance`（來源 ADOPTION 五行、01#45 49 60–62 73；其餘節留空標「待實例」） |
+| H17 狀態面不可用時的暫停 | `roles/conduct-common.md` §1 操作紀律（唯一居所；00 §二 H17） |
 | 缺陷路徑 | 橫切：三條核心各一落點——無專屬卡種 → `core/card-schema.md`（單一形狀）；留痕走狀態面、不另開 log → `core/verbs.md` §寫入契約；未開卡走 commit trailer 下限 → `roles/conduct-common.md` §2。FIX 後綴屬命名洞 → `core/naming.md`。其餘分住 requirement／planning／implementation（03 §缺陷路徑） |
 | 需求方角色薄 | `roles/requester.md` §1（來源 03#133 38 66 81 84 137、01#3 4、02#5 68） |
 | 待審清單無形狀 | 形狀＝`.github/ISSUE_TEMPLATE/list-intake.yml` 的 `json wf-intake` 四欄（§一）；schema 住 `core/card-schema.md` §intake；讀它的動詞＝`open`（§七）；動詞集合固定於 §七 |
@@ -357,10 +358,15 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 紅線 | 至少 T3 的變更域 | 敏感、高風險 |
 | 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | 目標、需求、範圍、scope、AC |
 | 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | backlog、inbox、待辦池 |
-| 規格、規格欄 | 卡面會使 `spec_version` +1 的欄（核心痛點、驗收條件、非射程、when） | 需求文件、spec |
+| 規格、規格欄 | 卡面會使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources`（C11）；核心痛點另受裁定連結約束，不在此列 | 需求文件、spec |
 | 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | 驗證、校驗、guard |
 | 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性、品質 |
 | finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷、bug |
+| 合成表 | 核心轉移表 ∪ 已啟用模組 add − remove，再按該卡 `stage_plan` 展開 | 狀態表、workflow 圖 |
+| 模組 delta | 模組宣告區塊裡對狀態值域、轉移、欄位、注意事項的增減 | 外掛、patch、覆寫 |
+| 設計閘（Design gate） | 規劃階段離開前 `verification` 欄填齊的檢查點；正式中文詞＝設計閘 | 設計審、design review |
+| 驗證項目 | 卡面 `verification`：每條 {item, who}，說「怎麼證明驗收條件成立、誰證」；驗收條件說「什麼算過」；`self_run` 是交回單裡真的跑了什麼 | 測試計畫、驗證方式 |
+| 清單收斂宣告 | 一張卡吸收哪些清單項：卡面 `source_issue`＋收件表單 `dedupe` 欄 | 合併宣告、去重 |
 | 封存、撤銷、停止 | 三個離開動作 | 關閉、刪除、歸檔（作為封存以外的意思） |
 | 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
 | 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
