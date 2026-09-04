@@ -58,7 +58,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 三 · 核心迴圈與角色（定案摘要）
 
-**第零條（README 心智模型第一行）**：CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不做內容判讀。舊 ROADMAP 目標 1「有機械執行者擋下才算達成」廢止。三目標並列：可稽核、防低級事故、**流程順暢**（前兩項不得以犧牲第三項達成；沿 #177 brief）。
+**第零條（README 心智模型第一行）**：CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不做內容判讀。舊 ROADMAP 目標 1「有機械執行者擋下才算達成」廢止。目標的排序與關係住決策紀錄第零條，本檔不重述。
 
 決策紀錄「補充裁定」已載：第零條取代 C10 的 20 條計數，硬擋以本表為準。依第零條把 `extract/00-consolidated.md` §二的 19 條加 K4 K5 逐條重判如下。
 
@@ -248,12 +248,12 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
 | 退回上一階段的條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
 | 命名與目錄 | `core/naming.md` |
-| 研究階段討論回合出口 | `modules/research/module.md` §1：討論以一則留言收口，`move` 收該 URL |
+| 研究階段討論回合出口 | `modules/research/module.md` §1（來源 03#52） |
 | 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
 | Design gate 記錄位 | `stages/planning.md` §1：設計判斷寫進 verification 欄；N/A 寫理由 |
 | 規則文件自身過期 | 生命週期落點：每個規則檔 frontmatter `last_confirmed: <日期>`；`brief` 在每段來源標記帶該檔 `last_confirmed`，超過 `rule_confirm_days` 的標「過期」（印，不擋）；確認者＝需求方，確認動作＝改日期一次 commit。引用寫法另住 `roles/conduct-common.md` §2 |
-| 查核者資訊邊界 | `roles/reviewer.md` §1：只看派工單與分支；派工單就是全部 |
-| 常態誰 merge | `stages/closeout.md` §4：PM 在四停下條件內直行（03#93） |
+| 查核者資訊邊界 | `roles/reviewer.md` §1（來源 02#966–968、04#41） |
+| 常態誰 merge | `stages/closeout.md` §4（來源 03#93） |
 | Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
 | 升級梯 JSON 形狀 | 模組 `escalation` 宣告 `fields: [escalation_count]`，啟用時由 `move` 數；未啟用時第 3 次退回的預設處置是 `roles/pm.md` §4 的條文，PM 自己數 |
 | 專案層級別數字 | `core/tiers.md` §專案層（形狀：文字加嚴介面；數字未定，沿 tier-rules §四） |
