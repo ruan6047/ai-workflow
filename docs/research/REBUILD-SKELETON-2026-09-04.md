@@ -192,7 +192,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ```yaml
 name: resource-lock
-enable_when: 專案 `.wf/modules.json` 列出本模組  # 決策 6：同時 ≥2 執行者時該列；這句是判斷依據不是條件
+enable_when: 派工當下板上狀態＝進行中且 owner 不同的卡 ≥1 張  # 決策 6「同時 ≥2 執行者」；事實來源＝Project 投影欄
 adds:
   fields: [worktree, lease_expires_at]
   stages: []
@@ -214,13 +214,13 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | initiative | 卡的 `parent` 非空 | 卡面 JSON | 02#10、04#44 117–120 |
 | stat-redline | 卡的 `tier_basis.sensitive` 含統計／ML／資料正確性 | 卡面 JSON | 04#135–138、03#57 |
 | escalation | 專案 `.wf/modules.json` 列出（計數由 `move` 在該 iteration 內做） | modules.json | 00 §六；05 空洞 7 |
-| resource-lock | 專案 `.wf/modules.json` 列出（決策 6：同時 ≥2 執行者時該列） | modules.json | 00 §六 |
+| resource-lock | 同時 ≥2 執行者：`move` 派工當下，板上狀態＝進行中且 `owner.actor` 與本卡不同的卡 ≥1 張（決策 6） | Project 投影欄 狀態＋owner（`modules.json` 只放參數，如 lease TTL，⛔ 不是條件） | 00 §六 |
 | pitfalls-13 | 專案 `.wf/modules.json` 列出 | modules.json | 00 §六 |
 | identity | 專案 `.wf/modules.json` 列出（多實體共用同一帳號時該列） | modules.json | 00 §六 |
 | snapshot | 專案 `.wf/modules.json` 列出（狀態面在 GitHub 時該列） | modules.json | 00 §六 |
 | db-contract | 專案 `.wf/modules.json` 列出（有 DB 時該列）且 `.wf/contracts/DATABASE_CONTRACT.md` 存在（兩者 AND；缺契約檔＝未啟用，`notes` 印警示） | modules.json＋契約檔 | 02#45–50、04#129–132 |
 
-合成語意：專案層模組只看 `modules.json`；卡層模組只看卡面欄；`db-contract` 是唯一 AND。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
+合成語意：卡層模組看卡面欄；`resource-lock` 看 Project 投影欄；其餘專案層模組看 `modules.json`；`db-contract` 是唯一 AND。`modules.json` 對 `resource-lock` 只提供參數。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
 
 
 ## 十 · `core/naming.md` 的內容（新；舊規則只有四條，00 空洞 9）
@@ -316,6 +316,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+第九輪（被審 a8e1722）：
+- R1-01：`resource-lock` 的 predicate 改為「派工當下板上進行中且 owner 不同的卡 ≥1 張」，事實來源＝Project 投影欄；`modules.json` 只放參數。
 
 第八輪（被審 b378bfe）：
 - R1-01：H3 改為「合併方式由專案層 `merge_method` 決定、平台設定強制」；aiwf 選 squash 是專案層值（C3）。
