@@ -78,7 +78,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H10 | JSON 合法、鍵集合封閉、解析失敗整卡拒、寫後回讀 | 資料有效性＋寫入順序 | CLI 全動詞 |
 | H11＋K5 | 交回時 `source_sha` 40 碼且在遠端；審核期間分支 HEAD＝卡面 `source_sha`；交回單 `source_sha`＝卡面值 | 資料有效性 | CLI `move`（寫）、`brief --for reviewer`／`review`（比） |
 | K10 | 派審前分支與 main 的 `merge-tree` 無衝突 | 資料有效性（git 事實） | CLI `brief --for reviewer` |
-| KR（C12–C14） | 已給的 `--ruling` URL 存在，且作者 ∈ `.wf/actors.json` `requesters`（缺 URL 不在此列，只印） | 資料有效性（GitHub 事實） | CLI `move`／`edit` |
+| KR（C12–C14） | 已給的 `--ruling` URL 存在，且依留言首行分流比對作者：`wf:verdict` ⇒ 作者 ∈ `.wf/actors.json` `reviewers` 或＝該 iteration `roles` 的 reviewer.actor；`wf:ruling` ⇒ 作者 ∈ `requesters`；轉移需要哪一種由 §四條件欄定（審核→完成／退回要 verdict；撤銷、停止、級別下修、T4 sign-off 要 ruling）。缺 URL 不在此列，只印 | 資料有效性（GitHub 事實） | CLI `move`／`edit` |
 | H13 | 交回單欄位一致性（C2 三含意）：`REQUEST_CHANGES` 須有 `blocking: true` 或 `core_pain_resolved: no`，兩者皆無即拒收為無效裁決；`APPROVE` 不得有 `blocking: true` 或 `core_pain_resolved: no` | 資料有效性（JSON 欄位間一致） | CLI 讀交回單 JSON |
 | H14 | 查核唯讀、不代改 | **紀律** | `roles/reviewer.md`；分支變動由 H11 抓 |
 | H16 | 事件只寫該卡 Issue | **語意** | `core/verbs.md` |
@@ -92,7 +92,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 - 四角色：需求方、PM、執行者、查核者（決策 5）。第二 PM、人工查核不存在（C4）。
 - 每階段五步：① `notes` 印一份清單（四個來源：框架核心 → 已啟用模組 → 專案層 → 卡面，決策 11 逐字順序）② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
 - 查核者判 R3 R4；查核者的裁決同時覆蓋派工單（attribution: coordinator／planner）（C4）。
-- 裁決與裁定＝GitHub 留言；動詞只收 `--ruling <URL>`：缺即印，已給但不存在、或留言作者 ∉ `.wf/actors.json` 的 `requesters` 才拒（C12–C14）。單帳號專案（aiwf 今日）此比對恆真，仍保留為結構。
+- 裁決與裁定＝GitHub 留言，誰貼都可以（有 shell 用 `review`，沒 shell 手貼同格式）；動詞只收 `--ruling <URL>`：缺即印；已給但不存在，或作者與留言種類不符（`wf:verdict` 對 reviewers／該 iteration 的 reviewer，`wf:ruling` 對 requesters）才拒（C12–C14）。單帳號專案（aiwf 今日）此比對恆真，仍保留為結構。
 
 ## 四 · `core/state-machine.md` 的內容
 
@@ -109,8 +109,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 撤銷卡（不在板、帶 `wf-card`） | 需求／待辦 | 由 `open <issue>` 復板：沿用其 `card_id` 與 `iteration`，只重新加進 Project；撤銷卡⛔ 不是清單項（§十八） |
 | 任一階段（結案除外）／待辦 | 同階段／進行中 | 派工 |
 | 任一階段（結案除外）／進行中 | 同階段／待確認 | 交回 |
-| 任一階段（結案除外）／待確認 | 下一階段／待辦 | ⑤ 過；下一階段為結案時走「最後一個階段」列 |
-| 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；結案／退回＝需求方退回補驗 |
+| 任一階段（結案除外）／待確認 | 下一階段／待辦 | ⑤ 過；審核階段此邊的 `--ruling` 種類＝`wf:verdict`；下一階段為結案時走「最後一個階段」列 |
+| 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；審核階段此邊的 `--ruling` 種類＝`wf:verdict`；結案／退回＝需求方退回補驗（`wf:ruling`） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
 | 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）。同卡同 iteration 累積第 3 次退回（不分階段、不要求連續）時 `move` 印「預設處置＝換執行者（升級①）；需求方可否決」（PM 減重 4）；escalation 模組未啟用時只印不擋 |
 | 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 記 from；無 `--ruling` 印提示 |
@@ -173,7 +173,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 動詞 | 輸入 | 硬擋（rc≠0 並寫一則拒收留言，C13） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
 | `open <issue> [--parent <card_id>]` | 清單 issue 號；父卡 ID（PM 開卡時的結構化輸入，⛔ 不在 intake 四欄）。issue body 已有 `wf-card` 區塊＝撤銷卡復板：沿用 `card_id`／`iteration`，不配新 ID | 不是 issue、已在板上、`--parent` 不存在或沿父鏈算得鏈深 >2、JSON 鍵不合法（H9、H10；全部在首次遠端寫入前） | 缺欄清單、清單留言數與未讀警示（K7） | 建卡 JSON、加進 Project、配卡ID |
-| `move <card> --to <階段/狀態> [--actor A --family F] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor 與 family、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者不符（H7、H8；資料有效性） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時 `acceptance` 或 `verification` 為空陣列或含空字串（存在性，不讀內容） | Project 欄、JSON `roles` 追加一筆並投影到 owner／branch／iteration、轉移記錄留言（S5，含 role／actor／family） |
+| `move <card> --to <階段/狀態> [--actor A --family F] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor 與 family、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、進終態前收尾未完成、**已給的** `--ruling` URL 不存在或作者與留言種類不符（KR：verdict 對 reviewers／該 iteration reviewer，ruling 對 requesters；H7、H8） | **缺 `--ruling`**（撤銷、阻塞、停止、級別下修；C12）、缺欄（阻塞四欄、停止三欄）、merge SHA 是否 main 祖先、CI 狀態、離開規劃時 `acceptance` 或 `verification` 為空陣列或含空字串（存在性，不讀內容） | Project 欄、JSON `roles` 追加一筆並投影到 owner／branch／iteration、轉移記錄留言（S5，含 role／actor／family） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 後沿父鏈重算鏈深 >2（H10、H9、C11） | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 只在 `--for reviewer`：分支 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 有衝突（H11、K10）。`--for executor`／`closeout` 無硬擋 | 缺人填段的提示；`--for executor` 時分支尚未建則印「派工後由 move 寫回」 | 無（輸出到 stdout；PM 貼進留言）。輸出形狀：每一段首行固定 `[來源: <來源>/<檔>#<節>]`，來源值域＝core／module:<名>／project／card（決策 11「每段標來源」） |
@@ -335,6 +335,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+第十八輪（被審 42ca665）：
+- R1-01：KR 分流——`wf:verdict` 對 reviewers 或該 iteration 的 reviewer.actor，`wf:ruling` 對 requesters；§三、§四、§七同步。
 
 第十七輪（被審 cdf2ac5，R1 R2 過）：
 - R3-01：§四加「清單（撤銷過的卡）→ 需求／待辦」邊，由 `open` 復板沿用 card_id／iteration。
