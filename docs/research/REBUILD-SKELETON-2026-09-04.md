@@ -394,6 +394,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 獨立查核 | 查核者實體不同於本 iteration 執行者實體（P2） | 第二雙眼、peer review |
 | 拒收（事件） | CLI rc≠0 並寫一則 `wf:reject` 留言的那次事件；作為硬擋類別名仍禁用 | 駁回、reject（作為類別名） |
 | 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 驗證失敗、invalid |
+| 質詢（grilling） | T4 卡離開規劃前需求方與 PM 逐題定案的對話紀錄，落 `wf:log`，卡面 `grilling` 指向 | 訪談、code review、審問 |
+| 單向門 | 級別只升不降的門檻：降級需裁定（`core/tiers.md` §單向門） | 不可逆、one-way |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | merge 策略、合併策略 |
 | 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 寫入規則、transaction |
 | 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | 影響面、blast list |
