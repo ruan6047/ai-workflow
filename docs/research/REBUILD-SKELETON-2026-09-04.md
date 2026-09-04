@@ -85,13 +85,20 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 **階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是卡級模組（唯一啟用條件＝該卡 `stage_plan` 含該階段；事實來源＝卡面 JSON），未啟用時該卡的階段序列裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
 
-**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案階段加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。
+**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案階段加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。模組加狀態時，其 `transitions.add` 必同時給進邊與至少一條可達結案的出邊；三個模組的 delta 釘死如下（條文住各模組 `module.md`）：
+
+| 模組 | add（from → to；條件） |
+|---|---|
+| research | 研究／待確認 → 研究／不可判定（交回單 verdict＝不可判定）；研究／不可判定 → 需求／待辦（重述問題）；研究／不可判定 → 結案／待確認（以不可判定作結案報告） |
+| escalation | 任一階段（結案除外）／退回 → 同階段／升級（同 iteration 第 N 次退回，N＝`modules.json` 該模組 `params.escalate_after`，種子 3）；升級 → 同階段／進行中（換人或換級再派，`--ruling` 缺即印）；升級 → 結案／待確認（需求方裁定收尾） |
+| maintenance | 維護／待辦 → 維護／運行中（上線）；維護／運行中 → 維護／進行中（事件處理）；維護／運行中 → 結案／待確認（結束維護） |
+
 
 **核心轉移表**（每列＝一條允許的邊；`move` 只接受表內轉移，D1）：
 
 | from | to | 條件 |
 |---|---|---|
-| 需求／待確認 | 研究或規劃或執行／待辦 | 依階段計畫的下一階段；T2+ 不得跳過規劃（S3） |
+| 需求／待確認 | 研究或規劃或執行／待辦 | 依階段計畫的下一階段；T2+ 而 `stage_plan` 缺規劃＝印（S3，PM 判） |
 | 需求／待確認 | 清單（撤銷） | 卡ID 保留、iteration 延續（S6、C5）；無 `--ruling` 印提示；JSON 留在 issue body |
 | 撤銷卡（不在板、帶 `wf-card`） | 需求／待辦 | `open` 復板，沿用 `card_id`／`iteration`（§十八） |
 | 任一階段（結案除外）／待辦 | 同階段／進行中 | 派工 |
@@ -106,7 +113,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 結案／退回 | 結案／待確認 | 補驗後重交結案報告 |
 | 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling`（缺即印）；兩者皆封存 |
 
-**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
+**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），對「無模組」「每個帶 delta 的模組單獨啟用」「全部啟用」各跑一次，每次涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
 
 ## 五 · `core/tiers.md` 的內容
 
@@ -131,7 +138,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | feature | string | PM | 建卡 | brief |
 | core_pain | string | CLI 從清單 issue 的 `wf-intake` 逐字帶入 | 建卡 | 所有交接文件 |
 | non_scope | string[] | PM | 建卡 | brief、R2 |
-| stage_plan | enum[]（階段名逐字） | PM | 建卡 | move |
+| stage_plan | enum[]（8 階段名逐字；必為 §四階段序列的子序列、不重複；必含 需求、執行、審核、結案；不合＝D3 拒） | PM | 建卡 | move |
 | acceptance | string[] ≥1 | PM | 離開規劃前 | brief、R3 |
 | verification | {item, who}[] | PM | 離開規劃前 | brief |
 | list_convergence | int[]（清單 issue 號） | PM | 建卡 | 結案核對 |
