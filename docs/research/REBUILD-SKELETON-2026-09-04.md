@@ -266,7 +266,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十二 · 注意事項的生命週期（只定資料、參數、管道、落點）
 
-**資料形狀**：三個加嚴層級 F-（框架）／P-（專案）／T-（卡面 `notes` 欄）；每條 `{id, text, origin, last_cited}`；輸出永遠是單一份清單、一套三值（§八）。
+**資料形狀**：三個加嚴層級 F-（框架）／P-（專案）／T-（卡面 `notes` 欄）；每條 `{id, text, origin, last_cited}`；合成形狀＝三層累加、不覆寫、專案層與任務層只能加嚴不能豁免（B1；條文住 `roles/pm.md` §4 與 `core/verbs.md` §notes）；輸出永遠是單一份清單、一套三值（§八）。
 
 **參數**（皆設計值，住 `core/params.md`，填規則時可調）：
 
