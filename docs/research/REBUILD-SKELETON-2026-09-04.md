@@ -236,7 +236,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 交付報告 schema 散 | `core/handoff.md` |
 | 一卡一分支無明文 | `core/naming.md`＋`core/verbs.md` move |
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
-| 退回上一站條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
+| 退回上一階段的條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
 | 命名與目錄 | `core/naming.md` |
 | 研究階段討論回合出口 | `modules/research/module.md` §1：討論以一則留言收口，`move` 收該 URL |
 | 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
