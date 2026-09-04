@@ -74,7 +74,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | D3 | JSON 合法、鍵集合封閉；解析失敗整卡拒；寫後回讀 | CLI 全動詞 |
 | D4 | `--source-sha` 在遠端存在；`--ruling` URL 存在且含 `wf-return`／`wf-ruling` 區塊 | CLI `move`／`edit` |
 
-判準：**CLI 拒的範圍＝「寫壞資料」與「指向不存在的東西」；其餘＝印，交 AI 或人判。** 降為印的比對：HEAD 與 `source_sha`、`merge-tree` 衝突、交回單欄位一致性、鏈深、終態前 PR 與分支狀態、裁定留言作者；降為注意事項的：一人一角、跨家族。
+判準：**CLI 拒的範圍＝「寫壞資料」與「指向不存在的東西」（＝決策紀錄的資料有效性、寫入順序、平台委託三類）；其餘＝印，交 AI 或人判。** 降為印的比對：HEAD 與 `source_sha`、`merge-tree` 衝突、交回單欄位一致性、鏈深、終態前 PR 與分支狀態、裁定留言作者；降為注意事項的：一人一角、跨家族。
 
 - 四角色：需求方、PM、執行者、查核者（決策 5）。第二 PM、人工查核不存在（C4）。
 - 每階段五步：① `notes` 印一份清單（四個來源：框架核心 → 已啟用模組 → 專案層 → 卡面，決策 11 逐字順序）② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
@@ -162,7 +162,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標、（派工與派審時）actor、（交回時）source_sha、裁定 URL | 轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在或無 `wf-return`／`wf-ruling` 區塊（D1、D4） | 進終態前 PR 與分支狀態（印）、缺 `--ruling`（撤銷、阻塞、停止、級別下修）、裁定留言作者 login、缺欄（阻塞四欄、停止三欄）、離開規劃時 `acceptance` 或 `verification` 為空 | Project 欄、JSON owner／branch／iteration／source_sha、轉移記錄留言（純散文） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡（D3、D2、C11）；鏈深沿父鏈算後只印 | 無裁定連結、審核期修改 | JSON；`edit` 留言；規格欄變動時 spec_version +1；審核期另貼 `edit during review` 留言（C11） |
 | `notes <card> [--stage]` | — | — | 一份編號清單，四個來源（框架核心 F- → 已啟用模組 F- → 專案層 P- → 卡面 `notes` 欄 T-，決策 11 順序）＋ pitfalls-13 樣板（若啟用） | 無 |
-| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 無 | `--for reviewer`：分支 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 有衝突（印）；`--for reviewer` 另印本 iteration 的執行者 actor（PM 判 H5 H6 的資訊）；`--for closeout`：merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段來源標記帶該檔 `last_confirmed` | 無（stdout；PM 貼進留言）。每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]` |
+| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 無 | `--for reviewer`：分支 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 有衝突（印）；`--for reviewer` 另印本 iteration 的執行者 actor（PM 判一人一角與跨家族的資訊）；`--for closeout`：merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段來源標記帶該檔 `last_confirmed` | 無（stdout；PM 貼進留言）。每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]` |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法（D3） | 交回單欄位不一致（PM 判）、缺段（未驗清單、self_run、注意事項回應） | 以 `json wf-return` 區塊貼成該卡一則留言，⛔ 不動狀態、⛔ 不另產生其他留言 |
 | `snapshot` | — | — | — | 本機 JSON＋Markdown |
 
@@ -256,7 +256,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十二 · 注意事項的生命週期（只定資料、參數、管道、落點）
 
-**資料形狀**：三個加嚴層級 F-（框架）／P-（專案）／T-（卡面 `notes` 欄）；每條 `{id, text, origin, last_cited}`；合成形狀＝三層累加、不覆寫、專案層與任務層只能加嚴不能豁免（B1；條文住 `roles/pm.md` §4 與 `core/verbs.md` §notes）；輸出永遠是單一份清單、一套三值（§八）。
+**資料形狀**：三個加嚴層級 F-（框架）／P-（專案）／T-（卡面 `notes` 欄）；每條 `{id, text, origin, last_cited}`；合成形狀＝三個加嚴層級累加、不覆寫、專案層與任務層只能加嚴不能豁免（B1；條文住 `roles/pm.md` §4 與 `core/verbs.md` §notes）；輸出永遠是單一份清單、一套三值（§八）。
 
 **參數**（皆設計值，住 `core/params.md`，填規則時可調）：
 
