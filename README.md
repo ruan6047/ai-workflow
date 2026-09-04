@@ -1,3 +1,5 @@
+> ⛔ **本檔為舊制規則，2026-09-04 起凍結，僅供 archive 前對照。** 第三輪重構期間一切以 `docs/research/REBUILD-DECISIONS-2026-09-04.md`（決策與第零條）與 `docs/research/REBUILD-SKELETON-2026-09-04.md`（骨架）為準；查核者與執行者⛔ 不得以本檔任何條文為判準。舊 `wfcli` 同時凍結。全檔封存歸重構第 7 步。
+
 # ai-workflow — 跨專案 AI 協作治理 (Governance)
 
 多 AI／多模型協作的**中央治理專案**。規則只有一個家：本 repo。各專案採用後，只在自己 repo 放**指向本檔的 stub**與自己的狀態面；部署平台由各專案自訂，依 canonical contract 回報狀態。
