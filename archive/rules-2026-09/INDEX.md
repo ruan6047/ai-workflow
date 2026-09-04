@@ -11,5 +11,6 @@
 | `cli/` | `cli/` | 舊 `wfcli` 與其測試；凍結不再改 |
 | `scripts/` | `scripts/` | 舊掃描器與工具；CI 不再跑 |
 | `archive/issues/`（原未納入 git） | `../issues/` | aiwf 112 張舊 issue 匯出，本步起納入 git |
+| `snapshots/` | `snapshots/` | 舊每日快照的維運說明；產生者 `scripts/daily_snapshot.sh` 已在本目錄，launchd `com.wf.daily-snapshot` 需在本機卸載（需求方） |
 
-未搬：`tasks/`、`snapshots/`、`docs/research/`（骨架與萃取，仍在用）。
+未搬：`tasks/`、`docs/research/`（骨架與萃取，仍在用）。
