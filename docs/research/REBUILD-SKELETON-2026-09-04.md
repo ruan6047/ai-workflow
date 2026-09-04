@@ -134,7 +134,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 六 · `core/card-schema.md` 的內容
 
-卡面＝Issue body 的一個 fenced JSON 區塊（`json wf-card`）＋人讀散文段。CLI 只讀寫 JSON（決策 1）；讀留言時同樣只讀 fenced JSON 區塊（`json wf-return`、`json wf-ruling`），散文一律不讀。
+卡面＝Issue body 的一個 fenced JSON 區塊（`json wf-card`）＋人讀散文段。CLI 只讀寫 JSON（決策 1）；讀留言時同樣只讀 fenced JSON 區塊（`json wf-return`、`json wf-ruling`、`json wf-note`、`json wf-move`、`json wf-edit`、`json wf-reject`、`json wf-log`），散文與首行一律不讀。
 
 | 欄 | 型別 | 誰填 | 何時必填（`open` 印缺欄） | 誰讀 |
 |---|---|---|---|---|
@@ -235,7 +235,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID 形狀：`<AREA>-<NNN>`；AREA＝專案層封閉枚舉（aiwf 種子：WF、CLI、DOC、OPS）；NNN＝`open` 依 repo 遞增；語意 slug 的位置＝issue 標題（需求方 2026-09-04 裁定不進卡ID）。修復卡形狀 `<原卡>-FIX<n>`。
 - 分支：`wf/<card_id>`；由 `move` 到進行中時寫回卡面。
-- 留言標頭：轉移記錄 `wf:move`、修訂 `wf:edit`、拒收 `wf:reject`、注意事項候選 `wf:note`、研究與量測全文 `wf:log`；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼他人裁決或裁定時，末段固定一行 `代貼裁定・授權來源：<session 或留言 URL>`（C12）。研究與量測全文一律進 `wf:log` 留言，卡面 JSON 只放判準與指向（K8、K9；需求方裁定，核心規則不是模組）。
+- 留言的形狀：CLI 寫的每則留言＝首行標頭（`wf:move`／`wf:edit`／`wf:reject`／`wf:log`，給人讀）＋一個 `json wf-<種類>` 區塊（給 CLI 讀）；人貼的 `wf:note`／`wf:verdict`／`wf:ruling` 同形。CLI 讀留言一律只認 fenced 區塊的標籤與欄位，⛔ 不讀首行（決策 1）；裁決與裁定由人貼，首行 `wf:verdict`／`wf:ruling` 只給人讀，CLI 的判定輸入是留言內的 `json wf-return`／`json wf-ruling` 區塊；PM 代貼他人裁決或裁定時，末段固定一行 `代貼裁定・授權來源：<session 或留言 URL>`（C12）。研究與量測全文一律進 `wf:log` 留言，卡面 JSON 只放判準與指向（K8、K9；需求方裁定，核心規則不是模組）。
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔的位置＝`.wf/`。
 
@@ -279,7 +279,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | guard_review_period | 20 張結案卡 | 零拒收硬擋的回看週期 |
 | rule_confirm_days | 90 天 | 規則檔 `last_confirmed` 過期即印（§十一） |
 
-**管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；交回單 finding 標 `note: new` 時由 `review` 動詞產生同樣一則並附 origin）→ `notes` 印候選 → `snapshot` 匯出全部候選與 `last_cited`。
+**管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；內容＝一個 `json wf-note {text, origin}` 區塊，首行 `wf:note` 只給人讀；交回單 finding 標 `note: new` 時由 `review` 動詞產生同樣一則並附 origin）→ `notes` 只讀 `wf-note` 區塊印候選 → `snapshot` 匯出全部候選與 `last_cited`。
 
 **落點**（條文在填規則時寫）：
 
@@ -335,6 +335,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 需求方提議後補：§十八 `core/glossary.md` 通用語言，列為填規則第 1 步第一檔（fe71a05 後）。
+
+PM 自審（4030fa3 後）：`wf:note` 與所有 CLI 寫的留言都帶 `json wf-<種類>` 區塊；`notes`／`snapshot` 只讀區塊；§六列出全部區塊標籤。
 
 第十九輪（被審 9663880）：
 - R1-01：留言種類改由 fenced 區塊標籤與欄位（`wf-return`.role／`wf-ruling`.kind）判定，首行 `wf:*` 只給人讀；§三、§四、§七、§十同步。
