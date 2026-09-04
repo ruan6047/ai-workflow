@@ -32,7 +32,7 @@ last_confirmed: 2026-09-05
   "service_goal": {"type": "string", "minLength": 1},
   "parent": {"type": ["string", "null"]},
   "blocked": {"type": ["object", "null"], "required": ["from", "ruling"], "additionalProperties": false,
-              "properties": {"from": {"enum": ["待辦", "進行中", "待確認", "退回"]}, "ruling": {"type": "string", "format": "uri"}}},
+              "properties": {"from": {"$ref": "#/$defs/nonterminal"}, "ruling": {"type": "string", "format": "uri"}}},
   "grilling": {"type": ["string", "null"], "format": "uri"},
   "tier": {"enum": ["T0", "T1", "T2", "T3", "T4"]},
   "tier_basis": {"type": "object", "required": ["sensitive", "recoverable", "blast"], "additionalProperties": false,
@@ -55,10 +55,11 @@ last_confirmed: 2026-09-05
             "properties": {"id": {"type": "string", "pattern": "^T-(需求|研究|規劃|執行|審核|部署|維護|結案)-[0-9]{2}$"}, "text": {"type": "string", "minLength": 1}, "origin": {"type": "string", "format": "uri"}}}}
  },
  "$defs": {"capability": {"type": "object", "required": ["level", "reason"], "additionalProperties": false,
-           "properties": {"level": {"enum": ["經濟型", "主力型", "高階型"]}, "reason": {"type": "string", "minLength": 1}}}}}
+           "properties": {"level": {"enum": ["經濟型", "主力型", "高階型"]}, "reason": {"type": "string", "minLength": 1}}},
+          "nonterminal": {"enum": ["待辦", "進行中", "待確認", "退回"]}}}
 ```
 
-schema 以外的結構約束（D3，CLI 驗）：`blocked.from` 的值域＝核心四個非終態 ∪ 已啟用模組加的非終態（合成後驗）；`stage_plan` 為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum 再驗；未啟用模組的值因此仍拒。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 

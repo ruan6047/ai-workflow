@@ -17,7 +17,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 | `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目的階段／狀態；派工時 actor；交回時 source_sha；裁定 URL | 卡面 JSON 解析失敗、轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D3、D1、D4） | 進終態前 PR 與分支狀態；缺 `--ruling`（撤銷、阻塞、停止、級別下修）；裁定留言無 `wf-return`／`wf-ruling` 區塊；裁定留言作者；`wf-ruling` 依 kind 的必要鍵缺；離開規劃時 `acceptance` 或 `verification` 空；T4 而 `grilling` 空；T2+ 而 `stage_plan` 缺規劃 | Project 五欄；`owner`／`branch`／`iteration`／`source_sha`／`blocked`；轉移記錄留言 `wf:move`；進終態即封存 |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡、`--set source_sha=` 不在遠端、已給的 `--ruling` URL 不存在（D3、D4） | 無裁定連結；卡在審核階段 | JSON；`wf:edit` 留言（欄、原值 hash → 新值 hash）；規格欄變動 ⇒ `spec_version` +1；審核階段另貼 `edit during review` 留言 |
 | `notes <card> [--stage <階段>]` | — | 卡面 JSON 解析失敗（D3） | 一份編號清單（§3） | 無 |
-| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 卡面 JSON 解析失敗（D3） | 派工單或裁定單的 CLI 段（`core/handoff.md`）；`--for reviewer` 另印 HEAD ≠ `source_sha`、`source_sha` 未 push、`merge-tree` 衝突；`--for closeout` 另印 merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]`，過期（`rule_confirm_days`）標 ⚠️ | 無；stdout 由 PM 貼進留言 |
+| `brief <card> --for executor\|reviewer\|closeout` | 角色 | 卡面 JSON 解析失敗（D3） | 派工單或裁定單的 CLI 段（`core/handoff.md`）；`--for reviewer` 另印分支頭 ≠ 來源 SHA、來源 SHA 未 push、`merge-tree` 衝突；`--for closeout` 另印 merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段首行 `[來源: <來源>/<檔>#<節> · confirmed <日期>]`，過期（`rule_confirm_days`）標 ⚠️ | 無；stdout 由 PM 貼進留言 |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法（D3） | 缺段（依卡面 `tier`：T2 以上的 `unverified`、`note_responses`，與依 `role` 的段，`core/handoff.md` §2）；`note_responses` 的 id 未覆蓋 `notes` 清單；`review_result` 與 `findings` 不一致 | 一則帶 `json wf-return` 的留言；⛔ 不動狀態 |
 | `snapshot` | — | 任一卡 JSON 解析失敗（D3） | — | 本機 JSON＋Markdown；含全部 `wf-note` 候選與 `last_cited` |
 
@@ -29,7 +29,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 - D2 `open` 只從清單項或撤銷卡，兩者皆不在板上。
 - D3 JSON 合法、鍵集合封閉；`card_id`／`source_issue` 建卡後不可改；解析失敗整卡拒，該卡所有動詞不跑。
 - D4 `--source-sha` 在遠端存在；`--ruling` URL 存在；`parent` 指到板上存在的卡。
-- 檢查先於首次遠端寫入：先純計算並驗證新內容，再開始第一次寫（→ [#023](../archive/issues/023.md)、[#141](../archive/issues/141.md)、[#147](../archive/issues/147.md)、[#148](../archive/issues/148.md)、[#221](../archive/issues/221.md)）。
+- 檢查先於首次遠端寫入：先純計算並確認新內容符合資料有效性，再開始第一次寫（→ [#023](../archive/issues/023.md)、[#141](../archive/issues/141.md)、[#147](../archive/issues/147.md)、[#148](../archive/issues/148.md)、[#221](../archive/issues/221.md)）。
 - 寫入順序＝卡面 JSON → 五個投影欄 → 回讀；回讀不等＝D3 拒收（rc≠0，寫 `wf:reject`）；下一次動詞先對帳。
 - 每次拒收寫一則 `wf:reject` 留言：一行 `拒收・<D 編號>・<原因>`；印不寫留言。
 - 留言 append-only：一次寫入一則；⛔ 不編輯既有留言、⛔ 不開可編輯的日誌留言。
