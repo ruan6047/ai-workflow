@@ -20,7 +20,7 @@ core/                      定義層（C8）。只放定義與機械語意，⛔
 stages/                    一階段一檔；研究、部署、維護三個可跳過的站住模組
   requirement.md  planning.md  implementation.md  review.md  closeout.md
 roles/                     一角色一檔＋共用一檔
-  requester.md  pm.md  executor.md  reviewer.md  common.md
+  requester.md  pm.md  executor.md  reviewer.md  conduct-common.md
 modules/                   每模組一目錄；module.md 開頭是宣告區塊（§九）
   research/  resource-lock/  escalation/  deploy/  maintenance/
   pitfalls-13/  identity/  snapshot/  db-contract/  initiative/  stat-redline/
@@ -31,7 +31,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 採用專案側（不在本 repo）：
 ```
-.wf/modules.json           啟用的模組與參數（§九）
+.wf/modules.json           啟用的模組與參數（§九）＋專案層設定：`merge_method`（squash／merge；C3 裁定合併方式歸專案層）
 .wf/stages/<階段>.md        專案層注意事項 P-<階段>-NN（只能加）
 .wf/tiers.md               專案層加嚴（只能往上綁）
 .wf/contracts/             模組要求的專案填空（DATABASE_CONTRACT 等）
@@ -45,7 +45,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 |---|---|---|
 | 階段檔 | 1 目標與產出 · 2 進入／離開條件 · 3 狀態 delta（引用 core） · 4 站內迴圈（①–⑤ 在本站的形狀） · 5 各角色做／⛔ 不做 · 6 注意事項 `F-<階段>-NN` | 60 行 |
 | 角色檔 | 1 職責 · 2 紅線 · 3 動作前自檢 · 4 注意事項 `F-<角色>-NN` | 60 行 |
-| common.md | 1 操作紀律（實跑、fetch、不截斷、rc、負控、逐字、多居所、驗原件） · 2 書寫紀律（數字帶日期、不寫行號、引用逐字） | 40 行 |
+| conduct-common.md | 1 操作紀律（實跑、fetch、不截斷、rc、負控、逐字、多居所、驗原件） · 2 書寫紀律（數字帶日期、不寫行號、引用逐字） | 40 行 |
 | core 各檔 | 依檔（§四–§八） | 120 行 |
 | module.md | 0 宣告區塊（§九） · 1 條文 · 2 該模組加的注意事項 | 80 行 |
 | README | 1 心智模型（≤12 行） · 2 角色一句話 · 3 查詢指令 | 40 行 |
@@ -75,10 +75,10 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H13 | 交回單欄位一致性（C2 三含意）：`REQUEST_CHANGES` 須有 `blocking: true` 或 `core_pain_resolved: no`，兩者皆無即拒收為無效裁決；`APPROVE` 不得有 `blocking: true` 或 `core_pain_resolved: no` | 資料有效性（JSON 欄位間一致） | CLI 讀交回單 JSON |
 | H14 | 查核唯讀、不代改 | **紀律** | `roles/reviewer.md`；分支變動由 H11 抓 |
 | H16 | 事件只寫該卡 Issue | **語意** | `core/verbs.md` |
-| H17 | 狀態面不可用時暫停 | **紀律** | `roles/common.md` |
+| H17 | 狀態面不可用時暫停 | **紀律** | `roles/conduct-common.md` |
 | H18 | 結案四停下條件 | **降為印** | PM 判 |
 | H19 | 禁 `gh pr update-branch` | **砍** | C3 |
-| K4 | 守衛必須進 CI | **紀律** | `roles/common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
+| K4 | 守衛必須進 CI | **紀律** | `roles/conduct-common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
 
 硬擋淨數 **13**：平台委託 5、CLI 資料有效性 8。CLI 層的 8 條沒有一條讀散文，全部是欄位存在、相等、在表內、在遠端。
 
@@ -221,7 +221,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 - 卡ID：`<AREA>-<NNN>`。AREA 是專案層封閉枚舉（aiwf 建議：WF、CLI、DOC、OPS）；NNN 由 `open` 依 repo 遞增配發，⛔ 不帶語意 slug（slug 住 issue 標題）。修復卡 `<原卡>-FIX<n>` 保留。
 - 分支：`wf/<card_id>`；由 `move` 到進行中時寫回卡面。
-- 留言標頭：轉移記錄 `wf:move`、修訂 `wf:edit`、拒收 `wf:reject`、注意事項候選 `wf:note`、研究與量測全文 `wf:log`；裁決與裁定由人貼但首行固定 `wf:verdict`／`wf:ruling`。研究與量測全文一律進 `wf:log` 留言，卡面 JSON 只放判準與指向（K8、K9；需求方裁定，核心規則不是模組）。
+- 留言標頭：轉移記錄 `wf:move`、修訂 `wf:edit`、拒收 `wf:reject`、注意事項候選 `wf:note`、研究與量測全文 `wf:log`；裁決與裁定由人貼但首行固定 `wf:verdict`／`wf:ruling`；PM 代貼他人裁決或裁定時，末段固定一行 `代貼裁定・授權來源：<session 或留言 URL>`（C12）。研究與量測全文一律進 `wf:log` 留言，卡面 JSON 只放判準與指向（K8、K9；需求方裁定，核心規則不是模組）。
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔一律在 `.wf/` 之下。
 
@@ -230,7 +230,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 空洞 | 落點 |
 |---|---|
 | 部署、維護 0 條 | 模組 `deploy`、`maintenance`；條文從 ADOPTION 五行與 01#45 49 60–62 73 起草，其餘留空標「待實例」 |
-| 缺陷路徑 | 橫切：三條核心各一落點——無專屬卡種 → `core/card-schema.md`（單一形狀）；留痕走狀態面、不另開 log → `core/verbs.md` §寫入契約；未開卡走 commit trailer 下限 → `roles/common.md` §2。FIX 後綴屬命名洞 → `core/naming.md`。其餘分住 requirement／planning／implementation（03 §缺陷路徑） |
+| 缺陷路徑 | 橫切：三條核心各一落點——無專屬卡種 → `core/card-schema.md`（單一形狀）；留痕走狀態面、不另開 log → `core/verbs.md` §寫入契約；未開卡走 commit trailer 下限 → `roles/conduct-common.md` §2。FIX 後綴屬命名洞 → `core/naming.md`。其餘分住 requirement／planning／implementation（03 §缺陷路徑） |
 | 需求方角色薄 | `roles/requester.md`：裁升級、撤銷、停止、T4 sign-off、結案 ④、清單條件 2；每條一句 |
 | 待審清單無形狀 | 形狀＝`.github/ISSUE_TEMPLATE/list-intake.yml` 的 `json wf-intake` 四欄（§一）；schema 逐字住 `core/card-schema.md` §intake；`open` 讀它並印缺欄；收件動詞⛔ 不加 |
 | 交付報告 schema 散 | `core/handoff.md` |
@@ -241,7 +241,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 研究站討論回合出口 | `modules/research/module.md` §1：討論以一則留言收口，`move` 收該 URL |
 | 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
 | Design gate 記錄位 | `stages/planning.md` §1：設計判斷寫進 verification 欄；N/A 寫理由 |
-| 規則文件自身過期 | 生命週期落點：每個規則檔 frontmatter `last_confirmed: <日期>`；`snapshot` 印超過 90 天未確認的規則檔清單（印，不擋；90 是設計值）；確認者＝需求方，確認動作＝改日期一次 commit。引用寫法另住 `roles/common.md` §2 |
+| 規則文件自身過期 | 生命週期落點：每個規則檔 frontmatter `last_confirmed: <日期>`；`snapshot` 印超過 90 天未確認的規則檔清單（印，不擋；90 是設計值）；確認者＝需求方，確認動作＝改日期一次 commit。引用寫法另住 `roles/conduct-common.md` §2 |
 | 查核者資訊邊界 | `roles/reviewer.md` §1：只看派工單與分支；派工單就是全部 |
 | 常態誰 merge | `stages/closeout.md` §4：PM 在四停下條件內直行（03#93） |
 | Log 移留言 | 核心留言標頭 `wf:log`（§十），不是模組 |
@@ -272,7 +272,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 順序（每步一個 PR；執行＝PM，查核＝Codex 跨實體，sign-off＝需求方；CLI 那步例外：執行者另派、PM 不兼）：
 0. **封存**（需求方 2026-09-04 裁定必為第一步）：舊 canonical、stage-rules、templates、tier-rules、MODEL_ROUTING、ADOPTION、docs 設計文件、舊 `cli/` 與其測試、舊 `scripts/` 掃描器整包移入 `archive/rules-2026-09/`；CI 換成只跑新 CLI 測試的最小 workflow；`archive/issues/` 重新納入 git。三個入口檔已先清成 stub。
 1. `core/` 六檔（定義層先定，其他檔才有東西可引）
-2. `roles/common.md` → 四角色檔
+2. `roles/conduct-common.md` → 四角色檔
 3. 五階段檔（研究住模組）
 4. `modules/` 逐一寫 §九清單所列每個模組的宣告區塊（條文可先空），⛔ 不另記總數
 5. README、ADOPTION 重寫
