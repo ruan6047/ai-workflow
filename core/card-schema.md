@@ -101,7 +101,7 @@ last_confirmed: 2026-09-05
 
 ## 5 · 投影欄
 
-Project 只放五欄，全由 CLI 回寫：階段（單選 8 值）、狀態（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別（單選 5 值）、owner（TEXT，`role@actor`）、卡ID（TEXT）。TEXT 欄上限 1024 bytes UTF-8；超過即 D3 拒。寫入順序住 `core/verbs.md` §寫入契約。
+Project 只放五欄，全由 CLI 回寫：階段（單選 8 值）、狀態（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別（單選 5 值）、owner（TEXT，`role:actor`；actor 字串本身含 `@`，需求方 2026-09-05 裁定）、卡ID（TEXT）。TEXT 欄上限 1024 bytes UTF-8；超過即 D3 拒。寫入順序住 `core/verbs.md` §寫入契約。
 
 ## 6 · schema_version
 
