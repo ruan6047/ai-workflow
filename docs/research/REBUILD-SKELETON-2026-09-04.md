@@ -17,7 +17,7 @@ core/                      定義層（C8）。只放定義與機械語意，⛔
   verbs.md                 七動詞：open / move / edit / notes / brief / review / snapshot
   handoff.md               三份交接文件的段落表＋交回單 JSON schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
-stages/                    一階段一檔；研究、部署、維護三個可跳過的站住模組
+stages/                    一階段一檔；研究、部署、維護三個可跳過的階段住模組
   requirement.md  planning.md  implementation.md  review.md  closeout.md
 roles/                     一角色一檔＋共用一檔
   requester.md  pm.md  executor.md  reviewer.md  conduct-common.md
@@ -43,7 +43,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 | 檔種 | 固定節（順序不可換） | 上限 |
 |---|---|---|
-| 階段檔 | 1 目標與產出 · 2 進入／離開條件 · 3 狀態 delta（引用 core） · 4 站內迴圈（①–⑤ 在本站的形狀） · 5 各角色做／⛔ 不做 · 6 注意事項 `F-<階段>-NN` | 60 行 |
+| 階段檔 | 1 目標與產出 · 2 進入／離開條件 · 3 狀態 delta（引用 core） · 4 階段內迴圈（①–⑤ 在本階段的形狀） · 5 各角色做／⛔ 不做 · 6 注意事項 `F-<階段>-NN` | 60 行 |
 | 角色檔 | 1 職責 · 2 紅線 · 3 動作前自檢 · 4 注意事項 `F-<角色>-NN` | 60 行 |
 | conduct-common.md | 1 操作紀律（實跑、fetch、不截斷、rc、負控、逐字、多居所、驗原件） · 2 書寫紀律（數字帶日期、不寫行號、引用逐字） | 40 行 |
 | core 各檔 | 依檔（§四–§八） | 120 行 |
@@ -89,26 +89,26 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 四 · `core/state-machine.md` 的內容
 
-**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是模組（啟用條件皆為「階段計畫含該站」），未啟用時階段計畫的值域裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
+**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是模組（啟用條件皆為「階段計畫含該階段」），未啟用時階段計畫的值域裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
 
-**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案站加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。
+**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案階段加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。
 
 **核心轉移表**（每列＝一條允許的邊；`move` 只接受表內轉移，H7）：
 
 | from | to | 條件 |
 |---|---|---|
-| 需求／待確認 | 研究或規劃或執行／待辦 | 依階段計畫的下一站；T2+ 不得跳過規劃（S3） |
+| 需求／待確認 | 研究或規劃或執行／待辦 | 依階段計畫的下一階段；T2+ 不得跳過規劃（S3） |
 | 需求／待確認 | 清單（撤銷） | 卡ID 保留、iteration 延續（S6、C5）；無 `--ruling` 印提示 |
 | 任一階段／待辦 | 同階段／進行中 | 派工 |
 | 任一階段／進行中 | 同階段／待確認 | 交回 |
-| 任一階段／待確認 | 下一站／待辦 | ⑤ 過 |
+| 任一階段／待確認 | 下一階段／待辦 | ⑤ 過 |
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10） |
 | 任一階段／退回 | 同階段／進行中 | 再派；進執行時 iteration +1（S7）。同卡同 iteration 累積第 3 次退回（不分階段、不要求連續）時 `move` 印「預設處置＝換執行者（升級①）；需求方可否決」（PM 減重 4）；escalation 模組未啟用時只印不擋 |
 | 任一狀態 | 阻塞 | 記 from；無 `--ruling` 印提示 |
 | 阻塞 | from | 解除 |
-| 最後一站／待確認 | 結案／待確認 | 結案報告 |
-| 結案／待確認 | 完成 或 停止（結案站 delta） | 完成需 H8 收尾；停止無 `--ruling` 印提示；兩者皆封存 |
+| 最後一個階段／待確認 | 結案／待確認 | 結案報告 |
+| 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成需 H8 收尾；停止無 `--ruling` 印提示；兩者皆封存 |
 
 **模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求）。
 
@@ -225,7 +225,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 規則檔：kebab-case、無日期；研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔一律在 `.wf/` 之下。
 
-## 十一 · 空洞落點（00 §十的 20 條）
+## 十一 · 空洞落點（00 §十的 20 項）
 
 | 空洞 | 落點 |
 |---|---|
@@ -238,7 +238,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
 | 退回上一站條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
 | 命名與目錄 | `core/naming.md` |
-| 研究站討論回合出口 | `modules/research/module.md` §1：討論以一則留言收口，`move` 收該 URL |
+| 研究階段討論回合出口 | `modules/research/module.md` §1：討論以一則留言收口，`move` 收該 URL |
 | 停止裁定由誰 | `roles/requester.md`；`move` 收 `--ruling`，缺即印 |
 | Design gate 記錄位 | `stages/planning.md` §1：設計判斷寫進 verification 欄；N/A 寫理由 |
 | 規則文件自身過期 | 生命週期落點：每個規則檔 frontmatter `last_confirmed: <日期>`；`snapshot` 印超過 90 天未確認的規則檔清單（印，不擋；90 是設計值）；確認者＝需求方，確認動作＝改日期一次 commit。引用寫法另住 `roles/conduct-common.md` §2 |
@@ -264,7 +264,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 1. 管道：卡上一則首行 `wf:note` 的留言，**任何角色都能貼**（執行者、查核者、需求方、PM）；交回單的失誤登記或 finding 標 `note: new` 時，CLI 替它產生同樣一則並附 `origin: <finding_id>`。框架只提供這條管道，要不要加是貼的人的判斷。
 2. 呈現與計數：下一輪 `notes` 印出該卡全部 `wf:note` 為 T- 候選；`snapshot` 匯出所有卡的 `wf:note` 與 origin。同義判定由人或執行 AI 做，⛔ 不建掃描器。
 3. 正式化（T- → P- 或 F-）的形狀：提案＝一則清單項，固定三格（條文、來源 `wf:note` 清單、處理手段，值域＝只印／進派工單／退回條件）；確認者＝需求方；P- 的落點＝採用專案 `.wf/stages/<階段>.md`（T1），F- 的落點＝本 repo 卡（T3 以上跨實體審）。條文住 `roles/requester.md` §1 與 `stages/requirement.md` §2（需求方 2026-09-04 裁定為來源）。
-4. 守衛化的形狀：入口只有一個＝處理手段被裁定為「不可逆或平台層事故」且指得出執行者（§三三類）；預設值＝不做；引用次數不是輸入。條文住 `core/tiers.md` §紅線與 `roles/requester.md` §1（需求方 2026-09-04 裁定為來源）。
+4. 守衛化的形狀：入口只有一個＝處理手段被裁定為「不可逆或平台層事故」且指得出執行者（§三的三類）；預設值＝不做；引用次數不是輸入。條文住 `core/tiers.md` §紅線與 `roles/requester.md` §1（需求方 2026-09-04 裁定為來源）。
 5. 反向：硬擋拒收留言（C13）累計 0 次的閘門，每 20 張結案卡由 PM 列出一次，交需求方判留或降為印。
 
 ## 十三 · 填規則的順序與停損
@@ -283,7 +283,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十四 · 本檔的驗收條件（什麼結果會推翻它）
 
-1. `extract/00-consolidated.md` §十的 20 條空洞與 §八的 3 條新洞，每條在 §十一都有一個落點；缺一即不過。
+1. `extract/00-consolidated.md` §十的 20 條空洞與 §八的 3 項新洞，每條在 §十一都有一個落點；缺一即不過。
 2. `00-consolidated.md` §二–§六每一列「留」的規則，都能對到 §一目錄樹裡恰一個檔；對不到即不過。
 3. §四轉移表每個狀態都有出邊（停止除外），每個階段都能到結案；手驗，Codex 複驗。
 4. 本檔不含任何一句祈使句形式的規則正文（只含形狀）；含即不過。
@@ -301,7 +301,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 ## 十六 · Codex R1 裁決的處置
 
 第一輪（留言 5535340214）：
-- R1-01：`停止` 移出核心值域，改為結案站 delta（§四）。
+- R1-01：`停止` 移出核心值域，改為結案階段 delta（§四）。
 - R1-02：`--ruling` 缺席一律印；只有已給但不存在或作者不符的 URL 才拒（§三、§四、§五、§七、§十一）。
 
 第二輪（被審 d6a8caf）：
@@ -323,7 +323,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 第五輪（被審 80e3c46）：
 - R1-01：§二理由連結只指 `archive/`；萃取稿定位為輸入、填完移入 archive（決策 9）。
-- R1-02：`edit` 硬擋加 `source_issue`；§六兩欄標「建後不可改」（C11）。
+- R1-02：`edit` 硬擋加 `source_issue`；§六的兩欄標「建後不可改」（C11）。
 
 第四輪（被審 61feebf）：
 - R1-01：§六補 `notes` 欄；§七 `notes` 動詞改為四個來源。
@@ -333,7 +333,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 第三輪（被審 d8fc77b）：
 - R1-01：交回單人填欄與 schema 補未驗清單三分類（§八）。
 - R1-02：resource-lock 啟用條件收回決策 6「同時 ≥2 執行者」（§九）。
-- R1-03：研究站改為模組 `research`（與部署、維護同形），`不可判定` 隨它存在；C6 不動（§一、§四、§九、§十一、§十三）。
+- R1-03：研究階段改為模組 `research`（與部署、維護同形），`不可判定` 隨它存在；C6 不動（§一、§四、§九、§十一、§十三）。
 
 ## 十七 · 對 #177 規劃審 38 個 P1 finding 的自審
 
