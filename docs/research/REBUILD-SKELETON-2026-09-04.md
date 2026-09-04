@@ -10,7 +10,7 @@
 README.md                  L0 入口：一分鐘心智模型＋查詢指令；⛔ 不列會變的東西（04#158）
 .github/ISSUE_TEMPLATE/
   list-intake.yml          待審清單收件表單：預填一個 `json wf-intake` 區塊，四欄 source／observation／dedupe（關鍵字＋命中號）／repo；`open` 只讀該區塊（決策 1），散文欄給人看
-core/                      定義層（C8）。只放定義與機械語意，⛔ 不放理由
+core/                      定義檔（C8）。只放定義與機械語意，⛔ 不放理由
   state-machine.md         階段、核心狀態值域、核心轉移表、模組 delta 合成規則
   tiers.md                 T0–T4 表、紅線域、能力層級判準、單向門、缺陷級別套用
   card-schema.md           卡面 fenced JSON 欄位集（JSON Schema 逐字）
@@ -86,7 +86,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H19 | 禁 `gh pr update-branch` | **砍** | C3 |
 | K4 | 守衛必須進 CI | **紀律** | `roles/conduct-common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
 
-硬擋淨數 **14**：平台委託 5、CLI 資料有效性 9。CLI 層的 9 條沒有一條讀散文，全部是欄位存在、相等、在表內、在遠端、可合併。
+硬擋淨數 **14**：平台委託 5、CLI 資料有效性 9。CLI 的 9 條沒有一條讀散文，全部是欄位存在、相等、在表內、在遠端、可合併。
 
 - 四角色：需求方、PM、執行者、查核者（決策 5）。第二 PM、人工查核不存在（C4）。
 - 每階段五步：① `notes` 印一份清單（四個來源：框架核心 → 已啟用模組 → 專案層 → 卡面，決策 11 逐字順序）② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
@@ -95,7 +95,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ## 四 · `core/state-machine.md` 的內容
 
-**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是卡層模組（唯一啟用條件＝該卡 `stage_plan` 含該階段；事實來源＝卡面 JSON），未啟用時該卡的階段序列裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
+**階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是卡級模組（唯一啟用條件＝該卡 `stage_plan` 含該階段；事實來源＝卡面 JSON），未啟用時該卡的階段序列裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
 
 **核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案階段加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。
 
@@ -226,7 +226,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | snapshot | 專案 `.wf/modules.json` 列出（狀態面在 GitHub 時該列） | modules.json | 00 §六 |
 | db-contract | 專案 `.wf/modules.json` 列出（有 DB 時該列）且 `.wf/contracts/DATABASE_CONTRACT.md` 存在（兩者 AND；缺契約檔＝未啟用，`notes` 印警示） | modules.json＋契約檔 | 02#45–50、04#129–132 |
 
-合成語意：卡層模組看卡面欄；`resource-lock` 看 Project 投影欄；其餘專案層模組看 `modules.json`；`db-contract` 是唯一 AND。`modules.json` 對 `resource-lock` 只提供參數。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
+合成語意：卡級模組看卡面欄；`resource-lock` 看 Project 投影欄；其餘專案層模組看 `modules.json`；`db-contract` 是唯一 AND。`modules.json` 對 `resource-lock` 只提供參數。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
 
 
 ## 十 · `core/naming.md` 的內容（新；舊規則只有四條，00 空洞 9）
@@ -336,7 +336,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 第十六輪（被審 1231d7b）：
 - R1-02：`source_sha` 從 `edit` 例外移除（C11 只有兩個例外）；不可變改由審核期留言與 `brief` 重比守。
-- R1-01：「層」的架構用法待需求方裁（見下）。
+- R1-01：需求方裁乙案——「層」只禁用於清單輸出與來源計數，架構詞「專案層」照用；決策紀錄該句同日修訂。定義層／CLI 層／卡層／機械層四處順手改字。
 
 PM 自審（b3ca6d6 後）：H8 的事實來源明寫為卡面 `branch`＋GitHub API（PR by head ref、merged、merge commit、分支存在），不另設 PR 欄。
 
@@ -423,7 +423,7 @@ Gemini 第二輪（被審 ce651ca，留言 5536360697）：
 | iteration | 卡進入執行階段的次數 | 輪次、輪、round |
 | 查核輪 R1–R4 | 前提／射程／內容／影響面 | 輪次、pass |
 | 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源 | 踩坑清冊、清單（作為注意事項的同義）、層（作為來源） |
-| 硬擋、印、語意 | 機械層三類行為 | 守衛、閘門、偵測器、拒收（作為類別名） |
+| 硬擋、印、語意 | 機械側三類行為 | 守衛、閘門、偵測器、拒收（作為類別名） |
 | 模組、啟用條件 | opt-in 機制與其條件 | 外掛、plugin、功能旗標 |
 | 裁定、裁決 | 需求方的決定／查核者的結論，皆為留言 | 批准、核可、sign-off（除 T4 外） |
 | 派工單、交回單、裁定單 | 三份交接文件 | 派工包、派審詞、交付報告、結案報告、狀態變更裁定單 |
