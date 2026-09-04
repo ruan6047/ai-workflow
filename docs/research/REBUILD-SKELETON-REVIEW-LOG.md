@@ -72,6 +72,10 @@ H8（進終態前 PR 與分支狀態）與 H9 的鏈深上限降為印；硬擋 
 | H19 | 禁 `gh pr update-branch` | **砍** | C3 |
 | K4 | 守衛必須進 CI | **紀律** | `roles/conduct-common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
 
+## 第二十四輪（被審 d1b2d31，留言 5540583866）
+
+- R1-01：刪 §七 `brief --for reviewer` 印本 iteration 執行者 actor 的要求；一人一角與跨家族只留 PM 注意事項（§三已如此）。PM 要判時讀卡面 `owner` 與轉移記錄留言，兩者本來就有。
+
 ## 第二十三輪（被審 42211db，留言 5540360158）
 
 - R4-01：第 0 步 CI 只留 secret scanner（P4）與 trailer 檢查（P5）；轉移表可達性 job 隨第 1 步 `core/state-machine.md` 同 PR、新 CLI 測試 job 隨第 6 步同 PR；⛔ 不預先加空 job（§十三）。順帶把 P5 的 CI job 補進形狀，先前三個 job 漏了它。
