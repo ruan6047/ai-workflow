@@ -54,7 +54,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 **第零條（README 心智模型第一行）**：CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不做內容判讀。舊 ROADMAP 目標 1「有機械執行者擋下才算達成」廢止。三目標並列：可稽核、防低級事故、**流程順暢**（前兩項不得以犧牲第三項達成；沿 #177 brief）。
 
-依此把 `extract/00-consolidated.md` §二的 19 條硬擋加 K4 K5 逐條重判。**本表是硬擋的唯一清單**；00 與 07 的計數為歷史。
+決策紀錄「補充裁定」已載：第零條取代 C10 的 20 條計數，硬擋以本表為準。依第零條把 `extract/00-consolidated.md` §二的 19 條加 K4 K5 逐條重判如下。
 
 | 舊編號 | 一句 | 重判 | 落點 |
 |---|---|---|---|
@@ -70,7 +70,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H9 | `open` 只從清單 issue；不在板上；鏈深 ≤2 | 資料有效性 | CLI `open` |
 | H10 | JSON 合法、鍵集合封閉、解析失敗整卡拒、寫後回讀 | 資料有效性＋寫入順序 | CLI 全動詞 |
 | H11＋K5 | SHA 40 碼且在遠端；報告入口 SHA＝分支 head；被引用 SHA 不得改寫 | 資料有效性 | CLI `brief`／`move` |
-| H13 | APPROVE 與 open blocking 並存 | **降為印** | PM 判 |
+| H13 | 交回單欄位一致性（C2 三含意）：`REQUEST_CHANGES` 須有 `blocking: true` 或 `core_pain_resolved: no`，兩者皆無即拒收為無效裁決；`APPROVE` 不得有 `blocking: true` 或 `core_pain_resolved: no` | 資料有效性（JSON 欄位間一致） | CLI 讀交回單 JSON |
 | H14 | 查核唯讀、不代改 | **紀律** | `roles/reviewer.md`；分支變動由 H11 抓 |
 | H16 | 事件只寫該卡 Issue | **語意** | `core/verbs.md` |
 | H17 | 狀態面不可用時暫停 | **紀律** | `roles/common.md` |
@@ -78,7 +78,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | H19 | 禁 `gh pr update-branch` | **砍** | C3 |
 | K4 | 守衛必須進 CI | **紀律** | `roles/common.md`：若有守衛則進 CI，⛔ 不是要有守衛 |
 
-硬擋淨數 **12**：平台委託 5、CLI 資料有效性 7。CLI 層的 7 條沒有一條讀內容。
+硬擋淨數 **13**：平台委託 5、CLI 資料有效性 8。CLI 層的 8 條沒有一條讀散文，全部是欄位存在、相等、在表內、在遠端。
 
 - 四角色：需求方、PM、執行者、查核者（決策 5）。第二 PM、人工查核不存在（C4）。
 - 每階段五步：① `notes` 印三層清單 ② PM `brief` 派 ③ 交回 ④ PM 對完整性＋判 R1 R2 ⑤ `move`（S8、S9）。
@@ -174,7 +174,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 八欄、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
 | 裁定單 | PM→需求方 | 事件序、退回理由、findings、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
-交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄；同一 schema 執行者與查核者共用。
+交回單 JSON schema＝舊 review-prompt §5 加 `role` 欄；同一 schema 執行者與查核者共用。**注意事項回應的三值唯一定義居所＝本檔**：`note_responses: [{id, value, text}]`，`value` 封閉值域 `followed`／`not_applicable`／`found`（人讀顯示 已遵循／不適用／發現），`not_applicable` 與 `found` 的 `text` 非空；§十二與各階段檔只引用不複製；CLI 只查 id 是否覆蓋 `notes` 印出的清單、value 在值域、text 非空，⛔ 不判內容。
 
 留言一事件一則、寫後不改（決議 §五、P1-33）；⛔ 不用可編輯的固定留言當日誌，故無併發與 rollover 問題。派工單完整性由收件的查核者判（C4）；裁定單完整性由需求方 ④ 判。
 
@@ -249,7 +249,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十二 · 注意事項的生命週期
 
-- 三層：框架 `F-<階段|角色>-NN`、專案 `P-`、任務 `T-`（卡面 JSON `notes` 欄）；累加不覆寫、只能加嚴（B1）。
+- 三層：框架 `F-<階段|角色>-NN`、專案 `P-`、任務 `T-`（卡面 JSON `notes` 欄）；累加不覆寫、只能加嚴（B1）。回應三值定義在 `core/handoff.md`（§八），此處不重寫。
 - 來源：05 反覆失誤表（17 形狀）與 03 保留的 49 條是第一版母體。
 - 退場：每條記 `last_cited`（最近一次在交回單 findings 的 `note_id` 被引用的卡）；連續 20 張結案卡未被引用 ⇒ 移到 `archive/notes/`。數字 20 是設計值，⛔ 不是量測值。
 - 升遷：同一條在 3 張卡的 T- 出現 ⇒ P-；跨專案 ⇒ F-。判定是語意比對，由 PM 提、需求方點頭。
@@ -291,10 +291,16 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 - 五個 Project 投影欄是否夠（view 只靠它們篩選）。
 - `escalation` 未啟用時，同輪第 3 次退回的預設動作（決策「預設升級①換人、需求方否決」要住哪）。
 
-## 十六 · Codex R1 裁決（2026-09-04，PR #245 留言 5535340214）的處置
+## 十六 · Codex R1 裁決的處置
 
+第一輪（留言 5535340214）：
 - R1-01：`停止` 移出核心值域，改為結案站 delta（§四）。
 - R1-02：`--ruling` 缺席一律印；只有已給但不存在或作者不符的 URL 才拒（§三、§四、§五、§七、§十一）。
+
+第二輪（被審 d6a8caf）：
+- R1-01：C10 計數被第零條取代一事補進決策紀錄「補充裁定」，骨架 §三改為引用它，不再自行重判。
+- R1-02：H13 恢復為資料有效性硬擋，含 C2 三含意（§三）。先前降為印是把 JSON 欄位間一致性誤判成內容判讀。
+- R1-03：注意事項回應三值的唯一居所定在 `core/handoff.md`，交回單 schema 引用（§八、§十二）。
 
 ## 十七 · 對 #177 規劃審 38 個 P1 finding 的自審
 
