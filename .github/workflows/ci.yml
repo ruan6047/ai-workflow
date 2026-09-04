@@ -53,10 +53,14 @@ jobs:
       - name: 決定受檢 commit 範圍
         id: range
         run: |
+          # PR：合併結果對 base 的新 commit。分支 push：對 main 的新 commit。
+          # main push：本次推上來的區間（首推或 before 不可得時退回最後 1 個）。
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "range=origin/${{ github.base_ref }}..HEAD" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-            echo "range=HEAD~20..HEAD" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "range=origin/main..HEAD" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            echo "range=HEAD~1..HEAD" >> "$GITHUB_OUTPUT"
           else
             echo "range=${{ github.event.before }}..${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
@@ -65,7 +69,7 @@ jobs:
 
   tests:
     # 匯總 job；名字＝ruleset required check。第 7 步改 ruleset 後刪除。
-    name: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && 'tests' || 'tests (branch head)' }}
+    name: "${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && 'tests' || 'tests (branch head)' }}"
     needs: [secret-scan, commit-trailer]
     runs-on: ubuntu-latest
     timeout-minutes: 2
