@@ -1,8 +1,8 @@
 name: CI
 
 # 第三輪重構第 0 步（骨架 §十三；需求方 2026-09-04 裁定封存為第一步）。
-# 本步只留兩個有被測物的 job：secret-scan（P4）、commit-trailer（P5）。
-# 轉移表可達性 job 隨第 1 步 core/state-machine.md 進場；新 CLI 測試 job 隨第 6 步進場。
+# 第 0 步：secret-scan（P4）、commit-trailer（P5）。第 1 步加 reachability（core/state-machine.md）。
+# 新 CLI 測試 job 隨第 6 步進場。
 # ⛔ 不再有掃描 docs 的 job。
 #
 # ruleset「main must be green」（id 20768920）的 required check＝secret-scan、commit-trailer
@@ -66,3 +66,15 @@ jobs:
           fi
       - name: 驗 trailer 鍵與連續區塊
         run: python3 .github/scripts/trailer_check.py "${{ steps.range.outputs.range }}"
+
+  reachability:
+    # 骨架 §四：轉移表可達性。被測物＝core/state-machine.md 的 json wf-state-machine 區塊。
+    name: reachability
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 .github/scripts/reachability.py --selftest
+      - run: python3 .github/scripts/reachability.py
