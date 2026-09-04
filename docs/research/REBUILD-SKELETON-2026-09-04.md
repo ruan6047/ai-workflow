@@ -222,14 +222,6 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 合成語意：專案層模組只看 `modules.json`；卡層模組只看卡面欄；`db-contract` 是唯一 AND。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
 
-| deploy | 階段計畫含部署 | 00 §六 |
-| maintenance | 交付物為排程、爬蟲、告警 | 00 §六 |
-| pitfalls-13 | 專案宣告 | 00 §六 |
-| identity | 多實體共用同一帳號 | 00 §六 |
-| snapshot | 狀態面在 GitHub | 00 §六 |
-| db-contract | 專案有 DB | 02#45–50、04#129–132 |
-| initiative | 卡有父卡 | 02#10、04#44 117–120 |
-| stat-redline | 卡屬統計／ML／資料正確性 | 04#135–138、03#57 |
 
 ## 十 · `core/naming.md` 的內容（新；舊規則只有四條，00 空洞 9）
 
