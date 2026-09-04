@@ -29,7 +29,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 - D2 `open` 只從清單項或撤銷卡，兩者皆不在板上。
 - D3 JSON 合法、鍵集合封閉；`card_id`／`source_issue` 建卡後不可改；解析失敗整卡拒，該卡所有動詞不跑。
 - D4 `--source-sha` 在遠端存在；`--ruling` URL 存在；`parent` 指到板上存在的卡。
-- 檢查先於首次遠端寫入：先純計算並驗證新內容，再開始第一次寫（→ archive/issues：5 張卡的半寫入事故）。
+- 檢查先於首次遠端寫入：先純計算並驗證新內容，再開始第一次寫（→ [#023](../archive/issues/023.md)、[#141](../archive/issues/141.md)、[#147](../archive/issues/147.md)、[#148](../archive/issues/148.md)、[#221](../archive/issues/221.md)）。
 - 寫入順序＝卡面 JSON → 五個投影欄 → 回讀；回讀不等即印並寫 `wf:reject`；下一次動詞先對帳。
 - 每次拒收寫一則 `wf:reject` 留言：一行 `拒收・<D 編號>・<原因>`；印不寫留言。
 - 留言 append-only：一次寫入一則；⛔ 不編輯既有留言、⛔ 不開可編輯的日誌留言。
