@@ -70,8 +70,16 @@ def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
             return None if nxt in (None, "結案") else nxt
         return tok if tok in plan else None
 
+    def holds(cond: str | None) -> bool:
+        if not cond:
+            return True
+        op, stage = cond.split(":", 1)
+        return (stage in plan) if op == "plan_has" else (stage not in plan)
+
     for t in sm["transitions"]:
         f, to = t["from"], t["to"]
+        if not holds(t.get("if")):
+            continue
         if f == "清單":
             edges["清單"].add(to)
             continue
@@ -155,7 +163,7 @@ def selftest(sm: dict) -> int:
     b1["transitions"] = [t for t in b1["transitions"] if not t["to"].startswith("結案/完成") and not t["to"].startswith("結案/停止")]
     e1 = check(b1, plan); ok1 = any("不可達結案" in e or "無出邊" in e for e in e1)
     b2 = copy.deepcopy(sm)
-    b2["transitions"].append({"from": "結案/停止", "to": "結案/待確認", "when": "負控：終態出邊"})
+    b2["transitions"].append({"from": "結案/停止", "to": "結案/待確認", "condition": "負控：終態出邊"})
     e2 = check(b2, plan); ok2 = any(e.startswith("終態 結案/停止 有出邊") for e in e2)
     b3 = copy.deepcopy(sm)
     b3["states"] = b3["states"] + ["孤立"]
@@ -163,8 +171,16 @@ def selftest(sm: dict) -> int:
     # 只有 阻塞 往返、無其他出邊的狀態：必 FAIL（第 1 步審核 R3-01 的假陽性）
     b4 = copy.deepcopy(sm)
     b4["states"] = b4["states"] + ["孤島"]
-    b4["transitions"].append({"from": "**/孤島", "to": "same/阻塞", "when": "負控"})
+    b4["transitions"].append({"from": "**/孤島", "to": "same/阻塞", "condition": "負控"})
     e4 = check(b4, plan); ok4 = any("非終態 需求/孤島 不可達結案" in e for e in e4)
+    # R1 退回目標唯一：含規劃的計畫不得有 需求/退回 邊；缺規劃的計畫不得有 規劃/退回 邊
+    with_plan = [s for s in sm["stages"] if s in sm["required_stages"] or s == "規劃"]
+    e_with = expand(sm, with_plan)
+    ok5 = "需求/退回" not in e_with.get("審核/待確認", set()) and "規劃/退回" in e_with.get("審核/待確認", set())
+    e_without = expand(sm, plan)
+    ok6 = "規劃/退回" not in e_without.get("審核/待確認", set()) and "需求/退回" in e_without.get("審核/待確認", set())
+    print(f"selftest_r1_return_target_unique: {'PASS' if (ok5 and ok6) else 'FAIL'}")
+    bad += not (ok5 and ok6)
     for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3), ("blocked_loop_only", ok4, e4)):
         print(f"selftest_{name}: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
         bad += not ok

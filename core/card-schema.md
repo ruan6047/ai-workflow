@@ -59,7 +59,7 @@ last_confirmed: 2026-09-05
           "nonterminal": {"enum": ["待辦", "進行中", "待確認", "退回"]}}}
 ```
 
-合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum 再驗；未啟用模組的值因此仍拒。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；PM 與需求方欄＝空字串或空陣列；`parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，(a) 把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum；(b) 把已啟用模組 `module.md` 內 `json schema` 區塊（`$id`＝模組名，只含該模組 `adds.fields` 的 properties 與型別）的 properties 併入 `wf-card.properties`；然後再驗。未啟用模組的狀態值與欄名因此仍是未定義鍵，D3 拒。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；PM 與需求方欄＝空字串或空陣列；`parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 
