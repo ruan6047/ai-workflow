@@ -55,9 +55,9 @@ last_confirmed: 2026-09-05
 | 驗證項目 | 卡面 `verification`：怎麼證明、誰證 | 不是 `self_run` | 測試計畫、驗證方式 |
 | 非射程 | 卡面 `non_scope`：這張卡不做什麼 | 不是未驗 | 非目標、out of scope |
 | 服務的原始目標 | 卡面 `service_goal`，需求方填 | 不是核心痛點 | 目的、initiative 目標 |
-| 規格欄 | 使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources` | 核心痛點不在此列 | 需求文件、spec |
+| 規格、規格欄 | 規格＝卡面判準與規格欄的總稱；規格欄＝使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources` | 核心痛點不在此列 | 需求文件、spec |
 | 清單收斂宣告 | 卡面 `list_convergence`：這張卡吸收哪些清單項 | 不是查重 | 合併宣告、去重 |
-| 設計閘 | 規劃離開前 `verification` 填齊的檢查點 | 不是設計審查會 | Design gate、design review |
+| 設計閘（Design gate） | 規劃離開前 `verification` 填齊的檢查點 | 不是設計審查會 | 設計審、design review |
 | 質詢 | T4 卡離開規劃前需求方與 PM 逐題定案的紀錄，落 `wf:log` | 不是 code review | grilling、訪談、審問 |
 | 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數 | 鏈深 >2 只印 | 母卡、子卡、family、epic |
 | 資源宣告 | 卡面 `resources` 字串陣列 | 文法住模組 | 依賴、鎖 |

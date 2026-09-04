@@ -17,7 +17,7 @@ last_confirmed: 2026-09-05
 | T3 | T2 加規格與驗收條件、self_run、merge 前 required check | 必跑 | 不同實體 |
 | T4 | T3 加跨家族查核或需求方 sign-off、實測證據 | 必跑，離開前附質詢 | 跨家族，或 sign-off |
 
-→ archive/rules-2026-09/AI_WORKFLOW.md L116–124。
+→ [archive/rules-2026-09/AI_WORKFLOW.md §0 級別表](../archive/rules-2026-09/AI_WORKFLOW.md)。
 
 ## 2 · 判準
 
@@ -64,7 +64,7 @@ sensitive 值域＝public_contract／security／payment／data_write／migration
 | security、payment、statistics、data_write | 高階型＋跨家族查核 |
 | 部署與 migration 異常 | 主力型；不可逆或根因不明升高階型 |
 
-- 先選風險再選供應商；高能力模型不取代測試、平台委託、獨立查核。
+- 先依風險定層級，再挑實際跑的模型名（住專案層）；高能力層級不取代測試、平台委託、獨立查核。
 - 派工實際層級低於卡面建議時，派工單寫偏離理由。
 
 ## 7 · 專案層

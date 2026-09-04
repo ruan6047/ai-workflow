@@ -52,7 +52,7 @@ last_confirmed: 2026-09-05
   "source_sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
   "iteration": {"type": "integer", "minimum": 0},
   "notes": {"type": "array", "items": {"type": "object", "required": ["id", "text", "origin"], "additionalProperties": false,
-            "properties": {"id": {"type": "string", "pattern": "^T-[^-]+-[0-9]{2}$"}, "text": {"type": "string", "minLength": 1}, "origin": {"type": "string", "format": "uri"}}}}
+            "properties": {"id": {"type": "string", "pattern": "^T-(需求|研究|規劃|執行|審核|部署|維護|結案)-[0-9]{2}$"}, "text": {"type": "string", "minLength": 1}, "origin": {"type": "string", "format": "uri"}}}}
  },
  "$defs": {"capability": {"type": "object", "required": ["level", "reason"], "additionalProperties": false,
            "properties": {"level": {"enum": ["經濟型", "主力型", "高階型"]}, "reason": {"type": "string", "minLength": 1}}}}}
@@ -89,7 +89,7 @@ schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 為 `core/state-ma
   "repo": {"type": "string", "minLength": 1}}}
 ```
 
-`open` 只讀此區塊；缺欄印退回提案者，⛔ PM 不代填。
+`open` 只讀此區塊；缺欄印缺欄清單，處置由收件方判。
 
 ## 4 · `wf-note`
 
@@ -100,7 +100,7 @@ schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 為 `core/state-ma
 
 ## 5 · 投影欄
 
-Project 只放五欄，全由 CLI 回寫：階段（單選 8 值）、狀態（單選：核心 5＋停止＋已啟用模組值）、級別（單選 5 值）、owner（TEXT，`role@actor`）、卡ID（TEXT）。TEXT 欄上限 1024 bytes UTF-8；超過即 D3 拒。寫入順序住 `core/verbs.md` §寫入契約。
+Project 只放五欄，全由 CLI 回寫：階段（單選 8 值）、狀態（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別（單選 5 值）、owner（TEXT，`role@actor`）、卡ID（TEXT）。TEXT 欄上限 1024 bytes UTF-8；超過即 D3 拒。寫入順序住 `core/verbs.md` §寫入契約。
 
 ## 6 · 版本
 

@@ -42,11 +42,11 @@ last_confirmed: 2026-09-05
 | 射程外發現 | 人 | 只寫進本段交需求方；⛔ 不開卡、⛔ 不 spawn 背景任務；無則「無」 |
 | 裁決 | 查核者 | `review_result`、`core_pain_resolved`、一句話理由 |
 
-必填性依級別：T0／T1 只要 `self_run` 與逐條驗收；T2 以上全段。
+必填性依級別：T0／T1 只要 `self_run` 與逐條驗收（schema 的 `required`）；T2 以上全段，缺段由 `review` 依卡面 `tier` 印，⛔ 不進 schema。
 
 ```json schema
 {"$id": "wf-return", "type": "object", "additionalProperties": false,
- "required": ["card_id", "iteration", "role", "source_sha", "self_run", "acceptance", "unverified", "note_responses"],
+ "required": ["card_id", "iteration", "role", "source_sha", "self_run", "acceptance"],
  "properties": {
   "card_id": {"type": "string"}, "iteration": {"type": "integer"}, "role": {"enum": ["executor", "reviewer"]},
   "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
@@ -72,7 +72,7 @@ last_confirmed: 2026-09-05
   "reason": {"type": "string"}}}
 ```
 
-一則留言只有一個 `wf-return` 區塊。`role=reviewer` 時 `review_result`、`core_pain_resolved`、`findings` 必填；`role=executor` 時 `mistakes` 必填（CLI 印缺段）。CLI 只驗 id 覆蓋、值在值域、text 非空，⛔ 不判內容。
+一則留言只有一個 `wf-return` 區塊。T2 以上：`unverified`、`note_responses` 必填；`role=reviewer` 另必填 `review_result`、`core_pain_resolved`、`findings`；`role=executor` 另必填 `mistakes`。以上皆由 `review` 印缺段。CLI 只驗 id 覆蓋、值在值域、text 非空，⛔ 不判內容。
 
 ## 3 · 裁定單（PM → 需求方；`brief --for closeout` 或人手組）
 

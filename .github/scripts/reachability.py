@@ -2,7 +2,7 @@
 """轉移表可達性測試（骨架 §四；core/state-machine.md §5）。
 
 讀 core/state-machine.md 的 `json wf-state-machine` 區塊，對每個合法 stage_plan 展開合成表，斷言：
-1. 每個從 initial 可達的非終態有出邊，且可達 完成 或 停止；
+1. 合成表定義集合（階段計畫 × 狀態值域 ∪ 清單）內每個非終態有出邊，且可達 完成 或 停止；
 2. 完成 與 停止 的出邊集合為空。
 模組 delta 的案例在第 4 步隨模組加入；本步只有無模組案例。
 """
@@ -35,7 +35,9 @@ def legal_plans(sm: dict) -> list[list[str]]:
 
 
 def states_of(sm: dict, stage: str) -> list[str]:
-    return sm["states"] + sm.get("stage_delta", {}).get(stage, {}).get("states_add", [])
+    only = sm.get("only_in_stage", {})
+    core = [s for s in sm["states"] if only.get(s, stage) == stage]
+    return core + sm.get("stage_delta", {}).get(stage, {}).get("states_add", [])
 
 
 def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
@@ -89,19 +91,21 @@ def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
     return edges
 
 
+def universe(sm: dict, plan: list[str]) -> set[str]:
+    nodes = {f"{st}/{s}" for st in plan for s in states_of(sm, st)}
+    nodes.add("清單")
+    return nodes
+
+
 def check(sm: dict, plan: list[str]) -> list[str]:
     edges = expand(sm, plan)
     terminal = {f"結案/{s}" for s in sm["terminal"]}
     errors = []
-    # reachable from initial
-    seen, stack = set(), [sm["initial"]]
-    while stack:
-        n = stack.pop()
-        if n in seen:
-            continue
-        seen.add(n)
-        stack.extend(edges.get(n, ()))
-    # reverse reachability to terminal
+    # 終態出邊：對全部節點檢查，不依可達性
+    for n, outs in edges.items():
+        if n in terminal and outs:
+            errors.append(f"終態 {n} 有出邊 {sorted(outs)}")
+    # 反向可達終態
     rev: dict[str, set[str]] = defaultdict(set)
     for a, bs in edges.items():
         for b in bs:
@@ -113,27 +117,35 @@ def check(sm: dict, plan: list[str]) -> list[str]:
             continue
         can_finish.add(n)
         stack.extend(rev.get(n, ()))
-    for n in sorted(seen):
-        if n in terminal:
-            if edges.get(n):
-                errors.append(f"終態 {n} 有出邊 {sorted(edges[n])}")
-            continue
+    for n in sorted(universe(sm, plan) - terminal):
         if not edges.get(n):
             errors.append(f"非終態 {n} 無出邊")
         elif n not in can_finish:
             errors.append(f"非終態 {n} 不可達結案")
+    # initial 必在定義集合內且可達結案
+    if sm["initial"] not in can_finish:
+        errors.append(f"initial {sm['initial']} 不可達結案")
     return errors
 
 
 def selftest(sm: dict) -> int:
-    """負控：砍掉結案的兩條終態邊，必須 FAIL。"""
+    """負控三件：砍終態邊必 FAIL；不可達終態帶出邊必 FAIL；定義集合內孤立非終態必 FAIL。"""
     import copy
-    broken = copy.deepcopy(sm)
-    broken["transitions"] = [t for t in broken["transitions"] if not t["to"].startswith("結案/完成") and not t["to"].startswith("結案/停止")]
-    errs = check(broken, [s for s in sm["stages"] if s in sm["required_stages"]])
-    ok = any("不可達結案" in e or "無出邊" in e for e in errs)
-    print(f"selftest_broken_table: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
-    return 0 if ok else 1
+    plan = [s for s in sm["stages"] if s in sm["required_stages"]]
+    bad = 0
+    b1 = copy.deepcopy(sm)
+    b1["transitions"] = [t for t in b1["transitions"] if not t["to"].startswith("結案/完成") and not t["to"].startswith("結案/停止")]
+    e1 = check(b1, plan); ok1 = any("不可達結案" in e or "無出邊" in e for e in e1)
+    b2 = copy.deepcopy(sm)
+    b2["transitions"].append({"from": "結案/停止", "to": "結案/待辦", "when": "負控：終態出邊"})
+    e2 = check(b2, plan); ok2 = any(e.startswith("終態 結案/停止 有出邊") for e in e2)
+    b3 = copy.deepcopy(sm)
+    b3["states"] = b3["states"] + ["孤立"]
+    e3 = check(b3, plan); ok3 = any("非終態 需求/孤立 無出邊" in e for e in e3)
+    for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3)):
+        print(f"selftest_{name}: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
+        bad += not ok
+    return 1 if bad else 0
 
 
 def main() -> int:
