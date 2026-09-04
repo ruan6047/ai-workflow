@@ -2,5 +2,3 @@
 __pycache__/
 *.py[cod]
 
-# 第三輪重構：aiwf issue 匯出先不納入 git（舊掃描器會把歷史留言當指標掃紅）；封存第 1 步退場舊掃描器後再納入
-archive/issues/
