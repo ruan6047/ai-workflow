@@ -257,7 +257,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 命名與目錄 | `core/naming.md` |
 | 研究階段討論回合出口 | `modules/research/module.md` §1（來源 03#52） |
 | 停止裁定由誰 | `roles/requester.md` §1（來源 03 空洞）；`move` 的 `--ruling` 形狀見 §七 |
-| Design gate 記錄位 | `stages/planning.md` §1（來源 01#90、02#4）；欄位＝`verification` |
+| 設計閘（Design gate）記錄位 | `stages/planning.md` §1（來源 01#90、02#4）；欄位＝`verification` |
 | 規則文件自身過期 | 資料＝規則檔 frontmatter `last_confirmed`（§二）；印＝`brief` 來源標記（§七）；參數＝`rule_confirm_days`（§十二）；確認者落點 `roles/requester.md` §1 |
 | 查核者資訊邊界 | `roles/reviewer.md` §1（來源 02#966–968、04#41） |
 | 常態誰 merge | `stages/closeout.md` §4（來源 03#93） |
