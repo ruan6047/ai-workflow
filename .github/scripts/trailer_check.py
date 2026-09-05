@@ -10,6 +10,8 @@
 
 `--selftest` 跑內建正負控。
 """
+from __future__ import annotations
+
 import re
 import subprocess
 import sys

@@ -7,6 +7,8 @@
 模組案例（第 4a 步起）：讀 modules/*/module.md 的 `yaml wf-module` 區塊（JSON 子集），對每個帶
 transitions／states delta 的模組跑「單獨啟用」，再跑「全部啟用」；卡級模組只在含該階段的計畫上啟用。
 """
+from __future__ import annotations
+
 import glob
 import itertools
 import json
