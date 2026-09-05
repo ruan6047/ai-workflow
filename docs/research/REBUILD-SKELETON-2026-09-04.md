@@ -38,7 +38,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 .wf/modules.json           schema＝{modules: [{name, params}], merge_method: squash|merge（C3）, areas: [卡ID 前綴枚舉]（§十）}
 .wf/stages/<階段>.md        專案層注意事項 P-<階段>-NN（只能加）
 .wf/tiers.md               專案層加嚴（只能往上綁）
-.wf/contracts/             模組要求的專案填空（DATABASE_CONTRACT 等）
+.wf/contracts/             模組要求的專案填空（DATABASE_CONTRACT 等）；CLI 只讀其中 `json wf-contract` 區塊（`side_effects` 陣列＝副作用入口）
 ```
 
 ## 二 · 每個檔的固定節與行數上限
@@ -88,7 +88,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 **階段**：需求 → 研究* → 規劃* → 執行 → 審核 → 部署* → 維護* → 結案。星號＝可跳過；研究、部署、維護是卡級模組（唯一啟用條件＝該卡 `stage_plan` 含該階段；事實來源＝卡面 JSON），未啟用時該卡的階段序列裡沒有它（S3、C6）；規劃的跳過由級別決定（T0／T1），仍是核心。
 
-**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加：結案階段加 停止（終態，S6）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。模組加狀態時，其 `transitions.add` 必同時給進邊與至少一條可達結案的出邊；三個模組的 delta 釘死如下（條文住各模組 `module.md`）：
+**核心狀態值**（C6）：待辦／進行中／待確認／完成／退回＋正交 阻塞。階段 delta 可加可減：結案階段加 停止（終態，S6）、減 待辦／進行中；完成 只在結案有值（`only_in_stage`；填規則第 1 步為可達性驗收所定）。模組可加：`research` 加 不可判定；`escalation` 加 升級；`maintenance` 加 運行中。模組加狀態時，其 `transitions.add` 必同時給進邊與至少一條可達結案的出邊；三個模組的 delta 釘死如下（條文住各模組 `module.md`）：
 
 | 模組 | add（from → to；條件） |
 |---|---|
@@ -116,7 +116,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 結案／退回 | 結案／待確認 | 補驗後重交結案報告 |
 | 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling` kind=stop（缺留言或缺鍵皆印）；兩者皆封存 |
 
-**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試矩陣隨被測物累加：第 1 步只有「無模組」；第 4 步每個帶 delta 的模組進 repo 的同一 PR 加「該模組單獨啟用」，最後一個模組的 PR 再加「全部啟用」；每個案例涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
+**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`，可帶機械鍵 `if`（`plan_has:<階段>`／`plan_lacks:<階段>`，展開時裁邊）；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試矩陣隨被測物累加：第 1 步只有「無模組」；第 4 步每個帶 delta 的模組進 repo 的同一 PR 加「該模組單獨啟用」，最後一個模組的 PR 再加「全部啟用」；每個案例涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
 
 ## 五 · `core/tiers.md` 的內容
 
@@ -162,7 +162,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | iteration | int | CLI | — | brief |
 | notes | {id: `T-<階段>-NN`, text, origin: 留言 URL}[]（卡面 `notes` 欄，T- 加嚴層級） | 任何有 shell 的角色經 `edit --set notes+=`，來源為 `wf:note` 留言（§十二） | 否 | notes、brief |
 
-`tier_basis` 值域：sensitive 多選＝public_contract／security／payment／data_write／migration／production／rules／statistics（＝`core/tiers.md` §紅線域）；recoverable＝reversible／rollback_only／irreversible；blast＝file／module／repo／cross_repo。
+模組 `adds.fields` 的型別唯一居所＝`core/card-schema.md` 的 `$defs/module_fields/<模組名>`，啟用時併入 properties（填規則第 1 步定）。`tier_basis` 值域：sensitive 多選＝public_contract／security／payment／data_write／migration／production／rules／statistics（＝`core/tiers.md` §紅線域）；recoverable＝reversible／rollback_only／irreversible；blast＝file／module／repo／cross_repo。
 
 未定義鍵 ⇒ fail-closed（D3）。`schema_version` 的升版判準與舊版卡遷移方式住 `core/card-schema.md` §版本（來源：P1-30；形狀＝升版觸發條件一句、遷移路徑一句）。Project 欄位只放 `階段`、`狀態`、`級別`、`owner`（TEXT，`role:actor`）、`卡ID` 五個投影欄，全由 CLI 回寫；逐欄 `max_bytes` 與寫入順序見 §十一（05 新洞）。
 
@@ -337,38 +337,38 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 
 ## 十八 · `core/glossary.md` 的內容（通用語言；需求方 2026-09-04 提議）
 
-每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。消費者三個：CLI enum 與 Project 選項名（取「詞」欄字面）、規則檔正文、審核提示；禁用同義詞的違規判定條文住 `roles/conduct-common.md` §2。約束邊界：詞表管中文正文用詞；schema 鍵名（§六英文識別字，如 `spec_version`、`stage_plan`）與 GitHub 平台詞（issue、PR、Project、ruleset、comment）不入表、不受禁用同義詞約束，中文正文指涉它們時用表內對應詞。種子（填規則時逐列補定義）：
+每列＝一個詞。四欄：詞 · 一句定義 · ⛔ 不是什麼 · 禁用同義詞。⛔ 不放理由。消費者三個：CLI enum 與 Project 選項名（取「詞」欄字面）、規則檔正文、審核提示。「禁用同義詞」只收會被當成同一概念的專名（舊制術語、英文名、別檔文件名），⛔ 不收日常詞；日常詞的多義靠「⛔ 不是什麼」欄（需求方 2026-09-05 甲案；量測：舊清單 199 條中 54 條日常詞在 core 正文命中 111 次、真違規 4 次）。違規判定條文住 `roles/conduct-common.md` §2。約束邊界：詞表管中文正文用詞；schema 鍵名（§六英文識別字，如 `spec_version`、`stage_plan`）與 GitHub 平台詞（issue、PR、Project、ruleset、comment）不入表、不受禁用同義詞約束，中文正文指涉它們時用表內對應詞。種子（填規則時逐列補定義）：
 
 | 詞 | 涵蓋 | 禁用同義詞 |
 |---|---|---|
-| 卡、清單項、撤銷卡 | 卡＝在板 issue；清單項＝不在板且無 `wf-card` 區塊的 issue（無卡ID）；撤銷卡＝不在板但帶 `wf-card` 區塊的 issue（保留卡ID，`open` 可復板） | Backlog、task、票 |
-| 階段（8） | 需求…結案 | 站、phase、gate |
+| 卡、清單項、撤銷卡 | 卡＝在板 issue；清單項＝不在板且無 `wf-card` 區塊的 issue（無卡ID）；撤銷卡＝不在板但帶 `wf-card` 區塊的 issue（保留卡ID，`open` 可復板） | Backlog、task |
+| 階段（8） | 需求…結案 | phase、gate |
 | 狀態（核心 5＋阻塞；模組加值） | 待辦…退回、阻塞、停止、升級、不可判定、運行中 | 交付狀態、部署狀態、Status |
-| 轉移、轉移記錄 | `move` 的一次寫入與其留言 | 事件、event、handoff |
-| iteration | 卡進入執行階段的次數 | 輪次、輪、round |
+| 轉移、轉移記錄 | `move` 的一次寫入與其留言 | event、handoff |
+| iteration | 卡進入執行階段的次數 | 輪次、round |
 | 查核輪 R1–R4 | 前提／射程／內容／影響面 | 輪次、pass |
-| 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源 | 踩坑清冊、清單（作為注意事項的同義）、層（作為來源） |
+| 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源 | 踩坑清冊、層（作為來源） |
 | 硬擋、印、語意 | 機械側三類行為 | 守衛、閘門、偵測器、拒收（作為類別名） |
-| 模組、啟用條件 | opt-in 機制與其條件 | 外掛、plugin、功能旗標 |
-| 裁定、裁決 | 需求方的決定／查核者的結論，皆為留言 | 批准、核可、sign-off（除 T4 外） |
+| 模組、啟用條件 | opt-in 機制與其條件 | plugin、功能旗標 |
+| 裁定、裁決 | 需求方的決定／查核者的結論，皆為留言 | sign-off（除 T4 外） |
 | 派工單、交回單、裁定單 | 三份交接文件 | 派工包、派審詞、交付報告、結案報告、狀態變更裁定單 |
 | 需求方、PM、執行者、查核者 | 四角色 | 祕書、Coordinator、第二 PM、人工查核、規劃者 |
-| 實體、家族 | 跑角色的 session／模型家族 | 帳號、人、instance |
-| 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境）、難度、等級 |
-| 紅線 | 至少 T3 的變更域 | 敏感（作為紅線的同義）、高風險 |
-| 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | 目標、需求、範圍、scope、AC |
+| 實體、家族 | 跑角色的 session／模型家族 | instance |
+| 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境） |
+| 紅線 | 至少 T3 的變更域 | 高風險 |
+| 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | scope、AC |
 | 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | backlog、inbox、待辦池 |
 | 規格、規格欄 | 卡面會使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources`（C11）；核心痛點另受裁定連結約束，不在此列 | 需求文件、spec |
-| 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | 驗證、校驗、guard |
-| 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性、品質 |
+| 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | guard |
+| 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性 |
 | finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷（作為 finding 的同義）、bug |
 | 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種（§五 缺陷套用表、§十一 缺陷路徑） | bug（作為卡種）、BUG- 前綴 |
 | 合成表 | 核心轉移表 ∪ 已啟用模組 add − remove，再按該卡 `stage_plan` 展開 | 狀態表、workflow 圖 |
-| 模組 delta | 模組宣告區塊裡對狀態值域、轉移、欄位、注意事項的增減 | 外掛、patch、覆寫 |
+| 模組 delta | 模組宣告區塊裡對狀態值域、轉移、欄位、注意事項的增減 | patch |
 | 設計閘（Design gate） | 規劃階段離開前 `verification` 欄填齊的檢查點；正式中文詞＝設計閘 | 設計審、design review |
 | 驗證項目 | 卡面 `verification`：每條 {item, who}，說「怎麼證明驗收條件成立、誰證」；驗收條件說「什麼算過」；`self_run` 是交回單裡真的跑了什麼 | 測試計畫、驗證方式 |
-| 清單收斂宣告 | 一張卡吸收哪些清單項：卡面 `source_issue`＋收件表單 `dedupe` 欄 | 合併宣告、去重 |
-| 封存、撤銷、停止 | 三個離開動作 | 關閉、刪除、歸檔（作為封存以外的意思） |
+| 清單收斂宣告 | 一張卡吸收哪些清單項：卡面 `source_issue`＋收件表單 `dedupe` 欄 | 合併宣告 |
+| 封存、撤銷、停止 | 三個離開動作 | — |
 | 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
 | 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
 | 七動詞 open／move／edit／notes／brief／review／snapshot | CLI 的全部入口 | amend、改卡、handoff、assign、pitfalls、踩坑、verdict（作為動詞） |
@@ -378,29 +378,29 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | db_scope | 卡對資料庫的變更範圍 enum none／read／write／schema／data-migration；後兩者連動 T4 | db_permission、資料庫權限 |
 | trailer | commit 訊息末端連續的結構化標籤區塊（Requested-by、Planned-by、Implemented-by、Reviewed-by） | footer、git-tag |
 | falsifier | 交回單逐條 AC 的證偽條件 | 反測（保留給統計紅線模組的對抗性反測）、反向案例 |
-| sign-off | 需求方對 T4 卡的最終授權裁定 | approve、核准 |
+| sign-off | 需求方對 T4 卡的最終授權裁定 | approve |
 | self_run | 交回單內實跑指令與原始輸出 | 本地測試、手動驗證 |
 | attribution | finding 責任歸屬 enum executor／coordinator／planner／reviewer／external | 責任方、責任者 |
-| 狀態面 | 卡當下的階段＋狀態＋阻塞，唯一居所＝issue body JSON 與 Project 投影欄 | 看板狀態、board、進度 |
-| 階段計畫 | 卡面 `stage_plan`：這張卡要走的階段子集（研究／部署／維護為模組選配） | 流程、pipeline、路線 |
-| 終態 | 出邊為空的狀態：完成、停止 | 結束、closed、done |
+| 狀態面 | 卡當下的階段＋狀態＋阻塞，唯一居所＝issue body JSON 與 Project 投影欄 | 看板狀態、board |
+| 階段計畫 | 卡面 `stage_plan`：這張卡要走的階段子集（研究／部署／維護為模組選配） | pipeline |
+| 終態 | 出邊為空的狀態：完成、停止 | closed、done |
 | 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數（>2 只印） | 母卡、子卡、family、epic |
-| 資源宣告 | 卡面 `resources` 欄的字串陣列；文法住 db-contract／resource-lock 模組 | 依賴、鎖 |
-| owner | 卡當下的 {role, actor}，由 `move --actor` 寫 | 負責人、assignee、承辦 |
-| 失誤登記 | 交回單裡執行者自報的錯誤與修正（非查核者 finding） | 自首、錯誤清單、bug list |
+| 資源宣告 | 卡面 `resources` 欄的字串陣列；文法住 db-contract／resource-lock 模組 | — |
+| owner | 卡當下的 {role, actor}，由 `move --actor` 寫 | 負責人、assignee |
+| 失誤登記 | 交回單裡執行者自報的錯誤與修正（非查核者 finding） | 錯誤清單、bug list |
 | 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 重啟條件、reopen |
-| 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | 上訴、appeal、反證 |
-| 三軸 | 級別判準的三個軸：敏感面／可復原性／影響面＝`tier_basis` 的 sensitive／recoverable／blast（來源 tier-rules L58–60） | 風險軸、維度 |
-| 分支 | 卡面 `branch`：該卡工作所在的 git 分支名 | feature、工作區 |
-| SHA 四種：被審／來源／合併基底／合併 | 被審＝代貼裁決首行所記、查核者讀到的 commit；來源＝卡面 `source_sha`，交回時的分支頭；合併基底＝派工單的 merge-base；合併＝結案時 main 上的 merge commit | 目標 SHA、版本、HEAD（作為名詞） |
+| 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | appeal |
+| 三軸 | 級別判準的三個軸：敏感面／可復原性／影響面＝`tier_basis` 的 sensitive／recoverable／blast（來源 tier-rules L58–60） | 風險軸 |
+| 分支 | 卡面 `branch`：該卡工作所在的 git 分支名 | feature |
+| SHA 四種：被審／來源／合併基底／合併 | 被審＝代貼裁決首行所記、查核者讀到的 commit；來源＝卡面 `source_sha`，交回時的分支頭；合併基底＝派工單的 merge-base；合併＝結案時 main 上的 merge commit | 目標 SHA、HEAD（作為名詞） |
 | 獨立查核 | 查核者實體不同於本 iteration 執行者實體（P2） | 第二雙眼、peer review |
-| 拒收（事件） | CLI rc≠0 並寫一則 `wf:reject` 留言的那次事件；作為硬擋類別名仍禁用 | 駁回、reject（作為類別名） |
+| 拒收（事件） | CLI rc≠0 並寫一則 `wf:reject` 留言的那次事件；作為硬擋類別名仍禁用 | reject（作為類別名） |
 | 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 驗證失敗、invalid |
-| 質詢（grilling） | T4 卡離開規劃前需求方與 PM 逐題定案的對話紀錄，落 `wf:log`，卡面 `grilling` 指向 | 訪談、code review、審問 |
+| 質詢（grilling） | T4 卡離開規劃前需求方與 PM 逐題定案的對話紀錄，落 `wf:log`，卡面 `grilling` 指向 | code review |
 | 單向門 | 級別只升不降的門檻：降級需裁定（`core/tiers.md` §單向門） | 不可逆、one-way |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | merge 策略、合併策略 |
 | 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 寫入規則、transaction |
-| 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | 影響面（作為副作用入口的同義）、blast list |
+| 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | blast list |
 | 退回理由 | 裁定單裡每輪退回引用的 `wf-return` finding | 駁回原因、reject reason |
 
 ## 未驗
