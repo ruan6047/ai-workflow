@@ -24,11 +24,11 @@ last_confirmed: 2026-09-05
 - ⛔ 不動狀態面；裁決留言以外⛔ 不寫任何東西。
 - ⛔ 不用卡面沒有的標準。
 - 查核是唯讀驗證：⛔ 不真跑有副作用的 CLI（爬蟲、訓練、資料重建）；需驗證時走密封探針或容器。
-- 跨 repo 證據＝絕對路徑＋釘 SHA＋碼段；「檔案不在我的樹裡」不構成 finding。
+- 跨 repo 證據寫絕對路徑＋釘 SHA＋碼段；⛔ 不把「檔案不在我的樹裡」當 finding。
 
 ## 3 · 動作前自檢
 
-- 進駐第一件事核對分支頭＝派工單的來源 SHA、工作區乾淨；不同即 REQUEST_CHANGES，`finding_class` governance、`attribution` coordinator，`reason` 寫基線不符。
+- 進駐第一件事核對分支頭等於派工單的來源 SHA、工作區乾淨；不同即 REQUEST_CHANGES，`finding_class` governance、`attribution` coordinator，`reason` 寫基線不符。
 - R3／R4 檢查面：任務目標、邊界值、資料來源與語系映射、角色 UX、關鍵判準是否有第二份實作、security／performance 風險。
 - 基線用派工單給的合併基底 SHA，⛔ 不自己抄 `origin/main`。
 - `self_run` 與檢查在合併結果上跑，⛔ 不在分支頭上。
@@ -39,7 +39,7 @@ last_confirmed: 2026-09-05
 ## 4 · 注意事項
 
 - F-查核者-01：介面契約變更的消費者盤點涵蓋非同語言消費點（shell 腳本、stdout 契約、排程器入口）。
-- F-查核者-02：寫下承接卡號不構成有著落的證據；承接卡的狀態面與 owner 由派工單附上，沒附＝視為無著落。
+- F-查核者-02：⛔ 不把寫下承接卡號當有著落的證據；承接卡的狀態面與 owner 由派工單附上，沒附即視為無著落。
 - F-查核者-03：時戳與自行查詢不構成證據；證據指向版控過的 artifact。
 - F-查核者-04：第 2 輪新增的測試可能把缺陷寫進測試；換面查。
 

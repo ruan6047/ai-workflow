@@ -18,7 +18,7 @@ last_confirmed: 2026-09-05
 - 注意事項正式化：候選要升為 P- 或 F- 條目時，確認三格（條文、來源、處理手段）；缺處理手段⛔ 不升。
 - 硬擋新增的唯一入口：處理手段屬 recoverable＝irreversible 或平台層事故時才裁定升為平台委託 P-（`core/platform.md`）；預設不升，⛔ 不擴 CLI 硬擋。
 - 定期回看：每 `guard_review_period`（`core/params.md`）張結案卡收 PM 一份回看清單（零拒收硬擋、正式化候選、`last_confirmed` 過期的規則檔三類），一則裁定留言處理。
-- 規則檔 `last_confirmed` 的確認者；改規則＝一張卡，sensitive 含 rules。
+- 確認規則檔的 `last_confirmed`；改規則開一張卡，sensitive 含 rules。
 
 ## 2 · 紅線
 
@@ -35,6 +35,6 @@ last_confirmed: 2026-09-05
 ## 4 · 注意事項
 
 - F-需求方-01：需求表單只寫可觀測現象（「X 指向 Y，但 Y 不存在」），⛔ 不寫解法、⛔ 不寫未量測的因果推論。
-- F-需求方-02：finding 存在⛔ 不等於要開卡；處置順序＝是否立刻造成事故 → 服務哪個目標 → 是否與排程衝突。
+- F-需求方-02：finding 存在時⛔ 不因此開卡；依序問是否立刻造成事故 → 服務哪個目標 → 是否與排程衝突再處置。
 
 → [archive/rules-2026-09/stage-rules/requirement.md](../archive/rules-2026-09/stage-rules/requirement.md)、[archive/rules-2026-09/docs/ROADMAP.md](../archive/rules-2026-09/docs/ROADMAP.md)、[archive/issues/219.md](../archive/issues/219.md)、[archive/issues/147.md](../archive/issues/147.md)
