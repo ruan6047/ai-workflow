@@ -1,12 +1,12 @@
 name: CI
 
 # 第三輪重構第 0 步（骨架 §十三；需求方 2026-09-04 裁定封存為第一步）。
-# 本步只留兩個有被測物的 job：secret-scan（P4）、commit-trailer（P5）。
-# 轉移表可達性 job 隨第 1 步 core/state-machine.md 進場；新 CLI 測試 job 隨第 6 步進場。
+# 第 0 步：secret-scan（P4）、commit-trailer（P5）。第 1 步加 reachability（core/state-machine.md）。
+# 新 CLI 測試 job 隨第 6 步進場。
 # ⛔ 不再有掃描 docs 的 job。
 #
-# ruleset「main must be green」（id 20768920）的 required check＝secret-scan、commit-trailer
-#（需求方 2026-09-05 甲案：第 0 步即改 ruleset，不留空 job）。
+# ruleset「main must be green」（id 20768920）的 required check＝secret-scan、commit-trailer、reachability
+#（需求方 2026-09-05 裁定：第 0 步改 ruleset 不留空 job；第 1 步加 reachability）。
 # P1–P5 的條文居所＝core/platform.md（第 1 步）；本檔只是執行 artifact。
 
 on:
@@ -41,7 +41,7 @@ jobs:
 
   commit-trailer:
     # P5：commit trailer 鍵在允許集合內，且是訊息末端的連續單一區塊。
-    # 本步只驗「鍵」與「連續」；哪些 trailer 必須出現，等 core/platform.md 條文（第 1 步）。
+    # 只驗「鍵」與「連續」（core/platform.md P5）；哪些 trailer 必須出現＝約定，住 roles/conduct-common.md §2，CI 不驗。
     name: commit-trailer
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -66,3 +66,15 @@ jobs:
           fi
       - name: 驗 trailer 鍵與連續區塊
         run: python3 .github/scripts/trailer_check.py "${{ steps.range.outputs.range }}"
+
+  reachability:
+    # 骨架 §四：轉移表可達性。被測物＝core/state-machine.md 的 json wf-state-machine 區塊。
+    name: reachability
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 .github/scripts/reachability.py --selftest
+      - run: python3 .github/scripts/reachability.py
