@@ -19,7 +19,7 @@ last_confirmed: 2026-09-05
               "parent", "blocked", "grilling", "owner", "branch", "source_sha", "notes"],
  "properties": {
   "schema_version": {"type": "integer", "const": 1},
-  "card_id": {"type": "string", "pattern": "^[A-Z]+-[0-9]{3,}(-FIX[0-9]+)?$"},
+  "card_id": {"type": "string", "pattern": "^[A-Z]+-[0-9]{3,}(-FIX[1-9][0-9]*)?$"},
   "source_issue": {"type": "integer"},
   "feature": {"type": "string"},
   "core_pain": {"type": "string"},
@@ -27,39 +27,42 @@ last_confirmed: 2026-09-05
   "stage_plan": {"type": "array", "items": {"enum": ["需求", "研究", "規劃", "執行", "審核", "部署", "維護", "結案"]}, "uniqueItems": true},
   "acceptance": {"type": "array", "items": {"type": "string"}},
   "verification": {"type": "array", "items": {"type": "object", "required": ["item", "who"], "additionalProperties": false,
-                    "properties": {"item": {"type": "string"}, "who": {"enum": ["executor", "reviewer", "requester", "ci"]}}}},
+                    "properties": {"item": {"type": "string"}, "who": {"type": "string"}}}},
   "list_convergence": {"type": "array", "items": {"type": "integer"}},
   "service_goal": {"type": "string"},
   "parent": {"type": ["string", "null"]},
   "blocked": {"type": ["object", "null"], "required": ["from", "ruling"], "additionalProperties": false,
               "properties": {"from": {"$ref": "#/$defs/nonterminal"}, "ruling": {"type": "string", "format": "uri"}}},
   "grilling": {"type": ["string", "null"], "format": "uri"},
-  "tier": {"enum": ["T0", "T1", "T2", "T3", "T4", ""]},
-  "tier_basis": {"type": "object", "required": ["sensitive", "recoverable", "blast"], "additionalProperties": false,
+  "tier": {"enum": ["T0", "T1", "T2", "T3", "T4", null]},
+  "tier_basis": {"type": ["object", "null"], "required": ["sensitive", "recoverable", "blast"], "additionalProperties": false,
     "properties": {
       "sensitive": {"type": "array", "uniqueItems": true, "items": {"enum": ["public_contract", "security", "payment", "data_write", "migration", "production", "rules", "statistics"]}},
-      "recoverable": {"enum": ["reversible", "rollback_only", "irreversible", ""]},
-      "blast": {"enum": ["file", "module", "repo", "cross_repo", ""]}}},
+      "recoverable": {"enum": ["reversible", "rollback_only", "irreversible"]},
+      "blast": {"enum": ["file", "module", "repo", "cross_repo"]}}},
   "exec_capability": {"$ref": "#/$defs/capability"},
   "review_capability": {"$ref": "#/$defs/capability"},
-  "db_scope": {"enum": ["none", "read", "write", "schema", "data-migration", ""]},
+  "db_scope": {"enum": ["none", "read", "write", "schema", "data-migration", null]},
   "resources": {"type": "array", "items": {"type": "string"}},
   "when": {"type": "string"},
   "spec_version": {"type": "integer", "minimum": 1},
   "owner": {"type": ["object", "null"], "required": ["role", "actor"], "additionalProperties": false,
-            "properties": {"role": {"enum": ["requester", "pm", "executor", "reviewer"]}, "actor": {"type": "string", "minLength": 1}}},
+            "properties": {"role": {"enum": ["requester", "pm", "executor", "reviewer"]}, "actor": {"type": "string"}}},
   "branch": {"type": ["string", "null"]},
   "source_sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
   "iteration": {"type": "integer", "minimum": 0},
   "notes": {"type": "array", "items": {"type": "object", "required": ["id", "text", "origin"], "additionalProperties": false,
-            "properties": {"id": {"type": "string", "pattern": "^T-(需求|研究|規劃|執行|審核|部署|維護|結案)-[0-9]{2}$"}, "text": {"type": "string", "minLength": 1}, "origin": {"type": "string", "format": "uri"}}}}
+            "properties": {"id": {"type": "string", "pattern": "^T-(需求|研究|規劃|執行|審核|部署|維護|結案)-[0-9]{2}$"}, "text": {"type": "string"}, "origin": {"type": "string", "format": "uri"}}}}
  },
- "$defs": {"capability": {"type": "object", "required": ["level", "reason"], "additionalProperties": false,
-           "properties": {"level": {"enum": ["經濟型", "主力型", "高階型", ""]}, "reason": {"type": "string"}}},
-          "nonterminal": {"enum": ["待辦", "進行中", "待確認", "退回"]}}}
+ "$defs": {"capability": {"type": ["object", "null"], "required": ["level", "reason"], "additionalProperties": false,
+           "properties": {"level": {"enum": ["經濟型", "主力型", "高階型"]}, "reason": {"type": "string"}}},
+          "nonterminal": {"enum": ["待辦", "進行中", "待確認", "退回"]},
+          "module_fields": {
+            "resource-lock": {"worktree": {"type": ["string", "null"]}, "lease_expires_at": {"type": ["string", "null"], "format": "date-time"}},
+            "escalation": {"escalation_count": {"type": "integer", "minimum": 0}}}}}
 ```
 
-合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，(a) 把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum；(b) 把已啟用模組 `module.md` 內 `json schema` 區塊（`$id`＝模組名，只含該模組 `adds.fields` 的 properties 與型別）的 properties 併入 `wf-card.properties`；然後再驗。未啟用模組的狀態值與欄名因此仍是未定義鍵，D3 拒。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；PM 與需求方欄＝空字串或空陣列；`parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，(a) 把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum；(b) 把 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 
@@ -73,7 +76,7 @@ last_confirmed: 2026-09-05
 | grilling | PM（`edit`） | T4 離開規劃前 | brief、裁定單 |
 | parent | PM（`open --parent`／`edit`） | 有父卡時 | 鏈深（印）、initiative |
 | owner、branch、source_sha、blocked | CLI（`move`） | — | brief、Project、D4 |
-| notes | 任何角色經 `edit --set notes+=`，來源＝`wf:note` 留言 | — | notes、brief |
+| notes | 任何角色經 `edit --set notes+=`，來源＝`wf:note` 留言；`last_cited` 不存卡面，由 `snapshot` 推得 | — | notes、brief |
 
 規格欄＝acceptance／verification／non_scope／resources；`edit` 改任一欄 ⇒ `spec_version` +1（C11）。
 
@@ -101,7 +104,7 @@ last_confirmed: 2026-09-05
 
 ## 5 · 投影欄
 
-Project 只放五欄，全由 CLI 回寫：階段（單選 8 值）、狀態（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別（單選 5 值）、owner（TEXT，`role:actor`；actor 字串本身含 `@`，需求方 2026-09-05 裁定）、卡ID（TEXT）。TEXT 欄上限 1024 bytes UTF-8；超過即 D3 拒。寫入順序住 `core/verbs.md` §寫入契約。
+Project 只放五欄，全由 CLI 回寫：階段（單選 8 值）、狀態（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別（單選 5 值）、owner（TEXT，`role:actor`，需求方 2026-09-05 裁定）、卡ID（TEXT）。`max_bytes`：owner 1024、卡ID 1024（UTF-8，2026-09-04 種子）；超過＝寫壞資料，D3（`core/verbs.md` §2）。null 的 enum 欄投影＝單選欄清空。寫入順序住 `core/verbs.md` §寫入契約。
 
 ## 6 · schema_version
 

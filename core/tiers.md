@@ -34,7 +34,8 @@ sensitive 值域＝public_contract／security／payment／data_write／migration
 - 含 public_contract、security、payment、data_write、production ⇒ 至少 T3。
 - 含 migration、rules、statistics ⇒ T4。
 - `db_scope ∈ {schema, data-migration}` ⇒ T4，且 sensitive 必含 migration（C9）。
-- T4 卡的查核者實體須跨家族；同家族不同工具不算；不可跨家族時需求方 sign-off。
+- T4 查核者的獨立性條件＝注意事項，住 `roles/pm.md` §4；級別表的「跨家族，或 sign-off」是形狀。
+- 注意事項升為硬擋的唯一入口＝需求方裁定，且處理手段屬不可逆或平台層事故（條文住 `roles/requester.md` §1）；預設不升。
 
 ## 4 · 單向門
 

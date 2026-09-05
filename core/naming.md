@@ -35,5 +35,5 @@ last_confirmed: 2026-09-05
 - 規則檔：kebab-case、無日期；`core/`、`stages/`、`roles/`、`modules/<name>/module.md`。
 - 研究與紀錄檔：`docs/research/<YYYY-MM-DD>-<slug>.md`。
 - 專案層檔一律住 `.wf/`：`modules.json`、`tiers.md`、`stages/<階段>.md`、`contracts/`。
-- 注意事項 id：`F-<階段或角色>-NN`（框架）、`P-<階段>-NN`（專案）、`T-<階段>-NN`（卡面）。
+- 注意事項 id：`F-<階段或角色>-NN`（框架）、`F-<模組名>-NN`（模組）、`P-<階段>-NN`（專案）、`T-<階段>-NN`（卡面）。
 - finding id：`<card_id>-R<iteration>-<序>`，由 `review` 編。

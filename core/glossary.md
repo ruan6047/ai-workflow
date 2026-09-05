@@ -20,9 +20,9 @@ last_confirmed: 2026-09-05
 | 狀態 | 待辦／進行中／待確認／完成／退回／阻塞，加階段與模組 delta 的值 | 不是投影欄的其他欄 | Status、進度、交付狀態、部署狀態 |
 | 狀態面 | 卡當下的階段＋狀態＋阻塞；唯一居所＝issue body JSON 與 Project 投影欄 | 不是聊天、不是本機檔 | 看板狀態、board、進度 |
 | 終態 | 出邊為空的狀態：完成、停止 | 不含撤銷 | 結束、closed、done |
-| 轉移 | `move` 的一次寫入；轉移記錄＝其留言 | 不是事件流 | 事件、event、handoff |
+| 轉移、轉移記錄 | 轉移＝`move` 的一次寫入；轉移記錄＝該次寫入的 `wf:move` 留言 | 不是事件流 | 事件、event、handoff |
 | 合成表 | 核心轉移表 ∪ 已啟用模組 add − remove，再按該卡 `stage_plan` 展開 | 不是流程圖 | 狀態表、workflow 圖 |
-| 模組 | opt-in 的規則包，帶恰一個啟用條件 | 未啟用時不存在 | 外掛、plugin、功能旗標 |
+| 模組、啟用條件 | 模組＝opt-in 的規則包；啟用條件＝該模組唯一的一個 predicate，成立才存在 | 未啟用時不存在 | 外掛、plugin、功能旗標 |
 | 模組 delta | 模組宣告區塊對狀態值域、轉移、欄位、注意事項的增減 | 不是覆寫 | patch、override、外掛、覆寫 |
 | iteration | 卡進入執行階段的次數 | 不是退回次數 | 輪次、輪、round |
 | 查核輪 R1–R4 | 前提／射程／內容／影響面四題 | 不是 iteration | 輪次、pass |
@@ -47,7 +47,7 @@ last_confirmed: 2026-09-05
 | 家族 | 模型家族 | 不是工具 | 供應商、vendor |
 | 獨立查核 | 查核者實體不同於本 iteration 執行者實體 | 同家族不同工具不算跨家族 | 第二雙眼、peer review |
 | 級別 | T0–T4，由三軸取最高 | 不是難度 | tier（中文語境）、難度、等級 |
-| 能力層級 | 經濟型／主力型／高階型 | 不是模型名 | 模型、model |
+| 能力層級 | 經濟型／主力型／高階型 | 不是模型名 | tier（中文語境）、難度、等級 |
 | 三軸 | 級別判準的三個軸：敏感面／可復原性／影響面＝卡面 `tier_basis` 的 sensitive／recoverable／blast | 不是級別本身 | 風險軸、維度 |
 | 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種 | 不是 finding | bug（作為卡種）、BUG- 前綴 |
 | 模型名 | 實際跑的模型識別字，只住派工單與專案層 | 不是能力層級 | 模型（作為能力層級的同義） |
@@ -61,7 +61,7 @@ last_confirmed: 2026-09-05
 | 規格、規格欄 | 規格＝卡面判準與規格欄的總稱；規格欄＝使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources` | 核心痛點不在此列 | 需求文件、spec |
 | 清單收斂宣告 | 這張卡吸收哪些清單項：卡面 `source_issue`＋收件表單 `dedupe` 欄，落卡面 `list_convergence` | 不是查重 | 合併宣告、去重 |
 | 設計閘（Design gate） | 規劃離開前 `verification` 填齊的檢查點 | 不是設計審查會 | 設計審、design review |
-| 質詢 | T4 卡離開規劃前需求方與 PM 逐題定案的紀錄，落 `wf:log` | 不是 code review | grilling、訪談、審問、code review |
+| 質詢（grilling） | T4 卡離開規劃前需求方與 PM 逐題定案的紀錄，落 `wf:log` | 不是 code review | 訪談、審問、code review |
 | 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數 | 鏈深 >2 只印 | 母卡、子卡、family、epic |
 | 資源宣告 | 卡面 `resources` 字串陣列 | 文法住模組 | 依賴、鎖 |
 | owner | 卡當下的 {role, actor}，由 `move --actor` 寫 | 不是 GitHub assignee | 負責人、承辦、assignee |

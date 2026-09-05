@@ -74,6 +74,8 @@ def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
         if not cond:
             return True
         op, stage = cond.split(":", 1)
+        if op not in ("plan_has", "plan_lacks"):
+            sys.exit(f"⛔ 未知的 if 運算子：{cond}")
         return (stage in plan) if op == "plan_has" else (stage not in plan)
 
     for t in sm["transitions"]:
@@ -90,11 +92,12 @@ def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
                     continue
                 t_stage_tok, t_state = to.split("/", 1) if to != "清單" else ("清單", "")
                 if st == "阻塞":
-                    # 解除：每個阻塞節點只回自己的 from
-                    if t_state == "<from>":
-                        for frm in states_of(sm, fs):
-                            if frm not in sm["terminal"] and frm != "阻塞":
-                                edges[blocked_node(fs, frm)].add(f"{fs}/{frm}")
+                    # 解除：每個阻塞節點只回自己的 from；阻塞不得有其他出邊
+                    if t_state != "<from>":
+                        sys.exit(f"⛔ 阻塞的出邊只能是 same/<from>：{t}")
+                    for frm in states_of(sm, fs):
+                        if frm not in sm["terminal"] and frm != "阻塞":
+                            edges[blocked_node(fs, frm)].add(f"{fs}/{frm}")
                     continue
                 src = f"{fs}/{st}"
                 if to == "清單":

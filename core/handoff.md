@@ -22,7 +22,7 @@ last_confirmed: 2026-09-05
 | 能力層級建議 | CLI | 卡面 `exec_capability` 或 `review_capability` 的層級與理由 |
 | 實際模型 | 人 | 實際跑的模型名＋偏離理由；與建議相符時逐字「相符」 |
 | 注意事項 | CLI | `notes` 的編號清單全文 |
-| 副作用入口 | CLI | 專案層 `.wf/contracts/` 所列；缺檔印「專案層未宣告」 |
+| 副作用入口 | CLI | 專案層 `.wf/contracts/*.md` 內 `json wf-contract` 區塊的 `side_effects` 陣列逐條；無區塊印「專案層未宣告」 |
 | 寫入授權、唯讀路徑 | 人（PM） | 逐條列出；其餘唯讀 |
 | 未驗項 | 人（PM） | PM 已知未驗，三分類各附原因 |
 | 本文件落差 | 人（PM） | 無則逐字「無」 |
@@ -34,25 +34,25 @@ last_confirmed: 2026-09-05
 | 段 | 誰填 | 內容 |
 |---|---|---|
 | 卡與身分 | CLI | 同派工單；另列 `source_sha`、commit 清單（`git log`）、改動面（`git diff --stat` 每檔一列）、`finding_id`（`review` 依 `core/naming.md` 編） |
-| self_run | 人 | 實跑的指令、rc、原始輸出；⛔ 不讀碼推論、⛔ 不轉抄他人輸出 |
+| self_run | 人 | 實跑的指令、rc、原始輸出 |
 | 逐條驗收 | 人 | 每條 `acceptance`：做法／證據／falsifier，⛔ 不合併 |
 | 失誤登記 | 執行者 | 逐項：失誤／何時／影響／補救；無則逐字「無」 |
 | findings | 查核者 | 八欄逐條（schema）；無則逐字「無」 |
 | 未驗清單 | 人 | 每項 `{item, kind, reason}`；kind＝cannot／skipped／deferred；reason 非空 |
 | 注意事項回應 | 人 | 對 `notes` 印出的每個 id 一條 `{id, value, text}`；value＝followed／not_applicable／found；後兩者 text 非空 |
-| 射程外發現 | 人 | 只寫進本段交需求方；⛔ 不開卡、⛔ 不 spawn 背景任務；無則「無」 |
+| 射程外發現 | 人 | 逐項；無則「無」 |
 | 裁決 | 查核者 | `review_result`、`core_pain_resolved`、一句話理由 |
 
-必填性依級別：T0／T1 只要 `self_run` 與逐條驗收（schema 的 `required`）；T2 以上全段，缺段由 `review` 依卡面 `tier` 印，⛔ 不進 schema。
+必填性依級別：T0／T1 只要 `self_run` 與逐條驗收；T2 以上全段。缺段一律由 `review` 依卡面 `tier` 印，⛔ 不進 schema；schema 只管結構，`required` 只列 `review` 自己補的欄。`review` 先補 `card_id`／`iteration`／`role`／`source_sha`／`finding_id`，再驗 schema。
 
 ```json schema
 {"$id": "wf-return", "type": "object", "additionalProperties": false,
- "required": ["card_id", "iteration", "role", "source_sha", "self_run", "acceptance"],
+ "required": ["card_id", "iteration", "role", "source_sha"],
  "properties": {
   "card_id": {"type": "string"}, "iteration": {"type": "integer"}, "role": {"enum": ["executor", "reviewer"]},
   "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-  "self_run": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["command", "rc", "observed"], "additionalProperties": false,
-               "properties": {"command": {"type": "string"}, "rc": {"type": "integer"}, "observed": {"type": "string", "minLength": 1}}}},
+  "self_run": {"type": "array", "items": {"type": "object", "required": ["command", "rc", "observed"], "additionalProperties": false,
+               "properties": {"command": {"type": "string"}, "rc": {"type": "integer"}, "observed": {"type": "string"}}}},
   "acceptance": {"type": "array", "items": {"type": "object", "required": ["text", "method", "evidence", "falsifier"], "additionalProperties": false,
                  "properties": {"text": {"type": "string"}, "method": {"type": "string"}, "evidence": {"type": "string"}, "falsifier": {"type": "string"}}}},
   "mistakes": {"type": "array", "items": {"type": "object", "required": ["what", "when", "impact", "fix"], "additionalProperties": false,
@@ -64,7 +64,7 @@ last_confirmed: 2026-09-05
                               "attribution": {"enum": ["executor", "planner", "coordinator", "reviewer", "external"]},
                               "root_cause_id": {"type": "string"}, "evidence": {"type": "string"}, "disposition": {"type": "string"}}}},
   "unverified": {"type": "array", "items": {"type": "object", "required": ["item", "kind", "reason"], "additionalProperties": false,
-                 "properties": {"item": {"type": "string"}, "kind": {"enum": ["cannot", "skipped", "deferred"]}, "reason": {"type": "string", "minLength": 1}}}},
+                 "properties": {"item": {"type": "string"}, "kind": {"enum": ["cannot", "skipped", "deferred"]}, "reason": {"type": "string"}}}},
   "note_responses": {"type": "array", "items": {"type": "object", "required": ["id", "value"], "additionalProperties": false,
                      "properties": {"id": {"type": "string"}, "value": {"enum": ["followed", "not_applicable", "found"]}, "text": {"type": "string"}}}},
   "out_of_scope": {"type": "array", "items": {"type": "string"}},
@@ -73,7 +73,7 @@ last_confirmed: 2026-09-05
   "reason": {"type": "string"}}}
 ```
 
-一則留言只有一個 `wf-return` 區塊。T2 以上：`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）必填；`role=reviewer` 另必填 `review_result`、`core_pain_resolved`、`findings`；`role=executor` 另必填 `mistakes`。以上皆由 `review` 印缺段。CLI 只驗 id 覆蓋、值在值域、text 非空，⛔ 不判內容。
+一則留言只有一個 `wf-return` 區塊。缺段（`review` 印，⛔ 不是 D3）：全級別＝`self_run`、`acceptance`；T2 以上另＝`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）；`role=reviewer` 另＝`review_result`、`core_pain_resolved`、`findings`；`role=executor` 另＝`mistakes`。CLI 只印 id 未覆蓋 `notes` 清單、`not_applicable`／`found` 而 text 空、`unverified.reason` 空，⛔ 不判內容。
 
 ## 3 · 裁定單（PM → 需求方；`brief --for closeout` 或人手組）
 
@@ -91,7 +91,7 @@ last_confirmed: 2026-09-05
 {"$id": "wf-ruling", "type": "object", "additionalProperties": false, "required": ["kind", "reason"],
  "properties": {
   "kind": {"enum": ["block", "stop", "withdraw", "tier_change", "signoff", "other"]},
-  "reason": {"type": "string", "minLength": 1},
+  "reason": {"type": "string"},
   "waiting_on": {"type": "string"}, "unblock_condition": {"type": "string"},
   "revive_condition": {"type": "string"}, "reversal_handle": {"type": "string"}}}
 ```
