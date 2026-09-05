@@ -36,14 +36,12 @@ last_confirmed: 2026-09-05
 
 - PM：merge、收尾、組裁定單、封存；⛔ 不裁定停止。
 - 需求方：讀裁定單、確認或退回、裁停止；⛔ 不代改。
-- 執行者：不在本階段（代行 merge 只在需求方明確授權時，merge commit 帶 `Reviewed-by`）。
+- 執行者：不在本階段。
 - 查核者：不在本階段。
 
 ## 6 · 注意事項
 
 - F-結案-01：進入完成前印的 merge SHA 是否 main 祖先、CI 狀態，紅即停。
 - F-結案-02：終態才釋放宣告的資源；進 main 未結案的卡仍算現役。
-- F-結案-03：封存、收尾、合併前跑全套並用 repo 宣告的工具鏈。
-- F-結案-04：翻案把手須可跑（`git revert <merge SHA>`）；寫不出即逐字「無把手」＋原因。
 
 → [archive/rules-2026-09/stage-rules/closeout.md](../archive/rules-2026-09/stage-rules/closeout.md)、[archive/rules-2026-09/templates/closeout-report.md](../archive/rules-2026-09/templates/closeout-report.md)、[archive/issues/025.md](../archive/issues/025.md)、[archive/issues/220.md](../archive/issues/220.md)

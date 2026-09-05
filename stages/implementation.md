@@ -16,7 +16,7 @@ last_confirmed: 2026-09-05
 
 - 進入＝規劃階段離開（T0／T1 由需求直通）；`move` 到進行中時 iteration +1、`source_sha`＝null、寫 `branch`。
 - 離開＝交回單經 `review` 貼出、PM 判完整性與 R1 R2 過 → 審核階段待辦。
-- 失聯：卡停在進行中；出口＝新 iteration 重做，或另一實體以 `role=executor` 交一份交回單，`mistakes` 逐字寫「非本人自評」。
+- 失聯：卡停在進行中；PM `move` 到待確認再退回、再派（iteration +1），或另一實體以 `role=executor` 交回，`mistakes` 每則 `what` 起首逐字「非本人自評」；分支未 push 則走阻塞（`wf-ruling` kind=block）。
 
 ## 3 · 狀態 delta
 
@@ -24,7 +24,7 @@ last_confirmed: 2026-09-05
 
 ## 4 · 階段內迴圈
 
-- ① `notes --stage 執行` ② PM `brief --for executor`，人填段寫寫入授權、唯讀範圍、實際模型 ③ 執行者 `move --source-sha` 交回、`review --file --role executor` 貼交回單 ④ PM 判缺段、格數、值域與 R1 R2 ⑤ `move`。
+- ① `notes --stage 執行` ② PM `brief --for executor`，人填段寫寫入授權、唯讀範圍、實際模型 ③ 執行者推分支、`review --file --role executor` 貼交回單 ④ PM 判缺段、格數、值域與 R1 R2 ⑤ PM `move --source-sha` 到待確認，再 `move` 到下一階段或退回。
 - 交回單的來源 SHA＝交回當下的分支頭；交回後再 commit＝再交一次。
 - 修缺陷先看回歸測試紅，再修綠。
 - 分支更新走本地 rebase＋`--force-with-lease`（已被引用的 SHA 除外，`roles/executor.md` §2）。
@@ -41,8 +41,7 @@ last_confirmed: 2026-09-05
 - F-執行-01：一個 commit 一件事；⛔ 不混入無關重構或依賴升級。
 - F-執行-02：宣稱可防回歸的測試先對缺陷版本跑紅。
 - F-執行-03：新 worktree 先建全套測試基線；每筆驗證標註環境。
-- F-執行-04：介面契約變更的消費者盤點涵蓋 shell 腳本、stdout 契約、排程器入口。
-- F-執行-05：artifact 在交付 SHA 可重現：產生工具與 artifact 同一 commit；自指命中明列，⛔ 不偷偷排除。
-- F-執行-06：資源宣告漏列交付檔、宣告過寬、指到不存在路徑，交回前對照 `git diff --name-status` 修正。
+- F-執行-04：artifact 在交付 SHA 可重現：產生工具與 artifact 同一 commit；自指命中明列，⛔ 不偷偷排除。
+- F-執行-05：資源宣告漏列交付檔、宣告過寬、指到不存在路徑，交回前對照 `git diff --name-status` 修正。
 
 → [archive/rules-2026-09/stage-rules/implementation.md](../archive/rules-2026-09/stage-rules/implementation.md)、[archive/rules-2026-09/templates/delivery-report.md](../archive/rules-2026-09/templates/delivery-report.md)、[archive/issues/219.md](../archive/issues/219.md)
