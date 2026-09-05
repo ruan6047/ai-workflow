@@ -1,0 +1,43 @@
+---
+name: requester
+when: 你是出題、裁定、sign-off 的那個人，卡在需求階段、要停止、要降級、要結案確認、或有人請你裁時
+non_scope: ⛔ 不寫 PM 怎麼組裁定單（住 core/handoff.md §3）；⛔ 不寫 R1 R2 的判法（住 roles/pm.md）
+last_confirmed: 2026-09-05
+---
+
+# 需求方
+
+## 1 · 職責
+
+- 決定哪個清單項升級為卡、缺陷開不開卡；⛔ 不代填清單項。
+- 填卡面 `service_goal`；PM 判 R1 後保留否決：撤銷或停止。
+- 裁定：停止、撤銷、級別下修、阻塞解除、授權缺口擴權或開新卡、T4 sign-off。裁定＝一則 `wf:ruling` 留言（`core/handoff.md` §3）；PM 可代貼。
+- 結案確認：讀裁定單，確認才轉完成，否則退回補驗。
+- T4 卡離開規劃前做質詢，紀錄落 `wf:log` 留言。
+- 注意事項正式化：候選要升為 P- 或 F- 條目時，確認三格（條文、來源、處理手段）；缺處理手段⛔ 不升。
+- 硬擋新增的唯一入口：處理手段屬 recoverable＝irreversible 或平台層事故時才裁定升為硬擋；預設不升。
+- 定期回看：每 `guard_review_period`（`core/params.md`）張結案卡收 PM 一份回看清單（零拒收硬擋、正式化候選、`last_confirmed` 過期的規則檔三類），一則裁定留言處理。
+- 規則檔 `last_confirmed` 的確認者；改規則＝一張卡，規則錯了影響全專案，`rules` 紅線域。
+- 停止自審的判準（給 PM）：連續一整批零實質發現才停，⛔ 不用筆數遞減外推。
+
+## 2 · 紅線
+
+- 裁定只以留言生效；只存在對話的裁定⛔ 不算，PM 代貼時首行標記授權來源。
+- ⛔ 不代填表單、⛔ 不代寫規格、⛔ 不代改執行者的產出。
+- 不在場時決策進待審清單；AI 只續做已派的工作。
+
+## 3 · 動作前自檢
+
+- 裁定前讀實際值（卡面 JSON、投影欄、留言），⛔ 不憑印象。
+- 停止類裁定含 reason、revive_condition、reversal_handle；阻塞類含 reason、waiting_on、unblock_condition。
+- 級別下修前看裁定單列的被繞過的要求。
+- 提案被推翻後要求 PM 重新研究至少三輪再給新建議，⛔ 不當場翻面。
+
+## 4 · 注意事項
+
+- F-需求方-01：需求表單只寫可觀測現象（「X 指向 Y，但 Y 不存在」），⛔ 不寫解法、⛔ 不寫未量測的因果推論。
+- F-需求方-02：同族第三張卡出現時停手，先問一根問題還是 N 個實例。
+- F-需求方-03：finding 存在⛔ 不等於要開卡；處置順序＝是否立刻造成事故 → 服務哪個目標 → 是否與排程衝突。
+- F-需求方-04：統計檢定在可行樣本量下問不出答案時判不可判定，⛔ 不引為否定證據。
+
+→ [archive/rules-2026-09/stage-rules/requirement.md](../archive/rules-2026-09/stage-rules/requirement.md)、[archive/rules-2026-09/docs/ROADMAP.md](../archive/rules-2026-09/docs/ROADMAP.md)、[archive/issues/219.md](../archive/issues/219.md)、[archive/issues/147.md](../archive/issues/147.md)
