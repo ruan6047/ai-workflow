@@ -253,7 +253,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 交付報告 schema 散 | `core/handoff.md` |
 | 一卡一分支無明文 | `core/naming.md`＋`core/verbs.md` move |
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
-| 退回上一階段的條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §4 |
+| 退回上一階段的條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §2 進入／離開條件 |
 | 命名與目錄 | `core/naming.md` |
 | 研究階段討論回合出口 | `modules/research/module.md` §1（來源 03#52） |
 | 停止裁定由誰 | `roles/requester.md` §1（來源 03 空洞）；`move` 的 `--ruling` 形狀見 §七 |
@@ -282,7 +282,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | guard_review_period | 20 張結案卡 | 需求方定期回看的週期（零拒收硬擋、正式化候選、規則檔過期三類合併） |
 | rule_confirm_days | 90 天 | `brief` 來源標記把過期規則檔標出來（§十一） |
 
-**管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；內容＝一個 `json wf-note {text, origin}` 區塊，首行 `wf:note` 只給人讀；候選的形狀＝一則 `wf:note` 留言，`origin`＝來源 finding 的留言 URL；誰在何時貼的條文住 `roles/conduct-common.md` §注意事項）→ `notes` 只讀 `wf-note` 區塊印候選 → `snapshot` 匯出全部候選與 `last_cited`。
+**管道**（框架提供，判斷不在框架）：`wf:note` 留言（任何角色可貼；內容＝一個 `json wf-note {text, origin}` 區塊，首行 `wf:note` 只給人讀；候選的形狀＝一則 `wf:note` 留言，`origin`＝來源 finding 的留言 URL；誰在何時貼的條文住 `roles/conduct-common.md` §2 書寫紀律）→ `notes` 只讀 `wf-note` 區塊印候選 → `snapshot` 匯出全部候選與 `last_cited`。
 
 **落點**（條文在填規則時寫）：
 
