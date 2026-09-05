@@ -4,8 +4,10 @@
 讀 core/state-machine.md 的 `json wf-state-machine` 區塊，對每個合法 stage_plan 展開合成表，斷言：
 1. 合成表定義集合（階段計畫 × 狀態值域 ∪ 清單）內每個非終態有出邊，且可達 完成 或 停止；
 2. 完成 與 停止 的出邊集合為空。
-模組 delta 的案例在第 4 步隨模組加入；本步只有無模組案例。
+模組案例（第 4a 步起）：讀 modules/*/module.md 的 `yaml wf-module` 區塊（JSON 子集），對每個帶
+transitions／states delta 的模組跑「單獨啟用」，再跑「全部啟用」；卡級模組只在含該階段的計畫上啟用。
 """
+import glob
 import itertools
 import json
 import re
@@ -25,6 +27,41 @@ def load() -> dict:
     return json.loads(m.group(1))
 
 
+MODBLOCK = re.compile(r"```yaml wf-module\n(.*?)\n```", re.S)
+
+
+def load_modules() -> list[dict]:
+    mods = []
+    for f in sorted(glob.glob(str(ROOT / "modules/*/module.md"))):
+        m = MODBLOCK.search(Path(f).read_text(encoding="utf-8"))
+        if not m:
+            sys.exit(f"⛔ {f} 沒有 yaml wf-module 區塊")
+        mods.append(json.loads(m.group(1)))
+    return mods
+
+
+def compose(sm: dict, mods: list[dict]) -> dict:
+    """核心 ∪ add − remove；模組加的狀態進 states，only_in_stage 由該模組 transitions 所及的階段決定。"""
+    import copy
+    out = copy.deepcopy(sm)
+    out.setdefault("module_states", {})
+    for m in mods:
+        adds = m.get("adds", {})
+        tr = adds.get("transitions", {})
+        for st in adds.get("states", []):
+            if st not in out["states"]:
+                out["states"].append(st)
+            stages = set()
+            for t in tr.get("add", []):
+                for side in (t["from"], t["to"]):
+                    stage_tok, _, state = side.partition("/")
+                    if state == st:
+                        stages.add(stage_tok)
+            out["module_states"][st] = stages  # 記法 token：'*'、'**'、'same' 或字面階段
+        out["transitions"] = [t for t in out["transitions"] if t not in tr.get("remove", [])] + list(tr.get("add", []))
+    return out
+
+
 def legal_plans(sm: dict) -> list[list[str]]:
     optional = [s for s in sm["stages"] if s not in sm["required_stages"]]
     plans = []
@@ -37,7 +74,16 @@ def legal_plans(sm: dict) -> list[list[str]]:
 def states_of(sm: dict, stage: str) -> list[str]:
     only = sm.get("only_in_stage", {})
     delta = sm.get("stage_delta", {}).get(stage, {})
-    core = [s for s in sm["states"] if only.get(s, stage) == stage and s not in delta.get("states_remove", [])]
+    scoped = sm.get("module_states", {})
+    core = []
+    for s in sm["states"]:
+        if only.get(s, stage) != stage or s in delta.get("states_remove", []):
+            continue
+        if s in scoped:
+            toks = scoped[s]
+            if not (stage in toks or "**" in toks or ("*" in toks and stage != "結案") or ("same" in toks and stage != "結案")):
+                continue
+        core.append(s)
     return core + delta.get("states_add", [])
 
 
@@ -184,6 +230,15 @@ def selftest(sm: dict) -> int:
     ok6 = "規劃/退回" not in e_without.get("審核/待確認", set()) and "需求/退回" in e_without.get("審核/待確認", set())
     print(f"selftest_r1_return_target_unique: {'PASS' if (ok5 and ok6) else 'FAIL'}")
     bad += not (ok5 and ok6)
+    # 模組負控：模組加的狀態只有進邊沒有出邊，必 FAIL；正控：research 的 不可判定 節點確實進了定義集合
+    fake = {"name": "fake", "adds": {"states": ["孤模"], "transitions": {"add": [{"from": "執行/待確認", "to": "執行/孤模", "condition": "負控"}], "remove": []}}}
+    e7 = check(compose(sm, [fake]), plan); ok7 = any("非終態 執行/孤模 無出邊" in e for e in e7)
+    research = next((m for m in load_modules() if m["name"] == "research"), None)
+    rplan = [s for s in sm["stages"] if s in sm["required_stages"] or s == "研究"]
+    ok8 = bool(research) and "研究/不可判定" in universe(compose(sm, [research]), rplan) and not check(compose(sm, [research]), rplan)
+    print(f"selftest_module_state_without_exit: {'PASS' if ok7 else 'FAIL'}")
+    print(f"selftest_module_state_in_universe: {'PASS' if ok8 else 'FAIL'}")
+    bad += (not ok7) + (not ok8)
     for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3), ("blocked_loop_only", ok4, e4)):
         print(f"selftest_{name}: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
         bad += not ok
@@ -195,15 +250,30 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
         return selftest(sm)
     plans = legal_plans(sm)
-    bad = 0
-    for plan in plans:
-        errs = check(sm, plan)
-        tag = "→".join(plan)
-        print(f"{'PASS' if not errs else 'FAIL'} {tag}")
-        for e in errs:
-            print(f"  ⛔ {e}")
-        bad += bool(errs)
-    print(f"stage_plan 案例：{len(plans)}，失敗 {bad}（無模組）")
+    mods = load_modules()
+    delta_mods = [m for m in mods if m.get("adds", {}).get("states") or m.get("adds", {}).get("transitions", {}).get("add")]
+    cases = [("無模組", [])] + [(f"單獨啟用 {m['name']}", [m]) for m in delta_mods] + [("全部啟用", delta_mods)]
+    total = bad = 0
+
+    def enabled(m: dict, plan: list[str]) -> bool:
+        stages = m.get("adds", {}).get("stages", [])
+        return all(st in plan for st in stages)  # 卡級模組只在含該階段的計畫上存在
+
+    for label, ms in cases:
+        n = f = 0
+        for plan in plans:
+            active = [m for m in ms if enabled(m, plan)]
+            errs = check(compose(sm, active), plan)
+            n += 1
+            if errs:
+                f += 1
+                print(f"FAIL [{label}] {'→'.join(plan)}")
+                for e in errs:
+                    print(f"  ⛔ {e}")
+        print(f"[{label}] stage_plan 案例：{n}，失敗 {f}")
+        total += n
+        bad += f
+    print(f"合計 {total} 案例，失敗 {bad}；模組 delta {len(delta_mods)} 個")
     return 1 if bad else 0
 
 
