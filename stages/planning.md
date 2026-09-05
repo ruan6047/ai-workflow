@@ -9,15 +9,15 @@ last_confirmed: 2026-09-05
 
 ## 1 · 目標與產出
 
-- 產出＝規格（規格欄，`spec_version` 由 `edit` 自動 +1）、`acceptance` ≥1、`verification` 逐項指定誰跑、（父卡）帶 `parent` 的卡的切片與依賴序。
-- 設計閘＝離開前 `verification` 填齊；純技術卡的設計判斷可寫「不適用」但 `verification` 項要寫理由。
-- 規格只能在本階段改；執行與審核階段改規格＝先交回到待確認再退回本階段。
+- 交出規格（規格欄，`spec_version` 由 `edit` 自動 +1）、`acceptance` ≥1、`verification` 逐項指定誰跑、（父卡）帶 `parent` 的卡的切片與依賴序。
+- 離開前把 `verification` 填齊（設計閘）；純技術卡的設計判斷可寫「不適用」，但在 `verification` 項寫理由。
+- 只在本階段改規格；執行與審核階段要改規格時先交回到待確認再退回本階段。
 
 ## 2 · 進入／離開條件
 
-- 進入＝需求或研究階段離開；T0／T1 跳過本階段（`core/tiers.md` §1）。
-- 離開＝PM 判 ④ 過：`move` 印的「`acceptance` 或 `verification` 空」為空；T4 另附質詢（`grilling`）。
-- 退回本階段的入邊＝任一階段／待確認 R1 不過且 `stage_plan` 含規劃（`core/state-machine.md`）。
+- 從需求或研究階段離開後進入；T0／T1 跳過本階段（`core/tiers.md` §1）。
+- PM 判 ④ 過且 `move` 印的「`acceptance` 或 `verification` 空」為空才離開；T4 另附質詢（`grilling`）。
+- 任一階段／待確認 R1 不過且 `stage_plan` 含規劃時退回本階段（`core/state-machine.md`）。
 
 ## 3 · 狀態 delta
 
@@ -26,8 +26,8 @@ last_confirmed: 2026-09-05
 ## 4 · 階段內迴圈
 
 - ① `notes --stage 規劃` ② PM `brief --for executor` 派寫規格 ③ 執行者 `edit` 規格欄、`review --file --role executor` 交回 ④ PM 有序判：R1 上游產出還有效嗎 → R2 射程對核心痛點 → 每條驗收條件可追溯回痛點、非零資訊、基線釘死 ⑤ `move`。
-- 需求方裁定改到規格欄時，PM 以 `edit --ruling <URL>` 落卡面；只存在留言或對話的變更⛔ 不生效。
-- 父卡基線變更：先更新父卡、標註受影響的帶 `parent` 的卡並重新核可，再繼續；⛔ 不只在下層卡內改方向。
+- 需求方裁定改到規格欄時，PM 以 `edit --ruling <URL>` 落卡面；只存在留言或對話的變更⛔ 不當生效。
+- 父卡基線變更時先更新父卡、標註受影響的帶 `parent` 的卡並重新核可，再繼續；⛔ 不只在下層卡內改方向。
 
 ## 5 · 各角色做／⛔ 不做
 
