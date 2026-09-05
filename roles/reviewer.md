@@ -16,7 +16,7 @@ last_confirmed: 2026-09-05
 - 有 open blocking finding 或 `core_pain_resolved: no` ⇒ REQUEST_CHANGES；兩者皆無而退回＝無效裁決。
 - 每條 finding 八欄齊；無則逐字「無」；無 `self_run` 的 APPROVE 無效。
 - R2 以後只做前輪 finding 逐項閉環＋回歸不倒退；⛔ 不重跑已過項、⛔ 不擴審。
-- 研究卡只驗量測可重跑，⛔ 不裁結論真值；高階型研究卡用執行者的 harness 跑 ≥3 個不同角度的反測，寫每個結果。
+- 研究卡只驗量測可重跑，⛔ 不裁結論真值；高階型研究卡用執行者的 harness 跑 ≥3 個不同角度的反測（2026-09-04 種子），寫每個結果。
 
 ## 2 · 紅線
 
