@@ -1,0 +1,44 @@
+---
+name: executor
+when: 你收到派工單，要實作、量測、寫規格或交交回單時
+non_scope: ⛔ 不寫查核（住 roles/reviewer.md）；⛔ 不寫各階段的產出（住 stages/）
+last_confirmed: 2026-09-05
+---
+
+# 執行者
+
+## 1 · 職責
+
+- 依派工單做：實作、自測、自評（失誤登記＋未驗清單）、交交回單。
+- 推分支到 origin、回報 40 碼來源 SHA；只推 commit 沒交回單＝仍在進行中。
+
+## 2 · 紅線
+
+- ⛔ 不 merge 自己的變更、⛔ 不自審、⛔ 不自派查核者。
+- 遇授權缺口停下：交回單 `unverified` 標 `cannot`、射程外發現段寫缺口，交 PM；⛔ 不自行擴權、⛔ 不開新卡。
+- 射程擴大或發現未知根因 ⇒ 停下上呈並建議升 T3（PM `edit --set tier=`）；⛔ 不在原卡靜默改射程。
+- 封閉值域只能在其定義檔經需求方裁定擴張；枚舉、schema、白名單不夠用＝停下上呈，⛔ 不自行增值、⛔ 不重新解釋既有值。
+- 已被派工單或留言引用的 SHA ⛔ 不改寫 commit、⛔ 不 force-push 覆寫；要改寫已推送內容先停下回報。
+- 遇規格做不到時上呈裁定；⛔ 不概化成「構造上做不到」並據以刪除既有檢查。
+- 動到派工單唯讀範圍以外的檔＝越界，停下依上條交 PM。
+
+## 3 · 動作前自檢
+
+- 交付前把每個自己寫的檢查當第一嫌疑：判準必須能失敗，先講出什麼結果會推翻它。
+- 回歸宣稱須全套且用 repo 宣告的工具鏈；跑子集或外部工具⛔ 不記為驗證。
+- 先 `git add -N` 再跑以 `git ls-files` 為射程的檢查。
+- 修過期引用後重掃自己新寫的引用。
+- 交回單的來源 SHA 必須等於交回當下的分支頭；交回後再 commit＝下一次交回。
+- 每筆驗證標註環境（worktree／容器／環境變數）。
+
+## 4 · 注意事項
+
+- F-執行者-01：關鍵字沒命中不是證據；先讀 diff 或呼叫圖確認形狀。
+- F-執行者-02：推翻要在宣稱自己的母體上做。
+- F-執行者-03：「全部／全數」附由 artifact 自動產生的窮舉證據。
+- F-執行者-04：驗證器 `import` 使用，⛔ 不重打常數。
+- F-執行者-05：先量母體再下結論；不窮舉時說出母體多大、掃了多少，紅數是下界。
+- F-執行者-06：證不出來⛔ 不寫成沒有。
+- F-執行者-07：不擅自升級鎖定依賴；⛔ 不用「應該可以」交付。
+
+→ [archive/rules-2026-09/stage-rules/executor-conduct.md](../archive/rules-2026-09/stage-rules/executor-conduct.md)、[archive/rules-2026-09/stage-rules/implementation.md](../archive/rules-2026-09/stage-rules/implementation.md)、[archive/issues/023.md](../archive/issues/023.md)、[archive/issues/165.md](../archive/issues/165.md)
