@@ -42,8 +42,10 @@ last_confirmed: 2026-09-05
 - F-需求-02：開卡前讀清單項全部留言，⛔ 不只讀 body。
 - F-需求-03：開卡前先答三問：服務哪個目標、執行者是誰、現在有人受害嗎。
 - F-需求-04：一根問題開一張卡；只在需要不同能力域的執行者、紅線隔離、寫入集不相交可真平行三情形開新卡。
-- F-需求-05：鏈深沿父鏈算，>2（2026-09-04 種子）只印；全域問題脫鏈獨立運行，⛔ 不入鏈。
-- F-需求-06：待審清單⛔ 不佔投影欄、⛔ 不進盤點分母；接受清單當墓地。
-- F-需求-07：高複雜或影響大的卡把研究列進階段計畫；交付物是排程、爬蟲、告警等外部觸發時列維護；純文件卡⛔ 不列部署。
+- F-需求-05：鏈深沿父鏈算，>2（2026-09-04 種子）只印。
+- F-需求-06：全域問題脫鏈獨立運行，⛔ 不入鏈。
+- F-需求-07：待審清單⛔ 不佔投影欄、⛔ 不進盤點分母；接受清單當墓地。
+- F-需求-08：高複雜或影響大的卡把研究列進階段計畫。
+- F-需求-09：交付物是排程、爬蟲、告警等外部觸發時列維護；純文件卡⛔ 不列部署。
 
 → [archive/rules-2026-09/stage-rules/requirement.md](../archive/rules-2026-09/stage-rules/requirement.md)、[archive/rules-2026-09/stage-rules/list-intake-requirements.md](../archive/rules-2026-09/stage-rules/list-intake-requirements.md)、[archive/rules-2026-09/stage-rules/defect-path.md](../archive/rules-2026-09/stage-rules/defect-path.md)

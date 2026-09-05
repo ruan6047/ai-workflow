@@ -10,7 +10,8 @@ last_confirmed: 2026-09-05
 ## 1 · 目標與產出
 
 - 交出 main 上的合併 SHA、CI 綠、裁定單（結案確認類）、終態（完成或停止）＋封存。
-- ⛔ 不把合併當結案；每次結案都做封存。
+- ⛔ 不把合併當結案。
+- 每次結案都做封存。
 
 ## 2 · 進入／離開條件
 
@@ -29,8 +30,10 @@ last_confirmed: 2026-09-05
 - 常態由 PM merge：APPROVE＋裁決完整時直行 merge→收尾；四停下條件任一成立即停下請示需求方：blocking 未 resolved、CI 非綠或 merge 後狀態不符、分支落後且衝突、T4。
 - 合併方式依專案層 `merge_method`（`core/platform.md` P3）；⛔ 不用 `gh pr update-branch`，分支更新走本地 rebase。
 - PR body ⛔ 不寫 `Closes #N`；只由 `move` 到終態關 issue。
-- 清單收斂核對：`list_convergence` 逐項確認真解決才關；分支在終態刪除，保留要寫明理由進卡面。
-- 事後查核（碼已進 main 才審）只當違規補救，⛔ 不當正常路徑；是否回退 main 交需求方裁定；修復卡用 `<原卡>-FIX<n>`。
+- 清單收斂核對：`list_convergence` 逐項確認真解決才關。
+- 分支在終態刪除；保留要寫明理由進卡面。
+- 事後查核（碼已進 main 才審）只當違規補救，⛔ 不當正常路徑。
+- 事後查核發現缺陷時，是否回退 main 交需求方裁定；修復卡用 `<原卡>-FIX<n>`。
 
 ## 5 · 各角色做／⛔ 不做
 
@@ -42,6 +45,7 @@ last_confirmed: 2026-09-05
 ## 6 · 注意事項
 
 - F-結案-01：進入完成前印的 merge SHA 是否 main 祖先、CI 狀態，紅即停。
-- F-結案-02：終態才釋放宣告的資源；進 main 未結案的卡仍算現役。
+- F-結案-02：終態才釋放宣告的資源。
+- F-結案-03：進 main 未結案的卡仍算現役。
 
 → [archive/rules-2026-09/stage-rules/closeout.md](../archive/rules-2026-09/stage-rules/closeout.md)、[archive/rules-2026-09/templates/closeout-report.md](../archive/rules-2026-09/templates/closeout-report.md)、[archive/issues/025.md](../archive/issues/025.md)、[archive/issues/220.md](../archive/issues/220.md)

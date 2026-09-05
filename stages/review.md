@@ -26,8 +26,10 @@ last_confirmed: 2026-09-05
 ## 4 · 階段內迴圈
 
 - ① `notes --stage 審核` ② PM `brief --for reviewer`，人填段寫實際模型、已知未驗、本文件落差 ③ 查核者 `review --file --role reviewer` 貼裁決 ④ PM 判完整性與 `review_result` 對 findings 一致 ⑤ `move`。
-- 把派工單本身納入被審範圍；查核者對派工錯記 `attribution` coordinator／planner。
-- 送審後 PM `edit` 卡面前先貼留言告知查核者（`core/verbs.md`）；改到規格欄時退回規劃。
+- 把派工單本身納入被審範圍。
+- 查核者對派工錯記 `attribution` coordinator／planner。
+- 送審後 PM `edit` 卡面前先貼留言告知查核者（`core/verbs.md`）。
+- 送審後改到規格欄時退回規劃。
 - 純文字交付的卡把痛點寫成關於文字的可觀測現象；痛點指向世界時，查核者對 `core_pain_resolved` 逐字答 no。
 
 ## 5 · 各角色做／⛔ 不做
