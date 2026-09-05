@@ -11,13 +11,14 @@ last_confirmed: 2026-09-05
 
 - 決定哪個清單項升級為卡、缺陷開不開卡；⛔ 不代填清單項。
 - 填卡面 `service_goal`；PM 判 R1 後保留否決：撤銷或停止。
-- 裁定：停止、撤銷、級別下修、進入阻塞、授權缺口擴權或開新卡、T4 sign-off。裁定＝一則 `wf:ruling` 留言（`core/handoff.md` §3）；PM 可代貼。
-- 結案確認：讀裁定單，確認才轉完成，否則退回補驗。
+- 裁定：停止、撤銷、級別下修、進入阻塞、授權缺口擴權或開新卡、升級四選一（換人／退回上一階段／停止／退回無效）、事後查核是否回退 main、T4 sign-off。裁定＝一則 `wf:ruling` 留言（`core/handoff.md` §3）；PM 可代貼。
+- 結案：讀裁定單；不否決則 PM 依 `stages/closeout.md` §4 直行；T4 須 sign-off。
+- 規劃階段核可取捨與驗收條件；⛔ 不寫規格。
 - T4 卡離開規劃前做質詢，紀錄落 `wf:log` 留言。
 - 注意事項正式化：候選要升為 P- 或 F- 條目時，確認三格（條文、來源、處理手段）；缺處理手段⛔ 不升。
-- 硬擋新增的唯一入口：處理手段屬 recoverable＝irreversible 或平台層事故時才裁定升為硬擋；預設不升。
+- 硬擋新增的唯一入口：處理手段屬 recoverable＝irreversible 或平台層事故時才裁定升為平台委託 P-（`core/platform.md`）；預設不升，⛔ 不擴 CLI 硬擋。
 - 定期回看：每 `guard_review_period`（`core/params.md`）張結案卡收 PM 一份回看清單（零拒收硬擋、正式化候選、`last_confirmed` 過期的規則檔三類），一則裁定留言處理。
-- 規則檔 `last_confirmed` 的確認者；改規則＝一張卡，規則錯了影響全專案，`rules` 紅線域。
+- 規則檔 `last_confirmed` 的確認者；改規則＝一張卡，sensitive 含 rules。
 
 ## 2 · 紅線
 
