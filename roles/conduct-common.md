@@ -35,7 +35,6 @@ last_confirmed: 2026-09-05
 - ⛔ 不寫看起來在驗證身分、實際恆真的條文；身分只做宣告欄位＋完整性檢查。
 - 發現候選注意事項即在該卡貼一則 `wf:note`（`origin`＝來源 finding 留言 URL）；⛔ 不直接寫進規則檔。
 - commit trailer 約定：T0／T1 至少 `Requested-by`＋`Implemented-by`；T2 以上加 `Planned-by`；merge 與核可 commit 加 `Reviewed-by`；未開卡的缺陷修正至少帶前兩鍵（CI 只驗鍵與連續，`core/platform.md` P5）。
-- squash 合併時自訂訊息：標題一行、正文一段、trailer 收成末端連續單一區塊；⛔ 不用平台預設的多則訊息串接（會把 trailer 切散而違反 P5）。
 - 代貼他人裁定或裁決時首行標記依 `core/naming.md` §3；原文從第二行起一字不改。
 
 → [archive/rules-2026-09/stage-rules/pm-conduct.md](../archive/rules-2026-09/stage-rules/pm-conduct.md)、[archive/issues/037.md](../archive/issues/037.md)、[archive/issues/150.md](../archive/issues/150.md)
