@@ -48,12 +48,16 @@ last_confirmed: 2026-09-06
 - 派工（`move` 到進行中）時印本卡 `resources` 與現役卡 `resources` 的交集（§0 交接段「寫入集交集」）；有交集由 PM 判排隊或並行，⛔ 不自動擋。
 - 交集判定＝完全字串比對；`db:<env>:schema` 不支配 `db:<env>:table:<name>`，db 文法住 `modules/db-contract`。
 - 資源宣告逐條寫 `file:<路徑>`／`port:<n>`／`container:<name>`／`db:…`，含交付必要的重現工具；現役卡的定義依 `stages/closeout.md` F-結案-03，釋放時點依 F-結案-02。
-- 認領時把實際 worktree 路徑與分支寫回卡面 `worktree`、`branch`，`lease_expires_at`＝認領時刻＋`params.lease_ttl_hours`；一卡一 worktree 一 session。
+- 認領時把實際 worktree 路徑與分支寫回卡面 `worktree`、`branch`；一卡一 worktree 一 session，靠註冊查重。
+- `lease_expires_at`＝認領時刻＋`params.lease_ttl_hours`。
 - lease 以 `edit --set lease_expires_at=` 續約；派工單與交回單引用有效 lease，過期⛔ 不接受。
 - 破壞性入口（build／rebuild／migration）由專案在 `.wf/contracts/CONTROL_PLANE.md` 列出；啟動前確認本卡 lease 有效，無效⛔ 不跑。
 - 資料庫視為共享可變基礎設施，寫入隔離並序列化；口頭協調、Markdown、聊天訊息⛔ 不構成鎖。
 - 本機資源工具只建立、釋放資源並回報；⛔ 不寫狀態面，狀態只由 `move` 寫。
-- 執行者的路徑指向 worktree ⛔ 不指 main checkout；交回前 cwd 移出 worktree；merge 者先離開 worktree；⛔ 不在 worktree 內移除自身目錄、⛔ 不從仍 checkout 的分支刪 branch。
+- 執行者的 Edit／Write／server 路徑指向 worktree，⛔ 不指 main checkout。
+- 交回前把 cwd 移出 worktree；merge 者先離開 worktree。
+- ⛔ 不在 worktree 內移除自身目錄。
+- ⛔ 不從仍被 checkout 的分支刪 branch。
 - 同卡族共用 worktree，修復卡切新分支⛔ 不另開目錄；卡族全結案後才移除 worktree 與分支。
 - 驗證命令會改 tracked file 時在拋棄式 worktree 執行；查核沙箱無 lease、無 owner。
 
