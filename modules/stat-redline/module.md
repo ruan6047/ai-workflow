@@ -25,7 +25,11 @@ last_confirmed: 2026-09-05
       "remove": []
     },
     "flags": [],
-    "notes": [],
+    "notes": [
+      "F-stat-redline-01",
+      "F-stat-redline-02",
+      "F-stat-redline-03"
+    ],
     "handoff_sections": [
       "紅線區塊（本卡的窗口與門檻）",
       "對抗性反測表（≥3 角度，各寫支持／推翻／未能檢定）"
