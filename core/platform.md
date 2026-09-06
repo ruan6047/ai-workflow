@@ -19,5 +19,5 @@ last_confirmed: 2026-09-05
 
 - P5 允許集合＝Requested-by、Planned-by、Implemented-by、Reviewed-by、Co-Authored-By；哪些必須出現＝約定，住 `roles/conduct-common.md` §2，CI ⛔ 不驗。
 - P2 的獨立性判定（不同實體、跨家族）是 PM 注意事項，⛔ 不機械化。
-- 平台擋不到的（UI 手改欄位、直推 main 的 T0／T1）＝紀律，住 `roles/conduct-common.md` §1。
+- 平台擋不到的（UI 手改投影欄、T2 以上直推 main）＝紀律，住 `roles/conduct-common.md` §1。
 - 新增平台委託須需求方裁定；⛔ 不加沒有被測物的 CI job。

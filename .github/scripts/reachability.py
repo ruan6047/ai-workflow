@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import glob
 import itertools
+import itertools
 import json
 import re
 import sys
@@ -383,7 +384,11 @@ def main() -> int:
     print(f"模組 handoff_sections 對帳：{len(mods)} 檔，失敗 {len(sec_errs)}")
     note_errs += sec_errs
     delta_mods = [m for m in mods if m.get("adds", {}).get("states") or m.get("adds", {}).get("transitions", {}).get("add")]
-    cases = [("無模組", [])] + [(f"單獨啟用 {m['name']}", [m]) for m in delta_mods] + [("全部啟用", delta_mods)]
+    cases = []
+    for r in range(len(delta_mods) + 1):
+        for combo in itertools.combinations(delta_mods, r):
+            label = "無模組" if not combo else "啟用 " + "+".join(m["name"] for m in combo)
+            cases.append((label, list(combo)))
     total = bad = 0
 
     def enabled(m: dict, plan: list[str]) -> bool:
