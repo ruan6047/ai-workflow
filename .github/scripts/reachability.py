@@ -341,8 +341,10 @@ def check(sm: dict, plan: list[str]) -> list[str]:
 def selftest(sm: dict) -> int:
     """負控四件：砍終態邊；終態帶出邊；孤立非終態；只有阻塞往返的狀態。皆必 FAIL。
 
-    `**/<非終態>` 讓值域內每個非終態都帶一條進阻塞出邊，故孤立狀態落「不可達結案」而非「無出邊」；
-    「無出邊」仍活於阻塞節點與清單（砍解除邊 14 條、砍清單出邊 1 條，2026-09-07 實測）。
+    孤立狀態的診斷分類隨正式表而變——`**/<非終態>` 在時每個非終態都帶進阻塞出邊，落「不可達結案」；
+    改回四值枚舉時模組狀態落「無出邊」。負控只驗 `check()` 有沒有捕捉到該節點，⛔ 不釘死是哪一種診斷，
+    否則正式表的正向可達會經 `--selftest` 的 rc 間接擋 merge（Codex #283 R1-01 第 2 輪，2026-09-07）。
+    「無出邊」仍活於阻塞節點與清單（砍解除邊 14 條、砍清單出邊 1 條，實測）。
     """
     import copy
     plan = [s for s in sm["stages"] if s in sm["required_stages"]]
@@ -355,7 +357,7 @@ def selftest(sm: dict) -> int:
     e2 = check(b2, plan); ok2 = any(e.startswith("終態 結案/停止 有出邊") for e in e2)
     b3 = copy.deepcopy(sm)
     b3["states"] = b3["states"] + ["孤立"]
-    e3 = check(b3, plan); ok3 = any("非終態 需求/孤立 不可達結案" in e for e in e3)
+    e3 = check(b3, plan); ok3 = any(e.startswith("非終態 需求/孤立 ") for e in e3)
     # 只有 阻塞 往返、無其他出邊的狀態：必 FAIL（第 1 步審核 R3-01 的假陽性）
     b4 = copy.deepcopy(sm)
     b4["states"] = b4["states"] + ["孤島"]
@@ -371,7 +373,7 @@ def selftest(sm: dict) -> int:
     bad += not (ok5 and ok6)
     # 模組負控：模組加的狀態只有進邊沒有出邊，必 FAIL；正控：research 的 不可判定 節點確實進了定義集合
     fake = {"name": "fake", "adds": {"states": ["孤模"], "transitions": {"add": [{"from": "執行/待確認", "to": "執行/孤模", "condition": "負控"}], "remove": []}}}
-    e7 = check(compose(sm, [fake]), plan); ok7 = any("非終態 執行/孤模 不可達結案" in e for e in e7)
+    e7 = check(compose(sm, [fake]), plan); ok7 = any(e.startswith("非終態 執行/孤模 ") for e in e7)
     research = next((m for m in load_modules() if m["name"] == "research"), None)
     rplan = [s for s in sm["stages"] if s in sm["required_stages"] or s == "研究"]
     ok8 = bool(research) and "研究/不可判定" in universe(compose(sm, [research]), rplan) and not check(compose(sm, [research]), rplan)
