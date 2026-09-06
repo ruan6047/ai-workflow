@@ -104,6 +104,23 @@ def sections_errors(name: str, declared: list, ret: dict[str, set[str]], other: 
     return errs
 
 
+def delta_modules(mods: list[dict]) -> list[dict]:
+    """帶狀態或轉移 delta 的模組；`transitions.remove` 也算 delta。"""
+    return [m for m in mods
+            if m.get("adds", {}).get("states")
+            or any(m.get("adds", {}).get("transitions", {}).get(k) for k in ("add", "remove"))]
+
+
+def module_cases(delta_mods: list[dict]) -> list[tuple[str, list[dict]]]:
+    """delta 模組的冪集；每個組合一個案例。"""
+    out = []
+    for r in range(len(delta_mods) + 1):
+        for combo in itertools.combinations(delta_mods, r):
+            label = "無模組" if not combo else "啟用 " + "+".join(m["name"] for m in combo)
+            out.append((label, list(combo)))
+    return out
+
+
 def orphan_errors(ret: dict[str, set[str]], other: dict[str, set[str]], names: set[str]) -> list[str]:
     """core/handoff.md 提到、但 modules/ 沒有的模組名。"""
     return [f"core/handoff.md 段名指向不存在的模組 {m}" for m in sorted((set(ret) | set(other)) - names)]
@@ -360,10 +377,15 @@ def selftest(sm: dict) -> int:
     s_both = sections_errors("m", ["A", "B"], {"m": {"A", "B"}}, oth)
     _, _, lab_errs = handoff_labels('```json schema\n{"$id": "wf-return", "$defs": {"module_return_sections": {"m": {"k": {"type": "string"}}}}}\n```')
     s_orphan = orphan_errors({"ghost": {"A"}}, {}, {"m"})
-    probe = [{"name": "rm-only", "adds": {"states": [], "transitions": {"add": [], "remove": [{"from": "需求/待辦", "to": "需求/進行中"}]}}}]
-    is_delta = bool(probe[0]["adds"]["states"] or any(probe[0]["adds"]["transitions"].get(k) for k in ("add", "remove")))
-    print(f"selftest_remove_only_module_is_delta: {'PASS' if is_delta else 'FAIL'}（負控 1 條）")
-    bad = bad or not is_delta
+    probe = {"name": "rm-only", "adds": {"states": [], "transitions": {"add": [], "remove": [{"from": "需求/待辦", "to": "需求/進行中"}]}}}
+    inert = {"name": "no-delta", "adds": {"states": [], "transitions": {"add": [], "remove": []}}}
+    dm = delta_modules([probe, inert])
+    cs = module_cases(dm)
+    ok3 = ([m["name"] for m in dm] == ["rm-only"]
+           and len(cs) == 2
+           and any(m["name"] == "rm-only" for _, ms in cs for m in ms))
+    print(f"selftest_remove_only_module_is_delta: {'PASS' if ok3 else 'FAIL'}（負控 2 條）")
+    bad = bad or not ok3
     ok2 = (not s_ok and len(s_missing) == 1 and len(s_extra) == 1 and len(s_none) == 1 and len(s_both) == 1
            and len(lab_errs) == 1 and len(s_orphan) == 1)
     print(f"selftest_module_sections_consistency: {'PASS' if ok2 else 'FAIL'}（負控 6 條）")
@@ -386,12 +408,8 @@ def main() -> int:
         print(f"⛔ handoff_sections 對帳：{e}")
     print(f"模組 handoff_sections 對帳：{len(mods)} 檔，失敗 {len(sec_errs)}")
     note_errs += sec_errs
-    delta_mods = [m for m in mods if m.get("adds", {}).get("states") or any(m.get("adds", {}).get("transitions", {}).get(k) for k in ("add", "remove"))]
-    cases = []
-    for r in range(len(delta_mods) + 1):
-        for combo in itertools.combinations(delta_mods, r):
-            label = "無模組" if not combo else "啟用 " + "+".join(m["name"] for m in combo)
-            cases.append((label, list(combo)))
+    delta_mods = delta_modules(mods)
+    cases = module_cases(delta_mods)
     total = bad = 0
 
     def enabled(m: dict, plan: list[str]) -> bool:
