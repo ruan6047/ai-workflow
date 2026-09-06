@@ -39,11 +39,13 @@ last_confirmed: 2026-09-06
 
 ## 1 · 條文
 
-- 父卡保存目標、規格基線（規格欄與 `spec_version`）、依賴序、里程碑、決策與風險；帶 `parent` 的卡採可獨立驗證的垂直切片。
+- 父卡保存目標、規格基線（規格欄與 `spec_version`）、依賴序、里程碑、決策與風險。
+- 帶 `parent` 的卡採可獨立驗證的垂直切片。
 - 帶 `parent` 的卡建卡時登記 `parent_spec_version`＝父卡當時的 `spec_version`；空值由 `move` 印，⛔ 不派工。
 - `brief` 在 §0 宣告的交接段印父卡 `spec_version` 與本卡 `parent_spec_version`；兩值不一致時查核者 REQUEST_CHANGES、PM 退回，⛔ 不以舊基線交付。
 - 執行者發現交付須偏離已核可基線時凍結受影響部分並在卡上貼留言告知 PM；⛔ 不自行改基線後續作。
-- PM 對照父卡依賴序逐張標受影響卡的影響級別（無影響／需改規格／前提失效／方向失效）並留痕；觸發者（執行者）、評估者（PM）、核可者（需求方）⛔ 不合於一人。
+- PM 對照父卡依賴序逐張標受影響卡的影響級別（無影響／需改規格／前提失效／方向失效）並留痕。
+- 觸發者（執行者）、評估者（PM）、核可者（需求方）⛔ 不合於一人。
 - 無影響不動；需改規格者更新該卡規格並重登 `parent_spec_version`；前提失效者轉阻塞，解除條件＝新基線核可；方向失效者交需求方裁停止或退回規劃／需求。
 - 父卡規格由 `edit --ruling <核可裁定 URL>` 更新，`spec_version` +1；需求方核可前新基線⛔ 不生效。
 - 核可後 PM 更新待辦中受影響卡的規格與 `parent_spec_version`，並在進行中的受影響卡貼留言要執行者確認在途工作是否受波及。
@@ -53,6 +55,6 @@ last_confirmed: 2026-09-06
 
 - F-initiative-01：基線變更紀錄＝父卡一則留言（日期、變更摘要、觸發卡、受影響卡與級別、核可裁定 URL）；⛔ 不用聊天或口頭共識代替。
 - F-initiative-02：⛔ 不把方向失效降成需改規格以避免退回；級別由 PM 判並留痕，⛔ 不由觸發者自判。
-- F-initiative-03：`parent_spec_version` 漏填是 2026-08 WF-18 首戰命中的實例；建卡時填，⛔ 不留到派工。
+- F-initiative-03：`parent_spec_version` 在建卡時填；⛔ 不留到派工。
 
 → [archive/rules-2026-09/templates/baseline-cascade.md](../../archive/rules-2026-09/templates/baseline-cascade.md)、[archive/rules-2026-09/templates/review-dispatch.md](../../archive/rules-2026-09/templates/review-dispatch.md)
