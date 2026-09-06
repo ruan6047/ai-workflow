@@ -383,9 +383,10 @@ def selftest(sm: dict) -> int:
     for tr in b8["transitions"]:
         if tr["from"] == "**/<非終態>":
             tr["from"] = "**/待辦|進行中|待確認|退回"
+    # 只驗偵測能力（`roles/conduct-common.md` §1 附負控輸出），⛔ 不斷言正式表——
+    # 正式表的正向可達由 main() 的印承載（19 個系統性突變實測：印捕捉 10、本負控的正式表半唯一捕捉 0）
     ok9 = (bool(research)
-           and unreachable(compose(b8, [research]), rplan) == ["研究/阻塞←不可判定"]
-           and not unreachable(compose(sm, [research]), rplan))
+           and unreachable(compose(b8, [research]), rplan) == ["研究/阻塞←不可判定"])
     print(f"selftest_blocked_from_covers_module_states: {'PASS' if ok9 else 'FAIL'}（負控 1 條）")
     bad += not ok9
     for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3), ("blocked_loop_only", ok4, e4)):
