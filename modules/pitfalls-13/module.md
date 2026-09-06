@@ -46,6 +46,7 @@ last_confirmed: 2026-09-06
 - 離開階段前交齊交回單的 13 族段（`core/handoff.md` §2 `$defs/module_return_sections`）；`review` 印缺段，⛔ 不判內容。
 - 13 族三值與回應三值（followed／not_applicable／found）⛔ 不互代。
 - 新族只由 finding 的 `root_cause_id` 歸併、或需求階段由需求方與 PM 供給並指名維護者；⛔ 不由執行者自增。
+- 同一 repo 既有解法的索引由 PM 寫進專案層 `.wf/stages/<階段>.md`，隨 P- 注意事項印（`core/verbs.md` §3）；⛔ 不由 CLI 產生。
 - ⛔ 不設每階段族數上限。
 
 ## 2 · 注意事項
