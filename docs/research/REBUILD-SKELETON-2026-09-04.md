@@ -355,8 +355,8 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 | 階段（8） | 需求…結案 | phase、gate |
 | 狀態（核心 5＋阻塞；模組加值） | 待辦…退回、阻塞、停止、升級、不可判定、運行中 | 交付狀態、部署狀態、Status |
 | 轉移、轉移記錄 | `move` 的一次寫入與其留言 | event、handoff |
-| iteration | 卡進入執行階段的次數 | 輪次、round |
-| 查核輪 R1–R4 | 前提／射程／內容／影響面 | 輪次、pass |
+| iteration | 卡進入執行階段的次數；不是輪次 | round |
+| 查核輪 R1–R4 | 前提／射程／內容／影響面；不是輪次 | pass |
 | 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源；不是層 | 踩坑清冊（作為注意事項的同義） |
 | 硬擋、印、語意 | 機械側三類行為 | 守衛（作為硬擋的同義）、閘門（作為硬擋的同義）、偵測器、拒收（作為類別名） |
 | 模組、啟用條件 | opt-in 機制與其條件 | plugin、功能旗標 |
@@ -380,7 +380,7 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 | 清單收斂宣告 | 一張卡吸收哪些清單項：卡面 `source_issue`＋收件表單 `dedupe` 欄 | 合併宣告 |
 | 封存、撤銷、停止 | 三個離開動作 | — |
 | 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
-| 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
+| 來源（四個）：core／module／project／card | 清單與交接文件的合成來源；不是層 | layer |
 | 七動詞 open／move／edit／notes／brief／review／snapshot | CLI 的全部入口 | amend、改卡、handoff、assign、pitfalls、踩坑（作為動詞名）、verdict（作為動詞） |
 | 未驗清單三分類 cannot／skipped／deferred | 驗不了／沒去驗／刻意不驗 | 未驗（裸列）、TODO |
 | 回應三值 followed／not_applicable／found | 已遵循／不適用／發現 | 已檢查（作為回應三值的第一值）、已遵守、N/A |
