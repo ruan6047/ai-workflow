@@ -42,7 +42,7 @@ def load_modules() -> list[dict]:
     return mods
 
 
-NOTE_ID = re.compile(r"^- (F-[A-Za-z0-9-]+-\d{2})：", re.M)
+NOTE_ID = re.compile(r"^- ([^：\s]+)：", re.M)  # §2 每條起首的 id，形狀另驗，⛔ 不因不合形狀而漏抓
 
 
 def notes_errors(name: str, declared: list, body: str) -> list[str]:
@@ -53,7 +53,7 @@ def notes_errors(name: str, declared: list, body: str) -> list[str]:
     if declared != listed:
         errs.append(f"{name}: adds.notes={declared} ≠ §2 條列={listed}")
     shape = re.compile(rf"^F-{re.escape(name)}-\d{{2}}$")
-    for i in declared:
+    for i in declared + [x for x in listed if x not in declared]:
         if not shape.match(i):
             errs.append(f"{name}: id {i} 不是 F-{name}-NN 形狀")
     return errs
@@ -279,8 +279,11 @@ def selftest(sm: dict) -> int:
     e_order = notes_errors("x", ["F-x-02", "F-x-01"], good)
     e_prefix = notes_errors("x", ["F-y-01", "F-x-02"], good.replace("F-x-01", "F-y-01"))
     e_shape = notes_errors("x", ["F-x-extra-01", "F-x-02"], good.replace("F-x-01", "F-x-extra-01"))
-    ok = not e_ok and len(e_missing) == 1 and len(e_order) == 1 and len(e_prefix) == 1 and len(e_shape) == 1
-    print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 4 條）")
+    e_listed_prefix = notes_errors("x", [], good.replace("F-x-01", "P-x-01").replace("F-x-02", "P-x-02"))
+    e_listed_digits = notes_errors("x", [], good.replace("F-x-01", "F-x-1").replace("F-x-02", "F-x-2"))
+    ok = (not e_ok and len(e_missing) == 1 and len(e_order) == 1 and len(e_prefix) == 1 and len(e_shape) == 1
+          and e_listed_prefix and e_listed_digits)
+    print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 6 條）")
     bad = bad or not ok
     return 1 if bad else 0
 
