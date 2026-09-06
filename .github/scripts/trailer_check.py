@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """P5：commit trailer 鍵在允許集合內，且是訊息末端的連續單一區塊。
 
-只驗兩件事（骨架 §三 P5）：
+只驗兩件事（core/platform.md P5）：
 1. trailer 區塊＝末段（最後一個空行之後）且至少一行的鍵在允許集合內；區塊內每行都要是
    `Key: value` 且 Key 在允許集合內。末段沒有任何允許鍵＝沒有 trailer，不驗（散文、
    conventional subject 都不是 trailer）。

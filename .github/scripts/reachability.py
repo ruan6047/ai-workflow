@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""轉移表可達性測試（骨架 §四；core/state-machine.md §5）。
+"""轉移表可達性測試（core/state-machine.md §5）。
 
-讀 core/state-machine.md 的 `json wf-state-machine` 區塊，對每個合法 stage_plan 展開合成表，斷言：
+讀 core/state-machine.md 的 `json wf-state-machine` 區塊與 core/enums.md 的 `json wf-enums`（階段／狀態值域），對每個合法 stage_plan 展開合成表，斷言：
 1. 合成表定義集合（階段計畫 × 狀態值域 ∪ 清單）內每個非終態有出邊，且可達 完成 或 停止；
 2. 完成 與 停止 的出邊集合為空。
 模組案例（第 4a 步起）：讀 modules/*/module.md 的 `yaml wf-module` 區塊（JSON 子集），對每個帶
@@ -21,12 +21,25 @@ ROOT = Path(__file__).resolve().parents[2]
 BLOCK = re.compile(r"```json wf-state-machine\n(.*?)\n```", re.S)
 
 
+ENUMBLOCK = re.compile(r"```json wf-enums\n(.*?)\n```", re.S)
+
+
 def load() -> dict:
     text = (ROOT / "core/state-machine.md").read_text(encoding="utf-8")
     m = BLOCK.search(text)
     if not m:
         sys.exit("⛔ core/state-machine.md 沒有 json wf-state-machine 區塊")
-    return json.loads(m.group(1))
+    sm = json.loads(m.group(1))
+    e = ENUMBLOCK.search((ROOT / "core/enums.md").read_text(encoding="utf-8"))
+    if not e:
+        sys.exit("⛔ core/enums.md 沒有 json wf-enums 區塊")
+    en = json.loads(e.group(1))
+    # 值域住 core/enums.md：狀態機區塊只放轉移與 delta。基底 states 只含 only_in_stage 有登記的終態（完成）；停止 由結案的 stage_delta 加。
+    sm["stages"] = en["stages"]["enum"]
+    sm["terminal"] = en["states_terminal"]["enum"]
+    base_terminal = [s for s in sm["terminal"] if s in sm.get("only_in_stage", {})]
+    sm["states"] = en["states_core"]["enum"] + base_terminal + en["state_blocked"]["enum"]
+    return sm
 
 
 MODBLOCK = re.compile(r"```yaml wf-module\n(.*?)\n```", re.S)

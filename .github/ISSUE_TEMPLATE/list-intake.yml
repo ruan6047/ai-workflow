@@ -1,4 +1,4 @@
-# 待審清單收件表單（第三輪重構，骨架 §一）。
+# 待審清單收件表單（第三輪重構；居所依 core/naming.md §4）。
 #
 # 形狀＝一個 `json wf-intake` 區塊，四欄 source／observation／dedupe／repo。
 # 新 CLI `wf open` 只讀該區塊（決策 1）；散文欄給人看。

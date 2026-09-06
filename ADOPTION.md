@@ -24,7 +24,7 @@
 ## 3 · Project 五欄
 
 - 階段（單選 8 值）、狀態（單選：核心 5＋阻塞＋結案的停止＋已啟用模組的值）、級別（單選 5 值）、owner（TEXT，`role:actor`）、卡ID（TEXT）。
-- 值域逐字取 `core/glossary.md` 的「詞」欄；兩個 view：活卡依階段分組、全部。
+- 值域逐字取 `core/enums.md`（階段 `stages`、狀態 `states_core`＋`state_blocked`＋`states_terminal`＋模組 `adds.states`、級別 `tiers`）；兩個 view：活卡依階段分組、全部。
 - 五欄全由 CLI 回寫；⛔ 不用 GitHub 內建自動化、⛔ 不在 UI 手改（`roles/conduct-common.md` §1）。
 
 ## 4 · 第一張卡

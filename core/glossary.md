@@ -2,7 +2,7 @@
 name: glossary
 when: 寫或讀任何規則檔、CLI enum、Project 選項名、審核提示時查詞
 non_scope: ⛔ 不解釋為什麼；⛔ 不管 schema 英文鍵名與 GitHub 平台詞（issue、PR、Project、ruleset、comment）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-07
 ---
 
 # 通用語言
@@ -15,9 +15,9 @@ last_confirmed: 2026-09-05
 | 清單項 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue | 沒有卡ID | inbox item |
 | 撤銷卡 | 不在板但帶 `wf-card` 區塊的 issue；`open` 可復板 | 不是清單項、不是停止 | 關閉的卡、歸檔卡 |
 | 待審清單 | 全部清單項的集合；`open` 的唯一入口 | 不是看板欄位、不進任何分母 | Backlog、inbox、待辦池 |
-| 階段 | 需求／研究／規劃／執行／審核／部署／維護／結案 八個之一 | 不是狀態 | phase、gate |
+| 階段 | 八階段之一，值住 `core/enums.md` `stages` | 不是狀態 | phase、gate |
 | 階段計畫 | 卡面 `stage_plan`：這張卡要走的階段子序列 | 不是流程圖 | pipeline |
-| 狀態 | 待辦／進行中／待確認／完成／退回／阻塞，加階段與模組 delta 的值 | 不是投影欄的其他欄 | Status、交付狀態、部署狀態 |
+| 狀態 | 核心四值＋阻塞＋終態，加階段與模組 delta 的值；值住 `core/enums.md` | 不是投影欄的其他欄 | Status、交付狀態、部署狀態 |
 | 狀態面 | 卡當下的階段＋狀態＋阻塞；唯一居所＝issue body JSON 與 Project 投影欄 | 不是聊天、不是本機檔 | 看板狀態、board |
 | 終態 | 出邊為空的狀態：完成、停止 | 不含撤銷 | closed、done |
 | 轉移、轉移記錄 | 轉移＝`move` 的一次寫入；轉移記錄＝該次寫入的 `wf:move` 留言 | 不是事件流 | event、handoff |
@@ -47,7 +47,7 @@ last_confirmed: 2026-09-05
 | 家族 | 模型家族 | 不是工具 | 供應商、vendor |
 | 獨立查核 | 查核者實體不同於本 iteration 執行者實體 | 同家族不同工具不算跨家族 | 第二雙眼、peer review |
 | 級別 | T0–T4，由三軸取最高 | 不是難度 | tier（中文語境） |
-| 能力層級 | 經濟型／主力型／高階型 | 不是模型名 | tier（中文語境） |
+| 能力層級 | 三值，住 `core/enums.md` `capability_levels` | 不是模型名 | tier（中文語境） |
 | 三軸 | 級別判準的三個軸：敏感面／可復原性／影響面＝卡面 `tier_basis` 的 sensitive／recoverable／blast | 不是級別本身 | 風險軸 |
 | 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種 | 不是 finding | BUG- 前綴 |
 | 模型名 | 實際跑的模型識別字，只住派工單與專案層 | 不是能力層級 | — |
