@@ -43,7 +43,7 @@ last_confirmed: 2026-09-06
 - 族名以 archive/issues/130 結案留言的 13 個字串為準；⛔ 不改字、⛔ 不自造族。
 - 無實測階段的族留在全階段層；下放到某階段須需求方裁定。
 - 交回單的 13 族段每族恰一行，值＝`已檢查`／`不適用`／`發現`。
-- 離開階段前交齊 13 族段；PM 對照樣板判缺行，⛔ 不判內容。
+- 離開階段前交齊交回單的 13 族段（`core/handoff.md` §2 `$defs/module_return_sections`）；`review` 印缺段，⛔ 不判內容。
 - 13 族三值與回應三值（followed／not_applicable／found）⛔ 不互代。
 - 新族只由 finding 的 `root_cause_id` 歸併、或需求階段由需求方與 PM 供給並指名維護者；⛔ 不由執行者自增。
 - ⛔ 不設每階段族數上限。
