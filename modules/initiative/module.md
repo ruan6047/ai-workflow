@@ -1,6 +1,6 @@
 ---
 name: initiative
-when: 卡有父卡：子切片、基線遞變、父卡持 spec 基線
+when: 卡有父卡：子切片、基線遞變、父卡持 規格基線
 non_scope: ⛔ 不寫鏈深（住 core/verbs.md）
 last_confirmed: 2026-09-06
 ---
@@ -29,7 +29,7 @@ last_confirmed: 2026-09-06
     "flags": [],
     "notes": ["F-initiative-01", "F-initiative-02", "F-initiative-03"],
     "handoff_sections": [
-      "spec 基線（父卡 spec_version 與本卡登記版本）"
+      "規格基線（父卡 spec_version 與本卡登記版本）"
     ]
   },
   "project_inputs": [],
