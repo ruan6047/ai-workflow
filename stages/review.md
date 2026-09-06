@@ -16,6 +16,7 @@ last_confirmed: 2026-09-06
 
 - 從執行階段離開後進入；派審前 `brief --for reviewer` 印分支頭、來源 SHA、`merge-tree` 三項，有紅⛔ 不派。
 - APPROVE 時 `move --ruling <裁決 URL>` 到下一階段／待辦，下一階段為結案時到結案／待確認；REQUEST_CHANGES 時退回同階段再派執行者。
+- T4 收足 `core/tiers.md` §1 所定則數且全部 APPROVE 才離開；任一 REQUEST_CHANGES 依上一條分流。
 - R1 不過（上游產出失效、核心痛點與規格矛盾）時退回規劃／退回，階段計畫無規劃則退回需求／退回；R2–R4 不過時退回同階段。
 - 同一 iteration 第 3 次（2026-09-04 種子）退回依 `roles/pm.md` F-PM-01 處置。
 

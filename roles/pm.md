@@ -42,7 +42,7 @@ last_confirmed: 2026-09-05
 ## 4 · 注意事項
 
 - F-PM-01：同一 iteration 第 3 次（2026-09-04 種子）退回時預設換人（換執行者實體），需求方可否決；escalation 模組啟用時依其 delta。
-- F-PM-02：同一張卡同一 iteration 一人一角；執行者⛔ 不查核、⛔ 不 merge 自己的變更；T4 查核者跨家族或需求方 sign-off，同家族不同工具不算。
+- F-PM-02：同一張卡同一 iteration 一人一角；執行者⛔ 不查核、⛔ 不 merge 自己的變更；T4 的查核者彼此不同家族，同家族不同工具不算兩個家族。
 - F-PM-03：升遷 T-→P-→F-：同一 T- 條目被 `promote_threshold` 張卡引用即列為候選，PM 提三格、需求方點頭；同義判定由 PM 做。
 - F-PM-04：退場：`last_cited` 落後 `retire_threshold` 張結案卡的條目列入回看清單，需求方裁定退場或保留。
 - F-PM-05：回看清單每 `guard_review_period` 張結案卡合成一份（零拒收硬擋、正式化候選、`last_confirmed` 過期），交需求方一則裁定。

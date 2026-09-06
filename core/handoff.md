@@ -26,6 +26,7 @@ last_confirmed: 2026-09-06
 | 寫入授權、唯讀範圍 | 人（PM） | 逐條列出；其餘唯讀 |
 | 未驗項 | 人（PM） | PM 已知未驗，三分類各附原因 |
 | 本文件落差 | 人（PM） | 無則逐字「無」 |
+| 查核序 | 人（PM） | 本 iteration 內這是第幾份派審單，從 1 起；`--for executor` 不印 |
 | 模組段 | 依模組條文 | 已啟用模組宣告的派工單段（下方 `wf-module-sections.brief`），段名逐字＝該模組 `adds.handoff_sections`；無則不印 |
 
 模組段歸屬（段名逐字＝各模組 `adds.handoff_sections`；CI 對帳字串集合，⛔ 不讀內容）：
@@ -35,13 +36,13 @@ last_confirmed: 2026-09-06
  "closeout": {"escalation": ["升級單（三次退回逐字理由、四選一各值證據）"], "identity": ["身分三格（GitHub 帳號／session ID／訊息定位）"]}}
 ```
 
-`brief` 同時印一份交回單 JSON 樣板：`card_id`、`iteration`、`role`、`acceptance` 條文、`note_responses` 的 id 預填；人只填判斷欄。
+`brief` 同時印一份交回單 JSON 樣板：`card_id`、`iteration`、`role`、`acceptance` 條文、`note_responses` 的 id 預填；其餘由作者填。
 
 ## 2 · 交回單（執行者或查核者 → PM；`review --file`）
 
 | 段 | 誰填 | 內容 |
 |---|---|---|
-| 卡與身分 | CLI | 同派工單；另列 `source_sha`、commit 清單（`git log`）、改動面（`git diff --stat` 每檔一列）、`finding_id`（`review` 依 `core/naming.md` 編） |
+| 卡與身分 | CLI | 同派工單；另列 `source_sha`、commit 清單（`git log`）、改動面（`git diff --stat` 每檔一列）、`finding_id` 由作者依 `core/naming.md` §4 填 |
 | self_run | 人 | 實跑的指令、rc、原始輸出 |
 | 逐條驗收 | 人 | 每條 `acceptance`：做法／證據／falsifier，⛔ 不合併 |
 | 失誤登記 | 執行者 | 逐項：失誤／何時／影響／補救；無則逐字「無」 |
@@ -52,7 +53,7 @@ last_confirmed: 2026-09-06
 | 射程外發現 | 人 | 逐項；無則「無」 |
 | 裁決 | 查核者 | `review_result`、`core_pain_resolved`、一句話理由 |
 
-必填性依級別：T0／T1 只要 `self_run` 與逐條驗收；T2 以上全段。缺段一律由 `review` 依卡面 `tier` 印，⛔ 不進 schema；schema 只管結構，`required` 只列 `review` 自己補的欄。`review` 先補 `card_id`／`iteration`／`role`／`source_sha`／`finding_id`，再把已啟用模組的 `$defs/module_return_sections/<模組名>` 併入 `properties`（型別唯一居所＝本檔，與 `core/card-schema.md` §1 合成同型），再驗 schema；模組段缺時依 `label` 印。
+必填性依級別：T0／T1 只要 `self_run` 與逐條驗收；T2 以上全段。缺段一律由 `review` 依卡面 `tier` 印，⛔ 不進 schema；schema 只管結構，`required` 只列 `review` 自己補的欄。`review` 先補 `card_id`／`iteration`／`role`／`source_sha`（`finding_id` 由作者依 `core/naming.md` §4 填，`review` ⛔ 不編、只印撞號），再把已啟用模組的 `$defs/module_return_sections/<模組名>` 併入 `properties`（型別唯一居所＝本檔，與 `core/card-schema.md` §1 合成同型），再驗 schema；模組段缺時依 `label` 印。
 
 ```json schema
 {"$id": "wf-return", "type": "object", "additionalProperties": false,
@@ -92,7 +93,7 @@ last_confirmed: 2026-09-06
 
 一則留言只有一個 `wf-return` 區塊。缺段（`review` 印，⛔ 不是 D3）：全級別＝`self_run`、`acceptance`；T2 以上另＝`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）；`role=reviewer` 另＝`review_result`、`core_pain_resolved`、`findings`；`role=executor` 另＝`mistakes`；已啟用模組的交回單段不分級別。CLI 只印 id 未覆蓋 `notes` 清單、`not_applicable`／`found` 而 text 空、`unverified.reason` 空、模組段內 `不適用`／`發現` 而 text 空，⛔ 不判內容。
 
-跨 iteration 閉環：iteration ≥2 的 `wf-return` 逐條重列前輪 finding 的原 `finding_id` 與新 `status`；`review` 只對無 `finding_id` 的 finding 編新 id，⛔ 不重編既有 id。
+跨 iteration 閉環：iteration ≥2 的 `wf-return` 逐條重列前輪 finding 的原 `finding_id` 與新 `status`；新 finding 由作者編新 id，⛔ 不重用既有 id。
 
 ## 3 · 裁定單（PM → 需求方；`brief --for closeout` 或人手組）
 

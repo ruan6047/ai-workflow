@@ -15,7 +15,7 @@ last_confirmed: 2026-09-05
 | T1 | 直推 main；聚焦自查；⛔ 不改 versioned source、設定、生成物、規格文字 | 跳過 | 無 |
 | T2 | 分支＋聚焦回歸測試＋獨立查核 | 必跑 | 不同實體 |
 | T3 | T2 加規格與驗收條件、self_run、merge 前 required check | 必跑 | 不同實體 |
-| T4 | T3 加跨家族查核或需求方 sign-off、實測證據 | 必跑，離開前附質詢 | 跨家族，或 sign-off |
+| T4 | T3 加兩則裁決、需求方 sign-off、實測證據 | 必跑，離開前附質詢 | 兩位查核者彼此不同家族 |
 
 → [archive/rules-2026-09/AI_WORKFLOW.md §0 級別表](../archive/rules-2026-09/AI_WORKFLOW.md)。
 
@@ -34,7 +34,7 @@ sensitive 值域＝public_contract／security／payment／data_write／migration
 - 含 public_contract、security、payment、data_write、production ⇒ 至少 T3。
 - 含 migration、rules、statistics ⇒ T4。
 - `db_scope ∈ {schema, data-migration}` ⇒ T4，且 sensitive 必含 migration（C9）。
-- T4 查核者的獨立性條件＝注意事項，住 `roles/pm.md` §4；級別表的「跨家族，或 sign-off」是形狀。
+- T4 查核者的獨立性條件＝注意事項，住 `roles/pm.md` §4；sign-off 依 `roles/requester.md` §1 與 `stages/closeout.md` §4。
 - 注意事項升為硬擋的唯一入口＝需求方裁定，且處理手段屬不可逆或平台層事故（條文住 `roles/requester.md` §1）；預設不升。
 
 ## 4 · 單向門
