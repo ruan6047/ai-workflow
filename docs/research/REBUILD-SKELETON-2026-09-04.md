@@ -147,7 +147,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | list_convergence | int[]（清單 issue 號） | PM | 建卡 | 結案核對 |
 | service_goal | string | 需求方 | 建卡 | R1 |
 | parent | card_id | PM（`open --parent` 或 `edit --set parent=`；兩者皆算鏈深並印） | 有父卡時 | 鏈深（印）、initiative 模組 |
-| blocked | {from: 狀態, ruling: 留言 URL} 或 null | CLI（`move --to 阻塞` 寫，解除時清 null） | — | brief、Project 狀態欄 |
+| blocked | {from: 狀態, ruling: 留言 URL 或 null（缺 `--ruling` 時；2026-09-07 補記）} 或 null | CLI（`move --to 阻塞` 寫，解除時清 null） | — | brief、Project 狀態欄 |
 | grilling | 留言 URL 或 null（T4 質詢紀錄所在的 `wf:log` 留言；00 §四「T4 卡附 grilling 質詢紀錄」） | PM（`edit --set grilling=`） | T4 離開規劃前（缺＝`move` 印） | brief、裁定單 |
 | tier | enum T0–T4 | PM | 建卡 | move、tiers |
 | tier_basis | {sensitive: enum[], recoverable: enum, blast: enum}（值域見表下） | PM 或執行 AI 選值 | 建卡 | 印；stat-redline 模組看 `statistics ∈ sensitive` |
@@ -186,7 +186,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 |---|---|---|---|
 | 派工單（每段首行 `[來源: …]`，決策 11） | PM→執行者或查核者 | 卡與身分、核心痛點、驗收逐條、非射程、merge-base SHA、前輪 findings、能力層級建議、注意事項編號清單、副作用入口清單 | 寫入授權、唯讀範圍、實際模型與偏離理由、未驗項（三分類）、本文件落差 |
 | 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 九欄、**未驗清單（三分類：驗不了／沒去驗／刻意不驗，各附原因）**、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
-| 模組段（2026-09-06 補記） | 依 `core/handoff.md` | 交回單段型別住 wf-return schema `$defs/module_return_sections`；派工單／裁定單段歸屬住 `json wf-module-sections`；段名逐字＝模組 `adds.handoff_sections` | 人填 |
+| 模組段（2026-09-06 補記） | 依 `core/handoff.md` | 交回單段型別住 wf-return schema `$defs/module_return_sections`；派工單／裁定單段歸屬住 `json wf-module-sections`；段名逐字＝模組 `adds.handoff_sections` | 依模組條文（2026-09-07 補記） |
 | 裁定單 | PM→需求方 | 事件序（以 `wf-return` 留言的時間序推，CLI 不讀散文留言）、各輪退回理由與 findings（讀 `wf-return`）、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
 交回單各段的必填性依級別分兩檔：T0／T1 只要 `self_run` 與逐 AC 證據；T2 以上全段（形狀，流程順暢；來源 03#24、決策第零條三目標）。`brief --for executor` 與 `--for reviewer` 同時印一份交回單 JSON 樣板（id、AC 條文、注意事項 id 預填），人只填判斷欄。
