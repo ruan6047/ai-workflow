@@ -72,5 +72,3 @@ last_confirmed: 2026-09-06
 - F-escalation-02：達門檻⛔ 不按整數自動升級；裁定單組好才 `move` 到升級。
 - F-escalation-03：裁定單只寫事實與各值證據，⛔ 不含建議、⛔ 不代需求方選值。
 - F-escalation-04：裁定單的各次退回理由逐字轉錄自 `wf-return`，⛔ 不摘要。
-
-→ [archive/rules-2026-09/templates/review-escalation.md](../../archive/rules-2026-09/templates/review-escalation.md)、[archive/rules-2026-09/templates/status-change-ruling.md](../../archive/rules-2026-09/templates/status-change-ruling.md)、[archive/rules-2026-09/stage-rules/review.md](../../archive/rules-2026-09/stage-rules/review.md)

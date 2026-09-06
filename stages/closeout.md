@@ -47,5 +47,3 @@ last_confirmed: 2026-09-06
 - F-結案-01：進入完成前印的 merge SHA 是否 main 祖先、CI 狀態，紅即停。
 - F-結案-02：終態才釋放宣告的資源。
 - F-結案-03：進 main 未結案的卡仍算現役。
-
-→ [archive/rules-2026-09/stage-rules/closeout.md](../archive/rules-2026-09/stage-rules/closeout.md)、[archive/rules-2026-09/templates/closeout-report.md](../archive/rules-2026-09/templates/closeout-report.md)、[archive/issues/025.md](../archive/issues/025.md)、[archive/issues/220.md](../archive/issues/220.md)

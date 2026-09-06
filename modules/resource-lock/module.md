@@ -69,5 +69,3 @@ last_confirmed: 2026-09-06
 - F-resource-lock-02：派工前對照 `git worktree list` 與現役卡的 `worktree` 欄，孤兒目錄、死路徑、殘留 lease 只列進派工單；⛔ 不自動清理，清理在結案批次做。
 - F-resource-lock-03：回收到期 worktree 前先檢查未提交變更；⛔ 不靜默刪除工作內容。
 - F-resource-lock-04：worktree 內 submodule 目錄空是預期，需要時明確初始化；「檔案不在我的樹裡」⛔ 不構成 finding。
-
-→ [archive/rules-2026-09/templates/worktree-lifecycle.md](../../archive/rules-2026-09/templates/worktree-lifecycle.md)、[archive/rules-2026-09/templates/control-plane-contract.md](../../archive/rules-2026-09/templates/control-plane-contract.md)、[archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)

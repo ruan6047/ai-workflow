@@ -58,5 +58,3 @@ last_confirmed: 2026-09-06
 - F-initiative-01：基線變更紀錄＝父卡一則留言（日期、變更摘要、觸發卡、受影響卡與級別、核可裁定 URL）；⛔ 不用聊天或口頭共識代替。
 - F-initiative-02：⛔ 不把方向失效降成需改規格以避免退回；級別由 PM 判並留痕，⛔ 不由觸發者自判。
 - F-initiative-03：`parent_spec_version` 在建卡時填；⛔ 不留到派工。
-
-→ [archive/rules-2026-09/templates/baseline-cascade.md](../../archive/rules-2026-09/templates/baseline-cascade.md)、[archive/rules-2026-09/templates/review-dispatch.md](../../archive/rules-2026-09/templates/review-dispatch.md)

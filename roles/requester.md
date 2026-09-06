@@ -36,5 +36,3 @@ last_confirmed: 2026-09-05
 
 - F-需求方-01：需求表單只寫可觀測現象（「X 指向 Y，但 Y 不存在」），⛔ 不寫解法、⛔ 不寫未量測的因果推論。
 - F-需求方-02：finding 存在時⛔ 不因此開卡；依序問是否立刻造成事故 → 服務哪個目標 → 是否與排程衝突再處置。
-
-→ [archive/rules-2026-09/stage-rules/requirement.md](../archive/rules-2026-09/stage-rules/requirement.md)、[archive/rules-2026-09/docs/ROADMAP.md](../archive/rules-2026-09/docs/ROADMAP.md)、[archive/issues/219.md](../archive/issues/219.md)、[archive/issues/147.md](../archive/issues/147.md)

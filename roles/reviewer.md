@@ -44,5 +44,3 @@ last_confirmed: 2026-09-07
 - F-查核者-04：第 2 輪新增的測試可能把缺陷寫進測試；換面查。
 - F-查核者-05：判紅線違反與對抗性反測結果時套 `roles/executor.md` F-執行者-08…11 的結果解讀通則。
 - F-查核者-06：寫 `disposition` 前先量被修對象的母體——活的消費者、語料出現次數、失效模式發生過幾次；母體為零時逐字寫「記為已知漏洞」或「待實例」，⛔ 不寫修法。
-
-→ [archive/rules-2026-09/stage-rules/reviewer-conduct.md](../archive/rules-2026-09/stage-rules/reviewer-conduct.md)、[archive/rules-2026-09/templates/review-prompt.md](../archive/rules-2026-09/templates/review-prompt.md)、[archive/issues/062.md](../archive/issues/062.md)、[archive/issues/017.md](../archive/issues/017.md)

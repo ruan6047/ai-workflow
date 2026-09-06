@@ -64,5 +64,3 @@ last_confirmed: 2026-09-05
 - F-stat-redline-01：紅線區塊缺席、或條目停在泛用句未綁定本卡窗口與門檻，本身即 REQUEST_CHANGES 事由。
 - F-stat-redline-02：反測角度不適用時寫「不適用：<原因>」，⛔ 不硬湊。
 - F-stat-redline-03：⛔ 不把單一小樣本季當失敗證據而略過全期合併結果（cpbl-analytics#98 VAL1 反例，2026-08-07）。
-
-→ [archive/rules-2026-09/templates/statistical-redline.md](../../archive/rules-2026-09/templates/statistical-redline.md)、[archive/rules-2026-09/stage-rules/research.md](../../archive/rules-2026-09/stage-rules/research.md)、[archive/rules-2026-09/stage-rules/reviewer-conduct.md](../../archive/rules-2026-09/stage-rules/reviewer-conduct.md)

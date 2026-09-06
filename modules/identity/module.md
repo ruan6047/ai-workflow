@@ -46,5 +46,3 @@ last_confirmed: 2026-09-06
 ## 2 · 注意事項
 
 - F-identity-01：換實體接手時三格重填；⛔ 不沿用前一實體的 session ID。
-
-→ [archive/rules-2026-09/templates/dispatch-package.md](../../archive/rules-2026-09/templates/dispatch-package.md)、[archive/rules-2026-09/templates/verdict.md](../../archive/rules-2026-09/templates/verdict.md)、[archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)
