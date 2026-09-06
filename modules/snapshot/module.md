@@ -41,8 +41,7 @@ last_confirmed: 2026-09-06
 - PM 每 `params.schedule`（種子 daily）跑一次 `snapshot`。
 - 跑完把輸出 commit 到本 repo 的 `params.branch`（種子 `snapshots`）作離線稽核副本。
 - 事後對帳與盤點分母以快照分支為準。
-- `last_cited` 的讀取落點＝快照輸出；推導住 `core/verbs.md`。
-- 快照只讀狀態面；⛔ 不寫回。
+- 對狀態面只做唯讀存取；⛔ 不寫回。
 
 ## 2 · 注意事項
 
