@@ -46,8 +46,11 @@ last_confirmed: 2026-09-06
 - 碰 DB 的卡填 `db_scope`（核心欄）與 `db_namespace`（§0 欄）。
 - `db_scope ∈ {schema, data-migration}` 時另填 `migration_phase`（§0 欄）、環境與 `db:` 資源；級別依 `core/tiers.md` §3。
 - `db:` 資源文法＝`db:<env>:schema`／`db:<env>:table:<name>`，`schema`、`table` 是字面關鍵字，只換 `<env>` 與 `<name>`；交集比對住 `modules/resource-lock`。
+- `<env>` 只用契約檔枚舉的環境正名（種子 local／test／staging／production），契約檔附別名表；卡面與資源宣告⛔ 不用別名。
 - 寫入或測試 DB 的卡用以卡ID 隔離的 namespace（DB、container、cache、queue、port 同理）；共用可寫 dev／test DB 須有 owner、lock 與清理方式。
-- 同一 `<env, schema>` 最多一個 migration writer；同表資料 migration 亦鎖；schema 卡依序 merge，⛔ 不平行產生互相依賴的 migration。
+- 同一 `<env, schema>` 最多一個 migration writer。
+- 同表的資料 migration 亦鎖，同時只有一張卡寫。
+- schema 卡依契約列的順序 merge；⛔ 不平行產生互相依賴的 migration。
 - schema 演進採 expand → migrate → contract，`migration_phase` 記本卡所在段。
 - 無法回滾的 DDL、刪欄／表與大量轉換各自獨立一張卡。
 - 資料 migration 寫成可重跑、可續跑、受批次限制。
