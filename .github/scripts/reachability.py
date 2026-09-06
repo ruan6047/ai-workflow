@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import glob
 import itertools
-import itertools
 import json
 import re
 import sys
