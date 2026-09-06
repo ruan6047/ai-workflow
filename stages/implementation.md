@@ -1,7 +1,7 @@
 ---
 name: implementation
 when: 卡在執行階段：派工、實作、交回交回單
-non_scope: ⛔ 不寫執行者的跨階段紀律（住 roles/executor.md、roles/conduct-common.md）；⛔ 不寫交回單欄位（住 core/handoff.md §2）
+non_scope: ⛔ 不寫執行者的跨階段紀律（住 roles/executor.md、roles/conduct-common.md）；⛔ 不寫交回單欄位（住 core/return.md）
 last_confirmed: 2026-09-05
 ---
 

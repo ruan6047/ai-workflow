@@ -1,7 +1,7 @@
 ---
 name: requester
 when: 你是出題、裁定、sign-off 的那個人，卡在需求階段、要停止、要降級、要結案確認、或有人請你裁時
-non_scope: ⛔ 不寫 PM 怎麼組裁定單（住 core/handoff.md §3）；⛔ 不寫 R1 R2 的判法（住 roles/pm.md）
+non_scope: ⛔ 不寫 PM 怎麼組裁定單（住 core/ruling.md）；⛔ 不寫 R1 R2 的判法（住 roles/pm.md）
 last_confirmed: 2026-09-05
 ---
 
@@ -11,7 +11,7 @@ last_confirmed: 2026-09-05
 
 - 決定哪個清單項升級為卡、缺陷開不開卡；⛔ 不代填清單項。
 - 填卡面 `service_goal`；PM 判 R1 後保留否決：撤銷或停止。
-- 裁定：停止、撤銷、級別下修、進入阻塞、授權缺口擴權或開新卡、升級四選一（換人／退回上一階段／停止／退回無效）、事後查核是否回退 main、T4 sign-off。裁定＝一則 `wf:ruling` 留言（`core/handoff.md` §3）；PM 可代貼。
+- 裁定：停止、撤銷、級別下修、進入阻塞、授權缺口擴權或開新卡、升級四選一（換人／退回上一階段／停止／退回無效）、事後查核是否回退 main、T4 sign-off。裁定＝一則 `wf:ruling` 留言（`core/ruling.md`）；PM 可代貼。
 - 結案：讀裁定單；不否決則 PM 依 `stages/closeout.md` §4 直行；T4 須 sign-off。
 - 規劃階段核可取捨與驗收條件；⛔ 不寫規格。
 - T4 卡離開規劃前做質詢，紀錄落 `wf:log` 留言。

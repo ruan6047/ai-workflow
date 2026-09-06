@@ -1,7 +1,7 @@
 ---
 name: card-schema
 when: 寫或讀卡面 JSON、清單項 JSON、`wf:note` JSON、Project 投影欄時讀
-non_scope: ⛔ 不寫欄位該填什麼內容（住 stages/requirement.md、planning.md）；⛔ 不寫交回單與裁定（住 core/handoff.md）
+non_scope: ⛔ 不寫欄位該填什麼內容（住 stages/requirement.md、planning.md）；⛔ 不寫交回單與裁定（住 core/return.md、core/ruling.md）
 last_confirmed: 2026-09-05
 ---
 

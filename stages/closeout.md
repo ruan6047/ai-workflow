@@ -1,7 +1,7 @@
 ---
 name: closeout
 when: 卡在結案階段：合併、收尾、裁定單、封存、停止
-non_scope: ⛔ 不寫裁定單欄位（住 core/handoff.md §3）；⛔ 不寫部署與維護（住模組）
+non_scope: ⛔ 不寫裁定單欄位（住 core/ruling.md）；⛔ 不寫部署與維護（住模組）
 last_confirmed: 2026-09-06
 ---
 
