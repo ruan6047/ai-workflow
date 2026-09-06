@@ -2,7 +2,7 @@
 name: executor
 when: 你收到派工單，要實作、量測、寫規格或交交回單時
 non_scope: ⛔ 不寫查核（住 roles/reviewer.md）；⛔ 不寫各階段的產出（住 stages/）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-06
 ---
 
 # 執行者
