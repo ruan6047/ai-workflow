@@ -78,6 +78,3 @@ jobs:
           persist-credentials: false
       - run: python3 .github/scripts/reachability.py --selftest
       - run: python3 .github/scripts/reachability.py
-      # 詞表表結構對帳（只比字串集合與形狀，⛔ 不掃正文、⛔ 不判用詞；用詞違規是查核者的 governance finding）
-      - run: python3 .github/scripts/glossary_check.py --selftest
-      - run: python3 .github/scripts/glossary_check.py

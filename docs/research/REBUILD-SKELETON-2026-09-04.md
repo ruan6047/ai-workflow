@@ -351,7 +351,7 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 
 | 詞 | 涵蓋 | 禁用同義詞 |
 |---|---|---|
-| 卡、清單項、撤銷卡 | 卡＝在板 issue；清單項＝不在板且無 `wf-card` 區塊的 issue（無卡ID）；撤銷卡＝不在板但帶 `wf-card` 區塊的 issue（保留卡ID，`open` 可復板） | Backlog、task |
+| 卡、清單項、撤銷卡 | 卡＝在板 issue；清單項＝不在板且無 `wf-card` 區塊的 issue（無卡ID）；撤銷卡＝不在板但帶 `wf-card` 區塊的 issue（保留卡ID，`open` 可復板） | task |
 | 階段（8） | 需求…結案 | phase、gate |
 | 狀態（核心 5＋阻塞；模組加值） | 待辦…退回、阻塞、停止、升級、不可判定、運行中 | 交付狀態、部署狀態、Status |
 | 轉移、轉移記錄 | `move` 的一次寫入與其留言 | event、handoff |
@@ -367,12 +367,12 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 | 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境） |
 | 紅線 | 至少 T3 的變更域 | 高風險 |
 | 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | scope（作為驗收條件的同義）、AC |
-| 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | backlog、inbox、待辦池 |
+| 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | Backlog、inbox、待辦池 |
 | 規格、規格欄 | 卡面會使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources`（C11）；核心痛點另受裁定連結約束，不在此列 | 需求文件、spec |
 | 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | guard |
 | 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性（作為完整性的同義） |
 | finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷（作為 finding 的同義）、bug |
-| 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種（§五 缺陷套用表、§十一 缺陷路徑） | bug（作為卡種）、BUG- 前綴 |
+| 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種（§五 缺陷套用表、§十一 缺陷路徑）；不是 finding | BUG- 前綴 |
 | 合成表 | 核心轉移表 ∪ 已啟用模組 add − remove，再按該卡 `stage_plan` 展開 | 狀態表、workflow 圖 |
 | 模組 delta | 模組宣告區塊裡對狀態值域、轉移、欄位、注意事項的增減 | patch |
 | 設計閘（Design gate） | 規劃階段離開前 `verification` 欄填齊的檢查點；正式中文詞＝設計閘 | 設計審、design review |
