@@ -54,7 +54,7 @@ last_confirmed: 2026-09-06
 ## 2 · 注意事項
 
 - F-db-contract-01：`db:<env>:schema` 不支配 `db:<env>:table:<name>`；要互斥就宣告同一字串。
-- F-db-contract-02：`db_scope` 的 `schema` 值與資源 token 的 `schema` 關鍵字是兩回事；⛔ 不把關鍵字換成 schema 名（2026-08 cpbl 契約 5 行 6 處寫錯而靜默失效）。
+- F-db-contract-02：`db_scope` 的 `schema` 值與資源 token 的 `schema` 關鍵字是兩回事；⛔ 不把關鍵字換成 schema 名。
 - F-db-contract-03：已啟用而 `.wf/contracts/DATABASE_CONTRACT.md` 不存在時 `notes` 印資料完整性提示；⛔ 不擋。
 
 → [archive/rules-2026-09/templates/database-contract.md](../../archive/rules-2026-09/templates/database-contract.md)、[archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)
