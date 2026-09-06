@@ -17,7 +17,7 @@ last_confirmed: 2026-09-05
 
 ## 3 · 核心轉移表
 
-唯一居所＝下方區塊；`move` 只接受合成表內的邊（D1）。`from`／`to` 的階段記法：`*`＝該卡階段計畫內任一非結案階段；`same`＝同階段；`next`＝階段計畫的下一階段（下一階段為結案時走 `last` 列）；`last`＝階段計畫內最後一個非結案階段；`清單`＝不在板。`state` 的 `<from>`＝進阻塞前的狀態，解除只回那一個狀態（每個非終態各有自己的阻塞節點）。`if`＝機械條件，值域 `plan_has:<階段>`／`plan_lacks:<階段>`，展開時不成立的邊不進合成表（D1）；`condition`＝給 PM 讀的條件與印，⛔ 不是機械條件。
+唯一居所＝下方區塊；`move` 只接受合成表內的邊（D1）。`from`／`to` 的階段記法：`*`＝該卡階段計畫內任一非結案階段；`same`＝同階段；`next`＝階段計畫的下一階段（下一階段為結案時走 `last` 列）；`last`＝階段計畫內最後一個非結案階段；`清單`＝不在板。`state` 的 `<非終態>`＝該階段值域內除終態與 阻塞 外的每個狀態，含模組加的狀態；`<from>`＝進阻塞前的狀態，解除只回那一個狀態（每個非終態各有自己的阻塞節點）。`if`＝機械條件，值域 `plan_has:<階段>`／`plan_lacks:<階段>`，展開時不成立的邊不進合成表（D1）；`condition`＝給 PM 讀的條件與印，⛔ 不是機械條件。
 
 ```json wf-state-machine
 {
@@ -41,7 +41,7 @@ last_confirmed: 2026-09-05
     {"from": "**/待確認", "to": "需求/退回", "if": "plan_lacks:規劃", "condition": "⑤ R1 不過"},
     {"from": "*/退回", "to": "same/進行中", "condition": "再派；進執行時 iteration +1、source_sha=null；同 iteration 第 3 次退回預設換人，需求方可否決"},
     {"from": "結案/退回", "to": "結案/待確認", "condition": "補驗後重交裁定單"},
-    {"from": "**/待辦|進行中|待確認|退回", "to": "same/阻塞", "condition": "寫 blocked.from；--ruling 種類＝wf-ruling kind=block，缺留言或缺鍵皆印"},
+    {"from": "**/<非終態>", "to": "same/阻塞", "condition": "寫 blocked.from；--ruling 種類＝wf-ruling kind=block，缺留言或缺鍵皆印"},
     {"from": "**/阻塞", "to": "same/<from>", "condition": "解除；清 blocked"},
     {"from": "結案/待確認", "to": "結案/完成", "condition": "印 PR 與分支狀態；封存"},
     {"from": "結案/待確認", "to": "結案/停止", "condition": "--ruling 種類＝wf-ruling kind=stop，缺留言或缺鍵皆印；封存"}
@@ -60,4 +60,4 @@ last_confirmed: 2026-09-05
 
 ## 5 · 可達性測試
 
-CI job `reachability` 跑 `.github/scripts/reachability.py`，對每個合法 `stage_plan`（2026-09-05：16 種）斷言兩件：合成表定義集合內每個非終態有出邊且可達完成或停止；完成與停止出邊為空。矩陣隨被測物累加：本檔進 repo 時只測無模組；帶 delta 的模組進 repo 時同 PR 加該模組案例。
+CI job `reachability` 跑 `.github/scripts/reachability.py`，對每個合法 `stage_plan`（2026-09-05：16 種）斷言兩件：合成表定義集合內每個非終態有出邊且可達完成或停止；完成與停止出邊為空。另印每個案例從 `initial` 正向走不到的節點，⛔ 不擋（2026-09-07 加，`**/<非終態>` 修好前為 384 個）。矩陣隨被測物累加：本檔進 repo 時只測無模組；帶 delta 的模組進 repo 時同 PR 加該模組案例。
