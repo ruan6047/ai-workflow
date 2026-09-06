@@ -27,7 +27,7 @@ last_confirmed: 2026-09-06
 ## 4 · 階段內迴圈
 
 - ① `notes --stage 結案` ② PM `brief --for closeout` 組裁定單 CLI 段 ③ PM 填人填段、需求方讀 ④ 需求方確認或退回補驗 ⑤ `move` 到完成或停止。
-- 常態由 PM merge：APPROVE＋裁決完整時直行 merge→收尾；四停下條件任一成立即停下請示需求方：有 `status: open` 且 `blocking: true` 的 finding、CI 非綠或 merge 後狀態不符、分支落後且衝突、T4。
+- 常態由 PM merge：APPROVE＋裁決完整時直行 merge→收尾；四停下條件任一成立即停下請示需求方：有 `status: open` 且 `blocking: true` 的 finding、CI 非綠或 merge 後狀態不符、分支落後且衝突、T4 未取得需求方 sign-off（`wf-ruling` kind=signoff）。
 - 合併方式依專案層 `merge_method`（`core/platform.md` P3）；⛔ 不用 `gh pr update-branch`，分支更新走本地 rebase。
 - PR body ⛔ 不寫 `Closes #N`；只由 `move` 到終態關 issue。
 - 清單收斂核對：`list_convergence` 逐項確認真解決才關。
