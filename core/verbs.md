@@ -2,7 +2,7 @@
 name: verbs
 when: 跑或實作任一 CLI 動詞、判一次拒收是不是合法、查 notes 合成順序時讀
 non_scope: ⛔ 不寫誰在什麼時候該跑（住 roles/、stages/）；⛔ 不寫 schema（住 core/card-schema.md、core/return.md、core/ruling.md）
-last_confirmed: 2026-09-06
+last_confirmed: 2026-09-07
 ---
 
 # 七動詞
@@ -30,7 +30,8 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 - D3 JSON 合法、鍵集合封閉；`card_id`／`source_issue` 建卡後不可改；投影 TEXT 欄超過 `max_bytes`；解析失敗整卡拒，該卡所有動詞不跑。
 - D4 `--source-sha` 在遠端存在；`--ruling` URL 存在；`parent` 指到板上存在的卡。
 - 檢查先於首次遠端寫入：先純計算並驗證新內容，再開始第一次寫（→ [#023](../archive/issues/023.md)、[#141](../archive/issues/141.md)、[#147](../archive/issues/147.md)、[#148](../archive/issues/148.md)、[#221](../archive/issues/221.md)）。
-- 寫入順序＝卡面 JSON → 五個投影欄 → 回讀；回讀不等＝D3 拒收（rc≠0，寫 `wf:reject`）；下一次動詞先對帳。
+- 寫入順序＝卡面 JSON → 五個投影欄 → 回讀；回讀不等＝D3 拒收（rc≠0，寫 `wf:reject`）。
+- 下一次動詞先對帳卡面 JSON 與五個投影欄；不等＝以卡面 JSON 重寫該欄後續跑並印重寫了哪幾欄，⛔ 不拒收。
 - 每次拒收寫一則 `wf:reject` 留言：一行 `拒收・<D 編號>・<原因>`；印不寫留言。
 - 留言 append-only：一次寫入一則；⛔ 不編輯既有留言、⛔ 不開可編輯的日誌留言。
 - CLI 只讀三種留言區塊：`wf-return`、`wf-ruling`、`wf-note`；散文與首行不讀。
