@@ -42,6 +42,34 @@ def load_modules() -> list[dict]:
     return mods
 
 
+NOTE_ID = re.compile(r"^- (F-[A-Za-z0-9-]+-\d{2})：", re.M)
+
+
+def notes_errors(name: str, declared: list, body: str) -> list[str]:
+    """§0 adds.notes 與 §2 條列 id 的對帳：只比 id 集合、順序與前綴，⛔ 不讀條文內容。"""
+    sec = body.split("## 2 · 注意事項", 1)
+    listed = NOTE_ID.findall(sec[1]) if len(sec) == 2 else []
+    errs = []
+    if declared != listed:
+        errs.append(f"{name}: adds.notes={declared} ≠ §2 條列={listed}")
+    for i in declared:
+        if not i.startswith(f"F-{name}-"):
+            errs.append(f"{name}: id {i} 前綴不是 F-{name}-")
+    return errs
+
+
+def check_module_notes() -> list[str]:
+    errs = []
+    for f in sorted(glob.glob(str(ROOT / "modules/*/module.md"))):
+        body = Path(f).read_text(encoding="utf-8")
+        m = MODBLOCK.search(body)
+        if not m:
+            continue  # load_modules 已擋
+        d = json.loads(m.group(1))
+        errs += notes_errors(d["name"], d.get("adds", {}).get("notes", []), body)
+    return errs
+
+
 def compose(sm: dict, mods: list[dict]) -> dict:
     """核心 ∪ add − remove；模組加的狀態進 states，only_in_stage 由該模組 transitions 所及的階段決定。"""
     import copy
@@ -244,6 +272,15 @@ def selftest(sm: dict) -> int:
     for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3), ("blocked_loop_only", ok4, e4)):
         print(f"selftest_{name}: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
         bad += not ok
+    good = "```yaml wf-module\n{}\n```\n## 2 · 注意事項\n\n- F-x-01：a。\n- F-x-02：b。\n"
+    e_ok = notes_errors("x", ["F-x-01", "F-x-02"], good)
+    e_missing = notes_errors("x", [], good)
+    e_order = notes_errors("x", ["F-x-02", "F-x-01"], good)
+    e_prefix = notes_errors("x", ["F-y-01", "F-x-02"], good.replace("F-x-01", "F-y-01"))
+    ok = not e_ok and len(e_missing) == 1 and len(e_order) == 1 and len(e_prefix) == 1
+    print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 3 條）")
+    if not ok:
+        rc = 1
     return 1 if bad else 0
 
 
@@ -253,6 +290,10 @@ def main() -> int:
         return selftest(sm)
     plans = legal_plans(sm)
     mods = load_modules()
+    note_errs = check_module_notes()
+    for e in note_errs:
+        print(f"⛔ adds.notes 對帳：{e}")
+    print(f"模組 adds.notes 對帳：{len(mods)} 檔，失敗 {len(note_errs)}")
     delta_mods = [m for m in mods if m.get("adds", {}).get("states") or m.get("adds", {}).get("transitions", {}).get("add")]
     cases = [("無模組", [])] + [(f"單獨啟用 {m['name']}", [m]) for m in delta_mods] + [("全部啟用", delta_mods)]
     total = bad = 0
@@ -276,7 +317,7 @@ def main() -> int:
         total += n
         bad += f
     print(f"合計 {total} 案例，失敗 {bad}；模組 delta {len(delta_mods)} 個")
-    return 1 if bad else 0
+    return 1 if (bad or note_errs) else 0
 
 
 if __name__ == "__main__":

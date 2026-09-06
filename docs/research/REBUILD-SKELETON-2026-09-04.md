@@ -209,7 +209,7 @@ adds:
   states: []
   transitions: {add: [], remove: []}
   flags: []            # 模組只能宣告旗標；動詞集合固定於 core/verbs.md（決議 §七：動詞新增須需求方裁定）
-  notes: [F-resource-01, F-resource-02]
+  notes: [F-resource-lock-01, F-resource-lock-02]
   handoff_sections: [資源宣告逐條]
 project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 ```
