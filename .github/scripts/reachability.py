@@ -104,19 +104,26 @@ def sections_errors(name: str, declared: list, ret: dict[str, set[str]], other: 
     return errs
 
 
+def orphan_errors(ret: dict[str, set[str]], other: dict[str, set[str]], names: set[str]) -> list[str]:
+    """core/handoff.md 提到、但 modules/ 沒有的模組名。"""
+    return [f"core/handoff.md 段名指向不存在的模組 {m}" for m in sorted((set(ret) | set(other)) - names)]
+
+
 def check_module_sections() -> list[str]:
     ret, other, errs = handoff_labels(HANDOFF.read_text(encoding="utf-8"))
+    names: set[str] = set()
     for f in sorted(glob.glob(str(ROOT / "modules/*/module.md"))):
         m = MODBLOCK.search(Path(f).read_text(encoding="utf-8"))
         if not m:
             continue
         d = json.loads(m.group(1))
+        names.add(d["name"])
         adds = d.get("adds", {})
         errs += sections_errors(d["name"], adds.get("handoff_sections", []), ret, other)
         for c in adds.get("counters", []):
             if c not in adds.get("fields", []):
                 errs.append(f"{d['name']}: counters {c} 不在 adds.fields")
-    return errs
+    return errs + orphan_errors(ret, other, names)
 
 
 def check_module_notes() -> list[str]:
@@ -352,8 +359,10 @@ def selftest(sm: dict) -> int:
     s_none = sections_errors("z", ["A"], ret, oth)
     s_both = sections_errors("m", ["A", "B"], {"m": {"A", "B"}}, oth)
     _, _, lab_errs = handoff_labels('```json schema\n{"$id": "wf-return", "$defs": {"module_return_sections": {"m": {"k": {"type": "string"}}}}}\n```')
-    ok2 = (not s_ok and len(s_missing) == 1 and len(s_extra) == 1 and len(s_none) == 1 and len(s_both) == 1 and len(lab_errs) == 1)
-    print(f"selftest_module_sections_consistency: {'PASS' if ok2 else 'FAIL'}（負控 5 條）")
+    s_orphan = orphan_errors({"ghost": {"A"}}, {}, {"m"})
+    ok2 = (not s_ok and len(s_missing) == 1 and len(s_extra) == 1 and len(s_none) == 1 and len(s_both) == 1
+           and len(lab_errs) == 1 and len(s_orphan) == 1)
+    print(f"selftest_module_sections_consistency: {'PASS' if ok2 else 'FAIL'}（負控 6 條）")
     bad = bad or not ok2
     return 1 if bad else 0
 

@@ -84,7 +84,7 @@ last_confirmed: 2026-09-06
    "research": {"measurement": {"label": "量測紀錄（可重跑）", "type": "string"}, "conclusion": {"label": "結論", "type": "object", "required": ["verdict"], "additionalProperties": false, "properties": {"verdict": {"enum": ["可判定", "不可判定"]}, "text": {"type": "string"}}}},
    "stat-redline": {"redlines": {"label": "紅線區塊（本卡的窗口與門檻）", "type": "array", "items": {"type": "string"}},
                     "adversarial_tests": {"label": "對抗性反測表（≥3 角度，各寫支持／推翻／未能檢定）", "type": "array", "items": {"type": "object", "required": ["angle", "result"], "additionalProperties": false, "properties": {"angle": {"type": "string"}, "result": {"enum": ["支持", "推翻", "未能檢定", "不適用"]}, "text": {"type": "string"}}}}},
-   "pitfalls-13": {"pitfall_families": {"label": "13 族踩坑清冊（每族恰一行，已檢查／不適用／發現）", "type": "array", "items": {"type": "object", "required": ["family", "value"], "additionalProperties": false, "properties": {"family": {"type": "string"}, "value": {"enum": ["已檢查", "不適用", "發現"]}, "text": {"type": "string"}}}}},
+   "pitfalls-13": {"pitfall_families": {"label": "13 族踩坑清冊（每族恰一行，已檢查／不適用／發現）", "type": "string"}},
    "db-contract": {"db_contract": {"label": "DB 契約段（namespace、lock、備份、回滾、驗證命令）", "type": "string"}},
    "deploy": {"deploy_facts": {"label": "部署事實（環境／時間／SHA／驗證）", "type": "string"}},
    "maintenance": {"run_status": {"label": "運行狀態（活著的證據）", "type": "string"}}}}}
