@@ -92,7 +92,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 | 模組 | add（from → to；條件） |
 |---|---|
-| research | 研究／待確認 → 研究／不可判定（交回單 verdict＝不可判定）；研究／不可判定 → 需求／待辦（重述問題）；研究／不可判定 → 結案／待確認（以不可判定作結案報告） |
+| research | 研究／待確認 → 研究／不可判定（交回單 verdict＝不可判定）；研究／不可判定 → 需求／待辦（重述問題）；研究／不可判定 → 結案／待確認（以不可判定寫裁定單） |
 | escalation | 任一階段（結案除外）／退回 → 同階段／升級（同 iteration 第 N 次退回，N＝`modules.json` 該模組 `params.escalate_after`，種子 3）；升級 → 同階段／進行中（換人或換級再派，`--ruling` 缺即印）；升級 → 結案／待確認（需求方裁定收尾） |
 | maintenance | 維護／待辦 → 維護／運行中（上線）；維護／運行中 → 維護／進行中（事件處理）；維護／運行中 → 結案／待確認（結束維護） |
 
@@ -112,8 +112,8 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1、`source_sha` 清為 null（S7）；同一 iteration 第 3 次退回的預設處置＝換人，需求方可否決（PM 減重 4）；條文住 `roles/pm.md` §4 |
 | 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 寫 `blocked.from`；`--ruling` 種類＝`wf-ruling` kind=block，缺留言或缺鍵皆印 |
 | 阻塞 | from（必為非終態） | 解除 |
-| 最後一個階段／待確認 | 結案／待確認 | 結案報告 |
-| 結案／退回 | 結案／待確認 | 補驗後重交結案報告 |
+| 最後一個階段／待確認 | 結案／待確認 | 裁定單（結案確認類） |
+| 結案／退回 | 結案／待確認 | 補驗後重交裁定單 |
 | 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling` kind=stop（缺留言或缺鍵皆印）；兩者皆封存 |
 
 **模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`，可帶機械鍵 `if`（`plan_has:<階段>`／`plan_lacks:<階段>`，展開時裁邊）；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試矩陣隨被測物累加：第 1 步只有「無模組」；第 4 步每個帶 delta 的模組進 repo 的同一 PR 加「該模組單獨啟用」，最後一個模組的 PR 再加「全部啟用」；每個案例涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
@@ -349,8 +349,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 轉移、轉移記錄 | `move` 的一次寫入與其留言 | event、handoff |
 | iteration | 卡進入執行階段的次數 | 輪次、round |
 | 查核輪 R1–R4 | 前提／射程／內容／影響面 | 輪次、pass |
-| 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源 | 踩坑清冊、層（作為來源） |
-| 硬擋、印、語意 | 機械側三類行為 | 守衛、閘門、偵測器、拒收（作為類別名） |
+| 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源 | 踩坑清冊（作為注意事項的同義）、層（作為來源） |
+| 硬擋、印、語意 | 機械側三類行為 | 守衛（作為硬擋的同義）、閘門（作為硬擋的同義）、偵測器、拒收（作為類別名） |
 | 模組、啟用條件 | opt-in 機制與其條件 | plugin、功能旗標 |
 | 裁定、裁決 | 需求方的決定／查核者的結論，皆為留言 | sign-off（除 T4 外） |
 | 派工單、交回單、裁定單 | 三份交接文件 | 派工包、派審詞、交付報告、結案報告、狀態變更裁定單 |
@@ -375,7 +375,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
 | 七動詞 open／move／edit／notes／brief／review／snapshot | CLI 的全部入口 | amend、改卡、handoff、assign、pitfalls、踩坑、verdict（作為動詞） |
 | 未驗清單三分類 cannot／skipped／deferred | 驗不了／沒去驗／刻意不驗 | 未驗（裸列）、TODO |
-| 回應三值 followed／not_applicable／found | 已遵循／不適用／發現 | 已檢查、已遵守、N/A |
+| 回應三值 followed／not_applicable／found | 已遵循／不適用／發現 | 已檢查（作為回應三值的第一值）、已遵守、N/A |
+| 13 族三值 | 已檢查／不適用／發現，pitfalls-13 專用 | followed／not_applicable／found（作為 13 族三值） |
 | 投影欄（5）：階段／狀態／級別／owner／卡ID | Project 上由 CLI 回寫的欄 | 看板欄位、Ledger 欄 |
 | db_scope | 卡對資料庫的變更範圍 enum none／read／write／schema／data-migration；後兩者連動 T4 | db_permission、資料庫權限 |
 | trailer | commit 訊息末端連續的結構化標籤區塊（Requested-by、Planned-by、Implemented-by、Reviewed-by） | footer、git-tag |

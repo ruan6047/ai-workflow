@@ -26,11 +26,11 @@ last_confirmed: 2026-09-05
 | 模組 delta | 模組宣告區塊對狀態值域、轉移、欄位、注意事項的增減 | 不是覆寫 | patch、override |
 | iteration | 卡進入執行階段的次數 | 不是退回次數 | 輪次、round |
 | 查核輪 R1–R4 | 前提／射程／內容／影響面四題 | 不是 iteration | 輪次、pass |
-| 硬擋 | CLI rc≠0 或平台拒絕的行為 | 不是印 | 守衛、閘門、偵測器、拒收（作為類別名） |
+| 硬擋 | CLI rc≠0 或平台拒絕的行為 | 不是印 | 守衛（作為硬擋的同義）、閘門（作為硬擋的同義）、偵測器、拒收（作為類別名） |
 | 印 | CLI rc=0 並列出資訊的行為 | 不是判斷 | — |
 | 語意 | 動詞的固定行為 | 不是拒絕 | — |
 | 拒收 | 一次硬擋與其 `wf:reject` 留言 | 不是硬擋類別名 | reject（作為類別名） |
-| 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 不含內容判讀 | 驗證失敗、invalid |
+| 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 不含內容判讀 | 驗證失敗、invalid（作為拒收類別名） |
 | 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | 不是內容判讀 | guard |
 | 完整性 | 必要欄或必要段齊不齊 | 不是對不對 | 正確性 |
 | 裁定 | 需求方的決定，形狀＝一則留言 | 不是裁決 | sign-off（除 T4 外） |
@@ -52,9 +52,9 @@ last_confirmed: 2026-09-05
 | 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種 | 不是 finding | bug（作為卡種）、BUG- 前綴 |
 | 模型名 | 實際跑的模型識別字，只住派工單與專案層 | 不是能力層級 | — |
 | 紅線 | 至少 T3 的變更域 | 不是「高風險」的泛稱 | 高風險 |
-| 單向門 | 級別只升不降；降級需裁定 | 不是不可逆的泛稱 | 不可逆、one-way |
+| 單向門 | 級別只升不降；降級需裁定 | 不是不可逆的泛稱 | 不可逆（作為單向門的同義）、one-way |
 | 核心痛點 | 卡面第一判準欄，從清單項逐字帶入 | 不是解法 | — |
-| 驗收條件 | 卡面 `acceptance`：什麼算過 | 不是驗證項目 | scope、AC |
+| 驗收條件 | 卡面 `acceptance`：什麼算過 | 不是驗證項目 | scope（作為驗收條件的同義）、AC |
 | 驗證項目 | 卡面 `verification`：怎麼證明、誰證 | 不是 `self_run` | 測試計畫、驗證方式 |
 | 非射程 | 卡面 `non_scope`：這張卡不做什麼 | 不是未驗 | 非目標、out of scope |
 | 服務的原始目標 | 卡面 `service_goal`，需求方填 | 不是核心痛點 | initiative 目標 |
@@ -68,10 +68,11 @@ last_confirmed: 2026-09-05
 | 分支 | 卡面 `branch`：該卡工作所在的 git 分支 | 不是 worktree | feature |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | 不是 CLI 判斷 | merge 策略、合併策略 |
 | SHA 四種 | 被審＝查核者讀到的 commit；來源＝卡面 `source_sha`；合併基底＝派工單的 merge-base；合併＝main 上的 merge commit | 不寫短 SHA | 目標 SHA、HEAD（作為名詞） |
-| 注意事項 | 一份編號清單，四個來源合成 | 不是規則正文 | 踩坑清冊、層（作為來源） |
+| 注意事項 | 一份編號清單，四個來源合成 | 不是規則正文 | 踩坑清冊（作為注意事項的同義）、層（作為來源） |
 | 加嚴層級 F-／P-／T- | 注意事項的三個編號前綴：框架／專案／卡面 | 不是來源 | 層 |
 | 來源（四個） | core／module／project／card | 不是層 | 層（作為來源）、layer |
-| 回應三值 | followed／not_applicable／found | 不是「已檢查」 | 已檢查、已遵守、N/A |
+| 回應三值 | followed／not_applicable／found | 不是「已檢查」 | 已檢查（作為回應三值的第一值）、已遵守、N/A |
+| 13 族三值 | 已檢查／不適用／發現；pitfalls-13 模組 13 族段每族一行的值 | 不是回應三值 | followed／not_applicable／found（作為 13 族三值） |
 | 未驗清單三分類 | cannot／skipped／deferred | 不是裸列 | 未驗（裸列）、TODO |
 | self_run | 交回單內實跑的指令與原始輸出 | 不是讀碼推論 | 本地測試、手動驗證 |
 | falsifier | 交回單逐條驗收條件的證偽條件 | 不是反測 | 反向案例、反測（保留給統計紅線模組的對抗性反測） |
@@ -84,7 +85,7 @@ last_confirmed: 2026-09-05
 | 副作用入口 | 派工單列的、改動會外溢的檔或設定 | 不是三軸的影響面 | blast list |
 | 派工、交回 | 五步迴圈的 ②（`move` 到進行中）與 ③（`move` 到待確認） | 不是聊天通知 | assign、handoff |
 | 候選 | 貼在 `wf:note` 留言、尚未進任何加嚴層級的注意事項 | 不是正式條目 | — |
-| 七動詞 | open／move／edit／notes／brief／review／snapshot | 沒有第八個 | amend、改卡、handoff、assign、pitfalls、踩坑、verdict（作為動詞） |
+| 七動詞 | open／move／edit／notes／brief／review／snapshot | 沒有第八個 | amend、改卡、handoff、assign、pitfalls、踩坑（作為動詞名）、verdict（作為動詞） |
 | 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 不是 transaction | 寫入規則、transaction |
 | 留言標頭 wf:* | CLI 與人留言的首行 | 不是 marker | marker、事件型別 |
 | 投影欄 | Project 上由 CLI 回寫的五欄：階段／狀態／級別／owner／卡ID | 不是事實來源 | 看板欄位、Ledger 欄 |

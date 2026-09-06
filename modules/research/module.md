@@ -39,7 +39,7 @@ last_confirmed: 2026-09-05
         {
           "from": "研究/不可判定",
           "to": "結案/待確認",
-          "condition": "以不可判定作結案報告"
+          "condition": "以不可判定寫裁定單"
         }
       ],
       "remove": []
