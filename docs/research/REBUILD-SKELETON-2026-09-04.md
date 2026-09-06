@@ -186,6 +186,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 |---|---|---|---|
 | 派工單（每段首行 `[來源: …]`，決策 11） | PM→執行者或查核者 | 卡與身分、核心痛點、驗收逐條、非射程、merge-base SHA、前輪 findings、能力層級建議、注意事項編號清單、副作用入口清單 | 寫入授權、唯讀範圍、實際模型與偏離理由、未驗項（三分類）、本文件落差 |
 | 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面、finding_id | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 九欄、**未驗清單（三分類：驗不了／沒去驗／刻意不驗，各附原因）**、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
+| 模組段（2026-09-06 補記） | 依 `core/handoff.md` | 交回單段型別住 wf-return schema `$defs/module_return_sections`；派工單／裁定單段歸屬住 `json wf-module-sections`；段名逐字＝模組 `adds.handoff_sections` | 人填 |
 | 裁定單 | PM→需求方 | 事件序（以 `wf-return` 留言的時間序推，CLI 不讀散文留言）、各輪退回理由與 findings（讀 `wf-return`）、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
 交回單各段的必填性依級別分兩檔：T0／T1 只要 `self_run` 與逐 AC 證據；T2 以上全段（形狀，流程順暢；來源 03#24、決策第零條三目標）。`brief --for executor` 與 `--for reviewer` 同時印一份交回單 JSON 樣板（id、AC 條文、注意事項 id 預填），人只填判斷欄。
@@ -209,6 +210,8 @@ adds:
   states: []
   transitions: {add: [], remove: []}
   flags: []            # 模組只能宣告旗標；動詞集合固定於 core/verbs.md（決議 §七：動詞新增須需求方裁定）
+  counters: []         # `move --to */退回` 時 +1 的欄（2026-09-06 補記；escalation 用）
+  move_prints: []      # `move` 印項的識別字，語意住模組 §1（2026-09-06 補記）
   notes: [F-resource-lock-01, F-resource-lock-02]
   handoff_sections: [資源宣告逐條]
 project_inputs: [.wf/contracts/CONTROL_PLANE.md]
@@ -306,7 +309,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 3. 五階段檔（研究住模組）
 4. `modules/` 分兩段：4a 每模組宣告區塊（§九清單全部，條文可先空），帶 `transitions` delta 的模組同 PR 加該模組的可達性案例（§四）；4b 條文回填，一模組一 PR，§十一有來源條文的模組全部回填後本步才算完成；`deploy`／`maintenance` 留「待實例」標記帶日期，第一張實例卡出現時回填（§十一）。⛔ 不另記總數
 5. README、ADOPTION 重寫
-6. 新 CLI `wf`（另一張 T3 卡；同 PR 加新 CLI 測試 job）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊，CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
+6. 新 CLI `wf`（另一張 T3 卡；同 PR 加新 CLI 測試 job）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊（另加 `core/handoff.md` 的 `json wf-module-sections` 與各模組 `yaml wf-module`，2026-09-06 補記），CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
 7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 核心值＋結案 delta「停止」＋已啟用模組的值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟全部動作可逆（關閉 issue、移出 Project、封存皆可逆；無硬刪）。
 
 停損：任一檔超過 §二上限 ⇒ 停下拆；`cli/src` 超過 3,000 行 ⇒ 停下重看分桶；第 6 步超過 3 輪查核 ⇒ 需求方裁定是否縮射程。三個數字都是設計值。

@@ -14,7 +14,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 | 動詞 | 輸入 | 硬擋（rc≠0，寫 `wf:reject`） | 印（rc=0） | 寫 |
 |---|---|---|---|---|
 | `open <issue> [--parent <card_id>]` | 清單項或撤銷卡的 issue 號；父卡ID | 不是清單項也不是撤銷卡、已在板上、JSON 鍵不合法、`--parent` 不存在（D2、D3、D4） | 缺欄清單（建卡必填欄）、鏈深（>2 印「上限 2」，2026-09-04 種子）、清單項留言數與未讀警示 | 卡面 JSON、Project 五欄、卡ID；撤銷卡復板沿用 `card_id`／`iteration` |
-| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標階段／狀態；派工時 actor；交回時 source_sha；裁定 URL | 卡面 JSON 解析失敗、轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D3、D1、D4） | 已啟用模組宣告的印項（住該模組 §1）；進終態前 PR 與分支狀態；缺 `--ruling`（撤銷、阻塞、停止、級別下修）；裁定留言無 `wf-return`／`wf-ruling` 區塊；裁定留言作者；`wf-ruling` 依 kind 的必要鍵缺；離開規劃時 `acceptance` 或 `verification` 空；T4 而 `grilling` 空；T2+ 而 `stage_plan` 缺規劃；`stage_plan` 空（合成表只有需求階段，離不開需求） | Project 五欄；`owner`／`branch`／`iteration`／`source_sha`／`blocked`；不論來源，進入執行／進行中即 `iteration` +1 且 `source_sha`=null；交回時寫 `--source-sha`；轉移記錄留言 `wf:move`；進終態即封存；已啟用模組宣告由 `move` 累加的欄（如 `escalation_count`） |
+| `move <card> --to <階段/狀態> [--actor A] [--source-sha SHA] [--ruling URL]` | 目標階段／狀態；派工時 actor；交回時 source_sha；裁定 URL | 卡面 JSON 解析失敗、轉移不在合成表內、終態出邊、`--source-sha` 不在遠端、已給的 `--ruling` URL 不存在（D3、D1、D4） | 已啟用模組 §0 `adds.move_prints` 列的印項（語意住該模組 §1）；進終態前 PR 與分支狀態；缺 `--ruling`（撤銷、阻塞、停止、級別下修）；裁定留言無 `wf-return`／`wf-ruling` 區塊；裁定留言作者；`wf-ruling` 依 kind 的必要鍵缺；離開規劃時 `acceptance` 或 `verification` 空；T4 而 `grilling` 空；T2+ 而 `stage_plan` 缺規劃；`stage_plan` 空（合成表只有需求階段，離不開需求） | Project 五欄；`owner`／`branch`／`iteration`／`source_sha`／`blocked`；不論來源，進入執行／進行中即 `iteration` +1 且 `source_sha`=null；交回時寫 `--source-sha`；轉移記錄留言 `wf:move`；進終態即封存；已啟用模組 §0 `adds.counters` 列的欄（`move --to */退回` 時 +1，進執行時歸零） |
 | `edit <card> --set <欄>=<值> [--ruling URL]` | 欄與值 | JSON 不合法、改 `card_id` 或 `source_issue`、`--set parent=` 指到不存在的卡、`--set source_sha=` 不在遠端、已給的 `--ruling` URL 不存在（D3、D4） | 無裁定連結；卡在審核階段；`--set parent=` 後的鏈深（>2 印「上限 2」，2026-09-04 種子） | JSON；`wf:edit` 留言（欄、原值 hash → 新值 hash）；規格欄變動 ⇒ `spec_version` +1；審核階段另貼 `edit during review` 留言 |
 | `notes <card> [--stage <階段>]` | — | 卡面 JSON 解析失敗（D3） | 一份編號清單（§3） | 無 |
 | `brief <card> --for executor\|reviewer\|closeout` | 角色 | 卡面 JSON 解析失敗（D3） | 派工單或裁定單的 CLI 段（`core/handoff.md`，含已啟用模組的段）；`--for reviewer` 另印分支頭 ≠ 來源 SHA、來源 SHA 未 push、`merge-tree` 衝突；`--for closeout` 另印 merge SHA 是否 main 祖先、CI 狀態；缺人填段；每段首行 `[來源: <來源>/<檔>#<節> · <name>：<when> · confirmed <日期>]`（`name`、`when` 取該檔 frontmatter），過期（`rule_confirm_days`）標 ⚠️ | 無；stdout 由 PM 貼進留言 |
@@ -37,7 +37,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 - CLI ⛔ 不產生統計數字、⛔ 不比對內容同義、⛔ 不判斷該不該。
 - 硬擋只落在寫壞資料（D1、D3）與指向不存在（D2、D4）；其餘一律印。
 - 缺陷的留痕走狀態面（卡面 JSON 與留言），⛔ 不另開 log。
-- 模組欄只由該模組條文指定的動詞寫；`move` 依模組條文累加的欄（如 `escalation_count`）⛔ 不由 `edit --set` 改。
+- 模組欄只由該模組條文指定的動詞寫；`adds.counters` 列的欄⛔ 不由 `edit --set` 改。
 
 ## 3 · notes 合成
 

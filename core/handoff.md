@@ -7,7 +7,7 @@ last_confirmed: 2026-09-06
 
 # 三份交接文件
 
-每段首行 `[來源: <來源>/<檔>#<節> · <name>：<when> · confirmed <日期>]`（`name`、`when` 取該檔 frontmatter）。CLI 段由 `brief` 從卡面 JSON、git、規則檔組；人填段只由該角色本人填；缺段印。
+每段首行 `[來源: <來源>/<檔>#<節> · <name>：<when> · confirmed <日期>]`（`name`、`when` 取該檔 frontmatter）。CLI 段由 `brief` 從卡面 JSON、Project 投影欄、git、規則檔組；人填段只由該角色本人填；缺段印。
 
 ## 1 · 派工單（PM → 執行者或查核者；`brief --for executor|reviewer`）
 
@@ -81,7 +81,7 @@ last_confirmed: 2026-09-06
   "core_pain_resolved": {"enum": ["yes", "no"]},
   "reason": {"type": "string"}},
  "$defs": {"module_return_sections": {
-   "research": {"measurement": {"label": "量測紀錄（可重跑）", "type": "string"}, "conclusion": {"label": "結論", "type": "string"}},
+   "research": {"measurement": {"label": "量測紀錄（可重跑）", "type": "string"}, "conclusion": {"label": "結論", "type": "object", "required": ["verdict"], "additionalProperties": false, "properties": {"verdict": {"enum": ["可判定", "不可判定"]}, "text": {"type": "string"}}}},
    "stat-redline": {"redlines": {"label": "紅線區塊（本卡的窗口與門檻）", "type": "array", "items": {"type": "string"}},
                     "adversarial_tests": {"label": "對抗性反測表（≥3 角度，各寫支持／推翻／未能檢定）", "type": "array", "items": {"type": "object", "required": ["angle", "result"], "additionalProperties": false, "properties": {"angle": {"type": "string"}, "result": {"enum": ["支持", "推翻", "未能檢定", "不適用"]}, "text": {"type": "string"}}}}},
    "pitfalls-13": {"pitfall_families": {"label": "13 族踩坑清冊（每族恰一行，已檢查／不適用／發現）", "type": "array", "items": {"type": "object", "required": ["family", "value"], "additionalProperties": false, "properties": {"family": {"type": "string"}, "value": {"enum": ["已檢查", "不適用", "發現"]}, "text": {"type": "string"}}}}},
@@ -90,14 +90,16 @@ last_confirmed: 2026-09-06
    "maintenance": {"run_status": {"label": "運行狀態（活著的證據）", "type": "string"}}}}}
 ```
 
-一則留言只有一個 `wf-return` 區塊。缺段（`review` 印，⛔ 不是 D3）：全級別＝`self_run`、`acceptance`；T2 以上另＝`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）；`role=reviewer` 另＝`review_result`、`core_pain_resolved`、`findings`；`role=executor` 另＝`mistakes`。CLI 只印 id 未覆蓋 `notes` 清單、`not_applicable`／`found` 而 text 空、`unverified.reason` 空，⛔ 不判內容。
+一則留言只有一個 `wf-return` 區塊。缺段（`review` 印，⛔ 不是 D3）：全級別＝`self_run`、`acceptance`；T2 以上另＝`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）；`role=reviewer` 另＝`review_result`、`core_pain_resolved`、`findings`；`role=executor` 另＝`mistakes`；已啟用模組的交回單段不分級別。CLI 只印 id 未覆蓋 `notes` 清單、`not_applicable`／`found` 而 text 空、`unverified.reason` 空、模組段內 `不適用`／`發現` 而 text 空，⛔ 不判內容。
+
+跨 iteration 閉環：iteration ≥2 的 `wf-return` 逐條重列前輪 finding 的原 `finding_id` 與新 `status`；`review` 只對無 `finding_id` 的 finding 編新 id，⛔ 不重編既有 id。
 
 ## 3 · 裁定單（PM → 需求方；`brief --for closeout` 或人手組）
 
 | 段 | 誰填 | 內容 |
 |---|---|---|
 | 留言時間序 | CLI | `wf-return` 留言的時間序、各輪退回理由與 findings |
-| 現況 | CLI | merge SHA、CI 狀態、四停下條件前三項（`status: open` 且 `blocking: true` 的 finding／CI 非綠／分支衝突） |
+| 現況 | CLI | merge SHA、CI 狀態、四停下條件前三項（同 `finding_id` 最後一則 `wf-return` 的 `status: open` 且 `blocking: true`／CI 非綠／分支衝突） |
 | 模組段 | 人（PM） | 已啟用模組宣告的裁定單段（§1 `wf-module-sections.closeout`）；無則不印 |
 | 類別 | 人（PM） | 恰一個：升級／停止／撤銷／級別變更／結案確認／其他 |
 | 各值證據 | 人（PM） | 四選一（換人／退回上一階段／停止／退回無效）各「若成立會是什麼證據」；只寫事實，⛔ 不含建議 |
