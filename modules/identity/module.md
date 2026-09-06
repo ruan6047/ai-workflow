@@ -2,7 +2,7 @@
 name: identity
 when: 多實體共用同一 GitHub 帳號
 non_scope: ⛔ 不寫代貼標記（住 core/naming.md §3）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-06
 ---
 
 # 模組 identity
@@ -25,7 +25,7 @@ last_confirmed: 2026-09-05
       "remove": []
     },
     "flags": [],
-    "notes": [],
+    "notes": ["F-identity-01"],
     "handoff_sections": [
       "身分三格（GitHub 帳號／session ID／訊息定位）"
     ]
@@ -37,8 +37,14 @@ last_confirmed: 2026-09-05
 
 ## 1 · 條文
 
-- 待第 4b 步回填（2026-09-05）；來源列＝00 §六；01#97；03#134；04#6。
+- 派工單與裁定單的撰寫者在「身分三格」段（§0 交接段，`brief` 印缺段）填 GitHub 帳號、session ID（transcript 檔名的 id）、該則訊息定位（uuid 或 timestamp）。
+- 交回單、裁決與清單提案的撰寫者在留言散文段填同三格。
+- PM 只判三格有沒有填；⛔ 不核對。
+- 三格內⛔ 不填模型名、⛔ 不填 AI 工具；模型名住派工單「實際模型」段與代貼首行（`core/naming.md` §3）。
+- 核對由需求方在本機 transcript 做。
 
 ## 2 · 注意事項
 
-- 待第 4b 步回填（2026-09-05）；id 形狀 `F-identity-NN`。
+- F-identity-01：換實體接手時三格重填；⛔ 不沿用前一實體的 session ID。
+
+→ [archive/rules-2026-09/templates/dispatch-package.md](../../archive/rules-2026-09/templates/dispatch-package.md)、[archive/rules-2026-09/templates/verdict.md](../../archive/rules-2026-09/templates/verdict.md)、[archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)
