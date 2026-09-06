@@ -58,7 +58,7 @@ last_confirmed: 2026-09-06
 - `escalation_count`＝本 iteration 內 `move --to */退回` 的次數，由 `move` 累加；進執行階段（iteration +1）與 升級 → 進行中 時歸零，⛔ 不由人手改。
 - 轉退回依核心轉移表（⑤ 不過）；規劃錯誤前提走 R1 不過的核心路徑，等待外部條件走阻塞，同 SHA 重複查核不收。
 - `escalation_count` 達 `params.escalate_after`（種子 3）時 `move` 印「達升級門檻」；PM 組裁定單（升級類）後 `move --to <同階段>/升級`。
-- 裁定單（升級類，`core/handoff.md` §3）由 PM 組，§0 宣告的交接段填：每次退回的 `wf-return` 留言 URL、blocking finding 的 `finding_class` 與 `root_cause_id`、逐字理由、核心痛點原文、四選一各值「若成立會是什麼證據」。
+- 裁定單（升級類，`core/ruling.md`）由 PM 組，§0 宣告的交接段填：每次退回的 `wf-return` 留言 URL、blocking finding 的 `finding_class` 與 `root_cause_id`、逐字理由、核心痛點原文、四選一各值「若成立會是什麼證據」。
 - 需求方以一則 `wf:ruling` 四選一裁定（換人／退回上一階段／停止／退回無效）；「改規格」⛔ 不是合法值，改規格走 R1 不過的核心路徑（`stage_plan` 含規劃→規劃／退回，否則→需求／退回）。
 - 換人或換級（能力層級升一級）時 PM `move --ruling <URL> --to <同階段>/進行中` 再派；退回無效亦回進行中，由執行者原樣交回再審。
 - 退回上一階段時 PM 先 `move --ruling <URL>` 回進行中，執行者交回後 PM 以 R1 不過走核心轉移表退回規劃或需求。

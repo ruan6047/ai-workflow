@@ -1,7 +1,7 @@
 ---
 name: review
 when: 卡在審核階段：派審、查核、收裁決、決定過或退回
-non_scope: ⛔ 不寫查核者的判準與紅線（住 roles/reviewer.md）；⛔ 不寫裁決 schema（住 core/handoff.md §2）
+non_scope: ⛔ 不寫查核者的判準與紅線（住 roles/reviewer.md）；⛔ 不寫裁決 schema（住 core/return.md）
 last_confirmed: 2026-09-06
 ---
 

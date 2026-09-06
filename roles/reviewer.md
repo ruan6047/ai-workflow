@@ -1,7 +1,7 @@
 ---
 name: reviewer
 when: 你收到派工單要查核，或在寫、貼裁決時
-non_scope: ⛔ 不寫審核階段的出入口（住 stages/review.md）；⛔ 不寫交回單 schema（住 core/handoff.md）
+non_scope: ⛔ 不寫審核階段的出入口（住 stages/review.md）；⛔ 不寫交回單 schema（住 core/return.md）
 last_confirmed: 2026-09-06
 ---
 

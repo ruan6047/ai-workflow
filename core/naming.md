@@ -1,7 +1,7 @@
 ---
 name: naming
 when: 配卡ID、開分支、命名檔案、寫留言首行時讀
-non_scope: ⛔ 不寫留言內容的規則（住 core/verbs.md、core/handoff.md）
+non_scope: ⛔ 不寫留言內容的規則（住 core/verbs.md、core/return.md、core/ruling.md）
 last_confirmed: 2026-09-05
 ---
 

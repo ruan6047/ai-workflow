@@ -16,7 +16,10 @@ core/                      定義檔（C8）。只放定義與機械語意，⛔
   tiers.md                 T0–T4 表、紅線域、能力層級判準、單向門、缺陷級別套用
   card-schema.md           卡面 fenced JSON 欄位集（JSON Schema 逐字）
   verbs.md                 七動詞：open / move / edit / notes / brief / review / snapshot
-  handoff.md               三份交接文件的段落表＋交回單 JSON schema
+  handoff.md               三份交接文件的共通規則與入口（2026-09-07 拆檔）
+  dispatch.md              派工單段落表
+  return.md                交回單段落表＋wf-return schema
+  ruling.md                裁定單段落表＋wf-ruling schema
   naming.md                卡ID、分支、檔名、留言標頭的命名規則
   params.md                設計值參數表（§十二），一列一參數：名、種子值、用在哪
   platform.md              平台委託五條 P1–P5（§三）：每條＝規則一句＋執行 artifact（ruleset 項目或 CI job 檔名）；ruleset 與 CI 只是它的執行面
@@ -180,13 +183,13 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 `core/verbs.md` 另有固定節「寫入契約」，內容來源＝K2（檢查先於首次遠端寫入、寫後回讀）、K3／C13（拒收留痕）、決策 1（只讀 fenced JSON）、第零條（不產生統計數字）；條文在填規則步驟寫，本檔只定節名與來源。
 
-## 八 · `core/handoff.md` 的內容（04 §範本欄位）
+## 八 · 三份交接文件的內容（04 §範本欄位；2026-09-07 拆為 `core/handoff.md` 共通規則＋`core/dispatch.md`／`core/return.md`／`core/ruling.md`）
 
 | 文件 | 誰→誰 | CLI 填 | 人填 |
 |---|---|---|---|
 | 派工單（每段首行 `[來源: …]`，決策 11） | PM→執行者或查核者 | 卡與身分、核心痛點、驗收逐條、非射程、merge-base SHA、前輪 findings、能力層級建議、注意事項編號清單、副作用入口清單 | 寫入授權、唯讀範圍、實際模型與偏離理由、未驗項（三分類）、本文件落差 |
 | 交回單 | 執行者或查核者→PM | 卡與身分、AC 條文、commit 清單、改動面（`finding_id` 由作者填，2026-09-07 補記） | self_run、逐 AC 做法／證據／falsifier、失誤登記或 findings 九欄、**未驗清單（三分類：驗不了／沒去驗／刻意不驗，各附原因）**、注意事項回應、範圍外發現、`review_result`／`core_pain_resolved`（查核者） |
-| 模組段（2026-09-06 補記） | 依 `core/handoff.md` | 交回單段型別住 wf-return schema `$defs/module_return_sections`；派工單／裁定單段歸屬住 `json wf-module-sections`；段名逐字＝模組 `adds.handoff_sections` | 依模組條文（2026-09-07 補記） |
+| 模組段（2026-09-06 補記） | 依 `core/dispatch.md`／`core/return.md`／`core/ruling.md` | 交回單段型別住 wf-return schema `$defs/module_return_sections`；派工單／裁定單段歸屬住 `json wf-module-sections`；段名逐字＝模組 `adds.handoff_sections` | 依模組條文（2026-09-07 補記） |
 | 裁定單 | PM→需求方 | 事件序（以 `wf-return` 留言的時間序推，CLI 不讀散文留言）、各輪退回理由與 findings（讀 `wf-return`）、merge SHA、CI、四停下條件前三項 | 類別（升級／停止／撤銷／級別變更／結案確認／其他）、四選一各值證據、復活條件、翻案把手、被繞過的閘門 |
 
 交回單各段的必填性依級別分兩檔：T0／T1 只要 `self_run` 與逐 AC 證據；T2 以上全段（形狀，流程順暢；來源 03#24、決策第零條三目標）。`brief --for executor` 與 `--for reviewer` 同時印一份交回單 JSON 樣板（id、AC 條文、注意事項 id 預填），人只填判斷欄。
@@ -257,7 +260,7 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 | 缺陷路徑 | 橫切：三條核心各一落點——無專屬卡種 → `core/card-schema.md`（單一形狀）；留痕走狀態面、不另開 log → `core/verbs.md` §寫入契約；未開卡走 commit trailer 下限 → `roles/conduct-common.md` §2。FIX 後綴屬命名洞 → `core/naming.md`。其餘分住 requirement／planning／implementation（03 §缺陷路徑） |
 | 需求方角色薄 | `roles/requester.md` §1（來源 03#133 38 66 81 84 137、01#3 4、02#5 68） |
 | 待審清單無形狀 | 形狀＝`.github/ISSUE_TEMPLATE/list-intake.yml` 的 `json wf-intake` 四欄（§一）；schema 住 `core/card-schema.md` §intake；讀它的動詞＝`open`（§七）；動詞集合固定於 §七 |
-| 交付報告 schema 散 | `core/handoff.md` |
+| 交付報告 schema 散 | `core/return.md` |
 | 一卡一分支無明文 | `core/naming.md`＋`core/verbs.md` move |
 | 資源宣告寫法 | `core/card-schema.md` resources 欄；文法在 db-contract／resource-lock |
 | 退回上一階段的條件 | `core/state-machine.md` 轉移表 R1 列＋`stages/review.md` §2 進入／離開條件 |
@@ -300,7 +303,7 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 | 退場（過期候選的處置） | `roles/pm.md` §4 | PM 減重 5 |
 | 守衛化的唯一入口與預設值 | `core/tiers.md` §紅線；`roles/requester.md` §1 | 需求方 2026-09-04 |
 | 零拒收硬擋的回看、注意事項正式化候選、規則檔 `last_confirmed` 過期 | 合成一次「需求方定期回看」，形狀＝一份回看清單（週期參數 `guard_review_period`）＋一則裁定留言；落點 `roles/pm.md` §4＋`roles/requester.md` §1 | C13、PM 減重 4、自審角度一 |
-| 回應三值與 `notes` 欄 schema | `core/handoff.md`、`core/card-schema.md` | §八、§六 |
+| 回應三值與 `notes` 欄 schema | `core/return.md`、`core/card-schema.md` | §八、§六 |
 
 ## 十三 · 填規則的順序與停損
 
@@ -311,7 +314,7 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 3. 五階段檔（研究住模組）
 4. `modules/` 分兩段：4a 每模組宣告區塊（§九清單全部，條文可先空），帶 `transitions` delta 的模組同 PR 加該模組的可達性案例（§四）；4b 條文回填，一模組一 PR，§十一有來源條文的模組全部回填後本步才算完成；`deploy`／`maintenance` 留「待實例」標記帶日期，第一張實例卡出現時回填（§十一）。⛔ 不另記總數
 5. README、ADOPTION 重寫
-6. 新 CLI `wf`（另一張 T3 卡；同 PR 加新 CLI 測試 job）。另收 04#145／00 H3 的「訊息由 CLI 組」：squash 訊息逐字記被審 SHA 與該輪查核結論，trailer 收成末端連續單一區塊。⚠️ 本步完成前，PM 手動 merge 的訊息沒有執行者——平台預設會把多則 commit 訊息串接而讓 trailer 被空行切散，違反 P5（2026-09-06 已連續發生 15 次）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md` 與 `core/handoff.md` 內的 fenced `json schema` 區塊（另加 `core/handoff.md` 的 `json wf-module-sections` 與各模組 `yaml wf-module`，2026-09-06 補記），CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
+6. 新 CLI `wf`（另一張 T3 卡；同 PR 加新 CLI 測試 job）。另收 04#145／00 H3 的「訊息由 CLI 組」：squash 訊息逐字記被審 SHA 與該輪查核結論，trailer 收成末端連續單一區塊。⚠️ 本步完成前，PM 手動 merge 的訊息沒有執行者——平台預設會把多則 commit 訊息串接而讓 trailer 被空行切散，違反 P5（2026-09-06 已連續發生 15 次）。形狀：三個目錄 `gh/`（GitHub 讀寫 adapter，唯一有網路的層）、`compose/`（notes／brief 的 DI 合成，只讀檔與 JSON）、`verbs/`（七個入口）。schema 的唯一居所＝`core/card-schema.md`、`core/return.md`、`core/ruling.md` 內的 fenced `json schema` 區塊（另加 `core/dispatch.md` 的 `json wf-module-sections` 與各模組 `yaml wf-module`，2026-09-06 補記；2026-09-07 拆檔），CLI 執行期直接讀取（決策 11：規則不住進程式碼），⛔ 不另存副本。測試策略：`gh/` 用錄放的 fake（fixture 為真實 API 回應）；`verbs/` 測轉移表與 D1–D4（schema 由 `core/` 讀入）；`compose/` 測輸出含每段來源標記；⛔ 不測內容判斷（沒有）。src 上限 3,000 行（不含測試）。
 7. aiwf 新 Project：五個欄位（階段＝單選 8 值、狀態＝單選 6 核心值＋結案 delta「停止」＋已啟用模組的值、級別＝單選 5 值、owner＝TEXT、卡ID＝TEXT）、兩個 view（活卡依階段分組、全部）、⛔ 不用 GitHub 內建 workflow 自動化；repo 端：ruleset 加 `required_linear_history`、關閉 merge 與 rebase 按鈕、`.wf/modules.json` 種子（modules: []、merge_method: squash、areas: [WF, CLI, DOC, OPS]）；舊卡關閉＋移出 #4；本步驟全部動作可逆（關閉 issue、移出 Project、封存皆可逆；無硬刪）。
 
 停損：任一檔超過 §二上限 ⇒ 停下拆；`cli/src` 超過 3,000 行 ⇒ 停下重看分桶；第 6 步超過 3 輪查核 ⇒ 需求方裁定是否縮射程。三個數字都是設計值。

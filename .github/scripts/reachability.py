@@ -59,13 +59,13 @@ def notes_errors(name: str, declared: list, body: str) -> list[str]:
     return errs
 
 
-HANDOFF = ROOT / "core/handoff.md"
+HANDOFF_FILES = [ROOT / "core/return.md", ROOT / "core/dispatch.md"]
 SCHEMA_BLOCK = re.compile(r"```json schema\n(.*?)```", re.S)
 SECTIONS_BLOCK = re.compile(r"```json wf-module-sections\n(.*?)```", re.S)
 
 
 def handoff_labels(text: str) -> tuple[dict[str, set[str]], dict[str, set[str]], list[str]]:
-    """core/handoff.md 內模組段名：交回單（wf-return $defs.module_return_sections 的 label）與派工單／裁定單（wf-module-sections）分開收。"""
+    """core/return.md 與 core/dispatch.md 內模組段名：交回單（wf-return $defs.module_return_sections 的 label）與派工單／裁定單（wf-module-sections）分開收。"""
     ret: dict[str, set[str]] = {}
     other: dict[str, set[str]] = {}
     errs: list[str] = []
@@ -91,14 +91,14 @@ def handoff_labels(text: str) -> tuple[dict[str, set[str]], dict[str, set[str]],
 
 
 def sections_errors(name: str, declared: list, ret: dict[str, set[str]], other: dict[str, set[str]]) -> list[str]:
-    """模組 adds.handoff_sections 與 handoff.md 段名的對帳：只比字串集合與歸屬，⛔ 不讀段內容。"""
+    """模組 adds.handoff_sections 與交接文件段名的對帳：只比字串集合與歸屬，⛔ 不讀段內容。"""
     want = set(declared)
     r, o = ret.get(name, set()), other.get(name, set())
     errs = []
     if want - (r | o):
-        errs.append(f"{name}: handoff_sections {sorted(want - (r | o))} 在 core/handoff.md 無對應段名")
+        errs.append(f"{name}: handoff_sections {sorted(want - (r | o))} 在交接文件無對應段名")
     if (r | o) - want:
-        errs.append(f"{name}: core/handoff.md 段名 {sorted((r | o) - want)} 未在模組宣告")
+        errs.append(f"{name}: 交接文件段名 {sorted((r | o) - want)} 未在模組宣告")
     if r & o:
         errs.append(f"{name}: 段名 {sorted(r & o)} 同時在交回單與派工單／裁定單")
     return errs
@@ -122,12 +122,12 @@ def module_cases(delta_mods: list[dict]) -> list[tuple[str, list[dict]]]:
 
 
 def orphan_errors(ret: dict[str, set[str]], other: dict[str, set[str]], names: set[str]) -> list[str]:
-    """core/handoff.md 提到、但 modules/ 沒有的模組名。"""
-    return [f"core/handoff.md 段名指向不存在的模組 {m}" for m in sorted((set(ret) | set(other)) - names)]
+    """交接文件提到、但 modules/ 沒有的模組名。"""
+    return [f"交接文件段名指向不存在的模組 {m}" for m in sorted((set(ret) | set(other)) - names)]
 
 
 def check_module_sections() -> list[str]:
-    ret, other, errs = handoff_labels(HANDOFF.read_text(encoding="utf-8"))
+    ret, other, errs = handoff_labels("\n".join(f.read_text(encoding="utf-8") for f in HANDOFF_FILES))
     names: set[str] = set()
     for f in sorted(glob.glob(str(ROOT / "modules/*/module.md"))):
         m = MODBLOCK.search(Path(f).read_text(encoding="utf-8"))
