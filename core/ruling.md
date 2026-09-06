@@ -11,7 +11,7 @@ last_confirmed: 2026-09-07
 |---|---|---|
 | 留言時間序 | CLI | `wf-return` 留言的時間序、各輪退回理由與 findings |
 | 現況 | CLI | merge SHA、CI 狀態、四停下條件前三項（同 `finding_id` 最後一則 `wf-return` 的 `status: open` 且 `blocking: true`／CI 非綠／分支衝突） |
-| 模組段 | 人（PM） | 已啟用模組宣告的裁定單段（§1 `wf-module-sections.closeout`）；無則不印 |
+| 模組段 | 人（PM） | 已啟用模組宣告的裁定單段（`core/dispatch.md` 的 `wf-module-sections.closeout`）；無則不印 |
 | 類別 | 人（PM） | 恰一個：升級／停止／撤銷／級別變更／結案確認／其他 |
 | 各值證據 | 人（PM） | 四選一（換人／退回上一階段／停止／退回無效）各「若成立會是什麼證據」；只寫事實，⛔ 不含建議 |
 | 復活條件、翻案把手 | 人（PM） | 停止類必填；翻案把手須可跑（`git revert <merge SHA>`），寫不出即逐字「無把手」＋原因 |
