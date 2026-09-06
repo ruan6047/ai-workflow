@@ -2,7 +2,7 @@
 name: snapshot
 when: 狀態面在 GitHub 上：每日離線稽核副本
 non_scope: ⛔ 不寫 snapshot 動詞的語意（住 core/verbs.md）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-06
 ---
 
 # 模組 snapshot
@@ -25,7 +25,7 @@ last_confirmed: 2026-09-05
       "remove": []
     },
     "flags": [],
-    "notes": [],
+    "notes": ["F-snapshot-01", "F-snapshot-02"],
     "handoff_sections": []
   },
   "project_inputs": [],
@@ -37,8 +37,13 @@ last_confirmed: 2026-09-05
 
 ## 1 · 條文
 
-- 待第 4b 步回填（2026-09-05）；來源列＝00 §六；02#53；04#122。
+- `snapshot` 依 `params.schedule`（種子 daily）由排程或 PM 手動跑，輸出本機 JSON＋Markdown（`core/verbs.md`），commit 到專案層指定的快照分支作離線稽核副本。
+- 事後對帳、盤點分母與 `last_cited` 以快照分支為準；Issue timeline ⛔ 不當嚴格不可覆寫的 store。
+- 快照只讀狀態面；⛔ 不寫回、⛔ 不改卡面。
 
 ## 2 · 注意事項
 
-- 待第 4b 步回填（2026-09-05）；id 形狀 `F-snapshot-NN`。
+- F-snapshot-01：對帳⛔ 不以 `gh project item-list` 的即時輸出為準（自訂欄位可回空）。
+- F-snapshot-02：快照 commit 訊息帶時間戳與卡數；⛔ 不手改快照檔。
+
+→ [archive/rules-2026-09/templates/control-plane-contract.md](../../archive/rules-2026-09/templates/control-plane-contract.md)、[archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)
