@@ -113,6 +113,9 @@
 - **統計結果解讀通則的居所**（需求方 2026-09-06 甲案）：04#138「第 7、9、10 條適用所有研究結論，不限紅線卡」與決策 4「條件不成立就不存在」衝突；裁定三條通則落 `roles/executor.md` §4（執行者下結論、查核者判紅線與反測結果時皆適用，查核者檔以指向句引用）；`modules/stat-redline` 第 4b 回填時保留紅線卡的具體化版本並指向；骨架 §九 表下同步註記。
 - **模組注意事項 id 與宣告對帳**（需求方 2026-09-06 授權 PM 裁定）：模組注意事項 id 依 `core/naming.md` 為 `F-<模組名>-NN`，骨架 §九範例 `F-resource-01` 為筆誤，改為 `F-resource-lock-01`；`adds.notes` 與 §2 條列的 id 集合、順序、前綴由 reachability job 對帳（只比 id，⛔ 不讀條文內容；量測：#261 帶 `notes: []` 通過跨實體審與 sign-off）。
 - **詞表限定字樣第二次清理**（需求方 2026-09-06 授權 PM 裁定，四輪研究）：與三軸名、缺陷同一處理，⛔ 不刪條目、⛔ 不改 pitfalls-13 的族名與三值字面。守衛、閘門加「作為硬擋的同義」；已檢查加「作為回應三值的第一值」並新增「13 族三值」列反向禁用 followed／not_applicable／found；不可逆加「作為單向門的同義」；踩坑加「作為動詞名」、踩坑清冊加「作為注意事項的同義」；scope 加「作為驗收條件的同義」；invalid 加「作為拒收類別名」；正確性加「作為完整性的同義」。骨架 §四與 research §0 的「結案報告」改為詞表字面「裁定單」。量測（2026-09-06；語料＝core／roles／stages／modules 全部 .md 含 frontmatter、排除 glossary 自身；禁用詞取 main 4763eaf 起的詞表、剝去限定後的純中文詞）：62 個純中文禁用詞命中 72 次，65 次落在已帶限定的條目且皆合法，7 次落在無限定條目、詞＝不可逆／已檢查／正確性／踩坑／踩坑清冊。
+- **模組段合成進交回單**（需求方 2026-09-06 裁定，研究四輪）：`core/handoff.md` 加 `$defs/module_return_sections/<模組名>`，型別居所在 core、宣告留模組（與 `card-schema` `$defs/module_fields` 同型）；派工單與裁定單的模組段歸屬住 `json wf-module-sections`；段名逐字＝模組 `adds.handoff_sections`，由 reachability job 對帳字串集合，⛔ 不讀內容。
+- **`move` 的模組通道**（需求方 2026-09-06 裁定）：`core/verbs.md` `move` 的印欄與寫欄各開「已啟用模組宣告」一項（骨架 §九、§十一逐字「計數由 `move` 做」的落實）；模組欄只由該模組條文指定的動詞寫。
+- **finding 八欄→九欄**（需求方 2026-09-06 裁定）：加必填 `status` enum open／resolved／withdrawn（舊制 04#99 的狀態欄，落 core 而非 escalation 模組，因 `roles/reviewer.md`、`stages/closeout.md`、`core/handoff.md` §3 三條核心條文已引用）；⛔ 不加 `accepted`（其 writer 是內容判讀）。骨架 §八「findings 八欄」同步改九欄。
 
 ## 待骨架文件決定（本紀錄⛔ 不裁）
 
