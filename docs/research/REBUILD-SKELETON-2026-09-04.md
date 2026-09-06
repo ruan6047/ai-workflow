@@ -113,13 +113,13 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段／待確認 | 同階段／退回 | ⑤ 不過（R2–R4）；審核階段 `--ruling` 種類＝`wf-return`，結案階段＝`wf-ruling`（缺即印） |
 | 任一階段／待確認 | 規劃或需求／退回 | ⑤ R1 不過（S10）；`stage_plan` 含規劃→規劃／退回，否則→需求／退回（合成表按該卡 `stage_plan` 展開，不存在的階段沒有邊） |
 | 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1、`source_sha` 清為 null（S7）；同一 iteration 第 3 次退回的預設處置＝換人，需求方可否決（PM 減重 4）；條文住 `roles/pm.md` §4 |
-| 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 寫 `blocked.from`；`--ruling` 種類＝`wf-ruling` kind=block，缺留言或缺鍵皆印 |
+| 任一非終態（記法 `<非終態>`；核心四值＋模組加的狀態，2026-09-07 補記） | 阻塞 | 寫 `blocked.from`；`--ruling` 種類＝`wf-ruling` kind=block，缺留言或缺鍵皆印 |
 | 阻塞 | from（必為非終態） | 解除 |
 | 最後一個階段／待確認 | 結案／待確認 | 裁定單（結案確認） |
 | 結案／退回 | 結案／待確認 | 補驗後重交裁定單 |
 | 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling` kind=stop（缺留言或缺鍵皆印）；兩者皆封存 |
 
-**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`，可帶機械鍵 `if`（`plan_has:<階段>`／`plan_lacks:<階段>`，展開時裁邊）；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試矩陣隨被測物累加：第 1 步只有「無模組」；第 4 步每個帶 delta 的模組進 repo 的同一 PR 加「該模組單獨啟用」，最後一個模組的 PR 再加「全部啟用」；每個案例涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。
+**模組 delta 格式**：模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`，可帶機械鍵 `if`（`plan_has:<階段>`／`plan_lacks:<階段>`，展開時裁邊）；合成＝核心 ∪ add − remove；CI 跑可達性測試（01#57 保留為測試要求），測試矩陣隨被測物累加：第 1 步只有「無模組」；第 4 步每個帶 delta 的模組進 repo 的同一 PR 加「該模組單獨啟用」，最後一個模組的 PR 再加「全部啟用」；每個案例涵蓋 `stage_plan` 的全部合法值；測試斷言兩件：每個非終態有出邊且可達結案；完成與停止的出邊集合為空。另印從 `initial` 正向走不到的節點，⛔ 不擋（2026-09-07 補記）。
 
 ## 五 · `core/tiers.md` 的內容
 

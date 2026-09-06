@@ -239,6 +239,12 @@ def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
             sys.exit(f"⛔ 未知的 if 運算子：{cond}")
         return (stage in plan) if op == "plan_has" else (stage not in plan)
 
+    def from_states(tok: str, stage: str) -> list[str]:
+        """`<非終態>`＝該階段值域內除終態與 阻塞 外的每個狀態，含模組加的狀態。"""
+        if tok == "<非終態>":
+            return [s for s in states_of(sm, stage) if s not in sm["terminal"] and s != "阻塞"]
+        return tok.split("|")
+
     for t in sm["transitions"]:
         f, to = t["from"], t["to"]
         if not holds(t.get("if")):
@@ -248,7 +254,7 @@ def expand(sm: dict, plan: list[str]) -> dict[str, set[str]]:
             continue
         f_stage, f_states = f.split("/", 1)
         for fs in from_stages(f_stage):
-            for st in f_states.split("|"):
+            for st in from_states(f_states, fs):
                 if st not in states_of(sm, fs):
                     continue
                 t_stage_tok, t_state = to.split("/", 1) if to != "清單" else ("清單", "")
@@ -287,6 +293,20 @@ def universe(sm: dict, plan: list[str]) -> set[str]:
     return nodes
 
 
+def unreachable(sm: dict, plan: list[str]) -> list[str]:
+    """從 initial 正向走不到的節點；印用，⛔ 不擋（core/state-machine.md §5）。"""
+    edges = expand(sm, plan)
+    seen: set[str] = set()
+    stack = [sm["initial"]]
+    while stack:
+        n = stack.pop()
+        if n in seen:
+            continue
+        seen.add(n)
+        stack.extend(edges.get(n, ()))
+    return sorted(universe(sm, plan) - seen)
+
+
 def check(sm: dict, plan: list[str]) -> list[str]:
     edges = expand(sm, plan)
     terminal = {f"結案/{s}" for s in sm["terminal"]}
@@ -319,7 +339,13 @@ def check(sm: dict, plan: list[str]) -> list[str]:
 
 
 def selftest(sm: dict) -> int:
-    """負控四件：砍終態邊；終態帶出邊；孤立非終態；只有阻塞往返的狀態。皆必 FAIL。"""
+    """負控四件：砍終態邊；終態帶出邊；孤立非終態；只有阻塞往返的狀態。皆必 FAIL。
+
+    孤立狀態的診斷分類隨正式表而變——`**/<非終態>` 在時每個非終態都帶進阻塞出邊，落「不可達結案」；
+    改回四值枚舉時模組狀態落「無出邊」。負控只驗 `check()` 有沒有捕捉到該節點，⛔ 不釘死是哪一種診斷，
+    否則正式表的正向可達會經 `--selftest` 的 rc 間接擋 merge（Codex #283 R1-01 第 2 輪，2026-09-07）。
+    「無出邊」仍活於阻塞節點與清單（砍解除邊 14 條、砍清單出邊 1 條，實測）。
+    """
     import copy
     plan = [s for s in sm["stages"] if s in sm["required_stages"]]
     bad = 0
@@ -331,7 +357,7 @@ def selftest(sm: dict) -> int:
     e2 = check(b2, plan); ok2 = any(e.startswith("終態 結案/停止 有出邊") for e in e2)
     b3 = copy.deepcopy(sm)
     b3["states"] = b3["states"] + ["孤立"]
-    e3 = check(b3, plan); ok3 = any("非終態 需求/孤立 無出邊" in e for e in e3)
+    e3 = check(b3, plan); ok3 = any(e.startswith("非終態 需求/孤立 ") for e in e3)
     # 只有 阻塞 往返、無其他出邊的狀態：必 FAIL（第 1 步審核 R3-01 的假陽性）
     b4 = copy.deepcopy(sm)
     b4["states"] = b4["states"] + ["孤島"]
@@ -347,13 +373,24 @@ def selftest(sm: dict) -> int:
     bad += not (ok5 and ok6)
     # 模組負控：模組加的狀態只有進邊沒有出邊，必 FAIL；正控：research 的 不可判定 節點確實進了定義集合
     fake = {"name": "fake", "adds": {"states": ["孤模"], "transitions": {"add": [{"from": "執行/待確認", "to": "執行/孤模", "condition": "負控"}], "remove": []}}}
-    e7 = check(compose(sm, [fake]), plan); ok7 = any("非終態 執行/孤模 無出邊" in e for e in e7)
+    e7 = check(compose(sm, [fake]), plan); ok7 = any(e.startswith("非終態 執行/孤模 ") for e in e7)
     research = next((m for m in load_modules() if m["name"] == "research"), None)
     rplan = [s for s in sm["stages"] if s in sm["required_stages"] or s == "研究"]
     ok8 = bool(research) and "研究/不可判定" in universe(compose(sm, [research]), rplan) and not check(compose(sm, [research]), rplan)
     print(f"selftest_module_state_without_exit: {'PASS' if ok7 else 'FAIL'}")
     print(f"selftest_module_state_in_universe: {'PASS' if ok8 else 'FAIL'}")
     bad += (not ok7) + (not ok8)
+    # 負控：進阻塞邊改回四值枚舉，模組加的阻塞節點從 initial 走不到（2026-09-07 實測 384 個）
+    b8 = copy.deepcopy(sm)
+    for tr in b8["transitions"]:
+        if tr["from"] == "**/<非終態>":
+            tr["from"] = "**/待辦|進行中|待確認|退回"
+    # 只驗偵測能力（`roles/conduct-common.md` §1 附負控輸出），⛔ 不斷言正式表——
+    # 正式表的正向可達由 main() 的印承載（19 個系統性突變實測：印捕捉 10、本負控的正式表半唯一捕捉 0）
+    ok9 = (bool(research)
+           and unreachable(compose(b8, [research]), rplan) == ["研究/阻塞←不可判定"])
+    print(f"selftest_blocked_from_covers_module_states: {'PASS' if ok9 else 'FAIL'}（負控 1 條）")
+    bad += not ok9
     for name, ok, errs in (("broken_terminal_edges", ok1, e1), ("terminal_with_outedge", ok2, e2), ("isolated_nonterminal", ok3, e3), ("blocked_loop_only", ok4, e4)):
         print(f"selftest_{name}: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
         bad += not ok
@@ -416,21 +453,28 @@ def main() -> int:
         stages = m.get("adds", {}).get("stages", [])
         return all(st in plan for st in stages)  # 卡級模組只在含該階段的計畫上存在
 
+    unreach = 0
     for label, ms in cases:
-        n = f = 0
+        n = f = u = 0
         for plan in plans:
             active = [m for m in ms if enabled(m, plan)]
-            errs = check(compose(sm, active), plan)
+            composed = compose(sm, active)
+            errs = check(composed, plan)
             n += 1
             if errs:
                 f += 1
                 print(f"FAIL [{label}] {'→'.join(plan)}")
                 for e in errs:
                     print(f"  ⛔ {e}")
-        print(f"[{label}] stage_plan 案例：{n}，失敗 {f}")
+            miss = unreachable(composed, plan)
+            u += len(miss)
+            for m in miss:
+                print(f"  ⚠️ [{label}] {'→'.join(plan)}：{m} 從 initial 走不到")
+        print(f"[{label}] stage_plan 案例：{n}，失敗 {f}，不可達節點 {u}")
         total += n
         bad += f
-    print(f"合計 {total} 案例，失敗 {bad}；模組 delta {len(delta_mods)} 個")
+        unreach += u
+    print(f"合計 {total} 案例，失敗 {bad}；模組 delta {len(delta_mods)} 個；不可達節點 {unreach}（印，⛔ 不擋）")
     return 1 if (bad or note_errs) else 0
 
 
