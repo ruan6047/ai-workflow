@@ -2,7 +2,7 @@
 name: pitfalls-13
 when: 專案啟用 13 族踩坑清冊
 non_scope: ⛔ 不寫核心注意事項（住 core/verbs.md §3）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-06
 ---
 
 # 模組 pitfalls-13
@@ -25,7 +25,7 @@ last_confirmed: 2026-09-05
       "remove": []
     },
     "flags": [],
-    "notes": [],
+    "notes": ["F-pitfalls-13-01"],
     "handoff_sections": [
       "13 族踩坑清冊（每族恰一行，已檢查／不適用／發現）"
     ]
@@ -37,8 +37,20 @@ last_confirmed: 2026-09-05
 
 ## 1 · 條文
 
-- 待第 4b 步回填（2026-09-05）；來源列＝00 §六；02#100–104；03#138；04#17。
+- `notes` 在編號清單後附 13 族樣板（§0 交接段），分兩層印：全階段層每階段都印，執行層只在執行階段加印。
+- 把 `宣稱超過證據`、`列舉或覆蓋不完整` 與尚無實測階段的 `交付未落地或未接線`、`文件與現實漂移`、`狀態轉移或生命週期`、`可重現性不足`、`並發或時序不安全`、`資源或寫入集宣告` 列在全階段層。
+- 把 `守衛涵蓋不足或可被繞過`、`身分或歸屬對應錯誤`、`程序或規格照字面不成立`、`留痕失真或遺失`、`解析或正規化錯誤` 列在執行層。
+- 族名以 archive/issues/130 結案留言的 13 個字串為準；⛔ 不改字、⛔ 不自造族。
+- 無實測階段的族留在全階段層；下放到某階段須需求方裁定。
+- 在交回單的 13 族段每族寫恰一行，值只取 `已檢查`／`不適用`／`發現` 之一。
+- 離開階段前交齊交回單的 13 族段（`core/handoff.md` §2 `$defs/module_return_sections`）；`review` 印缺段，⛔ 不判內容。
+- 13 族三值與回應三值（followed／not_applicable／found）⛔ 不互代。
+- 新族只由 finding 的 `root_cause_id` 歸併、或需求階段由需求方與 PM 供給並指名維護者；⛔ 不由執行者自增。
+- 同一 repo 既有解法的索引由 PM 寫進專案層 `.wf/stages/<階段>.md`，隨 P- 注意事項印（`core/verbs.md` §3）；⛔ 不由 CLI 產生。
+- ⛔ 不設每階段族數上限。
 
 ## 2 · 注意事項
 
-- 待第 4b 步回填（2026-09-05）；id 形狀 `F-pitfalls-13-NN`。
+- F-pitfalls-13-01：`已檢查` 裸寫，說明進 evidence；⛔ 不升成 `發現`、⛔ 不加敘述。
+
+→ [archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)、[archive/rules-2026-09/templates/delivery-report.md](../../archive/rules-2026-09/templates/delivery-report.md)、[archive/issues/130.md](../../archive/issues/130.md)
