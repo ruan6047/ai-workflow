@@ -26,7 +26,7 @@ last_confirmed: 2026-09-06
 | 寫入授權、唯讀範圍 | 人（PM） | 逐條列出；其餘唯讀 |
 | 未驗項 | 人（PM） | PM 已知未驗，三分類各附原因 |
 | 本文件落差 | 人（PM） | 無則逐字「無」 |
-| 模組段 | CLI | 已啟用模組宣告的派工單段（下方 `wf-module-sections.brief`），段名逐字＝該模組 `adds.handoff_sections`；無則不印 |
+| 模組段 | 依模組條文 | 已啟用模組宣告的派工單段（下方 `wf-module-sections.brief`），段名逐字＝該模組 `adds.handoff_sections`；無則不印 |
 
 模組段歸屬（段名逐字＝各模組 `adds.handoff_sections`；CI 對帳字串集合，⛔ 不讀內容）：
 

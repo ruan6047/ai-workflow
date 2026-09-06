@@ -32,7 +32,7 @@ last_confirmed: 2026-09-05
   "service_goal": {"type": "string"},
   "parent": {"type": ["string", "null"]},
   "blocked": {"type": ["object", "null"], "required": ["from", "ruling"], "additionalProperties": false,
-              "properties": {"from": {"$ref": "#/$defs/nonterminal"}, "ruling": {"type": "string", "format": "uri"}}},
+              "properties": {"from": {"$ref": "#/$defs/nonterminal"}, "ruling": {"type": ["string", "null"], "format": "uri"}}},
   "grilling": {"type": ["string", "null"], "format": "uri"},
   "tier": {"enum": ["T0", "T1", "T2", "T3", "T4", null]},
   "tier_basis": {"type": ["object", "null"], "required": ["sensitive", "recoverable", "blast"], "additionalProperties": false,
