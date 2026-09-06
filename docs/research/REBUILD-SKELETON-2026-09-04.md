@@ -112,7 +112,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 | 任一階段（結案除外）／退回 | 同階段／進行中 | 再派；進執行時 iteration +1、`source_sha` 清為 null（S7）；同一 iteration 第 3 次退回的預設處置＝換人，需求方可否決（PM 減重 4）；條文住 `roles/pm.md` §4 |
 | 任一非終態（待辦／進行中／待確認／退回） | 阻塞 | 寫 `blocked.from`；`--ruling` 種類＝`wf-ruling` kind=block，缺留言或缺鍵皆印 |
 | 阻塞 | from（必為非終態） | 解除 |
-| 最後一個階段／待確認 | 結案／待確認 | 裁定單（結案確認類） |
+| 最後一個階段／待確認 | 結案／待確認 | 裁定單（結案確認） |
 | 結案／退回 | 結案／待確認 | 補驗後重交裁定單 |
 | 結案／待確認 | 完成 或 停止（結案階段 delta） | 完成：印 PR 與分支狀態；停止：`--ruling` 種類＝`wf-ruling` kind=stop（缺留言或缺鍵皆印）；兩者皆封存 |
 
@@ -358,11 +358,11 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 實體、家族 | 跑角色的 session／模型家族 | instance |
 | 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境） |
 | 紅線 | 至少 T3 的變更域 | 高風險 |
-| 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | scope、AC |
+| 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | scope（作為驗收條件的同義）、AC |
 | 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | backlog、inbox、待辦池 |
 | 規格、規格欄 | 卡面會使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources`（C11）；核心痛點另受裁定連結約束，不在此列 | 需求文件、spec |
 | 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | guard |
-| 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性 |
+| 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性（作為完整性的同義） |
 | finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷（作為 finding 的同義）、bug |
 | 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種（§五 缺陷套用表、§十一 缺陷路徑） | bug（作為卡種）、BUG- 前綴 |
 | 合成表 | 核心轉移表 ∪ 已啟用模組 add − remove，再按該卡 `stage_plan` 展開 | 狀態表、workflow 圖 |
@@ -373,10 +373,10 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | 封存、撤銷、停止 | 三個離開動作 | — |
 | 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
 | 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
-| 七動詞 open／move／edit／notes／brief／review／snapshot | CLI 的全部入口 | amend、改卡、handoff、assign、pitfalls、踩坑、verdict（作為動詞） |
+| 七動詞 open／move／edit／notes／brief／review／snapshot | CLI 的全部入口 | amend、改卡、handoff、assign、pitfalls、踩坑（作為動詞名）、verdict（作為動詞） |
 | 未驗清單三分類 cannot／skipped／deferred | 驗不了／沒去驗／刻意不驗 | 未驗（裸列）、TODO |
 | 回應三值 followed／not_applicable／found | 已遵循／不適用／發現 | 已檢查（作為回應三值的第一值）、已遵守、N/A |
-| 13 族三值 | 已檢查／不適用／發現，pitfalls-13 專用 | followed／not_applicable／found（作為 13 族三值） |
+| 13 族三值 | 已檢查／不適用／發現；13 族踩坑清冊（每族恰一行）的值，後兩值與回應三值同字，以所在段判屬 | followed／not_applicable／found（作為 13 族三值） |
 | 投影欄（5）：階段／狀態／級別／owner／卡ID | Project 上由 CLI 回寫的欄 | 看板欄位、Ledger 欄 |
 | db_scope | 卡對資料庫的變更範圍 enum none／read／write／schema／data-migration；後兩者連動 T4 | db_permission、資料庫權限 |
 | trailer | commit 訊息末端連續的結構化標籤區塊（Requested-by、Planned-by、Implemented-by、Reviewed-by） | footer、git-tag |
@@ -398,9 +398,9 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | SHA 四種：被審／來源／合併基底／合併 | 被審＝代貼裁決首行所記、查核者讀到的 commit；來源＝卡面 `source_sha`，交回時的分支頭；合併基底＝派工單的 merge-base；合併＝結案時 main 上的 merge commit | 目標 SHA、HEAD（作為名詞） |
 | 獨立查核 | 查核者實體不同於本 iteration 執行者實體（P2） | 第二雙眼、peer review |
 | 拒收（事件） | CLI rc≠0 並寫一則 `wf:reject` 留言的那次事件；作為硬擋類別名仍禁用 | reject（作為類別名） |
-| 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 驗證失敗、invalid |
+| 寫壞資料、指向不存在 | CLI 拒收的僅有兩類：D1／D3 與 D2／D4 | 驗證失敗、invalid（作為拒收類別名） |
 | 質詢（grilling） | T4 卡離開規劃前需求方與 PM 逐題定案的對話紀錄，落 `wf:log`，卡面 `grilling` 指向 | code review |
-| 單向門 | 級別只升不降的門檻：降級需裁定（`core/tiers.md` §單向門） | 不可逆、one-way |
+| 單向門 | 級別只升不降的門檻：降級需裁定（`core/tiers.md` §單向門） | 不可逆（作為單向門的同義）、one-way |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | merge 策略、合併策略 |
 | 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 寫入規則、transaction |
 | 副作用入口 | 派工單列的、改動會外溢的檔或設定清單 | blast list |
