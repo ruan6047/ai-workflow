@@ -40,5 +40,8 @@ last_confirmed: 2026-09-05
 - F-執行者-05：先量母體再下結論；不窮舉時說出母體多大、掃了多少，紅數是下界。
 - F-執行者-06：證不出來⛔ 不寫成沒有。
 - F-執行者-07：不擅自升級鎖定依賴；⛔ 不用「應該可以」交付。
+- F-執行者-08：小樣本子群只列揭露、⛔ 不作支持證據；整個子群樣本不足時判「樣本不足以判定」，⛔ 不判不符合。
+- F-執行者-09：母體數字標資料截止時點，⛔ 不凍結數字、⛔ 不把母體漂移讀成缺陷；因管線落後或母體增長而翻面的判定記「不具證據等級」，⛔ 不記為模型失敗。
+- F-執行者-10：少數離群個案先個案查證（資料錯誤／特殊情況／資料缺失；官方紀錄、新聞定性佐證、人工審核）再計入整體結論，⛔ 不直接判整體不符合。
 
-→ [archive/rules-2026-09/stage-rules/executor-conduct.md](../archive/rules-2026-09/stage-rules/executor-conduct.md)、[archive/rules-2026-09/stage-rules/implementation.md](../archive/rules-2026-09/stage-rules/implementation.md)、[archive/issues/023.md](../archive/issues/023.md)、[archive/issues/165.md](../archive/issues/165.md)
+→ [archive/rules-2026-09/stage-rules/executor-conduct.md](../archive/rules-2026-09/stage-rules/executor-conduct.md)、[archive/rules-2026-09/templates/statistical-redline.md](../archive/rules-2026-09/templates/statistical-redline.md)、[archive/rules-2026-09/stage-rules/implementation.md](../archive/rules-2026-09/stage-rules/implementation.md)、[archive/issues/023.md](../archive/issues/023.md)、[archive/issues/165.md](../archive/issues/165.md)
