@@ -351,13 +351,13 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 
 | 詞 | 涵蓋 | 禁用同義詞 |
 |---|---|---|
-| 卡、清單項、撤銷卡 | 卡＝在板 issue；清單項＝不在板且無 `wf-card` 區塊的 issue（無卡ID）；撤銷卡＝不在板但帶 `wf-card` 區塊的 issue（保留卡ID，`open` 可復板） | Backlog、task |
+| 卡、清單項、撤銷卡 | 卡＝在板 issue；清單項＝不在板且無 `wf-card` 區塊的 issue（無卡ID）；撤銷卡＝不在板但帶 `wf-card` 區塊的 issue（保留卡ID，`open` 可復板） | task |
 | 階段（8） | 需求…結案 | phase、gate |
 | 狀態（核心 5＋阻塞；模組加值） | 待辦…退回、阻塞、停止、升級、不可判定、運行中 | 交付狀態、部署狀態、Status |
 | 轉移、轉移記錄 | `move` 的一次寫入與其留言 | event、handoff |
-| iteration | 卡進入執行階段的次數 | 輪次、round |
-| 查核輪 R1–R4 | 前提／射程／內容／影響面 | 輪次、pass |
-| 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源 | 踩坑清冊（作為注意事項的同義）、層（作為來源） |
+| iteration | 卡進入執行階段的次數；不是輪次 | round |
+| 查核輪 R1–R4 | 前提／射程／內容／影響面；不是輪次 | pass |
+| 注意事項、加嚴層級 F-／P-／T- | 一份清單、四個來源；不是層 | 踩坑清冊（作為注意事項的同義） |
 | 硬擋、印、語意 | 機械側三類行為 | 守衛（作為硬擋的同義）、閘門（作為硬擋的同義）、偵測器、拒收（作為類別名） |
 | 模組、啟用條件 | opt-in 機制與其條件 | plugin、功能旗標 |
 | 裁定、裁決 | 需求方的決定／查核者的結論，皆為留言 | sign-off（除 T4 外） |
@@ -367,12 +367,12 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 | 級別 T0–T4、能力層級 | 風險軸／模型能力軸 | tier（中文語境） |
 | 紅線 | 至少 T3 的變更域 | 高風險 |
 | 核心痛點、驗收條件、非射程、服務的原始目標 | 卡面四個判準欄 | scope（作為驗收條件的同義）、AC |
-| 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | backlog、inbox、待辦池 |
+| 待審清單 | 不在板、無 `wf-card` 區塊、帶 `wf-intake` 的 issue 集合；`open` 的唯一入口 | Backlog、inbox、待辦池 |
 | 規格、規格欄 | 卡面會使 `spec_version` +1 的四欄：`acceptance`／`verification`／`non_scope`／`resources`（C11）；核心痛點另受裁定連結約束，不在此列 | 需求文件、spec |
 | 資料有效性、平台委託 | 硬擋的兩類來源：D1–D4／P1–P5 | guard |
 | 完整性 | 必要欄或必要段齊不齊；CLI 只驗齊不齊，齊了對不對交人判 | 正確性（作為完整性的同義） |
 | finding | 查核者交回單裡一條有 id、severity、blocking、attribution 的問題 | issue（與 GitHub issue 衝突）、缺陷（作為 finding 的同義）、bug |
-| 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種（§五 缺陷套用表、§十一 缺陷路徑） | bug（作為卡種）、BUG- 前綴 |
+| 缺陷 | 已交付或已進 main 的行為錯誤；走一般階段，不配專屬卡種（§五 缺陷套用表、§十一 缺陷路徑）；不是 finding | BUG- 前綴 |
 | 合成表 | 核心轉移表 ∪ 已啟用模組 add − remove，再按該卡 `stage_plan` 展開 | 狀態表、workflow 圖 |
 | 模組 delta | 模組宣告區塊裡對狀態值域、轉移、欄位、注意事項的增減 | patch |
 | 設計閘（Design gate） | 規劃階段離開前 `verification` 欄填齊的檢查點；正式中文詞＝設計閘 | 設計審、design review |
@@ -380,7 +380,7 @@ params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的�
 | 清單收斂宣告 | 一張卡吸收哪些清單項：卡面 `source_issue`＋收件表單 `dedupe` 欄 | 合併宣告 |
 | 封存、撤銷、停止 | 三個離開動作 | — |
 | 留言標頭 wf:* | CLI 與人留言的首行 | marker、事件型別 |
-| 來源（四個）：core／module／project／card | 清單與交接文件的合成來源 | 層（作為來源）、layer |
+| 來源（四個）：core／module／project／card | 清單與交接文件的合成來源；不是層 | layer |
 | 七動詞 open／move／edit／notes／brief／review／snapshot | CLI 的全部入口 | amend、改卡、handoff、assign、pitfalls、踩坑（作為動詞名）、verdict（作為動詞） |
 | 未驗清單三分類 cannot／skipped／deferred | 驗不了／沒去驗／刻意不驗 | 未驗（裸列）、TODO |
 | 回應三值 followed／not_applicable／found | 已遵循／不適用／發現 | 已檢查（作為回應三值的第一值）、已遵守、N/A |
