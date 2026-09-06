@@ -47,9 +47,9 @@ last_confirmed: 2026-09-06
 - `db:` 資源文法＝`db:<env>:schema`／`db:<env>:table:<name>`，`schema`、`table` 是字面關鍵字，只換 `<env>` 與 `<name>`；交集比對住 `modules/resource-lock`。
 - 寫入或測試 DB 的卡用以卡ID 隔離的 namespace（DB、container、cache、queue、port 同理）；共用可寫 dev／test DB 須有 owner、lock 與清理方式。
 - 同一 `<env, schema>` 最多一個 migration writer；同表資料 migration 亦鎖；schema 卡依序 merge，⛔ 不平行產生互相依賴的 migration。
-- schema 演進採 expand → migrate → contract，`migration_phase` 記本卡所在段；不可逆 DDL、刪欄／表與大量轉換各自獨立一張卡。
+- schema 演進採 expand → migrate → contract，`migration_phase` 記本卡所在段；無法回滾的 DDL、刪欄／表與大量轉換各自獨立一張卡。
 - 資料 migration 可重跑、可續跑、受批次限制；交回單的 DB 契約段列 rehearsal、復原方案、對帳與 smoke test 的指令與結果。
-- 不可逆 DB 操作執行前取得需求方一則 `wf:ruling`（kind=signoff），裁定單記誰、如何。
+- 無法回滾的 DB 操作執行前取得需求方一則 `wf:ruling`（kind=signoff），裁定單記誰、如何。
 
 ## 2 · 注意事項
 
