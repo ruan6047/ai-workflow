@@ -17,7 +17,7 @@
 ```
 
 - `modules` 只列專案級模組（escalation、resource-lock、pitfalls-13、identity、snapshot、db-contract）；卡級模組（research、deploy、maintenance、initiative、stat-redline）看卡面，⛔ 不列。
-- `params` 的鍵與種子值抄該模組 `module.md` §0；值以本檔為準。
+- `params` 的鍵與種子值抄該模組 `module.md` §0；本專案實際採用的值住本檔。
 - `areas` 是卡ID 前綴枚舉（`core/naming.md` §1）。
 - 有資料庫才建 `.wf/contracts/DATABASE_CONTRACT.md`；同時 ≥2 執行者才建 `.wf/contracts/CONTROL_PLANE.md`。
 
