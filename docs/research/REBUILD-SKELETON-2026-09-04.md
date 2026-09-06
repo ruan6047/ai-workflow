@@ -230,6 +230,8 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | snapshot | 專案 `.wf/modules.json` 列出（狀態面在 GitHub 時該列） | modules.json | 00 §六 |
 | db-contract | 專案 `.wf/modules.json` 列出（有 DB 時該列）；已啟用而 `.wf/contracts/DATABASE_CONTRACT.md` 不存在＝模組自己的資料完整性提示（`notes` 印，模組行為） | modules.json | 02#45–50、04#129–132 |
 
+居所例外（需求方 2026-09-06 甲案）：04#138 的第 7、9、10 條結果解讀通則適用所有研究結論，住 `roles/executor.md` §4（查核者由 `roles/reviewer.md` §4 指向）；stat-redline 第 4b 回填時表格保留紅線卡的具體化版本並指向該居所。
+
 合成語意：卡級模組看卡面欄；`resource-lock` 看 Project 投影欄；其餘專案層模組看 `modules.json`，每個模組恰一個 predicate。`modules.json` 對 `resource-lock` 只提供參數。括號內的「該列」是給 PM 的判斷依據，⛔ 不是機械條件。
 
 
