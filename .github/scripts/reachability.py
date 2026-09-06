@@ -52,9 +52,10 @@ def notes_errors(name: str, declared: list, body: str) -> list[str]:
     errs = []
     if declared != listed:
         errs.append(f"{name}: adds.notes={declared} ≠ §2 條列={listed}")
+    shape = re.compile(rf"^F-{re.escape(name)}-\d{{2}}$")
     for i in declared:
-        if not i.startswith(f"F-{name}-"):
-            errs.append(f"{name}: id {i} 前綴不是 F-{name}-")
+        if not shape.match(i):
+            errs.append(f"{name}: id {i} 不是 F-{name}-NN 形狀")
     return errs
 
 
@@ -277,10 +278,10 @@ def selftest(sm: dict) -> int:
     e_missing = notes_errors("x", [], good)
     e_order = notes_errors("x", ["F-x-02", "F-x-01"], good)
     e_prefix = notes_errors("x", ["F-y-01", "F-x-02"], good.replace("F-x-01", "F-y-01"))
-    ok = not e_ok and len(e_missing) == 1 and len(e_order) == 1 and len(e_prefix) == 1
-    print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 3 條）")
-    if not ok:
-        rc = 1
+    e_shape = notes_errors("x", ["F-x-extra-01", "F-x-02"], good.replace("F-x-01", "F-x-extra-01"))
+    ok = not e_ok and len(e_missing) == 1 and len(e_order) == 1 and len(e_prefix) == 1 and len(e_shape) == 1
+    print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 4 條）")
+    bad = bad or not ok
     return 1 if bad else 0
 
 
