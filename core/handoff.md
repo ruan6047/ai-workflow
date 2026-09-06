@@ -42,7 +42,7 @@ last_confirmed: 2026-09-06
 
 | 段 | 誰填 | 內容 |
 |---|---|---|
-| 卡與身分 | CLI | 同派工單；另列 `source_sha`、commit 清單（`git log`）、改動面（`git diff --stat` 每檔一列）、`finding_id`（`review` 依 `core/naming.md` 編） |
+| 卡與身分 | CLI | 同派工單；另列 `source_sha`、commit 清單（`git log`）、改動面（`git diff --stat` 每檔一列）、`finding_id` 由作者依 `core/naming.md` §4 填 |
 | self_run | 人 | 實跑的指令、rc、原始輸出 |
 | 逐條驗收 | 人 | 每條 `acceptance`：做法／證據／falsifier，⛔ 不合併 |
 | 失誤登記 | 執行者 | 逐項：失誤／何時／影響／補救；無則逐字「無」 |
