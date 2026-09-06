@@ -203,6 +203,7 @@ docs/research/             決策紀錄、萃取、骨架（本檔）
 
 ```yaml
 name: resource-lock
+fact_source: Project 投影欄 狀態＋owner   # 事實從哪讀（2026-09-06 補記；4a 起已在用）
 enable_when: 派工當下板上狀態＝進行中且 owner 不同的卡 ≥1 張  # 決策 6「同時 ≥2 執行者」；事實來源＝Project 投影欄
 adds:
   fields: [worktree, lease_expires_at]
@@ -215,6 +216,7 @@ adds:
   notes: [F-resource-lock-01, F-resource-lock-02]
   handoff_sections: [資源宣告逐條]
 project_inputs: [.wf/contracts/CONTROL_PLANE.md]
+params: {lease_ttl_hours: 24}   # 條文引用的參數鍵與種子值；值的居所＝專案 .wf/modules.json（2026-09-06 補記；4a 起已在用）
 ```
 
 `.wf/modules.json` 列啟用的模組名與參數；`notes`／`brief`／`move` 依它合成清單、段落、轉移表與狀態值域。模組未啟用＝上面每一項都不存在。
