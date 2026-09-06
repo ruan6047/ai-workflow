@@ -37,9 +37,9 @@ last_confirmed: 2026-09-06
 
 ## 1 · 條文
 
-- `snapshot` 依 `params.schedule`（種子 daily）由排程或 PM 手動跑，輸出本機 JSON＋Markdown（`core/verbs.md`），commit 到專案層指定的快照分支作離線稽核副本。
+- `snapshot` 依 `params.schedule`（種子 daily）由排程或 PM 手動跑，輸出本機 JSON＋Markdown（`core/verbs.md`），commit 到專案指定的快照分支作離線稽核副本。
 - 事後對帳、盤點分母與 `last_cited` 以快照分支為準；Issue timeline ⛔ 不當嚴格不可覆寫的 store。
-- 快照只讀狀態面；⛔ 不寫回、⛔ 不改卡面。
+- 快照只讀狀態面；⛔ 不寫回、⛔ 不寫卡面。
 
 ## 2 · 注意事項
 
