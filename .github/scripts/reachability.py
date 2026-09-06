@@ -360,6 +360,10 @@ def selftest(sm: dict) -> int:
     s_both = sections_errors("m", ["A", "B"], {"m": {"A", "B"}}, oth)
     _, _, lab_errs = handoff_labels('```json schema\n{"$id": "wf-return", "$defs": {"module_return_sections": {"m": {"k": {"type": "string"}}}}}\n```')
     s_orphan = orphan_errors({"ghost": {"A"}}, {}, {"m"})
+    probe = [{"name": "rm-only", "adds": {"states": [], "transitions": {"add": [], "remove": [{"from": "需求/待辦", "to": "需求/進行中"}]}}}]
+    is_delta = bool(probe[0]["adds"]["states"] or any(probe[0]["adds"]["transitions"].get(k) for k in ("add", "remove")))
+    print(f"selftest_remove_only_module_is_delta: {'PASS' if is_delta else 'FAIL'}（負控 1 條）")
+    bad = bad or not is_delta
     ok2 = (not s_ok and len(s_missing) == 1 and len(s_extra) == 1 and len(s_none) == 1 and len(s_both) == 1
            and len(lab_errs) == 1 and len(s_orphan) == 1)
     print(f"selftest_module_sections_consistency: {'PASS' if ok2 else 'FAIL'}（負控 6 條）")
@@ -382,7 +386,7 @@ def main() -> int:
         print(f"⛔ handoff_sections 對帳：{e}")
     print(f"模組 handoff_sections 對帳：{len(mods)} 檔，失敗 {len(sec_errs)}")
     note_errs += sec_errs
-    delta_mods = [m for m in mods if m.get("adds", {}).get("states") or m.get("adds", {}).get("transitions", {}).get("add")]
+    delta_mods = [m for m in mods if m.get("adds", {}).get("states") or any(m.get("adds", {}).get("transitions", {}).get(k) for k in ("add", "remove"))]
     cases = []
     for r in range(len(delta_mods) + 1):
         for combo in itertools.combinations(delta_mods, r):
