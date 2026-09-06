@@ -116,6 +116,7 @@
 - **模組段合成進交回單**（需求方 2026-09-06 裁定，研究四輪）：`core/handoff.md` 加 `$defs/module_return_sections/<模組名>`，型別居所在 core、宣告留模組（與 `card-schema` `$defs/module_fields` 同型）；派工單與裁定單的模組段歸屬住 `json wf-module-sections`；段名逐字＝模組 `adds.handoff_sections`，由 reachability job 對帳字串集合與歸屬（同一段名⛔ 不同時在交回單與派工單／裁定單），⛔ 不讀內容；佔位模組（deploy、maintenance、pitfalls-13、identity）的段型別先給 string，4b 回填時可改。
 - **`move` 的模組通道**（需求方 2026-09-06 裁定）：`core/verbs.md` `move` 的印欄與寫欄各開「已啟用模組宣告」一項（落實骨架 §九「計數由 `move` 在該 iteration 內做」與 §十一「escalation 模組由 `move` 數」）；宣告形狀＝模組 §0 `adds.counters`（`move --to */退回` +1）與 `adds.move_prints`（識別字，語意住模組 §1），骨架 §九 範例同步補記；模組欄只由該模組條文指定的動詞寫。
 - **finding 八欄→九欄**（需求方 2026-09-06 裁定）：加必填 `status` enum open／resolved／withdrawn（舊制 04#99 的狀態欄，落 core 而非 escalation 模組，因 `roles/reviewer.md`、`stages/closeout.md`、`core/handoff.md` §3 三條核心條文已引用）；⛔ 不加 `accepted`（其 writer 是內容判讀）。骨架 §八「findings 八欄」同步改九欄。
+- **4b 得補該模組條文所引用的 `params` 鍵與種子值**（需求方 2026-09-06 裁定，研究四輪）：射程收在條文回填的因果鏈內，⛔ 不泛化為「4b 得補任何 4a 宣告缺口」；先例＝#263 補 `adds.notes`、#271 補 `counters`／`move_prints`。值的居所仍為專案 `.wf/modules.json`（`core/params.md` non_scope），§0 只放鍵與種子，與骨架 §五「N＝`params.escalate_after`，種子 3」同形。骨架 §九 範例同步補記 `params` 與 `fact_source` 兩鍵（4a 起已在用、§九從未收錄）。
 
 ## 待骨架文件決定（本紀錄⛔ 不裁）
 
