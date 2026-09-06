@@ -2,7 +2,7 @@
 name: reviewer
 when: 你收到派工單要查核，或在寫、貼裁決時
 non_scope: ⛔ 不寫審核階段的出入口（住 stages/review.md）；⛔ 不寫交回單 schema（住 core/handoff.md）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-06
 ---
 
 # 查核者
@@ -42,5 +42,6 @@ last_confirmed: 2026-09-05
 - F-查核者-02：⛔ 不把寫下承接卡號當有著落的證據；承接卡的狀態面與 owner 由派工單附上，沒附即視為無著落。
 - F-查核者-03：時戳與自行查詢不構成證據；證據指向版控過的 artifact。
 - F-查核者-04：第 2 輪新增的測試可能把缺陷寫進測試；換面查。
+- F-查核者-05：判紅線違反與對抗性反測結果時套 `roles/executor.md` F-執行者-08…11 的結果解讀通則。
 
 → [archive/rules-2026-09/stage-rules/reviewer-conduct.md](../archive/rules-2026-09/stage-rules/reviewer-conduct.md)、[archive/rules-2026-09/templates/review-prompt.md](../archive/rules-2026-09/templates/review-prompt.md)、[archive/issues/062.md](../archive/issues/062.md)、[archive/issues/017.md](../archive/issues/017.md)
