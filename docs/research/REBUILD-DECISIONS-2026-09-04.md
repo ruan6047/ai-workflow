@@ -118,6 +118,7 @@
 - **finding 八欄→九欄**（需求方 2026-09-06 裁定）：加必填 `status` enum open／resolved／withdrawn（舊制 04#99 的狀態欄，落 core 而非 escalation 模組，因 `roles/reviewer.md`、`stages/closeout.md`、`core/handoff.md` §3 三條核心條文已引用）；⛔ 不加 `accepted`（其 writer 是內容判讀）。骨架 §八「findings 八欄」同步改九欄。
 - **4b 得補該模組條文所引用的 `params` 鍵與種子值**（需求方 2026-09-06 裁定，研究四輪）：射程收在條文回填的因果鏈內，⛔ 不泛化為「4b 得補任何 4a 宣告缺口」；先例＝#263 補 `adds.notes`、#271 補 `counters`／`move_prints`。值的居所仍為專案 `.wf/modules.json`（`core/params.md` non_scope），§0 只放鍵與種子，與骨架 §五「N＝`params.escalate_after`，種子 3」同形。骨架 §九 範例同步補記 `params` 與 `fact_source` 兩鍵（4a 起已在用、§九從未收錄）。
 - **全域審查的修正得跨步一個 PR**（需求方 2026-09-06 裁定）：一次跨實體全域審查所產出的同一類缺陷（單一居所、管道閉合、佔位字面），得合為一個 PR 處理，⛔ 不受骨架 §十三「每步一個 PR」的粒度限制；限定條件＝該步已完成、修正不新增規則、PR 說明逐條列出來源 finding。逐步回填仍照原粒度。
+- **squash 訊息形狀是萃取遺漏**（需求方 2026-09-07 確認歸屬）：舊制 ROADMAP §3.5 逐字「squash 訊息**必須逐字記下被審 SHA**，以及該輪查核的結論」，萃取時未收，本輪 15 次合併因平台預設的多則訊息串接而讓 `Co-Authored-By` 被空行切散，違反 P5；歸屬＝coordinator，`finding_class`＝coordination，規則與 CI 皆無誤。條文補在 `stages/closeout.md` §4；歷史紅燈⛔ 不追溯改寫（P1 禁改史），下一次受控訊息合併後 main 的 head 轉綠。
 
 ## 待骨架文件決定（本紀錄⛔ 不裁）
 
