@@ -2,7 +2,7 @@
 name: requester
 when: 你是出題、裁定、sign-off 的那個人，卡在需求階段、要停止、要降級、要結案確認、或有人請你裁時
 non_scope: ⛔ 不寫 PM 怎麼組裁定單（住 core/handoff.md §3）；⛔ 不寫 R1 R2 的判法（住 roles/pm.md）
-last_confirmed: 2026-09-06
+last_confirmed: 2026-09-05
 ---
 
 # 需求方
@@ -18,7 +18,6 @@ last_confirmed: 2026-09-06
 - 注意事項正式化：候選要升為 P- 或 F- 條目時，確認三格（條文、來源、處理手段）；缺處理手段⛔ 不升。
 - 硬擋新增的唯一入口：處理手段屬 recoverable＝irreversible 或平台層事故時才裁定升為平台委託 P-（`core/platform.md`）；預設不升，⛔ 不擴 CLI 硬擋。
 - 定期回看：每 `guard_review_period`（`core/params.md`）張結案卡收 PM 一份回看清單（零拒收硬擋、正式化候選、`last_confirmed` 過期的規則檔三類），一則裁定留言處理。
-- 新增模組的唯一入口：提案附啟用條件（一個 predicate）、事實來源、來源萃取列三格才裁定；⛔ 不加沒有來源條文的模組。
 - 確認規則檔的 `last_confirmed`；改規則開一張卡，sensitive 含 rules。
 
 ## 2 · 紅線

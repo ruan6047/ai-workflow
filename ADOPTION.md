@@ -5,7 +5,7 @@
 - 建 ruleset：main 禁刪、禁改史、`required_linear_history`，bypass 清空（`core/platform.md` P1）。
 - required status checks 至少 `secret-scan`、`commit-trailer`（P4、P5）；有可達性檢查的專案加 `reachability`。
 - 合併方式只留一種按鈕，值同時寫進 `.wf/modules.json` 的 `merge_method`（P3）。
-- 複製 `.github/workflows/ci.yml` 與 `.github/scripts/`；⛔ 不加沒有被測物的 job。
+- 複製 `secret-scan` 與 `commit-trailer` 兩個 job 與 `.github/scripts/trailer_check.py`；`reachability` 檢查的是本 repo 的規則檔，採用專案⛔ 不複製。
 - commit trailer 鍵集合與必填時機依 `roles/conduct-common.md` §2。
 
 ## 2 · `.wf/modules.json` 種子
@@ -29,6 +29,6 @@
 
 ## 4 · 第一張卡
 
-- 需求方在 issue 貼一個 `json wf-intake` 區塊（`core/card-schema.md` §3）並點頭升級。
+- 提案者在 issue 貼一個 `json wf-intake` 區塊（`core/card-schema.md` §3）；需求方只決定升不升級為卡。
 - PM 跑 `open` 上板，之後走 `stages/requirement.md`；T0／T1 跳過規劃階段（`core/tiers.md` §1）。
 - 第一張卡先把本專案的 P- 注意事項與 `.wf/stages/<階段>.md` 建起來。

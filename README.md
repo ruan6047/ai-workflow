@@ -12,7 +12,7 @@
 - 硬擋只有九條：平台 P1–P5、CLI D1–D4；其餘一律印，交人或 AI 判。
 - 一條規則只住一處；理由與來歷用連結指 `archive/`。
 - 模組 opt-in：卡級看卡面欄，專案級看 `.wf/modules.json`；未啟用＝該模組的每一項都不存在。
-- 注意事項一份清單四個來源（框架 F-、模組 F-、專案 P-、卡面 T-），只加不刪。
+- 注意事項一份清單四個來源（框架 F-、模組 F-、專案 P-、卡面 T-）：合成時單向累加、不覆寫、無豁免鍵；過期條目由需求方裁定退場。
 
 ## 2 · 角色一句話
 
@@ -25,6 +25,6 @@
 
 - 讀規則的順序：`core/glossary.md` → `core/state-machine.md` → 你的角色檔 `roles/` → 當下階段檔 `stages/`。
 - 新專案怎麼接：`ADOPTION.md`。
-- 活卡與看板：`gh project item-list <N> --owner <帳號>`（板號住該專案 `.wf/modules.json`）。
+- 活卡與看板：`gh project list --owner <帳號>` 取板號，再 `gh project item-list <N> --owner <帳號>`。
 - 平台硬擋現況：`gh api repos/<owner>/<repo>/rulesets`。
 - 舊制規則與範本：`archive/rules-2026-09/`（唯讀，僅供對照）。
