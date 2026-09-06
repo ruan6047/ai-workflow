@@ -222,7 +222,7 @@ project_inputs: [.wf/contracts/CONTROL_PLANE.md]
 | deploy | 卡的 `stage_plan` 含部署 | 卡面 JSON | 00 §六 |
 | maintenance | 卡的 `stage_plan` 含維護（PM 何時該列維護，例如交付物是排程、爬蟲、告警，是 `stages/requirement.md` 的注意事項，⛔ 不是條件） | 卡面 JSON | 00 §六 |
 | initiative | 卡的 `parent` 非空 | 卡面 JSON | 02#10、04#44 117–120 |
-| stat-redline | `statistics ∈ tier_basis.sensitive`（集合成員比對，值域封閉） | 卡面 JSON | 04#135–138、03#57 |
+| stat-redline | `statistics ∈ tier_basis.sensitive`（集合成員比對，值域封閉） | 卡面 JSON | 04#135–138、03#57；04#138 的第 7、9、10 條結果解讀通則另住 `roles/executor.md` §4（需求方 2026-09-06 甲案），本模組表格保留紅線卡具體化版本並指過去 |
 | escalation | 專案 `.wf/modules.json` 列出（計數由 `move` 在該 iteration 內做） | modules.json | 00 §六；05 空洞 7 |
 | resource-lock | 同時 ≥2 執行者：`move` 派工當下，板上狀態＝進行中且 `owner.actor` 與本卡不同的卡 ≥1 張（決策 6） | Project 投影欄 狀態＋owner（`modules.json` 只放參數，如 lease TTL，⛔ 不是條件） | 00 §六 |
 | pitfalls-13 | 專案 `.wf/modules.json` 列出 | modules.json | 00 §六 |
