@@ -59,6 +59,73 @@ def notes_errors(name: str, declared: list, body: str) -> list[str]:
     return errs
 
 
+HANDOFF = ROOT / "core/handoff.md"
+SCHEMA_BLOCK = re.compile(r"```json schema\n(.*?)```", re.S)
+SECTIONS_BLOCK = re.compile(r"```json wf-module-sections\n(.*?)```", re.S)
+
+
+def handoff_labels(text: str) -> tuple[dict[str, set[str]], dict[str, set[str]], list[str]]:
+    """core/handoff.md 內模組段名：交回單（wf-return $defs.module_return_sections 的 label）與派工單／裁定單（wf-module-sections）分開收。"""
+    ret: dict[str, set[str]] = {}
+    other: dict[str, set[str]] = {}
+    errs: list[str] = []
+    for blk in SCHEMA_BLOCK.findall(text):
+        d = json.loads(blk)
+        if d.get("$id") != "wf-return":
+            continue
+        for mod, secs in d.get("$defs", {}).get("module_return_sections", {}).items():
+            for key, v in secs.items():
+                lab = v.get("label")
+                if not lab:
+                    errs.append(f"{mod}: $defs 段 {key} 缺 label")
+                    continue
+                if lab in ret.get(mod, set()):
+                    errs.append(f"{mod}: $defs label 重複 {lab}")
+                ret.setdefault(mod, set()).add(lab)
+    m = SECTIONS_BLOCK.search(text)
+    if m:
+        for doc in json.loads(m.group(1)).values():
+            for mod, labels in doc.items():
+                other.setdefault(mod, set()).update(labels)
+    return ret, other, errs
+
+
+def sections_errors(name: str, declared: list, ret: dict[str, set[str]], other: dict[str, set[str]]) -> list[str]:
+    """模組 adds.handoff_sections 與 handoff.md 段名的對帳：只比字串集合與歸屬，⛔ 不讀段內容。"""
+    want = set(declared)
+    r, o = ret.get(name, set()), other.get(name, set())
+    errs = []
+    if want - (r | o):
+        errs.append(f"{name}: handoff_sections {sorted(want - (r | o))} 在 core/handoff.md 無對應段名")
+    if (r | o) - want:
+        errs.append(f"{name}: core/handoff.md 段名 {sorted((r | o) - want)} 未在模組宣告")
+    if r & o:
+        errs.append(f"{name}: 段名 {sorted(r & o)} 同時在交回單與派工單／裁定單")
+    return errs
+
+
+def orphan_errors(ret: dict[str, set[str]], other: dict[str, set[str]], names: set[str]) -> list[str]:
+    """core/handoff.md 提到、但 modules/ 沒有的模組名。"""
+    return [f"core/handoff.md 段名指向不存在的模組 {m}" for m in sorted((set(ret) | set(other)) - names)]
+
+
+def check_module_sections() -> list[str]:
+    ret, other, errs = handoff_labels(HANDOFF.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for f in sorted(glob.glob(str(ROOT / "modules/*/module.md"))):
+        m = MODBLOCK.search(Path(f).read_text(encoding="utf-8"))
+        if not m:
+            continue
+        d = json.loads(m.group(1))
+        names.add(d["name"])
+        adds = d.get("adds", {})
+        errs += sections_errors(d["name"], adds.get("handoff_sections", []), ret, other)
+        for c in adds.get("counters", []):
+            if c not in adds.get("fields", []):
+                errs.append(f"{d['name']}: counters {c} 不在 adds.fields")
+    return errs + orphan_errors(ret, other, names)
+
+
 def check_module_notes() -> list[str]:
     errs = []
     for f in sorted(glob.glob(str(ROOT / "modules/*/module.md"))):
@@ -285,6 +352,18 @@ def selftest(sm: dict) -> int:
           and e_listed_prefix and e_listed_digits)
     print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 6 條）")
     bad = bad or not ok
+    ret, oth = {"m": {"A"}}, {"m": {"B"}}
+    s_ok = sections_errors("m", ["A", "B"], ret, oth)
+    s_missing = sections_errors("m", ["A", "B", "C"], ret, oth)
+    s_extra = sections_errors("m", ["A"], ret, oth)
+    s_none = sections_errors("z", ["A"], ret, oth)
+    s_both = sections_errors("m", ["A", "B"], {"m": {"A", "B"}}, oth)
+    _, _, lab_errs = handoff_labels('```json schema\n{"$id": "wf-return", "$defs": {"module_return_sections": {"m": {"k": {"type": "string"}}}}}\n```')
+    s_orphan = orphan_errors({"ghost": {"A"}}, {}, {"m"})
+    ok2 = (not s_ok and len(s_missing) == 1 and len(s_extra) == 1 and len(s_none) == 1 and len(s_both) == 1
+           and len(lab_errs) == 1 and len(s_orphan) == 1)
+    print(f"selftest_module_sections_consistency: {'PASS' if ok2 else 'FAIL'}（負控 6 條）")
+    bad = bad or not ok2
     return 1 if bad else 0
 
 
@@ -298,6 +377,11 @@ def main() -> int:
     for e in note_errs:
         print(f"⛔ adds.notes 對帳：{e}")
     print(f"模組 adds.notes 對帳：{len(mods)} 檔，失敗 {len(note_errs)}")
+    sec_errs = check_module_sections()
+    for e in sec_errs:
+        print(f"⛔ handoff_sections 對帳：{e}")
+    print(f"模組 handoff_sections 對帳：{len(mods)} 檔，失敗 {len(sec_errs)}")
+    note_errs += sec_errs
     delta_mods = [m for m in mods if m.get("adds", {}).get("states") or m.get("adds", {}).get("transitions", {}).get("add")]
     cases = [("無模組", [])] + [(f"單獨啟用 {m['name']}", [m]) for m in delta_mods] + [("全部啟用", delta_mods)]
     total = bad = 0

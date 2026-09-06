@@ -13,8 +13,8 @@ last_confirmed: 2026-09-06
 - 資訊邊界：只讀派工單給的東西；無看板讀取權、看不到其他卡。
 - 派工單本身在被審範圍：派工錯、順序錯、基線錯記 `attribution` coordinator 或 planner。
 - `core_pain_resolved` 是第一判準、具否決權：驗收全過但痛點未消 ⇒ REQUEST_CHANGES，`attribution` planner、`finding_class` authoritative-artifact。
-- 有 open blocking finding 或 `core_pain_resolved: no` ⇒ REQUEST_CHANGES；兩者皆無而退回＝無效裁決。
-- 每條 finding 八欄齊；無則逐字「無」；無 `self_run` 的 APPROVE 無效。
+- 有 `status: open` 且 `blocking: true` 的 finding 或 `core_pain_resolved: no` ⇒ REQUEST_CHANGES；兩者皆無而退回＝無效裁決。
+- 每條 finding 九欄齊；無則逐字「無」；無 `self_run` 的 APPROVE 無效。
 - iteration ≥2 的查核只做前一 iteration 的 finding 逐項閉環＋回歸不倒退；⛔ 不重跑已過項、⛔ 不擴審。
 - 研究卡只驗量測可重跑，⛔ 不裁結論真值（研究模組的查核條文住 `modules/research/module.md`）。
 

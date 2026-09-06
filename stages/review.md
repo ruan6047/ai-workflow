@@ -2,14 +2,14 @@
 name: review
 when: 卡在審核階段：派審、查核、收裁決、決定過或退回
 non_scope: ⛔ 不寫查核者的判準與紅線（住 roles/reviewer.md）；⛔ 不寫裁決 schema（住 core/handoff.md §2）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-06
 ---
 
 # 審核階段
 
 ## 1 · 目標與產出
 
-- 交出一則裁決留言（`wf:verdict`，`json wf-return`，`role=reviewer`）：`review_result`、`core_pain_resolved`、findings 八欄、`self_run`。
+- 交出一則裁決留言（`wf:verdict`，`json wf-return`，`role=reviewer`）：`review_result`、`core_pain_resolved`、findings 九欄、`self_run`。
 - 有序查核：PM 在收件時判 R1 前提、R2 射程；查核者判 R3 內容、R4 影響面。
 
 ## 2 · 進入／離開條件

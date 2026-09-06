@@ -17,13 +17,9 @@ last_confirmed: 2026-09-06
   "enable_when": "專案 .wf/modules.json 列出",
   "fact_source": "modules.json",
   "adds": {
-    "fields": [
-      "escalation_count"
-    ],
+    "fields": ["escalation_count"],
     "stages": [],
-    "states": [
-      "升級"
-    ],
+    "states": ["升級"],
     "transitions": {
       "add": [
         {
@@ -45,10 +41,10 @@ last_confirmed: 2026-09-06
       "remove": []
     },
     "flags": [],
+    "counters": ["escalation_count"],
+    "move_prints": ["escalation_threshold"],
     "notes": ["F-escalation-01", "F-escalation-02", "F-escalation-03", "F-escalation-04"],
-    "handoff_sections": [
-      "升級單（三次退回逐字理由、四選一各值證據）"
-    ]
+    "handoff_sections": ["升級單（三次退回逐字理由、四選一各值證據）"]
   },
   "project_inputs": [],
   "params": {

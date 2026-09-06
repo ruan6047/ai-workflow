@@ -27,6 +27,8 @@ last_confirmed: 2026-09-06
       "remove": []
     },
     "flags": [],
+    "counters": [],
+    "move_prints": ["parent_spec_version_empty"],
     "notes": ["F-initiative-01", "F-initiative-02", "F-initiative-03"],
     "handoff_sections": [
       "規格基線（父卡 spec_version 與本卡登記版本）"
