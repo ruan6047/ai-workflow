@@ -3,7 +3,7 @@ core/state-machine.md §3、core/dispatch.md「模組段歸屬」與 wf-contract
 core/return.md 與 core/ruling.md 的 schema、modules/*/module.md §0、
 core/naming.md §4／§5、core/handoff.md「每段首行」。
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,10 @@ class UnknownLabelError(BlockError):
     """圍欄標籤不在本讀取器支援範圍。"""
 
 
+class SkippedFence(BlockError):
+    """非 CLI 圍欄略過診斷；不阻止讀取。"""
+
+
 @dataclass(frozen=True)
 class Source:
     path: str
@@ -57,6 +61,11 @@ class Block:
 class Catalog:
     blocks: list[Block]
     schemas: dict[str, Block]
+    diagnostics: list[ValueError] = field(default_factory=list)
+
+    def by_label(self, label: str) -> list[Block]:
+        """非 schema 區塊依標籤查找，不進 $id 命名空間。"""
+        return [block for block in self.blocks if block.label == label]
 
 
 def source_line(source: Source) -> str:
@@ -64,7 +73,8 @@ def source_line(source: Source) -> str:
             f" · confirmed {source.last_confirmed}]")
 
 
-def read_blocks(root: Path | str, relative: Path | str) -> list[Block]:
+def read_blocks(root: Path | str, relative: Path | str,
+                *, diagnostics: list | None = None) -> list[Block]:
     """逐檔掃描；raw 是兩個圍欄行之間的逐字內容，包含末尾換行。
 
     刻意只記錄 ## 標題；沒有該層標題時 section 留空，不推測節名。
@@ -73,13 +83,18 @@ def read_blocks(root: Path | str, relative: Path | str) -> list[Block]:
     path = Path(relative).as_posix()
     with (Path(root) / relative).open(encoding="utf-8", newline="") as handle:
         text = handle.read()
-    metadata = parse_frontmatter(text, path)
+    diagnostics = diagnostics if diagnostics is not None else []
+    metadata = parse_frontmatter(text, path, diagnostics=diagnostics)
     result = []
     section, label = "", None
     start, offset = 0, 0
+    skipped = False
     for line in text.splitlines(keepends=True):
         marker = line.rstrip("\r\n")
-        if label is not None:
+        if skipped:
+            if marker == "```":
+                skipped = False
+        elif label is not None:
             if marker == "```":
                 raw = text[start:offset]
                 try:
@@ -95,7 +110,10 @@ def read_blocks(root: Path | str, relative: Path | str) -> list[Block]:
         elif marker.startswith("```"):
             label = marker[3:]
             if label not in LABELS:
-                raise UnknownLabelError(path, section, f"未知標籤 {label!r}")
+                if label.startswith(("json wf-", "yaml wf-")):
+                    raise UnknownLabelError(path, section, f"未知標籤 {label!r}")
+                diagnostics.append(SkippedFence(path, section, f"略過圍欄 {label!r}"))
+                label, skipped = None, True
             start = offset + len(line)
         offset += len(line)
     if label is not None:
@@ -118,10 +136,10 @@ def require_blocks(root: Path | str, relative: Path | str, label: str,
 def load_blocks(root: Path | str) -> Catalog:
     """每次從規則原件讀取，依 schema 的 $id 建索引；不驗 schema 或合成。"""
     root = Path(root)
-    blocks, schemas = [], {}
+    blocks, schemas, diagnostics = [], {}, []
     paths = sorted(root.glob("core/*.md")) + sorted(root.glob("modules/*/module.md"))
     for path in paths:
-        for block in read_blocks(root, path.relative_to(root)):
+        for block in read_blocks(root, path.relative_to(root), diagnostics=diagnostics):
             blocks.append(block)
             if block.label != "json schema" or not isinstance(block.data, dict):
                 continue
@@ -133,4 +151,4 @@ def load_blocks(root: Path | str) -> Catalog:
                 raise DuplicateIDError(block.source.path, block.source.section,
                                        f"重複 $id {identifier!r}；原件 {previous.path}#{previous.section}")
             schemas[identifier] = block
-    return Catalog(blocks, schemas)
+    return Catalog(blocks, schemas, diagnostics)

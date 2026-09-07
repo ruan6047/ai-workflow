@@ -21,7 +21,8 @@ class Frontmatter:
     last_confirmed: str
 
 
-def parse_frontmatter(text: str, path: str, section: str = "") -> Frontmatter:
+def parse_frontmatter(text: str, path: str, section: str = "",
+                      *, diagnostics: list | None = None) -> Frontmatter:
     """讀現有規則檔的單行文字欄位；保留值，不解讀日期或散文。"""
     match = HEADER.match(text)
     values = {}
@@ -31,8 +32,11 @@ def parse_frontmatter(text: str, path: str, section: str = "") -> Frontmatter:
             values[key] = value.strip()
     missing = tuple(key for key in FIELDS if key not in values)
     if missing:
-        raise MissingFrontmatterError(path, section, missing)
-    return Frontmatter(**values)
+        error = MissingFrontmatterError(path, section, missing)
+        if diagnostics is None:
+            raise error
+        diagnostics.append(error)
+    return Frontmatter(**{key: values.get(key, "") for key in FIELDS})
 
 
 def read_frontmatter(path: Path | str) -> Frontmatter:

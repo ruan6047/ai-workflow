@@ -1,13 +1,13 @@
 """驗證 core/card-schema.md §1、state-machine.md §3、naming.md §5 與 handoff.md 每段首行。"""
 import json
 from pathlib import Path
-import subprocess
+import ast
 
 import pytest
 
 from wf.compose.blocks import (
     BadJSONError, DuplicateIDError, MissingBlockError, UnknownLabelError,
-    load_blocks, read_blocks, require_blocks, source_line,
+    SkippedFence, load_blocks, read_blocks, require_blocks, source_line,
 )
 from wf.compose.frontmatter import MissingFrontmatterError, read_frontmatter
 
@@ -27,9 +27,7 @@ def test_repo_inventory():
     paths = sorted(ROOT.glob("core/*.md")) + sorted(ROOT.glob("modules/*/module.md"))
     total = 0
     for path in paths:
-        result = subprocess.run(["grep", "-c", "^```", str(path)], capture_output=True, text=True)
-        assert result.returncode in (0, 1), result.stderr
-        count = int(result.stdout)
+        count = sum(line.startswith("```") for line in path.read_text().splitlines())
         assert count % 2 == 0
         total += count
         print(f"FENCES {path.relative_to(ROOT)} {count}")
@@ -166,9 +164,73 @@ def test_section_filter_and_json_scalar(tmp_path):
 def test_import_inventory_negative_control(tmp_path):
     sample = tmp_path / "imports.py"
     sample.write_text("import subprocess\nfrom urllib import request\nimport socket\nimport requests\n")
-    result = subprocess.run(["grep", "-rn", "^import\\|^from", str(sample)], capture_output=True, text=True)
-    assert result.returncode == 0
-    assert [line.removeprefix(str(sample) + ":") for line in result.stdout.splitlines()] == [
+    lines = import_lines(sample)
+    assert lines == [
         "1:import subprocess", "2:from urllib import request", "3:import socket", "4:import requests",
     ]
-    print("IMPORT_NEGATIVE_CONTROL\n" + result.stdout, end="")
+    assert forbidden_imports(sample) == {"subprocess", "urllib", "socket", "requests"}
+    print("IMPORT_NEGATIVE_CONTROL\n" + "\n".join(lines))
+
+
+def import_lines(path):
+    lines = path.read_text().splitlines()
+    tree = ast.parse("\n".join(lines))
+    return [f"{node.lineno}:{lines[node.lineno - 1]}" for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))]
+
+
+def forbidden_imports(path):
+    names = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            names.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            names.add(node.module.split(".")[0])
+    return names & {"subprocess", "urllib", "socket", "requests"}
+
+
+def test_compose_import_inventory():
+    paths = sorted((ROOT / "cli/src/wf/compose").glob("*.py"))
+    for path in paths:
+        print(str(path.relative_to(ROOT)) + "\n" + "\n".join(import_lines(path)))
+        assert not forbidden_imports(path)
+    print(f"COMPOSE_IMPORT_FILES {len(paths)}")
+
+
+def test_non_cli_fences_report_and_continue(tmp_path):
+    import shutil
+    for directory in ("core", "modules"):
+        shutil.copytree(ROOT / directory, tmp_path / directory)
+    path = tmp_path / "core/card-schema.md"
+    with path.open("a") as handle:
+        handle.write("\n```mermaid\ngraph TD; A-->B\n```\n")
+    catalog = load_blocks(tmp_path)
+    skipped = [d for d in catalog.diagnostics if isinstance(d, SkippedFence)]
+    assert len(skipped) == 1
+    assert "mermaid" in str(skipped[0])
+    assert catalog.schemas == load_blocks(ROOT).schemas
+    print("SKIPPED", str(skipped[0]))
+
+
+def test_cross_label_id_namespace(tmp_path):
+    rule(tmp_path, '```json schema\n{"$id":"wf-card"}\n```\n'
+         '```json wf-enums\n{"$id":"wf-card","tiers":{"enum":["T0"]}}\n```\n')
+    catalog = load_blocks(tmp_path)
+    assert len(catalog.schemas) == 1
+    assert catalog.schemas["wf-card"].label == "json schema"
+    enums, = catalog.by_label("json wf-enums")
+    assert enums.data["tiers"]["enum"] == ["T0"]
+    from wf.compose.schema import materialize
+    assert materialize({"$ref": "wf-enums#/tiers"}, catalog) == {"enum": ["T0"]}
+
+
+@pytest.mark.parametrize("missing", ["name", "when", "non_scope", "last_confirmed"])
+def test_load_reports_missing_frontmatter_without_aborting(tmp_path, missing):
+    header = "\n".join(line for line in HEADER.split("\n") if not line.startswith(missing + ":"))
+    rule(tmp_path, '```json schema\n{"$id":"kept"}\n```\n', header=header)
+    catalog = load_blocks(tmp_path)
+    assert "kept" in catalog.schemas
+    diagnostic, = catalog.diagnostics
+    assert isinstance(diagnostic, MissingFrontmatterError)
+    assert diagnostic.missing == (missing,)
+    print("FRONTMATTER", str(diagnostic))
