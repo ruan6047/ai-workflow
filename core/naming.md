@@ -26,6 +26,7 @@ last_confirmed: 2026-09-07
 | `wf:move`、`wf:edit`、`wf:reject` | CLI，純散文 | 否 |
 | `wf:note` | 任何角色；帶 `json wf-note` | 只讀區塊 |
 | `wf:verdict` | 查核者；帶 `json wf-return` | 只讀區塊 |
+| `wf:return` | 執行者；帶 `json wf-return`（需求方 2026-09-07 裁定） | 只讀區塊 |
 | `wf:ruling` | 需求方；帶 `json wf-ruling` | 只讀區塊 |
 | `wf:log` | 任何角色；純散文，研究與量測全文 | 否 |
 | `代貼裁定・授權來源：<…>`、`代貼裁決・來源：<…>・被審 SHA：<…>` | PM 代貼時取代首行；原文從第二行起 | 否 |
