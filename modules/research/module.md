@@ -9,21 +9,18 @@ last_confirmed: 2026-09-05
 
 ## 0 · 宣告區塊
 
-唯一啟用條件＝`enable_when`（一個 predicate；事實來源＝`fact_source`）；未啟用時下列每一項都不存在。宣告以 YAML 的 JSON 子集書寫，CLI 與 CI 以 JSON 讀。
+啟用條件＝`enable_if`（CLI 判啟用的唯一依據；`enable_when` 是同義散文、只給人讀；事實來源＝`fact_source`）；未啟用時下列每一項都不存在，唯 `fields` 的結構合法性例外（`core/card-schema.md` §1 (b)，需求方 2026-09-07 裁定）。宣告以 YAML 的 JSON 子集書寫，CLI 與 CI 以 JSON 讀。
 
 ```yaml wf-module
 {
   "name": "research",
   "enable_when": "卡面 stage_plan 含 研究",
+  "enable_if": {"kind": "stage_plan_has", "stage": "研究"},
   "fact_source": "卡面 JSON",
   "adds": {
     "fields": [],
-    "stages": [
-      "研究"
-    ],
-    "enums": {"states": [
-      "不可判定"
-    ]},
+    "stages": ["研究"],
+    "enums": {"states": ["不可判定"]},
     "transitions": {
       "add": [
         {
@@ -46,10 +43,7 @@ last_confirmed: 2026-09-05
     },
     "flags": [],
     "notes": ["F-research-01", "F-research-02", "F-research-03", "F-research-04"],
-    "handoff_sections": [
-      "量測紀錄（可重跑）",
-      "結論"
-    ]
+    "handoff_sections": ["量測紀錄（可重跑）", "結論"]
   },
   "project_inputs": [],
   "params": {}
