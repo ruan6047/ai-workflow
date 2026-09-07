@@ -7,6 +7,8 @@ import re
 import subprocess
 from urllib.parse import quote
 
+from .writes import WriteMixin
+
 
 class GhError(RuntimeError):
     """API 未完成；未知錯誤不得推論資源不存在。"""
@@ -58,23 +60,27 @@ def _error(rc, payload, stderr):
     raise cls(detail.strip())
 
 
-class GhClient:
-    """唯讀 GitHub 介接層；runner 採 subprocess.run 的參數與回傳介面。"""
+class GhClient(WriteMixin):
+    """GitHub 介接層；runner 採 subprocess.run 的參數與回傳介面。"""
 
     def __init__(self, repo, *, runner=None, page_size=100):
         self.repo = '/'.join(quote(part, safe='') for part in repo.split('/'))
         self.runner = subprocess.run if runner is None else runner
         self.page_size = page_size
 
-    def _request(self, endpoint, *, query=None, variables=None):
-        args = ['gh', 'api', endpoint, '--method', 'POST' if query else 'GET']
+    def _request(self, endpoint, *, query=None, variables=None, method=None, payload=None):
+        args = ['gh', 'api', endpoint, '--method', method or ('POST' if query else 'GET')]
         if query:
             args += ['-f', 'query=' + query]
             for key, value in (variables or {}).items():
                 if value is not None:
                     args += ['-F' if isinstance(value, int) else '-f', f'{key}={value}']
+        options = {}
+        if payload is not None:
+            args += ['--input', '-']
+            options['input'] = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         try:
-            result = self.runner(args, capture_output=True, text=True, check=False, timeout=60)
+            result = self.runner(args, capture_output=True, text=True, check=False, timeout=60, **options)
         except (subprocess.TimeoutExpired, ConnectionError) as exc:
             raise TransportError(str(exc)) from exc
         except OSError as exc:
@@ -104,6 +110,14 @@ class GhClient:
     def issue(self, number):
         """保留 body、state 與其餘 API 欄位。"""
         return self._rest(f'issues/{number}')
+
+    def issues(self, state='all'):
+        return [item for item in self._pages(f'issues?state={quote(state, safe="")}')
+                if 'pull_request' not in item]
+
+    def pulls_for_branch(self, branch):
+        head = self.repo.split('/')[0] + ':' + quote(branch, safe='')
+        return self._pages(f'pulls?state=all&head={head}')
 
     def issue_exists(self, number):
         try:

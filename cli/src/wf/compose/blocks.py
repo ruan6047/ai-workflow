@@ -1,4 +1,4 @@
-"""消費 core/card-schema.md §1／§3／§4、core/enums.md「值域」、
+"""消費 core/card-schema.md §1／§3／§4／§5、core/enums.md「值域」、
 core/state-machine.md §3、core/dispatch.md「模組段歸屬」與 wf-contract、
 core/return.md 與 core/ruling.md 的 schema、modules/*/module.md §0、
 core/naming.md §4／§5、core/handoff.md「每段首行」。
@@ -11,7 +11,7 @@ from typing import Any
 from .frontmatter import parse_frontmatter
 
 LABELS = frozenset(("json schema", "json wf-enums", "json wf-state-machine",
-                    "json wf-module-sections", "yaml wf-module"))
+                    "json wf-module-sections", "yaml wf-module", "json wf-projection"))
 
 
 class BlockError(ValueError):
@@ -66,6 +66,12 @@ class Catalog:
     def by_label(self, label: str) -> list[Block]:
         """非 schema 區塊依標籤查找，不進 $id 命名空間。"""
         return [block for block in self.blocks if block.label == label]
+
+
+def projection(catalog: Catalog) -> dict:
+    """core/card-schema.md §5 的欄名、順序與每欄設定逐字取自區塊。"""
+    block, = catalog.by_label("json wf-projection")
+    return json.loads(block.raw)
 
 
 def source_line(source: Source) -> str:

@@ -1,0 +1,89 @@
+FENCES core/card-schema.md 8
+FENCES core/dispatch.md 4
+FENCES core/enums.md 2
+FENCES core/glossary.md 0
+FENCES core/handoff.md 0
+FENCES core/naming.md 0
+FENCES core/params.md 0
+FENCES core/platform.md 0
+FENCES core/return.md 2
+FENCES core/ruling.md 2
+FENCES core/state-machine.md 2
+FENCES core/tiers.md 0
+FENCES core/verbs.md 0
+FENCES modules/db-contract/module.md 2
+FENCES modules/deploy/module.md 2
+FENCES modules/escalation/module.md 2
+FENCES modules/identity/module.md 2
+FENCES modules/initiative/module.md 2
+FENCES modules/maintenance/module.md 2
+FENCES modules/pitfalls-13/module.md 2
+FENCES modules/research/module.md 2
+FENCES modules/resource-lock/module.md 2
+FENCES modules/snapshot/module.md 2
+FENCES modules/stat-redline/module.md 2
+BLOCK core/card-schema.md | json schema | wf-card
+BLOCK core/card-schema.md | json schema | wf-intake
+BLOCK core/card-schema.md | json schema | wf-note
+BLOCK core/card-schema.md | json wf-projection | 無
+BLOCK core/dispatch.md | json wf-module-sections | 無
+BLOCK core/dispatch.md | json schema | wf-contract
+BLOCK core/enums.md | json wf-enums | wf-enums
+BLOCK core/return.md | json schema | wf-return
+BLOCK core/ruling.md | json schema | wf-ruling
+BLOCK core/state-machine.md | json wf-state-machine | 無
+BLOCK modules/db-contract/module.md | yaml wf-module | 無
+BLOCK modules/deploy/module.md | yaml wf-module | 無
+BLOCK modules/escalation/module.md | yaml wf-module | 無
+BLOCK modules/identity/module.md | yaml wf-module | 無
+BLOCK modules/initiative/module.md | yaml wf-module | 無
+BLOCK modules/maintenance/module.md | yaml wf-module | 無
+BLOCK modules/pitfalls-13/module.md | yaml wf-module | 無
+BLOCK modules/research/module.md | yaml wf-module | 無
+BLOCK modules/resource-lock/module.md | yaml wf-module | 無
+BLOCK modules/snapshot/module.md | yaml wf-module | 無
+BLOCK modules/stat-redline/module.md | yaml wf-module | 無
+TOTAL files=24 blocks=21 fences=42
+SCHEMA_IDS ["wf-card", "wf-contract", "wf-intake", "wf-note", "wf-return", "wf-ruling"]
+.IMPORT_NEGATIVE_CONTROL socket, requests detected
+SRC cli/src/wf/__init__.py 1 []
+SRC cli/src/wf/compose/__init__.py 1 []
+SRC cli/src/wf/compose/blocks.py 160 ["dataclasses", "json", "pathlib", "typing"]
+SRC cli/src/wf/compose/enable.py 33 []
+SRC cli/src/wf/compose/frontmatter.py 44 ["dataclasses", "pathlib", "re"]
+SRC cli/src/wf/compose/project_config.py 48 ["json", "pathlib"]
+SRC cli/src/wf/compose/schema.py 48 ["copy"]
+SRC cli/src/wf/compose/transitions.py 206 ["collections", "itertools", "pathlib"]
+SRC cli/src/wf/compose/validate.py 98 ["dataclasses", "re"]
+SRC cli/src/wf/gh/__init__.py 1 []
+SRC cli/src/wf/gh/client.py 223 ["json", "re", "subprocess", "urllib"]
+SRC cli/src/wf/gh/writes.py 125 ["json", "re", "urllib"]
+SRC cli/src/wf/verbs/__init__.py 1 []
+SRC cli/src/wf/verbs/_write.py 123 ["copy", "dataclasses", "json", "wf"]
+SRC cli/src/wf/verbs/main.py 13 ["sys"]
+SRC_FILES 15 SRC_TOTAL 1125
+.SECRET_SCANNED cli/tests/fixtures/gh/ancestor.json
+SECRET_SCANNED cli/tests/fixtures/gh/branch.json
+SECRET_SCANNED cli/tests/fixtures/gh/ci.json
+SECRET_SCANNED cli/tests/fixtures/gh/comment.json
+SECRET_SCANNED cli/tests/fixtures/gh/comments.json
+SECRET_SCANNED cli/tests/fixtures/gh/commit.json
+SECRET_SCANNED cli/tests/fixtures/gh/commit_exists.json
+SECRET_SCANNED cli/tests/fixtures/gh/issue.json
+SECRET_SCANNED cli/tests/fixtures/gh/issue_exists.json
+SECRET_SCANNED cli/tests/fixtures/gh/issue_open.json
+SECRET_SCANNED cli/tests/fixtures/gh/merge_base.json
+SECRET_SCANNED cli/tests/fixtures/gh/pr.json
+SECRET_SCANNED cli/tests/fixtures/gh/project.json
+SECRET_SCANNED cli/tests/fixtures/s05/comment_urls.json
+SECRET_SCANNED cli/tests/fixtures/s05/issues.json
+SECRET_SCANNED cli/tests/fixtures/s05/pulls_for_branch.json
+SECRET_SCANNED cli/tests/fixtures/s05/write_restore.json
+SECRET_SCANNED_FILES 17
+.PROJECTION {"階段": {"key": "stage"}, "狀態": {"key": "state"}, "級別": {"key": "tier"}, "owner": {"key": "owner", "max_bytes": 1024}, "卡ID": {"key": "card_id", "max_bytes": 1024}}
+.{"before_hash": "6f2c3c0da3f39aff160386ebef9f4378081dfd90692e662110c758a2c1902248", "after_hash": "6f2c3c0da3f39aff160386ebef9f4378081dfd90692e662110c758a2c1902248", "comment_urls": ["https://github.com/ruan6047/ai-workflow/issues/295#issuecomment-5571566009", "https://github.com/ruan6047/ai-workflow/issues/295#issuecomment-5571566173"]}
+.RECORDED_ISSUES 295 ISSUES 113
+COMMENT_URLS ['https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192617303', 'https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192710001', 'https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192994482']
+.SECRET_NEGATIVE_CONTROL rejected; FILES 4
+.
+7 passed in 0.21s

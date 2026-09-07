@@ -1,0 +1,29 @@
+MUTATION_APPLIED readback
+READBACK_RESULT 0 REJECT_COMMENTS 0
+F
+=================================== FAILURES ===================================
+E   AssertionError
+/private/tmp/claude-501/-Users-ruanruan-Dev-ai-workflow--claude-worktrees-wf-framework-lightweight-ed47aa/4ea8b91d-0d55-4a08-b7cc-3934d76305ca/scratchpad/wt-S05/cli/tests/test_write_flow.py:57: AssertionError
+=========================== short test summary info ============================
+FAILED cli/tests/test_write_flow.py::test_readback_mismatch_rejects_once - As...
+1 failed in 0.01s
+.MUTATION_APPLIED prevalidation
+DATA_WRITE_COUNTS 1 5
+F
+=================================== FAILURES ===================================
+E   AssertionError
+/private/tmp/claude-501/-Users-ruanruan-Dev-ai-workflow--claude-worktrees-wf-framework-lightweight-ed47aa/4ea8b91d-0d55-4a08-b7cc-3934d76305ca/scratchpad/wt-S05/cli/tests/test_write_flow.py:110: AssertionError
+=========================== short test summary info ============================
+FAILED cli/tests/test_write_flow.py::test_prevalidation_rejects_before_data_writes[change0]
+1 failed in 0.01s
+.MUTATION_APPLIED order
+WRITE_ORDER ['project', 'issue', 'set_project_field', 'set_project_field', 'set_project_field', 'set_project_field', 'set_project_field', 'update_card_body', 'issue', 'project']
+F
+=================================== FAILURES ===================================
+E   AssertionError
+/private/tmp/claude-501/-Users-ruanruan-Dev-ai-workflow--claude-worktrees-wf-framework-lightweight-ed47aa/4ea8b91d-0d55-4a08-b7cc-3934d76305ca/scratchpad/wt-S05/cli/tests/test_write_flow.py:86: AssertionError
+=========================== short test summary info ============================
+FAILED cli/tests/test_write_flow.py::test_write_order_and_equal_readback - As...
+1 failed in 0.01s
+.
+3 passed in 0.28s

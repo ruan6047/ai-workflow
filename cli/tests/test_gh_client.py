@@ -54,7 +54,9 @@ def test_project_pagination_and_raw_projection_values():
 def test_fixture_inventory_covers_public_read_operations():
     expected = {name for name, value in vars(GhClient).items()
                 if not name.startswith('_') and callable(value)}
+    from .test_gh_write_recording import load_case
     fixtures = [load(name) for name in scenarios()]
+    fixtures += [load_case(name) for name in ('issues', 'pulls_for_branch')]
     assert {f['method'] for f in fixtures} == expected
 
 

@@ -1,0 +1,218 @@
+{
+  "provenance": "真實 API 回應",
+  "method": "write_restore",
+  "args": [],
+  "exchanges": [
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295 --method GET",
+      "recorded_at": "2026-09-07T13:45:49.324771+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"repository_url\":\"https://api.github.com/repos/ruan6047/ai-workflow\",\"labels_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/labels{/name}\",\"comments_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/comments\",\"events_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/events\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295\",\"id\":5373277421,\"node_id\":\"I_kwDOTR4r388AAAABQEW07Q\",\"number\":295,\"title\":\"WF-STEP6 錄放測試用（可關）\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"labels\":[],\"state\":\"open\",\"locked\":false,\"assignees\":[],\"milestone\":null,\"comments\":0,\"created_at\":\"2026-09-07T10:17:05Z\",\"updated_at\":\"2026-09-07T10:17:05Z\",\"closed_at\":null,\"assignee\":null,\"author_association\":\"OWNER\",\"active_lock_reason\":null,\"sub_issues_summary\":{\"total\":0,\"completed\":0,\"percent_completed\":0},\"issue_dependencies_summary\":{\"blocked_by\":0,\"total_blocked_by\":0,\"blocking\":0,\"total_blocking\":0},\"body\":\"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\\"schema_version\\\": 2, \\\"card_id\\\": \\\"WF-000\\\", \\\"note\\\": \\\"此區塊僅供錄放測試覆寫\\\"}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\",\"closed_by\":null,\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"timeline_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/timeline\",\"performed_via_github_app\":null,\"state_reason\":null,\"pinned_comment\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295 --method GET",
+      "recorded_at": "2026-09-07T13:45:49.829216+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"repository_url\":\"https://api.github.com/repos/ruan6047/ai-workflow\",\"labels_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/labels{/name}\",\"comments_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/comments\",\"events_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/events\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295\",\"id\":5373277421,\"node_id\":\"I_kwDOTR4r388AAAABQEW07Q\",\"number\":295,\"title\":\"WF-STEP6 錄放測試用（可關）\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"labels\":[],\"state\":\"open\",\"locked\":false,\"assignees\":[],\"milestone\":null,\"comments\":0,\"created_at\":\"2026-09-07T10:17:05Z\",\"updated_at\":\"2026-09-07T10:17:05Z\",\"closed_at\":null,\"assignee\":null,\"author_association\":\"OWNER\",\"active_lock_reason\":null,\"sub_issues_summary\":{\"total\":0,\"completed\":0,\"percent_completed\":0},\"issue_dependencies_summary\":{\"blocked_by\":0,\"total_blocked_by\":0,\"blocking\":0,\"total_blocking\":0},\"body\":\"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\\"schema_version\\\": 2, \\\"card_id\\\": \\\"WF-000\\\", \\\"note\\\": \\\"此區塊僅供錄放測試覆寫\\\"}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\",\"closed_by\":null,\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"timeline_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/timeline\",\"performed_via_github_app\":null,\"state_reason\":null,\"pinned_comment\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295",
+        "--method",
+        "PATCH",
+        "--input",
+        "-"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60,
+        "input": "{\"body\": \"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\n  \\\"schema_version\\\": 2,\\n  \\\"card_id\\\": \\\"WF-000\\\",\\n  \\\"note\\\": \\\"S05 真實錄放：僅替換此區塊\\\"\\n}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\"}"
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295 --method PATCH --input -",
+      "recorded_at": "2026-09-07T13:45:50.681195+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"repository_url\":\"https://api.github.com/repos/ruan6047/ai-workflow\",\"labels_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/labels{/name}\",\"comments_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/comments\",\"events_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/events\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295\",\"id\":5373277421,\"node_id\":\"I_kwDOTR4r388AAAABQEW07Q\",\"number\":295,\"title\":\"WF-STEP6 錄放測試用（可關）\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"labels\":[],\"state\":\"open\",\"locked\":false,\"assignees\":[],\"milestone\":null,\"comments\":0,\"created_at\":\"2026-09-07T10:17:05Z\",\"updated_at\":\"2026-09-07T13:45:50Z\",\"closed_at\":null,\"assignee\":null,\"author_association\":\"OWNER\",\"active_lock_reason\":null,\"sub_issues_summary\":{\"total\":0,\"completed\":0,\"percent_completed\":0},\"issue_dependencies_summary\":{\"blocked_by\":0,\"total_blocked_by\":0,\"blocking\":0,\"total_blocking\":0},\"body\":\"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\n  \\\"schema_version\\\": 2,\\n  \\\"card_id\\\": \\\"WF-000\\\",\\n  \\\"note\\\": \\\"S05 真實錄放：僅替換此區塊\\\"\\n}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\",\"closed_by\":null,\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"timeline_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/timeline\",\"performed_via_github_app\":null,\"state_reason\":null,\"pinned_comment\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295 --method GET",
+      "recorded_at": "2026-09-07T13:45:51.152788+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"repository_url\":\"https://api.github.com/repos/ruan6047/ai-workflow\",\"labels_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/labels{/name}\",\"comments_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/comments\",\"events_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/events\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295\",\"id\":5373277421,\"node_id\":\"I_kwDOTR4r388AAAABQEW07Q\",\"number\":295,\"title\":\"WF-STEP6 錄放測試用（可關）\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"labels\":[],\"state\":\"open\",\"locked\":false,\"assignees\":[],\"milestone\":null,\"comments\":0,\"created_at\":\"2026-09-07T10:17:05Z\",\"updated_at\":\"2026-09-07T13:45:50Z\",\"closed_at\":null,\"assignee\":null,\"author_association\":\"OWNER\",\"active_lock_reason\":null,\"sub_issues_summary\":{\"total\":0,\"completed\":0,\"percent_completed\":0},\"issue_dependencies_summary\":{\"blocked_by\":0,\"total_blocked_by\":0,\"blocking\":0,\"total_blocking\":0},\"body\":\"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\n  \\\"schema_version\\\": 2,\\n  \\\"card_id\\\": \\\"WF-000\\\",\\n  \\\"note\\\": \\\"S05 真實錄放：僅替換此區塊\\\"\\n}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\",\"closed_by\":null,\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"timeline_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/timeline\",\"performed_via_github_app\":null,\"state_reason\":null,\"pinned_comment\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295/comments",
+        "--method",
+        "POST",
+        "--input",
+        "-"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60,
+        "input": "{\"body\": \"wf:edit\\nS05 錄放測試：只換 wf-card 區塊；原 body 將恢復。\"}"
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295/comments --method POST --input -",
+      "recorded_at": "2026-09-07T13:45:52.054182+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5571566009\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295#issuecomment-5571566009\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"id\":5571566009,\"node_id\":\"IC_kwDOTR4r388AAAABTBdZuQ\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-09-07T13:45:52Z\",\"updated_at\":\"2026-09-07T13:45:52Z\",\"author_association\":\"OWNER\",\"body\":\"wf:edit\\nS05 錄放測試：只換 wf-card 區塊；原 body 將恢復。\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5571566009/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295/comments",
+        "--method",
+        "POST",
+        "--input",
+        "-"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60,
+        "input": "{\"body\": \"wf:reject\\n拒收・D3・S05 錄放測試：回讀不等\"}"
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295/comments --method POST --input -",
+      "recorded_at": "2026-09-07T13:45:52.805590+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5571566173\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295#issuecomment-5571566173\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"id\":5571566173,\"node_id\":\"IC_kwDOTR4r388AAAABTBdaXQ\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-09-07T13:45:52Z\",\"updated_at\":\"2026-09-07T13:45:52Z\",\"author_association\":\"OWNER\",\"body\":\"wf:reject\\n拒收・D3・S05 錄放測試：回讀不等\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5571566173/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295",
+        "--method",
+        "PATCH",
+        "--input",
+        "-"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60,
+        "input": "{\"body\": \"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\\"schema_version\\\": 2, \\\"card_id\\\": \\\"WF-000\\\", \\\"note\\\": \\\"此區塊僅供錄放測試覆寫\\\"}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\"}"
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295 --method PATCH --input -",
+      "recorded_at": "2026-09-07T13:45:53.642602+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"repository_url\":\"https://api.github.com/repos/ruan6047/ai-workflow\",\"labels_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/labels{/name}\",\"comments_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/comments\",\"events_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/events\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295\",\"id\":5373277421,\"node_id\":\"I_kwDOTR4r388AAAABQEW07Q\",\"number\":295,\"title\":\"WF-STEP6 錄放測試用（可關）\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"labels\":[],\"state\":\"open\",\"locked\":false,\"assignees\":[],\"milestone\":null,\"comments\":2,\"created_at\":\"2026-09-07T10:17:05Z\",\"updated_at\":\"2026-09-07T13:45:53Z\",\"closed_at\":null,\"assignee\":null,\"author_association\":\"OWNER\",\"active_lock_reason\":null,\"sub_issues_summary\":{\"total\":0,\"completed\":0,\"percent_completed\":0},\"issue_dependencies_summary\":{\"blocked_by\":0,\"total_blocked_by\":0,\"blocking\":0,\"total_blocking\":0},\"body\":\"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\\"schema_version\\\": 2, \\\"card_id\\\": \\\"WF-000\\\", \\\"note\\\": \\\"此區塊僅供錄放測試覆寫\\\"}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\",\"closed_by\":null,\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"timeline_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/timeline\",\"performed_via_github_app\":null,\"state_reason\":null,\"pinned_comment\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/295",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/295 --method GET",
+      "recorded_at": "2026-09-07T13:45:54.102862+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295\",\"repository_url\":\"https://api.github.com/repos/ruan6047/ai-workflow\",\"labels_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/labels{/name}\",\"comments_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/comments\",\"events_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/events\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/295\",\"id\":5373277421,\"node_id\":\"I_kwDOTR4r388AAAABQEW07Q\",\"number\":295,\"title\":\"WF-STEP6 錄放測試用（可關）\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"labels\":[],\"state\":\"open\",\"locked\":false,\"assignees\":[],\"milestone\":null,\"comments\":2,\"created_at\":\"2026-09-07T10:17:05Z\",\"updated_at\":\"2026-09-07T13:45:53Z\",\"closed_at\":null,\"assignee\":null,\"author_association\":\"OWNER\",\"active_lock_reason\":null,\"sub_issues_summary\":{\"total\":0,\"completed\":0,\"percent_completed\":0},\"issue_dependencies_summary\":{\"blocked_by\":0,\"total_blocked_by\":0,\"blocking\":0,\"total_blocking\":0},\"body\":\"第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\\n\\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\\n\\n```json wf-card\\n{\\\"schema_version\\\": 2, \\\"card_id\\\": \\\"WF-000\\\", \\\"note\\\": \\\"此區塊僅供錄放測試覆寫\\\"}\\n```\\n\\n這段散文用來驗證「只換區塊、散文逐字節不變」。\",\"closed_by\":null,\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"timeline_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/295/timeline\",\"performed_via_github_app\":null,\"state_reason\":null,\"pinned_comment\":null}",
+        "stderr": ""
+      }
+    }
+  ],
+  "observed": {
+    "before_hash": "6f2c3c0da3f39aff160386ebef9f4378081dfd90692e662110c758a2c1902248",
+    "after_hash": "6f2c3c0da3f39aff160386ebef9f4378081dfd90692e662110c758a2c1902248",
+    "changed_body": "第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\n\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\n\n```json wf-card\n{\n  \"schema_version\": 2,\n  \"card_id\": \"WF-000\",\n  \"note\": \"S05 真實錄放：僅替換此區塊\"\n}\n```\n\n這段散文用來驗證「只換區塊、散文逐字節不變」。",
+    "original_body": "第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\n\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\n\n```json wf-card\n{\"schema_version\": 2, \"card_id\": \"WF-000\", \"note\": \"此區塊僅供錄放測試覆寫\"}\n```\n\n這段散文用來驗證「只換區塊、散文逐字節不變」。",
+    "restored_body": "第 6 步新 CLI 切片 S05 錄製「寫入」類真實 API 回應用（換 issue body 的 json wf-card 區塊、貼留言、貼 wf:reject）。\n\n執行者（gpt-6-astra）只對本 issue 寫；錄完恢復原 body、留言保留。需求方 2026-09-08 同意開設。錄製完成後由 PM 關閉。\n\n```json wf-card\n{\"schema_version\": 2, \"card_id\": \"WF-000\", \"note\": \"此區塊僅供錄放測試覆寫\"}\n```\n\n這段散文用來驗證「只換區塊、散文逐字節不變」。",
+    "comment_urls": [
+      "https://github.com/ruan6047/ai-workflow/issues/295#issuecomment-5571566009",
+      "https://github.com/ruan6047/ai-workflow/issues/295#issuecomment-5571566173"
+    ]
+  },
+  "observed_shape": {
+    "after_hash": "str",
+    "before_hash": "str",
+    "changed_body": "str",
+    "comment_urls": {
+      "list": [
+        "str"
+      ]
+    },
+    "original_body": "str",
+    "restored_body": "str"
+  }
+}
