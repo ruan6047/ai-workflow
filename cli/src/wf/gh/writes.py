@@ -91,6 +91,10 @@ class WriteMixin:
         return result
 
     def set_project_field(self, project, item_id, name, value):
+        return self.write_project_field(self.prepare_project_field(project, item_id, name, value))
+
+    def prepare_project_field(self, project, item_id, name, value):
+        """只解析欄與選項 ID；讓呼叫端在首次寫入前準備整批。"""
         field, = (f for f in project['fields'] if f['name'] == name)
         inputs = {'projectId': project['id'], 'itemId': item_id, 'fieldId': field['id']}
         if value is None:
@@ -105,7 +109,10 @@ class WriteMixin:
                 inputs['value'] = {'singleSelectOptionId': option['id']}
             else:
                 inputs['value'] = {'text': value}
-        return self._mutation(operation, input_type, inputs, 'projectV2Item{id}')
+        return operation, input_type, inputs
+
+    def write_project_field(self, prepared):
+        return self._mutation(*prepared, 'projectV2Item{id}')
 
     def _mutation(self, operation, input_type, inputs, selection):
         return self._request('graphql', method='POST', payload={

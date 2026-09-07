@@ -1,9 +1,6 @@
-"""第 6 步測試策略與 S05 射程：src 母體、stdlib、網路邊界及離線護欄。"""
+"""消費 core/verbs.md §2、roles/conduct-common.md §1；第 6 步 src 與依賴邊界。"""
 import ast
 import json
-import os
-from pathlib import Path
-import subprocess
 import sys
 
 import pytest
@@ -22,22 +19,6 @@ def imports(text):
         elif isinstance(node, ast.ImportFrom) and not node.level:
             found.add(node.module.split('.')[0])
     return found
-
-
-def pytest_sessionstart(session):
-    if os.environ.get('WF_S05_OFFLINE') != '1':
-        return
-    real_run = subprocess.run
-
-    def offline_run(argv, *args, **kwargs):
-        if isinstance(argv, (str, bytes)) or Path(argv[0]).name in {'gh', 'curl', 'wget', 'ssh'}:
-            raise AssertionError('OFFLINE_NETWORK_DENIED')
-        return real_run(argv, *args, **kwargs)
-
-    subprocess.run = offline_run
-    with pytest.raises(AssertionError, match='OFFLINE_NETWORK_DENIED'):
-        subprocess.run(['gh', 'api', 'offline-negative-control'])
-    print('OFFLINE_NETWORK_DENIED negative control passed')
 
 
 def test_source_inventory_and_negative_controls():

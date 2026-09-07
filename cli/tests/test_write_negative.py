@@ -22,22 +22,34 @@ def pytest_sessionstart(session):
         old = "errors = validate(card, compose_schema(catalog, 'wf-card', enabled_modules))"
         new = 'errors = []'
     elif mutation == 'order':
-        old = '''    try:
+        old = """    try:
         client.update_card_body(number, card, create=create)
     except CardBodyError as exc:
         return reject(client, number, 'D3', str(exc), printed)
-    if write_projection:
-        for name, value in values.items():
-            client.set_project_field(project, item_id, name, value)
-'''
-        new = '''    if write_projection:
-        for name, value in values.items():
-            client.set_project_field(project, item_id, name, value)
+    for field in fields:
+        client.write_project_field(field)
+"""
+        new = """    for field in fields:
+        client.write_project_field(field)
     try:
         client.update_card_body(number, card, create=create)
     except CardBodyError as exc:
         return reject(client, number, 'D3', str(exc), printed)
-'''
+"""
+    elif mutation == 'projection':
+        old = """        fields = [client.prepare_project_field(project, item_id, name, value)
+                  for name, value in values.items()] if write_projection else []
+"""
+        assert source.count(old) == 1
+        source = source.replace(old, '')
+        old = '    for field in fields:\n'
+        new = """    try:
+        fields = [client.prepare_project_field(project, item_id, name, value)
+                  for name, value in values.items()] if write_projection else []
+    except (ValueError, TypeError, KeyError) as exc:
+        return reject(client, number, 'D3', str(exc), printed)
+    for field in fields:
+"""
     else:
         raise AssertionError(mutation)
     assert source.count(old) == 1
@@ -49,6 +61,7 @@ def pytest_sessionstart(session):
     ('readback', 'test_readback_mismatch_rejects_once'),
     ('prevalidation', 'test_prevalidation_rejects_before_data_writes[change0]'),
     ('order', 'test_write_order_and_equal_readback'),
+    ('projection', 'test_projection_resolution_precedes_data_writes[option]'),
 ])
 def test_mutations_make_acceptance_fail(mutation, target):
     env = dict(os.environ, PYTHONPATH='cli/src', WF_S05_MUTATION=mutation)

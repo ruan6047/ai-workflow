@@ -32,7 +32,7 @@ def load_project_config(root) -> dict:
         raise ProjectConfigError('areas 須為字串陣列')
     if not isinstance(cfg['merge_method'], str):
         raise ProjectConfigError('merge_method 須為字串')
-    if 'project' in raw:
+    if cfg['project'] is not None:
         project = cfg['project']
         if (not isinstance(project, dict) or not isinstance(project.get('owner'), str)
                 or type(project.get('number')) is not int):

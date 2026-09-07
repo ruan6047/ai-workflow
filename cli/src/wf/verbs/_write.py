@@ -92,15 +92,16 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
         if source is None and project is not None:
             source = _values(project, item_id)
         card, values = _prepare(card_json, current, source, catalog, enabled_modules)
+        fields = [client.prepare_project_field(project, item_id, name, value)
+                  for name, value in values.items()] if write_projection else []
     except (ValueError, TypeError, KeyError) as exc:
         return reject(client, number, 'D3', str(exc), printed)
     try:
         client.update_card_body(number, card, create=create)
     except CardBodyError as exc:
         return reject(client, number, 'D3', str(exc), printed)
-    if write_projection:
-        for name, value in values.items():
-            client.set_project_field(project, item_id, name, value)
+    for field in fields:
+        client.write_project_field(field)
     try:
         actual_card = read_card(client.issue(number)['body'] or '')
         actual = (_values(client.project(project_owner, project_number, projection(catalog)), item_id)

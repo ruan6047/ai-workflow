@@ -35,7 +35,7 @@ def test_adoption_seed_verbatim(tmp_path):
     ([], '頂層'), ({'project': {'owner': 'a'}}, 'project'),
     ({'modules': [{}]}, 'name'), ({'modules': [{'name': 'snapshot', 'params': []}]}, 'params'),
     ({'modules': 'snapshot'}, 'modules'), ({'modules': ['snapshot']}, 'name'),
-    ({'project': {'owner': 'a', 'number': True}}, 'project'), ({'project': None}, 'project'),
+    ({'project': {'owner': 'a', 'number': True}}, 'project'),
     ({'areas': [3]}, 'areas'), ({'areas': 'WF'}, 'areas'), ({'merge_method': 3}, 'merge_method'),
 ])
 def test_bad_config_is_recognizable(tmp_path, bad, reason):
@@ -59,3 +59,7 @@ def test_malformed_json(tmp_path):
     path.write_text('{bad}')
     with pytest.raises(ProjectConfigError):
         load_project_config(tmp_path)
+
+
+def test_explicit_null_project_matches_missing(tmp_path):
+    assert config(tmp_path, {"project": None}) == config(tmp_path, {})

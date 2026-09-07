@@ -195,3 +195,22 @@ def test_shared_fake_records_all_writes_in_order():
     assert fake.calls[0][1] == dict(number=295, card_json={'x': 1}, create=True)
     assert fake.calls[2][1]['value'] is None
     assert fake.responses == {}
+
+
+@pytest.mark.parametrize('value,data_type', [('選值', 'SINGLE_SELECT'), ('逐字', 'TEXT'), (None, 'SINGLE_SELECT')])
+def test_prepared_field_writes_without_resolving_again(value, data_type):
+    runner = ApiFake()
+    client = GhClient('a/b', runner=runner)
+    project = {'id': 'PROJECT', 'fields': [{'name': '呼叫端欄', 'id': 'FIELD', 'dataType': data_type}]}
+    prepared = client.prepare_project_field(project, 'ITEM', '呼叫端欄', value)
+    assert all('input' not in kwargs for args, kwargs in runner.calls)
+    reads = len(runner.calls)
+    assert reads == int(data_type == 'SINGLE_SELECT' and value is not None)
+    project['fields'].clear()
+    client.write_project_field(prepared)
+    assert len(runner.calls) == reads + 1
+    payload = json.loads(runner.calls[-1][1]['input'])
+    assert payload['query'].startswith('mutation(')
+    assert payload['variables']['input']['fieldId'] == 'FIELD'
+    assert payload['variables']['input'].get('value') == (
+        None if value is None else {'text': value} if data_type == 'TEXT' else {'singleSelectOptionId': 'OPTION'})
