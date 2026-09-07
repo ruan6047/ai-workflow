@@ -1,0 +1,178 @@
+{
+  "provenance": "真實 API 回應",
+  "method": "issue",
+  "args": [
+    228
+  ],
+  "page_size": 100,
+  "exchanges": [
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/228",
+        "--method",
+        "GET"
+      ],
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/228 --method GET",
+      "recorded_at": "2026-09-07T04:44:21.495276+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/228\",\"repository_url\":\"https://api.github.com/repos/ruan6047/ai-workflow\",\"labels_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/228/labels{/name}\",\"comments_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/228/comments\",\"events_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/228/events\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/228\",\"id\":5309010166,\"node_id\":\"I_kwDOTR4r388AAAABPHEQ9g\",\"number\":228,\"title\":\"清單項：決議取代清單未涵蓋 canonical §3 的兩處（claim 事件句、四個已裁撤角色名）\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"labels\":[],\"state\":\"open\",\"locked\":false,\"assignees\":[],\"milestone\":null,\"comments\":2,\"created_at\":\"2026-09-01T07:24:29Z\",\"updated_at\":\"2026-09-01T09:27:04Z\",\"closed_at\":null,\"assignee\":null,\"author_association\":\"OWNER\",\"active_lock_reason\":null,\"sub_issues_summary\":{\"total\":0,\"completed\":0,\"percent_completed\":0},\"issue_dependencies_summary\":{\"blocked_by\":0,\"total_blocked_by\":0,\"blocking\":0,\"total_blocking\":0},\"body\":\"### 出處可指\\n\\n`WF-REDESIGN-W2A`（#219）交付報告之「五 · 上呈」兩項（執行者 session `250bf6e2`／`e34c8786` 貼於 https://github.com/ruan6047/ai-workflow/issues/219#issuecomment-5490217865 ）；PM 於 2026-09-01 對決議紀錄取代清單全表的逐列比對。\\n\\n### 是觀察不是結論\\n\\n決議紀錄 `docs/research/WORKFLOW-REDESIGN-2026-08-30.md` §一取代清單共 14 列（2026-09-01 讀）。其中：\\n\\n- row 5 的被取代者欄逐字為 `aiwf MODEL_ROUTING.md「記入 claim 事件」`，狀態欄為 `✅ 已完成（9bb9cba）`；canonical `AI_WORKFLOW.md` §3 內有同語意句，該句不出現於任何一列的被取代者欄（逐列比對，14/14）。\\n- canonical §3 以四個名稱敘述 Gate 流程（含 `Discovery lead`），該批名稱不在 W2A 交付後 §1 的六角色表內；「§3 角色名」不出現於任何一列的被取代者欄（逐列比對，14/14）。\\n\\nW2A 交付後之 canonical §1 就地載有三行標註，逐字含「這是刻意留下的、⛔ 不是遺漏」「取代清單⛔ 沒有『§3 角色名』那一列 ⇒ 它沒有 owner」「⛔ 不得自行推對應關係」。\\n\\n### 查重留痕\\n\\n搜過的關鍵字與命中：`取代清單`（命中 #177、#219，無既有卡）、`claim 事件`（命中 #219 交付報告、決議 row 5，無卡）、`Discovery lead`（命中 canonical §3、#219，無卡）、`gh issue list --repo ruan6047/ai-workflow --state all --search \\\"取代清單\\\"` → 無既有清單項或卡承接此缺漏。\\n\\n### 屬哪個 repo\\n\\n`ruan6047/ai-workflow`。\\n\\n### 提案者身分\\n\\n| 格 | 值 |\\n|---|---|\\n| GitHub 帳號 | `ruan6047`（本 issue 的 author 欄即為此） |\\n| session ID | `cc0a7952-07a5-4978-8d03-8b5f48fbc690`（`~/.claude/projects/-Users-ruanruan-Dev-cpbl-analytics--claude-worktrees-workflow-review-optimization-33882b/<id>.jsonl`，需求方可核） |\\n| 訊息定位 | 需求方於該 session 之訊息「記進 #221 然後以防萬一最後一論研究沒有問題就直接核准」，緊接於 PM 呈 W2A 三件裁定之後 |\\n\\n⚠️ 提案者＝第一 PM ⇒ 依 `stage-rules/list-intake-requirements.md` 須由**另一個 PM** 做收件檢查。\\n\",\"closed_by\":null,\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/228/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"timeline_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/228/timeline\",\"performed_via_github_app\":null,\"state_reason\":null,\"pinned_comment\":null}",
+        "stderr": ""
+      }
+    }
+  ],
+  "observed": {
+    "url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/228",
+    "repository_url": "https://api.github.com/repos/ruan6047/ai-workflow",
+    "labels_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/228/labels{/name}",
+    "comments_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/228/comments",
+    "events_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/228/events",
+    "html_url": "https://github.com/ruan6047/ai-workflow/issues/228",
+    "id": 5309010166,
+    "node_id": "I_kwDOTR4r388AAAABPHEQ9g",
+    "number": 228,
+    "title": "清單項：決議取代清單未涵蓋 canonical §3 的兩處（claim 事件句、四個已裁撤角色名）",
+    "user": {
+      "login": "ruan6047",
+      "id": 49437898,
+      "node_id": "MDQ6VXNlcjQ5NDM3ODk4",
+      "avatar_url": "https://avatars.githubusercontent.com/u/49437898?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/ruan6047",
+      "html_url": "https://github.com/ruan6047",
+      "followers_url": "https://api.github.com/users/ruan6047/followers",
+      "following_url": "https://api.github.com/users/ruan6047/following{/other_user}",
+      "gists_url": "https://api.github.com/users/ruan6047/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/ruan6047/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/ruan6047/subscriptions",
+      "organizations_url": "https://api.github.com/users/ruan6047/orgs",
+      "repos_url": "https://api.github.com/users/ruan6047/repos",
+      "events_url": "https://api.github.com/users/ruan6047/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/ruan6047/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "labels": [],
+    "state": "open",
+    "locked": false,
+    "assignees": [],
+    "milestone": null,
+    "comments": 2,
+    "created_at": "2026-09-01T07:24:29Z",
+    "updated_at": "2026-09-01T09:27:04Z",
+    "closed_at": null,
+    "assignee": null,
+    "author_association": "OWNER",
+    "active_lock_reason": null,
+    "sub_issues_summary": {
+      "total": 0,
+      "completed": 0,
+      "percent_completed": 0
+    },
+    "issue_dependencies_summary": {
+      "blocked_by": 0,
+      "total_blocked_by": 0,
+      "blocking": 0,
+      "total_blocking": 0
+    },
+    "body": "### 出處可指\n\n`WF-REDESIGN-W2A`（#219）交付報告之「五 · 上呈」兩項（執行者 session `250bf6e2`／`e34c8786` 貼於 https://github.com/ruan6047/ai-workflow/issues/219#issuecomment-5490217865 ）；PM 於 2026-09-01 對決議紀錄取代清單全表的逐列比對。\n\n### 是觀察不是結論\n\n決議紀錄 `docs/research/WORKFLOW-REDESIGN-2026-08-30.md` §一取代清單共 14 列（2026-09-01 讀）。其中：\n\n- row 5 的被取代者欄逐字為 `aiwf MODEL_ROUTING.md「記入 claim 事件」`，狀態欄為 `✅ 已完成（9bb9cba）`；canonical `AI_WORKFLOW.md` §3 內有同語意句，該句不出現於任何一列的被取代者欄（逐列比對，14/14）。\n- canonical §3 以四個名稱敘述 Gate 流程（含 `Discovery lead`），該批名稱不在 W2A 交付後 §1 的六角色表內；「§3 角色名」不出現於任何一列的被取代者欄（逐列比對，14/14）。\n\nW2A 交付後之 canonical §1 就地載有三行標註，逐字含「這是刻意留下的、⛔ 不是遺漏」「取代清單⛔ 沒有『§3 角色名』那一列 ⇒ 它沒有 owner」「⛔ 不得自行推對應關係」。\n\n### 查重留痕\n\n搜過的關鍵字與命中：`取代清單`（命中 #177、#219，無既有卡）、`claim 事件`（命中 #219 交付報告、決議 row 5，無卡）、`Discovery lead`（命中 canonical §3、#219，無卡）、`gh issue list --repo ruan6047/ai-workflow --state all --search \"取代清單\"` → 無既有清單項或卡承接此缺漏。\n\n### 屬哪個 repo\n\n`ruan6047/ai-workflow`。\n\n### 提案者身分\n\n| 格 | 值 |\n|---|---|\n| GitHub 帳號 | `ruan6047`（本 issue 的 author 欄即為此） |\n| session ID | `cc0a7952-07a5-4978-8d03-8b5f48fbc690`（`~/.claude/projects/-Users-ruanruan-Dev-cpbl-analytics--claude-worktrees-workflow-review-optimization-33882b/<id>.jsonl`，需求方可核） |\n| 訊息定位 | 需求方於該 session 之訊息「記進 #221 然後以防萬一最後一論研究沒有問題就直接核准」，緊接於 PM 呈 W2A 三件裁定之後 |\n\n⚠️ 提案者＝第一 PM ⇒ 依 `stage-rules/list-intake-requirements.md` 須由**另一個 PM** 做收件檢查。\n",
+    "closed_by": null,
+    "reactions": {
+      "url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/228/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "timeline_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/228/timeline",
+    "performed_via_github_app": null,
+    "state_reason": null,
+    "pinned_comment": null
+  },
+  "observed_shape": {
+    "active_lock_reason": "NoneType",
+    "assignee": "NoneType",
+    "assignees": {
+      "list": []
+    },
+    "author_association": "str",
+    "body": "str",
+    "closed_at": "NoneType",
+    "closed_by": "NoneType",
+    "comments": "int",
+    "comments_url": "str",
+    "created_at": "str",
+    "events_url": "str",
+    "html_url": "str",
+    "id": "int",
+    "issue_dependencies_summary": {
+      "blocked_by": "int",
+      "blocking": "int",
+      "total_blocked_by": "int",
+      "total_blocking": "int"
+    },
+    "labels": {
+      "list": []
+    },
+    "labels_url": "str",
+    "locked": "bool",
+    "milestone": "NoneType",
+    "node_id": "str",
+    "number": "int",
+    "performed_via_github_app": "NoneType",
+    "pinned_comment": "NoneType",
+    "reactions": {
+      "+1": "int",
+      "-1": "int",
+      "confused": "int",
+      "eyes": "int",
+      "heart": "int",
+      "hooray": "int",
+      "laugh": "int",
+      "rocket": "int",
+      "total_count": "int",
+      "url": "str"
+    },
+    "repository_url": "str",
+    "state": "str",
+    "state_reason": "NoneType",
+    "sub_issues_summary": {
+      "completed": "int",
+      "percent_completed": "int",
+      "total": "int"
+    },
+    "timeline_url": "str",
+    "title": "str",
+    "updated_at": "str",
+    "url": "str",
+    "user": {
+      "avatar_url": "str",
+      "events_url": "str",
+      "followers_url": "str",
+      "following_url": "str",
+      "gists_url": "str",
+      "gravatar_id": "str",
+      "html_url": "str",
+      "id": "int",
+      "login": "str",
+      "node_id": "str",
+      "organizations_url": "str",
+      "received_events_url": "str",
+      "repos_url": "str",
+      "site_admin": "bool",
+      "starred_url": "str",
+      "subscriptions_url": "str",
+      "type": "str",
+      "url": "str",
+      "user_view_type": "str"
+    }
+  }
+}

@@ -1,1 +1,1 @@
-"""gh：GitHub 讀寫 adapter，唯一有網路的層；測試用錄放 fake（fixture 為真實 API 回應）。"""
+"""消費 docs/research/2026-09-07-step6-spec.md 第 6 步：GitHub 唯一網路層。"""

@@ -1,0 +1,28 @@
+{
+  "provenance": "真實 API 回應",
+  "method": "commit_exists",
+  "args": [
+    "f52df839b43e637cd6c399e4834bea76da4af029"
+  ],
+  "page_size": 100,
+  "exchanges": [
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/git/commits/f52df839b43e637cd6c399e4834bea76da4af029",
+        "--method",
+        "GET"
+      ],
+      "source_command": "gh api repos/ruan6047/ai-workflow/git/commits/f52df839b43e637cd6c399e4834bea76da4af029 --method GET",
+      "recorded_at": "2026-09-07T04:44:25.353499+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"sha\":\"f52df839b43e637cd6c399e4834bea76da4af029\",\"node_id\":\"C_kwDOTR4r39oAKGY1MmRmODM5YjQzZTYzN2NkNmMzOTllNDgzNGJlYTc2ZGE0YWYwMjk\",\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/git/commits/f52df839b43e637cd6c399e4834bea76da4af029\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/commit/f52df839b43e637cd6c399e4834bea76da4af029\",\"author\":{\"name\":\"ruan6047\",\"email\":\"49437898+ruan6047@users.noreply.github.com\",\"date\":\"2026-09-07T04:28:09Z\"},\"committer\":{\"name\":\"GitHub\",\"email\":\"noreply@github.com\",\"date\":\"2026-09-07T04:28:09Z\"},\"tree\":{\"sha\":\"54bacf9e2461697f7b8e61efbadce60e61c636bd\",\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/git/trees/54bacf9e2461697f7b8e61efbadce60e61c636bd\"},\"message\":\"docs(rebuild): 第 6 步規格前置 B — open --area、wf:return、review 取源、wf-contract、snapshot 例外、closeout squash 四旗標、--actor、B01 動詞契約\\n\\ncore/verbs.md §1／§2：open 加 --area（areas 單值隱含；缺而多值或不在枚舉＝D3）；move 的 --actor 收 role:actor\\n（role 不在四值＝D3）、owner 只在派工邊寫、先寫卡面 stage/state 再回寫五欄、印「裁定留言不在本卡」；\\nedit ⛔ 改 stage/state（只由 move 寫，D1）；brief --for closeout 另印 squash 訊息（被審 SHA＋每則 wf:verdict\\n留言作者與 review_result；trailer 取 --requested-by／--planned-by／--implemented-by／--reviewed-by 四旗標，\\nReviewed-by 缺旗標取留言作者、首行不讀；缺者印、⛔ 不自動 merge）；review 的 source_sha 依 role 取源五種情況、\\n首行依 role（executor wf:return／reviewer wf:verdict）；snapshot 只印對帳不等⛔ 不重寫、schema 仍從 core 讀。\\ncore/naming.md §3 加 wf:return；core/dispatch.md 加 wf-contract 的 json schema（不合 schema＝印不採用⛔ 不擋）。\\nstep6-spec 的 schema 居所清單加 wf-contract。B11 修復卡輸入判待實例⛔ 不寫。\\n\\n被審 SHA：ade4a3c49bc125b5779d3c1dd37bb4e466eda4df（rebase 後 b1454b4ee42e75ce8b5956d07873fa5b43f0d0d5，實體改動逐字相同）\\n查核：gpt-5.6-sol@Codex CLI 0.153.2 APPROVE（1 條 non-blocking：既有「不論來源」與詞表專名撞字，記回看清單）、\\ngemini-3.8-flash-high@agy APPROVE（第 6 輪）。家數依 2026-09-07 裁定＝兩家。\\n前五輪 Codex 抓：wf-contract 壞檔 D3 又「並印」、B05 歸屬、B04 未窮盡、骨架只改簽名、trailer 來源不全、\\n「本機 HEAD」、B 單獨合併時 schema 無 stage/state、§七 move 列、edit 列尾 D1、「來源」多義。\\n需求方 sign-off：2026-09-07（「全部甲」「trailer 照你那樣寫」「288、289 都合」）。\\n\\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\",\"parents\":[{\"sha\":\"39c8111b665398bc43a857da320275c1efa5c0fe\",\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/git/commits/39c8111b665398bc43a857da320275c1efa5c0fe\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/commit/39c8111b665398bc43a857da320275c1efa5c0fe\"}],\"verification\":{\"verified\":true,\"reason\":\"valid\",\"signature\":\"-----BEGIN PGP SIGNATURE-----\\n\\nwsFcBAABCAAQBQJqnj1ZCRC1aQ7uu5UhlAAAw9sQAF+z8UOmWDlB3SeIYO6Y/6Mh\\nv2gaTsP+2bTVD0VU7SZpPwMm/HwHzVHEI5oBVIPItNl0ygUz4dSOc52XUilm24Xr\\nbis5udb1pjvtRK+DLEYXnG9qE3RSu4/J8/UrmaBveYUy2bpG9Z8gyjG3zquJd16/\\nbG+lFBbGIGEE6UyjifmkH9rrD7a6g3Ff/PBanA1USRipQsQ8Zxkro7URWnkvTnfI\\nKQUOrr4ejipps2tFLmGASiCJrHITWgbaoAmnj8OgI1cUjizYn6TiC6Kc9hq/Butw\\nipVjMUpHzLW6ZKCV8KV149Lks0OJP26bDVhU5zmYgyCRDMOgdqfAg1+fndqiCplu\\nfRXZBjReq27EfZWvf2ozHUTVTIppzlybpD460LP6no+YaTXiOu+SRwgpX+ER6CX6\\ncn4UKfdhG4Me2QyuwnyjhTHGdxT82rtxbVDvNgu24kyevU1e3EiRjWEDCvGgNmgq\\nR36H7rTj9OYz0xZxTamNy0pkh1FdK+3iPLaoZvRlkLGHVKAkOeGqEN4iglqKesXt\\nnBLuqi8lbXfO9fUf1zaw60x8/nSyfOQV41+UojfGVakOnvrZZYUUnXY0DKCDVaJ5\\nbbDP3HCOnWKY65FGiDgfOi+LXIVxiAgy3U87NnNxZdSFTaMk2PxPdzf9gf7isFf3\\nmJhv0f8sHcCvyehUG3sG\\n=dtmr\\n-----END PGP SIGNATURE-----\\n\",\"payload\":\"tree 54bacf9e2461697f7b8e61efbadce60e61c636bd\\nparent 39c8111b665398bc43a857da320275c1efa5c0fe\\nauthor ruan6047 <49437898+ruan6047@users.noreply.github.com> 1788755289 +0800\\ncommitter GitHub <noreply@github.com> 1788755289 +0800\\n\\ndocs(rebuild): 第 6 步規格前置 B — open --area、wf:return、review 取源、wf-contract、snapshot 例外、closeout squash 四旗標、--actor、B01 動詞契約\\n\\ncore/verbs.md §1／§2：open 加 --area（areas 單值隱含；缺而多值或不在枚舉＝D3）；move 的 --actor 收 role:actor\\n（role 不在四值＝D3）、owner 只在派工邊寫、先寫卡面 stage/state 再回寫五欄、印「裁定留言不在本卡」；\\nedit ⛔ 改 stage/state（只由 move 寫，D1）；brief --for closeout 另印 squash 訊息（被審 SHA＋每則 wf:verdict\\n留言作者與 review_result；trailer 取 --requested-by／--planned-by／--implemented-by／--reviewed-by 四旗標，\\nReviewed-by 缺旗標取留言作者、首行不讀；缺者印、⛔ 不自動 merge）；review 的 source_sha 依 role 取源五種情況、\\n首行依 role（executor wf:return／reviewer wf:verdict）；snapshot 只印對帳不等⛔ 不重寫、schema 仍從 core 讀。\\ncore/naming.md §3 加 wf:return；core/dispatch.md 加 wf-contract 的 json schema（不合 schema＝印不採用⛔ 不擋）。\\nstep6-spec 的 schema 居所清單加 wf-contract。B11 修復卡輸入判待實例⛔ 不寫。\\n\\n被審 SHA：ade4a3c49bc125b5779d3c1dd37bb4e466eda4df（rebase 後 b1454b4ee42e75ce8b5956d07873fa5b43f0d0d5，實體改動逐字相同）\\n查核：gpt-5.6-sol@Codex CLI 0.153.2 APPROVE（1 條 non-blocking：既有「不論來源」與詞表專名撞字，記回看清單）、\\ngemini-3.8-flash-high@agy APPROVE（第 6 輪）。家數依 2026-09-07 裁定＝兩家。\\n前五輪 Codex 抓：wf-contract 壞檔 D3 又「並印」、B05 歸屬、B04 未窮盡、骨架只改簽名、trailer 來源不全、\\n「本機 HEAD」、B 單獨合併時 schema 無 stage/state、§七 move 列、edit 列尾 D1、「來源」多義。\\n需求方 sign-off：2026-09-07（「全部甲」「trailer 照你那樣寫」「288、289 都合」）。\\n\\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\",\"verified_at\":\"2026-09-07T04:28:10Z\"}}",
+        "stderr": ""
+      }
+    }
+  ],
+  "observed": true,
+  "observed_shape": "bool"
+}
