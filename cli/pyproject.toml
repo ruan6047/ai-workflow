@@ -1,0 +1,22 @@
+[project]
+name = "wf"
+version = "0.0.0"
+description = "ai-workflow 第 6 步新 CLI：七動詞、三目錄（gh／compose／verbs）；schema 執行期讀 core/ 的 fenced 區塊"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+wf = "wf.verbs.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

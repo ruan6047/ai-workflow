@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: wf
+Version: 0.0.0
+Summary: ai-workflow 第 6 步新 CLI：七動詞、三目錄（gh／compose／verbs）；schema 執行期讀 core/ 的 fenced 區塊
+Requires-Python: >=3.11
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
