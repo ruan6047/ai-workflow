@@ -21,7 +21,7 @@ last_confirmed: 2026-09-05
     "stages": [
       "部署"
     ],
-    "states": [],
+    "enums": {"states": []},
     "transitions": {
       "add": [],
       "remove": []

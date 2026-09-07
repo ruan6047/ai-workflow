@@ -21,9 +21,9 @@ last_confirmed: 2026-09-05
     "stages": [
       "研究"
     ],
-    "states": [
+    "enums": {"states": [
       "不可判定"
-    ],
+    ]},
     "transitions": {
       "add": [
         {

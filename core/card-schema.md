@@ -64,7 +64,7 @@ last_confirmed: 2026-09-07
             "db-contract": {"db_namespace": {"type": ["string", "null"]}, "migration_phase": {"enum": ["expand", "migrate", "contract", null]}}}}}
 ```
 
-合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 與 `core/enums.md` 後，先把每個 `wf-enums#/<鍵>` 的 `$ref` 具體化，(a) 把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum；(b) 把 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 與 `core/enums.md` 後，先把每個 `wf-enums#/<鍵>` 的 `$ref` 具體化，(a) 把已啟用模組宣告的 `adds.enums.states` 併入 `$defs/nonterminal` 的 enum；(b) 把 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 

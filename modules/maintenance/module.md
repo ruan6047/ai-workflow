@@ -21,9 +21,9 @@ last_confirmed: 2026-09-05
     "stages": [
       "維護"
     ],
-    "states": [
+    "enums": {"states": [
       "運行中"
-    ],
+    ]},
     "transitions": {
       "add": [
         {

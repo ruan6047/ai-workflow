@@ -19,7 +19,7 @@ last_confirmed: 2026-09-05
   "adds": {
     "fields": [],
     "stages": [],
-    "states": [],
+    "enums": {"states": []},
     "transitions": {
       "add": [],
       "remove": []

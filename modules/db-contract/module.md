@@ -22,7 +22,7 @@ last_confirmed: 2026-09-06
       "migration_phase"
     ],
     "stages": [],
-    "states": [],
+    "enums": {"states": []},
     "transitions": {
       "add": [],
       "remove": []

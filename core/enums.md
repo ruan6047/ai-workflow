@@ -24,7 +24,7 @@ last_confirmed: 2026-09-07
  "db_scope": {"enum": ["none", "read", "write", "schema", "data-migration"]}}
 ```
 
-- 狀態全集＝`states_core` ∪ `state_blocked` ∪ `states_terminal` ∪ 已啟用模組的 `adds.states`；`停止` 只在結案階段有值（`core/state-machine.md` §2）。
-- 模組擴充值域：只能加值、⛔ 不改基底值；今只有 `states`（宣告鍵 `adds.states`）。其他鍵要擴充時，第一個實例出現再在該模組宣告開 `adds.enums.<鍵>`，並同 PR 加合成與可達性案例；⛔ 不預開。
+- 狀態全集＝`states_core` ∪ `state_blocked` ∪ `states_terminal` ∪ 已啟用模組的 `adds.enums.states`；`停止` 只在結案階段有值（`core/state-machine.md` §2）。
+- 模組擴充值域：宣告鍵＝該模組 `adds.enums.<鍵>`（需求方 2026-09-07 裁定通用形），只能加值、⛔ 不改基底值；今只有 `states` 有實例。其他鍵第一次出現時同 PR 加合成與可達性案例；⛔ 不預開空鍵。
 - 詞表配套：本檔只放字面。值若是需要定義的詞，核心值住 `core/glossary.md`、模組加的值住該模組 §1；`core/glossary.md` 每個值域鍵一列、⛔ 不逐值列（需求方 2026-09-07）。
 - `db_scope` 為 null 時＝未填，`open` 印。

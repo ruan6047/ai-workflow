@@ -21,7 +21,7 @@ last_confirmed: 2026-09-06
       "parent_spec_version"
     ],
     "stages": [],
-    "states": [],
+    "enums": {"states": []},
     "transitions": {
       "add": [],
       "remove": []

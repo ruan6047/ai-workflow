@@ -19,7 +19,7 @@ last_confirmed: 2026-09-06
   "adds": {
     "fields": ["escalation_count"],
     "stages": [],
-    "states": ["升級"],
+    "enums": {"states": ["升級"]},
     "transitions": {
       "add": [
         {
