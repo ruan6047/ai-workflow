@@ -23,13 +23,13 @@ last_confirmed: 2026-09-05
 
 - 級別＝敏感面／可復原性／影響面三軸各自定級後取最高；⛔ 不取平均、不取多數。
 - ⛔ 不以估時、檔案數、工作量、當下額度定級或降級。
-- 三軸值域＝卡面 `tier_basis`：sensitive 多選（§3 紅線域）；recoverable＝reversible／rollback_only／irreversible；blast＝file／module／repo／cross_repo。
+- 三軸值域＝卡面 `tier_basis`：sensitive 多選（§3 紅線域）；recoverable、blast 值域住 `core/enums.md`。
 - irreversible 或 cross_repo ⇒ 至少 T3；sensitive 含任一紅線域 ⇒ 依 §3。
 - 混合卡以三軸最高的項定級。
 
 ## 3 · 紅線域
 
-sensitive 值域＝public_contract／security／payment／data_write／migration／production／rules／statistics。
+sensitive 值域住 `core/enums.md` `sensitive`（8 值）。
 
 - 含 public_contract、security、payment、data_write、production ⇒ 至少 T3。
 - 含 migration、rules、statistics ⇒ T4。
@@ -56,7 +56,7 @@ sensitive 值域＝public_contract／security／payment／data_write／migration
 
 ## 6 · 能力層級
 
-值域＝經濟型／主力型／高階型；卡面寫層級，⛔ 不寫模型名。
+值域住 `core/enums.md` `capability_levels`；卡面寫層級，⛔ 不寫模型名。
 
 | 工作 | 建議 |
 |---|---|

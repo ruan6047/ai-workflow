@@ -17,7 +17,7 @@ last_confirmed: 2026-09-05
 | P4 | secrets 不進 git | CI job `secret-scan`（`.github/workflows/ci.yml`，gitleaks v3.0.0） |
 | P5 | commit trailer 鍵在允許集合且為末端連續單一區塊 | CI job `commit-trailer`（`.github/scripts/trailer_check.py`） |
 
-- ⚠️ P5 的已知漏洞（2026-09-06 起）：合併訊息由平台預設組時 trailer 會被空行切散，本檔擋不到；訊息組法的居所＝新 CLI（骨架 §十三 第 6 步），該步完成前無執行者。
+- ⚠️ P5 的已知漏洞（2026-09-06 起）：合併訊息由平台預設組時 trailer 會被空行切散，本檔擋不到；訊息組法的居所＝新 CLI（`docs/research/2026-09-07-step6-spec.md` 第 6 步），該步完成前無執行者。
 - P5 允許集合＝Requested-by、Planned-by、Implemented-by、Reviewed-by、Co-Authored-By；哪些必須出現＝約定，住 `roles/conduct-common.md` §2，CI ⛔ 不驗。
 - P2 的獨立性判定（不同實體、跨家族）是 PM 注意事項，⛔ 不機械化。
 - 平台擋不到的（UI 手改投影欄、T2 以上直推 main）＝紀律，住 `roles/conduct-common.md` §1。

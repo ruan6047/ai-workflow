@@ -1,6 +1,6 @@
 name: CI
 
-# 第三輪重構第 0 步（骨架 §十三；需求方 2026-09-04 裁定封存為第一步）。
+# 第三輪重構第 0 步（順序見決策紀錄；需求方 2026-09-04 裁定封存為第一步）。
 # 第 0 步：secret-scan（P4）、commit-trailer（P5）。第 1 步加 reachability（core/state-machine.md）。
 # 新 CLI 測試 job 隨第 6 步進場。
 # ⛔ 不再有掃描 docs 的 job。
@@ -68,7 +68,7 @@ jobs:
         run: python3 .github/scripts/trailer_check.py "${{ steps.range.outputs.range }}"
 
   reachability:
-    # 骨架 §四：轉移表可達性。被測物＝core/state-machine.md 的 json wf-state-machine 區塊。
+    # core/state-machine.md §5：轉移表可達性。被測物＝該檔 json wf-state-machine 區塊＋core/enums.md 的值域。
     name: reachability
     runs-on: ubuntu-latest
     timeout-minutes: 5

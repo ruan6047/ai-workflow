@@ -2,12 +2,12 @@
 name: card-schema
 when: 寫或讀卡面 JSON、清單項 JSON、`wf:note` JSON、Project 投影欄時讀
 non_scope: ⛔ 不寫欄位該填什麼內容（住 stages/requirement.md、planning.md）；⛔ 不寫交回單與裁定（住 core/return.md、core/ruling.md）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-07
 ---
 
 # 卡面 schema
 
-卡面＝issue body 的一個 `json wf-card` 區塊＋人讀散文段。CLI 只讀寫 JSON；未定義鍵 ⇒ 整卡拒（D3）。schema 的唯一居所＝本檔的 `json schema` 區塊，CLI 執行期直接讀。
+卡面＝issue body 的一個 `json wf-card` 區塊＋人讀散文段。CLI 只讀寫 JSON；未定義鍵 ⇒ 整卡拒（D3）。schema 的唯一居所＝本檔的 `json schema` 區塊，值域住 `core/enums.md`，CLI 執行期直接讀。
 
 ## 1 · `wf-card`
 
@@ -24,7 +24,7 @@ last_confirmed: 2026-09-05
   "feature": {"type": "string"},
   "core_pain": {"type": "string"},
   "non_scope": {"type": "array", "items": {"type": "string"}},
-  "stage_plan": {"type": "array", "items": {"enum": ["需求", "研究", "規劃", "執行", "審核", "部署", "維護", "結案"]}, "uniqueItems": true},
+  "stage_plan": {"type": "array", "items": {"$ref": "wf-enums#/stages"}, "uniqueItems": true},
   "acceptance": {"type": "array", "items": {"type": "string"}},
   "verification": {"type": "array", "items": {"type": "object", "required": ["item", "who"], "additionalProperties": false,
                     "properties": {"item": {"type": "string"}, "who": {"type": "string"}}}},
@@ -34,20 +34,20 @@ last_confirmed: 2026-09-05
   "blocked": {"type": ["object", "null"], "required": ["from", "ruling"], "additionalProperties": false,
               "properties": {"from": {"$ref": "#/$defs/nonterminal"}, "ruling": {"type": ["string", "null"], "format": "uri"}}},
   "grilling": {"type": ["string", "null"], "format": "uri"},
-  "tier": {"enum": ["T0", "T1", "T2", "T3", "T4", null]},
+  "tier": {"anyOf": [{"$ref": "wf-enums#/tiers"}, {"type": "null"}]},
   "tier_basis": {"type": ["object", "null"], "required": ["sensitive", "recoverable", "blast"], "additionalProperties": false,
     "properties": {
-      "sensitive": {"type": "array", "uniqueItems": true, "items": {"enum": ["public_contract", "security", "payment", "data_write", "migration", "production", "rules", "statistics"]}},
-      "recoverable": {"enum": ["reversible", "rollback_only", "irreversible"]},
-      "blast": {"enum": ["file", "module", "repo", "cross_repo"]}}},
+      "sensitive": {"type": "array", "uniqueItems": true, "items": {"$ref": "wf-enums#/sensitive"}},
+      "recoverable": {"$ref": "wf-enums#/recoverable"},
+      "blast": {"$ref": "wf-enums#/blast"}}},
   "exec_capability": {"$ref": "#/$defs/capability"},
   "review_capability": {"$ref": "#/$defs/capability"},
-  "db_scope": {"enum": ["none", "read", "write", "schema", "data-migration", null]},
+  "db_scope": {"anyOf": [{"$ref": "wf-enums#/db_scope"}, {"type": "null"}]},
   "resources": {"type": "array", "items": {"type": "string"}},
   "when": {"type": "string"},
   "spec_version": {"type": "integer", "minimum": 1},
   "owner": {"type": ["object", "null"], "required": ["role", "actor"], "additionalProperties": false,
-            "properties": {"role": {"enum": ["requester", "pm", "executor", "reviewer"]}, "actor": {"type": "string"}}},
+            "properties": {"role": {"$ref": "wf-enums#/roles"}, "actor": {"type": "string"}}},
   "branch": {"type": ["string", "null"]},
   "source_sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
   "iteration": {"type": "integer", "minimum": 0},
@@ -55,8 +55,8 @@ last_confirmed: 2026-09-05
             "properties": {"id": {"type": "string", "pattern": "^T-(需求|研究|規劃|執行|審核|部署|維護|結案)-[0-9]{2}$"}, "text": {"type": "string"}, "origin": {"type": "string", "format": "uri"}}}}
  },
  "$defs": {"capability": {"type": ["object", "null"], "required": ["level", "reason"], "additionalProperties": false,
-           "properties": {"level": {"enum": ["經濟型", "主力型", "高階型"]}, "reason": {"type": "string"}}},
-          "nonterminal": {"enum": ["待辦", "進行中", "待確認", "退回"]},
+           "properties": {"level": {"$ref": "wf-enums#/capability_levels"}, "reason": {"type": "string"}}},
+          "nonterminal": {"$ref": "wf-enums#/states_core"},
           "module_fields": {
             "resource-lock": {"worktree": {"type": ["string", "null"]}, "lease_expires_at": {"type": ["string", "null"], "format": "date-time"}},
             "escalation": {"escalation_count": {"type": "integer", "minimum": 0}},
@@ -64,7 +64,7 @@ last_confirmed: 2026-09-05
             "db-contract": {"db_namespace": {"type": ["string", "null"]}, "migration_phase": {"enum": ["expand", "migrate", "contract", null]}}}}}
 ```
 
-合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 後，(a) 把已啟用模組宣告的 `adds.states` 併入 `$defs/nonterminal` 的 enum；(b) 把 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 與 `core/enums.md` 後，先把每個 `wf-enums#/<鍵>` 的 `$ref` 具體化，(a) 把已啟用模組宣告的 `adds.enums.states` 併入 `$defs/nonterminal` 的 enum；(b) 把 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 

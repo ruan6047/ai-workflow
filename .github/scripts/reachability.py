@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""轉移表可達性測試（骨架 §四；core/state-machine.md §5）。
+"""轉移表可達性測試（core/state-machine.md §5）。
 
-讀 core/state-machine.md 的 `json wf-state-machine` 區塊，對每個合法 stage_plan 展開合成表，斷言：
+讀 core/state-machine.md 的 `json wf-state-machine` 區塊與 core/enums.md 的 `json wf-enums`（階段／狀態值域），對每個合法 stage_plan 展開合成表，斷言：
 1. 合成表定義集合（階段計畫 × 狀態值域 ∪ 清單）內每個非終態有出邊，且可達 完成 或 停止；
 2. 完成 與 停止 的出邊集合為空。
 模組案例（第 4a 步起）：讀 modules/*/module.md 的 `yaml wf-module` 區塊（JSON 子集），對每個帶
@@ -21,12 +21,25 @@ ROOT = Path(__file__).resolve().parents[2]
 BLOCK = re.compile(r"```json wf-state-machine\n(.*?)\n```", re.S)
 
 
+ENUMBLOCK = re.compile(r"```json wf-enums\n(.*?)\n```", re.S)
+
+
 def load() -> dict:
     text = (ROOT / "core/state-machine.md").read_text(encoding="utf-8")
     m = BLOCK.search(text)
     if not m:
         sys.exit("⛔ core/state-machine.md 沒有 json wf-state-machine 區塊")
-    return json.loads(m.group(1))
+    sm = json.loads(m.group(1))
+    e = ENUMBLOCK.search((ROOT / "core/enums.md").read_text(encoding="utf-8"))
+    if not e:
+        sys.exit("⛔ core/enums.md 沒有 json wf-enums 區塊")
+    en = json.loads(e.group(1))
+    # 值域住 core/enums.md：狀態機區塊只放轉移與 delta。基底 states 只含 only_in_stage 有登記的終態（完成）；停止 由結案的 stage_delta 加。
+    sm["stages"] = en["stages"]["enum"]
+    sm["terminal"] = en["states_terminal"]["enum"]
+    base_terminal = [s for s in sm["terminal"] if s in sm.get("only_in_stage", {})]
+    sm["states"] = en["states_core"]["enum"] + base_terminal + en["state_blocked"]["enum"]
+    return sm
 
 
 MODBLOCK = re.compile(r"```yaml wf-module\n(.*?)\n```", re.S)
@@ -107,7 +120,7 @@ def sections_errors(name: str, declared: list, ret: dict[str, set[str]], other: 
 def delta_modules(mods: list[dict]) -> list[dict]:
     """帶狀態或轉移 delta 的模組；`transitions.remove` 也算 delta。"""
     return [m for m in mods
-            if m.get("adds", {}).get("states")
+            if m.get("adds", {}).get("enums", {}).get("states")
             or any(m.get("adds", {}).get("transitions", {}).get(k) for k in ("add", "remove"))]
 
 
@@ -163,7 +176,7 @@ def compose(sm: dict, mods: list[dict]) -> dict:
     for m in mods:
         adds = m.get("adds", {})
         tr = adds.get("transitions", {})
-        for st in adds.get("states", []):
+        for st in adds.get("enums", {}).get("states", []):
             if st not in out["states"]:
                 out["states"].append(st)
             stages = set()
@@ -372,7 +385,7 @@ def selftest(sm: dict) -> int:
     print(f"selftest_r1_return_target_unique: {'PASS' if (ok5 and ok6) else 'FAIL'}")
     bad += not (ok5 and ok6)
     # 模組負控：模組加的狀態只有進邊沒有出邊，必 FAIL；正控：research 的 不可判定 節點確實進了定義集合
-    fake = {"name": "fake", "adds": {"states": ["孤模"], "transitions": {"add": [{"from": "執行/待確認", "to": "執行/孤模", "condition": "負控"}], "remove": []}}}
+    fake = {"name": "fake", "adds": {"enums": {"states": ["孤模"]}, "transitions": {"add": [{"from": "執行/待確認", "to": "執行/孤模", "condition": "負控"}], "remove": []}}}
     e7 = check(compose(sm, [fake]), plan); ok7 = any(e.startswith("非終態 執行/孤模 ") for e in e7)
     research = next((m for m in load_modules() if m["name"] == "research"), None)
     rplan = [s for s in sm["stages"] if s in sm["required_stages"] or s == "研究"]
@@ -414,8 +427,8 @@ def selftest(sm: dict) -> int:
     s_both = sections_errors("m", ["A", "B"], {"m": {"A", "B"}}, oth)
     _, _, lab_errs = handoff_labels('```json schema\n{"$id": "wf-return", "$defs": {"module_return_sections": {"m": {"k": {"type": "string"}}}}}\n```')
     s_orphan = orphan_errors({"ghost": {"A"}}, {}, {"m"})
-    probe = {"name": "rm-only", "adds": {"states": [], "transitions": {"add": [], "remove": [{"from": "需求/待辦", "to": "需求/進行中"}]}}}
-    inert = {"name": "no-delta", "adds": {"states": [], "transitions": {"add": [], "remove": []}}}
+    probe = {"name": "rm-only", "adds": {"enums": {"states": []}, "transitions": {"add": [], "remove": [{"from": "需求/待辦", "to": "需求/進行中"}]}}}
+    inert = {"name": "no-delta", "adds": {"enums": {"states": []}, "transitions": {"add": [], "remove": []}}}
     dm = delta_modules([probe, inert])
     cs = module_cases(dm)
     ok3 = ([m["name"] for m in dm] == ["rm-only"]

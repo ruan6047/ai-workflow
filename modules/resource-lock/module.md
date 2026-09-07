@@ -22,7 +22,7 @@ last_confirmed: 2026-09-06
       "lease_expires_at"
     ],
     "stages": [],
-    "states": [],
+    "enums": {"states": []},
     "transitions": {
       "add": [],
       "remove": []
