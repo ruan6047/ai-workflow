@@ -15,7 +15,7 @@ class InvalidCommentURL(ValueError):
 
 
 def block_span(body, label, required=True):
-    if label not in ('wf-card', 'wf-return', 'wf-ruling', 'wf-note'):
+    if label not in ('wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note'):
         raise CardBodyError(f'不支援的區塊：{label}')
     spans, fence, start, offset = [], None, None, 0
     for line in body.splitlines(keepends=True):

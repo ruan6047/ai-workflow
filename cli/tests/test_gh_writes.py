@@ -76,7 +76,7 @@ def test_create_duplicate_never_patches():
     assert len(runner.calls) == 1
 
 
-@pytest.mark.parametrize('label', ['wf-card', 'wf-return', 'wf-ruling', 'wf-note'])
+@pytest.mark.parametrize('label', ['wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note'])
 def test_block_zero_one_two_and_invalid_json(label):
     text = f'```json {label}\n{{"a": 1}}\n```\n'
     assert block_span('純散文', label, required=False) is None
