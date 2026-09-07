@@ -142,11 +142,32 @@ def test_legal_plans_from_artifact_powerset(catalog, oracle):
     print(f"PLANS optional={len(optional)} computed={2 ** len(optional)} actual={len(plans)}")
 
 
-@pytest.mark.parametrize("plan", [[], ["執行", "需求", "審核", "結案"],
+def test_empty_plan_unfilled_and_reachable(catalog):
+    assert subject.is_legal_plan([], catalog=catalog) is True
+    assert subject.is_legal_plan(PLAN, catalog=catalog) is True
+    edges = subject.expand([], [], catalog=catalog)
+    assert edges.plan_unfilled is True
+    assert subject.expand(PLAN, [], catalog=catalog).plan_unfilled is False
+    expected = {"清單", "需求/待辦", "需求/進行中", "需求/待確認", "需求/退回",
+                "需求/阻塞←待辦", "需求/阻塞←進行中", "需求/阻塞←待確認", "需求/阻塞←退回"}
+    assert subject.universe([], [], catalog=catalog) == set(edges) == expected
+    assert set().union(*edges.values()) == expected
+    reached, pending = set(), [catalog.blocks[0].data["initial"]]
+    while pending:
+        node = pending.pop()
+        if node not in reached:
+            reached.add(node)
+            pending.extend(edges.get(node, ()))
+    assert reached == expected
+    print(f"EMPTY_PLAN unfilled={edges.plan_unfilled} nodes={sorted(expected)} reachable={sorted(reached)}")
+
+
+@pytest.mark.parametrize("plan", [["執行", "需求", "審核", "結案"],
                                   ["需求", "執行", "結案"],
                                   ["需求", "需求", "執行", "審核", "結案"],
                                   ["需求", "未知", "執行", "審核", "結案"]])
 def test_invalid_plans_rejected(catalog, plan):
+    assert subject.is_legal_plan(plan, catalog=catalog) is False
     for fn in (subject.expand, subject.universe):
         with pytest.raises(ValueError, match="stage_plan"):
             fn(plan, [], catalog=catalog)
@@ -207,20 +228,34 @@ def test_runtime_reads_source_without_rule_cache(tmp_path, catalog):
 
 def imports(text):
     return sorted({alias.name if isinstance(node, ast.Import) else
-                   "." * node.level + (node.module or "")
+                   "." * node.level + (node.module or "") + "." + alias.name
                    for node in ast.walk(ast.parse(text))
                    if isinstance(node, (ast.Import, ast.ImportFrom)) for alias in node.names})
 
 
+def assert_no_forbidden_imports(text):
+    banned = {"subprocess", "urllib", "socket", "requests", "http", "os.system", "popen", "os.popen"}
+    found = set(imports(text))
+    aliases = {a.asname or a.name: a.name for n in ast.walk(ast.parse(text))
+               if isinstance(n, ast.Import) for a in n.names}
+    found.update(f"{aliases.get(n.value.id, n.value.id)}.{n.attr}"
+                 for n in ast.walk(ast.parse(text))
+                 if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name))
+    assert not {name for name in found for bad in banned if name == bad or name.startswith(bad + ".")}
+
+
 def test_compose_import_inventory():
-    allowed = {".blocks", ".frontmatter", "collections.abc", "dataclasses", "itertools",
-               "json", "pathlib", "re", "typing"}
-    with pytest.raises(AssertionError):
-        assert set(imports("import socket\nfrom urllib import request")) <= allowed
-    print("NEGATIVE_CONTROL network_import=detected")
-    paths = sorted((ROOT / "cli/src/wf/compose").glob("*.py"))
+    for sentinel in ("import subprocess", "from urllib import parse", "import socket",
+                     "import requests", "from http import client", "from os import system",
+                     "import os as o; o.system('sentinel')", "import popen", "from os import popen",
+                     "import os; os.popen('sentinel')"):
+        with pytest.raises(AssertionError):
+            assert_no_forbidden_imports(sentinel)
+        print(f"NEGATIVE_CONTROL sentinel={sentinel!r} detected")
+    assert_no_forbidden_imports("import copy\nfrom pathlib import Path")
+    paths = sorted((ROOT / "cli/src/wf/compose").rglob("*.py"))
     for path in paths:
         found = imports(path.read_text(encoding="utf-8"))
         print(f"IMPORTS {path.relative_to(ROOT)} {found}")
-        assert set(found) <= allowed
+        assert_no_forbidden_imports(path.read_text(encoding="utf-8"))
     print(f"IMPORT_FILES scanned={len(paths)} population={len(paths)}")

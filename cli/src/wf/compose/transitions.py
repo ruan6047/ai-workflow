@@ -51,6 +51,13 @@ def legal_plans(*, catalog: Catalog | None = None, root: Path | str = ".") -> li
     return _plans(*_documents(catalog, root))
 
 
+def is_legal_plan(plan: Iterable[str], *, catalog: Catalog | None = None,
+                  root: Path | str = ".") -> bool:
+    """core/state-machine.md §1；空值合法，未填事實由 expand().plan_unfilled 提供。"""
+    plan = list(plan)
+    return not plan or plan in legal_plans(catalog=catalog, root=root)
+
+
 def blocked_node(stage: str, from_state: str) -> str:
     return f"{stage}/阻塞←{from_state}"
 
@@ -60,8 +67,11 @@ class _Machine:
                  catalog: Catalog | None, root: Path | str):
         self.sm, enums = _documents(catalog, root)
         self.plan = list(plan)
-        if not self.plan or self.plan not in _plans(self.sm, enums):
-            raise ValueError("stage_plan 必須非空、為階段序子序列且含 required_stages")
+        if self.plan and self.plan not in _plans(self.sm, enums):
+            raise ValueError("stage_plan 非空時必須為階段序子序列且含 required_stages")
+        self.plan_unfilled = not self.plan  # 未填；印由動詞層處理。
+        if self.plan_unfilled:
+            self.plan = [self.sm["initial"].partition("/")[0]]
         self.close = enums["stages"]["enum"][-1]
         self.non_close = [s for s in self.plan if s != self.close]
         self.terminal = set(enums["states_terminal"]["enum"])
@@ -146,6 +156,7 @@ class _Machine:
     def expand(self) -> Edges:
         nodes = self.universe()
         edges = Edges({n for n in nodes if n.partition("/")[2] in self.terminal})
+        edges.plan_unfilled = self.plan_unfilled
         for row in self.rows:
             if not self.holds(row.get("if")):
                 continue
