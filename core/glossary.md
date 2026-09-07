@@ -92,5 +92,5 @@ last_confirmed: 2026-09-07
 | 留言標頭 wf:* | CLI 與人留言的首行 | 不是 marker | marker、事件型別 |
 | 投影欄 | Project 上由 CLI 回寫的五欄：階段／狀態／級別／owner／卡ID | 不是事實來源 | 看板欄位、Ledger 欄 |
 | 封存、撤銷、停止 | 三個離開動作：終態封存／回清單／終態 | 封存不是刪除 | — |
-| db_scope | 卡對資料庫的變更域：none／read／write／schema／data-migration | 不是資源宣告 | db_permission、資料庫權限 |
+| db_scope | 卡對資料庫的變更域，值住 `core/enums.md` `db_scope` | 不是資源宣告 | db_permission、資料庫權限 |
 | trailer | commit 訊息末端連續的 `Key: value` 區塊 | 不是 footer 散文 | footer、git-tag |

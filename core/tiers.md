@@ -23,7 +23,7 @@ last_confirmed: 2026-09-05
 
 - 級別＝敏感面／可復原性／影響面三軸各自定級後取最高；⛔ 不取平均、不取多數。
 - ⛔ 不以估時、檔案數、工作量、當下額度定級或降級。
-- 三軸值域＝卡面 `tier_basis`：sensitive 多選（§3 紅線域）；recoverable、blast 值域住 `core/enums.md`；blast＝file／module／repo／cross_repo。
+- 三軸值域＝卡面 `tier_basis`：sensitive 多選（§3 紅線域）；recoverable、blast 值域住 `core/enums.md`。
 - irreversible 或 cross_repo ⇒ 至少 T3；sensitive 含任一紅線域 ⇒ 依 §3。
 - 混合卡以三軸最高的項定級。
 
