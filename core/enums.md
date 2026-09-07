@@ -1,13 +1,13 @@
 ---
 name: enums
 when: 寫或讀任何封閉值域（階段、狀態、級別、角色、紅線三軸、能力層級、db_scope）、寫 schema 的 enum、CLI 合成 choices 時讀
-non_scope: ⛔ 不寫值的語意（住各定義檔）；⛔ 不寫轉移（住 core/state-machine.md）；⛔ 不放模組加的值（住各模組 `adds.states`）
+non_scope: ⛔ 不寫值的語意（住各定義檔）；⛔ 不寫轉移（住 core/state-machine.md）；⛔ 不放模組加的值（住各模組 `adds.enums.states`）
 last_confirmed: 2026-09-07
 ---
 
 # 值域
 
-所有封閉值域的唯一居所＝下方區塊（需求方 2026-09-07 裁定）；schema 以 `$ref` 指向（`wf-enums#/<鍵>`），CLI 執行期直接讀，散文只指名⛔ 不抄值。每鍵一個 `{"enum": […]}`，可直接當 schema 片段。模組加的狀態由 `adds.states` 在合成時併進 `states_core`（`core/card-schema.md` §1）。新值或新鍵須需求方裁定。
+所有封閉值域的唯一居所＝下方區塊（需求方 2026-09-07 裁定）；schema 以 `$ref` 指向（`wf-enums#/<鍵>`），CLI 執行期直接讀，散文只指名⛔ 不抄值。每鍵一個 `{"enum": […]}`，可直接當 schema 片段。模組加的狀態由 `adds.enums.states` 在合成時併進 `states_core`（`core/card-schema.md` §1）。新值或新鍵須需求方裁定。
 
 ```json wf-enums
 {"$id": "wf-enums",
