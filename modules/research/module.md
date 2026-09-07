@@ -76,5 +76,3 @@ last_confirmed: 2026-09-05
 - F-research-02：研究卡是討論形狀，⛔ 不是送審形狀；量測紀錄段寫指令、環境、母體大小、掃描數與輸出檔路徑。
 - F-research-03：研究前先讀該卡全部留言，⛔ 不只讀派工單。
 - F-research-04：量測或設計前先搜既有解法（論文／GitHub／官方文件），列出搜過什麼與沒找到什麼。
-
-→ [archive/rules-2026-09/stage-rules/research.md](../../archive/rules-2026-09/stage-rules/research.md)、[archive/issues/147.md](../../archive/issues/147.md)

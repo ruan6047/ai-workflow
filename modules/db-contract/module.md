@@ -64,5 +64,3 @@ last_confirmed: 2026-09-06
 - F-db-contract-01：宣告整個 schema ⛔ 不會擋住只宣告個別表的卡；判定語意住 `modules/resource-lock`。
 - F-db-contract-02：`db_scope` 的 `schema` 值與資源 token 的 `schema` 關鍵字是兩回事；⛔ 不把關鍵字換成 schema 名。
 - F-db-contract-03：PM 派工前確認 `.wf/contracts/DATABASE_CONTRACT.md` 存在；不存在時寫進派工單未驗項，⛔ 不擋。
-
-→ [archive/rules-2026-09/templates/database-contract.md](../../archive/rules-2026-09/templates/database-contract.md)、[archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)

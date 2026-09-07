@@ -43,5 +43,3 @@ last_confirmed: 2026-09-06
 
 - F-審核-01：派工單的基線、來源 SHA、iteration 一律由 `brief` 從狀態面產出；執行者再交回後重產，⛔ 不沿用上一輪。
 - F-審核-02：查核者的判準與紅線依 `roles/reviewer.md`；本階段⛔ 不另立。
-
-→ [archive/rules-2026-09/stage-rules/review.md](../archive/rules-2026-09/stage-rules/review.md)、[archive/rules-2026-09/templates/review-dispatch.md](../archive/rules-2026-09/templates/review-dispatch.md)、[archive/issues/130.md](../archive/issues/130.md)、[archive/issues/167.md](../archive/issues/167.md)

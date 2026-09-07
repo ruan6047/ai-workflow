@@ -47,5 +47,3 @@ last_confirmed: 2026-09-05
 - F-規劃-07：核心痛點的成功條件與裁定矛盾時更正痛點並逐字列排除與歸屬，⛔ 不縮射程。
 - F-規劃-08：T2 以上的前提逐條附實查證據；未驗證前提標示且⛔ 不設為硬前置。
 - F-規劃-09：測試⛔ 不依賴 repo 歷史存在；判準在合成樹上驗。
-
-→ [archive/rules-2026-09/stage-rules/planning.md](../archive/rules-2026-09/stage-rules/planning.md)、[archive/rules-2026-09/templates/baseline-cascade.md](../archive/rules-2026-09/templates/baseline-cascade.md)、[archive/issues/088.md](../archive/issues/088.md)

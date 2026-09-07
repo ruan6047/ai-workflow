@@ -43,5 +43,3 @@ last_confirmed: 2026-09-05
 - F-執行-03：新 worktree 先建全套測試基線。
 - F-執行-04：讓 artifact 在交付 SHA 可重現：產生工具與 artifact 同一 commit；自指命中明列，⛔ 不偷偷排除。
 - F-執行-05：交回前對照 `git diff --name-status` 修正資源宣告的漏列交付檔、宣告過寬、不存在路徑。
-
-→ [archive/rules-2026-09/stage-rules/implementation.md](../archive/rules-2026-09/stage-rules/implementation.md)、[archive/rules-2026-09/templates/delivery-report.md](../archive/rules-2026-09/templates/delivery-report.md)、[archive/issues/219.md](../archive/issues/219.md)

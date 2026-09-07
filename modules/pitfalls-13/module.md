@@ -52,5 +52,3 @@ last_confirmed: 2026-09-06
 ## 2 · 注意事項
 
 - F-pitfalls-13-01：`已檢查` 裸寫，說明進 evidence；⛔ 不升成 `發現`、⛔ 不加敘述。
-
-→ [archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)、[archive/rules-2026-09/templates/delivery-report.md](../../archive/rules-2026-09/templates/delivery-report.md)、[archive/issues/130.md](../../archive/issues/130.md)

@@ -44,5 +44,3 @@ last_confirmed: 2026-09-06
 - F-執行者-09：下研究或資料結論時，母體數字帶資料截止時點（`roles/conduct-common.md` §2）；⛔ 不凍結數字、⛔ 不把母體漂移讀成錯誤。
 - F-執行者-10：判定因資料更新落後或母體增長（而非模型性質）而失敗或翻面時記「不具證據等級」，⛔ 不記為模型失敗證據。
 - F-執行者-11：下研究或資料結論時，少數離群個案先個案查證是資料錯誤、特殊情況或資料缺失（官方紀錄、新聞定性佐證、人工審核；數值以官方為權威），查證後才處置；查證前⛔ 不判整體錯誤或不符合。
-
-→ [archive/rules-2026-09/stage-rules/executor-conduct.md](../archive/rules-2026-09/stage-rules/executor-conduct.md)、[archive/rules-2026-09/templates/statistical-redline.md](../archive/rules-2026-09/templates/statistical-redline.md)、[archive/rules-2026-09/stage-rules/implementation.md](../archive/rules-2026-09/stage-rules/implementation.md)、[archive/issues/023.md](../archive/issues/023.md)、[archive/issues/165.md](../archive/issues/165.md)

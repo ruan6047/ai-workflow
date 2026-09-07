@@ -46,5 +46,3 @@ last_confirmed: 2026-09-06
 ## 2 · 注意事項
 
 - F-snapshot-01：對帳⛔ 不以 `gh project item-list` 的即時輸出為準。
-
-→ [archive/rules-2026-09/templates/control-plane-contract.md](../../archive/rules-2026-09/templates/control-plane-contract.md)、[archive/rules-2026-09/AI_WORKFLOW.md](../../archive/rules-2026-09/AI_WORKFLOW.md)

@@ -53,5 +53,3 @@ last_confirmed: 2026-09-05
 - F-PM-10：轉錄裁決時查核者身分無來源即寫「未知」。
 - F-PM-11：同族第三張卡或第三輪（2026-09-04 種子）出現時停手，改判一根問題還是 N 個實例；是實例則先量母體、開一張窮舉卡。
 - F-PM-12：維護 `.wf/stages/<階段>.md` 與卡面 `notes` 只加條目；⛔ 不刪、⛔ 不改寫、⛔ 不加豁免鍵。
-
-→ [archive/rules-2026-09/stage-rules/pm-conduct.md](../archive/rules-2026-09/stage-rules/pm-conduct.md)、[archive/issues/039.md](../archive/issues/039.md)、[archive/issues/105.md](../archive/issues/105.md)、[archive/issues/154.md](../archive/issues/154.md)

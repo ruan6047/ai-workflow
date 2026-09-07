@@ -47,5 +47,3 @@ last_confirmed: 2026-09-05
 - F-需求-07：待審清單⛔ 不佔投影欄、⛔ 不進盤點分母；接受清單當墓地。
 - F-需求-08：高複雜或影響大的卡把研究列進階段計畫。
 - F-需求-09：交付物是排程、爬蟲、告警等外部觸發時列維護；純文件卡⛔ 不列部署。
-
-→ [archive/rules-2026-09/stage-rules/requirement.md](../archive/rules-2026-09/stage-rules/requirement.md)、[archive/rules-2026-09/stage-rules/list-intake-requirements.md](../archive/rules-2026-09/stage-rules/list-intake-requirements.md)、[archive/rules-2026-09/stage-rules/defect-path.md](../archive/rules-2026-09/stage-rules/defect-path.md)

@@ -21,8 +21,6 @@ last_confirmed: 2026-09-05
 - 狀態面不可用時狀態操作暫停；⛔ 不改用聊天、本機檔案或記憶暫代，已派工作續作，轉移於恢復後補寫；UI 手改投影欄、T2 以上直推 main 同屬違反本紀律。
 - 需要等待時前景輪詢或不結束回合；射程外發現只寫進交回單的射程外發現段，⛔ 不開卡、⛔ 不 spawn 背景任務。
 
-→ [archive/rules-2026-09/stage-rules/executor-conduct.md](../archive/rules-2026-09/stage-rules/executor-conduct.md)、[archive/issues/161.md](../archive/issues/161.md)、[archive/issues/219.md](../archive/issues/219.md)、[archive/issues/221.md](../archive/issues/221.md)
-
 ## 2 · 書寫紀律
 
 - 引用裁定或規則逐字；⛔ 不節略、⛔ 不把選言轉述成禁令、⛔ 不改變其所述事實狀態。
@@ -36,5 +34,3 @@ last_confirmed: 2026-09-05
 - 發現候選注意事項即在該卡貼一則 `wf:note`（`origin`＝來源 finding 留言 URL）；⛔ 不直接寫進規則檔。
 - commit trailer 約定：T0／T1 至少 `Requested-by`＋`Implemented-by`；T2 以上加 `Planned-by`；merge 與核可 commit 加 `Reviewed-by`；未開卡的缺陷修正至少帶前兩鍵（CI 只驗鍵與連續，`core/platform.md` P5）。
 - 代貼他人裁定或裁決時首行標記依 `core/naming.md` §3；原文從第二行起一字不改。
-
-→ [archive/rules-2026-09/stage-rules/pm-conduct.md](../archive/rules-2026-09/stage-rules/pm-conduct.md)、[archive/issues/037.md](../archive/issues/037.md)、[archive/issues/150.md](../archive/issues/150.md)
