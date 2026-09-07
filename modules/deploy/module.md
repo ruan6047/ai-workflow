@@ -9,12 +9,13 @@ last_confirmed: 2026-09-05
 
 ## 0 · 宣告區塊
 
-唯一啟用條件＝`enable_when`（一個 predicate；事實來源＝`fact_source`）；未啟用時下列每一項都不存在。宣告以 YAML 的 JSON 子集書寫，CLI 與 CI 以 JSON 讀。
+啟用條件＝`enable_if`（CLI 判啟用的唯一依據；`enable_when` 是同義散文、只給人讀；事實來源＝`fact_source`）；未啟用時下列每一項都不存在，唯 `fields` 的結構合法性例外（`core/card-schema.md` §1 (b)，需求方 2026-09-07 甲案 B06）。宣告以 YAML 的 JSON 子集書寫，CLI 與 CI 以 JSON 讀。
 
 ```yaml wf-module
 {
   "name": "deploy",
   "enable_when": "卡面 stage_plan 含 部署",
+  "enable_if": {"kind": "stage_plan_has", "stage": "部署"},
   "fact_source": "卡面 JSON",
   "adds": {
     "fields": [],
