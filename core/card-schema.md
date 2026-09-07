@@ -108,12 +108,13 @@ last_confirmed: 2026-09-08
 
 ## 5 · 投影欄
 
-Project 只放五欄，全由 CLI 回寫，每欄的源＝卡面同名鍵（需求方 2026-09-07 裁定）：階段←`stage`（單選 8 值）、狀態←`state`（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別←`tier`（單選 5 值）、owner←`owner`（TEXT，`role:actor`，需求方 2026-09-05 裁定）、卡ID←`card_id`（TEXT）。`max_bytes`：owner 1024、卡ID 1024（UTF-8，2026-09-04 種子）；超過＝寫壞資料，D3（`core/verbs.md` §2）。null 的 enum 欄投影＝單選欄清空。寫入順序住 `core/verbs.md` §寫入契約。
+Project 只放五欄，全由 CLI 回寫，每欄的源＝卡面同名鍵（需求方 2026-09-07 裁定）：階段←`stage`（單選 8 值）、狀態←`state`（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別←`tier`（單選 5 值）、owner←`owner`（TEXT，`role:actor`，需求方 2026-09-05 裁定）、卡ID←`card_id`（TEXT）。TEXT 欄的 `max_bytes` 住下方區塊（UTF-8 位元組，2026-09-04 種子）；超過＝寫壞資料，D3（`core/verbs.md` §2）。null 的 enum 欄投影＝單選欄清空。寫入順序住 `core/verbs.md` §寫入契約。
 
-欄名↔卡面鍵的對照＝下方區塊（CLI 寫五欄、第 7 步建欄、對帳皆讀此，需求方 2026-09-08 裁定）：
+投影欄的機讀事實＝下方區塊：每欄 `key`（卡面鍵）、TEXT 欄另有 `max_bytes`；CLI 寫五欄、D3 驗長度、第 7 步建欄、對帳皆讀此（需求方 2026-09-08 裁定）：
 
 ```json wf-projection
-{"階段": "stage", "狀態": "state", "級別": "tier", "owner": "owner", "卡ID": "card_id"}
+{"階段": {"key": "stage"}, "狀態": {"key": "state"}, "級別": {"key": "tier"},
+ "owner": {"key": "owner", "max_bytes": 1024}, "卡ID": {"key": "card_id", "max_bytes": 1024}}
 ```
 
 ## 6 · schema_version
