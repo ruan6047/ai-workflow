@@ -33,6 +33,12 @@ def _field_value(item, name):
     return None if raw is None else raw.get('text', raw.get('name'))
 
 
+def _terminal_states(catalog):
+    """終態值域住 core/enums.md `json wf-enums` 的 states_terminal；⛔ 不在程式碼寫死。"""
+    enums, = catalog.by_label('json wf-enums')
+    return set(enums.data['states_terminal']['enum'])
+
+
 def escalation_count(card, from_node, to_node):
     """escalation §1 第 1 條：退回 +1；進執行（iteration +1 的同一轉移）與 升級→進行中 歸零。"""
     count = card.get('escalation_count', 0)
@@ -61,12 +67,16 @@ def escalation_threshold(card, from_node, to_node, *, module, config, **_):
 def resources_intersection(card, from_node, to_node, *, catalog, project, client, **_):
     """resource-lock §1 第 1–2 條：派工邊印交集；完全字串比對，⛔ 不自動擋。
 
-    現役卡母體＝板上狀態進行中且 owner.actor 與本卡不同（同 §0 enable_when）；
+    現役卡母體依 §1 第 3 條轉指 stages/closeout.md F-結案-03（進 main 未結案的卡仍算現役）
+    與 F-結案-02（終態才釋放宣告的資源）：板上非 isArchived、同 repo、狀態不在
+    core/enums.md states_terminal，且 owner 非 null 而 owner.actor 與本卡不同的卡；
     交集所需的 resources 不在投影欄，逐張回讀 issue 卡面（core/card-schema.md §5）。
+    啟用條件（§0 enable_if 的「進行中」）是另一回事，由呼叫端 S03 判，本層⛔ 不重判。
     """
     if _state(to_node) != IN_PROGRESS:
         return []
     names = {spec['key']: name for name, spec in projection(catalog).items()}
+    terminal = _terminal_states(catalog)
     actor = (card.get('owner') or {}).get('actor')
     mine = card.get('resources') or []
     lines, matched, unread = [], False, False
@@ -75,9 +85,10 @@ def resources_intersection(card, from_node, to_node, *, catalog, project, client
         repository = (content.get('repository') or {}).get('nameWithOwner')
         if item.get('isArchived') or repository != client.repo:
             continue
-        if _field_value(item, names['state']) != IN_PROGRESS:
+        if _field_value(item, names['state']) in terminal:
             continue
-        if (_field_value(item, names['owner']) or '').partition(':')[2] == actor:
+        owner = _field_value(item, names['owner'])
+        if not owner or owner.partition(':')[2] == actor:
             continue
         card_id = _field_value(item, names['card_id'])
         try:

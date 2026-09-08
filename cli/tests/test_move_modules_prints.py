@@ -30,6 +30,13 @@ def names(catalog):
     return {spec['key']: name for name, spec in projection(catalog).items()}
 
 
+@pytest.fixture(scope='module')
+def terminal(catalog):
+    """終態值域逐字取自 core/enums.md states_terminal，⛔ 不在測試裡抄字面。"""
+    enums, = catalog.by_label('json wf-enums')
+    return enums.data['states_terminal']['enum']
+
+
 class Client(FakeGhClient):
     repo = REPO
 
@@ -48,10 +55,12 @@ def card(**changes):
 
 
 def item(names, number, card_id, state='進行中', owner='executor:other', **extra):
+    """owner=None＝投影欄未填（gh/client 對空欄回 None），即未派工過的卡。"""
     return {'id': f'ITEM{number}', 'isArchived': False,
             'content': {'__typename': 'Issue', 'number': number,
                         'repository': {'nameWithOwner': REPO}},
-            'fieldValues': {names['state']: {'name': state}, names['owner']: {'text': owner},
+            'fieldValues': {names['state']: {'name': state},
+                            names['owner']: None if owner is None else {'text': owner},
                             names['card_id']: {'text': card_id}}} | extra
 
 
@@ -107,12 +116,37 @@ def test_exact_same_db_resource_still_intersects(catalog, names):
 def test_same_actor_and_archived_items_are_not_live(catalog, names):
     lines = prints(catalog, enabled=['resource-lock'], card_json=card(resources=['file:a.py']),
                    project=board([item(names, 20, 'WF-002', owner='pm:me'),
-                                  item(names, 21, 'WF-003', isArchived=True),
-                                  item(names, 22, 'WF-004', state='待確認')]),
+                                  item(names, 21, 'WF-003', isArchived=True)]),
                    client=Client({20: block(card(card_id='WF-002', resources=['file:a.py'])),
-                                  21: block(card(card_id='WF-003', resources=['file:a.py'])),
-                                  22: block(card(card_id='WF-004', resources=['file:a.py']))}))
+                                  21: block(card(card_id='WF-003', resources=['file:a.py']))}))
     assert lines == ['無交集']
+
+
+def test_non_terminal_card_outside_in_progress_still_holds_resources(catalog, names):
+    """F-結案-02／03：待確認卡未進終態，宣告的資源仍未釋放 → 交集要印。
+
+    啟用由另一張其他 actor 的進行中卡撐住（§0 enable_if），母體不等於啟用條件。
+    """
+    lines = prints(catalog, enabled=['resource-lock'], card_json=card(resources=['file:a.py']),
+                   project=board([item(names, 20, 'WF-002'),
+                                  item(names, 21, 'WF-003', state='待確認')]),
+                   client=Client({20: block(card(card_id='WF-002', resources=['file:b.py'])),
+                                  21: block(card(card_id='WF-003', resources=['file:a.py']))}))
+    assert lines == ['file:a.py ↔ WF-003']
+
+
+def test_terminal_and_ownerless_cards_do_not_hold_resources(catalog, names, terminal):
+    """F-結案-02 終態才釋放；owner 未填＝未派工過、不持資源（S09b PM 預設）。"""
+    holders = [item(names, 30 + offset, f'WF-{30 + offset}', state=state)
+               for offset, state in enumerate(terminal)]
+    holders.append(item(names, 40, 'WF-040', state='待辦', owner=None))
+    lines = prints(catalog, enabled=['resource-lock'], card_json=card(resources=['file:a.py']),
+                   project=board([item(names, 20, 'WF-002')] + holders),
+                   client=Client({20: block(card(card_id='WF-002', resources=['file:b.py']))}
+                                 | {holder['content']['number']:
+                                    block(card(card_id='X', resources=['file:a.py']))
+                                    for holder in holders}))
+    assert terminal and lines == ['無交集']
 
 
 def test_unreadable_live_card_is_named_and_skipped(catalog, names):
