@@ -16,6 +16,7 @@ import pytest
 from wf.compose.blocks import load_blocks
 from wf.gh.writes import read_block
 from wf.verbs.main import main
+from .test_closeout_flow import checker
 from .test_open_verb import MemoryClient, block, intake, issue
 
 RULES = Path(__file__).resolve().parents[2]
@@ -148,8 +149,11 @@ def to_first_verdict(step, root):
           verdict(root, 'v1.json', 'REQUEST_CHANGES', [finding('F-CLI-01', '補測')])])
 
 
-def drive(client, root, capsys):
-    """射程 4 的完整流程；回傳 (Flow, 退回後的 reviewer 派工單, 裁定單, snapshot 輸出)。"""
+def drive(client, root, capsys, *, current_verdict=True):
+    """射程 4 的完整流程；回傳 (Flow, 退回後的 reviewer 派工單, 裁定單, snapshot 輸出)。
+
+    `current_verdict=False` 只給 S19 驗收 5 的負控用：拿掉 iteration=1 的查核裁決那一步。
+    """
     step = Flow(client, root, capsys)
     to_first_verdict(step, root)
     step(['move', 'WF-001', '--to', '退回'], at='需求/退回')
@@ -161,15 +165,68 @@ def drive(client, root, capsys):
           verdict(root, 'v2.json', 'APPROVE', [finding('F-CLI-02', '已修')])])
     step(['move', 'WF-001', '--to', '執行/待辦'], at='執行/待辦')
     step(['move', 'WF-001', '--to', '進行中', '--actor', 'executor:a'], at='執行/進行中')
+    # FINAL-7：當輪（iteration=1）的執行者交回與查核裁決，結案訊息才有當輪作者／結果可引。
+    step(['review', 'WF-001', '--file', sheet(root, 'r3.json'), '--role', 'executor'])
     step(['move', 'WF-001', '--to', '待確認', '--source-sha', SHA], at='執行/待確認')
     step(['move', 'WF-001', '--to', '審核/待辦'], at='審核/待辦')
     step(['move', 'WF-001', '--to', '進行中', '--actor', 'reviewer:r'], at='審核/進行中')
     step(['move', 'WF-001', '--to', '待確認'], at='審核/待確認')
+    if current_verdict:
+        step(['review', 'WF-001', '--role', 'reviewer', '--file',
+              verdict(root, 'v3.json', 'APPROVE', [finding('F-CLI-03', '當輪通過')])])
     step(['move', 'WF-001', '--to', '結案/待確認'], at='結案/待確認')
     closeout = step(['brief', 'WF-001', '--for', 'closeout'])
     step(['move', 'WF-001', '--to', '完成'], at='結案/完成')
     snap = step(['snapshot', '--out', str(root / 'out')])
     return step, reviewer_brief, closeout, snap
+
+
+def squash_message(closeout):
+    """從 `brief --for closeout` 的 stdout 取出唯一一個 ```text 圍欄裡的 squash 訊息。"""
+    assert closeout.count('```text') == 1, closeout
+    return closeout.split('```text\n', 1)[1].split('\n```', 1)[0]
+
+
+def assert_current_round_squash(closeout):
+    """FINAL-7：結案訊息要咬住**當輪**（iteration=1）的被審 SHA、作者與 review_result，
+    且 trailer 末端連續、鍵在 P5 集合。負控（拿掉當輪裁定）必須讓這裡 FAIL。"""
+    assert '缺 Reviewed-by' not in closeout
+    msg = squash_message(closeout)
+    blocks = msg.split('\n\n')
+    assert blocks[0] == 'WF-001 端到端'
+    assert blocks[1] == f'被審 SHA：{SHA}\nfake-actor：APPROVE'
+    assert msg.count('：APPROVE') == 1 and '：REQUEST_CHANGES' not in msg
+    assert blocks[-1] == 'Reviewed-by: fake-actor'
+    check = checker()
+    assert not check.check('generated', msg)
+    assert {line.split(':', 1)[0].lower() for line in blocks[-1].splitlines()} <= check.ALLOWED
+    return msg
+
+
+def test_current_round_closeout_evidence(workspace, capsys):
+    """射程 1／驗收 5：iteration=1 有執行者交回與查核裁決後，結案 squash 訊息帶當輪證據。"""
+    client, root = workspace
+    _, _, closeout, _ = drive(client, root, capsys)
+    msg = assert_current_round_squash(closeout)
+    bad = msg + '\n見上（不是 trailer 行）'
+    errors = checker().check('negative', bad)
+    assert errors  # conduct-common §1：先證明 trailer 檢查器會響（末段混入非 trailer 行）
+    print('TRAILER_NEGATIVE rc=1', errors)
+    print('當輪 squash 訊息：', json.dumps(msg, ensure_ascii=False))
+
+
+def test_negative_control_missing_the_current_round_verdict(workspace, capsys):
+    """驗收 5 的負控：拿掉 iteration=1 的查核裁決 ⇒ 當輪 reviewer 數為 0、印「缺 Reviewed-by」，
+    上一題的當輪斷言必 FAIL（證明它咬得住，不是恆真）。"""
+    client, root = workspace
+    _, _, closeout, _ = drive(client, root, capsys, current_verdict=False)
+    with pytest.raises(AssertionError):
+        assert_current_round_squash(closeout)
+    assert '缺 Reviewed-by' in closeout
+    msg = squash_message(closeout)
+    assert msg.split('\n\n')[1] == f'被審 SHA：{SHA}'  # 沒有任何當輪作者／結果行
+    assert 'Reviewed-by' not in msg
+    print('負控：少了當輪裁定 ⇒ squash 訊息＝', json.dumps(msg, ensure_ascii=False))
 
 
 def test_seven_verbs_one_card_one_return(workspace, capsys):
@@ -193,7 +250,8 @@ def test_iteration_increments_only_on_entering_execution(workspace, capsys):
     client, root = workspace
     step, _, _, _ = drive(client, root, capsys)
     assert [n for _, node, n in step.log if node == '執行/待辦'] == [0]
-    assert [n for _, node, n in step.log if node == '執行/進行中'] == [1]
+    # 進 執行/進行中 之後多一筆當輪執行者交回，兩筆都必須是 iteration=1（只加不減嚴格度）。
+    assert [n for _, node, n in step.log if node == '執行/進行中'] == [1, 1]
     assert {n for _, node, n in step.log if node.startswith('需求')} == {0}
     assert step.card()['iteration'] == 1
 
