@@ -64,7 +64,7 @@ last_confirmed: 2026-09-07
 | 質詢（grilling） | T4 卡離開規劃前需求方與 PM 逐題定案的紀錄，落 `wf:log` | 不是 code review | code review |
 | 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數 | 鏈深 >2 只印 | 母卡、子卡、family、epic |
 | 資源宣告 | 卡面 `resources` 字串陣列 | 文法住模組 | — |
-| owner | 卡當下的 {role, actor}，由 `move --actor` 寫 | 不是 GitHub assignee | 負責人、assignee |
+| owner | 卡當下的 {role, actor}，由 `move --actor` 寫；已啟用模組條文另指定時例外（escalation 換人＝PM `edit`） | 不是 GitHub assignee | 負責人、assignee |
 | 分支 | 卡面 `branch`：該卡工作所在的 git 分支 | 不是 worktree | feature |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | 不是 CLI 判斷 | merge 策略、合併策略 |
 | SHA 四種 | 被審＝查核者讀到的 commit；來源＝卡面 `source_sha`；合併基底＝派工單的 merge-base；合併＝main 上的 merge commit | 不寫短 SHA | 目標 SHA、HEAD（作為名詞） |

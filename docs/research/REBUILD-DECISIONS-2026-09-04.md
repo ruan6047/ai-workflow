@@ -147,6 +147,8 @@
 - 六條 #4d：`notes` 以 `modules/pitfalls-13/module.md` §1 第 2、3 條的反引號字串與位置取族名，位置索引脆（已加讀取點註記）；正解＝族名進 §0 宣告＋`notes` 改讀宣告（CLI 動）。
 - 六條 #5 同步點清單（規則側字面 → CLI 檔；字面變動時同 PR 改；⛔ 不加對帳測試，測試＝第三居所）：規格欄四名（`core/card-schema.md` §2）→ `edit`；階段名 需求／規劃／執行／審核（`core/enums.md`）→ `edit`、`move`、`move_modules`；`owner` 投影 `role:actor` 的分隔（`core/card-schema.md` §5）→ `move`、`move_modules`、`notes`、`brief`、`_write`；`schema_version` 1→2 回填（`core/card-schema.md` §6）→ `_write`；`notes.id` pattern 與 `stages`（2026-09-07 已登記）。
 - 六條 #6：① `edit --set parent=` 排除 isArchived 而 `open` 的 parent 不排除，同一條 D4 兩個答案——待實例（終態卡可否當父卡未裁）；② `core/verbs.md` move 寫格「進終態即關 issue 並封存」的「封存」半邊 CLI 未實作（全 src 無 archive 呼叫，isArchived 只能來自 UI 手動）——CLI 改動，依停損進回看。
+- C20（待實例）：maintenance §0 從 `維護/進行中` 沒有邊回 `維護/運行中`，一次事件即逼出維護；補邊要改狀態機 from／to（兩家族），等第一張維護卡。
+- C25（待需求方裁）：`core/ruling.md` 類別欄（升級／停止／撤銷／級別變更／結案確認／其他）與 `wf-ruling.kind`（block／stop／withdraw／tier_change／signoff／other）無對照；升級、結案確認對應哪個 kind、阻塞要不要有類別，屬內容裁定。
 - C09：`adds.counters` 列的欄由 `edit` 改時的字面結果＝印「模組欄由 `move` 寫」（規則句已補）；d-S07 的 D3 硬擋與「宣告即擋」待 CLI 側改印。
 - 缺 `--ruling` 的印：`core/verbs.md` move 印格所列各案在 CLI；第六案 結案/待確認→結案/退回 走清單（`stages/closeout.md` §4）；是否全收斂一併議。
 ## 待骨架文件決定（本紀錄⛔ 不裁）
