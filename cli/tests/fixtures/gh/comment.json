@@ -1,0 +1,42 @@
+{
+  "provenance": "真實 API 回應",
+  "method": "comment",
+  "args": [
+    5490607488
+  ],
+  "page_size": 100,
+  "exchanges": [
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/comments/5490607488",
+        "--method",
+        "GET"
+      ],
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/comments/5490607488 --method GET",
+      "recorded_at": "2026-09-07T04:44:24.372180+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5490607488\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/228#issuecomment-5490607488\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/228\",\"id\":5490607488,\"node_id\":\"IC_kwDOTR4r388AAAABR0QFgA\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-09-01T07:41:23Z\",\"updated_at\":\"2026-09-01T07:41:23Z\",\"author_association\":\"OWNER\",\"body\":\"## 第二 PM 收件裁決\\n\\n⛔ 本裁決只依生效中的 `stage-rules/list-intake-requirements.md` 判收件流程，不判提案內容是否正確、是否該做或缺陷責任歸屬；本項與 #219 R1 的實質裁決互相獨立。\\n\\n1. **出處可指：過**——已指向 #219 交付報告 `issuecomment-5490217865` 的「五 · 上呈」兩項，並提供來源卡、執行者 session 與 PM 逐列比對的來源；本裁決不核內容真偽。\\n2. **是觀察不是結論：過**——正文只陳述決議取代清單 14 列的字面涵蓋、canonical §3 的現存句子／角色名，以及 W2A 後 §1 的揭露文字；未預設修法或寫入未量測因果推論。\\n3. **查重留痕：過**——已逐字列出 `取代清單`、`claim 事件`、`Discovery lead` 三組搜尋關鍵字，並記錄命中 #177、#219 與無既有承接卡；規則只要求關鍵字有列出，不判搜尋品質。\\n4. **屬哪個 repo：過**——已明示為 `ruan6047/ai-workflow`。\\n\\n- **提案者身分三格：過**——GitHub 帳號、session ID、該則訊息定位三格皆有填；依規則，⛔ 不核對真偽。\\n\\n**總裁決：收件通過。** 四項與身分三格皆過。這只表示 #228 可留在待審清單，不表示其實質主張成立，也不表示 #219 可帶著該缺口合併。\\n\\n裁決者身分自述：第二 PM；模型家族＝OpenAI GPT-5；實際模型＝gpt-5.6-sol；session ID＝01a05bdd-5a42-7192-a956-a3e607a6f322。\\ntimestamp：2026-09-01T15:41:02+08:00（Asia/Taipei）\\n\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5490607488/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    }
+  ],
+  "observed": {
+    "id": 5490607488,
+    "url": "https://github.com/ruan6047/ai-workflow/issues/228#issuecomment-5490607488",
+    "author": "ruan6047",
+    "created_at": "2026-09-01T07:41:23Z",
+    "body": "## 第二 PM 收件裁決\n\n⛔ 本裁決只依生效中的 `stage-rules/list-intake-requirements.md` 判收件流程，不判提案內容是否正確、是否該做或缺陷責任歸屬；本項與 #219 R1 的實質裁決互相獨立。\n\n1. **出處可指：過**——已指向 #219 交付報告 `issuecomment-5490217865` 的「五 · 上呈」兩項，並提供來源卡、執行者 session 與 PM 逐列比對的來源；本裁決不核內容真偽。\n2. **是觀察不是結論：過**——正文只陳述決議取代清單 14 列的字面涵蓋、canonical §3 的現存句子／角色名，以及 W2A 後 §1 的揭露文字；未預設修法或寫入未量測因果推論。\n3. **查重留痕：過**——已逐字列出 `取代清單`、`claim 事件`、`Discovery lead` 三組搜尋關鍵字，並記錄命中 #177、#219 與無既有承接卡；規則只要求關鍵字有列出，不判搜尋品質。\n4. **屬哪個 repo：過**——已明示為 `ruan6047/ai-workflow`。\n\n- **提案者身分三格：過**——GitHub 帳號、session ID、該則訊息定位三格皆有填；依規則，⛔ 不核對真偽。\n\n**總裁決：收件通過。** 四項與身分三格皆過。這只表示 #228 可留在待審清單，不表示其實質主張成立，也不表示 #219 可帶著該缺口合併。\n\n裁決者身分自述：第二 PM；模型家族＝OpenAI GPT-5；實際模型＝gpt-5.6-sol；session ID＝01a05bdd-5a42-7192-a956-a3e607a6f322。\ntimestamp：2026-09-01T15:41:02+08:00（Asia/Taipei）\n",
+    "issue_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/228"
+  },
+  "observed_shape": {
+    "author": "str",
+    "body": "str",
+    "created_at": "str",
+    "id": "int",
+    "issue_url": "str",
+    "url": "str"
+  }
+}

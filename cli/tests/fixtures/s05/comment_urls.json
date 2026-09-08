@@ -1,0 +1,181 @@
+{
+  "provenance": "真實 API 回應",
+  "method": "comment_urls",
+  "args": [
+    "https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192617303",
+    "https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192710001",
+    "https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192994482"
+  ],
+  "exchanges": [
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/comments/5192617303",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/comments/5192617303 --method GET",
+      "recorded_at": "2026-09-07T13:45:59.180527+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192617303\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192617303\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/7\",\"id\":5192617303,\"node_id\":\"IC_kwDOTR4r388AAAABNYENVw\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-08-05T13:51:02Z\",\"updated_at\":\"2026-08-05T13:51:02Z\",\"author_association\":\"OWNER\",\"body\":\"## 需求方裁決（2026-08-05，PM 落帳）\\n\\n交付 `2033807` 的 10 項待裁決結果：\\n- **1/2/5/7（推論型四項）**：全部照執行者處理確認——決議 9/10/12 留父卡不入通則；Coordinator＝PM 祕書同一角色；core_pain_resolved:no→attribution:planner；required checks 條件式措辭。\\n- **3 snapshot 頻率**：每日通則，維持現寫。\\n- **4 §4.2/§4.4**：維持共存（資源互斥層 vs DB 契約層，scope 不同）。\\n- **6 wfcli review 子命令**：核准開卡（WF-22-CLI3，Backlog 排程後執行）。\\n- **8 Log 段**：狀態面以 Issue/wfcli 事件為準，卡檔留白正確。\\n- **9/10 ADOPTION/README**：**擴寫入集退執行者補**（含 README 範本樹既有 7 檔缺口一併補）。\\n- **cpbl stub 五點**：待決（merge 授權時併決）。\\n\\n執行者續作 ADOPTION/README 後送跨家族查核。\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192617303/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/comments/5192617303",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/comments/5192617303 --method GET",
+      "recorded_at": "2026-09-07T13:45:59.735811+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192617303\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192617303\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/7\",\"id\":5192617303,\"node_id\":\"IC_kwDOTR4r388AAAABNYENVw\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-08-05T13:51:02Z\",\"updated_at\":\"2026-08-05T13:51:02Z\",\"author_association\":\"OWNER\",\"body\":\"## 需求方裁決（2026-08-05，PM 落帳）\\n\\n交付 `2033807` 的 10 項待裁決結果：\\n- **1/2/5/7（推論型四項）**：全部照執行者處理確認——決議 9/10/12 留父卡不入通則；Coordinator＝PM 祕書同一角色；core_pain_resolved:no→attribution:planner；required checks 條件式措辭。\\n- **3 snapshot 頻率**：每日通則，維持現寫。\\n- **4 §4.2/§4.4**：維持共存（資源互斥層 vs DB 契約層，scope 不同）。\\n- **6 wfcli review 子命令**：核准開卡（WF-22-CLI3，Backlog 排程後執行）。\\n- **8 Log 段**：狀態面以 Issue/wfcli 事件為準，卡檔留白正確。\\n- **9/10 ADOPTION/README**：**擴寫入集退執行者補**（含 README 範本樹既有 7 檔缺口一併補）。\\n- **cpbl stub 五點**：待決（merge 授權時併決）。\\n\\n執行者續作 ADOPTION/README 後送跨家族查核。\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192617303/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/comments/5192710001",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/comments/5192710001 --method GET",
+      "recorded_at": "2026-09-07T13:46:00.282564+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192710001\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192710001\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/7\",\"id\":5192710001,\"node_id\":\"IC_kwDOTR4r388AAAABNYJ3cQ\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-08-05T13:58:52Z\",\"updated_at\":\"2026-08-05T13:58:52Z\",\"author_association\":\"OWNER\",\"body\":\"## 交付定稿（2026-08-05）\\n\\n最終 SHA `c853ed930210e5b1825091000bd2385f04f15b83`（五 commit：新範本→canonical 正文→templates 同步→ADOPTION＋範本樹→root 樹；基準 21746ee，歷史無改寫）。cli 116 tests 綠、相對連結 0 破損、trailers 全解析。\\n\\n- canonical 169→260 行：13 決議＋六條派工條款＋查核範式＋資源宣告生命週期＋結案七步＋§2.2 依 #83 改寫；27 項溯源檢查指令產生全命中。\\n- templates 新 2 改 8；ADOPTION §4 補派工/派審引用；README root 13＋templates 18 雙層樹機械驗證（set+order equal、雙向差集空）。\\n- 一項自行判斷入 commit body：README 自列（「雙向差集為空」標準的必然結果）——交查核者確認。\\n- 維持待決：cpbl stub 五點（merge 授權時需求方併決）。\\n\\n狀態：🔍待查核。\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192710001/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/comments/5192710001",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/comments/5192710001 --method GET",
+      "recorded_at": "2026-09-07T13:46:00.898947+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192710001\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192710001\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/7\",\"id\":5192710001,\"node_id\":\"IC_kwDOTR4r388AAAABNYJ3cQ\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-08-05T13:58:52Z\",\"updated_at\":\"2026-08-05T13:58:52Z\",\"author_association\":\"OWNER\",\"body\":\"## 交付定稿（2026-08-05）\\n\\n最終 SHA `c853ed930210e5b1825091000bd2385f04f15b83`（五 commit：新範本→canonical 正文→templates 同步→ADOPTION＋範本樹→root 樹；基準 21746ee，歷史無改寫）。cli 116 tests 綠、相對連結 0 破損、trailers 全解析。\\n\\n- canonical 169→260 行：13 決議＋六條派工條款＋查核範式＋資源宣告生命週期＋結案七步＋§2.2 依 #83 改寫；27 項溯源檢查指令產生全命中。\\n- templates 新 2 改 8；ADOPTION §4 補派工/派審引用；README root 13＋templates 18 雙層樹機械驗證（set+order equal、雙向差集空）。\\n- 一項自行判斷入 commit body：README 自列（「雙向差集為空」標準的必然結果）——交查核者確認。\\n- 維持待決：cpbl stub 五點（merge 授權時需求方併決）。\\n\\n狀態：🔍待查核。\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192710001/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/comments/5192994482",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/comments/5192994482 --method GET",
+      "recorded_at": "2026-09-07T13:46:01.491666+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192994482\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192994482\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/7\",\"id\":5192994482,\"node_id\":\"IC_kwDOTR4r388AAAABNYbOsg\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-08-05T14:22:32Z\",\"updated_at\":\"2026-08-05T14:22:32Z\",\"author_association\":\"OWNER\",\"body\":\"## 🔍 跨家族查核 R1（Codex）：REQUEST_CHANGES（2026-08-05）＋需求方追認裁決\\n\\n- core_pain_resolved: yes。逐段正反向溯源：其餘全部規範可對回 13 決議／#7 已核推論／#83／#90-93 留痕；§2.2 舊禁句 0 命中；雙層樹、連結、116 tests、五 commit trailers 全複驗通過。\\n- **CANON1-R1-01（major，blocking）**：新聞佐證通道的四約束（僅定性／官方數值權威／URL＋日期／第三方泛化）於 AI_WORKFLOW.md:230、dispatch-package.md:32、project-stub.md:28 無書面裁決源頭——實為 PM 對需求方口頭裁定的操作化，僅存 session 記憶。**反向溯源機制首次命中真實無源條文。**\\n\\n**⚖️ 需求方追認裁決（2026-08-05）**：四約束**追認為正式裁決**（實戰已驗證：連段語意翻案即依此邊界執行——媒體報導佐證定性、官方紀錄榜裁定數值）。本留言即權威源頭。\\n\\n處置：退回 implementation（iteration+1）——條文保留，補源頭引用（本留言）至溯源鏈；modifications 極小。\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192994482/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    },
+    {
+      "request": [
+        "gh",
+        "api",
+        "repos/ruan6047/ai-workflow/issues/comments/5192994482",
+        "--method",
+        "GET"
+      ],
+      "kwargs": {
+        "capture_output": true,
+        "text": true,
+        "check": false,
+        "timeout": 60
+      },
+      "source_command": "gh api repos/ruan6047/ai-workflow/issues/comments/5192994482 --method GET",
+      "recorded_at": "2026-09-07T13:46:02.089240+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192994482\",\"html_url\":\"https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192994482\",\"issue_url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/7\",\"id\":5192994482,\"node_id\":\"IC_kwDOTR4r388AAAABNYbOsg\",\"user\":{\"login\":\"ruan6047\",\"id\":49437898,\"node_id\":\"MDQ6VXNlcjQ5NDM3ODk4\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/49437898?u=0329ac1a465152035e9b600d71e7d7e9e1645abd&v=4\",\"gravatar_id\":\"\",\"url\":\"https://api.github.com/users/ruan6047\",\"html_url\":\"https://github.com/ruan6047\",\"followers_url\":\"https://api.github.com/users/ruan6047/followers\",\"following_url\":\"https://api.github.com/users/ruan6047/following{/other_user}\",\"gists_url\":\"https://api.github.com/users/ruan6047/gists{/gist_id}\",\"starred_url\":\"https://api.github.com/users/ruan6047/starred{/owner}{/repo}\",\"subscriptions_url\":\"https://api.github.com/users/ruan6047/subscriptions\",\"organizations_url\":\"https://api.github.com/users/ruan6047/orgs\",\"repos_url\":\"https://api.github.com/users/ruan6047/repos\",\"events_url\":\"https://api.github.com/users/ruan6047/events{/privacy}\",\"received_events_url\":\"https://api.github.com/users/ruan6047/received_events\",\"type\":\"User\",\"user_view_type\":\"public\",\"site_admin\":false},\"created_at\":\"2026-08-05T14:22:32Z\",\"updated_at\":\"2026-08-05T14:22:32Z\",\"author_association\":\"OWNER\",\"body\":\"## 🔍 跨家族查核 R1（Codex）：REQUEST_CHANGES（2026-08-05）＋需求方追認裁決\\n\\n- core_pain_resolved: yes。逐段正反向溯源：其餘全部規範可對回 13 決議／#7 已核推論／#83／#90-93 留痕；§2.2 舊禁句 0 命中；雙層樹、連結、116 tests、五 commit trailers 全複驗通過。\\n- **CANON1-R1-01（major，blocking）**：新聞佐證通道的四約束（僅定性／官方數值權威／URL＋日期／第三方泛化）於 AI_WORKFLOW.md:230、dispatch-package.md:32、project-stub.md:28 無書面裁決源頭——實為 PM 對需求方口頭裁定的操作化，僅存 session 記憶。**反向溯源機制首次命中真實無源條文。**\\n\\n**⚖️ 需求方追認裁決（2026-08-05）**：四約束**追認為正式裁決**（實戰已驗證：連段語意翻案即依此邊界執行——媒體報導佐證定性、官方紀錄榜裁定數值）。本留言即權威源頭。\\n\\n處置：退回 implementation（iteration+1）——條文保留，補源頭引用（本留言）至溯源鏈；modifications 極小。\",\"reactions\":{\"url\":\"https://api.github.com/repos/ruan6047/ai-workflow/issues/comments/5192994482/reactions\",\"total_count\":0,\"+1\":0,\"-1\":0,\"laugh\":0,\"hooray\":0,\"confused\":0,\"heart\":0,\"rocket\":0,\"eyes\":0},\"performed_via_github_app\":null,\"minimized\":null,\"pin\":null}",
+        "stderr": ""
+      }
+    }
+  ],
+  "observed": [
+    {
+      "id": 5192617303,
+      "url": "https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192617303",
+      "author": "ruan6047",
+      "created_at": "2026-08-05T13:51:02Z",
+      "body": "## 需求方裁決（2026-08-05，PM 落帳）\n\n交付 `2033807` 的 10 項待裁決結果：\n- **1/2/5/7（推論型四項）**：全部照執行者處理確認——決議 9/10/12 留父卡不入通則；Coordinator＝PM 祕書同一角色；core_pain_resolved:no→attribution:planner；required checks 條件式措辭。\n- **3 snapshot 頻率**：每日通則，維持現寫。\n- **4 §4.2/§4.4**：維持共存（資源互斥層 vs DB 契約層，scope 不同）。\n- **6 wfcli review 子命令**：核准開卡（WF-22-CLI3，Backlog 排程後執行）。\n- **8 Log 段**：狀態面以 Issue/wfcli 事件為準，卡檔留白正確。\n- **9/10 ADOPTION/README**：**擴寫入集退執行者補**（含 README 範本樹既有 7 檔缺口一併補）。\n- **cpbl stub 五點**：待決（merge 授權時併決）。\n\n執行者續作 ADOPTION/README 後送跨家族查核。",
+      "issue_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/7"
+    },
+    {
+      "id": 5192710001,
+      "url": "https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192710001",
+      "author": "ruan6047",
+      "created_at": "2026-08-05T13:58:52Z",
+      "body": "## 交付定稿（2026-08-05）\n\n最終 SHA `c853ed930210e5b1825091000bd2385f04f15b83`（五 commit：新範本→canonical 正文→templates 同步→ADOPTION＋範本樹→root 樹；基準 21746ee，歷史無改寫）。cli 116 tests 綠、相對連結 0 破損、trailers 全解析。\n\n- canonical 169→260 行：13 決議＋六條派工條款＋查核範式＋資源宣告生命週期＋結案七步＋§2.2 依 #83 改寫；27 項溯源檢查指令產生全命中。\n- templates 新 2 改 8；ADOPTION §4 補派工/派審引用；README root 13＋templates 18 雙層樹機械驗證（set+order equal、雙向差集空）。\n- 一項自行判斷入 commit body：README 自列（「雙向差集為空」標準的必然結果）——交查核者確認。\n- 維持待決：cpbl stub 五點（merge 授權時需求方併決）。\n\n狀態：🔍待查核。",
+      "issue_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/7"
+    },
+    {
+      "id": 5192994482,
+      "url": "https://github.com/ruan6047/ai-workflow/issues/7#issuecomment-5192994482",
+      "author": "ruan6047",
+      "created_at": "2026-08-05T14:22:32Z",
+      "body": "## 🔍 跨家族查核 R1（Codex）：REQUEST_CHANGES（2026-08-05）＋需求方追認裁決\n\n- core_pain_resolved: yes。逐段正反向溯源：其餘全部規範可對回 13 決議／#7 已核推論／#83／#90-93 留痕；§2.2 舊禁句 0 命中；雙層樹、連結、116 tests、五 commit trailers 全複驗通過。\n- **CANON1-R1-01（major，blocking）**：新聞佐證通道的四約束（僅定性／官方數值權威／URL＋日期／第三方泛化）於 AI_WORKFLOW.md:230、dispatch-package.md:32、project-stub.md:28 無書面裁決源頭——實為 PM 對需求方口頭裁定的操作化，僅存 session 記憶。**反向溯源機制首次命中真實無源條文。**\n\n**⚖️ 需求方追認裁決（2026-08-05）**：四約束**追認為正式裁決**（實戰已驗證：連段語意翻案即依此邊界執行——媒體報導佐證定性、官方紀錄榜裁定數值）。本留言即權威源頭。\n\n處置：退回 implementation（iteration+1）——條文保留，補源頭引用（本留言）至溯源鏈；modifications 極小。",
+      "issue_url": "https://api.github.com/repos/ruan6047/ai-workflow/issues/7"
+    }
+  ],
+  "observed_shape": {
+    "list": [
+      {
+        "author": "str",
+        "body": "str",
+        "created_at": "str",
+        "id": "int",
+        "issue_url": "str",
+        "url": "str"
+      }
+    ]
+  }
+}
