@@ -79,7 +79,7 @@ last_confirmed: 2026-09-08
 | acceptance（≥1）、verification（≥1） | PM | 離開規劃前 | brief、R3 |
 | grilling | PM（`edit`） | T4 離開規劃前 | brief、裁定單 |
 | parent | PM（`open --parent`／`edit`） | 有父卡時 | 鏈深（印）、initiative |
-| stage、state、owner、branch、source_sha、blocked | CLI（`move`；`stage`／`state` 建卡時由 `open` 寫 `initial`） | — | brief、Project、D1、D4 |
+| stage、state、owner、branch、source_sha、blocked | CLI（`move`；`stage`／`state` 建卡時由 `open` 寫 `initial`；`owner` 在 escalation 換人時由 PM `edit`，`modules/escalation` §1） | — | brief、Project、D1、D4 |
 | notes | 任何角色經 `edit --set notes+=`，來源＝`wf:note` 留言；`last_cited` 不存卡面，由 `snapshot` 推得 | — | notes、brief |
 
 規格欄＝acceptance／verification／non_scope／resources；`edit` 改任一欄 ⇒ `spec_version` +1（C11）。

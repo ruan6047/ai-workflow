@@ -27,6 +27,7 @@ last_confirmed: 2026-09-06
 ## 4 · 階段內迴圈
 
 - ① `notes --stage 結案` ② PM `brief --for closeout` 組裁定單 CLI 段 ③ PM 填人填段、需求方讀 ④ 需求方確認或退回補驗 ⑤ `move` 到完成或停止。
+- 需求方退回補驗＝一則 `wf:ruling`；PM `move --ruling <該留言 URL> --to 結案/退回`，補驗後 `move --to 結案/待確認` 重交裁定單。
 - 常態由 PM merge：APPROVE＋裁決完整時直行 merge→收尾；四停下條件任一成立即停下請示需求方：有 `status: open` 且 `blocking: true` 的 finding、CI 非綠或 merge 後狀態不符、分支落後且衝突、T4 未取得需求方 sign-off（`wf-ruling` kind=signoff）。
 - 合併方式依專案層 `merge_method`（`core/platform.md` P3）；⛔ 不用 `gh pr update-branch`，分支更新走本地 rebase。
 - PR body ⛔ 不寫 `Closes #N`；只由 `move` 到終態關 issue。
@@ -45,5 +46,5 @@ last_confirmed: 2026-09-06
 ## 6 · 注意事項
 
 - F-結案-01：進入完成前印的 merge SHA 是否 main 祖先、CI 狀態，紅即停。
-- F-結案-02：終態才釋放宣告的資源。
+- F-結案-02：終態才釋放宣告的資源；撤銷亦釋放。
 - F-結案-03：進 main 未結案的卡仍算現役。

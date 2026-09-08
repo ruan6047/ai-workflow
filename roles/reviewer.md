@@ -15,7 +15,7 @@ last_confirmed: 2026-09-07
 - `core_pain_resolved` 是第一判準、具否決權：驗收全過但痛點未消 ⇒ REQUEST_CHANGES，`attribution` planner、`finding_class` authoritative-artifact。
 - 有 `status: open` 且 `blocking: true` 的 finding 或 `core_pain_resolved: no` ⇒ REQUEST_CHANGES；兩者皆無而退回＝無效裁決。
 - 每條 finding 九欄齊；無則逐字「無」；無 `self_run` 的 APPROVE 無效。
-- iteration ≥2 的查核只做前一 iteration 的 finding 逐項閉環＋回歸不倒退；⛔ 不重跑已過項、⛔ 不擴審。
+- 本卡已有前一則 `wf:verdict` 時，查核只做前一則的 finding 逐項閉環＋回歸不倒退；⛔ 不重跑已過項、⛔ 不擴審。
 - 研究卡只驗量測可重跑，⛔ 不裁結論真值（研究模組的查核條文住 `modules/research/module.md`）。
 
 ## 2 · 紅線

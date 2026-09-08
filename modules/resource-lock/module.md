@@ -14,7 +14,7 @@ last_confirmed: 2026-09-06
 ```yaml wf-module
 {
   "name": "resource-lock",
-  "enable_when": "派工當下板上狀態＝進行中且 owner.actor 與本卡不同的卡 ≥1 張",
+  "enable_when": "派工當下板上有其他 owner 的進行中卡 ≥1 張",
   "enable_if": {"kind": "other_actor_card_in_state", "state": "進行中", "min": 1},
   "fact_source": "Project 投影欄 狀態＋owner",
   "adds": {

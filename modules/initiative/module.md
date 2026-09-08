@@ -44,7 +44,7 @@ last_confirmed: 2026-09-06
 
 - 父卡保存目標、規格基線（規格欄與 `spec_version`）、依賴序、里程碑、決策與風險。
 - 帶 `parent` 的卡採可獨立驗證的垂直切片。
-- 帶 `parent` 的卡建卡時登記 `parent_spec_version`＝父卡當時的 `spec_version`；空值由 `move` 印，⛔ 不派工。
+- 帶 `parent` 的卡 `open --parent` 時由 `open` 登記 `parent_spec_version`＝父卡當時的 `spec_version`；空值由 `move` 印，⛔ 不派工。
 - `brief` 在 §0 宣告的交接段印父卡 `spec_version` 與本卡 `parent_spec_version`；兩值不一致時查核者 REQUEST_CHANGES、PM 退回，⛔ 不以舊基線交付。
 - 執行者發現交付須偏離已核可基線時凍結受影響部分並在卡上貼留言告知 PM；⛔ 不自行改基線後續作。
 - PM 對照父卡依賴序逐張標受影響卡的影響級別（無影響／需改規格／前提失效／方向失效）並留痕。

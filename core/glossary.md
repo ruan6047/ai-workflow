@@ -64,7 +64,7 @@ last_confirmed: 2026-09-07
 | 質詢（grilling） | T4 卡離開規劃前需求方與 PM 逐題定案的紀錄，落 `wf:log` | 不是 code review | code review |
 | 父卡、鏈深 | `parent` 指到的卡；沿父鏈算的層數 | 鏈深 >2 只印 | 母卡、子卡、family、epic |
 | 資源宣告 | 卡面 `resources` 字串陣列 | 文法住模組 | — |
-| owner | 卡當下的 {role, actor}，由 `move --actor` 寫 | 不是 GitHub assignee | 負責人、assignee |
+| owner | 卡當下的 {role, actor}，由 `move --actor` 寫；已啟用模組條文另指定時例外（escalation 換人＝PM `edit`） | 不是 GitHub assignee | 負責人、assignee |
 | 分支 | 卡面 `branch`：該卡工作所在的 git 分支 | 不是 worktree | feature |
 | 合併方式 | 專案層 `merge_method`，由平台強制 | 不是 CLI 判斷 | merge 策略、合併策略 |
 | SHA 四種 | 被審＝查核者讀到的 commit；來源＝卡面 `source_sha`；合併基底＝派工單的 merge-base；合併＝main 上的 merge commit | 不寫短 SHA | 目標 SHA、HEAD（作為名詞） |
@@ -91,6 +91,6 @@ last_confirmed: 2026-09-07
 | 寫入契約 | `core/verbs.md` 的固定節：檢查先於首次遠端寫入、寫後回讀、拒收留痕 | 不是 transaction | 寫入規則、transaction |
 | 留言標頭 wf:* | CLI 與人留言的首行 | 不是 marker | marker、事件型別 |
 | 投影欄 | Project 上由 CLI 回寫的五欄：階段／狀態／級別／owner／卡ID | 不是事實來源 | 看板欄位、Ledger 欄 |
-| 封存、撤銷、停止 | 三個離開動作：終態封存／回清單／終態 | 封存不是刪除 | — |
+| 封存、撤銷、停止 | 三個離開動作：終態時關 issue（Project item 不移出、不 isArchived）／回清單／終態 | 封存不是刪除 | — |
 | db_scope | 卡對資料庫的變更域，值住 `core/enums.md` `db_scope` | 不是資源宣告 | db_permission、資料庫權限 |
 | trailer | commit 訊息末端連續的 `Key: value` 區塊 | 不是 footer 散文 | footer、git-tag |

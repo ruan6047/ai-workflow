@@ -31,7 +31,7 @@ last_confirmed: 2026-09-06
         {
           "from": "*/升級",
           "to": "same/進行中",
-          "condition": "換人或換級再派；--ruling 缺即印"
+          "condition": "換人或換級再派；--ruling（§1）"
         },
         {
           "from": "*/升級",
@@ -61,7 +61,7 @@ last_confirmed: 2026-09-06
 - `escalation_count` 達 `params.escalate_after`（種子 3）時 `move` 印「達升級門檻」；PM 組裁定單（升級類）後 `move --to <同階段>/升級`。
 - 裁定單（升級類，`core/ruling.md`）由 PM 組，§0 宣告的交接段填：每次退回的 `wf-return` 留言 URL、blocking finding 的 `finding_class` 與 `root_cause_id`、逐字理由、核心痛點原文、四選一各值「若成立會是什麼證據」。
 - 需求方以一則 `wf:ruling` 四選一裁定（換人／退回上一階段／停止／退回無效）；「改規格」⛔ 不是合法值，改規格走 R1 不過的核心路徑（`stage_plan` 含規劃→規劃／退回，否則→需求／退回）。
-- 換人或換級（能力層級升一級）時 PM `move --ruling <URL> --to <同階段>/進行中` 再派；退回無效亦回進行中，由執行者原樣交回再審。
+- 換人或換級（能力層級升一級）時 PM 先 `edit --set owner={"role":"executor","actor":"<新實體>"} --ruling <URL>`，再 `move --ruling <URL> --to <同階段>/進行中` 再派（此邊⛔ 不是派工邊，`--actor` 不寫 owner）；退回無效亦回進行中，由執行者原樣交回再審。
 - 退回上一階段時 PM 先 `move --ruling <URL>` 回進行中，執行者交回後 PM 以 R1 不過走核心轉移表退回規劃或需求。
 - 停止時 `move --ruling <URL> --to 結案/待確認`，再依結案階段走停止。
 - PM：計數以 `move` 為準、組裁定單、落裁定；⛔ 不裁定、⛔ 不手改 `escalation_count`。

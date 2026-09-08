@@ -11,9 +11,9 @@
 ## 2 · `.wf/modules.json` 種子
 
 ```json
-{"modules": [{"name": "snapshot", "params": {"schedule": "daily", "branch": "snapshots"}}],
+{"modules": [],
  "merge_method": "squash",
- "areas": ["WF"]}
+ "areas": ["WF", "CLI", "DOC", "OPS"]}
 ```
 
 - `modules` 只列專案級模組（escalation、resource-lock、pitfalls-13、identity、snapshot、db-contract）；卡級模組（research、deploy、maintenance、initiative、stat-redline）看卡面，⛔ 不列。
