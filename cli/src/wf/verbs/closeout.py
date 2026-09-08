@@ -88,10 +88,11 @@ def _current(ctx, records, complete):
                 lines.append(f'CI 非綠：未能取得 CI：{exc}')
     except GhError as exc:
         lines += [f'未能取得 PR／merge SHA：{exc}', '未能取得 main 祖先關係', 'CI 非綠：未能取得 CI']
-    try:
-        if not branch:
-            raise LocalGitUnavailable('無分支')
-        base, head = ctx.client.branch_head('main'), ctx.client.branch_head(branch)
+    try:  # S11b：取源同 brief 的 reviewer 段＝遠端 main 頭 vs 卡面 source_sha。
+        head = ctx.card.get('source_sha')
+        if not head:
+            raise LocalGitUnavailable('來源 SHA 未填')
+        base = ctx.client.branch_head('main')
         rc = merge_tree(base, head, root=ctx.root)
         lines.append(f"分支衝突：{'成立' if rc == 1 else '不成立'}；證據：merge-tree {base} {head} rc={rc}")
     except (GhError, LocalGitUnavailable) as exc:

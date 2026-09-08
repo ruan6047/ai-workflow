@@ -98,8 +98,8 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
     return replace(result, printed=tuple(report))
 
 
-def main(argv=None, *, client, catalog, root='.', enabled_modules=()):
-    """供總入口分派；本片不修改 verbs/main.py。"""
+def run(argv=None, *, client, root='.', catalog=None, enabled_modules=()):
+    """七動詞統一入口名（S15）；參數次序同其餘動詞的 run，行為不變。"""
     args = parse_args('wf edit', argv, ('card', {}), ('--set', {'required': True, 'dest': 'assignment'}),
                       ('--ruling', {}))
     config = load_project_config(root)
@@ -107,3 +107,6 @@ def main(argv=None, *, client, catalog, root='.', enabled_modules=()):
     return edit(args.card, args.assignment, client=client, catalog=catalog,
                 ruling=args.ruling, enabled_modules=enabled_modules,
                 project_owner=project.get('owner'), project_number=project.get('number')).rc
+
+
+main = run  # 舊名別名保留一版（既有呼叫端不改）

@@ -81,7 +81,9 @@ def _identity(ctx):
     return [f'{k}：{_plain(ctx.card.get(k))}' for k in keys] + [f'from：pm · to：{ctx.target}']
 
 def _baseline(ctx):
-    """基線列：merge-base；無分支改用 main 頭。reviewer 另列被審分支、來源 SHA 與三印。"""
+    """基線列：merge-base；無分支改用 main 頭。reviewer 另列被審分支、來源 SHA 與三印。
+    merge-tree 取源＝遠端 main 頭 vs `source_sha`（S11b）：merge-base 對「main 與分支改同一行」
+    的真實分岔會漏報無衝突；兩者不同時段內註明。取不到 main 頭＝印未能比對，⛔ 不當成無衝突。"""
     branch, sha = ctx.card.get('branch'), ctx.card.get('source_sha')
     head = _remote(ctx.client.branch_head, branch) if branch else None
     base = _remote(ctx.client.merge_base, MAIN, branch) if head else None
@@ -98,8 +100,13 @@ def _baseline(ctx):
     exists = _remote(ctx.client.commit_exists, sha)
     lines.append('來源 SHA 未 push' if exists is False
                  else '未能確認來源 SHA 是否已 push' if exists is None else '來源 SHA 已 push')
+    main_head = _remote(ctx.client.branch_head, MAIN)
+    if main_head is None:
+        return lines + [NO_MERGE_TREE]
+    if main_head != base:
+        lines.append(f'merge-tree 取源＝main 頭 {main_head}，非合併基底 {_plain(base)}')
     try:
-        lines.append(CONFLICT if merge_tree(base, sha, root=ctx.root) else 'merge-tree 無衝突')
+        lines.append(CONFLICT if merge_tree(main_head, sha, root=ctx.root) else 'merge-tree 無衝突')
     except LocalGitUnavailable:
         lines.append(NO_MERGE_TREE)
     return lines

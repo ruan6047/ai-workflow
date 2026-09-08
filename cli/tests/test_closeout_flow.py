@@ -153,3 +153,28 @@ def test_trailer_flags_do_not_change_dispatch(tmp_path, target, capsys, monkeypa
             original = output
         else:
             assert output == original
+
+
+def test_branch_conflict_uses_the_main_head_and_the_source_sha(tmp_path, monkeypatch):
+    """S11b：分支衝突取源＝遠端 main 頭 vs 卡面 source_sha，與 brief 的 reviewer 段同一組。
+    負控：分支頭另給第三個值，舊取源（main 頭 vs 分支頭）會讓下面的等式 FAIL。"""
+    seen = []
+    monkeypatch.setattr(closeout, 'merge_tree',
+                        lambda base, head, **kwargs: seen.append((base, head)) or 1)
+    heads = {'main': 'a' * 40, 'topic': 'b' * 40}
+    client = client_for(branch_head=lambda branch: heads[branch])
+    lines, _, _ = render(tmp_path, client)
+    assert seen == [('a' * 40, 'c' * 40)]
+    assert f"分支衝突：成立；證據：merge-tree {'a' * 40} {'c' * 40} rc=1" in lines
+    assert ('branch_head', {'branch': 'topic'}) not in client.calls
+    print('負控：舊取源會是', ('a' * 40, heads['topic']), '≠ 實際', seen[0])
+
+
+def test_branch_conflict_without_a_source_sha_is_not_a_verdict(tmp_path, monkeypatch):
+    """S11b：source_sha 未填 ⇒ 印未能取得，⛔ 不當成不成立、⛔ 不呼叫 merge-tree。"""
+    seen = []
+    monkeypatch.setattr(closeout, 'merge_tree', lambda *args, **kwargs: seen.append(args) or 0)
+    lines, _, _ = render(tmp_path, client_for(card(branch='topic', source_sha=None)))
+    assert seen == []
+    assert '分支衝突：未能取得 merge-tree：來源 SHA 未填' in lines
+    assert not any(line.startswith('分支衝突：不成立') for line in lines)

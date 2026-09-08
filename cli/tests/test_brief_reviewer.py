@@ -103,16 +103,62 @@ def test_reviewer_prints_source_sha_not_pushed(tmp_path):
     assert '來源 SHA 已 push' in baseline(pushed)
 
 
+def heads(**by_branch):
+    """branch_head 替身：逐分支給頭；S11b 起 main 頭與被審分支頭要能分別設定。"""
+    return lambda branch: by_branch[branch]
+
+
 def test_reviewer_prints_merge_tree_conflict(tmp_path):
-    """驗收 8（印三）：本機 fixture repo 的兩個衝突 commit ⇒ merge-tree 衝突；可合併是負控。"""
+    """驗收 8（印三）：本機 fixture repo 的兩個衝突 commit ⇒ merge-tree 衝突；可合併是負控。
+    S11b：取源改遠端 main 頭 vs source_sha，故衝突由 main 頭（非 merge-base）給。"""
     root = make_root(tmp_path)
     base, left, right = git_repo(root)
     data = card(branch='feat', source_sha=right)
-    _, lines = emitted(make_client(data, branch_head=right, merge_base=left), root, 'reviewer')
+    _, lines = emitted(make_client(data, branch_head=heads(main=left, feat=right),
+                                   merge_base=base), root, 'reviewer')
     assert 'merge-tree 衝突' in baseline(lines)
-    _, clean = emitted(make_client(data, branch_head=right, merge_base=base), root, 'reviewer')
+    _, clean = emitted(make_client(data, branch_head=heads(main=base, feat=right),
+                                   merge_base=base), root, 'reviewer')
     assert 'merge-tree 無衝突' in baseline(clean)
     assert merge_tree(left, right, root=root) == 1 and merge_tree(base, right, root=root) == 0
+
+
+def test_merge_tree_source_is_main_head_not_merge_base(tmp_path):
+    """S11b 驗收 3：真實分岔（共同祖先→main 與 feature 各改同一行）⇒ 印衝突。
+    負控＝把對象換回 merge-base：同一組 SHA 下 merge_tree(merge-base, source_sha)==0，
+    亦即舊取源會印「無衝突」，本案的衝突斷言必 FAIL。"""
+    root = make_root(tmp_path)
+    base, main_head, right = git_repo(root)
+    data = card(branch='feat', source_sha=right)
+    client = make_client(data, branch_head=heads(main=main_head, feat=right), merge_base=base)
+    _, lines = emitted(client, root, 'reviewer')
+    assert 'merge-tree 衝突' in baseline(lines)
+    assert f'merge-tree 取源＝main 頭 {main_head}，非合併基底 {base}' in baseline(lines)
+    assert ('branch_head', {'branch': 'main'}) in client.calls
+    assert merge_tree(base, right, root=root) == 0  # 負控：舊取源（merge-base）＝無衝突
+    assert merge_tree(main_head, right, root=root) == 1
+    print('負控：merge-base 取源 rc=0（漏報），main 頭取源 rc=1')
+
+
+def test_merge_tree_is_not_run_when_the_main_head_is_unavailable(tmp_path):
+    """S11b：取不到遠端 main 頭 ⇒ 印未能比對、rc 0，⛔ 不當成無衝突、⛔ 不跑 merge-tree。"""
+    root = make_root(tmp_path)
+    base, _, right = git_repo(root)
+
+    def head(branch):
+        if branch == 'main':
+            raise NotFound('main')
+        return right
+    calls = []
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr('wf.verbs.brief.merge_tree', lambda *a, **kw: calls.append(a) or 0)
+    try:
+        result, lines = emitted(make_client(card(branch='feat', source_sha=right),
+                                            branch_head=head, merge_base=base), root, 'reviewer')
+    finally:
+        monkey.undo()
+    assert result.rc == 0 and baseline(lines)[-1] == '未能比對 merge-tree'
+    assert calls == [] and 'merge-tree 無衝突' not in baseline(lines)
 
 
 def test_merge_tree_unavailable_is_printed_not_raised(tmp_path):
