@@ -26,6 +26,17 @@ def test_adoption_seed_verbatim(tmp_path):
     path.write_text(seed)
     cfg = load_project_config(tmp_path)
     assert cfg == json.loads(seed) | {'project': None}
+    # 種子的 modules 由 ADOPTION.md §2 決定（2026-09-08 C12 起為空陣列），⛔ 不在測試裡抄名字
+    assert module_names(cfg) == [m['name'] for m in json.loads(seed)['modules']]
+    assert module_params(cfg, 'missing') == {}
+
+
+def test_module_params_reads_declared_params(tmp_path):
+    seed = '{"modules": [{"name": "snapshot", "params": {"schedule": "daily"}}], "areas": ["WF"]}'
+    path = tmp_path / '.wf/modules.json'
+    path.parent.mkdir()
+    path.write_text(seed)
+    cfg = load_project_config(tmp_path)
     assert module_names(cfg) == ['snapshot']
     assert module_params(cfg, 'snapshot')['schedule'] == 'daily'
     assert module_params(cfg, 'missing') == {}
