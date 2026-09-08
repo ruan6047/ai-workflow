@@ -158,6 +158,32 @@ def test_d3_unclosed_block_and_duplicate(setup):
         assert len(rejects(client)) == 1
 
 
+# S14b／R1.14-1：wf-card 區塊存在但值為 null（或任何非物件）＝存在的壞卡，不是「沒有卡」。
+def test_null_card_block_is_d3(setup, catalog, tmp_path):
+    _, issues, items = population(catalog)
+    issues[1] = issue(2, None)  # 區塊內容逐字 null
+    assert '```json wf-card\nnull\n```' in issues[1]['body']
+    client, kwargs = setup(issues=issues, items=items)
+    result = snapshot(**kwargs)
+    assert result.rc == 1
+    assert result.data is None
+    assert len(rejects(client)) == 1
+    assert rejects(client)[0]['number'] == 2
+    assert rejects(client)[0]['first_line'] == 'wf:reject'
+    assert '不是物件' in rejects(client)[0]['body']
+    assert not (tmp_path / '.wf/snapshot/snapshot.json').exists()
+    assert not (tmp_path / '.wf/snapshot/snapshot.md').exists()
+    assert_read_only(client)
+
+
+@pytest.mark.parametrize('value', [None, [], ['a'], 'null', 3, True])
+def test_non_object_card_block_is_d3(setup, value):
+    client, kwargs = setup(issues=[issue(1, value)])
+    assert snapshot(**kwargs).rc == 1
+    assert len(rejects(client)) == 1
+    assert '不是物件' in rejects(client)[0]['body']
+
+
 # 驗收 3：core schema——宣告模組欄恆合法（(b)）；模組狀態值未合成即不合法。
 def test_declared_module_field_passes_without_enabling(setup, catalog):
     client, kwargs = setup(issues=[issue(1, card(escalation_count=2))],
@@ -225,6 +251,26 @@ def test_note_failing_schema_is_invalid(setup):
     result = snapshot(**kwargs)
     assert result.data['candidates'] == []
     assert result.data['invalid_candidates'][0]['reason'].startswith('/text')
+
+
+# S14b／R1.14-1：wf-note 為 null 的留言仍是候選母體的一員，URL ⛔ 不能消失。
+@pytest.mark.parametrize('value', [None, [], 'null', 7])
+def test_non_object_note_block_is_invalid_candidate(setup, value):
+    comments = {1: [comment(1, 11, 'wf-note', value)]}
+    _, kwargs = setup(issues=[issue(1, card())], comments=comments)
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert result.data['candidates'] == []
+    assert [c['comment_url'] for c in result.data['invalid_candidates']] == [comment(1, 11)['url']]
+    assert '不是物件' in result.data['invalid_candidates'][0]['reason']
+
+
+def test_null_return_block_does_not_cite(setup):
+    comments = {1: [comment(1, 21, 'wf-return', None)]}
+    _, kwargs = setup(issues=[issue(1, card())], comments=comments)
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert result.data['last_cited'] == {}
 
 
 # 驗收 6：last_cited 取最後一次被引用的留言。

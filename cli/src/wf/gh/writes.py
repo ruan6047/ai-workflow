@@ -46,6 +46,20 @@ def read_block(body, label, required=True):
         raise CardBodyError(f'{label} JSON 解析失敗') from exc
 
 
+def block_value(body, label):
+    """回傳（區塊在不在, 區塊值）；值可為 null／任何 JSON，型別由呼叫端判（⛔ 此層不判讀）。
+    0／≥2／未閉合／壞 JSON 的行為與 block_span(required=False)／read_block 相同。
+    """
+    span = block_span(body, label, required=False)
+    if span is None:
+        return False, None
+    start, end = span
+    try:
+        return True, json.loads(body[start:end])
+    except ValueError as exc:
+        raise CardBodyError(f'{label} JSON 解析失敗') from exc
+
+
 def card_span(body):
     return block_span(body, 'wf-card')
 

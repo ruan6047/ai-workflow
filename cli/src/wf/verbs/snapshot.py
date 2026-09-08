@@ -18,7 +18,7 @@ from wf.compose.blocks import load_blocks, projection
 from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
-from wf.gh.writes import CardBodyError, read_block
+from wf.gh.writes import CardBodyError, block_value
 from wf.verbs._write import projected, reject
 
 OUT_DEFAULT = '.wf/snapshot'
@@ -51,11 +51,18 @@ def _errors(errors):
 
 
 def _block(comment, label):
-    """回傳（區塊資料, 不能解析的原因）；壞區塊只記錄，⛔ 不擋（派工單 §5）。"""
+    """回傳（區塊在不在, 值, 不能解析的原因）；壞區塊只記錄，⛔ 不擋（派工單 §5）。"""
     try:
-        return read_block(comment.get('body') or '', label, required=False), None
+        return (*block_value(comment.get('body') or '', label), None)
     except CardBodyError as exc:
-        return None, str(exc)
+        return True, None, str(exc)
+
+
+def _shape(value, label, schema):
+    """區塊存在時的內容檢查：值不是物件（card-schema §1／§4）或 schema 不過。"""
+    if not isinstance(value, dict):
+        return f'{label} 不是物件'
+    return _errors(validate(value, schema)) or None
 
 
 def _markdown(data):
@@ -94,16 +101,17 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     schema = compose_schema(catalog, 'wf-card')
     cards, bad = [], []
     for issue in client.issues(state='all'):
-        try:
-            card = read_block(issue['body'] or '', 'wf-card', required=False)
+        try:  # 區塊在不在才決定母體；值為 null 仍是卡（R1.14-1）。
+            present, card = block_value(issue['body'] or '', 'wf-card')
         except CardBodyError as exc:
             bad.append((issue['number'], str(exc)))
             continue
-        if card is None:
+        if not present:
             continue
-        errors = validate(card, schema)  # core schema，⛔ 不做 §3 合成（§1 snapshot 列逐字）
-        if errors:
-            bad.append((issue['number'], _errors(errors)))
+        # core schema，⛔ 不做 §3 合成（§1 snapshot 列逐字）
+        reason = _shape(card, 'wf-card', schema)
+        if reason is not None:
+            bad.append((issue['number'], reason))
         else:
             cards.append((issue, card))
     for number, reason in bad:
@@ -134,14 +142,14 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
         for comment in client.comments(number):
             where = {'card_id': card_id, 'comment_url': comment.get('url'),
                      'created_at': comment.get('created_at')}
-            note, reason = _block(comment, 'wf-note')
-            if note is not None:
-                reason = _errors(validate(note, note_schema)) or None
-            if reason is not None:
+            present, note, reason = _block(comment, 'wf-note')
+            if present and reason is None:
+                reason = _shape(note, 'wf-note', note_schema)
+            if present and reason is not None:
                 invalid.append(where | {'reason': reason})
-            elif note is not None:
+            elif present:
                 candidates.append(where | {'note': note})
-            responses, _ = _block(comment, 'wf-return')
+            _, responses, _ = _block(comment, 'wf-return')
             responses = responses.get('note_responses') if isinstance(responses, dict) else None
             for response in responses if isinstance(responses, list) else []:
                 identifier = response.get('id') if isinstance(response, dict) else None

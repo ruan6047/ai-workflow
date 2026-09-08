@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from wf.gh.client import GhClient, PermissionDenied
-from wf.gh.writes import CardBodyError, InvalidCommentURL, block_span, read_block, card_span, read_card
+from wf.gh.writes import (CardBodyError, InvalidCommentURL, block_span, block_value,
+                          read_block, card_span, read_card)
 
 
 class ApiFake:
@@ -214,3 +215,23 @@ def test_prepared_field_writes_without_resolving_again(value, data_type):
     assert payload['variables']['input']['fieldId'] == 'FIELD'
     assert payload['variables']['input'].get('value') == (
         None if value is None else {'text': value} if data_type == 'TEXT' else {'singleSelectOptionId': 'OPTION'})
+
+
+# S14b／R1.14-1：block_value 分得出「區塊不存在」與「區塊存在但值是 null」。
+@pytest.mark.parametrize('label', ['wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note'])
+def test_block_value_separates_absent_from_null(label):
+    def text(content):
+        return f'```json {label}\n{content}\n```\n'
+    assert block_value('純散文', label) == (False, None)          # 1 不存在
+    assert block_value(text('{"a": 1}'), label) == (True, {'a': 1})  # 2 物件
+    assert block_value(text('null'), label) == (True, None)       # 3 null
+    assert block_value(text('[1, 2]'), label) == (True, [1, 2])   # 4 陣列
+    with pytest.raises(CardBodyError, match=f'{label} JSON 解析失敗'):  # 5 壞 JSON
+        block_value(text('{bad}'), label)
+    with pytest.raises(CardBodyError, match=f'{label} 區塊缺少、重複或未閉合'):  # 6 兩區塊
+        block_value(text('{"a": 1}') * 2, label)
+    with pytest.raises(CardBodyError, match=f'{label} 區塊缺少、重複或未閉合'):
+        block_value(text('{"a": 1}').removesuffix('```\n'), label)
+    # 對照組：read_block 把 null 與不存在都壓成 None，正是 R1.14-1 的成因。
+    assert read_block(text('null'), label, required=False) is None
+    assert read_block('純散文', label, required=False) is None
