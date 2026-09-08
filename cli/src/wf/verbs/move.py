@@ -193,7 +193,10 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         updated, values = prepare_card(updated, current, snapshot, catalog, enabled_names)
         if item_id:
             for name, value in values.items():  # 先解析整批新卡欄，確保對帳不搶在 D3 檢查前寫入
-                client.prepare_project_field(project, item_id, name, value)
+                try:
+                    client.prepare_project_field(project, item_id, name, value)
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise ValueError(f'{name} 投影欄無法解析：{exc}') from exc
             changed = reconcile(current, client=client, catalog=catalog, item_id=item_id,
                                 project_owner=location['owner'], project_number=location['number'])
             if changed:

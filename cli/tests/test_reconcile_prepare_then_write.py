@@ -17,6 +17,7 @@ from wf.compose.validate import _equal
 from wf.verbs import _write
 from wf.verbs import edit as edit_module
 from wf.verbs.edit import edit
+from wf.verbs.move import move
 
 from .test_brief_sections import card, make_root, WRITES
 from .test_card_gate_and_projection import RULES, board_client, first_lines, rejects, run_verb
@@ -24,7 +25,7 @@ from .test_card_gate_and_projection import RULES, board_client, first_lines, rej
 # 板上：階段／狀態與卡面（執行／進行中）不同，級別 T3 與卡面 T1 不同 ⇒ 三欄都要重寫。
 DRIFTED = {'階段': {'name': '規劃'}, '狀態': {'name': '待辦'}, '級別': {'name': 'T3'},
            'owner': None, '卡ID': {'text': 'WF-001'}}
-VERBS = ['review', 'notes', 'brief', 'edit']
+VERBS = ['review', 'notes', 'brief', 'edit', 'move']
 
 
 @pytest.fixture(scope='module')
@@ -42,19 +43,24 @@ def deny_network(monkeypatch):
         subprocess.run(['gh', 'api', 'negative-control'])
 
 
-def drifted_client(catalog, *, tier_options=True):
-    """卡面 T1／板上 T3 且階段、狀態同時漂移；tier_options=False ⇒ 板上級別缺 T1 選項。"""
-    client = board_client(catalog, card(tier='T1', branch='wf/WF-001', source_sha='b' * 40),
-                          dict(DRIFTED))
+def drifted_client(catalog, *, tier_options=True, state='進行中'):
+    """卡面 T1／板上 T3 且階段、狀態同時漂移；tier_options=False ⇒ 板上級別缺 T1 選項。
+    state 供 move 用：派工邊要求卡面停在 待辦（執行/待辦 → 執行/進行中）。"""
+    client = board_client(catalog, card(tier='T1', state=state, branch='wf/WF-001',
+                                        stage_plan=['需求', '執行', '審核', '結案'],
+                                        source_sha='b' * 40), dict(DRIFTED))
     if not tier_options:
         client.options['級別'] = [o for o in client.options['級別'] if o['name'] != 'T1']
     return client
 
 
 def run_one(verb, tmp_path, root, client, catalog):
+    lines = []
+    if verb == 'move':  # 派工邊 執行/待辦 → 執行/進行中；新卡欄同樣要先解析
+        return move(10, '執行/進行中', client=client, root=root, catalog=catalog,
+                    actor='executor:new', emit=lines.append), lines
     if verb != 'edit':
         return run_verb(verb, tmp_path, root, client)
-    lines = []
     return edit(10, 'feature="改過"', client=client, catalog=catalog, project_owner='fake',
                 project_number=1, emit=lines.append), lines
 
@@ -78,7 +84,8 @@ def test_unresolvable_projection_column_writes_nothing_before_the_rejection(tmp_
     """正向：板上級別缺 T1 選項 ⇒ 四支動詞 rc≠0、寫入序列只有 ['post_comment']、
     恰一則 wf:reject，且板上三欄（含已漂移的階段／狀態）一格都沒被改。"""
     root = make_root(tmp_path)
-    client = drifted_client(catalog, tier_options=False)
+    client = drifted_client(catalog, tier_options=False,
+                            state='待辦' if verb == 'move' else '進行中')
     result, _ = run_one(verb, tmp_path, root, client, catalog)
     writes = [name for name, _ in client.calls if name in WRITES]
     assert result.rc != 0, result
@@ -97,7 +104,8 @@ def test_writing_each_column_as_it_is_resolved_breaks_the_same_three_cases(tmp_p
     重現 ['write_project_field', 'write_project_field', …]，上一條的斷言必 FAIL。"""
     monkeypatch.setattr(_write, 'reconcile', legacy_reconcile)
     root = make_root(tmp_path)
-    client = drifted_client(catalog, tier_options=False)
+    client = drifted_client(catalog, tier_options=False,
+                            state='待辦' if verb == 'move' else '進行中')
     result, _ = run_one(verb, tmp_path, root, client, catalog)
     writes = [name for name, _ in client.calls if name in WRITES]
     assert result.rc != 0, result
@@ -114,10 +122,11 @@ def test_resolvable_columns_still_reconcile_the_whole_drift(tmp_path, catalog, v
     """正控：同一組漂移、級別選項齊全 ⇒ rc=0、印「重寫投影欄：階段、狀態、級別」、板上修好，
     證明上面兩條擋下的是「算不出」，不是把對帳整個關掉。"""
     root = make_root(tmp_path)
-    client = drifted_client(catalog)
+    client = drifted_client(catalog, state='待辦' if verb == 'move' else '進行中')
     result, lines = run_one(verb, tmp_path, root, client, catalog)
     assert result.rc == 0, result.reason
-    assert '重寫投影欄：階段、狀態、級別' in lines, lines
+    expected = '重寫投影欄：階段、級別' if verb == 'move' else '重寫投影欄：階段、狀態、級別'
+    assert expected in lines, lines  # move 的卡面停在 待辦＝板上值，狀態欄本來就不漂移, lines
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T1'}
     assert client.board['items'][0]['fieldValues']['階段'] == {'name': '執行'}
     assert client.board['items'][0]['fieldValues']['狀態'] == {'name': '進行中'}
