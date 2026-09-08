@@ -73,6 +73,14 @@ class MemoryClient(FakeGhClient):
         self.board['items'].append(item(number) | {'id': 'ITEM'})
         return result
 
+    def set_project_field(self, project, item_id, name, value):
+        """§2 對帳走的單欄寫入：讓板上模型跟著變，`重寫投影欄` 才有可觀測後果（S16）。"""
+        result = super().set_project_field(project, item_id, name, value)
+        row, = (entry for entry in self.board['items'] if entry['id'] == item_id)
+        row['fieldValues'][name] = None if value is None else (
+            {'name': value} if name in self.options else {'text': value})
+        return result
+
     def prepare_project_field(self, project, item_id, name, value):
         self.calls.append(('prepare_project_field', {'name': name, 'item_id': item_id}))
         return WriteMixin.prepare_project_field(self, project, item_id, name, value)

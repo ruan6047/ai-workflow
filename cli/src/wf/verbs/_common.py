@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 
 from wf.compose.blocks import projection
+from wf.compose.enable import is_enabled
+from wf.compose.project_config import module_names
 from wf.gh.client import NotFound
 from wf.gh.writes import CardBodyError, block_value, read_block
 
@@ -108,6 +110,13 @@ def board_facts(project, catalog, *, self_number=None, repo=None):
             facts.append({'state': values.get(names['state']),
                           'owner_actor': (values.get(names['owner']) or '').partition(':')[2] or None})
     return facts
+
+def enabled_modules(catalog, cfg, card, *, client=None, project=None, number=None):
+    """modules/*/module.md §0 enable_if 的啟用判定：專案設定＋卡面＋板上事實（open／move 同判）。"""
+    facts = board_facts(project, catalog, self_number=number,
+                        repo=None if client is None else client.repo)
+    return [block.data for block in catalog.by_label('yaml wf-module')
+            if is_enabled(block.data, modules_list=module_names(cfg), card=card, board_facts=facts)]
 
 def chain_depth(card, cards):
     """parent 鏈深 (層數, 斷點)；斷點 None＝走完、'循環'、或第一個缺的 card_id。"""

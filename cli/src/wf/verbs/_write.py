@@ -10,7 +10,7 @@ from wf.compose.schema import compose_schema
 from wf.compose.transitions import is_legal_plan
 from wf.compose.validate import validate, _equal
 from wf.gh.writes import CardBodyError
-from wf.verbs._common import block_object, field_values
+from wf.verbs._common import block_object, board_items, field_values
 
 
 @dataclass(frozen=True)
@@ -120,4 +120,30 @@ def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
         if not _equal(actual.get(name), value):
             client.set_project_field(project, item_id, name, value)
             changed.append(name)
+    return changed
+
+
+def check_card(card, *, client, number, catalog, enabled_modules=(), printed=()):
+    """§2 D3 鍵集合封閉、整卡拒：不合成後 schema 即一則 wf:reject，該卡動詞⛔ 不再往下跑。"""
+    schema = compose_schema(catalog, 'wf-card', enabled_modules)
+    failures = validate(card, schema)
+    if not failures:
+        return None
+    return reject(client, number, 'D3',
+                  '; '.join(f'{e.path}: {e.message}' for e in failures), printed)
+
+
+def reconcile_projection(card, *, client, catalog, location, project, number, report):
+    """§2 對帳：不等即以卡面 JSON 重寫該欄後續跑並印，⛔ 不拒收；無 Project／不在板上即略過。"""
+    if location is None or project is None:
+        return ()
+    if any(spec['key'] not in card for spec in projection(catalog).values()):
+        return ()  # 缺投影鍵＝各動詞的驗卡面（check_card／prepare_card）處置，此處 ⛔ 不對帳
+    item_id = board_items(project, client.repo, include_archived=True).get(number, {}).get('id')
+    if item_id is None:
+        return ()
+    changed = reconcile(card, client=client, catalog=catalog, item_id=item_id,
+                        project_owner=location['owner'], project_number=location['number'])
+    if changed:
+        report('重寫投影欄：' + '、'.join(changed))
     return changed

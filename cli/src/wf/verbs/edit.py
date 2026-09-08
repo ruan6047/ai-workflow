@@ -1,19 +1,22 @@
-"""消費 core/verbs.md §1 edit／§2、core/card-schema.md §1／§2／§5、
-core/naming.md §3、modules/*/module.md §0；設定介面依 ADOPTION.md §2。
+"""消費 core/verbs.md §1 edit／§2、core/card-schema.md §1／§2／§5 wf-projection、
+core/enums.md tiers、core/ruling.md kind、core/naming.md §3、modules/*/module.md §0；
+設定介面依 ADOPTION.md §2。
 """
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
 import json
 
+from wf.compose.blocks import projection
 from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.transitions import is_legal_plan
 from wf.compose.validate import validate, _equal
 from wf.gh.client import GhError, NotFound
 from wf.gh.writes import InvalidCommentURL
-from wf.verbs._common import Printer, block_object, board_cards, card_number, chain_depth, parse_args
-from wf.verbs._write import WriteResult, reject, write_card
+from wf.verbs._common import (Printer, block_object, board_cards, board_items, card_number,
+                              chain_depth, comment_blocks, parse_args)
+from wf.verbs._write import WriteResult, reconcile_projection, reject, write_card
 
 
 def _hash(value):
@@ -63,11 +66,19 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
         return refuse('D3', str(exc))
     if current.get('stage') == '審核':
         report('卡在審核階段')
+    comment = None
     if ruling is not None:
         try:
-            client.comment_from_url(ruling)
+            comment = client.comment_from_url(ruling)
         except (NotFound, InvalidCommentURL):
             return refuse('D4', f'ruling 不存在：{ruling}')
+    if key == 'tier':  # §1 edit 印格：降級（值域序自 core/enums.md tiers）而缺裁定或 kind 不符，只印不擋
+        order, = (block.data['tiers']['enum'] for block in catalog.by_label('json wf-enums'))
+        _, verdict = comment_blocks(comment or {}, ('wf-ruling',))['blocks']['wf-ruling']
+        if (current.get(key) in order and value in order
+                and order.index(value) < order.index(current[key])
+                and (not isinstance(verdict, dict) or verdict.get('kind') != 'tier_change')):
+            report('tier 降級而缺 --ruling 或 kind≠tier_change')
     if key == 'source_sha' and value is not None and not client.commit_exists(value):
         return refuse('D4', f'source_sha 不在遠端：{value}')
     if key == 'parent' and value is not None:
@@ -84,13 +95,24 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
             report('parent 鏈有循環' if broken == '循環' else f'parent 鏈無法續查：{broken}')
         if depth > 2:
             report('上限 2')
+    location = None if None in (project_owner, project_number) else {
+        'owner': project_owner, 'number': project_number}
+    board = None if location is None else client.project(project_owner, project_number,
+                                                         projection(catalog))
+    item_id = board_items(board, client.repo, include_archived=True).get(number, {}).get('id')
+    reconcile_projection(current, client=client, catalog=catalog, location=location,
+                         project=board, number=number, report=report)
     if key in current and _equal(current[key], value):
         return WriteResult(0, card=current, printed=tuple(report))
     if key in ('acceptance', 'verification', 'non_scope', 'resources'):
         updated['spec_version'] += 1
     old_hash, new_hash = _hash(current.get(key)), _hash(value)
+    # §1 edit 寫格：投影鍵變動即回寫該欄（§2 順序）；其餘鍵 ⛔ 不碰 Project。
+    target = ({'project_owner': project_owner, 'project_number': project_number, 'item_id': item_id}
+              if key in {spec['key'] for spec in projection(catalog).values()}
+              else {'write_projection': False})
     result = write_card(updated, client=client, number=number, catalog=catalog,
-                        enabled_modules=enabled_modules, write_projection=False)
+                        enabled_modules=enabled_modules, **target)
     if result.rc == 0:
         client.post_comment(number, 'wf:edit', f'{key}、{old_hash} → {new_hash}')
         if current['stage'] == '審核':

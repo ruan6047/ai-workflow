@@ -9,13 +9,13 @@ from pathlib import Path
 import re
 
 from wf.compose.blocks import load_blocks, projection
-from wf.compose.enable import is_enabled
-from wf.compose.project_config import load_project_config, module_names
+from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.gh.client import NotFound
-from wf.verbs._common import Printer, block_object, board_facts, card_number, comment_blocks, parse_args
-from wf.verbs._write import WriteResult, reject
+from wf.verbs._common import (Printer, block_object, card_number, comment_blocks, enabled_modules,
+                              parse_args)
+from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
 from wf.verbs.notes import notes
 
 
@@ -110,16 +110,24 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
         report(f'略過無法解析的 issue #{other}')
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
+    except (ValueError, TypeError, KeyError) as exc:
+        return reject(client, number, 'D3', str(exc), tuple(report))
+    project = None if cfg['project'] is None else client.project(
+        **cfg['project'], field_names=projection(catalog))
+    enabled = [module['name'] for module in
+               enabled_modules(catalog, cfg, current, client=client, project=project, number=number)]
+    failed = check_card(current, client=client, number=number, catalog=catalog,
+                        enabled_modules=enabled, printed=tuple(report))
+    if failed is not None:
+        return failed  # 卡面 D3＝整卡拒：⛔ 不再往下做，⛔ 不貼 wf:verdict／wf:return
+    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
+                         project=project, number=number, report=report)
+    try:
         data = json.loads(Path(file).read_text(encoding='utf-8'))
         if not isinstance(data, dict):
             raise ValueError('交回單不是物件')
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return reject(client, number, 'D3', str(exc), tuple(report))
-    project = None if cfg['project'] is None else client.project(
-        **cfg['project'], field_names=projection(catalog))
-    facts = board_facts(project, catalog, self_number=number, repo=client.repo)
-    enabled = [block.data['name'] for block in catalog.by_label('yaml wf-module')
-               if is_enabled(block.data, modules_list=module_names(cfg), card=current, board_facts=facts)]
     schema = compose_schema(catalog, 'wf-return', enabled)
     sections = {key: spec for name in enabled
                 for key, spec in schema['$defs']['module_return_sections'].get(name, {}).items()}

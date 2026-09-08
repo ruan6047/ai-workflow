@@ -153,7 +153,10 @@ def test_parent_depth(card, catalog, depth, capsys):
     else:
         assert result.rc == 0 and result.card['parent'] == 'WF-002'
     assert ('上限 2' in capsys.readouterr().out) == (depth > 2)
-    assert all(not kw['field_names'] for name, kw in fake.calls if name == 'project')
+    # D4 parent 盤點仍不取投影欄；§2 對帳另取五欄（本卡不在板上，對帳止於取不到 item_id）。
+    calls = [kw['field_names'] for name, kw in fake.calls if name == 'project']
+    assert calls == ([[]] if depth == 0 else [[], list(projection(catalog))])
+    assert not mutations(fake, 'set_project_field')
 
 
 def test_null_parent_needs_no_board(card, catalog):
@@ -163,7 +166,8 @@ def test_null_parent_needs_no_board(card, catalog):
     assert not any(name == 'project' for name, kw in fake.calls)
 
 
-def test_tier_defers_projection(card, catalog):
+def test_tier_defers_projection_without_project_config(card, catalog):
+    """`.wf/modules.json` 無 project：投影鍵也只寫卡面，⛔ 不碰 Project（FINAL-2a 的降級路徑）。"""
     result, fake = run(card, catalog, 'tier="T3"')
     assert result.rc == 0
     assert not any(name in ('project', 'set_project_field') for name, kw in fake.calls)
@@ -289,7 +293,8 @@ def test_entrypoint_parent_uses_project_config(card, catalog, tmp_path):
     (config / 'modules.json').write_text(json.dumps({'project': {'owner': 'configured', 'number': 7}}))
     assert main(['1', '--set', 'parent="WF-002"'], client=fake, catalog=catalog, root=tmp_path) == 0
     assert [kw for name, kw in fake.calls if name == 'project'] == [
-        {'owner': 'configured', 'number': 7, 'field_names': []}]
+        {'owner': 'configured', 'number': 7, 'field_names': []},
+        {'owner': 'configured', 'number': 7, 'field_names': list(projection(catalog))}]
 
 
 @pytest.mark.parametrize('excluded', ['archived', 'foreign', 'pull', 'draft'])

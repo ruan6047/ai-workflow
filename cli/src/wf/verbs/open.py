@@ -130,10 +130,14 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
     if board is not None:
         added = client.add_to_project(board['id'], source['node_id'])
         item_id = added['data']['addProjectV2ItemById']['item']['id']
-    return finish(write_card(card, client=client, number=number, catalog=catalog,
-                             project_owner=location['owner'] if location else None,
-                             project_number=location['number'] if location else None,
-                             item_id=item_id, enabled_modules=enabled, create=True))
+    result = write_card(card, client=client, number=number, catalog=catalog,
+                        project_owner=location['owner'] if location else None,
+                        project_number=location['number'] if location else None,
+                        item_id=item_id, enabled_modules=enabled, create=True)
+    if result.rc == 0 and current is not None:
+        # §1 open 寫格：撤銷卡復板沿用 card_id／iteration 並寫轉移記錄留言（形狀同 move）。
+        client.post_comment(number, 'wf:move', f"清單 → {machine['initial']}")
+    return finish(result)
 
 
 def run(argv, *, client, root='.', catalog=None):

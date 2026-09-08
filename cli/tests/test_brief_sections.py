@@ -226,7 +226,7 @@ def test_notes_section_is_the_notes_verb_output(tmp_path):
                         'origin': 'https://example.invalid/2'}])
     _, lines = emitted(make_client(data, comments=comments), root)
     expected = notes_verb(10, client=make_client(data, comments=comments), root=root,
-                          emit=lambda line: None).printed
+                          for_role='executor', emit=lambda line: None).printed
     body = dict(sections(lines))
     assert body['注意事項'][1:] == list(expected)
     candidates = [line for line in expected if line.startswith('候選')]

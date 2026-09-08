@@ -7,14 +7,13 @@ from pathlib import Path
 import re
 
 from wf.compose.blocks import Source, load_blocks, projection, source_line
-from wf.compose.enable import is_enabled
 from wf.compose.frontmatter import parse_frontmatter
-from wf.compose.project_config import load_project_config, module_names
+from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.gh.writes import CardBodyError
-from wf.verbs._common import Printer, block_object, board_facts, card_number, parse_args
-from wf.verbs._write import WriteResult, reject
+from wf.verbs._common import Printer, block_object, card_number, enabled_modules, parse_args
+from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
 
 ITEM = re.compile(r'^- ([FPT]-.+-[0-9]{2})：(.+)$')
 BACKTICK = re.compile(r'`([^`]+)`')
@@ -66,8 +65,9 @@ def _sorted_relative(root, pattern):
     return sorted(path.relative_to(Path(root)).as_posix() for path in Path(root).glob(pattern))
 
 
-def notes(card, *, client, root='.', catalog=None, stage=None, emit=print):
-    """S15 可直接呼叫；除 D3 的一則 wf:reject 外不寫任何遠端。"""
+def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, emit=print):
+    """S15 可直接呼叫；除 D3 的一則 wf:reject 與 §2 對帳的投影回寫外不寫任何遠端。
+    for_role＝`brief --for` 的角色（§3 第 1 條）；缺省取卡面 owner.role。"""
     report = Printer(emit)
     catalog = load_blocks(root) if catalog is None else catalog
     cfg = load_project_config(root)
@@ -83,20 +83,28 @@ def notes(card, *, client, root='.', catalog=None, stage=None, emit=print):
         report(f'階段 {stage} 不在 enums.stages，改用卡當前階段')
         stage = None
     stage = current.get('stage') if stage is None else stage
+    project = None
     if cfg['project'] is None:
         report('無 Project 設定，未評估 resource-lock')
-        facts = ()
     else:
-        facts = board_facts(client.project(**cfg['project'], field_names=projection(catalog)),
-                            catalog, self_number=number, repo=client.repo)
-    enabled = [block.data for block in catalog.by_label('yaml wf-module')
-               if is_enabled(block.data, modules_list=module_names(cfg),
-                             card=current, board_facts=facts)]
+        project = client.project(**cfg['project'], field_names=projection(catalog))
+    enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+    failed = check_card(current, client=client, number=number, catalog=catalog,
+                        enabled_modules=[module['name'] for module in enabled],
+                        printed=tuple(report))
+    if failed is not None:
+        return failed
+    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
+                         project=project, number=number, report=report)
+    role = (current.get('owner') or {}).get('role') if for_role is None else for_role
+    if role is None:
+        report('卡面 owner 未填，角色注意事項全印')
     items = []
     for relative in _sorted_relative(root, 'stages/*.md'):
         items += _file_notes(root, relative, '6', 'core', f'F-{stage}-')
     for relative in _sorted_relative(root, 'roles/*.md'):
-        items += _file_notes(root, relative, '4', 'core', 'F-')
+        if role is None or Path(relative).stem == role:  # §3：角色檔只取 owner.role／--for 那份
+            items += _file_notes(root, relative, '4', 'core', 'F-')
     for module in enabled:
         relative = f"modules/{module['name']}/module.md"
         found = _file_notes(root, relative, '2', 'module')

@@ -21,9 +21,9 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
-from wf.verbs._common import (Printer, block_object, board_facts, card_number, comment_blocks, parse_args,
-                              repo_cards)
-from wf.verbs._write import WriteResult, reject
+from wf.verbs._common import (Printer, block_object, board_facts, card_number, comment_blocks,
+                              enabled_modules, parse_args, repo_cards)
+from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
 from wf.verbs import closeout
@@ -34,6 +34,7 @@ REVIEWER = 'reviewer'  # core/enums.md roles
 MODULE_SECTION = '0 · 宣告區塊'  # modules/*/module.md 宣告區塊的節名
 HUMAN, UNWIRED, NONE = '（人填）', '模組層未接線', '無'
 NO_BRANCH, NO_PREVIOUS = '無分支，基線＝main 頭', '無前輪'
+UNKNOWN_PREVIOUS = '未能取得前輪 findings'
 NO_CONTRACT, BAD_CONTRACT = '專案層未宣告', '契約檔不合 schema'
 NO_MERGE_TREE, CONFLICT = '未能比對 merge-tree', 'merge-tree 衝突'
 TEMPLATE_HEAD = '交回單 JSON 樣板'
@@ -113,18 +114,26 @@ def _baseline(ctx):
 
 def _previous_findings(ctx):
     """前輪列（C02′）：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 `wf-return`；
-    沒有才退到 iteration−1；都沒有印「無前輪」。壞 JSON／重複／非物件的區塊當成沒有。"""
-    current, returns = ctx.card.get('iteration') or 0, []
-    for comment in _remote(ctx.client.comments, ctx.number) or []:
-        _, data = comment_blocks(comment, ('wf-return',))['blocks']['wf-return']
+    沒有才退到 iteration−1。讀取失敗或區塊不能解析＝印未能取得（F-執行者-06：未知⛔ 不冒充
+    「無前輪」）；成功讀到而確實沒有才印「無前輪」。"""
+    current, returns, errors = ctx.card.get('iteration') or 0, [], []
+    try:
+        comments = ctx.client.comments(ctx.number)
+    except GhError as exc:
+        return [f'{UNKNOWN_PREVIOUS}：{exc}']
+    for comment in comments:
+        parsed = comment_blocks(comment, ('wf-return',))
+        errors.extend(parsed['errors'])
+        _, data = parsed['blocks']['wf-return']
         if isinstance(data, dict) and data.get('role') == REVIEWER:
             returns.append((str(comment.get('created_at') or ''), data))
     returns.sort(key=lambda pair: pair[0])
     for want in (current, current - 1):
         found = [data for _, data in returns if data.get('iteration') == want]
         if found:
-            return [json.dumps(item, ensure_ascii=False) for item in found[-1].get('findings') or []] or [NO_PREVIOUS]
-    return [NO_PREVIOUS]
+            lines = [json.dumps(item, ensure_ascii=False) for item in found[-1].get('findings') or []]
+            return lines or ([f"{UNKNOWN_PREVIOUS}：{'；'.join(errors)}"] if errors else [NO_PREVIOUS])
+    return [f"{UNKNOWN_PREVIOUS}：{'；'.join(errors)}"] if errors else [NO_PREVIOUS]
 
 def _capability(ctx):
     """能力層級建議列（C11）：角色對應 capability 欄的 level 與 reason（card-schema §1 $defs/capability）。"""
@@ -135,7 +144,7 @@ def _capability(ctx):
 def _notes(ctx):
     """注意事項列：S10 `notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。"""
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
-                   emit=lambda line: None)
+                   for_role=ctx.target, emit=lambda line: None)
     ctx.note_ids = [m[1] for m in map(NOTE_ID.match, result.printed) if m]
     return list(result.printed)
 
@@ -245,6 +254,14 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
         client.project, **cfg['project'], field_names=projection(catalog))
     if cfg['project'] is not None and project is None:
         report('未能讀取 Project')
+    enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+    failed = check_card(current, client=client, number=number, catalog=catalog,
+                        enabled_modules=[module['name'] for module in enabled],
+                        printed=tuple(report))
+    if failed is not None:
+        return failed
+    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
+                         project=project, number=number, report=report)
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
                           catalog=catalog, cfg=cfg, project=project, note_ids=[],
                           days=None if match is None else int(match[1]),

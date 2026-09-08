@@ -136,7 +136,7 @@ def test_enabled_module_schema_and_labels(tmp_path):
     root = make_root(tmp_path, listed=['stat-redline'], project=False)
     schema = compose_schema(load_blocks(root), 'wf-return', ['stat-redline'])
     sections = schema['$defs']['module_return_sections']['stat-redline']
-    changes = {'tier': 'T1', 'tier_basis': {'sensitive': ['statistics']}}
+    changes = {'tier': 'T1', 'tier_basis': {'sensitive': ['statistics'], 'recoverable': 'reversible', 'blast': 'file'}}
     result, lines, _, _ = invoke(tmp_path, root=root, changes=changes)
     assert result.rc == 0
     for spec in sections.values():
@@ -222,7 +222,7 @@ def test_run_parses_card_file_role(tmp_path):
 
 
 def test_module_free_text_is_not_a_status(tmp_path):
-    changes = {'tier_basis': {'sensitive': ['statistics']}}
+    changes = {'tier_basis': {'sensitive': ['statistics'], 'recoverable': 'reversible', 'blast': 'file'}}
     data = {'adversarial_tests': [{'angle': '發現', 'result': '支持', 'text': ''}]}
     result, lines, _, _ = invoke(tmp_path, changes=changes, data=data)
     assert result.rc == 0

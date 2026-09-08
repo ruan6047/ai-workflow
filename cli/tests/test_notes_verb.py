@@ -28,9 +28,14 @@ def block(label, value):
 
 
 def card(**changes):
-    return dict(schema_version=2, card_id='WF-001', source_issue=10, stage='執行',
-                state='進行中', stage_plan=[], parent=None, tier_basis=None,
-                owner=None, notes=[]) | changes
+    """完整的 `wf-card`：notes 依 verbs.md §2 D3 先驗整張卡面，殘卡會被整卡拒。"""
+    return dict(schema_version=2, card_id='WF-001', source_issue=10, feature='', core_pain='',
+                non_scope=[], stage_plan=[], stage='執行', state='進行中', list_convergence=[],
+                service_goal='', tier=None, tier_basis=None, exec_capability=None,
+                review_capability=None, db_scope=None, resources=[], when='', spec_version=1,
+                iteration=0, acceptance=[], verification=[], parent=None, blocked=None,
+                grilling=None, owner={'role': 'executor', 'actor': '某執行者'}, branch=None,
+                source_sha=None, notes=[]) | changes
 
 
 def make_root(tmp_path, *, stages=(), roles=(), modules=(), real=False,
@@ -104,8 +109,9 @@ def test_core_order_stages_then_roles_by_filename(tmp_path):
     """PM 預設：階段檔 → roles/ 依檔名字典序，檔內出現序。"""
     root = make_root(tmp_path, stages=['implementation.md', 'requirement.md'],
                      roles=['aaa-role.md', 'executor.md'])
-    _, lines = emitted(make_client(card()), root)
+    _, lines = emitted(make_client(card(owner=None)), root)  # owner null＝角色檔全印並註明（§3）
     assert numbered(lines) == [(1, 'F-執行-01'), (2, 'F-AAA-01'), (3, 'F-執行者-01')]
+    assert '卡面 owner 未填，角色注意事項全印' in lines
 
 
 def test_only_id_shaped_bullets_inside_the_section_are_read(tmp_path):
