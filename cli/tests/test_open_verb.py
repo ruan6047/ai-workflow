@@ -202,11 +202,12 @@ def test_area_cases(setup, areas, area, valid):
 def test_numbering_all_repo_including_withdrawn_terminal_and_plain(setup):
     rows = [issue(1, expected_card(card_id='WF-001', source_issue=1)),
             issue(3, expected_card(card_id='WF-003', source_issue=3, stage='結案', state='完成')),
-            issue(2, expected_card(card_id='WF-002', source_issue=2)) | {'state': 'closed'},
+            issue(2, expected_card(card_id='WF-005', source_issue=2)) | {'state': 'closed'},
             issue(4, body='無區塊')]
     client, kwargs = setup(rows=rows, items=[item(1), item(3)])
     result = open_issue(10, **kwargs)
-    assert result.card['card_id'] == 'WF-004'
+    # 撤銷卡（closed、不在板）持有最大序號：若母體排除它，序號會回退成 WF-004（重用）——S06 查核 R1.6-01
+    assert result.card['card_id'] == 'WF-006'
     assert [args for name, args in client.calls if name == 'issues'] == [{'state': 'all'}]
 
 
