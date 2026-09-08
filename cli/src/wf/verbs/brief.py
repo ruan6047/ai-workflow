@@ -124,8 +124,10 @@ def _previous_findings(ctx):
     for comment in comments:
         parsed = comment_blocks(comment, ('wf-return',))
         errors.extend(parsed['errors'])
-        _, data = parsed['blocks']['wf-return']
-        if isinstance(data, dict) and data.get('role') == REVIEWER:
+        present, data = parsed['blocks']['wf-return']
+        if present and not isinstance(data, dict):
+            errors.append('wf-return 不是物件')  # 區塊在而值非物件＝未知（同 _common.block_object）
+        elif isinstance(data, dict) and data.get('role') == REVIEWER:
             returns.append((str(comment.get('created_at') or ''), data))
     returns.sort(key=lambda pair: pair[0])
     for want in (current, current - 1):

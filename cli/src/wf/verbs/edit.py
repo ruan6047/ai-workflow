@@ -16,7 +16,8 @@ from wf.gh.client import GhError, NotFound
 from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (Printer, block_object, board_cards, board_items, card_number,
                               chain_depth, comment_blocks, parse_args)
-from wf.verbs._write import WriteResult, reconcile_projection, reject, write_card
+from wf.verbs._write import (WriteResult, prepare_card, projection_values, reconcile_projection,
+                             reject, write_card)
 
 
 def _hash(value):
@@ -100,17 +101,26 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
     board = None if location is None else client.project(project_owner, project_number,
                                                          projection(catalog))
     item_id = board_items(board, client.repo, include_archived=True).get(number, {}).get('id')
-    reconcile_projection(current, client=client, catalog=catalog, location=location,
-                         project=board, number=number, report=report)
+    # §1 edit 寫格：投影鍵變動即回寫該欄（§2 順序）；其餘鍵 ⛔ 不碰 Project。
+    target = ({'project_owner': project_owner, 'project_number': project_number, 'item_id': item_id}
+              if key in {spec['key'] for spec in projection(catalog).values()}
+              else {'write_projection': False})
+    try:  # §2 檢查先於首次遠端寫入：新舊卡整批算完（含 max_bytes 與五欄可寫性）才對帳（同 move）
+        snapshot = projection_values(board, item_id) if target.get('item_id') else None
+        _, values = prepare_card(updated, current, snapshot, catalog, enabled_modules)
+        for valueset in ((values, prepare_card(current, current, snapshot, catalog,
+                                               enabled_modules)[1]) if item_id else ()):
+            for name, field in valueset.items():
+                client.prepare_project_field(board, item_id, name, field)
+        reconcile_projection(current, client=client, catalog=catalog, location=location,
+                             project=board, number=number, report=report)
+    except (ValueError, TypeError, KeyError) as exc:
+        return refuse('D3', str(exc))
     if key in current and _equal(current[key], value):
         return WriteResult(0, card=current, printed=tuple(report))
     if key in ('acceptance', 'verification', 'non_scope', 'resources'):
         updated['spec_version'] += 1
     old_hash, new_hash = _hash(current.get(key)), _hash(value)
-    # §1 edit 寫格：投影鍵變動即回寫該欄（§2 順序）；其餘鍵 ⛔ 不碰 Project。
-    target = ({'project_owner': project_owner, 'project_number': project_number, 'item_id': item_id}
-              if key in {spec['key'] for spec in projection(catalog).values()}
-              else {'write_projection': False})
     result = write_card(updated, client=client, number=number, catalog=catalog,
                         enabled_modules=enabled_modules, **target)
     if result.rc == 0:

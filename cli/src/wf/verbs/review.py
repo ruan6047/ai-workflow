@@ -16,7 +16,7 @@ from wf.gh.client import NotFound
 from wf.verbs._common import (Printer, block_object, card_number, comment_blocks, enabled_modules,
                               parse_args)
 from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
-from wf.verbs.notes import notes
+from wf.verbs.notes import notes, read_comments
 
 
 def _missing(root, data, current, role, sections, report):
@@ -75,7 +75,7 @@ def _hints(data, current, number, role, sections, schema, client, root, catalog,
     for key in sections:
         _empty_text(data.get(key), key, report, ('不適用', '發現'), sections[key])
     existing = set()
-    for comment in client.comments(number):
+    for comment in read_comments(client, number, report, '既有交回單'):
         parsed = comment_blocks(comment, ('wf-return',))
         for error in parsed['errors']:
             report(f'既有交回單未能解析：{error}')
@@ -120,8 +120,6 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
                         enabled_modules=enabled, printed=tuple(report))
     if failed is not None:
         return failed  # 卡面 D3＝整卡拒：⛔ 不再往下做，⛔ 不貼 wf:verdict／wf:return
-    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
-                         project=project, number=number, report=report)
     try:
         data = json.loads(Path(file).read_text(encoding='utf-8'))
         if not isinstance(data, dict):
@@ -147,6 +145,9 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
     errors = validate(data, schema)
     if errors:
         return reject(client, number, 'D3', '; '.join(f'{e.path}: {e.message}' for e in errors), tuple(report))
+    # §2 檢查先於首次遠端寫入：交回單 D3 與來源 SHA D4 都過了才對帳，⛔ 不在拒收前寫板。
+    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
+                         project=project, number=number, report=report)
     failed = _hints(data, current, number, role, sections, schema, client, root, catalog, report)
     if failed is not None:
         return failed

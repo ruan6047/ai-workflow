@@ -11,6 +11,7 @@ from wf.compose.frontmatter import parse_frontmatter
 from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
+from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import Printer, block_object, card_number, enabled_modules, parse_args
 from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
@@ -123,10 +124,19 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     return WriteResult(0, card=current, printed=tuple(report))
 
 
+def read_comments(client, number, report, label):
+    """留言讀不到＝印未知後續跑（§2「其餘一律印」；F-執行者-06 未知⛔ 不冒充沒有）。review 共用。"""
+    try:
+        return client.comments(number)
+    except GhError as exc:
+        report(f'未能取得{label}：{exc}')
+        return ()
+
+
 def _candidates(client, number, catalog, report):
     """naming.md §3：只讀 wf-note 區塊；散文與首行不讀。"""
     schema = compose_schema(catalog, 'wf-note')
-    for comment in client.comments(number):
+    for comment in read_comments(client, number, report, '候選'):
         try:  # 區塊在而值 null／非物件＝不合法的候選，⛔ 不是沒有候選（S14b 同判）
             data = block_object(comment.get('body'), 'wf-note', required=False)
         except CardBodyError:

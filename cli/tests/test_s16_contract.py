@@ -131,8 +131,10 @@ def test_edit_writes_back_the_projection_when_a_projection_key_changes(tmp_path,
                   project_owner='fake', project_number=1)
     assert result.rc == 0 and result.card['tier'] == 'T4'
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T4'}
-    written = [kwargs for name, kwargs in client.calls if name == 'prepare_project_field']
-    assert [kwargs['name'] for kwargs in written] == list(projection(catalog))
+    # S17：先算後寫之後 prepare_project_field 另含新舊卡的試算，故以實際寫入斷言五欄。
+    written = [prepared[2]['fieldId'] for name, prepared in client.calls
+               if name == 'write_project_field']
+    assert written == list(projection(catalog))
 
 
 def test_edit_leaves_the_board_alone_for_non_projection_keys(tmp_path, catalog):
@@ -141,7 +143,9 @@ def test_edit_leaves_the_board_alone_for_non_projection_keys(tmp_path, catalog):
     result = edit(10, 'feature="改過"', client=client, catalog=catalog,
                   project_owner='fake', project_number=1)
     assert result.rc == 0
-    assert [name for name, _ in client.calls if name == 'prepare_project_field'] == []
+    # S17：試算（prepare_project_field）是讀不是寫；此列要的是零投影欄「寫入」。
+    assert [name for name, _ in client.calls
+            if name in ('write_project_field', 'set_project_field')] == []
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T3'}
 
 
