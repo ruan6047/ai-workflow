@@ -5,6 +5,8 @@ from copy import deepcopy
 class FakeGhClient:
     """responses 可給固定回應或 callable(**kwargs)；寫入只記 calls，不修改遠端模型。"""
 
+    repo = 'fake/repo'  # 與 post_comment 的 html_url 同一 repo；子類可覆寫
+
     def __init__(self, **responses):
         self.responses = responses
         self.calls = []
@@ -31,6 +33,9 @@ class FakeGhClient:
 
     def branch_head(self, branch):
         return self._read('branch_head', branch=branch)
+
+    def merge_base(self, base, head):
+        return self._read('merge_base', base=base, head=head)
 
     def pull_request(self, number):
         return self._read('pull_request', number=number)

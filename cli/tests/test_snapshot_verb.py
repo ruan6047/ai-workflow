@@ -87,9 +87,9 @@ def deny_network(monkeypatch):
 
 @pytest.fixture
 def setup(tmp_path, catalog):
-    def make(issues=(), items=(), comments=None, project=True):
+    def make(issues=(), items=(), comments=None, project=True, modules=()):
         (tmp_path / '.wf').mkdir(exist_ok=True)
-        config = {'areas': ['WF'], 'modules': [],
+        config = {'areas': ['WF'], 'modules': [{'name': name} for name in modules],
                   'project': {'owner': 'fake', 'number': 1} if project else None}
         (tmp_path / '.wf/modules.json').write_text(json.dumps(config), encoding='utf-8')
         board = {'id': 'PROJECT', 'items': list(items), 'fields': []}
@@ -195,11 +195,31 @@ def test_declared_module_field_passes_without_enabling(setup, catalog):
 
 
 def test_module_state_value_is_rejected_by_core_schema(setup):
+    """C10 負控：escalation 未列於專案設定 ⇒ 升級 不在合成 schema，D3。"""
     client, kwargs = setup(issues=[issue(1, card(state='升級'))])
     result = snapshot(**kwargs)
     assert result.rc == 1
     assert len(rejects(client)) == 1
     assert '/state' in rejects(client)[0]['body']
+
+
+def test_enabled_module_state_value_passes_composed_schema(setup, catalog):
+    """C10：D3 用 S03 is_enabled 判定的模組合成 schema——escalation 啟用時板上 state=升級 的卡不被拒。"""
+    value = card(state='升級', escalation_count=3)
+    client, kwargs = setup(issues=[issue(1, value)], items=[on_board(1, value, catalog)], modules=['escalation'])
+    result = snapshot(**kwargs)
+    assert result.rc == 0 and rejects(client) == []
+    assert result.data['cards'][0]['card']['state'] == '升級'
+    assert_read_only(client)
+
+
+@pytest.mark.parametrize('plan,accepted', [(['需求', '研究', '執行', '審核', '結案'], True), ([], False)])
+def test_stage_plan_enabled_module_state(setup, plan, accepted):
+    """C10：enable_if 依卡面（stage_plan_has 研究）⇒ 不可判定 只在該卡的 stage_plan 含研究時合法。"""
+    client, kwargs = setup(issues=[issue(1, card(state='不可判定', stage='研究', stage_plan=plan))])
+    result = snapshot(**kwargs)
+    assert (result.rc == 0) is accepted
+    assert (rejects(client) == []) is accepted
 
 
 def test_unknown_key_is_rejected(setup):

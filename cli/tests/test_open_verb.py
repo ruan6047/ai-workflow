@@ -182,6 +182,13 @@ def test_d2_already_on_board(setup, body):
     assert_reject(client, open_issue(10, **kwargs), 'D2')
 
 
+def test_d2_archived_item_is_still_on_board(setup):
+    """第 8 條：封存（isArchived）的 Project 項仍在板上 ⇒ D2 照拒；⛔ 不改（六條裁定 #6）。"""
+    body = block('wf-card', expected_card(stage='結案', state='完成'))
+    client, kwargs = setup(body=body, items=[item(10) | {'isArchived': True}])
+    assert_reject(client, open_issue(10, **kwargs), 'D2')
+
+
 def test_d2_plain_issue(setup):
     client, kwargs = setup(body='一般 issue')
     assert_reject(client, open_issue(10, **kwargs), 'D2')
@@ -285,6 +292,24 @@ def test_no_project_prints_skips_projection_and_tracks_deferral(setup):
     assert any(row['item'] == '跨 session 發號原子性' for row in result.unverified)
     assert '清單項留言數：0' in result.printed
     assert not any('開卡前讀全部' in line for line in result.printed)
+
+
+@pytest.mark.parametrize('label', ['wf-card', 'wf-intake'])
+def test_null_block_on_the_source_issue_is_d3(setup, label):
+    """第 9 條探針：清單項／撤銷卡的區塊值為 null ⇒ D3（不是「沒有區塊」的 D2）。"""
+    client, kwargs = setup(body=f'前言\n```json {label}\nnull\n```\n')
+    result = open_issue(10, **kwargs)
+    assert_reject(client, result, 'D3')
+    assert '不是物件' in result.reason
+
+
+def test_null_block_on_another_issue_is_skipped_with_print(setup):
+    """第 9 條探針：發號掃描遇到別的 issue 的 null 區塊 ⇒ 印略過、不擋、序號不受影響（負控＝合法卡計入序號）。"""
+    rows = [issue(1, expected_card(card_id='WF-003', source_issue=1)), issue(2, body='```json wf-card\nnull\n```')]
+    client, kwargs = setup(rows=rows, items=[item(1)])
+    result = open_issue(10, **kwargs)
+    assert result.rc == 0 and result.card['card_id'] == 'WF-004'
+    assert '略過無法解析的 issue #2' in result.printed
 
 
 def test_other_repository_item_does_not_block(setup):

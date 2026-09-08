@@ -1,7 +1,6 @@
 """消費 core/verbs.md §1 edit／§2、core/card-schema.md §1／§2／§5、
 core/naming.md §3、modules/*/module.md §0；設定介面依 ADOPTION.md §2。
 """
-import argparse
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
@@ -12,7 +11,8 @@ from wf.compose.schema import compose_schema
 from wf.compose.transitions import is_legal_plan
 from wf.compose.validate import validate, _equal
 from wf.gh.client import GhError, NotFound
-from wf.gh.writes import InvalidCommentURL, block_span, read_card
+from wf.gh.writes import InvalidCommentURL
+from wf.verbs._common import Printer, block_object, board_cards, card_number, chain_depth, parse_args
 from wf.verbs._write import WriteResult, reject, write_card
 
 
@@ -22,61 +22,31 @@ def _hash(value):
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 
-def _board(client, owner, number):
-    if owner is None or number is None:
-        raise GhError('無 Project 設定，未能確認 parent')
-    cards = {}
-    for item in client.project(owner, number, ())['items']:
-        content = item.get('content') or {}
-        if (item.get('isArchived') or content.get('__typename') != 'Issue'
-                or content['repository']['nameWithOwner'] != client.repo):
-            continue
-        body = client.issue(content['number'])['body'] or ''
-        if block_span(body, 'wf-card', required=False) is not None:
-            card = read_card(body)
-            cards[card['card_id']] = card
-    return cards
-
-
-def _number(card, client):
-    if isinstance(card, int) or str(card).isdigit():
-        return int(card)
-    for issue in client.issues():
-        body = issue['body'] or ''
-        if block_span(body, 'wf-card', required=False) is not None:
-            if read_card(body)['card_id'] == card:
-                return issue['number']
-    raise NotFound(f'card 不存在：{card}')
-
-
 def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
          project_owner=None, project_number=None, emit=print):
     """card 為卡 ID 或 issue 號；catalog／已啟用模組由呼叫端供給。"""
-    number = _number(card, client)
-    printed = []
-
-    def report(message):
-        printed.append(message)
-        emit(message)
+    number, skipped = card_number(card, client)
+    report = Printer(emit)
 
     def refuse(code, reason):
-        return reject(client, number, code, reason, tuple(printed))
+        return reject(client, number, code, reason, tuple(report))
 
+    for other in skipped:
+        report(f'略過無法解析的 issue #{other}')
     if ruling is None:
         report('無裁定連結')
     try:
-        current = read_card(client.issue(number)['body'] or '')
-        if not isinstance(current, dict):
-            raise ValueError('wf-card 不是物件')
+        current = block_object(client.issue(number)['body'], 'wf-card')
         key, separator, raw = assignment.partition('=')
         if not separator:
             raise ValueError('--set 須為欄=JSON')
         if key in ('stage', 'state'):
             return refuse('D1', f'{key} 只由 move 寫')
-        counters = {key for block in catalog.by_label('yaml wf-module')
-                    for key in block.data.get('adds', {}).get('counters', [])}
-        if key in ('card_id', 'source_issue') or key in counters:
+        if key in ('card_id', 'source_issue'):
             return refuse('D3', f'{key} 不可由 edit 改')
+        if key in {k for block in catalog.by_label('yaml wf-module')
+                   for k in block.data.get('adds', {}).get('counters', [])}:
+            report('模組欄由 `move` 寫')  # C09：verbs.md §2 末句無「拒」字，硬擋只 D1–D4／P1–P5
         value = json.loads(raw)
         json.dumps(value, allow_nan=False)
         updated = deepcopy(current)
@@ -101,25 +71,21 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
     if key == 'source_sha' and value is not None and not client.commit_exists(value):
         return refuse('D4', f'source_sha 不在遠端：{value}')
     if key == 'parent' and value is not None:
-        parents = _board(client, project_owner, project_number)
+        if project_owner is None or project_number is None:
+            raise GhError('無 Project 設定，未能確認 parent')
+        parents, skipped = board_cards(client, client.project(project_owner, project_number, ()))
+        for other in skipped:
+            report(f'略過無法解析的 issue #{other}')
         if value not in parents:
             return refuse('D4', f'parent 不存在：{value}')
-        parents[current['card_id']] = updated
-        parent, depth, seen = value, 0, set()
-        while parent is not None:
-            if parent in seen:
-                report('parent 鏈有循環')
-                break
-            seen.add(parent)
-            depth += 1
-            if parent not in parents:
-                report(f'parent 鏈無法續查：{parent}')
-                break
-            parent = parents[parent]['parent']
+        parents[current['card_id']] = (number, updated)
+        depth, broken = chain_depth(updated, parents)
+        if broken is not None:
+            report('parent 鏈有循環' if broken == '循環' else f'parent 鏈無法續查：{broken}')
         if depth > 2:
             report('上限 2')
     if key in current and _equal(current[key], value):
-        return WriteResult(0, card=current, printed=tuple(printed))
+        return WriteResult(0, card=current, printed=tuple(report))
     if key in ('acceptance', 'verification', 'non_scope', 'resources'):
         updated['spec_version'] += 1
     old_hash, new_hash = _hash(current.get(key)), _hash(value)
@@ -129,16 +95,13 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
         client.post_comment(number, 'wf:edit', f'{key}、{old_hash} → {new_hash}')
         if current['stage'] == '審核':
             client.post_comment(number, 'wf:edit', 'edit during review')
-    return replace(result, printed=tuple(printed))
+    return replace(result, printed=tuple(report))
 
 
 def main(argv=None, *, client, catalog, root='.', enabled_modules=()):
     """供總入口分派；本片不修改 verbs/main.py。"""
-    parser = argparse.ArgumentParser(prog='wf edit')
-    parser.add_argument('card')
-    parser.add_argument('--set', required=True, dest='assignment')
-    parser.add_argument('--ruling')
-    args = parser.parse_args(argv)
+    args = parse_args('wf edit', argv, ('card', {}), ('--set', {'required': True, 'dest': 'assignment'}),
+                      ('--ruling', {}))
     config = load_project_config(root)
     project = config['project'] or {}
     return edit(args.card, args.assignment, client=client, catalog=catalog,

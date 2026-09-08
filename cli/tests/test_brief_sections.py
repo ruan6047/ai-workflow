@@ -29,12 +29,7 @@ NUMBERED = re.compile(r'^([0-9]+)\. ([^：]+)：')
 
 
 class Client(FakeGhClient):
-    """fakes.FakeGhClient 未含 S02 的 merge_base；本檔子類補上，⛔ 不改 fakes.py。"""
-
-    repo = 'fake/repo'
-
-    def merge_base(self, base, head):
-        return self._read('merge_base', base=base, head=head)
+    """S10b 起 fakes.FakeGhClient 已含 merge_base 與 repo；子類保留給本檔既有引用。"""
 
 
 def card(**changes):
@@ -204,10 +199,20 @@ def test_card_facts_and_verbatim_content(tmp_path):
     assert body['卡與身分'][1:] == ['card_id：WF-001', 'source_issue：10', 'tier：T3',
                                     'stage：執行', 'iteration：2', 'parent：null',
                                     'when：卡的 when', 'from：pm · to：executor']
-    assert body['能力層級建議'][1] == 'exec_capability：' + json.dumps(
-        data['exec_capability'], ensure_ascii=False)
+    assert body['能力層級建議'][1:] == ['exec_capability.level：主力型', 'exec_capability.reason：執行理由']
     _, review = emitted(make_client(data), root, 'reviewer')
-    assert dict(sections(review))['能力層級建議'][1].startswith('review_capability：')
+    assert dict(sections(review))['能力層級建議'][1:] == ['review_capability.level：高階型',
+                                                         'review_capability.reason：查核理由']
+
+
+def test_capability_prints_level_and_reason_not_tier_basis(tmp_path):
+    """C11：能力層級段印 <欄>.level 與 <欄>.reason（schema $defs/capability required），⛔ 不印 tier_basis；
+    欄為 null 時兩列印 null（負控：不因欄空而消失）。"""
+    root = make_root(tmp_path)
+    _, lines = emitted(make_client(card(exec_capability=None)), root)
+    body = dict(sections(lines))['能力層級建議']
+    assert body[1:] == ['exec_capability.level：null', 'exec_capability.reason：null']
+    assert not any('tier_basis' in line for line in body)
 
 
 def test_notes_section_is_the_notes_verb_output(tmp_path):
@@ -276,6 +281,24 @@ def test_broken_card_json_is_d3_with_one_reject_comment(tmp_path):
     assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
     call = dict(client.calls[-1][1])
     assert call['first_line'] == 'wf:reject' and call['body'].startswith('拒收・D3・')
+
+
+def test_null_card_block_is_d3(tmp_path):
+    """第 9 條探針：本卡 wf-card 區塊值為 null ⇒ D3 一則 wf:reject（訊息含「不是物件」）。"""
+    root = make_root(tmp_path)
+    client = make_client('前言\n```json wf-card\nnull\n```\n')
+    result = brief(10, target='executor', client=client, root=root, emit=lambda line: None)
+    assert result.rc == 1 and '不是物件' in result.reason
+    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
+
+
+def test_card_id_lookup_skips_null_issue_and_prints(tmp_path):
+    """第 9 條探針（card_number）：以卡ID 呼叫 brief，別的 issue 的 null 區塊只略過並印在最前。"""
+    root = make_root(tmp_path)
+    rows = [issue_row(3, '```json wf-card\nnull\n```\n'), issue_row(10, card())]
+    lines = []
+    result = brief('WF-001', target='executor', client=make_client(rows=rows), root=root, emit=lines.append)
+    assert result.rc == 0 and lines[0] == '略過無法解析的 issue #3'
 
 
 def test_healthy_run_writes_nothing(tmp_path):

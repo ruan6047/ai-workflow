@@ -27,6 +27,22 @@ def test_leaving_requirement_missing_creation_fields_from_source(setup):
     assert 'T2+ 而 stage_plan 缺規劃' in result.printed
 
 
+FILLED = dict(core_pain='痛', feature='f', non_scope=['x'], list_convergence=[1], tier='T1',
+              tier_basis={'sensitive': [], 'recoverable': 'reversible', 'blast': 'file'},
+              exec_capability={'level': '主力型', 'reason': 'r'}, review_capability={'level': '主力型', 'reason': 'r'},
+              db_scope='none', resources=['file:a'], when='w', service_goal='g')
+
+
+def test_missing_fields_print_skipped_when_withdrawing_or_all_filled(setup):
+    """S08 查核 R1.8-2：缺欄清單只在非空且 to_node≠清單 時印——兩個負控；正向在上一測。"""
+    client, kwargs = setup('需求', '待確認', core_pain='')
+    withdrawn = move(10, '清單', **kwargs)
+    assert withdrawn.rc == 0 and not any(line.startswith('缺欄清單') for line in withdrawn.printed)
+    client, kwargs = setup('需求', '待確認', stage_plan=['需求', '執行', '審核', '結案'], **FILLED)
+    filled = move(10, '執行/待辦', **kwargs)
+    assert filled.rc == 0 and not any(line.startswith('缺欄清單') for line in filled.printed)
+
+
 @pytest.mark.parametrize('acceptance,verification,expected', [
     ([], [], ['acceptance 空', 'verification 空']),
     (['驗收'], [], ['verification 空']),
@@ -78,6 +94,39 @@ def test_prose_first_line_and_note_cannot_supply_ruling(setup, body):
     assert '裁定留言無 wf-return／wf-ruling 區塊' in result.printed
     assert '裁定留言作者：requester-account' in result.printed
     assert '缺 wf-ruling kind=stop' in result.printed
+
+
+@pytest.mark.parametrize('label,expect_absent', [('wf-return', ['缺 wf-return 區塊', '裁定留言無 wf-return／wf-ruling 區塊']),
+                                                 ('wf-ruling', ['裁定留言無 wf-return／wf-ruling 區塊'])])
+def test_null_comment_block_is_present_but_not_an_object(setup, label, expect_absent):
+    """第 9 條探針：留言區塊值為 null＝區塊在（不印「無區塊」／「缺區塊」）但非物件（印不是物件／schema 不過）。"""
+    client, kwargs = setup('審核', '待確認')
+    client.responses['comment']['body'] = f'首行\n```json {label}\nnull\n```\n'
+    result = move(10, '結案/待確認', ruling=URL, **kwargs)
+    assert result.rc == 0
+    for line in expect_absent:
+        assert line not in result.printed
+    if label == 'wf-return':
+        assert 'wf-return 不是物件' in result.printed
+    else:
+        assert any(line.startswith('wf-ruling：') for line in result.printed)
+        assert '缺 wf-return 區塊' in result.printed  # 負控：wf-return 真的不在時仍印缺
+
+
+def test_other_card_with_null_block_prints_unparsable(setup):
+    """第 9 條探針：裁定留言所在的別張 issue 其 wf-card 為 null ⇒ 印「卡ID 無法解析」。"""
+    client, kwargs = setup(rows=[issue(20, body='```json wf-card\nnull\n```')])
+    client.responses['comment']['issue_url'] = 'https://api.github.com/repos/fake/repo/issues/20'
+    result = move(10, '進行中', ruling=URL.replace('/10#', '/20#'), **kwargs)
+    assert result.rc == 0
+    assert '裁定留言不在本卡：WF-001、issue #20（卡ID 無法解析）' in result.printed
+
+
+def test_card_id_lookup_skips_null_issue_and_prints(setup):
+    """第 9 條探針（card_number）：以卡ID 呼叫 move，別的 issue 的 null 區塊只略過並印。"""
+    client, kwargs = setup(rows=[issue(20, body='```json wf-card\nnull\n```')])
+    result = move('WF-001', '進行中', **kwargs)
+    assert result.rc == 0 and '略過無法解析的 issue #20' in result.printed
 
 
 def test_other_card_prints_both_ids(setup):

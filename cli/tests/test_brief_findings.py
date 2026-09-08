@@ -3,6 +3,8 @@ core/verbs.md §2「CLI 只讀三種留言區塊」。S11 驗收 5。
 """
 import json
 
+import pytest
+
 from .test_brief_sections import block, card, emitted, make_client, make_root, sections
 
 FINDING = {'finding_id': 'F-WF-001-1-01', 'severity': 'major', 'blocking': True,
@@ -50,6 +52,40 @@ def test_no_previous_round_prints_the_literal(tmp_path):
     comments = [comment(1, wf_return(5, 'reviewer', [finding()]))]
     _, other = emitted(make_client(card(iteration=2), comments=comments), root)
     assert previous(other) == ['無前輪']
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_same_iteration_takes_the_latest_reviewer_return(tmp_path, reverse):
+    """C02′：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 wf-return；列序反轉不影響。"""
+    root = make_root(tmp_path)
+    comments = [comment(1, wf_return(1, 'reviewer', [finding(evidence='上輪')])),
+                comment(2, wf_return(2, 'reviewer', [finding(evidence='本輪早')])),
+                comment(3, wf_return(2, 'executor', [finding(evidence='執行者本輪')])),
+                comment(4, wf_return(2, 'reviewer', [finding(evidence='本輪晚')]))]
+    if reverse:
+        comments.reverse()
+    _, lines = emitted(make_client(card(iteration=2), comments=comments), root)
+    assert [json.loads(line)['evidence'] for line in previous(lines)] == ['本輪晚']
+
+
+def test_fallback_to_previous_iteration_takes_its_latest_only(tmp_path):
+    """C02′：同 iteration 沒有 ⇒ 退到 iteration−1，仍取時間序最後一則（不合併多則）。"""
+    root = make_root(tmp_path)
+    comments = [comment(1, wf_return(1, 'reviewer', [finding(evidence='前輪早')])),
+                comment(2, wf_return(1, 'reviewer', [finding(evidence='前輪晚')]))]
+    _, lines = emitted(make_client(card(iteration=2), comments=comments), root)
+    assert [json.loads(line)['evidence'] for line in previous(lines)] == ['前輪晚']
+
+
+def test_null_return_block_is_not_a_previous_round(tmp_path):
+    """第 9 條探針：wf-return 區塊值為 null（存在但非物件）＝不是交回單 ⇒ 無前輪；負控＝同位置換成物件即印。"""
+    root = make_root(tmp_path)
+    null = [comment(1, '```json wf-return\nnull\n```\n')]
+    _, lines = emitted(make_client(card(iteration=1), comments=null), root)
+    assert previous(lines) == ['無前輪']
+    good = [comment(1, wf_return(1, 'reviewer', [finding(evidence='物件')]))]
+    _, lines = emitted(make_client(card(iteration=1), comments=good), root)
+    assert [json.loads(line)['evidence'] for line in previous(lines)] == ['物件']
 
 
 def test_broken_return_block_does_not_break_the_brief(tmp_path):

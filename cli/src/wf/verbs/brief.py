@@ -5,11 +5,8 @@ modules/resource-lock／initiative／identity §0；S11 派工單的 PM 預設�
 
 段序、段名與誰填逐字讀 `core/dispatch.md` 的表，⛔ 不抄進程式碼；CLI 段只搬事實、⛔ 不改寫
 不合併（第零條）。除 D3 的一則 `wf:reject` 外不寫任何遠端、⛔ 不自動 merge；`--for` 分派＝
-TARGETS 字典（S12 掛 closeout 鍵）。行距壓成單行、輔助函式合併以壓行數，仍超出本片 240 行
-上限（交回單 unverified 有量測）；`_block`／`_lookup`／`_mark`／`_plain`／`_remote` 是 S10b
-`verbs/_common.py` 的收斂對象。
+TARGETS 字典（S12 掛 closeout 鍵）。卡號查找、留言區塊與板上事實住 verbs/_common.py（S10b）。
 """
-import argparse
 from datetime import date
 import json
 from pathlib import Path
@@ -22,9 +19,10 @@ from wf.compose.frontmatter import read_frontmatter
 from wf.compose.project_config import load_project_config, module_names
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
-from wf.gh.client import GhError, NotFound
+from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
-from wf.gh.writes import CardBodyError, read_block, read_card
+from wf.verbs._common import (Printer, block_object, board_facts, card_number, comment_blocks, parse_args,
+                              repo_cards)
 from wf.verbs._write import WriteResult, reject
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
@@ -52,13 +50,6 @@ def _remote(call, *args, **kwargs):
     except GhError:
         return None
 
-def _block(body, label):
-    """壞 JSON 或區塊重複＝當成沒有；卡面 wf-card 的 D3 另由 brief() 判。"""
-    try:
-        return read_block(body or '', label, required=False)
-    except CardBodyError:
-        return None
-
 def _mark(ctx, origin, relative, section):
     """core/handoff.md 每段首行；節名為空不補空 `#`，逾 params.md rule_confirm_days 標 ⚠️。"""
     front = read_frontmatter(Path(ctx.root) / relative)
@@ -70,14 +61,6 @@ def _mark(ctx, origin, relative, section):
     except ValueError:
         stale = False
     return line + (' ⚠️' if stale else '')
-
-def _lookup(client, card_id):
-    """卡ID→(issue 號, 卡面)；S10b 整併時收斂進 verbs/_common.py。"""
-    for issue in _remote(client.issues, state='all') or []:
-        found = _block(issue.get('body'), 'wf-card')
-        if isinstance(found, dict) and found.get('card_id') == card_id:
-            return issue['number'], found
-    return None, None
 
 def _rows(root):
     """core/dispatch.md 的表：(段, 誰填, 內容) 逐列，段名逐字讀檔、⛔ 不抄進程式碼。"""
@@ -121,18 +104,25 @@ def _baseline(ctx):
     return lines
 
 def _previous_findings(ctx):
-    """前輪列：本卡留言的 `wf-return`、`role`=reviewer、`iteration`＝卡面 iteration−1。"""
-    lines, want = [], (ctx.card.get('iteration') or 0) - 1
+    """前輪列（C02′）：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 `wf-return`；
+    沒有才退到 iteration−1；都沒有印「無前輪」。壞 JSON／重複／非物件的區塊當成沒有。"""
+    current, returns = ctx.card.get('iteration') or 0, []
     for comment in _remote(ctx.client.comments, ctx.number) or []:
-        data = _block(comment.get('body'), 'wf-return')
-        if isinstance(data, dict) and data.get('role') == REVIEWER and data.get('iteration') == want:
-            lines += [json.dumps(item, ensure_ascii=False) for item in data.get('findings') or []]
-    return lines or [NO_PREVIOUS]
+        _, data = comment_blocks(comment, ('wf-return',))['blocks']['wf-return']
+        if isinstance(data, dict) and data.get('role') == REVIEWER:
+            returns.append((str(comment.get('created_at') or ''), data))
+    returns.sort(key=lambda pair: pair[0])
+    for want in (current, current - 1):
+        found = [data for _, data in returns if data.get('iteration') == want]
+        if found:
+            return [json.dumps(item, ensure_ascii=False) for item in found[-1].get('findings') or []] or [NO_PREVIOUS]
+    return [NO_PREVIOUS]
 
 def _capability(ctx):
-    """能力層級建議列：角色對應的 capability 欄值＋tier_basis（理由欄規則未定，PM 預設）。"""
+    """能力層級建議列（C11）：角色對應 capability 欄的 level 與 reason（card-schema §1 $defs/capability）。"""
     key = 'review_capability' if ctx.target == REVIEWER else 'exec_capability'
-    return [f'{key}：{_plain(ctx.card.get(key))}', f"tier_basis：{_plain(ctx.card.get('tier_basis'))}"]
+    value = ctx.card.get(key) if isinstance(ctx.card.get(key), dict) else {}
+    return [f'{key}.{field}：{_plain(value.get(field))}' for field in ('level', 'reason')]
 
 def _notes(ctx):
     """注意事項列：S10 `notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。"""
@@ -176,26 +166,21 @@ def _intersection(ctx):
 def _spec_baseline(ctx):
     """規格基線：父卡 `spec_version` 與本卡 `parent_spec_version` 兩值並列。"""
     parent = ctx.card.get('parent')
-    found = _lookup(ctx.client, parent)[1] if parent else None
-    version = '未找到父卡' if found is None else _plain(found.get('spec_version'))
-    return [f'父卡 {_plain(parent)} spec_version：{version}',
-            f"parent_spec_version：{_plain(ctx.card.get('parent_spec_version'))}"]
+    cards, skipped = _remote(repo_cards, ctx.client) or ({}, [])
+    version = _plain(cards[parent][1].get('spec_version')) if parent in cards else '未找到父卡'
+    return [f'略過無法解析的 issue #{other}' for other in skipped] + [
+        f'父卡 {_plain(parent)} spec_version：{version}',
+        f"parent_spec_version：{_plain(ctx.card.get('parent_spec_version'))}"]
 
 # 鍵＝(模組名, 該模組 §0 `adds.handoff_sections` 的序位)；段名逐字住宣告，⛔ 不抄進程式碼。
 MODULE_SECTIONS = {('resource-lock', 0): _listing('resources'), ('resource-lock', 1): _intersection,
                    ('initiative', 0): _spec_baseline, ('identity', 0): lambda ctx: [HUMAN]}
 
 def _module_sections(ctx):
-    """dispatch.md `wf-module-sections` 的 brief 鍵＋S03 is_enabled；板上事實與 notes 同形（私有故自寫）。"""
+    """dispatch.md `wf-module-sections` 的 brief 鍵＋S03 is_enabled；板上事實同 notes／move（_common）。"""
     declared, = ctx.catalog.by_label('json wf-module-sections')
     modules = {block.data['name']: block.data for block in ctx.catalog.by_label('yaml wf-module')}
-    names = {spec['key']: name for name, spec in projection(ctx.catalog).items()}
-    rows = [{name: (None if raw is None else raw.get('text', raw.get('name')))
-             for name, raw in item['fieldValues'].items()}
-            for item in (ctx.project or {}).get('items', [])]
-    facts = [{'state': row.get(names['state']),
-              'owner_actor': (row.get(names['owner']) or '').partition(':')[2] or None}
-             for row in rows]
+    facts = board_facts(ctx.project, ctx.catalog, self_number=ctx.number, repo=ctx.client.repo)
     listed, out = module_names(ctx.cfg), []
     for name, titles in declared.data['brief'].items():
         module = modules.get(name)
@@ -235,23 +220,16 @@ def _template(ctx):
     return body
 
 def brief(card, *, target, client, root='.', catalog=None, emit=print, today=None):
-    printed = []
-
-    def report(line):
-        printed.append(line)
-        emit(line)
-
+    report = Printer(emit)
     catalog = load_blocks(root) if catalog is None else catalog
     cfg = load_project_config(root)
-    number = int(card) if str(card).isdigit() else _lookup(client, card)[0]
-    if number is None:
-        raise NotFound(f'card 不存在：{card}')
+    number, skipped = card_number(card, client)
+    for other in skipped:
+        report(f'略過無法解析的 issue #{other}')
     try:
-        current = read_card(client.issue(number)['body'] or '')
-        if not isinstance(current, dict):
-            raise CardBodyError('wf-card 不是物件')
+        current = block_object(client.issue(number)['body'], 'wf-card')
     except (ValueError, TypeError, KeyError) as exc:
-        return reject(client, number, 'D3', str(exc))
+        return reject(client, number, 'D3', str(exc), tuple(report))
     match = DAYS.search((Path(root) / PARAMS).read_text(encoding='utf-8'))
     if match is None:
         report('未能讀取 rule_confirm_days，未評估過期')
@@ -270,12 +248,10 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
             report(line)
     report(TEMPLATE_HEAD)
     report(json.dumps(_template(ctx), ensure_ascii=False, indent=2))
-    return WriteResult(0, card=current, printed=tuple(printed))
+    return WriteResult(0, card=current, printed=tuple(report))
 
 def run(argv, *, client, root='.', catalog=None):
     """只解析本動詞參數；七動詞接線由 S15 提供。`--for` 值域＝TARGETS 的鍵。"""
-    parser = argparse.ArgumentParser(prog='wf brief')
-    parser.add_argument('card')
-    parser.add_argument('--for', dest='target', required=True, choices=sorted(TARGETS))
-    args = parser.parse_args(argv)
+    args = parse_args('wf brief', argv, ('card', {}), ('--for', {'dest': 'target', 'required': True,
+                                                                   'choices': sorted(TARGETS)}))
     return brief(args.card, target=args.target, client=client, root=root, catalog=catalog).rc

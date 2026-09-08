@@ -85,6 +85,32 @@ def test_d3_on_broken_card_json(tmp_path):
     assert writes[0][1]['body'].startswith('拒收・D3・')
 
 
+def test_null_card_block_is_d3(tmp_path):
+    """第 9 條探針：本卡 wf-card 值為 null ⇒ D3 一則 wf:reject（不是物件）。"""
+    root = make_root(tmp_path, stages=['implementation.md'])
+    client = make_client('前言\n```json wf-card\nnull\n```\n')
+    result = notes(10, client=client, root=root, emit=lambda line: None)
+    assert result.rc != 0 and '不是物件' in result.reason
+    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
+
+
+@pytest.mark.parametrize('value', ['null', '[]', '"x"'])
+def test_null_note_block_is_an_invalid_candidate(tmp_path, value):
+    """第 9 條探針：wf-note 區塊值為 null／非物件＝不合法候選（URL 不消失），⛔ 不是沒有候選。"""
+    root = make_root(tmp_path)
+    _, lines = emitted(make_client(card(), comments=[comment(1, block('wf-note', value))]), root)
+    assert lines == ['候選 https://github.com/fake/repo/issues/10#issuecomment-1 區塊不合法']
+
+
+def test_card_id_lookup_skips_null_issue_and_prints(tmp_path):
+    """第 9 條探針（card_number）：以卡ID 呼叫 notes，別的 issue 的 null 區塊只略過並印一行。"""
+    root = make_root(tmp_path, stages=['implementation.md'])
+    client = make_client(card())
+    client.responses['issues'] = [{'number': 3, 'body': '```json wf-card\nnull\n```'}, client.responses['issue']]
+    result = notes('WF-001', client=client, root=root, emit=lambda line: None)
+    assert result.rc == 0 and result.printed[0] == '略過無法解析的 issue #3'
+
+
 def test_d3_positive_control_valid_card_writes_nothing(tmp_path):
     """負控：同一路徑換成合法卡面即不寫 wf:reject。"""
     root = make_root(tmp_path, stages=['implementation.md'])

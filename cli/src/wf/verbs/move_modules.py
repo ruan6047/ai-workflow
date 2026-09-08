@@ -9,7 +9,7 @@ from copy import deepcopy
 
 from wf.compose.blocks import projection
 from wf.compose.project_config import module_params
-from wf.gh.writes import read_card
+from wf.verbs._common import block_object, board_items, field_values
 
 # 狀態與階段字面＝各模組 §1 條文的語意，逐字對應該模組宣告的 id；值域住 core/enums.md。
 RETURNED, IN_PROGRESS, ESCALATED, EXEC_STAGE = '退回', '進行中', '升級', '執行'
@@ -26,11 +26,6 @@ def _declarations(catalog, enabled_names=None):
     names = None if enabled_names is None else set(enabled_names)
     return [block.data for block in catalog.by_label('yaml wf-module')
             if names is None or block.data['name'] in names]
-
-
-def _field_value(item, name):
-    raw = item['fieldValues'].get(name)
-    return None if raw is None else raw.get('text', raw.get('name'))
 
 
 def _terminal_states(catalog):
@@ -80,19 +75,16 @@ def resources_intersection(card, from_node, to_node, *, catalog, project, client
     actor = (card.get('owner') or {}).get('actor')
     mine = card.get('resources') or []
     lines, matched, unread = [], False, False
-    for item in project['items']:
-        content = item.get('content') or {}
-        repository = (content.get('repository') or {}).get('nameWithOwner')
-        if item.get('isArchived') or repository != client.repo:
+    for number, item in board_items(project, client.repo).items():
+        values = field_values(item)
+        if values.get(names['state']) in terminal:
             continue
-        if _field_value(item, names['state']) in terminal:
-            continue
-        owner = _field_value(item, names['owner'])
+        owner = values.get(names['owner'])
         if not owner or owner.partition(':')[2] == actor:
             continue
-        card_id = _field_value(item, names['card_id'])
+        card_id = values.get(names['card_id'])
         try:
-            other = read_card(client.issue(content['number'])['body'] or '')
+            other = block_object(client.issue(number)['body'], 'wf-card')
             resources = other.get('resources') or []
         except (ValueError, TypeError, KeyError, RuntimeError):
             lines.append(f'無法讀取 {card_id} 的 resources')

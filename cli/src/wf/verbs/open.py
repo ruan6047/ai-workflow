@@ -2,10 +2,8 @@
 core/naming.md §1、core/state-machine.md §1–3、core/glossary.md 清單項／撤銷卡、
 modules/initiative/module.md §0–1、ADOPTION.md §2；S06 派工單的 PM 預設。
 """
-import argparse
 from copy import deepcopy
 from dataclasses import dataclass
-from pathlib import Path
 import re
 
 from wf.compose.blocks import load_blocks, projection
@@ -13,26 +11,13 @@ from wf.compose.enable import is_enabled
 from wf.compose.project_config import load_project_config, module_names, ProjectConfigError
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
-from wf.gh.writes import read_block
-from wf.verbs._write import WriteResult, _prepare, reject, write_card
+from wf.verbs._common import block_object, board_items, chain_depth, missing_fields, parse_args, repo_cards
+from wf.verbs._write import WriteResult, prepare_card, reject, write_card
 
 
 @dataclass(frozen=True)
 class OpenResult(WriteResult):
     unverified: tuple[dict, ...] = ()
-
-
-def missing_fields(card, root):
-    """必填時點直接讀 core/card-schema.md §2 表；零不是空值。"""
-    text = (Path(root) / 'core/card-schema.md').read_text(encoding='utf-8')
-    section = re.split(r'^## 2\b.*$', text, flags=re.M)[1]
-    section = re.split(r'^## ', section, flags=re.M)[0]
-    fields = []
-    for line in section.splitlines():
-        cells = [cell.strip() for cell in line.split('|')[1:-1]]
-        if len(cells) == 4 and cells[2] == '建卡':
-            fields.extend(cells[0].replace('`', '').split('、'))
-    return [key for key in fields if card.get(key) in (None, '', [], {})]
 
 
 def _initial_card(schema):
@@ -45,18 +30,6 @@ def _initial_card(schema):
                      else '' if prop.get('type') == 'string' else None)
     card.update(spec_version=1, iteration=0)
     return card
-
-
-def _depth(card, cards):
-    depth, seen = 0, {card['card_id']}
-    while card.get('parent'):
-        parent = card['parent']
-        if parent in seen or parent not in cards:
-            return None
-        seen.add(parent)
-        depth += 1
-        card = cards[parent][1]
-    return depth
 
 
 def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None, emit=print):
@@ -88,15 +61,14 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         printed.append('無 Project 設定')
         unverified.append({'item': 'D2 在板判定', 'kind': 'deferred',
                            'reason': '無 Project 設定，依 PM 預設視為不在板'})
-    on_board = {item['content']['number'] for item in board['items']
-                if item.get('content') and item['content'].get('__typename') == 'Issue'
-                and item['content'].get('repository', {}).get('nameWithOwner') == client.repo} if board else set()
+    # 封存項仍在板上（六條裁定 #6：封存⛔ 不是撤銷卡），故 include_archived。
+    on_board = set(board_items(board, client.repo, include_archived=True))
     if number in on_board:
         return refuse('D2', '已在板上')
     source = client.issue(number)
     try:
-        current = read_block(source['body'] or '', 'wf-card', required=False)
-        intake = None if current is not None else read_block(source['body'] or '', 'wf-intake', required=False)
+        current = block_object(source['body'], 'wf-card', required=False)
+        intake = None if current is not None else block_object(source['body'], 'wf-intake', required=False)
         if current is None and intake is None:
             return refuse('D2', '不是清單項也不是撤銷卡')
         if current is None:
@@ -106,11 +78,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         if area is not None and area not in cfg['areas']:
             return refuse('D3', '--area 不在 areas')
         schema = compose_schema(catalog, 'wf-card')
-        cards = {}
-        for issue in client.issues(state='all'):
-            card = read_block(issue['body'] or '', 'wf-card', required=False)
-            if card is not None:
-                cards[card['card_id']] = (issue['number'], card)
+        cards, skipped = repo_cards(client)
+        printed.extend(f'略過無法解析的 issue #{other}' for other in skipped)
         if current is None:
             area = cfg['areas'][0] if area is None and len(cfg['areas']) == 1 else area
             if area not in cfg['areas']:
@@ -139,15 +108,14 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
                    and is_enabled(b.data, modules_list=module_names(cfg), card=card)]
         if current is None and 'initiative' in enabled:
             card['parent_spec_version'] = cards[card['parent']][1]['spec_version']
-        card, values = _prepare(card, current, None, catalog, enabled)
+        card, values = prepare_card(card, current, None, catalog, enabled)
         if board is not None:
             for name, value in values.items():
                 client.prepare_project_field(board, '', name, value)
-        missing = missing_fields(card, root)
-        depth = _depth(card, cards)
-        printed.append('缺欄清單：' + '、'.join(missing))
-        printed.append(f'鏈深：{depth}' if depth is not None else '鏈深無法計算：parent 鏈有循環或缺卡')
-        if depth is None:
+        depth, broken = chain_depth(card, cards)
+        printed.append('缺欄清單：' + '、'.join(missing_fields(card, root)))
+        printed.append(f'鏈深：{depth}' if broken is None else '鏈深無法計算：parent 鏈有循環或缺卡')
+        if broken is not None:
             unverified.append({'item': '鏈深', 'kind': 'cannot', 'reason': 'parent 鏈有循環或缺卡'})
         elif depth > 2:
             printed.append('上限 2')
@@ -170,10 +138,6 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
 
 def run(argv, *, client, root='.', catalog=None):
     """只解析本動詞參數；七動詞接線由 S15 提供。"""
-    parser = argparse.ArgumentParser(prog='wf open')
-    parser.add_argument('issue', type=int)
-    parser.add_argument('--parent')
-    parser.add_argument('--area')
-    args = parser.parse_args(argv)
+    args = parse_args('wf open', argv, ('issue', {'type': int}), ('--parent', {}), ('--area', {}))
     return open_issue(args.issue, client=client, root=root, catalog=catalog,
                       parent=args.parent, area=args.area).rc

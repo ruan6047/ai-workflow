@@ -1,6 +1,8 @@
 """消費 core/dispatch.md `json wf-module-sections`、modules/resource-lock／initiative／identity §0，
 以及 verbs/move_modules.py 的交集函式。S11 驗收 7：段名逐字取自宣告，未啟用不印。
 """
+import pytest
+
 from .test_brief_sections import (SOURCE, card, emitted, issue_row, make_client, make_root,
                                   sections)
 from wf.compose.blocks import load_blocks
@@ -72,6 +74,36 @@ def test_no_intersection_and_missing_parent_are_reported(tmp_path):
     body = dict(sections(lines))
     assert body[declared.data['brief']['resource-lock'][1]][1:] == ['無交集']
     assert body[declared.data['brief']['initiative'][0]][1] == '父卡 WF-404 spec_version：未找到父卡'
+
+
+def test_null_parent_card_block_is_skipped(tmp_path):
+    """第 9 條探針：父卡 issue 的 wf-card 值為 null ⇒ 印略過、父卡視為未找到（負控＝wired() 找得到）。"""
+    root = make_root(tmp_path, listed=['identity'])
+    data = card(owner=MINE, resources=[], parent='WF-000', parent_spec_version=2)
+    rows = [issue_row(10, data), issue_row(12, '```json wf-card\nnull\n```\n')]
+    _, lines = emitted(make_client(rows=rows), root)
+    declared, = load_blocks(root).by_label('json wf-module-sections')
+    body = dict(sections(lines))[declared.data['brief']['initiative'][0]]
+    assert body[1:] == ['略過無法解析的 issue #12', '父卡 WF-000 spec_version：未找到父卡', 'parent_spec_version：2']
+    _, wired_lines = emitted(wired(), root)
+    assert '略過無法解析的 issue #12' not in wired_lines
+
+
+@pytest.mark.parametrize('exclusion', ['archived', 'foreign'])
+def test_archived_or_foreign_items_are_not_board_facts(tmp_path, exclusion):
+    """整併：brief 的板上事實與 move／notes 同一函式——封存項或別 repo 的進行中卡⛔ 不撐起 resource-lock。"""
+    root = make_root(tmp_path, listed=['identity'])
+    other = project_item(11, 'WF-002', archived=exclusion == 'archived')
+    if exclusion == 'foreign':
+        other['content']['repository']['nameWithOwner'] = 'other/repo'
+    rows = [issue_row(10, card(owner=MINE, resources=['file:a'])),
+            issue_row(11, card(card_id='WF-002', source_issue=11, resources=['file:a'],
+                               owner={'role': 'executor', 'actor': 'other'}))]
+    _, lines = emitted(make_client(rows=rows, items=[other]), root)
+    declared, = load_blocks(root).by_label('json wf-module-sections')
+    assert set(declared.data['brief']['resource-lock']).isdisjoint(name for name, _ in sections(lines))
+    _, live = emitted(make_client(rows=rows, items=[project_item(11, 'WF-002')]), root)  # 負控
+    assert declared.data['brief']['resource-lock'][1] in dict(sections(live))
 
 
 def test_disabled_modules_print_nothing(tmp_path):

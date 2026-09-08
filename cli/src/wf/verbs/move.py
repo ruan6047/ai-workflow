@@ -2,7 +2,6 @@
 core/card-schema.md §1／§2／§5、core/enums.md 值域、core/naming.md §2／§3、
 core/ruling.md 必要鍵、core/return.md 區塊、core/tiers.md §1、stages/closeout.md §2。
 """
-import argparse
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -16,53 +15,37 @@ from wf.compose.schema import compose_schema
 from wf.compose.transitions import blocked_node, expand, is_legal_move, is_legal_plan
 from wf.compose.validate import validate
 from wf.gh.client import NotFound
-from wf.gh.writes import InvalidCommentURL, read_block, read_card
-from wf.verbs._write import WriteResult, _prepare, _values, reconcile, reject, write_card
-from wf.verbs.edit import _number
-from wf.verbs.open import missing_fields
-
-
-def _board_facts(project, catalog, number, repo):
-    facts = []
-    for item in project['items'] if project else ():
-        content = item.get('content') or {}
-        if (item.get('isArchived') or content.get('__typename') != 'Issue'
-                or content.get('repository', {}).get('nameWithOwner') != repo
-                or content['number'] == number):
-            continue
-        values = {spec['key']: (raw.get('text', raw.get('name')) if raw else None)
-                  for name, spec in projection(catalog).items()
-                  for raw in [item['fieldValues'].get(name)]}
-        owner = values.get('owner')
-        facts.append({'state': values.get('state'),
-                      'owner_actor': owner.partition(':')[2] if owner else None})
-    return facts
+from wf.gh.writes import InvalidCommentURL
+from wf.verbs._common import (block_object, board_facts, board_items, card_number, comment_blocks,
+                              missing_fields, parse_args)
+from wf.verbs._write import WriteResult, prepare_card, projection_values, reconcile, reject, write_card
 
 
 def _ruling_prints(comment, current, number, expected, *, client, catalog, root):
+    """印項組合；區塊、作者與所屬 issue 的純讀住 _common.comment_blocks（S13 共用）。"""
     printed, blocks = [], {}
     if comment is not None:
-        printed.append(f"裁定留言作者：{comment['author']}")
-        other = int(comment['issue_url'].rsplit('/', 1)[1])
-        if other != number:
+        found = comment_blocks(comment)
+        blocks = found['blocks']
+        printed.append(f"裁定留言作者：{found['author']}")
+        if found['issue'] != number:
             try:
-                other_id = read_card(client.issue(other)['body'] or '')['card_id']
+                other_id = block_object(client.issue(found['issue'])['body'], 'wf-card')['card_id']
             except (ValueError, TypeError, KeyError):
-                other_id = f'issue #{other}（卡ID 無法解析）'
+                other_id = f"issue #{found['issue']}（卡ID 無法解析）"
             printed.append(f"裁定留言不在本卡：{current['card_id']}、{other_id}")
-        for label in ('wf-return', 'wf-ruling'):
-            try:
-                blocks[label] = read_block(comment['body'] or '', label, required=False)
-            except ValueError as exc:
-                printed.append(str(exc))
-        if not any(value is not None for value in blocks.values()):
+        printed.extend(found['errors'])
+        if not any(present for present, _ in blocks.values()):
             printed.append('裁定留言無 wf-return／wf-ruling 區塊')
-    ruling = blocks.get('wf-ruling')
-    if expected == 'wf-return' and blocks.get(expected) is None:
+    has_return, returned = blocks.get('wf-return', (False, None))
+    has_ruling, ruling = blocks.get('wf-ruling', (False, None))
+    if has_return and not isinstance(returned, dict):
+        printed.append('wf-return 不是物件')
+    if expected == 'wf-return' and not has_return:
         printed.append('缺 wf-return 區塊')
     if expected in ('block', 'stop') and (not isinstance(ruling, dict) or ruling.get('kind') != expected):
         printed.append(f'缺 wf-ruling kind={expected}')
-    if ruling is not None:
+    if has_ruling:
         schema = compose_schema(catalog, 'wf-ruling')
         printed.extend(f'wf-ruling：{e.path}: {e.message}' for e in validate(ruling, schema))
         if isinstance(ruling, dict):
@@ -101,8 +84,8 @@ def _terminal_prints(card, client):
 def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=None,
          ruling=None, emit=print):
     """卡 ID 或 issue 號；S09 接收一般 stage/state 節點，阻塞展開僅供 D1。"""
-    number = _number(card, client)
-    printed = []
+    number, skipped = card_number(card, client)
+    printed = [f'略過無法解析的 issue #{other}' for other in skipped]
 
     def finish(result):
         lines = tuple([*printed, *result.printed])
@@ -122,19 +105,14 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     catalog = load_blocks(root) if catalog is None else catalog
     location = config['project']
     project = client.project(**location, field_names=projection(catalog)) if location else None
-    item_id = next((i['id'] for i in project['items']
-                    if (i.get('content') or {}).get('__typename') == 'Issue'
-                    and i['content'].get('repository', {}).get('nameWithOwner') == client.repo
-                    and i['content']['number'] == number), None) if project else None
+    item_id = board_items(project, client.repo, include_archived=True).get(number, {}).get('id')
     try:
-        current = read_card(client.issue(number)['body'] or '')
-        if not isinstance(current, dict):
-            raise ValueError('wf-card 不是物件')
+        current = block_object(client.issue(number)['body'], 'wf-card')
         if not is_legal_plan(current['stage_plan'], catalog=catalog):
             raise ValueError('stage_plan 不合階段序')
-        snapshot = _values(project, item_id) if item_id else None
+        snapshot = projection_values(project, item_id) if item_id else None
         if current.get('schema_version') == 1:
-            current, _ = _prepare(current, current, snapshot, catalog, ())
+            current, _ = prepare_card(current, current, snapshot, catalog, ())
         from_node = f"{current['stage']}/{current['state']}"
         to_node = to if '/' in to or to == '清單' else f"{current['stage']}/{to}"
         target_stage, _, target_state = to_node.partition('/')
@@ -148,7 +126,7 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
                 raise ValueError('--actor role 不在四值或缺 role:actor')
             if dispatch:
                 updated['owner'] = {'role': role, 'actor': name}
-        facts = _board_facts(project, catalog, number, client.repo)
+        facts = board_facts(project, catalog, self_number=number, repo=client.repo)
         enabled = [b.data for b in catalog.by_label('yaml wf-module')
                    if is_enabled(b.data, modules_list=module_names(config), card=updated,
                                  board_facts=facts)]
@@ -180,8 +158,9 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         printed.append('缺 --ruling')
     printed.extend(_ruling_prints(comment, current, number, expected,
                                  client=client, catalog=catalog, root=root))
-    if current['stage'] == '需求' and target_stage != '需求':
-        printed.append('缺欄清單：' + '、'.join(missing_fields(current, root)))
+    missing = missing_fields(current, root) if current['stage'] == '需求' and target_stage != '需求' else []
+    if missing and to_node != '清單':  # S08 查核 R1.8-2：非空且不是撤銷才印
+        printed.append('缺欄清單：' + '、'.join(missing))
     if current['stage'] == '規劃' and target_stage != '規劃':
         printed.extend(f'{key} 空' for key in ('acceptance', 'verification') if not current[key])
     if current['tier'] == 'T4' and not current['grilling']:
@@ -211,10 +190,10 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     if target in edges.terminal_nodes:
         printed.extend(_terminal_prints(updated, client))
     try:
-        updated, values = _prepare(updated, current, snapshot, catalog, enabled_names)
+        updated, values = prepare_card(updated, current, snapshot, catalog, enabled_names)
         if item_id:
             # 先解析整批新舊欄，確保對帳不會搶在 D3 檢查前寫入。
-            for valueset in (values, _prepare(current, current, snapshot, catalog, enabled_names)[1]):
+            for valueset in (values, prepare_card(current, current, snapshot, catalog, enabled_names)[1]):
                 for name, value in valueset.items():
                     client.prepare_project_field(project, item_id, name, value)
             changed = reconcile(current, client=client, catalog=catalog, item_id=item_id,
@@ -238,13 +217,9 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
 
 def run(argv=None, *, client, root='.', catalog=None):
     """S15 的參數接點；不修改總入口。"""
-    parser = argparse.ArgumentParser(prog='wf move')
-    parser.add_argument('card')
-    parser.add_argument('--to', required=True)
-    parser.add_argument('--actor')
-    parser.add_argument('--source-sha')
-    parser.add_argument('--ruling')
-    return move(**vars(parser.parse_args(argv)), client=client, root=root, catalog=catalog).rc
+    args = parse_args('wf move', argv, ('card', {}), ('--to', {'required': True}), ('--actor', {}),
+                      ('--source-sha', {}), ('--ruling', {}))
+    return move(**vars(args), client=client, root=root, catalog=catalog).rc
 
 
 main = run

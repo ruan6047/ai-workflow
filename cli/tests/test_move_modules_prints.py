@@ -122,6 +122,14 @@ def test_same_actor_and_archived_items_are_not_live(catalog, names):
     assert lines == ['無交集']
 
 
+def test_null_card_block_on_a_live_card_is_reported_unreadable(catalog, names):
+    """第 9 條探針：現役卡的 wf-card 值為 null ⇒ 印無法讀取（不當成無資源，也不例外中止）。"""
+    lines = prints(catalog, enabled=['resource-lock'], card_json=card(resources=['file:a.py']),
+                   project=board([item(names, 20, 'WF-002')]),
+                   client=Client({20: '```json wf-card\nnull\n```\n'}))
+    assert lines == ['無法讀取 WF-002 的 resources']
+
+
 def test_non_terminal_card_outside_in_progress_still_holds_resources(catalog, names):
     """F-結案-02／03：待確認卡未進終態，宣告的資源仍未釋放 → 交集要印。
 
