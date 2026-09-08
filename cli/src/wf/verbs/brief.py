@@ -257,13 +257,13 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     if cfg['project'] is not None and project is None:
         report('未能讀取 Project')
     enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
-    failed = check_card(current, client=client, number=number, catalog=catalog,
-                        enabled_modules=[module['name'] for module in enabled],
-                        printed=tuple(report))
+    failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
+                        enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
+                        printed=tuple(report)) or reconcile_projection(
+                            current, client=client, catalog=catalog, location=cfg['project'],
+                            project=project, number=number, report=report)
     if failed is not None:
         return failed
-    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
-                         project=project, number=number, report=report)
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
                           catalog=catalog, cfg=cfg, project=project, note_ids=[],
                           days=None if match is None else int(match[1]),

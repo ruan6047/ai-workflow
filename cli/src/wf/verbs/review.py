@@ -146,9 +146,9 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
     if errors:
         return reject(client, number, 'D3', '; '.join(f'{e.path}: {e.message}' for e in errors), tuple(report))
     # §2 檢查先於首次遠端寫入：交回單 D3 與來源 SHA D4 都過了才對帳，⛔ 不在拒收前寫板。
-    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
-                         project=project, number=number, report=report)
-    failed = _hints(data, current, number, role, sections, schema, client, root, catalog, report)
+    failed = reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
+                                  project=project, number=number, report=report) or _hints(
+        data, current, number, role, sections, schema, client, root, catalog, report)
     if failed is not None:
         return failed
     report('未能取得 git 附錄')

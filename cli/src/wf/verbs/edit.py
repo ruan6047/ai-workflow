@@ -105,17 +105,17 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
     target = ({'project_owner': project_owner, 'project_number': project_number, 'item_id': item_id}
               if key in {spec['key'] for spec in projection(catalog).values()}
               else {'write_projection': False})
-    try:  # §2 檢查先於首次遠端寫入：新舊卡整批算完（含 max_bytes 與五欄可寫性）才對帳（同 move）
+    try:  # §2 檢查先於首次遠端寫入：新卡整批算完（含 max_bytes 與五欄可寫性）才對帳（同 move）
         snapshot = projection_values(board, item_id) if target.get('item_id') else None
         _, values = prepare_card(updated, current, snapshot, catalog, enabled_modules)
-        for valueset in ((values, prepare_card(current, current, snapshot, catalog,
-                                               enabled_modules)[1]) if item_id else ()):
-            for name, field in valueset.items():
-                client.prepare_project_field(board, item_id, name, field)
-        reconcile_projection(current, client=client, catalog=catalog, location=location,
-                             project=board, number=number, report=report)
+        for name, field in (values if item_id else {}).items():
+            client.prepare_project_field(board, item_id, name, field)
+        failed = reconcile_projection(current, client=client, catalog=catalog, location=location,
+                                      project=board, number=number, report=report)
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
+    if failed is not None:  # 對帳自己的欄算不出＝已拒收（舊卡欄由 reconcile 先算後寫）
+        return replace(failed, printed=tuple(report))
     if key in current and _equal(current[key], value):
         return WriteResult(0, card=current, printed=tuple(report))
     if key in ('acceptance', 'verification', 'non_scope', 'resources'):

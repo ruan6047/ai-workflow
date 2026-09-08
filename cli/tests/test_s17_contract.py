@@ -41,7 +41,7 @@ def deny_network(monkeypatch):
         subprocess.run(['gh', 'api', 'negative-control'])
 
 
-# ── FINAL2-1：對帳（會寫 set_project_field）⛔ 不得搶在完整驗證之前 ──────────────
+# ── FINAL2-1：對帳（會寫投影欄）⛔ 不得搶在完整驗證之前 ────────────────────────
 # 三個反例逐字取自 astra 複驗表：卡面 T1／板上 T3，拒收前板上都已變 T1。
 
 CASES = ['review-非法鍵', 'review-branch-null', 'edit-owner-超長']
@@ -115,7 +115,7 @@ def test_hoisting_the_reconcile_writes_the_board_before_the_rejection(tmp_path, 
     result, _ = run_case(case, tmp_path, root, client, catalog)
     writes = [name for name, _ in client.calls if name in WRITES]
     assert result.rc != 0, result
-    assert 'set_project_field' in writes, writes
+    assert 'write_project_field' in writes, writes  # S18：對帳改走 prepare→write
     assert writes != ['post_comment']
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T1'}
     print('FINAL2-1 負控', case, writes)

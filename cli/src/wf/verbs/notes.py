@@ -90,13 +90,13 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     else:
         project = client.project(**cfg['project'], field_names=projection(catalog))
     enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
-    failed = check_card(current, client=client, number=number, catalog=catalog,
-                        enabled_modules=[module['name'] for module in enabled],
-                        printed=tuple(report))
+    failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
+                        enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
+                        printed=tuple(report)) or reconcile_projection(
+                            current, client=client, catalog=catalog, location=cfg['project'],
+                            project=project, number=number, report=report)
     if failed is not None:
         return failed
-    reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
-                         project=project, number=number, report=report)
     role = (current.get('owner') or {}).get('role') if for_role is None else for_role
     if role is None:
         report('卡面 owner 未填，角色注意事項全印')

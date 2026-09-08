@@ -114,13 +114,15 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
 
 def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
     project = client.project(project_owner, project_number, projection(catalog))
-    actual = projection_values(project, item_id)
-    changed = []
-    for name, value in projected(card, catalog).items():
-        if not _equal(actual.get(name), value):
-            client.set_project_field(project, item_id, name, value)
-            changed.append(name)
-    return changed
+    values, actual, fields = projected(card, catalog), projection_values(project, item_id), {}
+    for name in [key for key, value in values.items() if not _equal(actual.get(key), value)]:
+        try:  # §2 檢查先於首次遠端寫入：不等的欄整批算完（含單選選項解析）才開始寫
+            fields[name] = client.prepare_project_field(project, item_id, name, values[name])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise ValueError(f'{name} 投影欄無法解析：{exc}') from exc
+    for field in fields.values():
+        client.write_project_field(field)
+    return list(fields)
 
 
 def check_card(card, *, client, number, catalog, enabled_modules=(), printed=()):
@@ -134,16 +136,18 @@ def check_card(card, *, client, number, catalog, enabled_modules=(), printed=())
 
 
 def reconcile_projection(card, *, client, catalog, location, project, number, report):
-    """§2 對帳：不等即以卡面 JSON 重寫該欄後續跑並印，⛔ 不拒收；無 Project／不在板上即略過。"""
-    if location is None or project is None:
-        return ()
-    if any(spec['key'] not in card for spec in projection(catalog).values()):
-        return ()  # 缺投影鍵＝各動詞的驗卡面（check_card／prepare_card）處置，此處 ⛔ 不對帳
+    """§2 對帳：不等即以卡面 JSON 重寫該欄後續跑並印，⛔ 不拒收；無 Project／不在板上略過；欄算不出＝零業務寫入的單一 D3 拒收（回非 None，呼叫端即停）。"""
+    if location is None or project is None or any(
+            spec['key'] not in card for spec in projection(catalog).values()):
+        return None  # 缺投影鍵＝各動詞的驗卡面（check_card／prepare_card）處置，此處 ⛔ 不對帳
     item_id = board_items(project, client.repo, include_archived=True).get(number, {}).get('id')
     if item_id is None:
-        return ()
-    changed = reconcile(card, client=client, catalog=catalog, item_id=item_id,
-                        project_owner=location['owner'], project_number=location['number'])
+        return None
+    try:
+        changed = reconcile(card, client=client, catalog=catalog, item_id=item_id,
+                            project_owner=location['owner'], project_number=location['number'])
+    except (ValueError, TypeError, KeyError) as exc:
+        return reject(client, number, 'D3', str(exc), tuple(report))
     if changed:
         report('重寫投影欄：' + '、'.join(changed))
-    return changed
+    return None

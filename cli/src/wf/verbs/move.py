@@ -192,10 +192,8 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     try:
         updated, values = prepare_card(updated, current, snapshot, catalog, enabled_names)
         if item_id:
-            # 先解析整批新舊欄，確保對帳不會搶在 D3 檢查前寫入。
-            for valueset in (values, prepare_card(current, current, snapshot, catalog, enabled_names)[1]):
-                for name, value in valueset.items():
-                    client.prepare_project_field(project, item_id, name, value)
+            for name, value in values.items():  # 先解析整批新卡欄，確保對帳不搶在 D3 檢查前寫入
+                client.prepare_project_field(project, item_id, name, value)
             changed = reconcile(current, client=client, catalog=catalog, item_id=item_id,
                                 project_owner=location['owner'], project_number=location['number'])
             if changed:

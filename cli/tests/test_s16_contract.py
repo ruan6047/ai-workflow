@@ -171,7 +171,7 @@ def test_next_verb_rewrites_the_drifted_projection_column(tmp_path, catalog, ver
 def test_without_the_reconcile_call_the_drift_survives(tmp_path, catalog, verb, monkeypatch):
     """FINAL-2b 負控：拿掉對帳呼叫 ⇒ 板上仍是 T3、那一行不再出現。"""
     for module in ('notes', 'brief', 'review'):
-        monkeypatch.setattr(f'wf.verbs.{module}.reconcile_projection', lambda *a, **k: ())
+        monkeypatch.setattr(f'wf.verbs.{module}.reconcile_projection', lambda *a, **k: None)
     root = make_root(tmp_path)
     client = board_client(catalog, card(tier='T1', branch='wf/WF-001', source_sha='b' * 40))
     result, lines = run_verb(verb, tmp_path, root, client)
