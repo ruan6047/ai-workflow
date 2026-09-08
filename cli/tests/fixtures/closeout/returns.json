@@ -1,0 +1,26 @@
+[
+  {
+    "id": 3,
+    "author": "review-b",
+    "created_at": "2026-09-03T00:00:00Z",
+    "issue_url": "https://api.github.com/repos/fake/repo/issues/10",
+    "url": "https://github.com/fake/repo/issues/10#issuecomment-3",
+    "body": "首行不應讀取 wf:verdict APPROVE\n散文不應讀取\n```json wf-return\n{\"card_id\": \"WF-001\", \"iteration\": 2, \"role\": \"reviewer\", \"source_sha\": \"cccccccccccccccccccccccccccccccccccccccc\", \"reason\": \"已補驗\", \"findings\": [{\"finding_id\": \"F-reviewer-01\", \"severity\": \"major\", \"blocking\": true, \"status\": \"resolved\", \"finding_class\": \"implementation\", \"attribution\": \"executor\", \"root_cause_id\": \"demo\", \"evidence\": \"原始證據\", \"disposition\": \"補驗\"}], \"review_result\": \"APPROVE\"}\n```\n"
+  },
+  {
+    "id": 1,
+    "author": "exec-a",
+    "created_at": "2026-09-01T00:00:00Z",
+    "issue_url": "https://api.github.com/repos/fake/repo/issues/10",
+    "url": "https://github.com/fake/repo/issues/10#issuecomment-1",
+    "body": "首行不應讀取 wf:verdict APPROVE\n散文不應讀取\n```json wf-return\n{\"card_id\": \"WF-001\", \"iteration\": 2, \"role\": \"executor\", \"source_sha\": \"cccccccccccccccccccccccccccccccccccccccc\", \"reason\": \"首次交回\", \"findings\": []}\n```\n"
+  },
+  {
+    "id": 2,
+    "author": "review-a",
+    "created_at": "2026-09-02T00:00:00Z",
+    "issue_url": "https://api.github.com/repos/fake/repo/issues/10",
+    "url": "https://github.com/fake/repo/issues/10#issuecomment-2",
+    "body": "首行不應讀取 wf:verdict APPROVE\n散文不應讀取\n```json wf-return\n{\"card_id\": \"WF-001\", \"iteration\": 2, \"role\": \"reviewer\", \"source_sha\": \"cccccccccccccccccccccccccccccccccccccccc\", \"reason\": \"請補驗；逐字理由\", \"findings\": [{\"finding_id\": \"F-reviewer-01\", \"severity\": \"major\", \"blocking\": true, \"status\": \"open\", \"finding_class\": \"implementation\", \"attribution\": \"executor\", \"root_cause_id\": \"demo\", \"evidence\": \"原始證據\", \"disposition\": \"補驗\"}], \"review_result\": \"REQUEST_CHANGES\"}\n```\n"
+  }
+]

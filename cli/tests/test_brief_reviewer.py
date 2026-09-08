@@ -152,10 +152,10 @@ def test_localgit_wraps_merge_tree_only():
 def test_run_wires_for_choices_and_card_id_lookup(tmp_path):
     """verbs.md §1：`--for` 值域＝TARGETS 的鍵（S12 掛 closeout）；卡ID 可查 issue 號。"""
     root = make_root(tmp_path)
-    assert sorted(TARGETS) == ['executor', 'reviewer']
+    assert sorted(TARGETS) == ['closeout', 'executor', 'reviewer']  # S12 已掛 closeout
     assert run(['10', '--for', 'reviewer'], client=make_client(card()), root=root) == 0
     with pytest.raises(SystemExit):
-        run(['10', '--for', 'closeout'], client=make_client(card()), root=root)
+        run(['10', '--for', '不存在'], client=make_client(card()), root=root)
     lines = []
     result = brief('WF-001', target='executor', client=make_client(card()), root=root,
                    emit=lines.append)

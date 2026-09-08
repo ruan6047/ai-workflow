@@ -26,6 +26,7 @@ from wf.verbs._common import (Printer, block_object, board_facts, card_number, c
 from wf.verbs._write import WriteResult, reject
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
+from wf.verbs import closeout
 
 DISPATCH, PARAMS = 'core/dispatch.md', 'core/params.md'
 MAIN = 'main'  # 預設分支名（core/dispatch.md 基線列「基線＝main 頭」）
@@ -206,7 +207,7 @@ def _dispatch_sections(ctx):
             out += _module_sections(ctx)
     return out
 
-TARGETS = {'executor': _dispatch_sections, REVIEWER: _dispatch_sections}
+TARGETS = {'executor': _dispatch_sections, REVIEWER: _dispatch_sections, 'closeout': closeout.sections}
 
 def _template(ctx):
     """dispatch.md 末段的預填（note_responses ⛔ 不含候選）；其餘鍵留空依 return.md 的 required。"""
@@ -219,7 +220,7 @@ def _template(ctx):
         body.setdefault(key, '')
     return body
 
-def brief(card, *, target, client, root='.', catalog=None, emit=print, today=None):
+def brief(card, *, target, client, root='.', catalog=None, emit=print, today=None, **trailers):
     report = Printer(emit)
     catalog = load_blocks(root) if catalog is None else catalog
     cfg = load_project_config(root)
@@ -241,17 +242,27 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
                           catalog=catalog, cfg=cfg, project=project, note_ids=[],
                           days=None if match is None else int(match[1]),
                           today=date.today() if today is None else today)
+    if target == 'closeout':
+        ctx.trailers = trailers
     for name, mark, lines in TARGETS[target](ctx):
         report('## ' + name)
         report(mark)
         for line in lines:
             report(line)
-    report(TEMPLATE_HEAD)
-    report(json.dumps(_template(ctx), ensure_ascii=False, indent=2))
+    if target == 'closeout':
+        for line in closeout.squash(ctx):
+            report(line)
+    else:
+        report(TEMPLATE_HEAD)
+        report(json.dumps(_template(ctx), ensure_ascii=False, indent=2))
     return WriteResult(0, card=current, printed=tuple(report))
 
 def run(argv, *, client, root='.', catalog=None):
     """只解析本動詞參數；七動詞接線由 S15 提供。`--for` 值域＝TARGETS 的鍵。"""
     args = parse_args('wf brief', argv, ('card', {}), ('--for', {'dest': 'target', 'required': True,
-                                                                   'choices': sorted(TARGETS)}))
-    return brief(args.card, target=args.target, client=client, root=root, catalog=catalog).rc
+                                                                   'choices': sorted(TARGETS)}),
+                      ('--requested-by', {}), ('--planned-by', {}), ('--implemented-by', {}),
+                      ('--reviewed-by', {'action': 'append'}))
+    trailers = {key: getattr(args, key) for key in
+                ('requested_by', 'planned_by', 'implemented_by', 'reviewed_by')} if args.target == 'closeout' else {}
+    return brief(args.card, target=args.target, client=client, root=root, catalog=catalog, **trailers).rc
