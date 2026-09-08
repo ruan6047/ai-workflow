@@ -18,7 +18,7 @@ from wf.verbs import _write
 from wf.verbs.edit import edit
 
 from .test_brief_sections import card, make_root, WRITES
-from .test_s16_contract import RULES, board_client, first_lines, rejects, run_verb
+from .test_card_gate_and_projection import RULES, board_client, first_lines, rejects, run_verb
 
 # 板上：階段／狀態與卡面（執行／進行中）不同，級別 T3 與卡面 T1 不同 ⇒ 三欄都要重寫。
 DRIFTED = {'階段': {'name': '規劃'}, '狀態': {'name': '待辦'}, '級別': {'name': 'T3'},
@@ -105,7 +105,7 @@ def test_writing_each_column_as_it_is_resolved_breaks_the_same_three_cases(tmp_p
     assert writes[:2] == ['write_project_field', 'write_project_field'], writes
     assert writes != ['post_comment']
     assert client.board['items'][0]['fieldValues']['階段'] == {'name': '執行'}
-    print('S18 FINAL3-1 負控', verb, writes)
+    print('FINAL3-1 負控', verb, writes)
 
 
 # ── 正控：欄都解析得出時，對帳照舊重寫並印 ──────────────────────────────────

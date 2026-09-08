@@ -19,7 +19,7 @@ from wf.verbs.edit import edit
 from wf.verbs.review import review
 
 from .test_brief_sections import block, card, make_client, make_root, WRITES
-from .test_s16_contract import RULES, board_client, first_lines, previous_section, rejects, sheet
+from .test_card_gate_and_projection import RULES, board_client, first_lines, previous_section, rejects, sheet
 
 LOCATION = {'owner': 'fake', 'number': 1}
 REWRITE = '重寫投影欄：級別'
