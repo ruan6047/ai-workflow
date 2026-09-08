@@ -145,7 +145,7 @@ def test_edit_leaves_the_board_alone_for_non_projection_keys(tmp_path, catalog):
     assert result.rc == 0
     # S17：試算（prepare_project_field）是讀不是寫；此列要的是零投影欄「寫入」。
     assert [name for name, _ in client.calls
-            if name in ('write_project_field', 'set_project_field')] == []
+            if name == 'write_project_field'] == []
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T3'}
 
 
@@ -188,7 +188,7 @@ def test_snapshot_only_prints_the_mismatch(tmp_path, catalog):
     result = snapshot(client=client, root=root, catalog=catalog, out=tmp_path / 'out',
                       emit=lines.append)
     assert result.rc == 0
-    assert not [name for name, _ in client.calls if name == 'set_project_field']
+    assert not [name for name, _ in client.calls if name == 'write_project_field']
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T3'}
     assert not [line for line in lines if line.startswith('重寫投影欄：')]
 

@@ -28,7 +28,7 @@ def rejected(result, fake, code, key=''):
     assert comments[0][1]['body'].startswith('拒收・' + code + '・')
     assert key in comments[0][1]['body']
     assert not mutations(fake, 'update_card_body')
-    assert not mutations(fake, 'set_project_field')
+    assert not mutations(fake, 'write_project_field')
 
 
 @pytest.mark.parametrize('key,code', [('card_id', 'D3'), ('source_issue', 'D3'),
@@ -156,7 +156,7 @@ def test_parent_depth(card, catalog, depth, capsys):
     # D4 parent 盤點仍不取投影欄；§2 對帳另取五欄（本卡不在板上，對帳止於取不到 item_id）。
     calls = [kw['field_names'] for name, kw in fake.calls if name == 'project']
     assert calls == ([[]] if depth == 0 else [[], list(projection(catalog))])
-    assert not mutations(fake, 'set_project_field')
+    assert not mutations(fake, 'write_project_field')
 
 
 def test_null_parent_needs_no_board(card, catalog):
@@ -170,7 +170,7 @@ def test_tier_defers_projection_without_project_config(card, catalog):
     """`.wf/modules.json` 無 project：投影鍵也只寫卡面，⛔ 不碰 Project（FINAL-2a 的降級路徑）。"""
     result, fake = run(card, catalog, 'tier="T3"')
     assert result.rc == 0
-    assert not any(name in ('project', 'set_project_field') for name, kw in fake.calls)
+    assert not any(name in ('project', 'write_project_field') for name, kw in fake.calls)
     changed = reconcile(result.card, client=fake, catalog=catalog, project_owner='owner',
                         project_number=1, item_id='ITEM')
     assert changed == ['級別']

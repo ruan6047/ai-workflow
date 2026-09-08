@@ -114,7 +114,8 @@ def test_bad_url_is_identifiable_without_network(url):
 def test_field_name_id_option_resolution_and_clear(value, data_type, operation):
     runner = ApiFake()
     project = {'id': 'PROJECT', 'fields': [{'name': '呼叫端欄', 'id': 'FIELD', 'dataType': data_type}]}
-    GhClient('a/b', runner=runner).set_project_field(project, 'ITEM', '呼叫端欄', value)
+    client = GhClient('a/b', runner=runner)
+    client.write_project_field(client.prepare_project_field(project, 'ITEM', '呼叫端欄', value))
     payload = json.loads(runner.calls[-1][1]['input'])
     assert operation in payload['query']
     inputs = payload['variables']['input']
@@ -187,14 +188,15 @@ def test_shared_fake_records_all_writes_in_order():
     fake = FakeGhClient()
     fake.update_card_body(295, {'x': 1}, create=True)
     fake.post_comment(295, 'wf:reject', '拒收・D3・原因')
-    fake.set_project_field({'id': 'P'}, 'I', '欄', None)
+    fake.write_project_field(('clearProjectV2ItemFieldValue', 'ClearProjectV2ItemFieldValueInput',
+                             {'projectId': 'P', 'itemId': 'I', 'fieldId': '欄'}))
     fake.add_to_project('P', 'ISSUE')
     fake.remove_from_project('P', 'I')
     fake.close_issue(295)
-    assert [name for name, kw in fake.calls] == ['update_card_body', 'post_comment', 'set_project_field',
+    assert [name for name, kw in fake.calls] == ['update_card_body', 'post_comment', 'write_project_field',
                                                 'add_to_project', 'remove_from_project', 'close_issue']
     assert fake.calls[0][1] == dict(number=295, card_json={'x': 1}, create=True)
-    assert fake.calls[2][1]['value'] is None
+    assert 'value' not in fake.calls[2][1][2]
     assert fake.responses == {}
 
 

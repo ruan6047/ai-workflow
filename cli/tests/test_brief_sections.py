@@ -21,7 +21,7 @@ from wf.verbs.brief import TEMPLATE_HEAD, _rows, brief
 RULES = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / 'fixtures/brief'
 TODAY = date(2026, 9, 8)
-WRITES = ('update_card_body', 'post_comment', 'set_project_field', 'write_project_field',
+WRITES = ('update_card_body', 'post_comment', 'write_project_field',
           'add_to_project', 'remove_from_project', 'close_issue')
 SOURCE = re.compile(r'^\[來源: (core|module|project|card)/[^ ]+ · [^：]+：.+ · '
                     r'confirmed \d{4}-\d{2}-\d{2}\]( ⚠️)?$')

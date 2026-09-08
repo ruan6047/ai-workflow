@@ -17,7 +17,7 @@ import wf.verbs.snapshot as snapshot_module
 
 RULES = Path(__file__).resolve().parents[2]
 NOW = '2026-09-08T00:00:00+00:00'
-WRITES = ('update_card_body', 'set_project_field', 'write_project_field',
+WRITES = ('update_card_body', 'write_project_field',
           'add_to_project', 'remove_from_project', 'close_issue')
 
 
@@ -238,7 +238,7 @@ def test_reconcile_prints_and_never_writes(setup, catalog):
     assert result.printed == ('WF-007 級別：卡面=T2 投影=T1',)
     assert result.data['mismatches'] == [
         {'card_id': 'WF-007', 'number': 1, 'field': '級別', 'card': 'T2', 'projection': 'T1'}]
-    assert [name for name, _ in client.calls if name == 'set_project_field'] == []
+    assert [name for name, _ in client.calls if name == 'write_project_field'] == []
     assert_read_only(client)
 
 

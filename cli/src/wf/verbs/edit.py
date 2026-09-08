@@ -109,7 +109,10 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
         snapshot = projection_values(board, item_id) if target.get('item_id') else None
         _, values = prepare_card(updated, current, snapshot, catalog, enabled_modules)
         for name, field in (values if item_id else {}).items():
-            client.prepare_project_field(board, item_id, name, field)
+            try:  # 算不出的欄，拒收本文要指得出是哪一欄（形狀同 _write.reconcile）
+                client.prepare_project_field(board, item_id, name, field)
+            except (ValueError, TypeError, KeyError) as exc:
+                raise ValueError(f'{name} 投影欄無法解析：{exc}') from exc
         failed = reconcile_projection(current, client=client, catalog=catalog, location=location,
                                       project=board, number=number, report=report)
     except (ValueError, TypeError, KeyError) as exc:

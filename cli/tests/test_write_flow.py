@@ -20,7 +20,8 @@ class ProjectionFake(FakeGhClient, WriteMixin):
 
     def write_project_field(self, field):
         prepared, project, item_id, name, value = field
-        return self.set_project_field(project, item_id, name, value)
+        self.calls.append(('write_project_field', dict(name=name, value=value, prepared=prepared)))
+        return {'data': {prepared[0]: {'projectV2Item': {'id': item_id}}}}
 
     def _request(self, endpoint, **kwargs):
         assert endpoint == 'graphql' and 'query' in kwargs and 'payload' not in kwargs
@@ -53,7 +54,7 @@ def simulated(card, catalog, *, mismatch=(), bad_body=False):
     def project(**kwargs):
         result = deepcopy(values)
         for name, kw in fake.calls:
-            if name == 'set_project_field' and kw['name'] not in mismatch:
+            if name == 'write_project_field' and kw['name'] not in mismatch:
                 result[kw['name']] = kw['value']
         return project_of(result)
 
@@ -68,7 +69,7 @@ def run(card, catalog, fake, **kwargs):
 
 
 def mutations(fake, method=None):
-    names = {'update_card_body', 'set_project_field', 'post_comment'} if method is None else {method}
+    names = {'update_card_body', 'write_project_field', 'post_comment'} if method is None else {method}
     return [(name, kw) for name, kw in fake.calls if name in names]
 
 
@@ -102,8 +103,8 @@ def test_write_order_and_equal_readback(card, catalog):
     result = run(updated, catalog, fake)
     assert result.rc == 0 and result.card == updated
     print('WRITE_ORDER', [name for name, kw in fake.calls])
-    assert [name for name, kw in mutations(fake)] == ['update_card_body'] + ['set_project_field'] * len(projection(catalog))
-    assert [kw['name'] for name, kw in mutations(fake, 'set_project_field')] == list(projection(catalog))
+    assert [name for name, kw in mutations(fake)] == ['update_card_body'] + ['write_project_field'] * len(projection(catalog))
+    assert [kw['name'] for name, kw in mutations(fake, 'write_project_field')] == list(projection(catalog))
     assert [name for name, kw in fake.calls][-2:] == ['issue', 'project']
     first_write = next(i for i, (name, kw) in enumerate(fake.calls) if name == 'update_card_body')
     assert [kw['name'] for name, kw in fake.calls[:first_write]
@@ -117,7 +118,7 @@ def test_readback_mismatch_rejects_once(card, catalog):
     print('READBACK_RESULT', result.rc, 'REJECT_COMMENTS', len(mutations(fake, 'post_comment')))
     assert_reject(result, fake)
     assert result.reason == '回讀不等'
-    assert len(mutations(fake, 'set_project_field')) == len(projection(catalog))
+    assert len(mutations(fake, 'write_project_field')) == len(projection(catalog))
 
 
 @pytest.mark.parametrize('change', [
@@ -128,11 +129,11 @@ def test_readback_mismatch_rejects_once(card, catalog):
 def test_prevalidation_rejects_before_data_writes(card, catalog, change):
     fake = simulated(card, catalog)
     result = run(card | change, catalog, fake)
-    print('DATA_WRITE_COUNTS', len(mutations(fake, 'update_card_body')), len(mutations(fake, 'set_project_field')))
+    print('DATA_WRITE_COUNTS', len(mutations(fake, 'update_card_body')), len(mutations(fake, 'write_project_field')))
     assert not mutations(fake, 'update_card_body')
     assert_reject(result, fake)
     assert not mutations(fake, 'update_card_body')
-    assert not mutations(fake, 'set_project_field')
+    assert not mutations(fake, 'write_project_field')
 
 
 @pytest.mark.parametrize('key', ['owner', 'card_id'])
@@ -152,7 +153,7 @@ def test_utf8_max_bytes_from_projection(card, catalog, key, extra):
     if extra:
         assert_reject(result, fake)
         assert not mutations(fake, 'update_card_body')
-    assert not any(name in ('project', 'set_project_field') for name, kw in fake.calls)
+    assert not any(name in ('project', 'write_project_field') for name, kw in fake.calls)
 
 
 @pytest.mark.parametrize('changes', [(), ('stage',), ('stage', 'state', 'tier')])
@@ -174,7 +175,7 @@ def test_without_project_still_checks_card(card, catalog, option, bad_body):
     fake = simulated(card, catalog, bad_body=bad_body)
     result = run(card | {'feature': '更新'}, catalog, fake, **option)
     assert result.rc == int(bad_body)
-    assert not any(name in ('project', 'set_project_field') for name, kw in fake.calls)
+    assert not any(name in ('project', 'write_project_field') for name, kw in fake.calls)
     assert result.printed == (() if 'write_projection' in option else ('無 Project 設定',))
     if bad_body:
         assert_reject(result, fake)
@@ -235,7 +236,7 @@ def test_migration_uses_supplied_snapshot_without_project_io(card, catalog):
     fake = simulated(card, catalog)
     result = run(card, catalog, fake, write_projection=False, projection_values=snapshot)
     assert result.rc == 0 and result.card['stage'] == '執行' and result.card['state'] == '進行中'
-    assert not any(name in ('project', 'set_project_field') for name, kw in fake.calls)
+    assert not any(name in ('project', 'write_project_field') for name, kw in fake.calls)
 
 
 @pytest.mark.parametrize('missing', ['body', 'item'])
@@ -246,7 +247,7 @@ def test_missing_readback_data_is_d3(card, catalog, missing):
         fake.responses['issue'] = lambda **kw: {'body': None} if mutations(fake, 'update_card_body') else previous(**kw)
     else:
         previous = fake.responses['project']
-        fake.responses['project'] = lambda **kw: {'items': []} if mutations(fake, 'set_project_field') else previous(**kw)
+        fake.responses['project'] = lambda **kw: {'items': []} if mutations(fake, 'write_project_field') else previous(**kw)
     assert_reject(run(card, catalog, fake), fake)
 
 
@@ -299,7 +300,7 @@ def test_projection_resolution_precedes_data_writes(card, catalog, missing):
     assert_reject(result, fake)
     assert [kw['name'] for method, kw in fake.calls if method == 'prepare_project_field'] == names[:1]
     assert not mutations(fake, 'update_card_body')
-    assert not mutations(fake, 'set_project_field')
+    assert not mutations(fake, 'write_project_field')
     print('PROJECTION_REJECT', missing, 'RC', result.rc, 'COMMENTS', len(mutations(fake, 'post_comment')),
           'BODY_WRITES', len(mutations(fake, 'update_card_body')),
-          'FIELD_WRITES', len(mutations(fake, 'set_project_field')))
+          'FIELD_WRITES', len(mutations(fake, 'write_project_field')))

@@ -28,12 +28,15 @@ def reject(client, number, code, reason, printed=()):
     return WriteResult(1, reason=reason, rejection=comment, printed=printed)
 
 
-def projected(card, catalog):
+def projected(card, catalog, check=False):
+    """check=True 另驗 §5 max_bytes（UTF-8 位元組，D3）；snapshot 唯讀對帳（§2 例外）要原值，故預設不驗。"""
     values = {}
     for name, spec in projection(catalog).items():
         value = card[spec['key']]
         if spec['key'] == 'owner' and value is not None:
             value = f"{value['role']}:{value['actor']}"
+        if check and 'max_bytes' in spec and value is not None and len(value.encode('utf-8')) > spec['max_bytes']:
+            raise ValueError(f'{name} 超過 max_bytes')
         values[name] = value
     return values
 
@@ -66,13 +69,7 @@ def prepare_card(card, current, snapshot, catalog, enabled_modules):
             raise ValueError(f'{key} 建卡後不可改')
     if not is_legal_plan(card['stage_plan'], catalog=catalog):
         raise ValueError('stage_plan 不合階段序')
-    values = projected(card, catalog)
-    for name, spec in projection(catalog).items():
-        value = values[name]
-        if 'max_bytes' in spec and value is not None:
-            if len(value.encode('utf-8')) > spec['max_bytes']:
-                raise ValueError(f'{name} 超過 max_bytes')
-    return card, values
+    return card, projected(card, catalog, check=True)
 
 
 _values, _prepare = projection_values, prepare_card  # 舊名別名（S10b 前的呼叫端）
@@ -114,7 +111,7 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
 
 def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
     project = client.project(project_owner, project_number, projection(catalog))
-    values, actual, fields = projected(card, catalog), projection_values(project, item_id), {}
+    values, actual, fields = projected(card, catalog, check=True), projection_values(project, item_id), {}
     for name in [key for key, value in values.items() if not _equal(actual.get(key), value)]:
         try:  # §2 檢查先於首次遠端寫入：不等的欄整批算完（含單選選項解析）才開始寫
             fields[name] = client.prepare_project_field(project, item_id, name, values[name])

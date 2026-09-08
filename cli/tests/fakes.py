@@ -61,9 +61,11 @@ class FakeGhClient:
         return {'id': 1, 'html_url': f'https://github.com/fake/repo/issues/{number}#issuecomment-1',
                 'body': first_line + '\n' + body}
 
-    def set_project_field(self, project, item_id, name, value):
-        self.calls.append(('set_project_field', deepcopy(dict(project=project, item_id=item_id, name=name, value=value))))
-        return {'data': {'updateProjectV2ItemFieldValue': {'projectV2Item': {'id': item_id}}}}
+    def write_project_field(self, prepared):
+        """投影欄的唯一寫入口（S20 刪 WriteMixin.set_project_field 後）；prepared 由 prepare_project_field 產。"""
+        self.calls.append(('write_project_field', deepcopy(prepared)))
+        operation, _, inputs = prepared
+        return {'data': {operation: {'projectV2Item': {'id': inputs['itemId']}}}}
 
     def add_to_project(self, project_id, issue_id):
         self.calls.append(('add_to_project', dict(project_id=project_id, issue_id=issue_id)))

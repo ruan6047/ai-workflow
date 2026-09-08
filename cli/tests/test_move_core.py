@@ -37,9 +37,6 @@ class MoveClient(MemoryClient):
                               comment={'author': 'requester-account', 'issue_url': 'https://api.github.com/repos/fake/repo/issues/10',
                                        'body': block('wf-ruling', {'kind': 'other', 'reason': '原文'})})
 
-    def set_project_field(self, *args):
-        return WriteMixin.set_project_field(self, *args)
-
     def comment_from_url(self, url):
         return WriteMixin.comment_from_url(self, url)
 

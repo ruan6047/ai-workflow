@@ -6,6 +6,7 @@ core/card-schema.md §5 `json wf-projection`（欄名↔卡面鍵）、core/enum
 反例逐字取自 astra 複驗表：卡面 stage／state 相對板上已漂移、板上第三欄「級別」缺 T1 選項。
 每條各一正向一負控（roles/conduct-common.md §1）；GitHub 全由既有替身接住，⛔ 不碰網路。
 """
+from pathlib import Path
 import socket
 import subprocess
 
@@ -13,8 +14,8 @@ import pytest
 
 from wf.compose.blocks import load_blocks, projection
 from wf.compose.validate import _equal
-from wf.gh.writes import WriteMixin
 from wf.verbs import _write
+from wf.verbs import edit as edit_module
 from wf.verbs.edit import edit
 
 from .test_brief_sections import card, make_root, WRITES
@@ -59,14 +60,13 @@ def run_one(verb, tmp_path, root, client, catalog):
 
 
 def legacy_reconcile(card_json, *, client, catalog, project_owner, project_number, item_id):
-    """負控：S17 之前的逐欄邊算邊寫（＝astra FINAL3-1 的反例來源），走正式的
-    WriteMixin.set_project_field＝prepare 完一欄就寫一欄。"""
+    """負控：S17 之前的逐欄邊算邊寫（＝astra FINAL3-1 的反例來源）＝prepare 完一欄就寫一欄。"""
     project = client.project(project_owner, project_number, projection(catalog))
     actual = _write.projection_values(project, item_id)
     changed = []
     for name, value in _write.projected(card_json, catalog).items():
         if not _equal(actual.get(name), value):
-            WriteMixin.set_project_field(client, project, item_id, name, value)
+            client.write_project_field(client.prepare_project_field(project, item_id, name, value))
             changed.append(name)
     return changed
 
@@ -85,8 +85,7 @@ def test_unresolvable_projection_column_writes_nothing_before_the_rejection(tmp_
     assert writes == ['post_comment'], writes
     assert first_lines(client) == ['wf:reject']
     assert rejects(client)[0]['body'].startswith('拒收・D3・')
-    if verb != 'edit':  # 三支走共用對帳，拒收本文要指出是哪一欄算不出
-        assert '級別' in rejects(client)[0]['body'], rejects(client)[0]['body']
+    assert '級別' in rejects(client)[0]['body'], rejects(client)[0]['body']  # 四支都要指出哪一欄算不出
     assert client.board['items'][0]['fieldValues'] == DRIFTED
     print('S18 FINAL3-1', verb, writes, rejects(client)[0]['body'])
 
@@ -122,3 +121,31 @@ def test_resolvable_columns_still_reconcile_the_whole_drift(tmp_path, catalog, v
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T1'}
     assert client.board['items'][0]['fieldValues']['階段'] == {'name': '執行'}
     assert client.board['items'][0]['fieldValues']['狀態'] == {'name': '進行中'}
+
+
+def edit_without_the_field_name_wrapper():
+    """負控用：把 edit 新卡欄位解析的欄名包裝拿掉（＝astra 複驗的被審版本），回傳該版 edit。"""
+    source = Path(edit_module.__file__).read_text(encoding='utf-8')
+    old = """            try:  # 算不出的欄，拒收本文要指得出是哪一欄（形狀同 _write.reconcile）
+                client.prepare_project_field(board, item_id, name, field)
+            except (ValueError, TypeError, KeyError) as exc:
+                raise ValueError(f'{name} 投影欄無法解析：{exc}') from exc
+"""
+    bare = '            client.prepare_project_field(board, item_id, name, field)\n'
+    assert source.count(old) == 1
+    namespace = {'__name__': 'wf.verbs.edit_without_wrapper', '__file__': edit_module.__file__}
+    exec(compile(source.replace(old, bare), edit_module.__file__, 'exec'), namespace)
+    return namespace['edit']
+
+
+def test_dropping_the_field_name_wrapper_loses_the_column_in_the_edit_rejection(tmp_path, catalog):
+    """FINAL3-1 負控：同一反例走沒有包裝的 edit ⇒ 本文回到不帶欄名的裸例外，
+    上一條對 edit 的『本文含級別』斷言必 FAIL。"""
+    client = drifted_client(catalog, tier_options=False)
+    result = edit_without_the_field_name_wrapper()(
+        10, 'feature="改過"', client=client, catalog=catalog, project_owner='fake',
+        project_number=1, emit=lambda line: None)
+    body = rejects(client)[0]['body']
+    assert result.rc != 0
+    assert body.startswith('拒收・D3・') and '級別' not in body, body
+    print('FINAL3-1 edit 負控', body)

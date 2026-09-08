@@ -104,9 +104,6 @@ class WriteMixin:
             raise InvalidCommentURL('留言不屬於 URL 指定的 issue')
         return result
 
-    def set_project_field(self, project, item_id, name, value):
-        return self.write_project_field(self.prepare_project_field(project, item_id, name, value))
-
     def prepare_project_field(self, project, item_id, name, value):
         """只解析欄與選項 ID；讓呼叫端在首次寫入前準備整批。"""
         field, = (f for f in project['fields'] if f['name'] == name)

@@ -255,6 +255,8 @@ def test_return_schema_is_consumed_at_runtime(tmp_path):
 def test_comment_counter_detects_forbidden_mutation():
     client = make_client(card())
     client.update_card_body(10, card())
-    client.set_project_field({}, 'item', 'state', '完成')
-    assert [name for name, _ in client.calls if name in WRITES] == ['update_card_body', 'set_project_field']
-    print('WRITE_NEGATIVE_CONTROL detected update_card_body and set_project_field')
+    client.write_project_field(('updateProjectV2ItemFieldValue', 'UpdateProjectV2ItemFieldValueInput',
+                                {'projectId': 'P', 'itemId': 'item', 'fieldId': '狀態',
+                                 'value': {'text': '完成'}}))
+    assert [name for name, _ in client.calls if name in WRITES] == ['update_card_body', 'write_project_field']
+    print('WRITE_NEGATIVE_CONTROL detected update_card_body and write_project_field')

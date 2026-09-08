@@ -18,7 +18,7 @@ from wf.verbs.notes import notes, run
 
 RULES = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / 'fixtures/notes'
-WRITES = ('update_card_body', 'post_comment', 'set_project_field',
+WRITES = ('update_card_body', 'post_comment',
           'write_project_field', 'add_to_project', 'remove_from_project', 'close_issue')
 
 
