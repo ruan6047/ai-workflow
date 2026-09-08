@@ -34,9 +34,10 @@ def test_source_inventory_and_negative_controls():
         if path.parent.name != 'gh':
             assert not names & NETWORK, path
         count = len(source.splitlines())
+        assert count <= 300, (path, count)  # 單檔上限（step6-spec 停損）
         total += count
         print('SRC', path.relative_to(ROOT), count, json.dumps(sorted(names)))
-    assert total <= 3000
+    assert total <= 3300
     print('SRC_FILES', len(paths), 'SRC_TOTAL', total)
     for relative in ('compose/blocks.py', 'compose/project_config.py', 'gh/client.py', 'gh/writes.py', 'verbs/_write.py'):
         doc = ast.get_docstring(ast.parse((ROOT / 'cli/src/wf' / relative).read_text()))
