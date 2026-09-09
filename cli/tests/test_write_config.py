@@ -26,7 +26,7 @@ def test_adoption_seed_verbatim(tmp_path):
     path.write_text(seed)
     cfg = load_project_config(tmp_path)
     assert cfg == json.loads(seed) | {'project': None}
-    # 種子的 modules 由 ADOPTION.md §2 決定（現為空陣列），⛔ 不在測試裡抄名字
+    # 種子的 modules 由 ADOPTION.md §2 決定（2026-09-08 起為空陣列），⛔ 不在測試裡抄名字
     assert module_names(cfg) == [m['name'] for m in json.loads(seed)['modules']]
     assert module_params(cfg, 'missing') == {}
 
