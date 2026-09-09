@@ -1,6 +1,6 @@
 """消費 modules/resource-lock/module.md §0–1、modules/initiative/module.md §0–1、
 core/card-schema.md §5、core/verbs.md §1 move［3］／§2 末、stages/closeout.md F-結案-02／03。
-S09 驗收 5–7：交集四案、parent_spec_version 三案、未實作 id；所有遠端讀取由 fake 接住。
+交集四案、parent_spec_version 三案、未實作 id；所有遠端讀取由 fake 接住。
 """
 import json
 from pathlib import Path
@@ -123,7 +123,7 @@ def test_same_actor_and_archived_items_are_not_live(catalog, names):
 
 
 def test_null_card_block_on_a_live_card_is_reported_unreadable(catalog, names):
-    """第 9 條探針：現役卡的 wf-card 值為 null ⇒ 印無法讀取（不當成無資源，也不例外中止）。"""
+    """null 區塊探針：現役卡的 wf-card 值為 null ⇒ 印無法讀取（不當成無資源，也不例外中止）。"""
     lines = prints(catalog, enabled=['resource-lock'], card_json=card(resources=['file:a.py']),
                    project=board([item(names, 20, 'WF-002')]),
                    client=Client({20: '```json wf-card\nnull\n```\n'}))
@@ -144,7 +144,7 @@ def test_non_terminal_card_outside_in_progress_still_holds_resources(catalog, na
 
 
 def test_terminal_and_ownerless_cards_do_not_hold_resources(catalog, names, terminal):
-    """F-結案-02 終態才釋放；owner 未填＝未派工過、不持資源（S09b PM 預設）。"""
+    """F-結案-02 終態才釋放；owner 未填＝未派工過、不持資源。"""
     holders = [item(names, 30 + offset, f'WF-{30 + offset}', state=state)
                for offset, state in enumerate(terminal)]
     holders.append(item(names, 40, 'WF-040', state='待辦', owner=None))

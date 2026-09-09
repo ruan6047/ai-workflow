@@ -1,4 +1,4 @@
-"""消費 core/verbs.md §2、roles/conduct-common.md §1；第 6 步 src 與依賴邊界。"""
+"""消費 core/verbs.md §2、roles/conduct-common.md §1；src 與依賴邊界。"""
 import ast
 import json
 import sys

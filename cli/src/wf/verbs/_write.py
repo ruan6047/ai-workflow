@@ -72,7 +72,7 @@ def prepare_card(card, current, snapshot, catalog, enabled_modules):
     return card, projected(card, catalog, check=True)
 
 
-_values, _prepare = projection_values, prepare_card  # 舊名別名（S10b 前的呼叫端）
+_values, _prepare = projection_values, prepare_card  # 舊名別名（既有呼叫端）
 
 
 def write_card(card_json, projection_values=None, *, client, number, catalog,

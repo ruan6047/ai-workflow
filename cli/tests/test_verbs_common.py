@@ -1,5 +1,5 @@
 """消費 core/verbs.md §1／§2、core/card-schema.md §5、modules/resource-lock/module.md §0；
-S10b 整併：verbs/_common.py 的純讀函式與 tests/fakes.py 的 merge_base。
+verbs/_common.py 的純讀函式與 tests/fakes.py 的 merge_base。
 """
 import pytest
 

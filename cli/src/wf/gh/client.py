@@ -1,5 +1,5 @@
 """消費 core/verbs.md §1–2、core/dispatch.md「基線」、core/naming.md §3、
-core/platform.md P1–P5、core/card-schema.md §5；docs/research/2026-09-07-step6-spec.md 第 6 步。
+core/platform.md P1–P5、core/card-schema.md §5；docs/research/2026-09-07-step6-spec.md。
 投影名稱由呼叫端依規則提供；此層只保留 API 事實，不內建規則或解析本文。
 """
 import json

@@ -1,7 +1,6 @@
 """動詞層共用的純讀函式；消費 core/verbs.md §1（open／edit／move／notes／brief 列）／§2、
 core/card-schema.md §1／§2 表／§5、core/naming.md §3、core/return.md 與 core/ruling.md 區塊、
-modules/resource-lock/module.md §0 板上事實。GitHub 讀取全經注入的 client；不寫、不印，印項由各動詞組
-（S10b：取代 edit._number／_board、open._depth／missing_fields、notes／move／brief 的板上事實與投影取值）。
+modules/resource-lock/module.md §0 板上事實。GitHub 讀取全經注入的 client；不寫、不印，印項由各動詞組。
 """
 import argparse
 from pathlib import Path
@@ -32,7 +31,7 @@ def parse_args(prog, argv, *specs):
     return parser.parse_args(argv)
 
 def block_object(body, label, required=True):
-    """區塊在而值 null／非物件＝CardBodyError（S14b block_value 之上，⛔ 不判內容）；
+    """區塊在而值 null／非物件＝CardBodyError（block_value 之上，⛔ 不判內容）；
     不在時 required 同 read_block 的 CardBodyError、否則 None。"""
     present, value = block_value(body or '', label)
     if not present:

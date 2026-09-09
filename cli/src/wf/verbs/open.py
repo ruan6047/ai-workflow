@@ -1,6 +1,6 @@
 """消費 core/verbs.md §1 open／§2、core/card-schema.md §1–3／§5、
 core/naming.md §1、core/state-machine.md §1–3、core/glossary.md 清單項／撤銷卡、
-modules/initiative/module.md §0–1、ADOPTION.md §2；S06 派工單的 PM 預設。
+modules/initiative/module.md §0–1、ADOPTION.md §2。
 """
 from copy import deepcopy
 from dataclasses import dataclass
@@ -33,7 +33,7 @@ def _initial_card(schema):
 
 
 def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None, emit=print):
-    """S15 可直接呼叫；所有 GitHub 操作經注入的 client，印項亦保留於結果。"""
+    """verbs/main.py 可直接呼叫；所有 GitHub 操作經注入的 client，印項亦保留於結果。"""
     printed, unverified = [], []
 
     def finish(result):
@@ -61,7 +61,7 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         printed.append('無 Project 設定')
         unverified.append({'item': 'D2 在板判定', 'kind': 'deferred',
                            'reason': '無 Project 設定，依 PM 預設視為不在板'})
-    # 封存項仍在板上（六條裁定 #6：封存⛔ 不是撤銷卡），故 include_archived。
+    # 封存項仍在板上（core/verbs.md §2 D2：封存⛔ 不是撤銷卡），故 include_archived。
     on_board = set(board_items(board, client.repo, include_archived=True))
     if number in on_board:
         return refuse('D2', '已在板上')
@@ -141,7 +141,7 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
 
 
 def run(argv, *, client, root='.', catalog=None):
-    """只解析本動詞參數；七動詞接線由 S15 提供。"""
+    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
     args = parse_args('wf open', argv, ('issue', {'type': int}), ('--parent', {}), ('--area', {}))
     return open_issue(args.issue, client=client, root=root, catalog=catalog,
                       parent=args.parent, area=args.area).rc

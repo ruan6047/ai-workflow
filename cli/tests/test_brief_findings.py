@@ -1,5 +1,5 @@
 """消費 core/dispatch.md 前輪 findings 列、core/return.md `wf-return`（role／iteration／findings）、
-core/verbs.md §2「CLI 只讀三種留言區塊」。S11 驗收 5。
+core/verbs.md §2「CLI 只讀三種留言區塊」。
 """
 import json
 
@@ -56,7 +56,7 @@ def test_no_previous_round_prints_the_literal(tmp_path):
 
 @pytest.mark.parametrize('reverse', [False, True])
 def test_same_iteration_takes_the_latest_reviewer_return(tmp_path, reverse):
-    """C02′：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 wf-return；列序反轉不影響。"""
+    """同 iteration 內時間序（created_at）最後一則 role=reviewer 的 wf-return；列序反轉不影響。"""
     root = make_root(tmp_path)
     comments = [comment(1, wf_return(1, 'reviewer', [finding(evidence='上輪')])),
                 comment(2, wf_return(2, 'reviewer', [finding(evidence='本輪早')])),
@@ -69,7 +69,7 @@ def test_same_iteration_takes_the_latest_reviewer_return(tmp_path, reverse):
 
 
 def test_fallback_to_previous_iteration_takes_its_latest_only(tmp_path):
-    """C02′：同 iteration 沒有 ⇒ 退到 iteration−1，仍取時間序最後一則（不合併多則）。"""
+    """同 iteration 沒有 ⇒ 退到 iteration−1，仍取時間序最後一則（不合併多則）。"""
     root = make_root(tmp_path)
     comments = [comment(1, wf_return(1, 'reviewer', [finding(evidence='前輪早')])),
                 comment(2, wf_return(1, 'reviewer', [finding(evidence='前輪晚')]))]
@@ -78,8 +78,8 @@ def test_fallback_to_previous_iteration_takes_its_latest_only(tmp_path):
 
 
 def test_null_return_block_is_not_a_previous_round(tmp_path):
-    """第 9 條探針：wf-return 區塊值為 null（存在但非物件）＝不是交回單。
-    S17（astra FINAL-3）改判：存在但非物件＝未知，⛔ 不得冒充「無前輪」；負控＝同位置換成物件即印。"""
+    """null 區塊探針：wf-return 區塊值為 null（存在但非物件）＝不是交回單。
+    改判（FINAL-3）：存在但非物件＝未知，⛔ 不得冒充「無前輪」；負控＝同位置換成物件即印。"""
     root = make_root(tmp_path)
     null = [comment(1, '```json wf-return\nnull\n```\n')]
     _, lines = emitted(make_client(card(iteration=1), comments=null), root)

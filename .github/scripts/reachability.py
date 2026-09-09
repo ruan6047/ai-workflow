@@ -356,7 +356,7 @@ def selftest(sm: dict) -> int:
 
     孤立狀態的診斷分類隨正式表而變——`**/<非終態>` 在時每個非終態都帶進阻塞出邊，落「不可達結案」；
     改回四值枚舉時模組狀態落「無出邊」。負控只驗 `check()` 有沒有捕捉到該節點，⛔ 不釘死是哪一種診斷，
-    否則正式表的正向可達會經 `--selftest` 的 rc 間接擋 merge（Codex #283 R1-01 第 2 輪，2026-09-07）。
+    否則正式表的正向可達會經 `--selftest` 的 rc 間接擋 merge。
     「無出邊」仍活於阻塞節點與清單（砍解除邊 14 條、砍清單出邊 1 條，實測）。
     """
     import copy
@@ -371,7 +371,7 @@ def selftest(sm: dict) -> int:
     b3 = copy.deepcopy(sm)
     b3["states"] = b3["states"] + ["孤立"]
     e3 = check(b3, plan); ok3 = any(e.startswith("非終態 需求/孤立 ") for e in e3)
-    # 只有 阻塞 往返、無其他出邊的狀態：必 FAIL（第 1 步審核 R3-01 的假陽性）
+    # 只有 阻塞 往返、無其他出邊的狀態：必 FAIL（曾是假陽性來源）
     b4 = copy.deepcopy(sm)
     b4["states"] = b4["states"] + ["孤島"]
     b4["transitions"].append({"from": "**/孤島", "to": "same/阻塞", "condition": "負控"})

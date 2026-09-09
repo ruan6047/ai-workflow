@@ -66,7 +66,7 @@ last_confirmed: 2026-09-08
             "db-contract": {"db_namespace": {"type": ["string", "null"]}, "migration_phase": {"enum": ["expand", "migrate", "contract", null]}}}}}
 ```
 
-合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 與 `core/enums.md` 後，先把每個 `wf-enums#/<鍵>` 的 `$ref` 具體化，(a) 把已啟用模組宣告的 `adds.enums.states` 併入 `$defs/nonterminal` 的 enum；(b) 把**全部**宣告模組的 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔；結構合法性⛔ 不隨啟用狀態變——模組停用後卡面既有的模組欄保留、只是不啟用其行為，需求方 2026-09-07 裁定）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 與 `core/enums.md` 後，先把每個 `wf-enums#/<鍵>` 的 `$ref` 具體化，(a) 把已啟用模組宣告的 `adds.enums.states` 併入 `$defs/nonterminal` 的 enum；(b) 把**全部**宣告模組的 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔；結構合法性⛔ 不隨啟用狀態變——模組停用後卡面既有的模組欄保留、只是不啟用其行為）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 
@@ -82,7 +82,7 @@ last_confirmed: 2026-09-08
 | stage、state、owner、branch、source_sha、blocked | CLI（`move`；`stage`／`state` 建卡時由 `open` 寫 `initial`；`owner` 在 escalation 換人時由 PM `edit`，`modules/escalation` §1） | — | brief、Project、D1、D4 |
 | notes | 任何角色經 `edit --set notes+=`，來源＝`wf:note` 留言；`last_cited` 不存卡面，由 `snapshot` 推得 | — | notes、brief |
 
-規格欄＝acceptance／verification／non_scope／resources；`edit` 改任一欄 ⇒ `spec_version` +1（C11）。
+規格欄＝acceptance／verification／non_scope／resources；`edit` 改任一欄 ⇒ `spec_version` +1。
 
 ## 3 · 清單項 `wf-intake`
 
@@ -108,9 +108,9 @@ last_confirmed: 2026-09-08
 
 ## 5 · 投影欄
 
-Project 只放五欄，全由 CLI 回寫，每欄的源＝卡面同名鍵（需求方 2026-09-07 裁定）：階段←`stage`（單選 8 值）、狀態←`state`（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別←`tier`（單選 5 值）、owner←`owner`（TEXT，`role:actor`，需求方 2026-09-05 裁定）、卡ID←`card_id`（TEXT）。TEXT 欄的 `max_bytes` 住下方區塊（UTF-8 位元組，2026-09-04 種子）；超過＝寫壞資料，D3（`core/verbs.md` §2）。null 的 enum 欄投影＝單選欄清空。寫入順序住 `core/verbs.md` §寫入契約。
+Project 只放五欄，全由 CLI 回寫，每欄的源＝卡面同名鍵：階段←`stage`（單選 8 值）、狀態←`state`（單選：核心 5＋阻塞＋停止＋已啟用模組值）、級別←`tier`（單選 5 值）、owner←`owner`（TEXT，`role:actor`）、卡ID←`card_id`（TEXT）。TEXT 欄的 `max_bytes` 住下方區塊（UTF-8 位元組，2026-09-04 種子）；超過＝寫壞資料，D3（`core/verbs.md` §2）。null 的 enum 欄投影＝單選欄清空。寫入順序住 `core/verbs.md` §寫入契約。
 
-投影欄的機讀事實＝下方區塊：每欄 `key`（卡面鍵）、TEXT 欄另有 `max_bytes`；CLI 寫五欄、D3 驗長度、第 7 步建欄、對帳皆讀此（需求方 2026-09-08 裁定）：
+投影欄的機讀事實＝下方區塊：每欄 `key`（卡面鍵）、TEXT 欄另有 `max_bytes`；CLI 寫五欄、D3 驗長度、建欄、對帳皆讀此：
 
 ```json wf-projection
 {"階段": {"key": "stage"}, "狀態": {"key": "state"}, "級別": {"key": "tier"},
@@ -121,4 +121,4 @@ Project 只放五欄，全由 CLI 回寫，每欄的源＝卡面同名鍵（需�
 
 - `schema_version` 升版觸發＝任一鍵新增、刪除、改型別或改值域；只加值域內的值不升版。
 - 遷移路徑＝任一寫入動詞讀到舊版卡時先升版再寫，寫後回讀；⛔ 不就地改舊卡的其他欄、⛔ 不加旗標。
-- 版本史：1（2026-09-05）→ 2（加 `stage`／`state`，需求方 2026-09-07 裁定）。1→2 遷移＝兩鍵由該卡 Project 的階段／狀態欄回填，這是唯一一次以投影為源；回填後依 `core/verbs.md` §2 以 JSON 為源。
+- 版本史：1（2026-09-05）→ 2（加 `stage`／`state`，2026-09-07）。1→2 遷移＝兩鍵由該卡 Project 的階段／狀態欄回填，這是唯一一次以投影為源；回填後依 `core/verbs.md` §2 以 JSON 為源。

@@ -193,7 +193,7 @@ COUNTER_PRINT = '模組欄由 `move` 寫'
 
 @pytest.mark.parametrize('key', ['escalation_count', 'new_counter'])
 def test_declared_counters_print_and_write(card, catalog, key, capsys):
-    """C09：adds.counters 欄由 edit 改＝印一行並照寫（宣告即印，不看啟用）；未宣告於 schema 的欄仍是 D3。"""
+    """adds.counters 欄由 edit 改＝印一行並照寫（宣告即印，不看啟用）；未宣告於 schema 的欄仍是 D3。"""
     module = {'name': 'fixture', 'adds': {'counters': [key]}}
     catalog = Catalog(catalog.blocks + [Block('yaml wf-module', module, '', catalog.blocks[0].source)], catalog.schemas)
     result, fake = run(card, catalog, key + '=1')
@@ -207,14 +207,14 @@ def test_declared_counters_print_and_write(card, catalog, key, capsys):
 
 
 def test_non_counter_key_has_no_counter_print(card, catalog, capsys):
-    """C09 負控：非計數欄不印「模組欄由 move 寫」。"""
+    """負控：非計數欄不印「模組欄由 move 寫」。"""
     result, fake = run(card, catalog, 'feature="x"')
     assert result.rc == 0
     assert COUNTER_PRINT not in capsys.readouterr().out
 
 
 def test_null_parent_card_block_is_skipped_then_d4(card, catalog, capsys):
-    """第 9 條探針：板上父卡的 wf-card 區塊值為 null ⇒ 印略過、parent 視為不存在（D4）；負控＝合法父卡過。"""
+    """null 區塊探針：板上父卡的 wf-card 區塊值為 null ⇒ 印略過、parent 視為不存在（D4）；負控＝合法父卡過。"""
     fake = parent_fake(card, catalog, {2: card | {'card_id': 'WF-002'}})
     read = fake.responses['issue']
     fake.responses['issue'] = lambda number: {'body': '```json wf-card\nnull\n```'} if number == 2 else read(number)
@@ -227,7 +227,7 @@ def test_null_parent_card_block_is_skipped_then_d4(card, catalog, capsys):
 
 
 def test_card_id_lookup_skips_unparsable_issues(card, catalog, tmp_path, capsys):
-    """第 9 條探針：以卡ID 查 issue 時，別的 issue 的 null／壞 JSON 區塊只略過並印，不擋。"""
+    """null 區塊探針：以卡ID 查 issue 時，別的 issue 的 null／壞 JSON 區塊只略過並印，不擋。"""
     from wf.verbs.edit import main
     fake = simulated(card, catalog)
     fake.responses['issues'] = [{'number': 8, 'body': '```json wf-card\nnull\n```'},

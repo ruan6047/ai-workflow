@@ -1,6 +1,6 @@
 """消費 core/dispatch.md（表、末段樣板）、core/handoff.md 每段首行、
 core/params.md rule_confirm_days、core/return.md schema required、core/verbs.md §1 brief 列／§2。
-S11 驗收 1／2／3／9／10：所有遠端操作由手構替身接住，⛔ 不碰真實網路。
+所有遠端操作由手構替身接住，⛔ 不碰真實網路。
 本檔另供 test_brief_reviewer.py 與 test_brief_modules.py 取用共用替身與 root 建置。
 """
 from datetime import date, timedelta
@@ -29,7 +29,7 @@ NUMBERED = re.compile(r'^([0-9]+)\. ([^：]+)：')
 
 
 class Client(FakeGhClient):
-    """S10b 起 fakes.FakeGhClient 已含 merge_base 與 repo；子類保留給本檔既有引用。"""
+    """fakes.FakeGhClient 已含 merge_base 與 repo；子類保留給本檔既有引用。"""
 
 
 def card(**changes):
@@ -114,7 +114,7 @@ def template(lines):
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S11 禁止真實網路')
+        raise AssertionError('禁止真實網路')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
 
 
@@ -206,7 +206,7 @@ def test_card_facts_and_verbatim_content(tmp_path):
 
 
 def test_capability_prints_level_and_reason_not_tier_basis(tmp_path):
-    """C11：能力層級段印 <欄>.level 與 <欄>.reason（schema $defs/capability required），⛔ 不印 tier_basis；
+    """能力層級段印 <欄>.level 與 <欄>.reason（schema $defs/capability required），⛔ 不印 tier_basis；
     欄為 null 時兩列印 null（負控：不因欄空而消失）。"""
     root = make_root(tmp_path)
     _, lines = emitted(make_client(card(exec_capability=None)), root)
@@ -284,7 +284,7 @@ def test_broken_card_json_is_d3_with_one_reject_comment(tmp_path):
 
 
 def test_null_card_block_is_d3(tmp_path):
-    """第 9 條探針：本卡 wf-card 區塊值為 null ⇒ D3 一則 wf:reject（訊息含「不是物件」）。"""
+    """null 區塊探針：本卡 wf-card 區塊值為 null ⇒ D3 一則 wf:reject（訊息含「不是物件」）。"""
     root = make_root(tmp_path)
     client = make_client('前言\n```json wf-card\nnull\n```\n')
     result = brief(10, target='executor', client=client, root=root, emit=lambda line: None)
@@ -293,7 +293,7 @@ def test_null_card_block_is_d3(tmp_path):
 
 
 def test_card_id_lookup_skips_null_issue_and_prints(tmp_path):
-    """第 9 條探針（card_number）：以卡ID 呼叫 brief，別的 issue 的 null 區塊只略過並印在最前。"""
+    """null 區塊探針（card_number）：以卡ID 呼叫 brief，別的 issue 的 null 區塊只略過並印在最前。"""
     root = make_root(tmp_path)
     rows = [issue_row(3, '```json wf-card\nnull\n```\n'), issue_row(10, card())]
     lines = []

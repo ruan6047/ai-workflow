@@ -1,4 +1,4 @@
-"""錄放工具；消費 docs/research/2026-09-07-step6-spec.md 第 6 步、core/card-schema.md §5。"""
+"""錄放工具；消費 docs/research/2026-09-07-step6-spec.md、core/card-schema.md §5。"""
 import json
 from pathlib import Path
 import re

@@ -22,7 +22,7 @@ from wf.verbs._write import WriteResult, prepare_card, projection_values, reconc
 
 
 def _ruling_prints(comment, current, number, expected, *, client, catalog, root):
-    """印項組合；區塊、作者與所屬 issue 的純讀住 _common.comment_blocks（S13 共用）。"""
+    """印項組合；區塊、作者與所屬 issue 的純讀住 _common.comment_blocks（與 review 共用）。"""
     printed, blocks = [], {}
     if comment is not None:
         found = comment_blocks(comment)
@@ -83,7 +83,7 @@ def _terminal_prints(card, client):
 
 def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=None,
          ruling=None, emit=print):
-    """卡 ID 或 issue 號；S09 接收一般 stage/state 節點，阻塞展開僅供 D1。"""
+    """卡 ID 或 issue 號；move_modules 接收一般 stage/state 節點，阻塞展開僅供 D1。"""
     number, skipped = card_number(card, client)
     printed = [f'略過無法解析的 issue #{other}' for other in skipped]
 
@@ -159,7 +159,7 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     printed.extend(_ruling_prints(comment, current, number, expected,
                                  client=client, catalog=catalog, root=root))
     missing = missing_fields(current, root) if current['stage'] == '需求' and target_stage != '需求' else []
-    if missing and to_node != '清單':  # S08 查核 R1.8-2：非空且不是撤銷才印
+    if missing and to_node != '清單':  # 非空且不是撤銷才印
         printed.append('缺欄清單：' + '、'.join(missing))
     if current['stage'] == '規劃' and target_stage != '規劃':
         printed.extend(f'{key} 空' for key in ('acceptance', 'verification') if not current[key])
@@ -217,7 +217,7 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
 
 
 def run(argv=None, *, client, root='.', catalog=None):
-    """S15 的參數接點；不修改總入口。"""
+    """verbs/main.py 的參數接點；不修改總入口。"""
     args = parse_args('wf move', argv, ('card', {}), ('--to', {'required': True}), ('--actor', {}),
                       ('--source-sha', {}), ('--ruling', {}))
     return move(**vars(args), client=client, root=root, catalog=catalog).rc

@@ -81,7 +81,7 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S14 禁止真實網路或子程序')
+        raise AssertionError('禁止真實網路或子程序')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
 
@@ -410,7 +410,7 @@ def test_note_failing_schema_is_invalid(setup):
     assert result.data['invalid_candidates'][0]['reason'].startswith('/text')
 
 
-# S14b／R1.14-1：wf-note 為 null 的留言仍是候選母體的一員，URL ⛔ 不能消失。
+# wf-note 為 null 的留言仍是候選母體的一員，URL ⛔ 不能消失。
 @pytest.mark.parametrize('value', [None, [], 'null', 7])
 def test_non_object_note_block_is_invalid_candidate(setup, value):
     comments = {1: [comment(1, 11, 'wf-note', value)]}

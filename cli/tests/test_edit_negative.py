@@ -17,7 +17,7 @@ MUTATIONS = {
 
 
 def pytest_sessionstart(session):
-    mutation = os.environ.get('WF_S07_MUTATION')
+    mutation = os.environ.get('WF_EDIT_MUTATION')
     if not mutation:
         return
     from wf.verbs import edit
@@ -33,7 +33,7 @@ def test_mutation_fails_acceptance(mutation):
     target = MUTATIONS[mutation][2]
     result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-s', '--tb=no',
         '-p', 'cli.tests.test_edit_negative', 'cli/tests/test_edit_flow.py', '-k', target],
-        cwd=ROOT, env=dict(os.environ, PYTHONPATH='cli/src', WF_S07_MUTATION=mutation),
+        cwd=ROOT, env=dict(os.environ, PYTHONPATH='cli/src', WF_EDIT_MUTATION=mutation),
         capture_output=True, text=True)
     print(result.stdout, end='')
     print(result.stderr, end='')

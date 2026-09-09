@@ -1,6 +1,6 @@
 """消費 core/verbs.md §1 brief／§2、core/ruling.md 表、core/dispatch.md
 wf-module-sections.closeout、core/handoff.md 每段首行、core/platform.md P5、
-core/return.md findings／review_result、stages/closeout.md §2／§4；S12 未知狀態補裁。
+core/return.md findings／review_result、stages/closeout.md §2／§4。
 """
 from pathlib import Path
 import re
@@ -88,7 +88,7 @@ def _current(ctx, records, complete):
                 lines.append(f'CI 非綠：未能取得 CI：{exc}')
     except GhError as exc:
         lines += [f'未能取得 PR／merge SHA：{exc}', '未能取得 main 祖先關係', 'CI 非綠：未能取得 CI']
-    try:  # S11b：取源同 brief 的 reviewer 段＝遠端 main 頭 vs 卡面 source_sha。
+    try:  # 取源同 brief 的 reviewer 段＝遠端 main 頭 vs 卡面 source_sha。
         head = ctx.card.get('source_sha')
         if not head:
             raise LocalGitUnavailable('來源 SHA 未填')

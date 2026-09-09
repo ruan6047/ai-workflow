@@ -6,7 +6,7 @@
    `Key: value` 且 Key 在允許集合內。末段沒有任何允許鍵＝沒有 trailer，不驗（散文、
    conventional subject 都不是 trailer）。
 2. 允許集合內的鍵不得出現在非末段（被空行切斷＝不是連續區塊）。
-⛔ 不驗哪些 trailer 必須出現、不驗值——那是 core/platform.md 的條文，不在本步。
+⛔ 不驗哪些 trailer 必須出現、不驗值——那是 core/platform.md 的條文。
 
 `--selftest` 跑內建正負控。
 """

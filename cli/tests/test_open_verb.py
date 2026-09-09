@@ -1,6 +1,6 @@
 """消費 core/verbs.md §1 open／§2、core/card-schema.md §1–3／§5、
 core/naming.md §1、core/state-machine.md §3、modules/initiative/module.md §0–1。
-S06 驗收：本檔所有遠端操作由具狀態 fake 接住。
+本檔所有遠端操作由具狀態 fake 接住。
 """
 from copy import deepcopy
 import ast
@@ -110,7 +110,7 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S06 禁止真實網路或子程序')
+        raise AssertionError('禁止真實網路或子程序')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
 
@@ -183,7 +183,7 @@ def test_d2_already_on_board(setup, body):
 
 
 def test_d2_archived_item_is_still_on_board(setup):
-    """第 8 條：封存（isArchived）的 Project 項仍在板上 ⇒ D2 照拒；⛔ 不改（六條裁定 #6）。"""
+    """封存（isArchived）的 Project 項仍在板上 ⇒ D2 照拒；⛔ 不改（core/verbs.md §2 D2）。"""
     body = block('wf-card', expected_card(stage='結案', state='完成'))
     client, kwargs = setup(body=body, items=[item(10) | {'isArchived': True}])
     assert_reject(client, open_issue(10, **kwargs), 'D2')
@@ -213,7 +213,7 @@ def test_numbering_all_repo_including_withdrawn_terminal_and_plain(setup):
             issue(4, body='無區塊')]
     client, kwargs = setup(rows=rows, items=[item(1), item(3)])
     result = open_issue(10, **kwargs)
-    # 撤銷卡（closed、不在板）持有最大序號：若母體排除它，序號會回退成 WF-004（重用）——S06 查核 R1.6-01
+    # 撤銷卡（closed、不在板）持有最大序號：若母體排除它，序號會回退成 WF-004（重用）
     assert result.card['card_id'] == 'WF-006'
     assert [args for name, args in client.calls if name == 'issues'] == [{'state': 'all'}]
 
@@ -296,7 +296,7 @@ def test_no_project_prints_skips_projection_and_tracks_deferral(setup):
 
 @pytest.mark.parametrize('label', ['wf-card', 'wf-intake'])
 def test_null_block_on_the_source_issue_is_d3(setup, label):
-    """第 9 條探針：清單項／撤銷卡的區塊值為 null ⇒ D3（不是「沒有區塊」的 D2）。"""
+    """null 區塊探針：清單項／撤銷卡的區塊值為 null ⇒ D3（不是「沒有區塊」的 D2）。"""
     client, kwargs = setup(body=f'前言\n```json {label}\nnull\n```\n')
     result = open_issue(10, **kwargs)
     assert_reject(client, result, 'D3')
@@ -304,7 +304,7 @@ def test_null_block_on_the_source_issue_is_d3(setup, label):
 
 
 def test_null_block_on_another_issue_is_skipped_with_print(setup):
-    """第 9 條探針：發號掃描遇到別的 issue 的 null 區塊 ⇒ 印略過、不擋、序號不受影響（負控＝合法卡計入序號）。"""
+    """null 區塊探針：發號掃描遇到別的 issue 的 null 區塊 ⇒ 印略過、不擋、序號不受影響（負控＝合法卡計入序號）。"""
     rows = [issue(1, expected_card(card_id='WF-003', source_issue=1)), issue(2, body='```json wf-card\nnull\n```')]
     client, kwargs = setup(rows=rows, items=[item(1)])
     result = open_issue(10, **kwargs)
@@ -415,7 +415,7 @@ def test_source_inventory_and_config_reader_negative_control():
     assert all(name.split('.')[0] in {'argparse', 'copy', 'dataclasses', 'pathlib', 're', 'wf'} for name in imported)
     print('匯入母體：', json.dumps(imported, ensure_ascii=False))
     print('負控 modules.json 字面：', config_literals("path = '.wf/modules.json'"))
-    print('本片 modules.json 字面：', config_literals(source))
+    print('modules.json 字面：', config_literals(source))
 
 
 def test_missing_single_select_option_before_project_add(setup):

@@ -1,6 +1,6 @@
 ---
 name: nope
-when: S09 測試替身：宣告了註冊表沒有的計數與印項 id
+when: 測試替身：宣告了註冊表沒有的計數與印項 id
 non_scope: ⛔ 不是框架模組，⛔ 不進 modules/
 last_confirmed: 2026-09-08
 ---

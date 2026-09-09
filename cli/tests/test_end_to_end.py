@@ -1,7 +1,7 @@
 """端到端：一張卡從清單項走到 結案/完成，含一次退回，七動詞全部經總入口 `main` 分派。
 
 消費 core/verbs.md §1 七列／§2、core/state-machine.md §3 轉移表、core/dispatch.md、
-core/return.md schema；S15 派工單射程 4。所有 GitHub 操作走 cli/tests/fakes.py 的替身
+core/return.md schema。所有 GitHub 操作走 cli/tests/fakes.py 的替身
 （MemoryClient 之上加留言存放），⛔ 不碰網路、⛔ 不錄真實 API。
 """
 from copy import deepcopy
@@ -150,9 +150,9 @@ def to_first_verdict(step, root):
 
 
 def drive(client, root, capsys, *, current_verdict=True):
-    """射程 4 的完整流程；回傳 (Flow, 退回後的 reviewer 派工單, 裁定單, snapshot 輸出)。
+    """完整流程；回傳 (Flow, 退回後的 reviewer 派工單, 裁定單, snapshot 輸出)。
 
-    `current_verdict=False` 只給 S19 驗收 5 的負控用：拿掉 iteration=1 的查核裁決那一步。
+    `current_verdict=False` 只給負控用：拿掉 iteration=1 的查核裁決那一步。
     """
     step = Flow(client, root, capsys)
     to_first_verdict(step, root)

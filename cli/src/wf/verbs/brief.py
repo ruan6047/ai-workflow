@@ -1,11 +1,11 @@
 """消費 core/verbs.md §1 brief 列／§2、core/dispatch.md（表、`json wf-module-sections`、
 wf-contract schema、末段樣板）、core/handoff.md 每段首行、core/params.md rule_confirm_days、
 core/return.md schema 的 required、core/glossary.md「來源（四個）」、
-modules/resource-lock／initiative／identity §0；S11 派工單的 PM 預設。
+modules/resource-lock／initiative／identity §0。
 
 段序、段名與誰填逐字讀 `core/dispatch.md` 的表，⛔ 不抄進程式碼；CLI 段只搬事實、⛔ 不改寫
 不合併（第零條）。除 D3 的一則 `wf:reject` 外不寫任何遠端、⛔ 不自動 merge；`--for` 分派＝
-TARGETS 字典（S12 掛 closeout 鍵）。卡號查找、留言區塊與板上事實住 verbs/_common.py（S10b）。
+TARGETS 字典。卡號查找、留言區塊與板上事實住 verbs/_common.py。
 """
 from datetime import date
 import json
@@ -83,7 +83,7 @@ def _identity(ctx):
 
 def _baseline(ctx):
     """基線列：merge-base；無分支改用 main 頭。reviewer 另列被審分支、來源 SHA 與三印。
-    merge-tree 取源＝遠端 main 頭 vs `source_sha`（S11b）：merge-base 對「main 與分支改同一行」
+    merge-tree 取源＝遠端 main 頭 vs `source_sha`：merge-base 對「main 與分支改同一行」
     的真實分岔會漏報無衝突；兩者不同時段內註明。取不到 main 頭＝印未能比對，⛔ 不當成無衝突。"""
     branch, sha = ctx.card.get('branch'), ctx.card.get('source_sha')
     head = _remote(ctx.client.branch_head, branch) if branch else None
@@ -113,7 +113,7 @@ def _baseline(ctx):
     return lines
 
 def _previous_findings(ctx):
-    """前輪列（C02′）：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 `wf-return`；
+    """前輪列：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 `wf-return`；
     沒有才退到 iteration−1。讀取失敗或區塊不能解析＝印未能取得（F-執行者-06：未知⛔ 不冒充
     「無前輪」）；成功讀到而確實沒有才印「無前輪」。"""
     current, returns, errors = ctx.card.get('iteration') or 0, [], []
@@ -138,20 +138,20 @@ def _previous_findings(ctx):
     return [f"{UNKNOWN_PREVIOUS}：{'；'.join(errors)}"] if errors else [NO_PREVIOUS]
 
 def _capability(ctx):
-    """能力層級建議列（C11）：角色對應 capability 欄的 level 與 reason（card-schema §1 $defs/capability）。"""
+    """能力層級建議列：角色對應 capability 欄的 level 與 reason（card-schema §1 $defs/capability）。"""
     key = 'review_capability' if ctx.target == REVIEWER else 'exec_capability'
     value = ctx.card.get(key) if isinstance(ctx.card.get(key), dict) else {}
     return [f'{key}.{field}：{_plain(value.get(field))}' for field in ('level', 'reason')]
 
 def _notes(ctx):
-    """注意事項列：S10 `notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。"""
+    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。"""
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
                    for_role=ctx.target, emit=lambda line: None)
     ctx.note_ids = [m[1] for m in map(NOTE_ID.match, result.printed) if m]
     return list(result.printed)
 
 def _side_effects(ctx):
-    """副作用入口列：`.wf/contracts/*.md` 的 `json wf-contract` 區塊，用 S03 validate 驗。"""
+    """副作用入口列：`.wf/contracts/*.md` 的 `json wf-contract` 區塊，用 compose/validate.py 驗。"""
     schema, lines, seen = compose_schema(ctx.catalog, 'wf-contract'), [], False
     for path in sorted(Path(ctx.root).glob('.wf/contracts/*.md')):
         for raw in CONTRACT.findall(path.read_text(encoding='utf-8')):
@@ -172,7 +172,7 @@ CLI_SECTIONS = (_identity, lambda ctx: [_plain(ctx.card.get('core_pain'))],
                 _previous_findings, _capability, _notes, _side_effects)
 
 def _intersection(ctx):
-    """寫入集交集＝S09 `move_modules` 的交集函式（缺則未接線）；語意住 resource-lock §1。"""
+    """寫入集交集＝`move_modules` 的交集函式（缺則未接線）；語意住 resource-lock §1。"""
     emit = MOVE_PRINTS.get('resources_intersection')
     if emit is None:
         return [UNWIRED]
@@ -196,7 +196,7 @@ MODULE_SECTIONS = {('resource-lock', 0): _listing('resources'), ('resource-lock'
                    ('initiative', 0): _spec_baseline, ('identity', 0): lambda ctx: [HUMAN]}
 
 def _module_sections(ctx):
-    """dispatch.md `wf-module-sections` 的 brief 鍵＋S03 is_enabled；板上事實同 notes／move（_common）。"""
+    """dispatch.md `wf-module-sections` 的 brief 鍵＋compose/enable.py is_enabled；板上事實同 notes／move（_common）。"""
     declared, = ctx.catalog.by_label('json wf-module-sections')
     modules = {block.data['name']: block.data for block in ctx.catalog.by_label('yaml wf-module')}
     facts = board_facts(ctx.project, ctx.catalog, self_number=ctx.number, repo=ctx.client.repo)
@@ -284,7 +284,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     return WriteResult(0, card=current, printed=tuple(report))
 
 def run(argv, *, client, root='.', catalog=None):
-    """只解析本動詞參數；七動詞接線由 S15 提供。`--for` 值域＝TARGETS 的鍵。"""
+    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。`--for` 值域＝TARGETS 的鍵。"""
     args = parse_args('wf brief', argv, ('card', {}), ('--for', {'dest': 'target', 'required': True,
                                                                    'choices': sorted(TARGETS)}),
                       ('--requested-by', {}), ('--planned-by', {}), ('--implemented-by', {}),

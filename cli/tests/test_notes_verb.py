@@ -1,6 +1,6 @@
 """消費 core/verbs.md §1 notes／§2／§3、core/naming.md §3／§4、
 core/card-schema.md §1／§4、core/handoff.md 來源標記、core/enums.md stages、
-modules/pitfalls-13/module.md §1。S10 驗收：所有遠端操作由手構替身接住。
+modules/pitfalls-13/module.md §1。所有遠端操作由手構替身接住。
 """
 import json
 from pathlib import Path
@@ -87,7 +87,7 @@ def numbered(lines):
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S10 禁止真實網路或子程序')
+        raise AssertionError('禁止真實網路或子程序')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
 

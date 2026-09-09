@@ -1,5 +1,5 @@
 """消費 core/verbs.md §1 notes／§2、core/naming.md §3、core/card-schema.md §4、
-core/enums.md stages；roles/conduct-common.md §1 的負控。S10 驗收 6、8、9、10。
+core/enums.md stages；roles/conduct-common.md §1 的負控。
 """
 import json
 from pathlib import Path
@@ -65,7 +65,7 @@ def test_default_stage_is_the_card_stage(tmp_path):
 
 
 def test_no_project_prints_resource_lock_notice(tmp_path):
-    """本片 PM 預設：project=None 時 board_facts=() 並印一行。"""
+    """PM 預設：project=None 時 board_facts=() 並印一行。"""
     root = make_root(tmp_path, project=False)
     client = make_client(card())
     _, lines = emitted(client, root)
@@ -86,7 +86,7 @@ def test_d3_on_broken_card_json(tmp_path):
 
 
 def test_null_card_block_is_d3(tmp_path):
-    """第 9 條探針：本卡 wf-card 值為 null ⇒ D3 一則 wf:reject（不是物件）。"""
+    """null 區塊探針：本卡 wf-card 值為 null ⇒ D3 一則 wf:reject（不是物件）。"""
     root = make_root(tmp_path, stages=['implementation.md'])
     client = make_client('前言\n```json wf-card\nnull\n```\n')
     result = notes(10, client=client, root=root, emit=lambda line: None)
@@ -96,14 +96,14 @@ def test_null_card_block_is_d3(tmp_path):
 
 @pytest.mark.parametrize('value', ['null', '[]', '"x"'])
 def test_null_note_block_is_an_invalid_candidate(tmp_path, value):
-    """第 9 條探針：wf-note 區塊值為 null／非物件＝不合法候選（URL 不消失），⛔ 不是沒有候選。"""
+    """null 區塊探針：wf-note 區塊值為 null／非物件＝不合法候選（URL 不消失），⛔ 不是沒有候選。"""
     root = make_root(tmp_path)
     _, lines = emitted(make_client(card(), comments=[comment(1, block('wf-note', value))]), root)
     assert lines == ['候選 https://github.com/fake/repo/issues/10#issuecomment-1 區塊不合法']
 
 
 def test_card_id_lookup_skips_null_issue_and_prints(tmp_path):
-    """第 9 條探針（card_number）：以卡ID 呼叫 notes，別的 issue 的 null 區塊只略過並印一行。"""
+    """null 區塊探針（card_number）：以卡ID 呼叫 notes，別的 issue 的 null 區塊只略過並印一行。"""
     root = make_root(tmp_path, stages=['implementation.md'])
     client = make_client(card())
     client.responses['issues'] = [{'number': 3, 'body': '```json wf-card\nnull\n```'}, client.responses['issue']]
@@ -120,6 +120,6 @@ def test_d3_positive_control_valid_card_writes_nothing(tmp_path):
 
 
 def test_source_is_within_the_line_budget():
-    """驗收 10：本片 src ≤200 行。"""
+    """驗收 10：src ≤200 行。"""
     from wf.verbs import notes as module
     assert len(Path(module.__file__).read_text(encoding='utf-8').splitlines()) <= 200

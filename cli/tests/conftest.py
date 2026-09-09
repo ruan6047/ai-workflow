@@ -1,4 +1,4 @@
-"""消費 roles/conduct-common.md §1；第 6 步規格的離線測試護欄。"""
+"""消費 roles/conduct-common.md §1；離線測試護欄。"""
 import os
 from pathlib import Path
 import subprocess
@@ -7,7 +7,7 @@ import pytest
 
 
 def pytest_sessionstart(session):
-    if os.environ.get('WF_S05_OFFLINE') != '1':
+    if os.environ.get('WF_OFFLINE') != '1':
         return
     real_run = subprocess.run
 

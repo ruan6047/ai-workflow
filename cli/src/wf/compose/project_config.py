@@ -1,4 +1,4 @@
-"""消費 ADOPTION.md §2；project 定位形狀依 WF-STEP6-S05 續派附錄 §4。
+"""消費 ADOPTION.md §2（含 `project` 定位形狀）。
 只讀專案設定與正規化缺省值；不判模組是否應啟用，不連網。
 """
 import json
