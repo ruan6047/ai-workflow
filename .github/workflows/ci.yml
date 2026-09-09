@@ -78,7 +78,7 @@ jobs:
       - run: python3 .github/scripts/reachability.py
 
   cli-tests:
-    # docs/research/2026-09-07-step6-spec.md：新 CLI 測試 job 隨被測物同 PR 進場。
+    # 新 CLI 測試 job 隨被測物同 PR 進場。
     name: cli-tests
     runs-on: ubuntu-latest
     timeout-minutes: 10

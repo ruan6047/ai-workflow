@@ -5,8 +5,8 @@
 ## 讀什麼（依序）
 
 1. `docs/research/REBUILD-DECISIONS-2026-09-04.md`：已定案決策，⛔ 不重審。
-2. 規則本體 `core/`、`roles/`、`stages/`、`modules/`＝唯一居所；第 6／7 步的形狀住 `docs/research/2026-09-07-step6-spec.md`。骨架已歸檔，⛔ 不引用。
-3. **被審物**：本分支對 `origin/main` 的 diff（`git diff origin/main...HEAD --stat` 與全文），對應 step6-spec 的**第 N 步**或規格前置，見 PR 標題。
+2. 規則本體 `core/`、`roles/`、`stages/`、`modules/`＝唯一居所。骨架與第 6／7 步的形狀已歸檔，⛔ 不引用。
+3. **被審物**：本分支對 `origin/main` 的 diff（`git diff origin/main...HEAD --stat` 與全文）；射程見 PR 標題與本文。
 
 ## 只審四題（四題全審、全列）
 
