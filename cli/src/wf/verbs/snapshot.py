@@ -112,7 +112,10 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
             continue
         if not present:
             continue
-        reason = _shape(card, 'wf-card', schema)
+        try:  # 合成 schema 要讀尚未驗過的卡面（enable.py 的 stage_plan_has 會 `in` 它）；
+            reason = _shape(card, 'wf-card', schema)  # 一張壞卡⛔ 不得中斷盤點或落到兩個清單之外
+        except Exception as exc:
+            reason = f'schema 合成或驗證失敗：{type(exc).__name__}: {exc}'
         if reason is None:
             cards.append((issue, card))
         else:

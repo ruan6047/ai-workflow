@@ -155,6 +155,9 @@ def test_bad_card_json_goes_to_invalid_cards(setup, catalog, tmp_path):
     assert [bad['number'] for bad in result.data['invalid_cards']] == [2]
     assert result.data['invalid_cards'][0]['body'] == issues[1]['body']  # 原始 body 逐字留存
     assert result.data['invalid_cards'][0]['reason']
+    # §1 印欄：卡面不合法的 issue 號與原因；⛔ 不只驗「寫」欄而放掉「印」欄。
+    assert result.printed == (
+        f"#2 卡面不合法：{result.data['invalid_cards'][0]['reason']}",)
     written, text = outputs(tmp_path)
     assert written == result.data
     assert '#2' in text.split('## 壞卡', 1)[1]
@@ -287,6 +290,23 @@ def test_every_card_invalid_still_writes_both_outputs(setup, tmp_path):
     assert written == result.data
     assert '## 壞卡' in text and '#4' in text
     assert posted_comments(client) == []
+    assert_read_only(client)
+
+
+def test_schema_compose_crash_still_lands_in_invalid_cards(setup, catalog, tmp_path):
+    """合成 schema 讀的是尚未驗過的卡面：`stage_plan` 非可迭代時 enable.py 會拋 TypeError。
+    §1「⛔ 不從盤點母體排除」要求它照樣進 invalid_cards，⛔ 不得中斷整次盤點。"""
+    _, issues, items = population(catalog)
+    issues[1] = issue(2, body=block('wf-card', card('WF-002', stage_plan=5)))
+    client, kwargs = setup(issues=issues, items=items)
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert [row['number'] for row in result.data['cards']] == [1, 3, 4]
+    assert [bad['number'] for bad in result.data['invalid_cards']] == [2]
+    assert 'TypeError' in result.data['invalid_cards'][0]['reason']
+    assert result.data['invalid_cards'][0]['body'] == issues[1]['body']
+    written, _ = outputs(tmp_path)
+    assert written == result.data
     assert_read_only(client)
 
 
