@@ -183,7 +183,7 @@ def test_d2_already_on_board(setup, body):
 
 
 def test_d2_archived_item_is_still_on_board(setup):
-    """第 8 條：封存（isArchived）的 Project 項仍在板上 ⇒ D2 照拒；⛔ 不改（六條裁定 #6）。"""
+    """封存（isArchived）的 Project 項仍在板上 ⇒ D2 照拒；⛔ 不改（core/verbs.md §2 D2）。"""
     body = block('wf-card', expected_card(stage='結案', state='完成'))
     client, kwargs = setup(body=body, items=[item(10) | {'isArchived': True}])
     assert_reject(client, open_issue(10, **kwargs), 'D2')

@@ -61,7 +61,7 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         printed.append('無 Project 設定')
         unverified.append({'item': 'D2 在板判定', 'kind': 'deferred',
                            'reason': '無 Project 設定，依 PM 預設視為不在板'})
-    # 封存項仍在板上（六條裁定 #6：封存⛔ 不是撤銷卡），故 include_archived。
+    # 封存項仍在板上（core/verbs.md §2 D2：封存⛔ 不是撤銷卡），故 include_archived。
     on_board = set(board_items(board, client.repo, include_archived=True))
     if number in on_board:
         return refuse('D2', '已在板上')

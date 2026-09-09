@@ -139,7 +139,7 @@ def record():
 
 
 @pytest.mark.parametrize('case', ['write_restore', *READ_CASES])
-def test_s05_real_recording_replay(case):
+def test_real_recording_replay(case):
     fixture = load_case(case)
     replay = WriteReplay(fixture)
     actual = exercise(GhClient(REPO, runner=replay), case, fixture['args'])
