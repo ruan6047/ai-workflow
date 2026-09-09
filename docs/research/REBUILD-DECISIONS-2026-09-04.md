@@ -140,7 +140,7 @@
 
 ## 回看清單（2026-09-08）
 
-登記於此、⛔ 不開 PR（不改變 CLI 實作的 finding 進回看，依補丁輪迴停損）；依 `roles/requester.md` §1 定期回看時一併議。
+登記於此、⛔ 不開 PR；依 `roles/requester.md` §1 定期回看時一併議（四類：零拒收硬擋、正式化候選、設計缺陷、`last_confirmed` 過期）。2026-09-09 更正：原括號「不改變 CLI 實作的 finding 進回看」被當成收件條件是誤讀——現有條目 9 條中 4 條逐字要改 CLI（六條 #1「CLI 下次動時移除」、#4d「（CLI 動）」、#6②「CLI 改動，依停損進回看」、C09「待 CLI 側改印」）；該句禁的是**當場開 PR**，⛔ 不是排除會改 CLI 的 finding。升成設計缺陷的三項門檻住 `roles/pm.md` §3。
 
 - 六條 #1：`move` 印「`wf-ruling` 依 kind 的必要鍵缺」的鍵集合以 regex 讀 `core/ruling.md` 散文（`_ruling_prints`）；散文改寫即靜默失印、⛔ 不寫壞資料。清單已在 `roles/requester.md` §3 與 `core/ruling.md`；CLI 下次動時移除。
 - 六條 #3：`*/升級→same/進行中` 不是派工邊，`--actor` 靜默不寫 `owner`（測試釘住的刻意實作）；換人走先 `edit` 後 `move`（`modules/escalation/module.md` §1）。第二個模組出現再派邊時再議 `adds` 的派工邊宣告。
@@ -150,6 +150,10 @@
 - C20（待實例）：maintenance §0 從 `維護/進行中` 沒有邊回 `維護/運行中`，一次事件即逼出維護；補邊要改狀態機 from／to（兩家族），等第一張維護卡。
 - C25（待需求方裁）：`core/ruling.md` 類別欄（升級／停止／撤銷／級別變更／結案確認／其他）與 `wf-ruling.kind`（block／stop／withdraw／tier_change／signoff／other）無對照；升級、結案確認對應哪個 kind、阻塞要不要有類別，屬內容裁定。
 - C09：`adds.counters` 列的欄由 `edit` 改時的字面結果＝印「模組欄由 `move` 寫」（規則句已補）；d-S07 的 D3 硬擋與「宣告即擋」待 CLI 側改印。
+- **設計缺陷 D1（2026-09-09 登記）：`wf:reject` 留痕綁在 `rc≠0`，而非綁在「被拒的那一次寫入」。**`core/glossary.md`「拒收｜一次硬擋與其 `wf:reject` 留言」、`core/verbs.md` §2「每次拒收寫一則」、§1 表頭「硬擋（rc≠0，寫 `wf:reject`）」三處把「資料無效」推導成「不能繼續＋rc≠0＋在被讀的卡上留言」。§2 給 D1–D4 的正當性是「硬擋只落在寫壞資料」＝守遠端不被寫壞，但 D3 後半「解析失敗整卡拒」是讀側條件；寫入動詞兩者重合，純讀動詞的讀側 D3 沒有寫入要保護，留痕反而成為該動詞唯一的遠端寫入。判準（`roles/pm.md` §3）本案成立——**必要項**活消費者：`snapshot.py`／`edit.py`／`review.py` 皆第 6 步已合併；**擇一項**受害點 ≥2（`snapshot` 壞卡→`snapshot.py` `if bad: return SnapshotResult(1, …)`；`edit --set owner=` 修既有過長值→`edit.py` 對舊卡 `reconcile_projection` 而 `_write.reconcile` 以 `check=True` 驗舊值 `max_bytes` 即 D3，修復被修復前的資料擋住）、（例外數＝3：§1 該列的 §3 合成例外、§2 對帳例外、#299 的 D3 例外——2026-09-09 依 Gemini 複審裁定**不當判準**：例外數量量的是規則成熟度、不是缺陷性，一條例外多的成熟規則會把任何單一動詞的操作違規誤放成設計缺陷；此處只作事實記錄，判準只用受害點。）另一受害點：`review` 交回單 schema 不過時 CLI 以查核者身分貼 `wf:reject`，撞 `roles/reviewer.md` §2「裁決留言以外⛔ 不寫任何東西」。正解＝把「驗證失敗」與「失敗處置」拆開（schema 說什麼不合法，動詞契約說停到哪、輸出什麼、往遠端寫什麼），並一併裁清留痕的作者、目標與角色授權。載體＝自舉結束後一張 T4 卡（`core/tiers.md` §3 `rules`），規則與 CLI 同 PR、⛔ 不再製造契約落差窗口。⛔ 不因已登記而免修（`roles/conduct-common.md` §1）。
+- **仍有效未承接（2026-09-09 舊卡退場時登記，關閉留言已指向本清單）**：[#227](https://github.com/ruan6047/ai-workflow/issues/227) main push 的 commit trailer 可解析性守衛（與 P5 的 UI 合併路徑漏洞同源——`squash_merge_commit_message=COMMIT_MESSAGES`，PM 忘了貼 `brief --for closeout` 的訊息時平台照樣拼接多則 commit 訊息）；[#242](https://github.com/ruan6047/ai-workflow/issues/242) `cli/src/wf/verbs/main.py` 只接 `ProjectConfigError` 與 `OSError`，其餘例外仍以 traceback 收場。兩張已 `not planned` 關閉、body 與留言原地保留；⛔ 不因關閉而視為已解決（`roles/conduct-common.md` §1）。
+- **回看（2026-09-09 登記）**：「同對象例外堆疊」這個訊號在規則側沒有任何鉤子了。框架為自己設的三個機械訊號（`core/naming.md` §5 行數上限、2026-09-05 分號裁定、`reachability` job）在「例外堆疊」這個方向上全是關的——例外是接在既有行尾的分號子句，行數抓不到、分號裁定明文允許「條件、例外、指向子句」、reachability 不讀 §2 條文一個字。判準已按 Gemini 複審只留受害點，故此訊號目前只靠 PM 人工數。第一次撞到「規則沒壞但例外多到讀不懂」時再議。
+- **不一致（2026-09-09 登記）**：`core/glossary.md`「狀態面」逐字不含留言，`core/verbs.md` §2「（卡面 JSON 與留言）」是孤例；`cli/tests/test_snapshot_verb.py` 的 `assert_read_only()` 其 `WRITES` 漏列 `post_comment`。
 - 缺 `--ruling` 的印：`core/verbs.md` move 印格所列各案在 CLI；第六案 結案/待確認→結案/退回 走清單（`stages/closeout.md` §4）；是否全收斂一併議。
 ## 待骨架文件決定（本紀錄⛔ 不裁）
 
