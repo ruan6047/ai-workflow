@@ -1,1 +1,1 @@
-"""消費 docs/research/2026-09-07-step6-spec.md：GitHub 唯一網路層。"""
+"""GitHub 唯一網路層；平台事實的居所＝core/platform.md P1–P5。"""

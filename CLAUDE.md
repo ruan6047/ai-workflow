@@ -5,7 +5,7 @@
 ## 現在以什麼為準
 
 1. `docs/research/REBUILD-DECISIONS-2026-09-04.md`：決策紀錄與**第零條**——CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不做內容判讀。
-2. 規則本體 `core/`、`roles/`、`stages/`、`modules/`＝唯一居所（骨架已於 2026-09-07 歸檔至 `archive/research/`；第 6／7 步的形狀住 `docs/research/2026-09-07-step6-spec.md`）。
+2. 規則本體 `core/`、`roles/`、`stages/`、`modules/`＝唯一居所（骨架與第 6／7 步的形狀已歸檔至 `archive/research/`，⛔ 不引為判準）。
 3. `docs/research/extract/`：舊規則萃取與 14 條衝突的量測與裁定。
 
 第 0–5 步已填完；⛔ 不得引用 archive 內任何條文為判準。框架給 AI 用：數值由 AI 自己算，審核時尤其要自己算，⛔ 不以文件裡的統計數字為權威。
