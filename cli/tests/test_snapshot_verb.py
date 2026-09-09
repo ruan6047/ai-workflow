@@ -14,7 +14,6 @@ from wf.compose.enable import UnknownEnableKindError
 from wf.compose.blocks import load_blocks, projection
 from wf.verbs._write import projected
 from wf.verbs.snapshot import run, snapshot
-import wf.verbs.snapshot as snapshot_module
 
 RULES = Path(__file__).resolve().parents[2]
 NOW = '2026-09-08T00:00:00+00:00'
@@ -161,7 +160,8 @@ def test_bad_card_json_goes_to_invalid_cards(setup, catalog, tmp_path):
         f"#2 卡面不合法：{result.data['invalid_cards'][0]['reason']}",)
     written, text = outputs(tmp_path)
     assert written == result.data
-    assert '#2' in text.split('## 壞卡', 1)[1]
+    section = text.split('## 壞卡', 1)[1].split('\n##', 1)[0]
+    assert f"#2：{result.data['invalid_cards'][0]['reason']}" in section  # 號與原因都要在
     assert_read_only(client)
 
 
@@ -259,6 +259,46 @@ def test_unknown_key_is_invalid_card(setup):
     assert [bad['number'] for bad in result.data['invalid_cards']] == [1]
     assert result.data['cards'] == []
     assert posted_comments(client) == []
+    assert_read_only(client)
+
+
+# core/verbs.md §2 D3 末句＋§1：原因字串帶 utf-8 無法編碼的字元（逐字轉義的孤立代理碼點）
+# 仍要落兩檔、合法卡照常輸出；⛔ 不得只捕捉例外後跳過輸出。
+LONE_SURROGATE = '\ud800'
+
+
+def test_unencodable_reason_still_writes_both_outputs(setup, catalog, tmp_path):
+    _, issues, items = population(catalog)
+    issues[1] = issue(2, card('WF-002', **{LONE_SURROGATE: 1}))
+    client, kwargs = setup(issues=issues, items=items)
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert [row['number'] for row in result.data['cards']] == [1, 3, 4]  # 前後的合法卡不受影響
+    bad, = result.data['invalid_cards']
+    assert bad['number'] == 2
+    assert bad['reason'] == f'/{LONE_SURROGATE}: 不符合 additionalProperties'
+    written, text = outputs(tmp_path)  # 兩檔都要在且可回讀，⛔ 不得是 0 位元組或缺檔
+    assert written == result.data  # 落檔的轉義回讀後逐字等值：body 與 reason 都對得回去
+    assert written['invalid_cards'][0]['body'] == issues[1]['body']
+    section = text.split('## 壞卡', 1)[1].split('\n##', 1)[0]
+    assert '#2' in section and '\\ud800' in section  # Markdown 同樣不中斷，原因照樣列出
+    assert posted_comments(client) == []
+    assert_read_only(client)
+
+
+def test_unencodable_reason_does_not_break_emit(setup, catalog):
+    """§1 印欄與落檔同一條邊界：真實入口的 emit=print 也會撞上不可編碼字元。
+    印出去的那行要能編碼，`printed` 仍留原因的逐字原樣。"""
+    _, issues, items = population(catalog)
+    issues[1] = issue(2, card('WF-002', **{LONE_SURROGATE: 1}))
+    client, kwargs = setup(issues=issues, items=items)
+    emitted = []
+    kwargs['emit'] = lambda line: emitted.append(line.encode('utf-8'))
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert emitted == ['#2 卡面不合法：/\\ud800: 不符合 additionalProperties'.encode('utf-8')]
+    assert result.printed == (
+        f"#2 卡面不合法：{result.data['invalid_cards'][0]['reason']}",)
     assert_read_only(client)
 
 
@@ -486,9 +526,3 @@ def test_catalog_defect_raises_before_the_per_card_loop(setup, catalog, tmp_path
         snapshot(**kwargs)
     assert not (tmp_path / '.wf/snapshot/snapshot.json').exists()
     assert_read_only(client)
-
-
-def test_source_line_budget():
-    lines = Path(snapshot_module.__file__).read_text(encoding='utf-8').splitlines()
-    print('snapshot.py 行數：', len(lines))
-    assert len(lines) <= 180

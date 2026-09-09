@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 
 from wf.compose.blocks import load_blocks, projection
 from wf.compose.enable import is_enabled
@@ -25,6 +26,16 @@ from wf.verbs._common import Printer, board_items, field_values, parse_args
 from wf.verbs._write import projected
 
 OUT_DEFAULT = '.wf/snapshot'
+_UNENCODABLE = re.compile('[\ud800-\udfff]')
+
+
+def _encodable(text):
+    """把 utf-8 無法編碼的孤立代理碼點改寫成 `\\uXXXX` 逐字轉義（其餘字元原樣）。
+    §2 D3 末句「⛔ 不拒、依 §1 記入本機輸出並續跑」＋ §1「合法卡照常輸出」：壞卡原因或 body
+    帶這種碼點時，⛔ 不得少產任一本機輸出、⛔ 不得跳過輸出。JSON 落檔後 `json.loads` 回讀
+    即等值原字串（`invalid_cards[].body` 與 reason 都逐字對應）；Markdown 是人看的摘要，
+    該處讀成同形的字面文字，逐字值仍以 snapshot.json 為準。"""
+    return _UNENCODABLE.sub(lambda m: '\\u%04x' % ord(m.group()), text)
 
 
 @dataclass(frozen=True)
@@ -89,7 +100,7 @@ def _markdown(data):
 
 def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     """對狀態面只讀（§1 snapshot 列「寫」欄）；對帳只印不重寫（core/verbs.md §2 末）。"""
-    report = Printer(emit)
+    report = Printer(lambda line: emit(_encodable(line)))  # 印出也會撞到同一個編碼邊界
     catalog = load_blocks(root) if catalog is None else catalog
     cfg = load_project_config(root)
     location, listed = cfg['project'], module_names(cfg)
@@ -168,8 +179,9 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     directory = Path(root) / OUT_DEFAULT if out is None else Path(out)
     directory.mkdir(parents=True, exist_ok=True)
     paths = (directory / 'snapshot.json', directory / 'snapshot.md')
-    paths[0].write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    paths[1].write_text(_markdown(data), encoding='utf-8')
+    written = json.dumps(data, ensure_ascii=False, indent=2) + '\n'
+    paths[0].write_text(_encodable(written), encoding='utf-8')
+    paths[1].write_text(_encodable(_markdown(data)), encoding='utf-8')
     return SnapshotResult(0, data, tuple(report), paths)
 
 
