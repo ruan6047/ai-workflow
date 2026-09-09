@@ -206,7 +206,7 @@ def test_card_facts_and_verbatim_content(tmp_path):
 
 
 def test_capability_prints_level_and_reason_not_tier_basis(tmp_path):
-    """C11：能力層級段印 <欄>.level 與 <欄>.reason（schema $defs/capability required），⛔ 不印 tier_basis；
+    """能力層級段印 <欄>.level 與 <欄>.reason（schema $defs/capability required），⛔ 不印 tier_basis；
     欄為 null 時兩列印 null（負控：不因欄空而消失）。"""
     root = make_root(tmp_path)
     _, lines = emitted(make_client(card(exec_capability=None)), root)

@@ -193,7 +193,7 @@ COUNTER_PRINT = '模組欄由 `move` 寫'
 
 @pytest.mark.parametrize('key', ['escalation_count', 'new_counter'])
 def test_declared_counters_print_and_write(card, catalog, key, capsys):
-    """C09：adds.counters 欄由 edit 改＝印一行並照寫（宣告即印，不看啟用）；未宣告於 schema 的欄仍是 D3。"""
+    """adds.counters 欄由 edit 改＝印一行並照寫（宣告即印，不看啟用）；未宣告於 schema 的欄仍是 D3。"""
     module = {'name': 'fixture', 'adds': {'counters': [key]}}
     catalog = Catalog(catalog.blocks + [Block('yaml wf-module', module, '', catalog.blocks[0].source)], catalog.schemas)
     result, fake = run(card, catalog, key + '=1')
@@ -207,7 +207,7 @@ def test_declared_counters_print_and_write(card, catalog, key, capsys):
 
 
 def test_non_counter_key_has_no_counter_print(card, catalog, capsys):
-    """C09 負控：非計數欄不印「模組欄由 move 寫」。"""
+    """負控：非計數欄不印「模組欄由 move 寫」。"""
     result, fake = run(card, catalog, 'feature="x"')
     assert result.rc == 0
     assert COUNTER_PRINT not in capsys.readouterr().out
