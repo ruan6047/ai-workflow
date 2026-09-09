@@ -17,7 +17,7 @@ from .test_open_verb import issue, item, expected_card
 
 @pytest.mark.parametrize('board_actor,new_actor,enabled', [('old', 'new', True),
     ('old', 'old', False), ('new', 'new', False), ('new', 'old', True)])
-def test_s09_order_signatures_and_new_actor_facts(setup, monkeypatch, board_actor, new_actor, enabled):
+def test_order_signatures_and_new_actor_facts(setup, monkeypatch, board_actor, new_actor, enabled):
     other = item(20)
     other['fieldValues'] = {'狀態': {'name': '進行中'}, 'owner': {'text': f'executor:{board_actor}'}}
     client, kwargs = setup(items=[other], rows=[issue(20, expected_card(card_id='WF-020'))],

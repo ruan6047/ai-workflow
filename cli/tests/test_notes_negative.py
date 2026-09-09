@@ -65,7 +65,7 @@ def test_default_stage_is_the_card_stage(tmp_path):
 
 
 def test_no_project_prints_resource_lock_notice(tmp_path):
-    """本片 PM 預設：project=None 時 board_facts=() 並印一行。"""
+    """PM 預設：project=None 時 board_facts=() 並印一行。"""
     root = make_root(tmp_path, project=False)
     client = make_client(card())
     _, lines = emitted(client, root)

@@ -4,7 +4,7 @@ name: CI
 # ⛔ 不再有掃描 docs 的 job。
 #
 # ruleset「main must be green」（id 20768920）的 required check＝secret-scan、commit-trailer、reachability
-#（ruleset ⛔ 不留空 job。）
+#（ruleset 不留空 job。）
 # P1–P5 的條文居所＝core/platform.md；本檔只是執行 artifact。
 
 on:
@@ -78,7 +78,7 @@ jobs:
       - run: python3 .github/scripts/reachability.py
 
   cli-tests:
-    # 新 CLI 測試 job 隨被測物同 PR 進場。
+    # docs/research/2026-09-07-step6-spec.md：新 CLI 測試 job 隨被測物同 PR 進場。
     name: cli-tests
     runs-on: ubuntu-latest
     timeout-minutes: 10

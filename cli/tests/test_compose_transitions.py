@@ -28,7 +28,7 @@ def catalog():
 @pytest.fixture
 def oracle():
     spec = importlib.util.spec_from_file_location(
-        "s04_reachability", ROOT / ".github/scripts/reachability.py")
+        "reachability", ROOT / ".github/scripts/reachability.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

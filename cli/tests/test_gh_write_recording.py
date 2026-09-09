@@ -182,7 +182,7 @@ def test_recordings_secret_negative_control():
 
 
 @pytest.mark.skipif(os.environ.get('WF_LIVE') != '1', reason='需明確啟用線上唯讀驗證')
-def test_live_readonly_and_existing_s02_suite():
+def test_live_readonly_and_existing_suite():
     from .test_gh_recording import verify_live
     verify_live()
     for case in READ_CASES:

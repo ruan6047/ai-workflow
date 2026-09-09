@@ -141,7 +141,7 @@ def test_add_remove_close_and_comment_interfaces():
     assert payloads[3] == {'body': 'caller:first\n逐字\n第二行'}
 
 
-def test_write_errors_keep_s02_classification():
+def test_write_errors_keep_classification():
     runner = lambda *a, **kw: SimpleNamespace(returncode=1, stdout='', stderr='gh: forbidden (HTTP 403)')
     with pytest.raises(PermissionDenied):
         GhClient('a/b', runner=runner).post_comment(295, 'wf:reject', 'reason')
