@@ -1,9 +1,9 @@
 """消費 core/verbs.md §1 move［3］［4］／§2 末、modules/escalation/module.md §0–1、
 modules/resource-lock/module.md §0–1、modules/initiative/module.md §0–1、
-core/card-schema.md §5、stages/closeout.md F-結案-02／03、ADOPTION.md §2；S09 派工單的 PM 預設。
+core/card-schema.md §5、stages/closeout.md F-結案-02／03、ADOPTION.md §2。
 
 註冊表的鍵＝模組 §0 `adds.counters`／`adds.move_prints` 宣告的 id，值＝該 id 的實作；
-啟用判定與轉移合法性由呼叫端（S08）先做，本層只依宣告算計數與印，⛔ 不擋（第零條）。
+啟用判定與轉移合法性由呼叫端（verbs/move.py）先做，本層只依宣告算計數與印，⛔ 不擋（第零條）。
 """
 from copy import deepcopy
 
@@ -66,7 +66,7 @@ def resources_intersection(card, from_node, to_node, *, catalog, project, client
     與 F-結案-02（終態才釋放宣告的資源）：板上非 isArchived、同 repo、狀態不在
     core/enums.md states_terminal，且 owner 非 null 而 owner.actor 與本卡不同的卡；
     交集所需的 resources 不在投影欄，逐張回讀 issue 卡面（core/card-schema.md §5）。
-    啟用條件（§0 enable_if 的「進行中」）是另一回事，由呼叫端 S03 判，本層⛔ 不重判。
+    啟用條件（§0 enable_if 的「進行中」）是另一回事，由呼叫端（compose/enable.py）判，本層⛔ 不重判。
     """
     if _state(to_node) != IN_PROGRESS:
         return []

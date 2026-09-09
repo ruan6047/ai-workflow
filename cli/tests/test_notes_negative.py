@@ -1,5 +1,5 @@
 """消費 core/verbs.md §1 notes／§2、core/naming.md §3、core/card-schema.md §4、
-core/enums.md stages；roles/conduct-common.md §1 的負控。S10 驗收 6、8、9、10。
+core/enums.md stages；roles/conduct-common.md §1 的負控。
 """
 import json
 from pathlib import Path

@@ -1,5 +1,5 @@
 """消費 modules/escalation/module.md §0–1、core/verbs.md §1 move［4］／§2 末、ADOPTION.md §2。
-S09 驗收 1–4：計數、兩個歸零邊、params 三案、未啟用不計不印。
+計數、兩個歸零邊、params 三案、未啟用不計不印。
 """
 import json
 from pathlib import Path
@@ -37,7 +37,7 @@ def card(**changes):
 
 def run_edges(catalog, cfg, names=('escalation',), start=None,
               edges=(('審核/待確認', '審核/退回'),) * 4):
-    """逐邊套用計數再取印項；印項用更新後的卡（S09 派工單射程 1）。"""
+    """逐邊套用計數再取印項；印項用更新後的卡。"""
     current, counts, prints = card() if start is None else start, [], []
     for source, target in edges:
         current = apply_counters(current, source, target, catalog=catalog, config=cfg,

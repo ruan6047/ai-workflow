@@ -1,4 +1,4 @@
-"""消費 core/verbs.md §1 move／§2、core/state-machine.md §3、core/naming.md §2；S08 驗收。"""
+"""消費 core/verbs.md §1 move／§2、core/state-machine.md §3、core/naming.md §2。"""
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -59,10 +59,10 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S08_NETWORK_DENIED')
+        raise AssertionError('MOVE_NETWORK_DENIED')
     monkeypatch.setattr(subprocess, 'run', forbidden)
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
-    # 即使日後 S09 進工作樹，核心測試仍明確模擬未接線。
+    # 即使日後 move_modules 進工作樹，核心測試仍明確模擬未接線。
     monkeypatch.setitem(sys.modules, 'wf.verbs.move_modules', None)
 
 
@@ -304,13 +304,13 @@ def test_argument_adapter(setup, capsys):
 
 
 def test_negative_controls_network_and_rejection_oracle(setup):
-    with pytest.raises(AssertionError, match='S08_NETWORK_DENIED'):
+    with pytest.raises(AssertionError, match='MOVE_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
     with socket.socket() as connection:
-        with pytest.raises(AssertionError, match='S08_NETWORK_DENIED'):
+        with pytest.raises(AssertionError, match='MOVE_NETWORK_DENIED'):
             connection.connect(('127.0.0.1', 9))
     client, kwargs = setup()
     good = move(10, '進行中', **kwargs)
     with pytest.raises(AssertionError):
         reject(client, good, 'D1')
-    print('負控：網路與子程序均響 S08_NETWORK_DENIED；成功轉移冒充 D1 拒收被斷言抓到')
+    print('負控：網路與子程序均響 MOVE_NETWORK_DENIED；成功轉移冒充 D1 拒收被斷言抓到')

@@ -1,6 +1,6 @@
 """消費 core/dispatch.md（表、末段樣板）、core/handoff.md 每段首行、
 core/params.md rule_confirm_days、core/return.md schema required、core/verbs.md §1 brief 列／§2。
-S11 驗收 1／2／3／9／10：所有遠端操作由手構替身接住，⛔ 不碰真實網路。
+所有遠端操作由手構替身接住，⛔ 不碰真實網路。
 本檔另供 test_brief_reviewer.py 與 test_brief_modules.py 取用共用替身與 root 建置。
 """
 from datetime import date, timedelta
@@ -29,7 +29,7 @@ NUMBERED = re.compile(r'^([0-9]+)\. ([^：]+)：')
 
 
 class Client(FakeGhClient):
-    """S10b 起 fakes.FakeGhClient 已含 merge_base 與 repo；子類保留給本檔既有引用。"""
+    """fakes.FakeGhClient 已含 merge_base 與 repo；子類保留給本檔既有引用。"""
 
 
 def card(**changes):
@@ -114,7 +114,7 @@ def template(lines):
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S11 禁止真實網路')
+        raise AssertionError('禁止真實網路')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
 
 

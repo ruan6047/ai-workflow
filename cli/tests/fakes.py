@@ -1,4 +1,4 @@
-"""共用手構替身；消費 core/verbs.md §2 與 WF-STEP6-S05 續派附錄 §9。"""
+"""共用手構替身；消費 core/verbs.md §2。"""
 from copy import deepcopy
 
 
@@ -62,7 +62,7 @@ class FakeGhClient:
                 'body': first_line + '\n' + body}
 
     def write_project_field(self, prepared):
-        """投影欄的唯一寫入口（S20 刪 WriteMixin.set_project_field 後）；prepared 由 prepare_project_field 產。"""
+        """投影欄的唯一寫入口；prepared 由 prepare_project_field 產。"""
         self.calls.append(('write_project_field', deepcopy(prepared)))
         operation, _, inputs = prepared
         return {'data': {operation: {'projectV2Item': {'id': inputs['itemId']}}}}

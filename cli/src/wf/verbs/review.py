@@ -1,7 +1,6 @@
 """消費 core/verbs.md §1 review／§2／§3、core/return.md 段落表／schema／末段必填性、
 core/naming.md §3／§4、core/tiers.md §1、core/enums.md 值域、modules/*/module.md §0。
-D4 階段限定與規劃前 main 回退依 WF-STEP6-S13 派工單（#296 C03）。
-本片刻意依派工單降級：gh/localgit.py 只有 merge_tree，無本機頭、log、diffstat 介面；
+現況降級：gh/localgit.py 只有 merge_tree，無本機頭、log、diffstat 介面；
 印未能取得，⛔ 不繞過 gh 層新增 git 子指令，也不得推論本機與遠端相同。
 """
 import json
@@ -159,7 +158,7 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
 
 
 def run(argv, *, client, root='.', catalog=None):
-    """七動詞入口接線由 S15 負責；role 值域取 return schema。"""
+    """七動詞入口接線由 verbs/main.py 負責；role 值域取 return schema。"""
     catalog = load_blocks(root) if catalog is None else catalog
     args = parse_args('wf review', argv, ('card', {}), ('--file', {'required': True}),
                       ('--role', {'required': True, 'choices':

@@ -7,7 +7,7 @@ import pytest
 
 
 def pytest_sessionstart(session):
-    if os.environ.get('WF_S05_OFFLINE') != '1':
+    if os.environ.get('WF_OFFLINE') != '1':
         return
     real_run = subprocess.run
 

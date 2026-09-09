@@ -1,8 +1,8 @@
 """消費 core/ruling.md 表、core/dispatch.md closeout、core/handoff.md、
-core/verbs.md §1 brief／§2、core/platform.md P5、core/return.md；S12 驗收。
+core/verbs.md §1 brief／§2、core/platform.md P5、core/return.md。
 
-S19 現況更新（取代 S12／S13 證據包裡已過期的兩句）：closeout 的分支衝突「成立」與
-「merge-tree 工具失敗」不再只有臨時探針，已落在本檔（見下方五個異常情境）；
+closeout 的分支衝突「成立」與
+「merge-tree 工具失敗」的回歸案例落在本檔（見下方五個異常情境）；
 終態的「封存」依 core/glossary.md §「封存、撤銷、停止」＝關 issue（Project item 不移出、
 不 isArchived），不是未實作的缺口——關 issue 的正例在 test_move_core.py 與 test_end_to_end.py。
 """
@@ -164,7 +164,7 @@ def test_trailer_flags_do_not_change_dispatch(tmp_path, target, capsys, monkeypa
 
 
 def test_branch_conflict_uses_the_main_head_and_the_source_sha(tmp_path, monkeypatch):
-    """S11b：分支衝突取源＝遠端 main 頭 vs 卡面 source_sha，與 brief 的 reviewer 段同一組。
+    """分支衝突取源＝遠端 main 頭 vs 卡面 source_sha，與 brief 的 reviewer 段同一組。
     負控：分支頭另給第三個值，舊取源（main 頭 vs 分支頭）會讓下面的等式 FAIL。"""
     seen = []
     monkeypatch.setattr(closeout, 'merge_tree',
@@ -179,7 +179,7 @@ def test_branch_conflict_uses_the_main_head_and_the_source_sha(tmp_path, monkeyp
 
 
 def test_branch_conflict_without_a_source_sha_is_not_a_verdict(tmp_path, monkeypatch):
-    """S11b：source_sha 未填 ⇒ 印未能取得，⛔ 不當成不成立、⛔ 不呼叫 merge-tree。"""
+    """source_sha 未填 ⇒ 印未能取得，⛔ 不當成不成立、⛔ 不呼叫 merge-tree。"""
     seen = []
     monkeypatch.setattr(closeout, 'merge_tree', lambda *args, **kwargs: seen.append(args) or 0)
     lines, _, _ = render(tmp_path, client_for(card(branch='topic', source_sha=None)))
@@ -188,7 +188,7 @@ def test_branch_conflict_without_a_source_sha_is_not_a_verdict(tmp_path, monkeyp
     assert not any(line.startswith('分支衝突：不成立') for line in lines)
 
 
-# ── S19 射程 2：closeout 五種異常情境落成回歸案例（各案 rc=0、輸出逐字、零遠端寫入）──
+# ── closeout 五種異常情境的回歸案例（各案 rc=0、輸出逐字、零遠端寫入）──
 # `render()` 已經替每一案斷言 rc=0 與 client.calls 不含任何寫入方法（WRITES）。
 
 MERGE_TREE_UNKNOWN = '分支衝突：未能取得 merge-tree：'

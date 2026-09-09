@@ -1,4 +1,4 @@
-"""S05 真實 gh API 錄放；core/verbs.md §2；只允許 #295 body／留言副作用。"""
+"""真實 gh API 錄放；core/verbs.md §2；只允許 #295 body／留言副作用。"""
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -181,7 +181,7 @@ def test_recordings_secret_negative_control():
     print('SECRET_NEGATIVE_CONTROL rejected; FILES', len(paths))
 
 
-@pytest.mark.skipif(os.environ.get('WF_S05_LIVE') != '1', reason='需明確啟用線上唯讀驗證')
+@pytest.mark.skipif(os.environ.get('WF_LIVE') != '1', reason='需明確啟用線上唯讀驗證')
 def test_live_readonly_and_existing_s02_suite():
     from .test_gh_recording import verify_live
     verify_live()

@@ -1,4 +1,4 @@
-"""消費 core/verbs.md §1 move 印項、core/ruling.md 必要鍵、core/tiers.md §1；S08 驗收。"""
+"""消費 core/verbs.md §1 move 印項、core/ruling.md 必要鍵、core/tiers.md §1。"""
 import json
 
 import pytest
@@ -34,7 +34,7 @@ FILLED = dict(core_pain='痛', feature='f', non_scope=['x'], list_convergence=[1
 
 
 def test_missing_fields_print_skipped_when_withdrawing_or_all_filled(setup):
-    """S08 查核 R1.8-2：缺欄清單只在非空且 to_node≠清單 時印——兩個負控；正向在上一測。"""
+    """缺欄清單只在非空且 to_node≠清單 時印——兩個負控；正向在上一測。"""
     client, kwargs = setup('需求', '待確認', core_pain='')
     withdrawn = move(10, '清單', **kwargs)
     assert withdrawn.rc == 0 and not any(line.startswith('缺欄清單') for line in withdrawn.printed)

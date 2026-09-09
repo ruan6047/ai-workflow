@@ -1,4 +1,4 @@
-"""core/card-schema.md §1／§5；core/verbs.md §2；S05 gh 寫入協定與區塊定位。"""
+"""core/card-schema.md §1／§5；core/verbs.md §2；gh 寫入協定與區塊定位。"""
 import json
 from types import SimpleNamespace
 
@@ -219,7 +219,7 @@ def test_prepared_field_writes_without_resolving_again(value, data_type):
         None if value is None else {'text': value} if data_type == 'TEXT' else {'singleSelectOptionId': 'OPTION'})
 
 
-# S14b／R1.14-1：block_value 分得出「區塊不存在」與「區塊存在但值是 null」。
+# block_value 分得出「區塊不存在」與「區塊存在但值是 null」。
 @pytest.mark.parametrize('label', ['wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note'])
 def test_block_value_separates_absent_from_null(label):
     def text(content):
@@ -234,6 +234,6 @@ def test_block_value_separates_absent_from_null(label):
         block_value(text('{"a": 1}') * 2, label)
     with pytest.raises(CardBodyError, match=f'{label} 區塊缺少、重複或未閉合'):
         block_value(text('{"a": 1}').removesuffix('```\n'), label)
-    # 對照組：read_block 把 null 與不存在都壓成 None，正是 R1.14-1 的成因。
+    # 對照組：read_block 把 null 與不存在都壓成 None，正是分不出來的成因。
     assert read_block(text('null'), label, required=False) is None
     assert read_block('純散文', label, required=False) is None

@@ -59,7 +59,7 @@ def _errors(errors):
 
 
 def _block(comment, label):
-    """回傳（區塊在不在, 值, 不能解析的原因）；壞區塊只記錄，⛔ 不擋（派工單 §5）。"""
+    """回傳（區塊在不在, 值, 不能解析的原因）；壞區塊只記錄，⛔ 不擋。"""
     try:
         return (*block_value(comment.get('body') or '', label), None)
     except CardBodyError as exc:
@@ -105,7 +105,7 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     cfg = load_project_config(root)
     location, listed = cfg['project'], module_names(cfg)
 
-    def schema(card):  # C10：D3 用 S03 is_enabled 判定的模組合成 schema（同 open）；⛔ 不做的是 notes 條文合成
+    def schema(card):  # D3 用 is_enabled 判定的模組合成 schema（同 open）；⛔ 不做的是 notes 條文合成
         return compose_schema(catalog, 'wf-card', [b.data['name'] for b in catalog.by_label('yaml wf-module')
                                                    if is_enabled(b.data, modules_list=listed, card=card)])
     # 探針：catalog 自身缺陷在此大聲炸，⛔ 不被下面的 except 逐卡誤記成「卡面不合法」。兩次都要：
@@ -119,7 +119,7 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
         report(f"#{issue['number']} 卡面不合法：{reason}")  # §1 印欄：issue 號與原因
 
     for issue in client.issues(state='all'):
-        try:  # 區塊在不在才決定母體；值為 null 仍是卡（R1.14-1）。
+        try:  # 區塊在不在才決定母體；值為 null 仍是卡。
             present, card = block_value(issue['body'] or '', 'wf-card')
         except CardBodyError as exc:
             record_invalid(issue, str(exc))
@@ -186,6 +186,6 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
 
 
 def run(argv, *, client, root='.', catalog=None):
-    """只解析本動詞參數；七動詞接線由 S15 提供。"""
+    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
     args = parse_args('wf snapshot', argv, ('--out', {}))
     return snapshot(client=client, root=root, catalog=catalog, out=args.out).rc

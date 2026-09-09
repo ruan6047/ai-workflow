@@ -1,6 +1,6 @@
 """消費 core/verbs.md §1 open／§2、core/card-schema.md §1–3／§5、
 core/naming.md §1、core/state-machine.md §3、modules/initiative/module.md §0–1。
-S06 驗收：本檔所有遠端操作由具狀態 fake 接住。
+本檔所有遠端操作由具狀態 fake 接住。
 """
 from copy import deepcopy
 import ast
@@ -110,7 +110,7 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S06 禁止真實網路或子程序')
+        raise AssertionError('禁止真實網路或子程序')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
 
@@ -213,7 +213,7 @@ def test_numbering_all_repo_including_withdrawn_terminal_and_plain(setup):
             issue(4, body='無區塊')]
     client, kwargs = setup(rows=rows, items=[item(1), item(3)])
     result = open_issue(10, **kwargs)
-    # 撤銷卡（closed、不在板）持有最大序號：若母體排除它，序號會回退成 WF-004（重用）——S06 查核 R1.6-01
+    # 撤銷卡（closed、不在板）持有最大序號：若母體排除它，序號會回退成 WF-004（重用）
     assert result.card['card_id'] == 'WF-006'
     assert [args for name, args in client.calls if name == 'issues'] == [{'state': 'all'}]
 

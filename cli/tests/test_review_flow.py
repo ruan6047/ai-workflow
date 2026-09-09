@@ -1,5 +1,5 @@
 """消費 core/verbs.md §1 review／§2／§3、core/return.md、core/naming.md §3／§4。
-S13 驗收：手構 fake 接住 GitHub；不錄真實 API、不改共用測試或唯讀介面。
+手構 fake 接住 GitHub；不錄真實 API、不改共用測試或唯讀介面。
 """
 import json
 from pathlib import Path
@@ -20,10 +20,10 @@ from .test_brief_sections import block, card, make_client, make_root, WRITES
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     def denied(*args, **kwargs):
-        raise AssertionError('S13_NETWORK_DENIED')
+        raise AssertionError('REVIEW_NETWORK_DENIED')
     monkeypatch.setattr(socket.socket, 'connect', denied)
     monkeypatch.setattr(subprocess, 'run', denied)
-    with pytest.raises(AssertionError, match='S13_NETWORK_DENIED'):
+    with pytest.raises(AssertionError, match='REVIEW_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
 
 

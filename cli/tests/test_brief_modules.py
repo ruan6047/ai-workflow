@@ -1,5 +1,5 @@
 """消費 core/dispatch.md `json wf-module-sections`、modules/resource-lock／initiative／identity §0，
-以及 verbs/move_modules.py 的交集函式。S11 驗收 7：段名逐字取自宣告，未啟用不印。
+以及 verbs/move_modules.py 的交集函式；段名逐字取自宣告，未啟用不印。
 """
 import pytest
 
@@ -48,7 +48,7 @@ def test_enabled_modules_add_sections_named_verbatim(tmp_path):
 
 
 def test_module_section_contents(tmp_path):
-    """驗收 7：資源宣告逐條、寫入集交集（S09 函式）、規格基線兩值並列、身分三格人填。"""
+    """驗收 7：資源宣告逐條、寫入集交集（move_modules 函式）、規格基線兩值並列、身分三格人填。"""
     root = make_root(tmp_path, listed=['identity'])
     declared, = load_blocks(root).by_label('json wf-module-sections')
     lock, initiative, identity = (declared.data['brief'][name] for name in

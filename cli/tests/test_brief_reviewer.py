@@ -1,5 +1,5 @@
 """消費 core/dispatch.md 基線列、core/verbs.md §1 brief 列（reviewer 三印）。
-S11 驗收 4／8／10：merge-tree 用本機 fixture repo，其餘遠端事實由手構替身接住。
+merge-tree 用本機 fixture repo，其餘遠端事實由手構替身接住。
 """
 import ast
 from pathlib import Path
@@ -104,13 +104,13 @@ def test_reviewer_prints_source_sha_not_pushed(tmp_path):
 
 
 def heads(**by_branch):
-    """branch_head 替身：逐分支給頭；S11b 起 main 頭與被審分支頭要能分別設定。"""
+    """branch_head 替身：逐分支給頭；main 頭與被審分支頭要能分別設定。"""
     return lambda branch: by_branch[branch]
 
 
 def test_reviewer_prints_merge_tree_conflict(tmp_path):
     """驗收 8（印三）：本機 fixture repo 的兩個衝突 commit ⇒ merge-tree 衝突；可合併是負控。
-    S11b：取源改遠端 main 頭 vs source_sha，故衝突由 main 頭（非 merge-base）給。"""
+    取源＝遠端 main 頭 vs source_sha，故衝突由 main 頭（非 merge-base）給。"""
     root = make_root(tmp_path)
     base, left, right = git_repo(root)
     data = card(branch='feat', source_sha=right)
@@ -124,7 +124,7 @@ def test_reviewer_prints_merge_tree_conflict(tmp_path):
 
 
 def test_merge_tree_source_is_main_head_not_merge_base(tmp_path):
-    """S11b 驗收 3：真實分岔（共同祖先→main 與 feature 各改同一行）⇒ 印衝突。
+    """真實分岔（共同祖先→main 與 feature 各改同一行）⇒ 印衝突。
     負控＝把對象換回 merge-base：同一組 SHA 下 merge_tree(merge-base, source_sha)==0，
     亦即舊取源會印「無衝突」，本案的衝突斷言必 FAIL。"""
     root = make_root(tmp_path)
@@ -141,7 +141,7 @@ def test_merge_tree_source_is_main_head_not_merge_base(tmp_path):
 
 
 def test_merge_tree_is_not_run_when_the_main_head_is_unavailable(tmp_path):
-    """S11b：取不到遠端 main 頭 ⇒ 印未能比對、rc 0，⛔ 不當成無衝突、⛔ 不跑 merge-tree。"""
+    """取不到遠端 main 頭 ⇒ 印未能比對、rc 0，⛔ 不當成無衝突、⛔ 不跑 merge-tree。"""
     root = make_root(tmp_path)
     base, _, right = git_repo(root)
 
@@ -196,9 +196,9 @@ def test_localgit_wraps_merge_tree_only():
 
 
 def test_run_wires_for_choices_and_card_id_lookup(tmp_path):
-    """verbs.md §1：`--for` 值域＝TARGETS 的鍵（S12 掛 closeout）；卡ID 可查 issue 號。"""
+    """verbs.md §1：`--for` 值域＝TARGETS 的鍵（含 closeout）；卡ID 可查 issue 號。"""
     root = make_root(tmp_path)
-    assert sorted(TARGETS) == ['closeout', 'executor', 'reviewer']  # S12 已掛 closeout
+    assert sorted(TARGETS) == ['closeout', 'executor', 'reviewer']  # 含 closeout
     assert run(['10', '--for', 'reviewer'], client=make_client(card()), root=root) == 0
     with pytest.raises(SystemExit):
         run(['10', '--for', '不存在'], client=make_client(card()), root=root)

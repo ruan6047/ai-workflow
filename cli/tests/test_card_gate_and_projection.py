@@ -1,4 +1,4 @@
-"""S16：讓 CLI 追上現行規則（astra 總檢查 FINAL-1～6）。
+"""讓 CLI 追上現行規則（astra 總檢查 FINAL-1～6）。
 
 消費 core/verbs.md §1（open／edit／notes／brief／review 列）／§2（D3、對帳、snapshot 例外）／§3
 第 1 條、core/card-schema.md §1／§5 `json wf-projection`、core/enums.md `tiers`。
@@ -40,10 +40,10 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S16_NETWORK_DENIED')
+        raise AssertionError('CARD_GATE_NETWORK_DENIED')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
-    with pytest.raises(AssertionError, match='S16_NETWORK_DENIED'):
+    with pytest.raises(AssertionError, match='CARD_GATE_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
 
 
@@ -131,7 +131,7 @@ def test_edit_writes_back_the_projection_when_a_projection_key_changes(tmp_path,
                   project_owner='fake', project_number=1)
     assert result.rc == 0 and result.card['tier'] == 'T4'
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T4'}
-    # S17：先算後寫之後 prepare_project_field 另含新舊卡的試算，故以實際寫入斷言五欄。
+    # 先算後寫之後 prepare_project_field 另含新舊卡的試算，故以實際寫入斷言五欄。
     written = [prepared[2]['fieldId'] for name, prepared in client.calls
                if name == 'write_project_field']
     assert written == list(projection(catalog))
@@ -143,7 +143,7 @@ def test_edit_leaves_the_board_alone_for_non_projection_keys(tmp_path, catalog):
     result = edit(10, 'feature="改過"', client=client, catalog=catalog,
                   project_owner='fake', project_number=1)
     assert result.rc == 0
-    # S17：試算（prepare_project_field）是讀不是寫；此列要的是零投影欄「寫入」。
+    # 試算（prepare_project_field）是讀不是寫；此列要的是零投影欄「寫入」。
     assert [name for name, _ in client.calls
             if name == 'write_project_field'] == []
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T3'}

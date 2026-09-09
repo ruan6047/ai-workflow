@@ -1,6 +1,6 @@
 """消費 core/verbs.md §1 notes／§2／§3、core/naming.md §3／§4、
 core/card-schema.md §1 notes 欄／§4 wf-note、core/handoff.md 每段首行、
-core/enums.md stages、modules/pitfalls-13/module.md §1；S10 派工單的 PM 預設。
+core/enums.md stages、modules/pitfalls-13/module.md §1。
 """
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,7 +67,7 @@ def _sorted_relative(root, pattern):
 
 
 def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, emit=print):
-    """S15 可直接呼叫；除 D3 的一則 wf:reject 與 §2 對帳的投影回寫外不寫任何遠端。
+    """verbs/main.py 可直接呼叫；除 D3 的一則 wf:reject 與 §2 對帳的投影回寫外不寫任何遠端。
     for_role＝`brief --for` 的角色（§3 第 1 條）；缺省取卡面 owner.role。"""
     report = Printer(emit)
     catalog = load_blocks(root) if catalog is None else catalog
@@ -137,7 +137,7 @@ def _candidates(client, number, catalog, report):
     """naming.md §3：只讀 wf-note 區塊；散文與首行不讀。"""
     schema = compose_schema(catalog, 'wf-note')
     for comment in read_comments(client, number, report, '候選'):
-        try:  # 區塊在而值 null／非物件＝不合法的候選，⛔ 不是沒有候選（S14b 同判）
+        try:  # 區塊在而值 null／非物件＝不合法的候選，⛔ 不是沒有候選
             data = block_object(comment.get('body'), 'wf-note', required=False)
         except CardBodyError:
             data = False
@@ -161,6 +161,6 @@ def _pitfalls(root, stage, report):
 
 
 def run(argv, *, client, root='.', catalog=None):
-    """只解析本動詞參數；七動詞接線由 S15 提供。"""
+    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
     args = parse_args('wf notes', argv, ('card', {}), ('--stage', {}))
     return notes(args.card, client=client, root=root, catalog=catalog, stage=args.stage).rc

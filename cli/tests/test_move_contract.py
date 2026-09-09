@@ -1,4 +1,4 @@
-"""消費 core/verbs.md §1 move／§2、core/enums.md 值域、modules/*/module.md §0；S08–S09 接點。"""
+"""消費 core/verbs.md §1 move／§2、core/enums.md 值域、modules/*/module.md §0。"""
 import ast
 from copy import deepcopy
 import json
@@ -44,7 +44,7 @@ def test_s09_order_signatures_and_new_actor_facts(setup, monkeypatch, board_acto
         assert not [name for name, _ in client.calls if name in WRITES]
         assert project == client.board
         order.append('prints')
-        return ['S09 更新後計數：5']
+        return ['更新後計數：5']
 
     module.apply_counters, module.module_prints = apply_counters, module_prints
     monkeypatch.setitem(sys.modules, 'wf.verbs.move_modules', module)
@@ -52,7 +52,7 @@ def test_s09_order_signatures_and_new_actor_facts(setup, monkeypatch, board_acto
     assert result.rc == 0
     assert order == ['counters', 'prints']
     assert result.card['escalation_count'] == 5
-    assert result.printed == ('S09 更新後計數：5',)
+    assert result.printed == ('更新後計數：5',)
 
 
 def test_module_hooks_absent_before_d1(setup, monkeypatch):
@@ -150,8 +150,8 @@ def test_src_inventory_and_stdlib_negative_control():
     assert not any(isinstance(node, ast.Constant) and isinstance(node.value, str) and 'modules.json' in node.value
                    for node in ast.walk(tree))
     print('負控外部依賴：' + json.dumps(external(imported('import requests'))))
-    print('S08 匯入母體：' + json.dumps(imported(source)))
-    print('S08 src 行數：', len(source.splitlines()))
+    print('匯入母體：' + json.dumps(imported(source)))
+    print('src 行數：', len(source.splitlines()))
 
 
 def test_malformed_existing_schema_cannot_be_repaired_by_move(setup):

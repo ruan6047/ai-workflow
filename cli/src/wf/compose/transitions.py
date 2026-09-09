@@ -1,8 +1,8 @@
 """消費 core/state-machine.md §1–4、core/enums.md「值域」、core/card-schema.md §1、
 core/verbs.md §1 move／§2 D1、modules/{escalation,research,maintenance}/module.md §0。
 
-enabled_modules 由呼叫端提供已啟用的宣告 dict；catalog 可沿用 S01 Catalog，
-未提供時僅透過 S01 讀 root 下的狀態機與值域原件，不快取或判模組啟用。
+enabled_modules 由呼叫端提供已啟用的宣告 dict；catalog 可沿用 compose/blocks.py 的 Catalog，
+未提供時僅透過它讀 root 下的狀態機與值域原件，不快取或判模組啟用。
 """
 from collections.abc import Iterable
 from itertools import combinations

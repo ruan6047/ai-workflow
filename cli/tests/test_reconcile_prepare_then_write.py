@@ -1,4 +1,4 @@
-"""S18：收 astra 複驗 FINAL3-1（共用對帳先寫後驗）。
+"""收 astra 複驗 FINAL3-1（共用對帳先寫後驗）。
 
 消費 core/verbs.md §2「檢查先於首次遠端寫入：先純計算並驗證新內容，再開始第一次寫」、
 同節「下一次動詞先對帳……不等＝以卡面 JSON 重寫該欄」與 D3、
@@ -36,10 +36,10 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S18_NETWORK_DENIED')
+        raise AssertionError('RECONCILE_NETWORK_DENIED')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
-    with pytest.raises(AssertionError, match='S18_NETWORK_DENIED'):
+    with pytest.raises(AssertionError, match='RECONCILE_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
 
 
@@ -66,7 +66,7 @@ def run_one(verb, tmp_path, root, client, catalog):
 
 
 def legacy_reconcile(card_json, *, client, catalog, project_owner, project_number, item_id):
-    """負控：S17 之前的逐欄邊算邊寫（＝astra FINAL3-1 的反例來源）＝prepare 完一欄就寫一欄。"""
+    """負控：舊版的逐欄邊算邊寫（＝astra FINAL3-1 的反例來源）＝prepare 完一欄就寫一欄。"""
     project = client.project(project_owner, project_number, projection(catalog))
     actual = _write.projection_values(project, item_id)
     changed = []
@@ -94,7 +94,7 @@ def test_unresolvable_projection_column_writes_nothing_before_the_rejection(tmp_
     assert rejects(client)[0]['body'].startswith('拒收・D3・')
     assert '級別' in rejects(client)[0]['body'], rejects(client)[0]['body']  # 四支都要指出哪一欄算不出
     assert client.board['items'][0]['fieldValues'] == DRIFTED
-    print('S18 FINAL3-1', verb, writes, rejects(client)[0]['body'])
+    print('FINAL3-1', verb, writes, rejects(client)[0]['body'])
 
 
 @pytest.mark.parametrize('verb', ['review', 'notes', 'brief'])

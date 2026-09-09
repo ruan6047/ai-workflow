@@ -50,7 +50,7 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
             return refuse('D3', f'{key} 不可由 edit 改')
         if key in {k for block in catalog.by_label('yaml wf-module')
                    for k in block.data.get('adds', {}).get('counters', [])}:
-            report('模組欄由 `move` 寫')  # C09：verbs.md §2 末句無「拒」字，硬擋只 D1–D4／P1–P5
+            report('模組欄由 `move` 寫')  # verbs.md §2 末句無「拒」字，硬擋只 D1–D4／P1–P5
         value = json.loads(raw)
         json.dumps(value, allow_nan=False)
         updated = deepcopy(current)
@@ -134,7 +134,7 @@ def edit(card, assignment, *, client, catalog, ruling=None, enabled_modules=(),
 
 
 def run(argv=None, *, client, root='.', catalog=None, enabled_modules=()):
-    """七動詞統一入口名（S15）；參數次序同其餘動詞的 run，行為不變。"""
+    """七動詞統一入口名；參數次序同其餘動詞的 run，行為不變。"""
     args = parse_args('wf edit', argv, ('card', {}), ('--set', {'required': True, 'dest': 'assignment'}),
                       ('--ruling', {}))
     config = load_project_config(root)

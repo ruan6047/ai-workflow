@@ -1,6 +1,6 @@
 """總入口接線：七動詞分派、未知動詞、設定不合法、repo 定位、`edit.run` 別名與不轉送 item_id。
 
-消費 core/verbs.md §1 七列／§2、ADOPTION.md §2；S15 驗收 1／2／4。
+消費 core/verbs.md §1 七列／§2、ADOPTION.md §2。
 所有 GitHub 操作走 cli/tests/fakes.py 的替身；⛔ 不碰網路、⛔ 不跑 `gh`。
 """
 import inspect
@@ -149,7 +149,7 @@ def test_edit_run_is_the_unified_entry_and_main_is_an_alias():
 
 
 def assert_no_item_id(kwargs):
-    """S07 查核 R1.7-02 的不變式：edit ⛔ 不轉送 item_id 給 write_card。"""
+    """不變式：edit ⛔ 不轉送 item_id 給 write_card。"""
     assert 'item_id' not in kwargs, kwargs
 
 

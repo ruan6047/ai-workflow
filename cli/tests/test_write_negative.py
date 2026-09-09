@@ -10,7 +10,7 @@ from .test_compose_schema import ROOT
 
 
 def pytest_sessionstart(session):
-    mutation = os.environ.get('WF_S05_MUTATION')
+    mutation = os.environ.get('WF_WRITE_MUTATION')
     if not mutation:
         return
     from wf.verbs import _write
@@ -64,7 +64,7 @@ def pytest_sessionstart(session):
     ('projection', 'test_projection_resolution_precedes_data_writes[option]'),
 ])
 def test_mutations_make_acceptance_fail(mutation, target):
-    env = dict(os.environ, PYTHONPATH='cli/src', WF_S05_MUTATION=mutation)
+    env = dict(os.environ, PYTHONPATH='cli/src', WF_WRITE_MUTATION=mutation)
     result = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-s', '--tb=line', '--assert=plain',
                              '-p', 'cli.tests.test_write_negative',
                              'cli/tests/test_write_flow.py::' + target],

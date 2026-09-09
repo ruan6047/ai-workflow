@@ -1,4 +1,4 @@
-"""core/verbs.md §2；core/card-schema.md §1／§5／§6；S05 附錄 §1／§2／§9。"""
+"""core/verbs.md §2；core/card-schema.md §1／§5／§6。"""
 from copy import deepcopy
 import json
 
@@ -161,7 +161,7 @@ def test_reconcile_only_differing_fields(card, catalog, changes):
     expected = write.projected(card, catalog)
     names = [name for name, spec in projection(catalog).items() if spec['key'] in changes]
     actual = {name: '不同' if name in names else value for name, value in expected.items()}
-    fake = ProjectionFake(project=project_of(actual))  # S18：對帳改走 prepare→write
+    fake = ProjectionFake(project=project_of(actual))  # 對帳走 prepare→write
     assert write.reconcile(card, client=fake, catalog=catalog, project_owner='owner',
                            project_number=1, item_id='ITEM') == names
     assert [(kw['name'], kw['value']) for name, kw in mutations(fake)] == [(name, expected[name]) for name in names]

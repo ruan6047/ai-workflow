@@ -37,10 +37,10 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S20_NETWORK_DENIED')
+        raise AssertionError('PROJECTION_NETWORK_DENIED')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
-    with pytest.raises(AssertionError, match='S20_NETWORK_DENIED'):
+    with pytest.raises(AssertionError, match='PROJECTION_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
 
 

@@ -1,4 +1,4 @@
-"""S17：收 astra 複驗開著的兩條（FINAL2-1 順序回歸、FINAL-3 未知不得冒充事實）。
+"""收 astra 複驗開著的兩條（FINAL2-1 順序回歸、FINAL-3 未知不得冒充事實）。
 
 消費 core/verbs.md §2「檢查先於首次遠端寫入：先純計算並驗證新內容，再開始第一次寫」、
 同節 D3／D4、對帳與「其餘一律印」，core/card-schema.md §5 `json wf-projection` 的
@@ -34,10 +34,10 @@ def catalog():
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
-        raise AssertionError('S17_NETWORK_DENIED')
+        raise AssertionError('WRITE_ORDER_NETWORK_DENIED')
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
-    with pytest.raises(AssertionError, match='S17_NETWORK_DENIED'):
+    with pytest.raises(AssertionError, match='WRITE_ORDER_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
 
 
@@ -86,7 +86,7 @@ def test_no_board_write_happens_before_the_rejection(tmp_path, catalog, case):
 
 
 def hoist_reconcile(monkeypatch, catalog):
-    """負控：把對帳搬回 S16 的位置——review 於 check_card 之後就對帳；
+    """負控：把對帳搬回舊版的位置——review 於 check_card 之後就對帳；
     edit 拿掉先算驗證（prepare_card 換成不驗的樁），對帳於是又排到驗證之前。"""
     real = _write.check_card
 
@@ -107,7 +107,7 @@ def hoist_reconcile(monkeypatch, catalog):
 @pytest.mark.parametrize('case', CASES)
 def test_hoisting_the_reconcile_writes_the_board_before_the_rejection(tmp_path, catalog, case,
                                                                      monkeypatch):
-    """FINAL2-1 負控：把對帳搬回驗證之前 ⇒ 同三案在拒收前就寫了板（S16 回歸重現），
+    """FINAL2-1 負控：把對帳搬回驗證之前 ⇒ 同三案在拒收前就寫了板（舊版回歸重現），
     證明上一條擋下的正是這個順序，不是別的東西。"""
     hoist_reconcile(monkeypatch, catalog)
     root = make_root(tmp_path)
@@ -115,7 +115,7 @@ def test_hoisting_the_reconcile_writes_the_board_before_the_rejection(tmp_path, 
     result, _ = run_case(case, tmp_path, root, client, catalog)
     writes = [name for name, _ in client.calls if name in WRITES]
     assert result.rc != 0, result
-    assert 'write_project_field' in writes, writes  # S18：對帳改走 prepare→write
+    assert 'write_project_field' in writes, writes  # 對帳走 prepare→write
     assert writes != ['post_comment']
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T1'}
     print('FINAL2-1 負控', case, writes)

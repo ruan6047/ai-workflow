@@ -7,7 +7,7 @@ last_confirmed: 2026-09-07
 
 # 值域
 
-所有封閉值域的唯一居所＝下方區塊（需求方 2026-09-07 裁定）；schema 以 `$ref` 指向（`wf-enums#/<鍵>`），CLI 執行期直接讀，散文只指名⛔ 不抄值。每鍵一個 `{"enum": […]}`，可直接當 schema 片段。模組加的狀態由 `adds.enums.states` 在合成時併進 `states_core`（`core/card-schema.md` §1）。新值或新鍵須需求方裁定。
+所有封閉值域的唯一居所＝下方區塊；schema 以 `$ref` 指向（`wf-enums#/<鍵>`），CLI 執行期直接讀，散文只指名⛔ 不抄值。每鍵一個 `{"enum": […]}`，可直接當 schema 片段。模組加的狀態由 `adds.enums.states` 在合成時併進 `states_core`（`core/card-schema.md` §1）。新值或新鍵須需求方裁定。
 
 ```json wf-enums
 {"$id": "wf-enums",
@@ -25,6 +25,6 @@ last_confirmed: 2026-09-07
 ```
 
 - 狀態全集＝`states_core` ∪ `state_blocked` ∪ `states_terminal` ∪ 已啟用模組的 `adds.enums.states`；`停止` 只在結案階段有值（`core/state-machine.md` §2）。
-- 模組擴充值域：宣告鍵＝該模組 `adds.enums.<鍵>`（需求方 2026-09-07 裁定通用形），只能加值、⛔ 不改基底值；今只有 `states` 有實例。其他鍵第一次出現時同 PR 加合成與可達性案例；⛔ 不預開空鍵。
-- 詞表配套：本檔只放字面。值若是需要定義的詞，核心值住 `core/glossary.md`、模組加的值住該模組 §1；`core/glossary.md` 每個值域鍵一列、⛔ 不逐值列（需求方 2026-09-07）。
+- 模組擴充值域：宣告鍵＝該模組 `adds.enums.<鍵>`（通用形），只能加值、⛔ 不改基底值；今只有 `states` 有實例。其他鍵第一次出現時同 PR 加合成與可達性案例；⛔ 不預開空鍵。
+- 詞表配套：本檔只放字面。值若是需要定義的詞，核心值住 `core/glossary.md`、模組加的值住該模組 §1；`core/glossary.md` 每個值域鍵一列、⛔ 不逐值列。
 - `db_scope` 為 null 時＝未填，`open` 印。
