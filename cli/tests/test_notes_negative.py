@@ -120,6 +120,6 @@ def test_d3_positive_control_valid_card_writes_nothing(tmp_path):
 
 
 def test_source_is_within_the_line_budget():
-    """驗收 10：本片 src ≤200 行。"""
+    """驗收 10：src ≤200 行。"""
     from wf.verbs import notes as module
     assert len(Path(module.__file__).read_text(encoding='utf-8').splitlines()) <= 200

@@ -415,7 +415,7 @@ def test_source_inventory_and_config_reader_negative_control():
     assert all(name.split('.')[0] in {'argparse', 'copy', 'dataclasses', 'pathlib', 're', 'wf'} for name in imported)
     print('匯入母體：', json.dumps(imported, ensure_ascii=False))
     print('負控 modules.json 字面：', config_literals("path = '.wf/modules.json'"))
-    print('本片 modules.json 字面：', config_literals(source))
+    print('modules.json 字面：', config_literals(source))
 
 
 def test_missing_single_select_option_before_project_add(setup):
