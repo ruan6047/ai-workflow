@@ -7,3 +7,6 @@ __pycache__/
 cli/src/*.egg-info/
 __pycache__/
 .pytest_cache/
+
+# wf snapshot 的缺省輸出（每次覆寫；啟用 snapshot 模組後居所是 params.branch）
+/.wf/snapshot/
