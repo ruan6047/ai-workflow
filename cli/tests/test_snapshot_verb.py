@@ -10,6 +10,7 @@ import subprocess
 import pytest
 
 from .fakes import FakeGhClient
+from wf.compose.enable import UnknownEnableKindError
 from wf.compose.blocks import load_blocks, projection
 from wf.verbs._write import projected
 from wf.verbs.snapshot import run, snapshot
@@ -303,7 +304,8 @@ def test_schema_compose_crash_still_lands_in_invalid_cards(setup, catalog, tmp_p
     assert result.rc == 0
     assert [row['number'] for row in result.data['cards']] == [1, 3, 4]
     assert [bad['number'] for bad in result.data['invalid_cards']] == [2]
-    assert result.data['invalid_cards'][0]['reason']  # 釘行為，⛔ 不釘例外類別（D2 修好後會換）
+    reason = result.data['invalid_cards'][0]['reason']  # 釘內容，⛔ 不釘例外類別
+    assert 'stage_plan' in reason or reason.startswith('schema 合成或驗證失敗：')
     assert result.data['invalid_cards'][0]['body'] == issues[1]['body']
     written, text = outputs(tmp_path)
     assert written == result.data
@@ -460,6 +462,30 @@ def test_overwrites_previous_output(setup, catalog, tmp_path):
     (tmp_path / '.wf/snapshot/snapshot.json').write_text('舊內容', encoding='utf-8')
     snapshot(**kwargs)
     assert json.loads((tmp_path / '.wf/snapshot/snapshot.json').read_text(encoding='utf-8'))
+
+
+@pytest.mark.parametrize('break_module, error', [
+    # kind 分派類：探針的 schema({}) 那半邊接得住。
+    (lambda data: data.__setitem__('enable_if', {'kind': 'typo_kind'}), UnknownEnableKindError),
+    # adds 類：啟用集為空時讀不到，非得靠探針的「全部宣告模組」那半邊。
+    (lambda data: data['adds'].pop('enums'), KeyError),
+])
+def test_catalog_defect_raises_before_the_per_card_loop(setup, catalog, tmp_path,
+                                                       break_module, error):
+    """探針負控：catalog 自身缺陷⛔ 不得被逐卡 except 誤記成每張卡的「卡面不合法」——
+    必須在迴圈前炸，且⛔ 不留下任何本機輸出、⛔ 不寫遠端。兩個案例分別打中探針的兩半。
+    隱含契約：`is_enabled` 每種 kind 對 `card={}` 必須安全，新 kind ⛔ 不得對 `_field`
+    的 None 做包含／空值以外的運算，否則探針會反過來打死健康 repo。"""
+    broken = load_blocks(RULES)
+    block, = [b for b in broken.by_label('yaml wf-module') if b.data['name'] == 'deploy']
+    break_module(block.data)
+    _, issues, items = population(catalog)
+    client, kwargs = setup(issues=issues, items=items)
+    kwargs['catalog'] = broken
+    with pytest.raises(error):
+        snapshot(**kwargs)
+    assert not (tmp_path / '.wf/snapshot/snapshot.json').exists()
+    assert_read_only(client)
 
 
 def test_source_line_budget():

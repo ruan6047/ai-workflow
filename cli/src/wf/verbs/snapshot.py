@@ -97,8 +97,9 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     def schema(card):  # C10：D3 用 S03 is_enabled 判定的模組合成 schema（同 open）；⛔ 不做的是 notes 條文合成
         return compose_schema(catalog, 'wf-card', [b.data['name'] for b in catalog.by_label('yaml wf-module')
                                                    if is_enabled(b.data, modules_list=listed, card=card)])
-    schema({})  # 探針：catalog 自身缺陷（如 enable_if kind 打錯）在此大聲炸，
-    # ⛔ 不被下面的 except 逐卡誤記成「卡面不合法」；空卡走 get 缺省、健康 catalog 不炸。
+    # 探針：catalog 自身缺陷在此大聲炸，⛔ 不被下面的 except 逐卡誤記成「卡面不合法」。兩次都要：
+    schema({})  # 走 is_enabled 的 kind 分派；空卡的啟用集是空的，讀不到 adds
+    compose_schema(catalog, 'wf-card', [b.data['name'] for b in catalog.by_label('yaml wf-module')])  # adds.enums
     cards, invalid_cards = [], []
 
     def record_invalid(issue, reason):  # §2 D3 例外：⛔ 不拒、⛔ 不從母體排除，記入本機輸出並續跑
