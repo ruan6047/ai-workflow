@@ -28,6 +28,17 @@ def root():
     return ROOT
 
 
+@pytest.fixture
+def unadopted_root(tmp_path):
+    """規則齊全但尚未接上框架的 repo：只連規則目錄、⛔ 不連 `.wf`。
+    本 repo 自身已有 `.wf/modules.json`（它就是第一個採用專案），故⛔ 不能拿 ROOT 當「無 Project 設定」的樣本。"""
+    target = tmp_path / 'unadopted'
+    target.mkdir()
+    for name in ('core', 'roles', 'stages', 'modules'):
+        (target / name).symlink_to(ROOT / name, target_is_directory=True)
+    return target
+
+
 def recorder(monkeypatch, module):
     calls = []
     monkeypatch.setattr(module, 'run', lambda argv, **kwargs: calls.append((argv, kwargs)) or 7)
@@ -58,10 +69,10 @@ def test_each_verb_reaches_its_own_module(verb, root, monkeypatch):
     assert client.calls == []
 
 
-def test_real_verbs_are_reached_without_the_recorders(root, tmp_path, capsys):
+def test_real_verbs_are_reached_without_the_recorders(unadopted_root, tmp_path, capsys):
     """驗收 1 的負控：不打樁時 rc 由真動詞決定——這裡 snapshot 真的產出檔案。"""
     client = FakeGhClient(issues=[], project={'id': 'P', 'fields': [], 'items': []})
-    assert main(['snapshot', '--out', str(tmp_path / 'out')], client=client, root=root) == 0
+    assert main(['snapshot', '--out', str(tmp_path / 'out')], client=client, root=unadopted_root) == 0
     assert (tmp_path / 'out/snapshot.json').is_file()
     assert json.loads((tmp_path / 'out/snapshot.json').read_text(encoding='utf-8'))['cards'] == []
     assert '無 Project 設定' in capsys.readouterr().out

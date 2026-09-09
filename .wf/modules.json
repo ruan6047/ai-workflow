@@ -1,0 +1,4 @@
+{"modules": [],
+ "merge_method": "squash",
+ "areas": ["WF", "CLI", "DOC", "OPS"],
+ "project": {"owner": "ruan6047", "number": 8}}

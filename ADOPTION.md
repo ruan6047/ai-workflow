@@ -13,13 +13,15 @@
 ```json
 {"modules": [],
  "merge_method": "squash",
- "areas": ["WF", "CLI", "DOC", "OPS"]}
+ "areas": ["WF", "CLI", "DOC", "OPS"],
+ "project": null}
 ```
 
 - `modules` 只列專案級模組（escalation、resource-lock、pitfalls-13、identity、snapshot、db-contract）；卡級模組（research、deploy、maintenance、initiative、stat-redline）看卡面，⛔ 不列。
 - 加入帶 `adds.enums.states` 的專案級模組時，同一 PR 補狀態欄選項。
 - `params` 的鍵與種子值抄該模組 `module.md` §0；本專案實際採用的值住本檔。
 - `areas` 是卡ID 前綴枚舉（`core/naming.md` §1）。
+- `project` 是 CLI 定位板的唯一居所（owner 字串＋number 整數）；缺它動詞不寫投影欄、只印「無 Project 設定」。種子填 `null`，§3 的 Project 建好後回填 `{"owner": …, "number": …}`。
 - 有資料庫才建 `.wf/contracts/DATABASE_CONTRACT.md`；同時 ≥2 執行者才建 `.wf/contracts/CONTROL_PLANE.md`。
 
 ## 3 · Project 五欄
