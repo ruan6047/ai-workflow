@@ -1,6 +1,6 @@
-"""消費 core/verbs.md §1 snapshot 列／§2、core/card-schema.md §1 (b)／§2／§4／§5、
-core/return.md、modules/snapshot/module.md §1、roles/pm.md F-PM-04。
-S14 驗收：本檔所有遠端操作由手構替身接住；⛔ 不碰真實網路。
+"""消費 core/verbs.md §1 snapshot 列（硬擋欄＝「—」）／§2（對帳例外、D3 末句的 snapshot 例外）、
+core/card-schema.md §1 (b)／§2／§4／§5、core/return.md、roles/pm.md F-PM-04。
+本檔所有遠端操作由手構替身接住；⛔ 不碰真實網路。
 """
 import json
 from pathlib import Path
@@ -17,7 +17,8 @@ import wf.verbs.snapshot as snapshot_module
 
 RULES = Path(__file__).resolve().parents[2]
 NOW = '2026-09-08T00:00:00+00:00'
-WRITES = ('update_card_body', 'write_project_field',
+# snapshot 的「寫」欄只有本機兩檔：任一遠端寫入都算違規，post_comment（含 wf:reject）也是。
+WRITES = ('update_card_body', 'write_project_field', 'post_comment',
           'add_to_project', 'remove_from_project', 'close_issue')
 
 
@@ -102,12 +103,19 @@ def setup(tmp_path, catalog):
     return make
 
 
-def rejects(client):
+def posted_comments(client):
     return [data for name, data in client.calls if name == 'post_comment']
 
 
 def assert_read_only(client):
     assert [name for name, _ in client.calls if name in WRITES] == []
+
+
+def outputs(tmp_path):
+    """兩個本機輸出檔的內容（不存在即讓測試在 read_text 就紅）。"""
+    directory = tmp_path / '.wf/snapshot'
+    return (json.loads((directory / 'snapshot.json').read_text(encoding='utf-8')),
+            (directory / 'snapshot.md').read_text(encoding='utf-8'))
 
 
 # 驗收 1：母體＝帶 wf-card 的全部 issue（含撤銷卡與終態關閉卡），無區塊者不算。
@@ -129,59 +137,69 @@ def test_population_counts_every_card_block(setup, catalog):
     assert [row['number'] for row in result.data['cards']] == [1, 2, 3, 4]
     assert [row['state_open'] for row in result.data['cards']] == [True, True, True, False]
     assert [row['projection'] is not None for row in result.data['cards']] == [True, True, False, False]
-    assert rejects(client) == []
+    assert posted_comments(client) == []
+    assert result.data['invalid_cards'] == []
     assert_read_only(client)
     print('母體：issue 共', len(issues), '帶 wf-card 者', len(result.data['cards']))
 
 
-# 驗收 2：任一卡 JSON 壞 ⇒ rc≠0、該卡恰一則 wf:reject、本機兩檔不寫。
-def test_d3_bad_card_json(setup, catalog, tmp_path):
+# 驗收 2：壞卡進 invalid_cards（帶原始 body），rc=0、零遠端寫入、合法卡照常輸出。
+def test_bad_card_json_goes_to_invalid_cards(setup, catalog, tmp_path):
     _, issues, items = population(catalog)
     issues[1] = issue(2, body=block('wf-card', None, raw='{壞掉的 JSON'))
     client, kwargs = setup(issues=issues, items=items)
     result = snapshot(**kwargs)
-    assert result.rc == 1
-    assert result.data is None
-    assert len(rejects(client)) == 1
-    assert rejects(client)[0]['number'] == 2
-    assert rejects(client)[0]['first_line'] == 'wf:reject'
-    assert rejects(client)[0]['body'].startswith('拒收・D3・')
-    assert not (tmp_path / '.wf/snapshot/snapshot.json').exists()
-    assert not (tmp_path / '.wf/snapshot/snapshot.md').exists()
+    assert result.rc == 0
+    assert posted_comments(client) == []
+    assert [row['number'] for row in result.data['cards']] == [1, 3, 4]
+    assert [bad['number'] for bad in result.data['invalid_cards']] == [2]
+    assert result.data['invalid_cards'][0]['body'] == issues[1]['body']  # 原始 body 逐字留存
+    assert result.data['invalid_cards'][0]['reason']
+    written, text = outputs(tmp_path)
+    assert written == result.data
+    assert '#2' in text.split('## 壞卡', 1)[1]
     assert_read_only(client)
 
 
-def test_d3_unclosed_block_and_duplicate(setup):
+def test_unclosed_block_and_duplicate_are_invalid_cards(setup):
     for body in ('```json wf-card\n{}\n', block('wf-card', card()) + block('wf-card', card())):
         client, kwargs = setup(issues=[issue(1, body=body)])
-        assert snapshot(**kwargs).rc == 1
-        assert len(rejects(client)) == 1
+        result = snapshot(**kwargs)
+        assert result.rc == 0
+        assert [bad['number'] for bad in result.data['invalid_cards']] == [1]
+        assert result.data['invalid_cards'][0]['body'] == body
+        assert result.data['cards'] == []
+        assert posted_comments(client) == []
+        assert_read_only(client)
 
 
-# S14b／R1.14-1：wf-card 區塊存在但值為 null（或任何非物件）＝存在的壞卡，不是「沒有卡」。
-def test_null_card_block_is_d3(setup, catalog, tmp_path):
+# core/card-schema.md §1（wf-card 是 object）：區塊在而值為 null（或任何非物件）＝存在的壞卡，不是「沒有卡」。
+def test_null_card_block_is_invalid_card(setup, catalog, tmp_path):
     _, issues, items = population(catalog)
     issues[1] = issue(2, None)  # 區塊內容逐字 null
     assert '```json wf-card\nnull\n```' in issues[1]['body']
     client, kwargs = setup(issues=issues, items=items)
     result = snapshot(**kwargs)
-    assert result.rc == 1
-    assert result.data is None
-    assert len(rejects(client)) == 1
-    assert rejects(client)[0]['number'] == 2
-    assert rejects(client)[0]['first_line'] == 'wf:reject'
-    assert '不是物件' in rejects(client)[0]['body']
-    assert not (tmp_path / '.wf/snapshot/snapshot.json').exists()
-    assert not (tmp_path / '.wf/snapshot/snapshot.md').exists()
+    assert result.rc == 0
+    assert posted_comments(client) == []
+    assert [bad['number'] for bad in result.data['invalid_cards']] == [2]
+    assert '不是物件' in result.data['invalid_cards'][0]['reason']
+    assert result.data['invalid_cards'][0]['body'] == issues[1]['body']
+    assert [row['number'] for row in result.data['cards']] == [1, 3, 4]
+    written, _ = outputs(tmp_path)
+    assert written == result.data
     assert_read_only(client)
 
 
 @pytest.mark.parametrize('value', [None, [], ['a'], 'null', 3, True])
-def test_non_object_card_block_is_d3(setup, value):
+def test_non_object_card_block_is_invalid_card(setup, value):
     client, kwargs = setup(issues=[issue(1, value)])
-    assert snapshot(**kwargs).rc == 1
-    assert len(rejects(client)) == 1
-    assert '不是物件' in rejects(client)[0]['body']
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert posted_comments(client) == []
+    assert result.data['cards'] == []
+    assert '不是物件' in result.data['invalid_cards'][0]['reason']
+    assert_read_only(client)
 
 
 # 驗收 3：core schema——宣告模組欄恆合法（(b)）；模組狀態值未合成即不合法。
@@ -191,41 +209,97 @@ def test_declared_module_field_passes_without_enabling(setup, catalog):
     result = snapshot(**kwargs)
     assert result.rc == 0
     assert result.data['cards'][0]['card']['escalation_count'] == 2
-    assert rejects(client) == []
+    assert result.data['invalid_cards'] == []
+    assert posted_comments(client) == []
 
 
-def test_module_state_value_is_rejected_by_core_schema(setup):
-    """C10 負控：escalation 未列於專案設定 ⇒ 升級 不在合成 schema，D3。"""
+def test_module_state_value_outside_core_schema_is_invalid_card(setup):
+    """escalation 未列於專案設定 ⇒ 升級 不在合成 schema：進 invalid_cards，⛔ 不拒收。"""
     client, kwargs = setup(issues=[issue(1, card(state='升級'))])
     result = snapshot(**kwargs)
-    assert result.rc == 1
-    assert len(rejects(client)) == 1
-    assert '/state' in rejects(client)[0]['body']
+    assert result.rc == 0
+    assert posted_comments(client) == []
+    assert [bad['number'] for bad in result.data['invalid_cards']] == [1]
+    assert '/state' in result.data['invalid_cards'][0]['reason']
+    assert_read_only(client)
 
 
 def test_enabled_module_state_value_passes_composed_schema(setup, catalog):
-    """C10：D3 用 S03 is_enabled 判定的模組合成 schema——escalation 啟用時板上 state=升級 的卡不被拒。"""
+    """模組合成 schema 依 is_enabled 判定——escalation 啟用時板上 state=升級 的卡是合法卡。"""
     value = card(state='升級', escalation_count=3)
     client, kwargs = setup(issues=[issue(1, value)], items=[on_board(1, value, catalog)], modules=['escalation'])
     result = snapshot(**kwargs)
-    assert result.rc == 0 and rejects(client) == []
+    assert result.rc == 0 and posted_comments(client) == []
     assert result.data['cards'][0]['card']['state'] == '升級'
+    assert result.data['invalid_cards'] == []
     assert_read_only(client)
 
 
 @pytest.mark.parametrize('plan,accepted', [(['需求', '研究', '執行', '審核', '結案'], True), ([], False)])
 def test_stage_plan_enabled_module_state(setup, plan, accepted):
-    """C10：enable_if 依卡面（stage_plan_has 研究）⇒ 不可判定 只在該卡的 stage_plan 含研究時合法。"""
+    """enable_if 依卡面（stage_plan_has 研究）⇒ 不可判定 只在該卡的 stage_plan 含研究時合法；
+    不合法時走 invalid_cards 而非拒收，故兩邊都是 rc=0、零留言。"""
     client, kwargs = setup(issues=[issue(1, card(state='不可判定', stage='研究', stage_plan=plan))])
     result = snapshot(**kwargs)
-    assert (result.rc == 0) is accepted
-    assert (rejects(client) == []) is accepted
+    assert result.rc == 0
+    assert (result.data['cards'] != []) is accepted
+    assert (result.data['invalid_cards'] == []) is accepted
+    assert posted_comments(client) == []
+    assert_read_only(client)
 
 
-def test_unknown_key_is_rejected(setup):
+def test_unknown_key_is_invalid_card(setup):
     client, kwargs = setup(issues=[issue(1, card(不存在的鍵=1))])
-    assert snapshot(**kwargs).rc == 1
-    assert len(rejects(client)) == 1
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert [bad['number'] for bad in result.data['invalid_cards']] == [1]
+    assert result.data['cards'] == []
+    assert posted_comments(client) == []
+    assert_read_only(client)
+
+
+# 驗收 2b：母體＝cards ∪ invalid_cards；混合、全壞與已關閉的壞卡都不掉。
+def test_mixed_valid_and_invalid_cards_keep_population(setup, catalog, tmp_path):
+    _, issues, items = population(catalog)
+    issues[1] = issue(2, card('WF-002', 不存在的鍵=1))
+    issues[2] = issue(3, body=block('wf-card', None, raw='{壞掉的 JSON'))
+    client, kwargs = setup(issues=issues, items=items)
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert result.data['cards'] != [] and result.data['invalid_cards'] != []
+    numbers = ([row['number'] for row in result.data['cards']]
+               + [bad['number'] for bad in result.data['invalid_cards']])
+    assert sorted(numbers) == [1, 2, 3, 4]  # issue 5 無 wf-card 區塊，不在母體
+    written, _ = outputs(tmp_path)
+    assert written == result.data
+    assert_read_only(client)
+
+
+def test_every_card_invalid_still_writes_both_outputs(setup, tmp_path):
+    broken = [issue(number, body=block('wf-card', None, raw='{壞掉的 JSON'))
+              for number in (1, 2, 3, 4)]
+    client, kwargs = setup(issues=broken)
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert result.data['cards'] == []
+    assert [bad['number'] for bad in result.data['invalid_cards']] == [1, 2, 3, 4]
+    written, text = outputs(tmp_path)
+    assert written == result.data
+    assert '## 壞卡' in text and '#4' in text
+    assert posted_comments(client) == []
+    assert_read_only(client)
+
+
+def test_closed_bad_card_is_in_invalid_cards(setup, catalog):
+    _, issues, items = population(catalog)
+    issues[3] = issue(4, card('WF-004', 不存在的鍵=1), state='closed')  # 母體含 state='all'
+    client, kwargs = setup(issues=issues, items=items)
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert [bad['number'] for bad in result.data['invalid_cards']] == [4]
+    assert [name for name, kwargs_ in client.calls if name == 'issues'] == ['issues']
+    assert [kwargs_['state'] for name, kwargs_ in client.calls if name == 'issues'] == ['all']
+    assert_read_only(client)
 
 
 # 驗收 4：對帳只印不重寫。
