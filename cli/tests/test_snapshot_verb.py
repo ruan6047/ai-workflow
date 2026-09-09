@@ -303,10 +303,11 @@ def test_schema_compose_crash_still_lands_in_invalid_cards(setup, catalog, tmp_p
     assert result.rc == 0
     assert [row['number'] for row in result.data['cards']] == [1, 3, 4]
     assert [bad['number'] for bad in result.data['invalid_cards']] == [2]
-    assert 'TypeError' in result.data['invalid_cards'][0]['reason']
+    assert result.data['invalid_cards'][0]['reason']  # 釘行為，⛔ 不釘例外類別（D2 修好後會換）
     assert result.data['invalid_cards'][0]['body'] == issues[1]['body']
-    written, _ = outputs(tmp_path)
+    written, text = outputs(tmp_path)
     assert written == result.data
+    assert '#2' in text.split('## 壞卡', 1)[1]
     assert_read_only(client)
 
 
