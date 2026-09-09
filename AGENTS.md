@@ -13,7 +13,7 @@
 
 ## 舊根因家族對照（隨舊 CLI 封存）
 
-下列字串由凍結中的測試 `test_agents_md_records_the_canonical_root_cause_id` 釘住，全表見 `archive/rules-2026-09/AGENTS.md`：
+下列字串留作人讀對照，全表見 `archive/rules-2026-09/AGENTS.md`。⛔ 無機械錨——`test_agents_md_records_the_canonical_root_cause_id` 讀的是 `archive/rules-2026-09/AGENTS.md`（該測試住 `archive/rules-2026-09/cli/tests/test_doctor.py`，`parents[2]` 解析到 `archive/rules-2026-09`），且 CI 只跑 `cli/tests`、⛔ 不跑 archive：
 
 `commit-trailer-required-but-missing`；曾用名：`governance-provenance-trailer-omission`、`unknown-DEV-AIWF-MINIMAL-CI1-R2-002`
-舊 trailer 檢查器只是偵測器，不在 push 也不在 merge 路徑上（原文在 `archive/rules-2026-09/AGENTS.md`；ROADMAP 仍以本行為錨）。
+舊 trailer 檢查器只是偵測器，不在 push 也不在 merge 路徑上（原文在 `archive/rules-2026-09/AGENTS.md`；ROADMAP 已隨舊 CLI 封存於 `archive/rules-2026-09/docs/ROADMAP.md`）。
