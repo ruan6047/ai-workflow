@@ -1,4 +1,4 @@
-"""消費 roles/conduct-common.md §1；第 6 步規格的離線測試護欄。"""
+"""消費 roles/conduct-common.md §1；離線測試護欄。"""
 import os
 from pathlib import Path
 import subprocess
