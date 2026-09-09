@@ -19,7 +19,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 | `notes <card> [--stage <階段>]` | — | 卡面 JSON 解析失敗（D3） | 一份編號清單（§3）；`--stage` 不在 `stages` 值域＝印並改用卡當前階段 | 無 |
 | `brief <card> --for executor\|reviewer\|closeout [--requested-by A] [--planned-by A] [--implemented-by A] [--reviewed-by A]…` | 角色；`--for closeout` 的 trailer 值（字面，缺即印缺；`--reviewed-by` 可重複） | 卡面 JSON 解析失敗（D3） | 派工單或裁定單的 CLI 段（`core/dispatch.md`、`core/ruling.md`，含已啟用模組的段）；`--for reviewer` 另印分支頭 ≠ 來源 SHA、來源 SHA 未 push、`merge-tree` 衝突；`--for closeout` 另印 merge SHA 是否 main 祖先、CI 狀態、squash 訊息（標題一行＝卡ID＋`feature`；本文逐字＝被審 SHA 與本 iteration 每則 `wf:verdict` 的留言作者＋`review_result`；trailer＝末端連續單一區塊，鍵取 P5 允許集合、值全取字面：Requested-by／Planned-by／Implemented-by 取同名旗標、缺旗標印缺；Reviewed-by＝每個 `--reviewed-by` 一行、缺旗標則每則 `wf:verdict` 的留言作者一行（首行⛔ 不讀，§2）；⛔ 不自動 merge）；缺人填段；每段首行 `[來源: <來源>/<檔>#<節> · <name>：<when> · confirmed <日期>]`（`name`、`when` 取該檔 frontmatter），過期（`rule_confirm_days`）標 ⚠️ | 無；stdout 由 PM 貼進留言 |
 | `review <card> --file <交回單.json> --role executor\|reviewer` | 本機交回單 JSON | schema 不合法（D3）；卡在執行階段以後而 executor 的卡面 `branch` null、遠端無該分支或遠端 ref 解析不出 40 碼 commit SHA（D4） | 缺段（全級別 `self_run`、`acceptance`；T2 以上另加 `unverified`、`note_responses`、`out_of_scope`；依 `role` 的段；已啟用模組的交回單段，`core/return.md`）；`note_responses` 的 id 未覆蓋 `notes` 清單、`not_applicable`／`found` 而 text 空、`unverified.reason` 空、模組段內 `不適用`／`發現` 而 text 空；`finding_id` 與本卡既有 `wf-return` 撞號；交回單欄位不一致（`review_result` 對 `findings`，PM 判） | 補 `card_id`／`iteration`／`role`／`source_sha` 後驗 schema——`source_sha` 依 role 取源：reviewer＝卡面 `source_sha`（null 即 schema 不合法，D3）；executor＝卡面 `branch` 在遠端的分支頭（`branch` null 時＝遠端 main 頭），⛔ 不用本機分支頭、⛔ 不用 null 或全零；本機分支頭 ≠ 遠端頭時印、本機 git 狀態取不到時印「未能比對本機分支頭」（rc=0）——貼一則留言，首行依 role：executor＝`wf:return`、reviewer＝`wf:verdict`，帶 `json wf-return`，散文段附 `git log` 的 commit 清單與 `git diff --stat` 的改動面；⛔ 不動狀態、⛔ 不另產生其他留言 |
-| `snapshot` | — | 任一卡 JSON 解析失敗（D3；schema 仍從 core 讀，⛔ 不做 §3 合成） | 對帳不等的卡與欄（§2 例外，⛔ 不重寫） | 本機 JSON＋Markdown；含全部 `wf-note` 候選與 `last_cited`（從 `wf-return.note_responses` 推得，不存卡面） |
+| `snapshot [--out <dir>]` | 輸出目錄；缺省 `.wf/snapshot` | — | 卡面 JSON 解析失敗或不合 schema 的 issue 號與原因（schema 仍從 core 讀，⛔ 不做 §3 合成）；對帳不等的卡與欄（§2 例外，⛔ 不重寫） | 本機 JSON＋Markdown；合法卡照常輸出，壞卡另列 issue 號、原始 body 與原因，⛔ 不從盤點母體排除；含全部 `wf-note` 候選與 `last_cited`（從 `wf-return.note_responses` 推得，不存卡面）；⛔ 不寫狀態面（含 `wf:reject` 留言） |
 
 `move --to 清單`＝撤銷；`move --to 阻塞`＝寫 `blocked.from`；離開阻塞＝回 `blocked.from` 並清 `blocked`。
 
@@ -27,11 +27,11 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 
 - D1 轉移在合成表內；終態無出邊；⛔ 無自由文字狀態。
 - D2 `open` 只從清單項或撤銷卡，兩者皆不在板上；封存的卡與 Project item isArchived 的卡仍在板上，⛔ 不是撤銷卡。
-- D3 JSON 合法、鍵集合封閉；`card_id`／`source_issue` 建卡後不可改；投影 TEXT 欄超過 `max_bytes`；解析失敗整卡拒，該卡所有動詞不跑。
+- D3 JSON 合法、鍵集合封閉；`card_id`／`source_issue` 建卡後不可改；投影 TEXT 欄超過 `max_bytes`；解析失敗整卡拒，該卡所有動詞不跑；`snapshot` 例外＝⛔ 不拒、依 §1 記入本機輸出並續跑。
 - D4 `--source-sha` 在遠端存在；`--ruling` URL 存在；`parent` 指到板上存在的卡。
 - 檢查先於首次遠端寫入：先純計算並驗證新內容，再開始第一次寫（→ [#023](../archive/issues/023.md)、[#141](../archive/issues/141.md)、[#147](../archive/issues/147.md)、[#148](../archive/issues/148.md)、[#221](../archive/issues/221.md)）。
 - 寫入順序＝卡面 JSON → 五個投影欄 → 回讀；回讀不等＝D3 拒收（rc≠0，寫 `wf:reject`）。
-- 下一次動詞先對帳卡面 JSON 與五個投影欄；不等＝以卡面 JSON 重寫該欄後續跑並印重寫了哪幾欄，⛔ 不拒收；`snapshot` 例外＝只印不重寫（`modules/snapshot/module.md` §1 唯讀）。
+- 下一次動詞先對帳卡面 JSON 與五個投影欄；不等＝以卡面 JSON 重寫該欄後續跑並印重寫了哪幾欄，⛔ 不拒收；`snapshot` 例外＝只印不重寫（§1 `snapshot` 列⛔ 不寫狀態面）。
 - 每次拒收寫一則 `wf:reject` 留言：一行 `拒收・<D 編號>・<原因>`；印不寫留言。
 - 留言 append-only：一次寫入，⛔ 不編輯既有留言、⛔ 不開可編輯的日誌留言。
 - CLI 只讀三種留言區塊：`wf-return`、`wf-ruling`、`wf-note`；散文與首行不讀。

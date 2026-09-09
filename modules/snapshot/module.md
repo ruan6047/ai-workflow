@@ -25,7 +25,7 @@ last_confirmed: 2026-09-06
       "add": [],
       "remove": []
     },
-    "flags": ["--out"],
+    "flags": [],
     "notes": ["F-snapshot-01"],
     "handoff_sections": []
   },
