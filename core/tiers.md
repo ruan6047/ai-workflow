@@ -2,7 +2,7 @@
 name: tiers
 when: 開卡定級別、選能力層級、判紅線、判降級、判缺陷級別時讀
 non_scope: ⛔ 不寫查核者怎麼審（住 roles/reviewer.md）；⛔ 不列模型名（住專案層）
-last_confirmed: 2026-09-05
+last_confirmed: 2026-09-09
 ---
 
 # 級別與紅線
@@ -33,6 +33,7 @@ sensitive 值域住 `core/enums.md` `sensitive`（8 值）。
 
 - 含 public_contract、security、payment、data_write、production ⇒ 至少 T3。
 - 含 migration、rules、statistics ⇒ T4。
+- `rules`＝改 `core/naming.md` §4 的規則檔；專案層 `.wf/` 檔與注意事項條目（P-／T-）不算。
 - `db_scope ∈ {schema, data-migration}` ⇒ T4，且 sensitive 必含 migration（C9）。
 - T4 查核者的獨立性條件＝注意事項，住 `roles/pm.md` §4；sign-off 依 `roles/requester.md` §1 與 `stages/closeout.md` §4。
 - 注意事項升為硬擋的唯一入口＝需求方裁定，且處理手段屬不可逆或平台層事故（條文住 `roles/requester.md` §1）；預設不升。

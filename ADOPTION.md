@@ -17,14 +17,16 @@
 ```
 
 - `modules` 只列專案級模組（escalation、resource-lock、pitfalls-13、identity、snapshot、db-contract）；卡級模組（research、deploy、maintenance、initiative、stat-redline）看卡面，⛔ 不列。
+- 加入帶 `adds.enums.states` 的專案級模組時，同一 PR 補狀態欄選項。
 - `params` 的鍵與種子值抄該模組 `module.md` §0；本專案實際採用的值住本檔。
 - `areas` 是卡ID 前綴枚舉（`core/naming.md` §1）。
 - 有資料庫才建 `.wf/contracts/DATABASE_CONTRACT.md`；同時 ≥2 執行者才建 `.wf/contracts/CONTROL_PLANE.md`。
 
 ## 3 · Project 五欄
 
-- 階段（單選 8 值）、狀態（單選：核心 5＋阻塞＋結案的停止＋已啟用模組的值）、級別（單選 5 值）、owner（TEXT，`role:actor`）、卡ID（TEXT）。
-- 值域逐字取 `core/enums.md`（階段 `stages`、狀態 `states_core`＋`state_blocked`＋`states_terminal`＋模組 `adds.enums.states`、級別 `tiers`）；兩個 view：活卡依階段分組、全部。
+- 階段（單選）、狀態（單選）、級別（單選）、owner（TEXT，`role:actor`）、卡ID（TEXT）。
+- 值域逐字取 `core/enums.md`（階段 `stages`、級別 `tiers`）與各模組 `module.md` §0（`adds.enums.states`）。狀態＝`states_core`＋`state_blocked`＋`states_terminal`＋**全部**卡級模組的 `adds.enums.states`＋`modules` 列出的專案級模組的 `adds.enums.states`——卡級模組依各自 `module.md` §0 的 `enable_if` 逐卡啟用（三種 kind：`stage_plan_has`、`field_nonempty`、`field_contains`），選項缺一個就讓一條合法轉移變成 D3 拒收，故建板時一次備齊；Project 備妥選項⛔ 不等於模組已啟用。
+- 兩個 view（活卡依階段分組、全部）：建 view 與 filter 可走 `createProjectV2View`／`updateProjectV2View`；依階段分組與內建 workflow 停用⛔ 無 API 輸入（查法＝introspect `ProjectV2ViewConfigurationInput` 只有 `visibleFieldIds`、Mutation 無 `updateProjectV2Workflow`），UI 手做後以 `projectV2.views{filter groupByFields}` 與 `workflows{enabled}` 回讀比對，⛔ 不憑截圖。
 - 五欄全由 CLI 回寫；⛔ 不用 GitHub 內建自動化、⛔ 不在 UI 手改（`roles/conduct-common.md` §1）。
 
 ## 4 · 第一張卡
