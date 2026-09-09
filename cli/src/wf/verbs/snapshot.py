@@ -1,10 +1,12 @@
-"""消費 core/verbs.md §1 snapshot 列／§2（對帳例外、每次拒收一則）、
+"""消費 core/verbs.md §1 snapshot 列（硬擋欄＝「—」：本動詞無拒收，⛔ 不寫狀態面含 `wf:reject`）
+／§2（對帳例外；D3 末句「`snapshot` 例外＝⛔ 不拒、依 §1 記入本機輸出並續跑」）、
 core/card-schema.md §1 (b)／§2 last_cited／§4 wf-note／§5 投影欄、
-core/return.md note_responses、modules/snapshot/module.md §1（唯讀）、roles/pm.md F-PM-04。
+core/return.md note_responses、roles/pm.md F-PM-04。
 
 本機輸出＝ `<out>/snapshot.json` 與 `<out>/snapshot.md`（覆寫）；out 缺省 `<root>/.wf/snapshot`。
 snapshot.json 鍵（本檔定義，供總入口與 PM 讀）：
 generated_at、baseline{repo, project}、cards[{card_id, number, state_open, card, projection}]、
+invalid_cards[{number, reason, body}]（壞卡；body＝該 issue 原始 body，⛔ 不從盤點母體排除）、
 mismatches[{card_id, number, field, card, projection}]、candidates[{card_id, comment_url, created_at, note}]、
 invalid_candidates[{card_id, comment_url, created_at, reason}]、last_cited{id: {card_id, comment_url, created_at}}。
 """
@@ -12,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 
 from wf.compose.blocks import load_blocks, projection
 from wf.compose.enable import is_enabled
@@ -20,9 +23,19 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
 from wf.gh.writes import CardBodyError, block_value
 from wf.verbs._common import Printer, board_items, field_values, parse_args
-from wf.verbs._write import projected, reject
+from wf.verbs._write import projected
 
 OUT_DEFAULT = '.wf/snapshot'
+_UNENCODABLE = re.compile('[\ud800-\udfff]')
+
+
+def _encodable(text):
+    """把 utf-8 無法編碼的孤立代理碼點改寫成 `\\uXXXX` 逐字轉義（其餘字元原樣）。
+    §2 D3 末句「⛔ 不拒、依 §1 記入本機輸出並續跑」＋ §1「合法卡照常輸出」：壞卡原因或 body
+    帶這種碼點時，⛔ 不得少產任一本機輸出、⛔ 不得跳過輸出。JSON 落檔後 `json.loads` 回讀
+    即等值原字串（`invalid_cards[].body` 與 reason 都逐字對應）；Markdown 是人看的摘要，
+    該處讀成同形的字面文字，逐字值仍以 snapshot.json 為準。"""
+    return _UNENCODABLE.sub(lambda m: '\\u%04x' % ord(m.group()), text)
 
 
 @dataclass(frozen=True)
@@ -69,6 +82,8 @@ def _markdown(data):
         owner = '' if owner is None else f"{owner['role']}:{owner['actor']}"
         lines.append(f"| {row['card_id']} | {card['stage']}/{card['state']} "
                      f"| {card['tier'] or ''} | {owner} |")
+    lines += ['', '## 壞卡'] + ([f"- #{c['number']}：{_line(c['reason'])}"
+                                for c in data['invalid_cards']] or ['- 無'])
     lines += ['', '## 對帳不等'] + ([
         f"- {m['card_id']} {m['field']}：卡面={_line(m['card'])} 投影={_line(m['projection'])}"
         for m in data['mismatches']] or ['- 無'])
@@ -84,8 +99,8 @@ def _markdown(data):
 
 
 def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
-    """對狀態面只讀；對帳只印不重寫（core/verbs.md §2 末、modules/snapshot §1）。"""
-    report = Printer(emit)
+    """對狀態面只讀（§1 snapshot 列「寫」欄）；對帳只印不重寫（core/verbs.md §2 末）。"""
+    report = Printer(lambda line: emit(_encodable(line)))  # 印出也會撞到同一個編碼邊界
     catalog = load_blocks(root) if catalog is None else catalog
     cfg = load_project_config(root)
     location, listed = cfg['project'], module_names(cfg)
@@ -93,25 +108,32 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     def schema(card):  # C10：D3 用 S03 is_enabled 判定的模組合成 schema（同 open）；⛔ 不做的是 notes 條文合成
         return compose_schema(catalog, 'wf-card', [b.data['name'] for b in catalog.by_label('yaml wf-module')
                                                    if is_enabled(b.data, modules_list=listed, card=card)])
-    cards, bad = [], []
+    # 探針：catalog 自身缺陷在此大聲炸，⛔ 不被下面的 except 逐卡誤記成「卡面不合法」。兩次都要：
+    schema({})  # 走 is_enabled 的 kind 分派；空卡的啟用集是空的，讀不到 adds
+    compose_schema(catalog, 'wf-card', [b.data['name'] for b in catalog.by_label('yaml wf-module')])  # adds.enums
+    cards, invalid_cards = [], []
+
+    def record_invalid(issue, reason):  # §2 D3 例外：⛔ 不拒、⛔ 不從母體排除，記入本機輸出並續跑
+        invalid_cards.append({'number': issue['number'], 'reason': reason,
+                              'body': issue.get('body') or ''})
+        report(f"#{issue['number']} 卡面不合法：{reason}")  # §1 印欄：issue 號與原因
+
     for issue in client.issues(state='all'):
         try:  # 區塊在不在才決定母體；值為 null 仍是卡（R1.14-1）。
             present, card = block_value(issue['body'] or '', 'wf-card')
         except CardBodyError as exc:
-            bad.append((issue['number'], str(exc)))
+            record_invalid(issue, str(exc))
             continue
         if not present:
             continue
-        reason = _shape(card, 'wf-card', schema)
-        if reason is not None:
-            bad.append((issue['number'], reason))
-        else:
+        try:  # 合成 schema 要讀尚未驗過的卡面（enable.py 的 stage_plan_has 會 `in` 它）；
+            reason = _shape(card, 'wf-card', schema)  # 一張壞卡⛔ 不得中斷盤點或落到兩個清單之外
+        except Exception as exc:
+            reason = f'schema 合成或驗證失敗：{type(exc).__name__}: {exc}'
+        if reason is None:
             cards.append((issue, card))
-    for number, reason in bad:
-        reject(client, number, 'D3', reason)
-        report(f'#{number} 拒收・D3・{reason}')
-    if bad:  # 檢查先於首次寫入（§2）；本機輸出同樣不寫。
-        return SnapshotResult(1, printed=tuple(report))
+        else:
+            record_invalid(issue, reason)
     board = client.project(**location, field_names=projection(catalog)) if location else None
     if board is None:
         report('無 Project 設定')
@@ -151,13 +173,15 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
                     cited[identifier] = where
     data = {'generated_at': now or datetime.now(timezone.utc).isoformat(),
             'baseline': {'repo': getattr(client, 'repo', None), 'project': location},
-            'cards': rows, 'mismatches': mismatches, 'candidates': candidates,
+            'cards': rows, 'invalid_cards': invalid_cards,
+            'mismatches': mismatches, 'candidates': candidates,
             'invalid_candidates': invalid, 'last_cited': cited}
     directory = Path(root) / OUT_DEFAULT if out is None else Path(out)
     directory.mkdir(parents=True, exist_ok=True)
     paths = (directory / 'snapshot.json', directory / 'snapshot.md')
-    paths[0].write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    paths[1].write_text(_markdown(data), encoding='utf-8')
+    written = json.dumps(data, ensure_ascii=False, indent=2) + '\n'
+    paths[0].write_text(_encodable(written), encoding='utf-8')
+    paths[1].write_text(_encodable(_markdown(data)), encoding='utf-8')
     return SnapshotResult(0, data, tuple(report), paths)
 
 
