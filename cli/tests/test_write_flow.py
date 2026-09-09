@@ -176,7 +176,9 @@ def test_without_project_still_checks_card(card, catalog, option, bad_body):
     result = run(card | {'feature': '更新'}, catalog, fake, **option)
     assert result.rc == int(bad_body)
     assert not any(name in ('project', 'write_project_field') for name, kw in fake.calls)
-    assert result.printed == (() if 'write_projection' in option else ('無 Project 設定',))
+    # 卡面已寫才走到回讀不等 ⇒ 印卡面 JSON；投影欄一格都沒寫 ⇒ ⛔ 不得列投影欄
+    prefix = () if 'write_projection' in option else ('無 Project 設定',)
+    assert result.printed == prefix + (('已完成的寫入：卡面 JSON',) if bad_body else ())
     if bad_body:
         assert_reject(result, fake)
     else:
@@ -248,7 +250,40 @@ def test_missing_readback_data_is_d3(card, catalog, missing):
     else:
         previous = fake.responses['project']
         fake.responses['project'] = lambda **kw: {'items': []} if mutations(fake, 'write_project_field') else previous(**kw)
-    assert_reject(run(card, catalog, fake), fake)
+    result = run(card, catalog, fake)
+    assert_reject(result, fake)
+    # 兩批寫入都已送出 ⇒ 兩個 post-write 出口都要印已完成的寫入，⛔ 不因例外種類而異
+    assert result.printed == ('已完成的寫入：卡面 JSON',
+                              '已完成的寫入：投影欄 ' + '、'.join(projection(catalog)))
+
+
+@pytest.mark.parametrize('project,expected', [
+    ({}, 'items'),                                          # KeyError('items')
+    (None, 'not subscriptable'),                            # TypeError
+    ({'items': [{'id': 'ITEM'}, {'id': 'ITEM'}]}, 'too many values to unpack'),  # 重複
+])
+def test_lookup_only_rewrites_the_invisible_case(project, expected):
+    """只有「查詢結果裡沒有這一項」才算查不到；其餘真因原樣往上拋，⛔ 不改寫成「查不到」
+    ——reject 只取 str(exc)，改寫等於在遠端留下錯的診斷（「重複」被說成「查不到」）。"""
+    refetched = []
+    with pytest.raises((ValueError, TypeError, KeyError)) as caught:
+        write.lookup_values(project, 'ITEM', lambda: refetched.append(1))
+    assert not isinstance(caught.value, write.ItemLookupTimeout)
+    assert expected in str(caught.value)
+    assert refetched == []  # 非「不可見」⛔ 不重抓、⛔ 不白等
+
+
+def test_invisible_item_lookup_waits_between_retries(monkeypatch):
+    """看不到才重試：兩次重試之間各睡一次，且傳入的逐字是 _ITEM_LOOKUP_INTERVAL。
+    間隔在此改成可辨識的值（conftest 的 autouse 歸零讓其餘測試 ⛔ 不真睡），sleep 注入假的。"""
+    monkeypatch.setattr(write, '_ITEM_LOOKUP_INTERVAL', 0.25)
+    slept, refetched, empty = [], [], {'items': []}
+    monkeypatch.setattr(write.time, 'sleep', slept.append)
+    with pytest.raises(write.ItemLookupTimeout) as caught:
+        write.lookup_values(empty, 'ITEM', lambda: refetched.append(1) or empty)
+    assert str(caught.value).startswith('Project 查不到 item ITEM')
+    assert len(refetched) == write._ITEM_LOOKUP_ATTEMPTS - 1
+    assert slept == [write._ITEM_LOOKUP_INTERVAL] * (write._ITEM_LOOKUP_ATTEMPTS - 1) == [0.25, 0.25]
 
 
 def test_null_readback_card_block_is_d3(card, catalog):
