@@ -77,7 +77,7 @@ def test_no_intersection_and_missing_parent_are_reported(tmp_path):
 
 
 def test_null_parent_card_block_is_skipped(tmp_path):
-    """第 9 條探針：父卡 issue 的 wf-card 值為 null ⇒ 印略過、父卡視為未找到（負控＝wired() 找得到）。"""
+    """null 區塊探針：父卡 issue 的 wf-card 值為 null ⇒ 印略過、父卡視為未找到（負控＝wired() 找得到）。"""
     root = make_root(tmp_path, listed=['identity'])
     data = card(owner=MINE, resources=[], parent='WF-000', parent_spec_version=2)
     rows = [issue_row(10, data), issue_row(12, '```json wf-card\nnull\n```\n')]

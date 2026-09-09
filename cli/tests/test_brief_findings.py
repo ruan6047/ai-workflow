@@ -78,7 +78,7 @@ def test_fallback_to_previous_iteration_takes_its_latest_only(tmp_path):
 
 
 def test_null_return_block_is_not_a_previous_round(tmp_path):
-    """第 9 條探針：wf-return 區塊值為 null（存在但非物件）＝不是交回單。
+    """null 區塊探針：wf-return 區塊值為 null（存在但非物件）＝不是交回單。
     改判（FINAL-3）：存在但非物件＝未知，⛔ 不得冒充「無前輪」；負控＝同位置換成物件即印。"""
     root = make_root(tmp_path)
     null = [comment(1, '```json wf-return\nnull\n```\n')]

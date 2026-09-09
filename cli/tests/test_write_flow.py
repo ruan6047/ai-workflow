@@ -252,7 +252,7 @@ def test_missing_readback_data_is_d3(card, catalog, missing):
 
 
 def test_null_readback_card_block_is_d3(card, catalog):
-    """第 9 條探針：寫入後回讀的 wf-card 值為 null ⇒ D3（不是物件），恰一則 wf:reject。"""
+    """null 區塊探針：寫入後回讀的 wf-card 值為 null ⇒ D3（不是物件），恰一則 wf:reject。"""
     fake = simulated(card, catalog)
     previous = fake.responses['issue']
     fake.responses['issue'] = lambda **kw: ({'body': '```json wf-card\nnull\n```'}

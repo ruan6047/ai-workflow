@@ -99,7 +99,7 @@ def test_prose_first_line_and_note_cannot_supply_ruling(setup, body):
 @pytest.mark.parametrize('label,expect_absent', [('wf-return', ['缺 wf-return 區塊', '裁定留言無 wf-return／wf-ruling 區塊']),
                                                  ('wf-ruling', ['裁定留言無 wf-return／wf-ruling 區塊'])])
 def test_null_comment_block_is_present_but_not_an_object(setup, label, expect_absent):
-    """第 9 條探針：留言區塊值為 null＝區塊在（不印「無區塊」／「缺區塊」）但非物件（印不是物件／schema 不過）。"""
+    """null 區塊探針：留言區塊值為 null＝區塊在（不印「無區塊」／「缺區塊」）但非物件（印不是物件／schema 不過）。"""
     client, kwargs = setup('審核', '待確認')
     client.responses['comment']['body'] = f'首行\n```json {label}\nnull\n```\n'
     result = move(10, '結案/待確認', ruling=URL, **kwargs)
@@ -114,7 +114,7 @@ def test_null_comment_block_is_present_but_not_an_object(setup, label, expect_ab
 
 
 def test_other_card_with_null_block_prints_unparsable(setup):
-    """第 9 條探針：裁定留言所在的別張 issue 其 wf-card 為 null ⇒ 印「卡ID 無法解析」。"""
+    """null 區塊探針：裁定留言所在的別張 issue 其 wf-card 為 null ⇒ 印「卡ID 無法解析」。"""
     client, kwargs = setup(rows=[issue(20, body='```json wf-card\nnull\n```')])
     client.responses['comment']['issue_url'] = 'https://api.github.com/repos/fake/repo/issues/20'
     result = move(10, '進行中', ruling=URL.replace('/10#', '/20#'), **kwargs)
@@ -123,7 +123,7 @@ def test_other_card_with_null_block_prints_unparsable(setup):
 
 
 def test_card_id_lookup_skips_null_issue_and_prints(setup):
-    """第 9 條探針（card_number）：以卡ID 呼叫 move，別的 issue 的 null 區塊只略過並印。"""
+    """null 區塊探針（card_number）：以卡ID 呼叫 move，別的 issue 的 null 區塊只略過並印。"""
     client, kwargs = setup(rows=[issue(20, body='```json wf-card\nnull\n```')])
     result = move('WF-001', '進行中', **kwargs)
     assert result.rc == 0 and '略過無法解析的 issue #20' in result.printed

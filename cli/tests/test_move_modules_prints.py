@@ -123,7 +123,7 @@ def test_same_actor_and_archived_items_are_not_live(catalog, names):
 
 
 def test_null_card_block_on_a_live_card_is_reported_unreadable(catalog, names):
-    """第 9 條探針：現役卡的 wf-card 值為 null ⇒ 印無法讀取（不當成無資源，也不例外中止）。"""
+    """null 區塊探針：現役卡的 wf-card 值為 null ⇒ 印無法讀取（不當成無資源，也不例外中止）。"""
     lines = prints(catalog, enabled=['resource-lock'], card_json=card(resources=['file:a.py']),
                    project=board([item(names, 20, 'WF-002')]),
                    client=Client({20: '```json wf-card\nnull\n```\n'}))

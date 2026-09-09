@@ -296,7 +296,7 @@ def test_no_project_prints_skips_projection_and_tracks_deferral(setup):
 
 @pytest.mark.parametrize('label', ['wf-card', 'wf-intake'])
 def test_null_block_on_the_source_issue_is_d3(setup, label):
-    """第 9 條探針：清單項／撤銷卡的區塊值為 null ⇒ D3（不是「沒有區塊」的 D2）。"""
+    """null 區塊探針：清單項／撤銷卡的區塊值為 null ⇒ D3（不是「沒有區塊」的 D2）。"""
     client, kwargs = setup(body=f'前言\n```json {label}\nnull\n```\n')
     result = open_issue(10, **kwargs)
     assert_reject(client, result, 'D3')
@@ -304,7 +304,7 @@ def test_null_block_on_the_source_issue_is_d3(setup, label):
 
 
 def test_null_block_on_another_issue_is_skipped_with_print(setup):
-    """第 9 條探針：發號掃描遇到別的 issue 的 null 區塊 ⇒ 印略過、不擋、序號不受影響（負控＝合法卡計入序號）。"""
+    """null 區塊探針：發號掃描遇到別的 issue 的 null 區塊 ⇒ 印略過、不擋、序號不受影響（負控＝合法卡計入序號）。"""
     rows = [issue(1, expected_card(card_id='WF-003', source_issue=1)), issue(2, body='```json wf-card\nnull\n```')]
     client, kwargs = setup(rows=rows, items=[item(1)])
     result = open_issue(10, **kwargs)

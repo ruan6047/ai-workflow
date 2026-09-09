@@ -284,7 +284,7 @@ def test_broken_card_json_is_d3_with_one_reject_comment(tmp_path):
 
 
 def test_null_card_block_is_d3(tmp_path):
-    """第 9 條探針：本卡 wf-card 區塊值為 null ⇒ D3 一則 wf:reject（訊息含「不是物件」）。"""
+    """null 區塊探針：本卡 wf-card 區塊值為 null ⇒ D3 一則 wf:reject（訊息含「不是物件」）。"""
     root = make_root(tmp_path)
     client = make_client('前言\n```json wf-card\nnull\n```\n')
     result = brief(10, target='executor', client=client, root=root, emit=lambda line: None)
@@ -293,7 +293,7 @@ def test_null_card_block_is_d3(tmp_path):
 
 
 def test_card_id_lookup_skips_null_issue_and_prints(tmp_path):
-    """第 9 條探針（card_number）：以卡ID 呼叫 brief，別的 issue 的 null 區塊只略過並印在最前。"""
+    """null 區塊探針（card_number）：以卡ID 呼叫 brief，別的 issue 的 null 區塊只略過並印在最前。"""
     root = make_root(tmp_path)
     rows = [issue_row(3, '```json wf-card\nnull\n```\n'), issue_row(10, card())]
     lines = []
