@@ -42,8 +42,13 @@ def projected(card, catalog, check=False):
     return values
 
 
+def _matched(project, item_id):
+    """Project 查詢結果裡 id 相符的項；0 筆＝暫時不可見（可重試），>1 筆＝重複（⛔ 不可重試）。"""
+    return [item for item in project['items'] if item['id'] == item_id]
+
+
 def projection_values(project, item_id):
-    item, = (item for item in project['items'] if item['id'] == item_id)
+    item, = _matched(project, item_id)
     return field_values(item)
 
 
@@ -60,14 +65,18 @@ class ItemLookupTimeout(ValueError):
 
 
 def lookup_values(project, item_id, refetch):
-    """有界唯讀重試取投影快照：查不到就重抓 Project（唯讀），⛔ 不重跑任何寫入。"""
+    """有界唯讀重試取投影快照：只有「查詢結果裡沒有這一項」才重抓 Project（唯讀），
+    ⛔ 不重跑任何寫入。其餘真因（同 id 多筆＝重複、Project 形狀壞掉的 TypeError／KeyError）
+    原樣往上拋，交給呼叫端既有的泛用 except 用真訊息拒收——⛔ 不改寫成「查不到」：
+    reject 只取 str(exc)、__cause__ 不進遠端留言，改寫等於在遠端留下錯的診斷。"""
     for attempt in range(1, _ITEM_LOOKUP_ATTEMPTS + 1):
-        try:
-            return projection_values(project, item_id)
-        except (ValueError, TypeError, KeyError) as exc:
-            if attempt == _ITEM_LOOKUP_ATTEMPTS:
-                raise ItemLookupTimeout(f'Project 查不到 item {item_id}'
-                                        f'（唯讀重抓 {_ITEM_LOOKUP_ATTEMPTS} 次仍不可見）') from exc
+        matched = _matched(project, item_id)
+        if matched:
+            item, = matched  # >1 ⇒ ValueError('too many values to unpack')，原樣往上拋
+            return field_values(item)
+        if attempt == _ITEM_LOOKUP_ATTEMPTS:
+            raise ItemLookupTimeout(f'Project 查不到 item {item_id}'
+                                    f'（唯讀重抓 {_ITEM_LOOKUP_ATTEMPTS} 次仍不可見）')
         time.sleep(_ITEM_LOOKUP_INTERVAL)
         project = refetch()
 
@@ -75,12 +84,18 @@ def lookup_values(project, item_id, refetch):
 def needs_snapshot(card):
     """要不要舊投影快照＝卡面是不是 v1（唯一用途是 1→2 回填 stage/state）。
     ⛔ 不以 create 為判準：撤銷卡復板也傳 create=True，拿它當條件會讓 v1 卡從遷移成功
-    變成『無投影欄可回填 stage/state』拒收（gpt-6-astra 2026-09-10 離線探針證偽）。"""
+    變成『無投影欄可回填 stage/state』拒收（gpt-6-astra 2026-09-10 離線探針證偽）。
+    ⚠️ 三個動詞入口都不會把 v1 卡送進 write_card：open 先過 prepare_card、move 自己先遷移過、
+    edit 被 core/card-schema.md 的 schema_version const 2 擋在 validate 就拒收；⛔ 別以為
+    edit 依賴這裡。此判準只服務直呼 write_card 的呼叫端（如 test_write_flow.py::
+    test_migration_only_version_stage_state），留著比刪安全，故 ⛔ 未刪。"""
     return isinstance(card, dict) and _equal(card.get('schema_version'), 1)
 
 
 def written_so_far(values):
-    """重試耗盡而拒收時，讓操作者知道遠端已經被寫成什麼樣（呼叫點必在兩批寫入之後）。"""
+    """update_card_body 之後才拒收時，讓操作者知道遠端已經被寫成什麼樣；三個 post-write
+    出口都要帶，否則讀者會把「沒有這行」反推成「沒寫入」。values＝實際寫進投影欄的那批：
+    無 Project 設定／write_projection=False 時傳空的，⛔ 不得列出沒發生的投影寫入。"""
     lines = ['已完成的寫入：卡面 JSON']
     if values:
         lines.append('已完成的寫入：投影欄 ' + '、'.join(values))
@@ -120,7 +135,8 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
                project_owner=None, project_number=None, item_id=None, enabled_modules=(),
                write_projection=True, create=False):
     """projection_values 為讀卡時的投影快照；省略時只在卡面是 v1（needs_snapshot）時才由 Project
-    讀取——新卡不去查剛加進板的 item（參數遮蔽同名函式，取快照一律經 lookup_values）。"""
+    讀取——新卡不去查剛加進板的 item（參數遮蔽同名函式，取快照一律經 lookup_values）。
+    取快照那條分支在三個動詞入口皆走不到（見 needs_snapshot），只供直呼 write_card 的呼叫端。"""
     printed = ('無 Project 設定',) if None in (project_owner, project_number, item_id) else ()
     write_projection = write_projection and not printed
 
@@ -144,16 +160,16 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
         return reject(client, number, 'D3', str(exc), printed)
     for field in fields:
         client.write_project_field(field)
+    # 三個 post-write 出口一律帶已完成的寫入：此處卡面已寫，投影欄則以 fields 是否為空為準
+    done = (*printed, *written_so_far(values if fields else {}))
     try:
         actual_card = block_object(client.issue(number)['body'], 'wf-card')
         actual = (lookup_values(fetch_project(), item_id, fetch_project)
                   if write_projection else values)
-    except ItemLookupTimeout as exc:  # 兩批寫入都已送出，拒收前先印遠端現況
-        return reject(client, number, 'D3', str(exc), (*printed, *written_so_far(values)))
-    except (ValueError, TypeError, KeyError) as exc:
-        return reject(client, number, 'D3', str(exc), printed)
+    except (ValueError, TypeError, KeyError) as exc:  # 含重試耗盡的 ItemLookupTimeout
+        return reject(client, number, 'D3', str(exc), done)
     if not _equal(actual_card, card) or not _equal(actual, values):
-        return reject(client, number, 'D3', '回讀不等', printed)
+        return reject(client, number, 'D3', '回讀不等', done)
     return WriteResult(0, card=card, printed=printed)
 
 

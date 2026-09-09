@@ -20,3 +20,11 @@ def pytest_sessionstart(session):
     with pytest.raises(AssertionError, match='OFFLINE_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'offline-negative-control'])
     print('OFFLINE_NETWORK_DENIED negative control passed')
+
+
+@pytest.fixture(autouse=True)
+def no_item_lookup_wait(monkeypatch):
+    """有界唯讀重試的間隔在測試裡一律歸零：測試 ⛔ 不真睡（次數仍由常數決定）。
+    等待本身由注入假 sleep 的那一例證明——test_write_flow.py 的
+    test_invisible_item_lookup_waits_between_retries 自己把間隔設成可辨識的值。"""
+    monkeypatch.setattr('wf.verbs._write._ITEM_LOOKUP_INTERVAL', 0)
