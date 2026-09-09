@@ -113,7 +113,7 @@ def _baseline(ctx):
     return lines
 
 def _previous_findings(ctx):
-    """前輪列（C02′）：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 `wf-return`；
+    """前輪列：同 iteration 內時間序（created_at）最後一則 role=reviewer 的 `wf-return`；
     沒有才退到 iteration−1。讀取失敗或區塊不能解析＝印未能取得（F-執行者-06：未知⛔ 不冒充
     「無前輪」）；成功讀到而確實沒有才印「無前輪」。"""
     current, returns, errors = ctx.card.get('iteration') or 0, [], []
@@ -138,7 +138,7 @@ def _previous_findings(ctx):
     return [f"{UNKNOWN_PREVIOUS}：{'；'.join(errors)}"] if errors else [NO_PREVIOUS]
 
 def _capability(ctx):
-    """能力層級建議列（C11）：角色對應 capability 欄的 level 與 reason（card-schema §1 $defs/capability）。"""
+    """能力層級建議列：角色對應 capability 欄的 level 與 reason（card-schema §1 $defs/capability）。"""
     key = 'review_capability' if ctx.target == REVIEWER else 'exec_capability'
     value = ctx.card.get(key) if isinstance(ctx.card.get(key), dict) else {}
     return [f'{key}.{field}：{_plain(value.get(field))}' for field in ('level', 'reason')]

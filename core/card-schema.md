@@ -82,7 +82,7 @@ last_confirmed: 2026-09-08
 | stage、state、owner、branch、source_sha、blocked | CLI（`move`；`stage`／`state` 建卡時由 `open` 寫 `initial`；`owner` 在 escalation 換人時由 PM `edit`，`modules/escalation` §1） | — | brief、Project、D1、D4 |
 | notes | 任何角色經 `edit --set notes+=`，來源＝`wf:note` 留言；`last_cited` 不存卡面，由 `snapshot` 推得 | — | notes、brief |
 
-規格欄＝acceptance／verification／non_scope／resources；`edit` 改任一欄 ⇒ `spec_version` +1（C11）。
+規格欄＝acceptance／verification／non_scope／resources；`edit` 改任一欄 ⇒ `spec_version` +1。
 
 ## 3 · 清單項 `wf-intake`
 
@@ -121,4 +121,4 @@ Project 只放五欄，全由 CLI 回寫，每欄的源＝卡面同名鍵：階�
 
 - `schema_version` 升版觸發＝任一鍵新增、刪除、改型別或改值域；只加值域內的值不升版。
 - 遷移路徑＝任一寫入動詞讀到舊版卡時先升版再寫，寫後回讀；⛔ 不就地改舊卡的其他欄、⛔ 不加旗標。
-- 版本史：1（2026-09-05）→ 2（加 `stage`／`state`）。1→2 遷移＝兩鍵由該卡 Project 的階段／狀態欄回填，這是唯一一次以投影為源；回填後依 `core/verbs.md` §2 以 JSON 為源。
+- 版本史：1（2026-09-05）→ 2（加 `stage`／`state`，2026-09-07）。1→2 遷移＝兩鍵由該卡 Project 的階段／狀態欄回填，這是唯一一次以投影為源；回填後依 `core/verbs.md` §2 以 JSON 為源。
