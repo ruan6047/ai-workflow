@@ -1,6 +1,7 @@
 """消費 core/verbs.md §1 review／§2／§3、core/return.md 段落表／schema／末段必填性、
 core/naming.md §3／§4、core/tiers.md §1、core/enums.md 值域、modules/*/module.md §0。
-現況降級：gh/localgit.py 只有 merge_tree，無本機頭、log、diffstat 介面；
+D4 階段限定與規劃前 main 回退依 core/verbs.md §1 review 列。
+刻意降級：gh/localgit.py 只有 merge_tree，無本機頭、log、diffstat 介面；
 印未能取得，⛔ 不繞過 gh 層新增 git 子指令，也不得推論本機與遠端相同。
 """
 import json
