@@ -16,6 +16,7 @@ from wf.compose.blocks import load_blocks, projection
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.gh.writes import WriteMixin, read_block
+from wf.verbs import _write
 from wf.verbs.open import missing_fields, open_issue, run
 
 
@@ -56,21 +57,33 @@ def item(number, repo='fake/repo'):
 class MemoryClient(FakeGhClient):
     repo = 'fake/repo'
 
-    def __init__(self, catalog, issues, items=(), comments=()):
+    def __init__(self, catalog, issues, items=(), comments=(), hide_rounds=0):
         self.rows = {row['number']: deepcopy(row) for row in issues}
         self.options = {'階段': [{'id': 'stage-initial', 'name': '需求'}],
                         '狀態': [{'id': 'state-initial', 'name': '待辦'}], '級別': []}
         self.board = {'id': 'PROJECT', 'items': deepcopy(list(items)), 'fields': [
             {'id': name, 'name': name, 'dataType': 'SINGLE_SELECT' if name in self.options else 'TEXT'}
             for name in projection(catalog)]}
+        # 最終一致性模型：add_to_project 之後 self.board 就有那一項（投影欄照樣寫得進去），
+        # 只是接下來的前 hide_rounds 次查詢回應把它藏起來；None ＝一直不可見。
+        # 預設 0 ＝不延遲：⛔ 不讓延遲變成所有既有案例的預設行為。
+        self.hide_rounds, self.hidden = hide_rounds, None
         super().__init__(issue=lambda number: self.rows[number],
                          issues=lambda state: list(self.rows.values()),
-                         project=lambda **kwargs: self.board, comments=list(comments))
+                         project=self.query_board, comments=list(comments))
+
+    def query_board(self, **kwargs):
+        if self.hidden is None or self.hide_rounds == 0:
+            return self.board
+        if self.hide_rounds is not None:
+            self.hide_rounds -= 1
+        return self.board | {'items': [row for row in self.board['items'] if row['id'] != self.hidden]}
 
     def add_to_project(self, project_id, issue_id):
         result = super().add_to_project(project_id, issue_id)
         number, = (n for n, row in self.rows.items() if row['node_id'] == issue_id)
         self.board['items'].append(item(number) | {'id': 'ITEM'})
+        self.hidden = 'ITEM'
         return result
 
     def prepare_project_field(self, project, item_id, name, value):
@@ -122,12 +135,13 @@ def setup(tmp_path, catalog):
         (RULES / 'core/card-schema.md').read_text(encoding='utf-8'), encoding='utf-8')
     (tmp_path / '.wf').mkdir()
 
-    def make(*, areas=('WF',), project=True, rows=(), items=(), comments=(), body=None, modules=()):
+    def make(*, areas=('WF',), project=True, rows=(), items=(), comments=(), body=None, modules=(),
+             hide_rounds=0):
         cfg = {'areas': list(areas), 'modules': list(modules),
                'project': {'owner': 'fake', 'number': 1} if project else None}
         (tmp_path / '.wf/modules.json').write_text(json.dumps(cfg), encoding='utf-8')
         source = issue(10, body=body if body is not None else '前言\n' + block('wf-intake', intake()) + '後記\n')
-        client = MemoryClient(catalog, [source, *rows], items, comments)
+        client = MemoryClient(catalog, [source, *rows], items, comments, hide_rounds)
         return client, dict(client=client, root=tmp_path, catalog=catalog, emit=lambda line: None)
     return make
 
@@ -416,6 +430,40 @@ def test_source_inventory_and_config_reader_negative_control():
     print('匯入母體：', json.dumps(imported, ensure_ascii=False))
     print('負控 modules.json 字面：', config_literals("path = '.wf/modules.json'"))
     print('modules.json 字面：', config_literals(source))
+
+
+@pytest.mark.parametrize('hide_rounds,visible', [(1, True), (2, True), (None, False)])
+@pytest.mark.parametrize('restore', [False, True])
+def test_added_item_hidden_by_eventually_consistent_query(setup, monkeypatch, hide_rounds, visible, restore):
+    """最終一致性探針：add_to_project 之後伺服端已經有那一項（投影欄照樣寫得進去），
+    只是查詢回應暫時看不到它。新卡與 v2 撤銷卡復板都 ⛔ 不該去查剛加的 item；
+    回讀階段查不到則走有界唯讀重試，耗盡才依契約拒收並印出已完成的寫入。"""
+    # 只免掉等待，次數仍由常數決定；raising=False 讓還原修法的負控失敗在斷言上，不是在這一行。
+    monkeypatch.setattr('wf.verbs._write._ITEM_LOOKUP_INTERVAL', 0, raising=False)
+    old = expected_card(card_id='WF-009', iteration=3, feature='既有')
+    client, kwargs = setup(body=block('wf-card', old) if restore else None, hide_rounds=hide_rounds)
+    result = open_issue(10, **kwargs)
+    names = [name for name, _ in client.calls]
+    fields = list(projection(kwargs['catalog']))
+    assert names.count('add_to_project') == 1  # 重試唯讀：⛔ 不重跑任何寫入
+    assert names.count('update_card_body') == 1
+    assert names.count('write_project_field') == len(fields)
+    comments = [data for name, data in client.calls if name == 'post_comment']
+    if visible:
+        assert result.rc == 0
+        assert result.card == (old | {'stage': '需求', 'state': '待辦'} if restore else expected_card())
+        assert client.board['items'][0]['fieldValues']['卡ID'] == {'text': old['card_id'] if restore else 'WF-001'}
+        assert [row['first_line'] for row in comments] == (['wf:move'] if restore else [])
+        assert names.count('project') == 2 + hide_rounds  # 開卡前 1 次＋回讀重抓到看得見為止
+    else:
+        assert result.rc != 0
+        assert [row['first_line'] for row in comments] == ['wf:reject']
+        assert comments[0]['body'] == '拒收・D3・' + result.reason
+        assert result.reason.startswith('Project 查不到 item ITEM')
+        assert '已完成的寫入：卡面 JSON' in result.printed
+        assert '已完成的寫入：投影欄 ' + '、'.join(fields) in result.printed
+        assert names.count('project') == 2 + _write._ITEM_LOOKUP_ATTEMPTS  # 有界：⛔ 不無限等
+    print('延遲輪數：', hide_rounds, '／project 查詢次數：', names.count('project'), '／rc：', result.rc)
 
 
 def test_missing_single_select_option_before_project_add(setup):
