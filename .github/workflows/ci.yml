@@ -1,13 +1,11 @@
 name: CI
 
-# 第三輪重構第 0 步（順序見決策紀錄；需求方 2026-09-04 裁定封存為第一步）。
-# 第 0 步：secret-scan（P4）、commit-trailer（P5）。第 1 步加 reachability（core/state-machine.md）。
-# 新 CLI 測試 job 隨第 6 步進場。
+# secret-scan＝P4、commit-trailer＝P5、reachability＝core/state-machine.md。
 # ⛔ 不再有掃描 docs 的 job。
 #
 # ruleset「main must be green」（id 20768920）的 required check＝secret-scan、commit-trailer、reachability
-#（需求方 2026-09-05 裁定：第 0 步改 ruleset 不留空 job；第 1 步加 reachability）。
-# P1–P5 的條文居所＝core/platform.md（第 1 步）；本檔只是執行 artifact。
+#（ruleset ⛔ 不留空 job。）
+# P1–P5 的條文居所＝core/platform.md；本檔只是執行 artifact。
 
 on:
   push:
@@ -80,7 +78,7 @@ jobs:
       - run: python3 .github/scripts/reachability.py
 
   cli-tests:
-    # docs/research/2026-09-07-step6-spec.md 第 6 步：新 CLI 測試 job，隨被測物同 PR 進場。
+    # 新 CLI 測試 job 隨被測物同 PR 進場。
     name: cli-tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
