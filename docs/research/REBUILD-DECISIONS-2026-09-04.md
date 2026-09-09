@@ -165,6 +165,26 @@
 ⑦ `test_gh_scope.py` 的 docstring 守衛只覆蓋五檔白名單；本片改動的 docstring 只有 1 處落在守衛內（`compose/project_config.py`），且 `compose/project_config.py` 的 `§` 出現次數由 2 降為 1、餘裕歸零。修法＝白名單改 `rglob('*.py')` 全掃。
 - **回看（2026-09-09 登記）**：「同對象例外堆疊」這個訊號在規則側沒有任何鉤子了。框架為自己設的三個機械訊號（`core/naming.md` §5 行數上限、2026-09-05 分號裁定、`reachability` job）在「例外堆疊」這個方向上全是關的——例外是接在既有行尾的分號子句，行數抓不到、分號裁定明文允許「條件、例外、指向子句」、reachability 不讀 §2 條文一個字。判準已按 Gemini 複審只留受害點，故此訊號目前只靠 PM 人工數。第一次撞到「規則沒壞但例外多到讀不懂」時再議。
 - **回看（2026-09-09 登記）：`core/platform.md:20` 的 P5 漏洞條目內容過時，且刪不掉座標。**逐字為`- ⚠️ P5 的已知漏洞（2026-09-06 起）：合併訊息由平台預設組時 trailer 會被空行切散，本檔擋不到；訊息組法的居所＝新 CLI（`docs/research/2026-09-07-step6-spec.md` 第 6 步），該步完成前無執行者。`兩個問題疊在同一行：① `第 6 步` 是建造過程座標（需求方 2026-09-09 裁定要清），但刪掉它，後半句的 `該步` 就沒有先行詞；② 「該步完成前無執行者」現在已不成立——CLI 已在 repo 內，`cli/src/wf/verbs/closeout.py:125 def squash(ctx)` 就是那個執行者（入口＝`brief --for closeout`，見 `core/verbs.md` §1 brief 列；`cli/src/wf/verbs/brief.py:279` 逐字 `for line in closeout.squash(ctx):`）。所以這不是施工痕跡而是**內容過時**，要改寫條文語意，PR #303 的射程（只刪不加、零行為改動）蓋不到。另外 `docs/research/2026-09-07-step6-spec.md` 本身依前面條目「第 7 步完成後歸檔」，屆時這個路徑引用會腐爛——同一行上有三件事要一起改，載體＝第 7 步收尾宣告之後的一片，同時處理居所改指與「無執行者」的更新。⛔ 不在 #303 內改（改了就不是零行為改動）。
+## 第 7 步收尾宣告（2026-09-09）
+
+第 7 步＝aiwf 接上自己的框架。宣告當下逐項回讀驗過，**數字全部是 2026-09-09 在 `ab78685` 實測**，⛔ 不引用任何先前輪次的轉述：
+
+| 項 | 規格逐字（`archive/research/2026-09-07-step6-spec.md` 第 7 條） | 回讀 |
+|---|---|---|
+| Project 五欄 | 欄名、型別與選項集逐字依 `ADOPTION.md` §3 | `aiwf 任務看板`；階段 8 值、狀態 9 值、級別 5 值、owner／卡ID 為 TEXT |
+| 狀態 9 值的推導 | `states_core`＋`state_blocked`＋`states_terminal`＋全部**卡級**模組的 `adds.enums.states`＋`modules` 列出的**專案級**模組的 | 4＋1＋2＝7 基底，加卡級 `research` 的 `不可判定`、`maintenance` 的 `運行中` ＝ **9**。`escalation` 的 `升級` ⛔ 不進——它 `enable_if.kind` 逐字為 `project_module_listed`，而 `.wf/modules.json` 的 `modules` 是空陣列 |
+| 兩個 view | 活卡依階段分組、全部 | `活卡 [BOARD_LAYOUT] filter=-狀態:完成,停止 group=階段`／`全部 [TABLE_LAYOUT] filter 與 group 皆空` |
+| ⛔ 不用內建 workflow | — | 6 條全部 `enabled=false` |
+| ruleset | 加 `required_linear_history` | `20768920 main must be green active`，rules＝`deletion non_fast_forward required_linear_history required_status_checks` |
+| 關閉 merge 與 rebase 按鈕 | — | `squash=true, merge=false, rebase=false` |
+| `.wf/modules.json` 種子 | `modules: []`、`merge_method: squash`、`areas: [WF, CLI, DOC, OPS]` | 逐字相同，另有 `project: {owner: ruan6047, number: 8}` |
+| 舊卡關閉＋移出 #4 | — | repo open issue ＝ **0**；Project #8 items ＝ **0**；Project #4 內的 ai-workflow 卡 ＝ **0** |
+| 全部動作可逆 | 關閉 issue、移出 Project、封存皆可逆；無硬刪 | 成立；99 張的 item_id 與欄位值存在 PM 暫存的 `p4-aiwf-recovery.json`，已交需求方留存 |
+
+配套：`archive/research/2026-09-07-step6-spec.md` 依其第 1 行「第 7 步完成後歸檔」歸檔，指向它的 8 處活引用同 PR 改指 `core/`（⛔ 不改指 `archive/`——那等於宣告程式在消費凍結文件）。
+
+**⛔ 本宣告不宣稱重構完成。** 尚未落地、已登記回看的：設計缺陷 D1（拒收留痕綁 rc≠0）、D2（模組啟用判定讀尚未驗過的卡面）、「引用必須可解析」那條規則與其 CI 檢查、`cli/tests` 的查核輪引用、`aiwf` 硬編兩處、`CLAUDE.md`／`AGENTS.md` 的重構期敘述。**「重構期結束、開始開卡」是需求方的裁定，⛔ 不由本宣告推出。**
+
 - **回看（2026-09-09 登記，需求方停損）：施工痕跡要靠「引用必須可解析」這條規則收，⛔ 不靠正則清單。**PR #303 用九輪、17 個 commit 換到 73 檔 **+210／−203＝淨減 7 行**，其中 16 個 commit 是收 finding；六個「母體的洞」全是由查核者想出新正則才發現（大小寫敏感、`_` 不構成 `\b` 邊界、路徑清單漏 `.github`、`--include` 漏 `.json`、批次條號 `六條裁定 #6`／`第 8 條`／`第 9 條探針`、代名詞 `本步`／`本片`）。**根因＝需求是語意的（讀者查不查得到出處），檢查是機械的（正則），兩者不可能收斂**；而且規則側現在**沒有任何一條**要求「註解／docstring 的引用必須指向 repo 內解析得到的居所」——唯一相近的 `roles/pm.md` §3「`cli/src` 指得出符號」只用於判設計缺陷，不是通則。所以清的是症狀，下一輪建造會照樣長出新的片號與批次條號。**正解**＝在 `roles/conduct-common.md` §2 或 `core/naming.md` 加一條：引用必須指向 repo 內解析得到的居所（檔＋節，或明確標為外部可查的 URL／issue），配一個 CI 檢查解析不到就 rc≠0；判準因此從「像不像片號」變成「這個引用解析得到嗎」，那才是機械可判的，且能擋住復發。載體＝自舉結束後一張 T4 卡（`core/tiers.md` §3 `rules`，規則與 CLI 同 PR）。⚠️ 在那之前，**任何人 ⛔ 不得再寫「清盡」「零殘留」這類完整性宣稱**，只能寫「這道指令在這些路徑下命中 N」。
 - **回看（2026-09-09 登記，PR #303 宣告「另一片」的收尾痕跡）**：PR #303 的「⛔ 不做」節列了五類刻意不清的施工痕跡，第六輪查核者 grep 證明其中三類**在本清單零命中**（`查核輪引用` 0、`C0N` 0、`cpbl-analytics#98` 0；負控：同檔「回看」11 命中），「已登記」是假的。現逐條登記，數字皆為 2026-09-09 `b60f93f` 實測：① **`cli/tests` 的查核輪引用**——`驗收 <N>` 67 行 11 檔、`FINAL` 59 行 7 檔（`FINAL-` 41 行）、實體名（`astra`／`gemini`／`Codex`／`子代理`）9 行 4 檔。這批是查核輪的驗收項編號與跨實體審查來歷，要逐條讀語意才分得出哪些是編號、哪些是句子的一部分，性質與任務號／片號的機械刪除不同，故與 #303 分片。⛔ 不與 `C<NN>`／`S<NN>` 混為一談——後者已於 `3481caa`／`6f2a4f9`／`25a3962`／`54de772` 清過四輪。⛔ **不寫「清盡」**——需求方 2026-09-09 停損（見下一條）：這個判準是語意的（讀者查不查得到出處），而檢查是正則的，兩者不可能收斂，九輪下來每輪都有人想出新正則再找到一批。現況只能這樣說：`grep -rniE '(^|[^0-9a-z])[sc][0-9]{2}([^0-9a-z]|$)|_[sc][0-9]{2}([^0-9a-z]|$)' core roles stages modules cli .github ADOPTION.md README.md` ＝ **21 命中，全部在 `cli/tests`**，分三類：① 5 行在 `test_gh_scope.py:53`／`test_gh_write_recording.py:19/89/94/95`——`s05` 識別字、目錄路徑與被烘進 request payload 的大寫 `S05` 字串；② 15 行在 `fixtures/s05/*.json`——錄放帶，`write_restore.json` 錄的是遠端 issue #295 的 body 本身；③ 1 行在 `fixtures/gh/ancestor.json`——compare API 錄下的 commit patch，內含 `3481caa` 後來刪掉的那個 `（C11）`。②③ 改它等於把錄音改成偽造。**這道指令零命中只證明這道指令沒找到東西，⛔ 不是完整性證明。**
 ② **`modules/stat-redline/module.md:67` 的 `cpbl-analytics#98`**——F-stat-redline-03 的例子出處，是外部 repo 的 issue，讀者查得到，與查不到出處的派工單引用不同類；要不要清由需求方定期回看時裁。③ **`core/platform.md:16`／`core/naming.md:15` 的 `aiwf` 硬編**——`aiwf 只留 squash`、`aiwf 種子 areas`，框架要給別的 repo 用時這兩處得改成專案層設定的引用；載體＝第一張真實卡跑完、確認 `.wf/` 的形狀後的一片。④ **`CLAUDE.md` 5 處、`AGENTS.md` 7 處的重構期敘述**——「本 repo 正在第三輪重構」「⛔ 不得引用 archive」之類，重構宣告結束時才能改，⛔ 不在重構期間先改（改了就自相矛盾）。⑤ **規則檔條級的 `archive/issues/*` 連結 2 處**——需求方 2026-09-07 已裁「檔級刪、條級留」，本項只是備忘，⛔ 不重開該裁定。
