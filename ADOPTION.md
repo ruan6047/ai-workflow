@@ -25,7 +25,7 @@
 ## 3 · Project 五欄
 
 - 階段（單選）、狀態（單選）、級別（單選）、owner（TEXT，`role:actor`）、卡ID（TEXT）。
-- 值域逐字取 `core/enums.md`（階段 `stages`、級別 `tiers`）與各模組 `module.md` §0（`adds.enums.states`）。狀態＝`states_core`＋`state_blocked`＋`states_terminal`＋**全部**卡級模組的 `adds.enums.states`＋`modules` 列出的專案級模組的 `adds.enums.states`——卡級模組逐卡啟用（`enable_if` 只看卡面 `stage_plan`），選項缺一個就讓一條合法轉移變成 D3 拒收，故建板時一次備齊；Project 備妥選項⛔ 不等於模組已啟用。
+- 值域逐字取 `core/enums.md`（階段 `stages`、級別 `tiers`）與各模組 `module.md` §0（`adds.enums.states`）。狀態＝`states_core`＋`state_blocked`＋`states_terminal`＋**全部**卡級模組的 `adds.enums.states`＋`modules` 列出的專案級模組的 `adds.enums.states`——卡級模組依各自 `module.md` §0 的 `enable_if` 逐卡啟用（三種 kind：`stage_plan_has`、`field_nonempty`、`field_contains`），選項缺一個就讓一條合法轉移變成 D3 拒收，故建板時一次備齊；Project 備妥選項⛔ 不等於模組已啟用。
 - 兩個 view（活卡依階段分組、全部）：建 view 與 filter 可走 `createProjectV2View`／`updateProjectV2View`；依階段分組與內建 workflow 停用⛔ 無 API 輸入（查法＝introspect `ProjectV2ViewConfigurationInput` 只有 `visibleFieldIds`、Mutation 無 `updateProjectV2Workflow`），UI 手做後以 `projectV2.views{filter groupByFields}` 與 `workflows{enabled}` 回讀比對，⛔ 不憑截圖。
 - 五欄全由 CLI 回寫；⛔ 不用 GitHub 內建自動化、⛔ 不在 UI 手改（`roles/conduct-common.md` §1）。
 
