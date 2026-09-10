@@ -84,8 +84,12 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
             area = cfg['areas'][0] if area is None and len(cfg['areas']) == 1 else area
             if area not in cfg['areas']:
                 return refuse('D3', '缺 --area 或 --area 不在 areas')
+            # and 兩側次序⛔ 不可互換：缺 card_id 的卡在 cards 裡是 None 鍵（_common.py 用 card.get）。
+            # re.fullmatch 在左時 None 讓它拋 TypeError，下方 except (ValueError, TypeError, KeyError)
+            # 接得住 ⇒ 落 D3 拒收；把 area 篩選挪到左則變 None.split 的 AttributeError，該 except ⛔ 不接
+            # ⇒ 整支 open 變 traceback。
             serials = [int(key.split('-')[1]) for key in cards
-                       if re.fullmatch(schema['properties']['card_id']['pattern'], key)]
+                       if re.fullmatch(schema['properties']['card_id']['pattern'], key) and key.split('-')[0] == area]
             card = _initial_card(schema)
             card.update(card_id=f'{area}-{max(serials, default=0) + 1:03d}',
                         source_issue=number, core_pain=intake['observation'], parent=parent)
