@@ -85,7 +85,7 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
             if area not in cfg['areas']:
                 return refuse('D3', '缺 --area 或 --area 不在 areas')
             serials = [int(key.split('-')[1]) for key in cards
-                       if re.fullmatch(schema['properties']['card_id']['pattern'], key)]
+                       if re.fullmatch(schema['properties']['card_id']['pattern'], key) and key.split('-')[0] == area]
             card = _initial_card(schema)
             card.update(card_id=f'{area}-{max(serials, default=0) + 1:03d}',
                         source_issue=number, core_pain=intake['observation'], parent=parent)

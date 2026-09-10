@@ -232,9 +232,11 @@ def test_numbering_all_repo_including_withdrawn_terminal_and_plain(setup):
     assert [args for name, args in client.calls if name == 'issues'] == [{'state': 'all'}]
 
 
-def test_numbering_cross_area_and_width(setup):
-    client, kwargs = setup(rows=[issue(1, expected_card(card_id='CLI-999'))])
-    assert open_issue(10, **kwargs).card['card_id'] == 'WF-1000'
+@pytest.mark.parametrize('existing,expected', [('WF-999', 'WF-1000'), ('CLI-999', 'WF-001')])
+def test_numbering_cross_area_and_width(setup, existing, expected):
+    # 同 area 到 999 仍進位到四位數；別的 area 的號 ⛔ 不進本 area 的池（core/naming.md §1 序號池四件）
+    client, kwargs = setup(rows=[issue(1, expected_card(card_id=existing))])
+    assert open_issue(10, **kwargs).card['card_id'] == expected
 
 
 @pytest.mark.parametrize('project,exists,on_board,valid', [
