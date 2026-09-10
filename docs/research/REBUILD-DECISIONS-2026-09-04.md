@@ -254,6 +254,22 @@
 
 - **PM 的操作改動（2026-09-10，⛔ 不是規則改動、⛔ 不是卡）**：派工單的「寫入授權、唯讀範圍」人填段改為**機械從規則檔抽出全文貼上**（`roles/<role>.md` §2＋§3、`conduct-common.md` §1＋§2），**⛔ 不挑選、⛔ 不手抄**。⚠️ 起因：PM 先前手抄的涵蓋率量得為 **36%**（22 條抄了 8 條），而手抄本身正是 `conduct-common` §2 逐字「引用逐字⛔ 不節略」要擋的失效模式。體積：executor 35 條／4.9KB、reviewer 34／4.9KB、pm 39／5.9KB、requester 28／4.1KB。⚠️ 它在**人填段、⛔ 不在清單** ⇒ ⛔ 無 `note_responses` 覆蓋要求，**只買到「執行者看得到全部 22 條」，⛔ 不買遵守**（見 ⑤）。
 
+- **回看（2026-09-10 第四批）：六件操作面與機制面的實測發現，全部 ⛔ 不開卡。**
+
+  1. **PM 給所有 Claude 子代理用同一個 `actor` 字串，使 `resource-lock` 對它們互相看不見。** `modules/resource-lock/module.md` §0 逐字 `"enable_if": {"kind": "other_actor_card_in_state", "state": "進行中", "min": 1}`，判定看 `owner.actor` **不同**才算 other actor。實測：`OPS-001` 的執行者提交前重跑 `notes` 得 20 條而非派工單寫的 24，原因是板上另一張進行中的 `WF-002` 的 `owner.actor` 與它**同為 `claude-opus-5-subagent`** ⇒ 模組停用。⚠️ **這是 PM 的操作錯誤、⛔ 不是 CLI 缺陷。** 改法：actor 帶卡號（`claude-opus-5-sub-<card_id>`）。改後立即生效——派 `WF-004` 時印出與 `WF-003` 在 `notes.py`／`brief.py`／`review.py` 三處的真實交集，先前同 actor 時 `resource-lock` **完全看不到**。
+
+  2. **`move` 的資源交集會把卡跟自己算成交集。** `move_modules.py` 的 `resources_intersection` docstring 逐字「owner 非 null 而 `owner.actor` 與本卡**不同**的卡」——排除條件是 **actor 而非卡號**；而 `owner` 正是派工邊才寫的 ⇒ 算交集時板上讀到的還是**上一輪的 owner** ⇒ 自我命中。實測兩次：`move 311 --to 執行/進行中` 印「… ↔ WF-002」（本卡即 WF-002）、`move 313 --to 規劃/進行中` 四項全部 `↔ OPS-001`。⚠️ 行為無害（只是印），但**使交集印失真**。
+
+  3. **`strict_required_status_checks_policy=true` ＋ `required_linear_history` ⇒ 裁決永遠不涵蓋真正落到 main 的東西。** 前者要求分支先追上 base 才能合，後者禁 merge commit ⇒ **只能 rebase**；而 rebase 改寫 SHA ⇒ 查核者綁定的被審 SHA 失效。`WF-005` 實測：`gh pr merge --squash` rc=1 逐字「the head branch is not up to date with the base branch」，rebase 後 head 由 `b82f4e7` 變 `199354c`，查核者逐字警告「**本裁決不涵蓋新 SHA**」並要求重新確認。⚠️ 該卡靠「rebase 後的 tree 等於查核者第一輪隔離驗過的 merge-tree（`51ce493c…`）」＋第三輪窄複驗（`range-diff` 三個 commit 全 `=`、`cmp rc=0 / 0 bytes`）繞過，**下一張若 rebase 有衝突就繞不過**。與 `OPS-001` 同族（規則與平台落差）。
+
+  4. **`brief` 的「前輪 findings」段 ⛔ 不讀執行者的 finding。** `brief.py` 的前輪列逐字「同 iteration 內時間序最後一則 **`role=reviewer`** 的 `wf-return`」⇒ 執行者交回單裡的 finding **完全不進派工單**，`brief` 印「無前輪」。實測 `WF-005` 進執行階段時前兩輪共 11 條 finding，`brief` 仍印「無前輪」；`WF-002` 進審核時前三輪的 finding 同樣不印。⇒ **每一輪的執行者都必須人工去讀留言**，而派工單字面會誤導他以為沒有前輪。
+
+  5. **代貼裁決的路徑產不出機讀裁決。** `gemini-3.8-flash-high` 交的是純文字，PM 依 `core/naming.md` §3 逐字「代貼裁決・來源：`<模型名>@<工具名>`・被審 SHA：`<sha>`」代貼（`#311` 的 `issuecomment-5616759931`）——**但 ⛔ 無 `json wf-return` 區塊** ⇒ `move` 會印「裁定留言無 `wf-return`／`wf-ruling` 區塊」，T4 的「兩則裁決」在機讀上只算得到另一則。⚠️ 而 Gemini 是本專案目前唯一的第三家族來源。
+
+  6. **`cli/tests/test_project_stage_skeleton.py` 釘住了 repo 的空白。** 該檔 docstring 逐字「⛔ 不斷言本 repo 缺任何東西」，而 `test_skeleton_has_no_frontmatter_and_stays_empty` 實際上把交付檔複製進合成樹後斷言它是空的 ⇒ **`.wf/stages/*.md` 一填第一批 `P-` 條目就會紅**。實測：把 `conduct-common` 的條文抄成 `P-` 的變體跑 `cli/tests` 得 **`2 failed, 891 passed`**。⚠️ 該測試是 PM 於 `WF-001` 建的，形態同已登記的「測試別釘 repo 的空白」。
+
+  7. **PM 差點開一條假 finding：`edit --set notes+=` 其實有實作。** PM `grep '+='` 只命中 `spec_version += 1`，據以判定「規則指定的語法 CLI 沒實作」；實際 `edit.py` 逐字 `if key == 'notes+': key = 'notes'; value = current[key] + [value]`。⚠️ 根因是 `roles/conduct-common.md` §1 逐字「**實跑，⛔ 不讀碼推論**」——PM 用錯的 grep 形狀推論，⛔ 未實跑。
+
 **兩件目前都⛔ 無受害者**——卡ID 能用、12 次只是慢。原裁定「等第一批四張卡（#311–#314）做完再開卡處理」**已於 2026-09-10 被需求方覆寫**：卡ID 那件改為 **WF-002 完成後立刻開卡**並修正既有卡 ID（見上），`edit` 單欄那件仍留在第一批之後。
 - **工具故障修復的有限例外（需求方 2026-09-10 裁定開）**：`wf open` 開新卡穩定失敗（2/2），而規則說工作走卡、走卡要先 `open`——**框架修不了自己的 blocking CLI bug**。自舉期那條例外**⛔ 不能沿用**：它逐字寫著「授權⛔ 不涵蓋 CLI 碼」，且已隨重構期結束失效。故另開一條，射程逐字如下，⛔ 不得外推：
   - **啟用條件三件全中**：①必要的 CLI 前置功能故障（沒有它就走不了卡）；②已有可重現證據；③沒有正常可行路徑。
