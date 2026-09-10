@@ -51,7 +51,7 @@ last_confirmed: 2026-09-06
 - 派工（`move` 到進行中）時印本卡 `resources` 與現役卡 `resources` 的交集（§0 交接段「寫入集交集」）；有交集由 PM 判排隊或並行，⛔ 不自動擋。
 - 交集判定＝完全字串比對；`db:<env>:schema` 不支配 `db:<env>:table:<name>`，db 文法住 `modules/db-contract`。
 - 資源宣告逐條寫 `file:<路徑>`／`port:<n>`／`container:<name>`／`db:…`，含交付必要的重現工具；現役卡的定義依 `stages/closeout.md` F-結案-03，釋放時點依 F-結案-02。
-- 認領時把實際 worktree 路徑與分支寫回卡面 `worktree`、`branch`；一卡一 worktree 一 session，靠註冊查重。
+- 認領時由執行者以 `edit --set worktree=` 把實際 worktree 路徑寫回卡面；`branch` 由 `move` 寫（`core/card-schema.md` §2），實際分支偏離 `wf/<card_id>` 時停下上呈、⛔ 不手改 `branch`；一卡一 worktree 一 session，靠註冊查重。
 - `lease_expires_at`＝認領時刻＋`params.lease_ttl_hours`。
 - lease 以 `edit --set lease_expires_at=` 續約；派工單與交回單引用有效 lease，過期⛔ 不接受。
 - 破壞性入口（build／rebuild／migration）由專案在 `.wf/contracts/CONTROL_PLANE.md` 列出；啟動前確認本卡 lease 有效，無效⛔ 不跑。
