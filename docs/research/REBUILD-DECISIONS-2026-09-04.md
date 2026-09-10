@@ -255,3 +255,31 @@
 - Project #4「cpbl-analytics 任務看板」217 張、29 欄；`交付狀態` 仍 15 值；`階段` 欄 217 張全空。
 - 快照 2026-09-03 10:41：🏁完成 128／🛑已停止 34／💡需求 30／⏸阻塞 17／📦已合併 4／📥Backlog 3／↩退回 1。非終態 55 張＝cpbl 38＋aiwf 17。
 - `gh project item-list` 的自訂欄位在本機回傳全空，可靠來源是 `origin/snapshots`。
+
+## 卡ID 改號紀錄（2026-09-10 生效）
+
+本節新增、⛔ 不改本檔既有任何一行；`:196`／`:198`／`:199` 是裁定當時的紀錄，逐字保留。
+
+**逐字更正 `:199`**：該行末逐字「**7 張中 5 張要改**」有三個錯數字——① 漏了本卡自己（`WF-008`(#320)→`WF-005`），② 「7 張」不是發號池母體，實測母體＝**9 個帶 `wf-card` 區塊的 issue**（多出 `WF-000`(#295) 與 `WF-008`(#320)），③ 故實際要改的是 **6 個號、⛔ 不是 5 個**。改號執行當下（2026-09-10）以 `cli/src/wf/verbs/_common.py` 的 `repo_cards`（逐字 `client.issues(state='all')`）實測，`skipped` 為空。
+
+改號映射（6 項，皆只改卡面 `json wf-card` 區塊內 `card_id` 的值，Project 的卡ID 投影欄由唯讀動詞的 `reconcile_projection` 對帳補上）：
+
+| issue | 舊卡ID | 新卡ID |
+|---|---|---|
+| #312 | `CLI-003` | `CLI-001` |
+| #313 | `OPS-004` | `OPS-001` |
+| #314 | `CLI-005` | `CLI-002` |
+| #316 | `WF-006` | `WF-003` |
+| #317 | `WF-007` | `WF-004` |
+| #320 | `WF-008` | `WF-005` |
+
+⛔ 不動：`WF-000`(#295)、`WF-001`(#306)、`WF-002`(#311)。`WF-000` 留在發號池內——移出會使序號回退成已用過的號，牴觸 `core/naming.md` §1 逐字「只增不重用」。
+
+改號後 per-area 的已用最大序號＝WF 5、CLI 2、OPS 1、DOC 0，據此的下一號＝`WF-006`、`CLI-003`、`OPS-002`、`DOC-001`。⚠️ `CLI-003`／`OPS-004`／`CLI-005`／`WF-006`／`WF-007`／`WF-008` 這六個舊號**將被重新發出並指到別張卡**；既有留言 append-only（`core/verbs.md` §2）⇒ 舊號的逐字引用一律**依當時值**解讀，各該卡上另有一則 `wf:log` 記映射。
+
+依據（皆在 `ruan6047/ai-workflow`）：
+
+- 改號授權與「與『只增不重用』沒有牴觸」＝需求方 2026-09-10 裁定，逐字「發錯的號 ⛔ 不是『已合法發出的號』，該條保護的是後者」，載於 <https://github.com/ruan6047/ai-workflow/issues/320> 本文「已裁定，⛔ 不用再議」段。
+- 級別由 T4 降 T3＝<https://github.com/ruan6047/ai-workflow/issues/320#issuecomment-5612175160>（`kind=tier_change`）。
+- `WF-000` 留在池內、⛔ 不碰「三位數起」第二處歧義＝<https://github.com/ruan6047/ai-workflow/issues/320#issuecomment-5613411580>。
+- 改號步序（`move` → 改卡面 → 唯讀動詞對帳 → `edit --set branch=`）與歷史檔處置＝<https://github.com/ruan6047/ai-workflow/issues/320#issuecomment-5613923646>。
