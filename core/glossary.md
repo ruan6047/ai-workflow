@@ -81,6 +81,8 @@ last_confirmed: 2026-09-07
 | 查核序 | 本 iteration 內派審單的序號，從 1 起，PM 在派工單填 | 不是 iteration、不是查核輪 R1–R4、不是討論回合 | — |
 | finding 狀態 | `status`：open／resolved／withdrawn，查核者填，跨 iteration 閉環用 | 不是 review_result | accepted、closed |
 | attribution | finding 責任歸屬：executor／coordinator／planner／reviewer／external | 不是 blame | 責任方、責任者 |
+| 責任動作四分 | 起草（產內容）／核可（授權生效）／轉錄（逐字搬運）／落欄（跑寫入動詞）；判法住 `core/conflict-resolution.md` §1 | 不是四個角色、不是四個階段 | — |
+| 適用面 | 一條條文的角色 × 動作 × 對象 × 期間 × 級別或模組五元組；重疊是必要條件、⛔ 不單獨定出結果，判準住 `core/conflict-resolution.md` §4／§6 | 不是非射程、不是三軸的影響面 | — |
 | 退回理由 | 裁定單裡每輪退回引用的 finding | 不是散文 | 駁回原因、reject reason |
 | 復活條件 | 裁定單裡停止或撤銷後可重開的條件 | 不是重試 | 重啟條件、reopen |
 | 翻案把手 | 裁定單裡推翻本次裁定所需的證據種類 | 不是上訴程序 | appeal |

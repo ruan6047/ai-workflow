@@ -60,4 +60,4 @@ last_confirmed: 2026-09-07
 
 一則留言只有一個 `wf-return` 區塊。缺段（`review` 印，⛔ 不是 D3）：全級別＝`self_run`、`acceptance`；T2 以上另＝`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）；`role=reviewer` 另＝`review_result`、`core_pain_resolved`、`findings`；`role=executor` 另＝`mistakes`；已啟用模組的交回單段不分級別。CLI 只印 id 未覆蓋 `notes` 清單、`not_applicable`／`found` 而 text 空、`unverified.reason` 空、模組段內 `不適用`／`發現` 而 text 空、交回單欄位不一致（`review_result` 對 `findings`，PM 判），⛔ 不判內容。
 
-跨 iteration 閉環：本卡已有前一則 `wf:verdict` 時，`wf-return` 逐條重列前輪 finding 的原 `finding_id` 與新 `status`；新 finding 由作者編新 id，⛔ 不重用既有 id。
+跨 iteration 閉環：本卡已有前一則 `wf:verdict` 時，`wf-return` 逐條重列前輪 finding 的原 `finding_id` 與新 `status`；新 finding 由作者編新 id，⛔ 不重用既有 id。`role=executor` 的重列＝修復陳述，`status` 的權威值由查核者在 `wf:verdict` 內填（`core/glossary.md`「finding 狀態」）。

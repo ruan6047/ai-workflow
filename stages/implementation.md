@@ -42,4 +42,4 @@ last_confirmed: 2026-09-05
 - F-執行-02：宣稱可防回歸的測試先對缺陷版本跑紅。
 - F-執行-03：新 worktree 先建全套測試基線。
 - F-執行-04：讓 artifact 在交付 SHA 可重現：產生工具與 artifact 同一 commit；自指命中明列，⛔ 不偷偷排除。
-- F-執行-05：交回前對照 `git diff --name-status` 修正資源宣告的漏列交付檔、宣告過寬、不存在路徑。
+- F-執行-05：交回前對照 `git diff --name-status` 列出資源宣告的漏列交付檔、宣告過寬、不存在路徑，隨交回單交 PM 落欄；⛔ 不自行改 `resources`（規格欄變更依 `stages/planning.md` §1）。
