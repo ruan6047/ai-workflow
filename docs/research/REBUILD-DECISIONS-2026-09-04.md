@@ -748,3 +748,47 @@ Mutation 有 ["minimizeComment","unminimizeComment"]；分類值域含 OUTDATED�
 ⚠️ **PM 對三家的操作紀律逐字要求「實跑，⛔ 不讀碼推論」。這一次 PM 自己沒做。**
 
 ⇒ **應落的紀律**：PM 轉述任何一家研究者對**某張卡**的判斷之前，必須先逐字讀該卡的卡面，並在轉述時標明「我讀過卡面／我沒讀」。研究者說的是「框架的某個理解錯了」，⛔ 不等於「那張卡錯了」——研究者通常⛔ 看不到卡面。
+
+## 回看清單補兩條（2026-09-11，收 `WF-002` 交回單時實測）
+
+⚠️ **本節是實測登記，⛔ 不是裁定。** 兩條都是**印、⛔ 不是擋**（`rc=0`），⛔ 未擋住任何寫入。
+
+### 一 · `review` 的撞號偵測器對「跨 iteration 閉環」誤報
+
+`wf review 311 --file <交回單> --role executor` 逐字印了五行：
+
+```
+finding_id 撞號：WF-002-R1.2-1
+finding_id 撞號：WF-002-R1.2-2
+finding_id 撞號：WF-002-R1.2-3
+finding_id 撞號：WF-002-R1.2-4
+finding_id 撞號：WF-002-R1.2-5
+```
+
+**五則全是假陽性。** `core/return.md` 逐字：
+
+> 跨 iteration 閉環：本卡已有前一則 `wf:verdict` 時，`wf-return` **逐條重列前輪 finding 的原 `finding_id` 與新 `status`**；新 finding 由作者編新 id，⛔ 不重用既有 id。
+
+⇒ **重列原 id 正是規則要求的行為。** 而同檔另一處逐字「`finding_id` 由作者依 `core/naming.md` §4 填，`review` ⛔ 不編、**只印撞號**」。
+
+⇒ **偵測器分不出「重列前輪 finding」與「重用既有 id 開新 finding」。** 前者合規、後者違規，兩者在狀態面的形狀是「id 與既有 `wf-return` 相同」——一模一樣。
+⚠️ 可分辨的形狀確實存在（重列的那則會帶新 `status`，且前一則是 `wf:verdict`、本則是 `wf:return`），但**現行偵測器⛔ 沒有用它**。
+
+⇒ **後果**：執行者照規則做，卻每則都收到一行警示。⚠️ 更糟的方向是反的——**真正的違規（重用既有 id 開新 finding）會被混在一堆假陽性裡**，讀的人分不出來。
+
+### 二 · 收 `role=executor` 的交回單要在**該卡的工作樹**裡跑
+
+同一次 `review` 另印兩行：
+
+```
+未能比對本機分支頭
+未能取得 git 附錄
+```
+
+成因：PM 在 `wf-framework-lightweight-ed47aa`（當時在 `main`）跑 `review`，而該卡的分支是 `wf/WF-002`、產出物在 `wf-WF-002` 那棵樹。
+
+`core/verbs.md` §1 `review` 寫格逐字：「`source_sha` 依 role 取源…executor＝卡面 `branch` 在遠端的分支頭…**本機分支頭 ≠ 遠端頭時印、本機 git 狀態取不到時印「未能比對本機分支頭」（rc=0）**」，另「散文段附 `git log` 的 commit 清單與 `git diff --stat` 的改動面」。
+
+⚠️ **⛔ 不影響已落地的內容**——`source_sha` 是 CLI 自己從卡面取的（`63a5532`，正確）。**失去的是散文段的 git 附錄**（commit 清單與改動面），那一段這次是空的。
+
+⇒ **應落的紀律**：跑 `wf review <card> --role executor` 時，工作目錄要在該卡 `branch` 對應的工作樹裡。⚠️ 這一條在 `core/verbs.md` §1 與 `roles/pm.md` 都**⛔ 沒有寫**，目前只靠 PM 記得。
