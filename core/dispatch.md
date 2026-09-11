@@ -32,7 +32,7 @@ last_confirmed: 2026-09-07
  "closeout": {"escalation": ["升級單（三次退回逐字理由、四選一各值證據）"], "identity": ["身分三格（GitHub 帳號／session ID／訊息定位）"]}}
 ```
 
-`wf-contract` 的 schema（居所＝本檔，副作用入口是核心派工單功能、不限資料庫）；區塊存在但不合 schema＝印「契約檔不合 schema」並不採用該檔、⛔ 不擋（`brief` 無寫入，依 `core/verbs.md` §2「其餘一律印」）；無區塊印「專案層未宣告」：
+`wf-contract` 的 schema（居所＝本檔，副作用入口是核心派工單功能、不限資料庫）；區塊存在但不合 schema＝印「契約檔不合 schema」並不採用該檔、⛔ 不擋（依 `core/verbs.md` §2 逐字「其餘一律印」；`brief` 在該檔 §1 的「寫」欄逐字「無」只指目的寫入，⛔ 不推得 `brief` 唯讀，共通副作用依同檔 §1 表下與 §2）；無區塊印「專案層未宣告」：
 
 ```json schema
 {"$id": "wf-contract", "type": "object", "additionalProperties": false, "required": ["side_effects"],

@@ -9,7 +9,7 @@ last_confirmed: 2026-09-09
 
 ## 1 · 職責
 
-- 跑 `open`／`move`／`notes`／`brief`／`snapshot`；狀態的唯一 writer，只有 PM 跑 `move`；`review` 由交回者自己跑，`edit --set notes+=` 任何角色。
+- 跑 `open`／`move`／`notes`／`brief`／`snapshot`；狀態的唯一 writer，只有 PM 跑 `move`；`review` 由交回者自己跑，`edit --set notes+=` 的角色範圍依 `core/card-schema.md` §2 的 `notes` 列。
 - 開卡：讀清單項全部留言（含「供開卡時採用」的裁定）後才 `open`；填 PM 欄；收斂清單。
 - 派工與派審：`brief` 組派工單，人填段自己填；派審前 `brief --for reviewer` 印的分支頭、來源 SHA、`merge-tree` 三項有紅即作廢派審。
 - 收件：判完整性（缺段、格數、值域）與 R1 前提、R2 射程，R1 不過⛔ 不跑 R2；⛔ 不判內容對錯。
