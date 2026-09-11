@@ -704,3 +704,47 @@ Mutation 有 ["minimizeComment","unminimizeComment"]；分類值域含 OUTDATED�
 **`WF-007` 先跑，再動 `core/verbs.md`。** 理由一致：`core/verbs.md` 是 T4 且**不可逆**（留言一旦 PATCH，被覆蓋的中間態只剩修訂史 ⇒ `recoverable` 應記 `rollback_only`、⛔ 不是 `reversible`）；`WF-007` 是離線雙盲、**完全可逆**。
 ⚠️ `claude-opus-5` 另指出第二層：先改生產會讓試驗結論搬不回去——試驗比的是「143 則 vs 0 則」，上線後生產是「1 則表」，**那是沒被測過的第三種呈現**。
 ⇒ 建議把 C 與 E **離線渲染**成 `WF-007` 的第三、第四臂（零遠端寫入、零 CLI 改動，落在 `#330` 現有 `non_scope` 的「只產離線資料」內）。
+
+## PM 的第七次同型失誤（2026-09-11）：沒讀就斷言別人錯，且是轉貼⛔ 未自己查
+
+⚠️ **本節是 PM 自錯的登記，⛔ 不是裁定。**
+
+### 做了什麼
+
+第八輪的 `claude-opus-5` 子代理量到 ruleset 20768920 逐字**無 `pull_request` 規則**，並判「這改變 #313 的修法」。PM 複驗了 ruleset（那部分對），**⛔ 沒有回頭讀 #313 的卡面**，就在該卡貼了一則 `wf:log`（`issues/313#issuecomment-5624019590`），逐字寫：
+
+> 本卡標題是「T0／T1 直推 main 與 ruleset 的衝突」。**衝突是真的，但成因跟本卡目前的敘述不一樣**，修法因此不同。
+
+並給了「兩條可能的路」。
+
+### 為什麼錯
+
+#313 的 `core_pain` 全文逐字：
+
+> 成因＝第 7 步自己設的 ruleset 20768920「main must be green」帶 required_status_checks（**實測 rules 為 required_status_checks／deletion／non_fast_forward／required_linear_history，bypass_actors 為空陣列，conditions 含 ~DEFAULT_BRANCH**），直推沒有 PR 就沒有 check 可過。…**兩條路擇一：(a) 改規則，承認有 required check 的 repo 上 T0／T1 也走 PR、只是免查核者；(b) 改 ruleset 開繞道（bypass actor），但會讓「main must be green」出現破口。**
+
+⇒ **該卡從一開始就列對了四條 rule types、⛔ 從未主張 ruleset 要求 PR。** 而它的 `feature` 逐字已經選了 (a)。
+⇒ **PM 給的「兩條可能的路」逐字就是卡面已經寫著的 (a)(b)，而且卡面已經選完了。**
+⇒ PM 攻的是**一個那張卡沒有主張過的東西**。
+
+### 仍然成立的兩塊（⛔ 不隨誤判一起收回）
+
+1. `rule-suites?ref=refs/heads/main` 回 **15 筆推送評估紀錄、2 筆 `result=fail`**（皆 `required_status_checks` FAIL、actor `ruan6047`）——這是 #313 `core_pain` 沒有的**平台側實證**，反而**支持**它逐字的「直推沒有 PR 就沒有 check 可過」。
+2. `core/platform.md` P2 的三處錯（artifact 欄的「＋PR」在平台上不存在；與同檔往下四行的註記「平台擋不到的（…T2 以上直推 main）」不能同真；`cli-tests` 已是第四個 required check 但 `core/ roles/ stages/ modules/` 全 grep 零命中，負控 `reachability` 命中兩檔）。
+⚠️ 但第 2 塊**⛔ 不是 #313 的射程**——PM 先前說「要不要併進 #313 留給需求方裁」，**那個問法本身建立在誤判上**。P2 與 #313 選的 (a) 路線無關，應另開卡。
+
+### #313 真正卡住的地方（與 PM 貼的完全無關）
+
+`acceptance` 與 `verification` **都是空陣列**（`core/verbs.md` §1 `move` 逐字「離開規劃時 `acceptance` 或 `verification` 空」會印），另有 **14 條 finding** 未處置（兩份 `role=executor` 交回單，8 + 6 條）。
+
+### 這一次跟前六次的差別
+
+| 次 | 形狀 |
+|---|---|
+| 1–5 | **判準比目標寬**（首行當分類鍵、子字串當區塊測試、丟錯的區塊算成讀得到、裸數字當引用判準、「原生史沒有」寫成「唯一」） |
+| 6 | **替需求方換判準後擴大射程** |
+| **7** | **沒讀就斷言別人錯，且是轉貼子代理的判斷⛔ 未自己查** |
+
+⚠️ **PM 對三家的操作紀律逐字要求「實跑，⛔ 不讀碼推論」。這一次 PM 自己沒做。**
+
+⇒ **應落的紀律**：PM 轉述任何一家研究者對**某張卡**的判斷之前，必須先逐字讀該卡的卡面，並在轉述時標明「我讀過卡面／我沒讀」。研究者說的是「框架的某個理解錯了」，⛔ 不等於「那張卡錯了」——研究者通常⛔ 看不到卡面。
