@@ -838,3 +838,88 @@ finding_id 撞號：WF-002-R1.2-5
 ⇒ 需求方裁定：**登記，⛔ 不動任何卡**，等 #311 與 #334 落地再一起看。
 
 ⚠️ 三件都是**印、⛔ 不是擋**層級的缺口，⛔ 未擋住任何寫入，也⛔ 未造成已知的錯誤放行。
+
+## 回看清單補五條（2026-09-11，跑 `WF-002` 一整輪實測到）
+
+⚠️ **本節是實測登記，⛔ 不是裁定。** 三條由執行者（`claude-opus-5` 子代理）實測、兩條由 PM 實測；**全部⛔ 未經跨家族覆核**（`gpt-6-astra` 當日第三次撞額度）。
+
+### 一 · `--source-sha` 在非交回邊被靜默丟棄
+
+`cli/src/wf/verbs/move.py` 逐字：
+
+```python
+if from_node == '執行/進行中' and to_node == '執行/待確認':
+    updated['source_sha'] = source_sha
+```
+
+⇒ **只有 `執行/進行中 → 執行/待確認` 這一條邊才寫。** 其他邊收到 `--source-sha` 會**吃掉、⛔ 不寫、⛔ 不印**、rc=0。
+`core/verbs.md` §1 `move` 寫格逐字也只說「…**交回時**寫 `--source-sha`」。
+
+PM 實測踩到：在 `規劃/進行中 → 規劃/待確認` 傳 `--source-sha 7eca267…`，卡面 `source_sha` 維持舊值，**零印項**。PM 一度誤判成「被 `move` 打回」——**事實是從來沒寫進去過**。
+⚠️ 唯一會響的是 D4（`source_sha` 不在遠端），而該值**在**遠端 ⇒ **驗過了、然後丟掉了**。
+
+⇒ **這是已登記的「動詞收到但沒寫進狀態面的旗標，一律印」的第三個同型實例**（前兩個＝`edit` 的第二個 `--set`、`move --source-sha` 在非執行邊）。`CLI-003`（#332）是它的前置條件卡。
+
+### 二 · `core/card-schema.md` §2「誰填」表的粒度不夠
+
+該表把 `stage`／`state`／`owner`／`branch`／`source_sha`／`blocked` **放同一列**，逐字「CLI（`move`；…；`owner` 在 escalation 換人時由 PM `edit`，`modules/escalation` §1）」。
+
+但這六個欄在 `core/verbs.md` §1 的可編輯性**完全不同**：
+
+| 欄 | `edit` 硬擋欄逐字 | `edit.py` |
+|---|---|---|
+| `stage`／`state` | 逐字列出「只由 `move` 寫，D1」 | 專屬 `refuse('D1', …)` |
+| `card_id`／`source_issue` | 逐字列出「建卡後不可改」 | 專屬 `refuse('D3', …)` |
+| **`source_sha`** | 逐字列出「**`--set source_sha=` 不在遠端**」⇒ **明文把 `edit --set source_sha=` 當合法用法** | 專屬 D4 分支 |
+| **`owner`** | **⛔ 完全沒提** | **⛔ 沒有任何專屬分支** |
+
+⇒ 同一格裡，`source_sha` 是**明文允許 `edit`**、`owner` 是**兩處都沉默**。
+⇒ PM 據此判：`owner` ⛔ 不用 `edit`（走四步邊補正）、`source_sha` 用 `edit` 補正（D4 把關；負控：傳 `deadbeef…` 得 rc=1）。
+⚠️ **負控只驗到「會擋」，⛔ 未驗到擋它的是不是 D4**——印的是「無裁定連結」而非「拒收・D4・…」。
+
+### 三 · `review` 的撞號假陽性隨 finding 數**線性成長**
+
+先前已登記「`review` 對跨 iteration 閉環誤報撞號」。本輪量到嚴重度比預估高：
+
+```
+執行者重列 5 條 finding  → 撞號 5 則
+執行者重列 11 條 finding → 撞號 11 則
+```
+
+`core/return.md` 逐字要求「逐條重列前輪 finding 的原 `finding_id` 與新 `status`」⇒ **卡愈久、finding 愈多，假陽性愈多**，而真正的違規（重用既有 id 開新 finding）被埋在裡面。
+
+### 四 · `snapshot` 對壞掉的 `wf-return` JSON **完全靜默**（執行者實測）
+
+`cli/src/wf/verbs/snapshot.py` 的留言迴圈逐字 `_, responses, _ = _block(...)`——**把解析失敗的原因丟掉**。
+執行者真跑 `snapshot()`：對含壞 JSON 的 `#311`，**印項 0 行、輸出檔不含該留言號**。
+
+⚠️ 對照 `core/verbs.md` §1 `snapshot` 列逐字「卡面 JSON 解析失敗或不合 schema 的 issue 號與原因…**⛔ 不從盤點母體排除**」——**那一條管的是卡面，⛔ 不管留言**。⇒ 留言層的壞 JSON 在離線稽核副本裡**無聲消失**。
+
+### 五 · `move --ruling <壞 JSON 的留言 URL>` 的訊息與事實不符（執行者實測）
+
+該留言**有** `wf-return` 圍欄、只是 JSON 壞掉。但 `move` 印的是：
+
+```
+裁定留言無 wf-return／wf-ruling 區塊
+缺 wf-return 區塊
+```
+
+**兩句都與事實不符。** 成因：`comment_blocks` 把壞 JSON 壓成 `(False, None)`，**「沒有區塊」與「區塊在但壞」變成同一個回傳值**。
+
+⇒ 與第三條同族：**偵測器把兩種不同的情形壓成同一個訊號**，而讀的人分不出來。
+
+---
+
+### ⚠️ 本輪 PM 的自錯（第 9–13 次，形狀與前八次同族）
+
+| # | 錯 | 誰抓到 |
+|---|---|---|
+| 9 | 把 `roles/requester.md` §2 的「⛔ 不代改執行者的產出」冒充成 `roles/pm.md` §2，已散進本卡裁定與 `main` | `gpt-6-astra` |
+| 10 | 派工單釘「⛔ 不 push」，抵觸 `roles/executor.md` §1「推分支到 origin」 | 執行者（`WF-002-R1.2-7`） |
+| 11 | 引 `stages/implementation.md` §2 的「分支未 push 則走阻塞」時**漏掉前提「執行者失聯時」** | `gpt-6-astra` |
+| 12 | 派工單缺材料（要研究者排除四案卻⛔ 沒附四案原文），同時又禁止它讀舊產出 | `gpt-6-astra` |
+| 13 | 數「帶 `wf-return` 的留言」用**子字串**當判準得 9 則，**嚴格行首比對是 7 則** | 執行者 |
+
+⚠️ 另有一件⛔ 未列入計數但同型：PM 在派工單逐字寫「**你的 r2 那份有這兩個鍵，r3 掉了**」——實測 **r2 與 r3 都沒有**，PM 憑印象寫的。執行者逐字回應：「**成因更正⛔ 不減輕我的責任**——漏段兩輪是我的產出問題，已進 `mistakes`。」
+
+⇒ **第 13 次特別值得記**：它發生在 PM **剛把「判準比目標寬」那條登記進 `main` 之後**。**登記⛔ 不等於不再犯。**
