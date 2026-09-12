@@ -13,7 +13,7 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
 from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
-from wf.verbs._common import (Printer, block_object, card_number, enabled_modules,
+from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, enabled_modules,
                               note_blocks, parse_args)
 from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
 
@@ -90,7 +90,10 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
         report('無 Project 設定，未評估 resource-lock')
     else:
         project = client.project(**cfg['project'], field_names=projection(catalog))
-    enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+    try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
+        enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+    except CardShapeError as exc:
+        return reject(client, number, 'D3', str(exc), tuple(report))
     failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
                         enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
                         printed=tuple(report)) or reconcile_projection(

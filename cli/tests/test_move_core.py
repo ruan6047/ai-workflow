@@ -13,7 +13,8 @@ from wf.gh.client import NotFound, PermissionDenied, TransportError
 from wf.gh.writes import WriteMixin, read_card
 from wf.verbs._write import projected
 from wf.verbs.move import move, run
-from .test_open_verb import MemoryClient, expected_card, issue, item, block
+from .test_open_verb import (MemoryClient, VARIANTS, block, expected_card, issue, item,
+                             shape_variants)
 
 ROOT = Path(__file__).resolve().parents[2]
 SHA = 'a' * 40
@@ -314,3 +315,44 @@ def test_negative_controls_network_and_rejection_oracle(setup):
     with pytest.raises(AssertionError):
         reject(client, good, 'D1')
     print('負控：網路與子程序均響 MOVE_NETWORK_DENIED；成功轉移冒充 D1 拒收被斷言抓到')
+
+
+# ── WF-004：啟用判定前的上界預驗（core/card-schema.md §1 合成順序）────────────────
+
+@pytest.mark.parametrize('variant', VARIANTS)
+def test_prevalidation_precedes_is_legal_plan_and_enablement(setup, catalog, monkeypatch, variant):
+    """8 敵意值：move 的上界預驗在 is_legal_plan 與啟用判定之前 ⇒ D3＋schema path。
+
+    基線行為＝stage_plan 非陣列時 is_legal_plan 先吃到未驗值（理由是 Python 內部字串或 traceback）。
+    """
+    monkeypatch.setattr('wf.verbs.move.is_legal_plan',
+                        lambda *a, **k: pytest.fail('上界預驗未過時 ⛔ 不得判階段序'))
+    monkeypatch.setattr('wf.verbs.move.is_enabled',
+                        lambda *a, **k: pytest.fail('上界預驗未過時 ⛔ 不得做啟用判定'))
+    changes, pointer = shape_variants(catalog)[variant]
+    client, kwargs = setup()
+    # 投影欄由合法卡建（敵意 owner 會讓測試替身自己的 projected 先炸）；被測物只讀 issue body。
+    client.rows[10]['body'] = block('wf-card', read_card(client.rows[10]['body']) | changes)
+    result = move(10, '進行中', **kwargs)
+    reject(client, result, 'D3')
+    assert result.reason.startswith('/'), result.reason
+    assert pointer in result.reason, result.reason
+    print('WF-004 move', variant, result.reason)
+
+
+def test_v1_card_still_migrates_before_prevalidation(setup, catalog):
+    """§2.2 的搬位理由：1→2 遷移仍先跑，遷移後的 v2 卡才過上界預驗。
+
+    預驗若挪到遷移之前，schema_version 的 const 2 會把 v1 卡擋掉，
+    直接殺死 core/card-schema.md §6 的 1→2 遷移路徑 ⇒ 本測試轉紅。
+    """
+    client, kwargs = setup(stage='執行', state='待辦')
+    v1 = read_card(client.rows[10]['body'])
+    del v1['stage'], v1['state']
+    v1['schema_version'] = 1
+    client.rows[10]['body'] = block('wf-card', v1)
+    result = move(10, '執行/進行中', actor='executor:new', **kwargs)
+    assert result.rc == 0, result.reason
+    assert result.card['schema_version'] == 2
+    assert (result.card['stage'], result.card['state']) == ('執行', '進行中')
+    print('WF-004 move v1 遷移後 rc：', result.rc, '／schema_version：', result.card['schema_version'])

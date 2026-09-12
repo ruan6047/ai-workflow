@@ -472,3 +472,61 @@ def test_missing_single_select_option_before_project_add(setup):
     client, kwargs = setup()
     client.options['狀態'] = []
     assert_reject(client, open_issue(10, **kwargs), 'D3')
+
+
+# ── WF-004：啟用判定前的上界預驗（core/card-schema.md §1 合成順序）────────────────
+
+def shape_variants(catalog):
+    """8 個敵意卡面值 → (卡面改動, 期望的 JSON pointer)。
+
+    合法部分逐值由 catalog 取（F-執行者-04）：4 個讀未驗卡面的 enable_if kind 各自讀哪個欄、
+    以及那些欄的合法值，唯一居所都是 modules/*/module.md §0 與 core/enums.md；這裡只把型別弄壞。
+    """
+    modules = {block.data['name']: block.data for block in catalog.by_label('yaml wf-module')}
+    enums, = catalog.by_label('json wf-enums')
+    stage = modules['research']['enable_if']['stage']            # stage_plan_has 讀 stage_plan
+    parent_field = modules['initiative']['enable_if']['field']   # field_nonempty 讀 parent
+    sensitive = modules['stat-redline']['enable_if']['value']    # field_contains 讀 tier_basis.sensitive
+    role = enums.data['roles']['enum'][0]                        # other_actor_card_in_state 讀 owner.actor
+    basis = {'sensitive': sensitive, 'recoverable': enums.data['recoverable']['enum'][0],
+             'blast': enums.data['blast']['enum'][0]}
+    return {
+        'stage_plan_none': ({'stage_plan': None}, '/stage_plan'),
+        'stage_plan_int': ({'stage_plan': 5}, '/stage_plan'),
+        'stage_plan_string': ({'stage_plan': stage}, '/stage_plan'),
+        'parent_int': ({parent_field: 5}, '/' + parent_field),
+        'tier_basis_string': ({'tier_basis': sensitive}, '/tier_basis'),
+        'sensitive_string': ({'tier_basis': basis}, '/tier_basis/sensitive'),
+        'owner_string': ({'owner': f'{role}:same'}, '/owner'),
+        'owner_actor_int': ({'owner': {'role': role, 'actor': 5}}, '/owner/actor'),
+    }
+
+
+VARIANTS = sorted(shape_variants(load_blocks(RULES)))
+
+
+@pytest.mark.parametrize('variant', VARIANTS)
+def test_prevalidation_precedes_parent_d4(setup, catalog, monkeypatch, variant):
+    """8 敵意值：open 的上界預驗在 parent D4 與啟用判定之前 ⇒ D3＋schema path，⛔ 無 Python 內部字串。"""
+    monkeypatch.setattr('wf.verbs.open.is_enabled',
+                        lambda *a, **k: pytest.fail('上界預驗未過時 ⛔ 不得做啟用判定'))
+    changes, pointer = shape_variants(catalog)[variant]
+    client, kwargs = setup(body=block('wf-card', expected_card(**changes)))
+    result = open_issue(10, **kwargs)
+    assert_reject(client, result, 'D3')
+    assert result.reason.startswith('/'), result.reason
+    assert pointer in result.reason, result.reason
+    print('WF-004 open', variant, result.reason)
+
+
+def test_v1_restore_rejects_on_schema_version_const(setup):
+    """§2.3 的刻意理由變更：v1 撤銷卡復板由「無投影欄可回填 stage/state」改落 /schema_version。
+
+    兩者同為 D3、同為零寫入；需求方 2026-09-12 wf:ruling 已核可，且裁定 ⛔ 不加保留舊訊息的分支。
+    """
+    client, kwargs = setup(body=block('wf-card', expected_card(schema_version=1)))
+    result = open_issue(10, **kwargs)
+    assert_reject(client, result, 'D3')
+    assert result.reason.startswith('/schema_version: '), result.reason
+    assert '無投影欄可回填 stage/state' not in result.reason
+    print('WF-004 v1 復板理由：', result.reason)
