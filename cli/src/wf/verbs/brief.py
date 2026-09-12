@@ -21,8 +21,8 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
-from wf.verbs._common import (Printer, block_object, board_facts, card_number, comment_blocks,
-                              enabled_modules, parse_args, repo_cards)
+from wf.verbs._common import (CardShapeError, Printer, block_object, board_facts, card_number,
+                              comment_blocks, enabled_modules, parse_args, repo_cards)
 from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
@@ -256,7 +256,10 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
         client.project, **cfg['project'], field_names=projection(catalog))
     if cfg['project'] is not None and project is None:
         report('未能讀取 Project')
-    enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+    try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
+        enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+    except CardShapeError as exc:
+        return reject(client, number, 'D3', str(exc), tuple(report))
     failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
                         enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
                         printed=tuple(report)) or reconcile_projection(

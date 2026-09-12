@@ -66,7 +66,23 @@ last_confirmed: 2026-09-08
             "db-contract": {"db_namespace": {"type": ["string", "null"]}, "migration_phase": {"enum": ["expand", "migrate", "contract", null]}}}}}
 ```
 
-合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 與 `core/enums.md` 後，先把每個 `wf-enums#/<鍵>` 的 `$ref` 具體化，(a) 把已啟用模組宣告的 `adds.enums.states` 併入 `$defs/nonterminal` 的 enum；(b) 把**全部**宣告模組的 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔；結構合法性⛔ 不隨啟用狀態變——模組停用後卡面既有的模組欄保留、只是不啟用其行為）；然後再驗。schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
+合成（D3 用合成後的 schema 驗）：CLI 讀本檔 schema 與 `core/enums.md` 後，先把每個 `wf-enums#/<鍵>` 的 `$ref` 具體化，(a) 把已啟用模組宣告的 `adds.enums.states` 併入 `$defs/nonterminal` 的 enum；(b) 把**全部**宣告模組的 `$defs/module_fields/<模組名>` 併入 `wf-card.properties`（模組 `adds.fields` 的型別唯一居所＝本檔；結構合法性⛔ 不隨啟用狀態變——模組停用後卡面既有的模組欄保留、只是不啟用其行為）；然後再驗。
+
+驗證順序（`notes`／`brief`／`review`／`move`／`open` 五個動詞）：合成 (a) 要先知道哪些模組啟用，啟用判定又讀卡面，⇒ 先驗才能算、先算才能驗構成環。解法是把驗證切成上界與精確兩道，⛔ 不新增任何 D1–D4、⛔ 不改任何模組的 `enable_if`：
+
+① **上界預驗**——用**全部宣告模組**的 `adds.enums.states` 聯集合成 `wf-card` 再整卡驗一次。此步只讀 catalog、⛔ 不讀卡面決定用哪個 schema ⇒ 無環。不過即停，落 D3，理由是 JSON pointer。上界 ⛔ 不得改用零模組基底：合法卡的模組 state（例如 `research` 啟用時的 `不可判定`）會被基底的 `/state` 誤拒。
+② **啟用判定**——上界過了才算 `enable_if`；卡面結構不合上界時 ⛔ 不得做啟用判定（否則 `stage_plan` 非陣列會讓 `stage_plan_has` 拋未攔截的 TypeError，另三個讀卡面的 kind 會靜默翻面）。
+③ **精確後驗**——以實際啟用集合再合成 `wf-card` 驗一次。此步 ⛔ 不得省：停用模組的 state 通得過上界，只有精確後驗擋得住。
+④ 三道之外的語意判定與寫入，位置逐動詞不同；固定不變的只有三件：①→②→③ 的相對序、③ ⛔ 不得省、任何持久寫入一律在 ③ 之後。五個動詞的逐檔實序：
+- `notes`／`brief`／`review`：①→②→③，之後才是 §2 對帳與寫入（`review` 另在 ③ 之後做交回單 D3 與 `source_sha` D4）。這三個動詞 ⛔ 不做 `stage_plan` 階段序、也 ⛔ 不做 `parent` D4。
+- `move`：①→`stage_plan` 階段序（D3）→②→③→轉移合法性（D1）→寫入。階段序保留它在基線的相對位置（② 之前），本卡只把 ① 插到它之前——① 先保證型別與值域，階段序的拒收理由才不會是吃到未驗值的 Python 內部字串。寫入前的 `prepare_card` 會再驗一次精確 schema 與階段序，那是既有行為、⛔ 不是本條新增的一道。
+- `open`：①→`parent` D4→②→③（`stage_plan` 階段序在 ③ 的 `prepare_card` 內）→寫入。`parent` D4 同樣保留在 ② 之前，理由同上。
+① 之前各動詞既有的入口判定（`open` 的 D2 在板／不是清單項、`--area` D3，`move` 的 1→2 遷移）⛔ 不受本條約束。
+
+⚠️ `move` 的 1→2 遷移（§6）排在 ① 之前：`schema_version` 是 const 2，v1 卡過不了上界；v1 卡的結構由遷移自己的驗證負責。
+⚠️ 本條的射程就是上列五個動詞。`snapshot` ⛔ 不在射程內——它逐卡 try／except，壞卡進 `invalid_cards` 且不中斷整批，處置依 issue #301，⛔ 不改。
+
+schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印，⛔ 不是 D3。`open` 寫入的初值：CLI 欄填值、`spec_version`=1、`iteration`=0；字串欄＝空字串、陣列欄＝空陣列、enum 與物件欄（`tier`、`tier_basis`、`exec_capability`、`review_capability`、`db_scope`）與 `parent`／`blocked`／`grilling`／`owner`／`branch`／`source_sha`＝null。缺陷卡用同一 `wf-card` 形狀，⛔ 無專屬卡種。schema 以外的結構約束（D3，CLI 驗）：`stage_plan` 非空時須為 `core/state-machine.md` 階段序的子序列且含需求／執行／審核／結案（空＝未填，印）；`card_id`／`source_issue` 建卡後不可改；`parent` 指到板上存在的卡（D4）。
 
 ## 2 · 誰填、何時必填、誰讀
 

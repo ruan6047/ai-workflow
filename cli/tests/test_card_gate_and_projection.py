@@ -13,9 +13,11 @@ import subprocess
 import pytest
 
 from wf.compose.blocks import load_blocks, projection
+from wf.compose.schema import compose_schema
+from wf.compose.validate import validate
 from wf.gh.client import GhError
 from wf.gh.writes import WriteMixin, read_block
-from wf.verbs import _write
+from wf.verbs import _common, _write
 from wf.verbs.brief import brief, _previous_findings
 from wf.verbs.edit import edit
 from wf.verbs.notes import notes
@@ -25,7 +27,7 @@ from wf.verbs.snapshot import snapshot
 
 from .test_brief_sections import block, card, make_client, make_root, WRITES
 from .test_end_to_end import E2EClient
-from .test_open_verb import expected_card, item, issue
+from .test_open_verb import VARIANTS, expected_card, item, issue, shape_variants
 
 RULES = Path(__file__).resolve().parents[2]
 BOARD = {'階段': {'name': '執行'}, '狀態': {'name': '進行中'}, '級別': {'name': 'T3'},
@@ -101,7 +103,12 @@ def test_illegal_card_key_is_rejected_once_by_every_verb(tmp_path, verb):
 
 @pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])
 def test_removing_the_card_gate_lets_the_illegal_key_through(tmp_path, verb, monkeypatch):
-    """FINAL-1 負控：把 check_card 換成不判的樁 ⇒ 同一張卡 rc=0，證明擋下來的正是這道驗證。"""
+    """FINAL-1 負控：把兩道驗卡面（上界預驗與 check_card）都換成不判的樁 ⇒ 同一張卡 rc=0。
+
+    WF-004 把非法鍵的攔截點前移到 enabled_modules 第一行的 prevalidate_card，
+    只樁 check_card 已不足以讓非法鍵穿過；負控語義隨之收窄為「拿掉兩道就穿過」。
+    """
+    monkeypatch.setattr(_common, 'prevalidate_card', lambda *a, **k: None)
     monkeypatch.setattr(_write, 'check_card', lambda *args, **kwargs: None)
     for module in ('notes', 'brief', 'review'):
         monkeypatch.setattr(f'wf.verbs.{module}.check_card', lambda *a, **k: None)
@@ -361,3 +368,127 @@ def test_new_card_writes_no_move_comment(open_root, catalog):
     result = open_issue(10, client=client, root=open_root, catalog=catalog, emit=lambda line: None)
     assert result.rc == 0
     assert first_lines(client) == []
+
+
+# ── WF-004：啟用判定前的上界預驗（core/card-schema.md §1 合成順序）────────────────
+
+def victim_card(catalog, **changes):
+    """notes／brief／review 三個動詞都能跑到底的合法卡；research 由 stage_plan 啟用。"""
+    research, = (b.data for b in catalog.by_label('yaml wf-module') if b.data['name'] == 'research')
+    enums, = catalog.by_label('json wf-enums')
+    stage = research['enable_if']['stage']
+    plan = [s for s in enums.data['stages']['enum'] if s in ('需求', stage, '規劃', '執行', '審核', '結案')]
+    return card(stage_plan=plan, stage=stage, state=enums.data['states_core']['enum'][0],
+                branch='wf/WF-001', source_sha='b' * 40) | changes
+
+
+@pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])
+@pytest.mark.parametrize('variant', VARIANTS)
+def test_prevalidation_precedes_enablement_for_every_victim_verb(tmp_path, catalog, monkeypatch,
+                                                                 verb, variant):
+    """8 敵意值 × 3 個受害動詞：上界預驗先擋 ⇒ rc=1、恰一則 wf:reject、理由是 schema path、
+    首次留言前零寫入，且 is_enabled 一次都沒被呼叫（A2）。
+
+    基線行為＝stage_plan 為 None／5 時 is_enabled 拋未攔截的 TypeError（見負控）。
+    """
+    calls = []
+    monkeypatch.setattr(_common, 'is_enabled',
+                        lambda *a, **k: calls.append(a) or pytest.fail('⛔ 不得做啟用判定'))
+    monkeypatch.setattr('wf.verbs.brief.is_enabled',
+                        lambda *a, **k: calls.append(a) or pytest.fail('⛔ 不得做啟用判定'))
+    changes, pointer = shape_variants(catalog)[variant]
+    root = make_root(tmp_path, project=False)
+    client = make_client(victim_card(catalog, **changes))
+    result, _ = run_verb(verb, tmp_path, root, client)
+    assert result.rc == 1
+    assert calls == []
+    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
+    assert first_lines(client) == ['wf:reject']
+    assert rejects(client)[0]['body'] == '拒收・D3・' + result.reason
+    assert result.reason.startswith('/'), result.reason
+    assert pointer in result.reason, result.reason
+    print('WF-004', verb, variant, result.reason)
+
+
+@pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])
+def test_prevalidation_stub_restores_the_typeerror(tmp_path, catalog, monkeypatch, verb):
+    """負控：把 prevalidate_card 換成不判的樁 ⇒ stage_plan=5 重現基線的未攔截 TypeError。
+
+    這道負控會響，才證明上界預驗不是零資訊的裝飾（F-規劃-03）。
+    """
+    monkeypatch.setattr(_common, 'prevalidate_card', lambda *a, **k: None)
+    root = make_root(tmp_path, project=False)
+    client = make_client(victim_card(catalog, stage_plan=5))
+    with pytest.raises(TypeError, match="argument of type 'int' is not iterable"):
+        run_verb(verb, tmp_path, root, client)
+    print('WF-004 負控', verb, '樁掉 prevalidate_card ⇒ TypeError 重現')
+
+
+@pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])
+def test_legal_module_state_is_not_rejected_by_the_superset(tmp_path, catalog, verb):
+    """A3：上界＝全部宣告模組的 states 聯集 ⇒ 合法的 research state 不被誤拒。
+
+    負控＝以零模組基底當上界（compose_schema(catalog,'wf-card') 不帶模組名），
+    同一張卡會得到 /state: 不符合 anyOf；見下一條。
+    """
+    research, = (b.data for b in catalog.by_label('yaml wf-module') if b.data['name'] == 'research')
+    state, = research['adds']['enums']['states']
+    root = make_root(tmp_path, project=False)
+    client = make_client(victim_card(catalog, state=state))
+    result, _ = run_verb(verb, tmp_path, root, client)
+    assert result.rc == 0, result.reason
+    assert 'wf:reject' not in first_lines(client)   # review 成功時本來就會貼 wf:return
+    print('WF-004 合法模組 state', verb, 'rc', result.rc, first_lines(client))
+
+
+def test_zero_module_base_would_reject_the_legal_module_state(catalog):
+    """A3 負控：上界若改用零模組基底，上一條那張合法卡就會被誤拒 ⇒ 「上界」三個字有資訊量。"""
+    research, = (b.data for b in catalog.by_label('yaml wf-module') if b.data['name'] == 'research')
+    state, = research['adds']['enums']['states']
+    legal = victim_card(catalog, state=state)
+    base = [f'{e.path}: {e.message}' for e in validate(legal, compose_schema(catalog, 'wf-card'))]
+    superset = [f'{e.path}: {e.message}' for e in
+                validate(legal, compose_schema(catalog, 'wf-card', _common.declared_module_names(catalog)))]
+    assert base and all(row.startswith('/state: ') for row in base), base
+    assert superset == []
+    print('WF-004 零模組基底誤拒：', base, '／上界：', superset)
+
+
+@pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])
+def test_exact_schema_still_rejects_a_disabled_module_state(tmp_path, catalog, verb):
+    """A4：精確後驗 ⛔ 不得被上界取代——research 未啟用而卡面帶它的 state ⇒ 仍 D3 /state。
+
+    同時是負控 ③：先斷言這張卡【通得過】上界預驗，⇒ 擋下它的只能是精確後驗；
+    省掉精確後驗這張卡就會被放行。
+    """
+    research, = (b.data for b in catalog.by_label('yaml wf-module') if b.data['name'] == 'research')
+    state, = research['adds']['enums']['states']
+    stage = research['enable_if']['stage']
+    legal = victim_card(catalog, state=state)
+    disabled = legal | {'stage_plan': [s for s in legal['stage_plan'] if s != stage], 'stage': '執行'}
+    _common.prevalidate_card(disabled, catalog)  # 不拋＝上界放行；擋下來的是後面那道
+    client = make_client(disabled)
+    result, _ = run_verb(verb, tmp_path, make_root(tmp_path, project=False), client)
+    assert result.rc == 1
+    assert first_lines(client) == ['wf:reject']
+    assert '/state' in result.reason, result.reason
+    print('WF-004 停用模組 state', verb, result.reason)
+
+
+@pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])
+def test_reject_reason_names_only_the_real_path(tmp_path, catalog, verb):
+    """A6：拒收理由 ⛔ 不得指認沒壞的欄。
+
+    research 已啟用、state 合法而 parent=5 ⇒ 本文含 /parent、⛔ 不含 /state。
+    回空集合 sentinel 的做法會在這裡多印一條虛假的 /state（append-only 的永久留言）。
+    """
+    research, = (b.data for b in catalog.by_label('yaml wf-module') if b.data['name'] == 'research')
+    state, = research['adds']['enums']['states']
+    root = make_root(tmp_path, project=False)
+    client = make_client(victim_card(catalog, state=state, parent=5))
+    result, _ = run_verb(verb, tmp_path, root, client)
+    assert result.rc == 1
+    body = rejects(client)[0]['body']
+    assert '/parent' in body, body
+    assert '/state' not in body, body
+    print('WF-004 指認正確欄', verb, body)

@@ -10,6 +10,8 @@ import re
 from wf.compose.blocks import projection
 from wf.compose.enable import is_enabled
 from wf.compose.project_config import module_names
+from wf.compose.schema import compose_schema
+from wf.compose.validate import validate
 from wf.gh.client import NotFound
 from wf.gh.writes import CardBodyError, block_spans, block_value, read_block
 
@@ -127,8 +129,25 @@ def board_facts(project, catalog, *, self_number=None, repo=None):
                           'owner_actor': (values.get(names['owner']) or '').partition(':')[2] or None})
     return facts
 
+class CardShapeError(ValueError):
+    """啟用判定前卡面就不合上界 schema（core/card-schema.md §1）；訊息＝schema path 逐字。
+    ValueError 子類 ⇒ 各動詞既有的 except (ValueError, TypeError, KeyError) 原樣落 D3。"""
+
+def declared_module_names(catalog):
+    """全部宣告模組名；⛔ 不讀卡面、⛔ 不讀專案設定 ⇒ 上界 schema 的合成不構成環。"""
+    return [block.data['name'] for block in catalog.by_label('yaml wf-module')]
+
+def prevalidate_card(card, catalog):
+    """啟用判定前的上界預驗（§1 合成順序）：以全部宣告模組合成的 wf-card schema 整卡驗一次。
+    上界接受任一啟用集合所能接受的卡 ⇒ 這裡不過的卡，精確後驗必不過；精確後驗 ⛔ 不因此可省。"""
+    errors = validate(card, compose_schema(catalog, 'wf-card', declared_module_names(catalog)))
+    if errors:
+        raise CardShapeError('; '.join(f'{e.path}: {e.message}' for e in errors))
+
 def enabled_modules(catalog, cfg, card, *, client=None, project=None, number=None):
-    """modules/*/module.md §0 enable_if 的啟用判定：專案設定＋卡面＋板上事實（open／move 同判）。"""
+    """modules/*/module.md §0 enable_if 的啟用判定：專案設定＋卡面＋板上事實（open／move 同判）。
+    第一行的上界預驗＝§1 合成順序：卡面結構不合上界時 ⛔ 不做啟用判定。"""
+    prevalidate_card(card, catalog)
     facts = board_facts(project, catalog, self_number=number,
                         repo=None if client is None else client.repo)
     return [block.data for block in catalog.by_label('yaml wf-module')

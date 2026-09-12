@@ -17,7 +17,7 @@ from wf.compose.validate import validate
 from wf.gh.client import NotFound
 from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (block_object, board_facts, board_items, card_number, comment_blocks,
-                              missing_fields, parse_args)
+                              missing_fields, parse_args, prevalidate_card)
 from wf.verbs._write import WriteResult, prepare_card, projection_values, reconcile, reject, write_card
 
 
@@ -108,11 +108,13 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     item_id = board_items(project, client.repo, include_archived=True).get(number, {}).get('id')
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
-        if not is_legal_plan(current['stage_plan'], catalog=catalog):
-            raise ValueError('stage_plan 不合階段序')
         snapshot = projection_values(project, item_id) if item_id else None
         if current.get('schema_version') == 1:
             current, _ = prepare_card(current, current, snapshot, catalog, ())
+        # §1 合成順序：上界預驗在啟用判定與任何語意判定之前；1→2 遷移仍先跑（§6 遷移路徑）。
+        prevalidate_card(current, catalog)
+        if not is_legal_plan(current['stage_plan'], catalog=catalog):
+            raise ValueError('stage_plan 不合階段序')
         from_node = f"{current['stage']}/{current['state']}"
         to_node = to if '/' in to or to == '清單' else f"{current['stage']}/{to}"
         target_stage, _, target_state = to_node.partition('/')

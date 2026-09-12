@@ -11,7 +11,8 @@ from wf.compose.enable import is_enabled
 from wf.compose.project_config import load_project_config, module_names, ProjectConfigError
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
-from wf.verbs._common import block_object, board_items, chain_depth, missing_fields, parse_args, repo_cards
+from wf.verbs._common import (block_object, board_items, chain_depth, missing_fields, parse_args,
+                              prevalidate_card, repo_cards)
 from wf.verbs._write import WriteResult, prepare_card, reject, write_card
 
 
@@ -101,6 +102,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
                 printed.append('撤銷卡復板保留既有 JSON；--parent／--area 不改既有欄')
         machine, = (b.data for b in catalog.blocks if b.label == 'json wf-state-machine')
         card['stage'], card['state'] = machine['initial'].split('/')
+        # §1 合成順序：上界預驗在啟用判定與 parent D4 之前。
+        prevalidate_card(card, catalog)
         for target in dict.fromkeys(p for p in (parent, card.get('parent')) if p is not None):
             if target not in cards or (board is not None and cards[target][0] not in on_board):
                 return refuse('D4', f'parent 不存在於' + ('板上：' if board else 'repo：') + target)
