@@ -7,8 +7,14 @@ core/return.md note_responses、roles/pm.md F-PM-04。
 snapshot.json 鍵（本檔定義，供總入口與 PM 讀）：
 generated_at、baseline{repo, project}、cards[{card_id, number, state_open, card, projection}]、
 invalid_cards[{number, reason, body}]（壞卡；body＝該 issue 原始 body，⛔ 不從盤點母體排除）、
-mismatches[{card_id, number, field, card, projection}]、candidates[{card_id, comment_url, created_at, note}]、
-invalid_candidates[{card_id, comment_url, created_at, reason}]、last_cited{id: {card_id, comment_url, created_at}}。
+mismatches[{card_id, number, field, card, projection}]、
+candidates[{card_id, comment_url, created_at, block_index, note}]（block_index 為該留言內的 wf-note
+區塊序號，1 起、依出現序）、invalid_candidates[{card_id, comment_url, created_at, block_index,
+note_id, reason, errors}]（errors＝[{path, keyword, message}]，逐欄取自 compose.validate 的
+ValidationError；非 schema 的兩類原因 errors 為 []。fence 未閉合的留言級錯誤 block_index 與
+note_id 皆為 null 且該則⛔ 不產生任何區塊級項目）、
+formalized_candidates[{card_id, comment_url, created_at, block_index, note_id, note}]
+（與卡面 notes 三鍵逐鍵相等而略過者；⛔ 不靜默丟棄）、last_cited{id: {card_id, comment_url, created_at}}。
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -22,7 +28,7 @@ from wf.compose.project_config import load_project_config, module_names
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
 from wf.gh.writes import CardBodyError, block_value
-from wf.verbs._common import Printer, board_items, field_values, parse_args
+from wf.verbs._common import Printer, board_items, field_values, note_blocks, parse_args
 from wf.verbs._write import projected
 
 OUT_DEFAULT = '.wf/snapshot'
@@ -92,6 +98,8 @@ def _markdown(data):
         for c in data['candidates']] or ['- 無'])
     lines += [f"- 不合法：{c['card_id']} {c['comment_url']}（{_line(c['reason'])}）"
               for c in data['invalid_candidates']]
+    lines += [f"- 已正式化，略過：{c['card_id']} {c['note_id']} {c['comment_url']} "
+              f"區塊 {c['block_index']}" for c in data['formalized_candidates']]
     lines += ['', '## last_cited', '| id | 卡ID | 留言 | created_at |', '|---|---|---|---|']
     lines += [f"| {i} | {v['card_id']} | {v['comment_url']} | {v['created_at']} |"
               for i, v in data['last_cited'].items()]
@@ -138,7 +146,7 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     if board is None:
         report('無 Project 設定')
     items = board_items(board, client.repo, include_archived=True)  # 對帳含封存項：仍在板上
-    rows, mismatches, candidates, invalid, cited = [], [], [], [], {}
+    rows, mismatches, candidates, invalid, formalized, cited = [], [], [], [], [], {}
     note_schema = compose_schema(catalog, 'wf-note')
     for issue, card in cards:
         number, card_id = issue['number'], card['card_id']
@@ -155,13 +163,25 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
         for comment in client.comments(number):
             where = {'card_id': card_id, 'comment_url': comment.get('url'),
                      'created_at': comment.get('created_at')}
-            present, note, reason = _block(comment, 'wf-note')
-            if present and reason is None:
-                reason = _shape(note, 'wf-note', note_schema)
-            if present and reason is not None:
-                invalid.append(where | {'reason': reason})
-            elif present:
-                candidates.append(where | {'note': note})
+            try:  # A1：N 個 wf-note 區塊逐個獨立處理，壞兄弟⛔ 不遮蔽合法區塊
+                blocks = note_blocks(comment.get('body'))
+            except CardBodyError as exc:  # 只有邊界無法辨認時才是留言級錯誤
+                blocks = ()
+                invalid.append(where | {'block_index': None, 'note_id': None,
+                                        'reason': str(exc), 'errors': []})
+            for index, note, reason in blocks:
+                errors = [] if reason is not None else validate(note, note_schema)
+                reason = _errors(errors) or None if reason is None else reason
+                at = where | {'block_index': index,
+                              'note_id': note.get('id') if note is not None else None}
+                if reason is not None:
+                    invalid.append(at | {'reason': reason, 'errors': [
+                        {'path': e.path, 'keyword': e.keyword, 'message': e.message}
+                        for e in errors]})
+                elif any(_equal(note, formal) for formal in card.get('notes') or []):
+                    formalized.append(at | {'note': note})  # A4：三鍵逐鍵相等才略過
+                else:
+                    candidates.append(where | {'block_index': index, 'note': note})
             _, responses, _ = _block(comment, 'wf-return')
             responses = responses.get('note_responses') if isinstance(responses, dict) else None
             for response in responses if isinstance(responses, list) else []:
@@ -175,7 +195,8 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
             'baseline': {'repo': getattr(client, 'repo', None), 'project': location},
             'cards': rows, 'invalid_cards': invalid_cards,
             'mismatches': mismatches, 'candidates': candidates,
-            'invalid_candidates': invalid, 'last_cited': cited}
+            'invalid_candidates': invalid, 'formalized_candidates': formalized,
+            'last_cited': cited}
     directory = Path(root) / OUT_DEFAULT if out is None else Path(out)
     directory.mkdir(parents=True, exist_ok=True)
     paths = (directory / 'snapshot.json', directory / 'snapshot.md')

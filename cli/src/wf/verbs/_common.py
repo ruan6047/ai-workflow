@@ -3,6 +3,7 @@ core/card-schema.md §1／§2 表／§5、core/naming.md §3、core/return.md �
 modules/resource-lock/module.md §0 板上事實。GitHub 讀取全經注入的 client；不寫、不印，印項由各動詞組。
 """
 import argparse
+import json
 from pathlib import Path
 import re
 
@@ -10,7 +11,7 @@ from wf.compose.blocks import projection
 from wf.compose.enable import is_enabled
 from wf.compose.project_config import module_names
 from wf.gh.client import NotFound
-from wf.gh.writes import CardBodyError, block_value, read_block
+from wf.gh.writes import CardBodyError, block_spans, block_value, read_block
 
 
 class Printer(list):
@@ -39,6 +40,22 @@ def block_object(body, label, required=True):
     if not isinstance(value, dict):
         raise CardBodyError(f'{label} 不是物件')
     return value
+
+def note_blocks(body):
+    """一則留言內的 wf-note 區塊逐個物化：[(序號, 值, 原因)]，序號 1 起依出現序。
+    原因 None＝值是可用的物件；否則為兩類逐字原因之一，此時值為 None。
+    fence 未閉合而區塊邊界無法辨認時整則拋 CardBodyError（留言級，⛔ 不產生區塊級項目）。"""
+    text = body or ''
+    out = []
+    for index, (start, end) in enumerate(block_spans(text, 'wf-note'), 1):
+        try:
+            value = json.loads(text[start:end])
+        except ValueError:
+            out.append((index, None, 'wf-note JSON 解析失敗'))
+            continue
+        out.append((index, value, None) if isinstance(value, dict)
+                   else (index, None, 'wf-note 不是物件'))
+    return out
 
 def comment_blocks(comment, labels=('wf-return', 'wf-ruling')):
     """留言的作者、所屬 issue 號與各區塊 (在不在, 值)；壞 JSON／重複＝(False, None) 並記 errors。"""

@@ -10,10 +10,11 @@ from wf.compose.blocks import Source, load_blocks, projection, source_line
 from wf.compose.frontmatter import parse_frontmatter
 from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
-from wf.compose.validate import validate
+from wf.compose.validate import validate, _equal
 from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
-from wf.verbs._common import Printer, block_object, card_number, enabled_modules, parse_args
+from wf.verbs._common import (Printer, block_object, card_number, enabled_modules,
+                              note_blocks, parse_args)
 from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
 
 ITEM = re.compile(r'^- ([FPT]-.+-[0-9]{2})：(.+)$')
@@ -118,7 +119,7 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     items += [Note(note['id'], note['text'], mark) for note in current.get('notes') or []]
     for index, note in enumerate(items, 1):
         report(f'{index}. {note.id}：{note.text} {note.mark}')
-    _candidates(client, number, catalog, report)
+    _candidates(client, number, catalog, report, current)
     if any(module['name'] == 'pitfalls-13' for module in enabled):
         _pitfalls(root, stage, report)
     return WriteResult(0, card=current, printed=tuple(report))
@@ -133,20 +134,29 @@ def read_comments(client, number, report, label):
         return ()
 
 
-def _candidates(client, number, catalog, report):
-    """naming.md §3：只讀 wf-note 區塊；散文與首行不讀。"""
+def _candidates(client, number, catalog, report, card):
+    """naming.md §3：只讀 wf-note 區塊；散文與首行不讀。一則留言內的 N 個區塊逐個獨立處理——
+    壞兄弟⛔ 不遮蔽合法區塊；不合法者帶留言 URL、區塊序號、可解析時的 id 與原因四件。
+    已正式化（與卡面 notes 某一筆三鍵逐鍵相等）者印一行略過，⛔ 不靜默丟棄。"""
     schema = compose_schema(catalog, 'wf-note')
+    formal = card.get('notes') or []
     for comment in read_comments(client, number, report, '候選'):
-        try:  # 區塊在而值 null／非物件＝不合法的候選，⛔ 不是沒有候選
-            data = block_object(comment.get('body'), 'wf-note', required=False)
-        except CardBodyError:
-            data = False
-        if data is None:
+        url = comment.get('url')
+        try:  # 只有 fence 未閉合而區塊邊界無法辨認時才回報留言級錯誤
+            blocks = note_blocks(comment.get('body'))
+        except CardBodyError as exc:
+            report(f'候選 {url} {exc}')
             continue
-        if data is False or validate(data, schema):
-            report(f"候選 {comment.get('url')} 區塊不合法")
-        else:
-            report(f"候選：{data['text']}｜{data['origin']}｜{comment.get('url')}")
+        for index, data, reason in blocks:
+            mark = f"（id={data['id']}）" if data is not None and 'id' in data else ''
+            if reason is None:
+                reason = '; '.join(f'{e.path}: {e.keyword}' for e in validate(data, schema)) or None
+            if reason is not None:
+                report(f'候選 {url} 區塊 {index}{mark} 不合法：{reason}')
+            elif any(_equal(data, note) for note in formal):
+                report(f'候選 {url} 區塊 {index}{mark}已正式化，略過')
+            else:
+                report(f"候選：{data['text']}｜{data['origin']}｜{url}")
 
 
 def _pitfalls(root, stage, report):

@@ -13,7 +13,9 @@ from .fakes import FakeGhClient
 from wf.compose.enable import UnknownEnableKindError
 from wf.compose.blocks import load_blocks, projection
 from wf.verbs._write import projected
-from wf.verbs.snapshot import run, snapshot
+from wf.compose.schema import compose_schema
+from wf.compose.validate import validate
+from wf.verbs.snapshot import _errors, _markdown, run, snapshot
 
 RULES = Path(__file__).resolve().parents[2]
 NOW = '2026-09-08T00:00:00+00:00'
@@ -389,7 +391,7 @@ def test_reconcile_equal_projection_has_no_mismatch(setup, catalog):
 
 # 驗收 5：候選只收 wf-note 區塊；壞區塊記 invalid、⛔ 不擋。
 def test_candidates_and_invalid(setup, catalog):
-    note = {'text': '候選一句', 'origin': 'https://github.com/fake/repo/issues/1'}
+    note = {'id': 'T-執行-01', 'text': '候選一句', 'origin': 'https://github.com/fake/repo/issues/1'}
     comments = {1: [comment(1, 11, 'wf-note', note),
                     comment(1, 12, 'wf-note', None, raw='{壞區塊'),
                     comment(1, 13)]}
@@ -403,7 +405,7 @@ def test_candidates_and_invalid(setup, catalog):
 
 
 def test_note_failing_schema_is_invalid(setup):
-    comments = {1: [comment(1, 11, 'wf-note', {'text': '', 'origin': 'https://x/1'})]}
+    comments = {1: [comment(1, 11, 'wf-note', {'id': 'T-執行-01', 'text': '', 'origin': 'https://x/1'})]}
     _, kwargs = setup(issues=[issue(1, card())], comments=comments)
     result = snapshot(**kwargs)
     assert result.data['candidates'] == []
@@ -525,4 +527,91 @@ def test_catalog_defect_raises_before_the_per_card_loop(setup, catalog, tmp_path
     with pytest.raises(error):
         snapshot(**kwargs)
     assert not (tmp_path / '.wf/snapshot/snapshot.json').exists()
+    assert_read_only(client)
+
+
+# ── A1／A3／A4：一則留言的多個 wf-note 區塊逐區塊獨立處理 ──────────────────────
+def note(index, **changes):
+    """三鍵齊全的合法 wf-note；changes 只動指定鍵，⛔ 不重打整份。"""
+    return {'id': f'T-執行-{index:02d}', 'text': f'條目{index}',
+            'origin': f'https://github.com/fake/repo/issues/{index}'} | changes
+
+
+def multi(ident, *blocks, created_at='2026-09-01T00:00:00Z'):
+    """一則 wf:note 留言含 N 個 wf-note 區塊；dict 逐項 json 化，str 逐字原樣。"""
+    body = ''.join(block('wf-note', None, raw=b) if isinstance(b, str) else block('wf-note', b)
+                   for b in blocks)
+    return {'id': ident, 'url': f'https://github.com/fake/repo/issues/1#issuecomment-{ident}',
+            'author': 'someone', 'created_at': created_at, 'body': 'wf:note\n' + body}
+
+
+@pytest.mark.parametrize('count', [0, 1, 4])
+def test_multi_block_comment_yields_one_candidate_per_block(setup, count):
+    rows = [note(i) for i in range(1, count + 1)]
+    row = multi(11, *rows)
+    client, kwargs = setup(issues=[issue(1, card())], comments={1: [row]})
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert [c['note'] for c in result.data['candidates']] == rows
+    assert [c['block_index'] for c in result.data['candidates']] == list(range(1, count + 1))
+    assert {c['comment_url'] for c in result.data['candidates']} == ({row['url']} if count else set())
+    assert result.data['invalid_candidates'] == []
+    assert result.data['formalized_candidates'] == []
+    assert_read_only(client)
+    print('MULTI_BLOCK', count, '→', len(result.data['candidates']))
+
+
+def test_invalid_candidate_carries_path_keyword_message(setup, catalog, tmp_path):
+    bad = note(4, id='bad', text='')
+    row = multi(11, note(1), '{壞掉的 JSON', '[]', bad)
+    client, kwargs = setup(issues=[issue(1, card())], comments={1: [row]})
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert [c['note'] for c in result.data['candidates']] == [note(1)]  # 合法兄弟仍送達
+    expected = validate(bad, compose_schema(catalog, 'wf-note'))  # 測試自己重跑，⛔ 不採被測輸出
+    assert {e.keyword for e in expected} == {'pattern', 'minLength'}
+    rows = result.data['invalid_candidates']
+    assert [(c['block_index'], c['note_id'], c['reason']) for c in rows] == [
+        (2, None, 'wf-note JSON 解析失敗'), (3, None, 'wf-note 不是物件'),
+        (4, 'bad', _errors(expected))]
+    assert [c['errors'] for c in rows[:2]] == [[], []]
+    assert rows[2]['errors'] == [{'path': e.path, 'keyword': e.keyword, 'message': e.message}
+                                 for e in expected]
+    assert all(c['comment_url'] == row['url'] for c in rows)
+    written, _ = outputs(tmp_path)
+    assert written == result.data
+    assert_read_only(client)
+
+
+def test_unterminated_fence_is_comment_level_only(setup):
+    row = multi(12, note(1))
+    row['body'] = row['body'].removesuffix('```\n')
+    client, kwargs = setup(issues=[issue(1, card())], comments={1: [row]})
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert result.data['candidates'] == [] and result.data['formalized_candidates'] == []
+    assert [(c['block_index'], c['note_id'], c['errors']) for c in
+            result.data['invalid_candidates']] == [(None, None, [])]
+    assert '未閉合' in result.data['invalid_candidates'][0]['reason']
+    assert result.data['invalid_candidates'][0]['comment_url'] == row['url']
+    assert_read_only(client)
+
+
+def test_formalized_candidates_records_skipped_and_markdown_reads_it(setup, tmp_path):
+    formal = note(1)
+    row = multi(11, formal, note(1, text='不同文字'), note(1, id='T-執行-09'))
+    client, kwargs = setup(issues=[issue(1, card(notes=[formal]))], comments={1: [row]})
+    result = snapshot(**kwargs)
+    assert result.rc == 0
+    assert result.data['formalized_candidates'] == [
+        {'card_id': 'WF-001', 'comment_url': row['url'], 'created_at': row['created_at'],
+         'block_index': 1, 'note_id': formal['id'], 'note': formal}]
+    assert [c['block_index'] for c in result.data['candidates']] == [2, 3]  # 差一鍵者仍是候選
+    assert result.data['invalid_candidates'] == []
+    written, text = outputs(tmp_path)
+    assert written == result.data
+    section = text.split('## 候選', 1)[1].split('\n##', 1)[0]
+    assert formal['id'] in section and '已正式化' in section
+    # 負控：略過行的唯一資料來源就是該鍵，清空後必須消失（⛔ 非憑空渲染）。
+    assert '已正式化' not in _markdown(dict(result.data, formalized_candidates=[]))
     assert_read_only(client)
