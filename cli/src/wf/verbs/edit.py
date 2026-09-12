@@ -33,6 +33,24 @@ def _normalized(key):
     return 'notes' if key == 'notes+' else key
 
 
+def _first_failure(failures, items):
+    """第④層同池比序：schema 與 stage_plan 階段序失敗一起排，回報 argv 中 --set 出現序最前的那一個。
+
+    failures 為 (JSON pointer, 回報文字)；歸屬＝pointer 第一段（`~1`→`/`、`~0`→`~` 反解）
+    等於該 --set 的正規化卡面鍵。對不到任何 --set 的失敗（卡面既有欄本就不合 schema）排在
+    全部可歸屬項之後，仍會被回報、⛔ 不丟棄；min 穩定 ⇒ 同名次保留 validate 的原序。
+    """
+    order = {}
+    for index, (key, _) in enumerate(items):
+        order.setdefault(_normalized(key), index)
+
+    def rank(failure):
+        head = failure[0].split('/')[1] if failure[0].startswith('/') else ''
+        return order.get(head.replace('~1', '/').replace('~0', '~'), len(items))
+
+    return min(failures, key=rank)[1]
+
+
 def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
          project_owner=None, project_number=None, emit=print):
     """card 為卡 ID 或 issue 號；assignments 為 `<欄>=<JSON>` 字串序列（⛔ 不收裸 str）；
@@ -81,11 +99,16 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
         updated = deepcopy(current)
         for key, value in items:
             updated[_normalized(key)] = current['notes'] + [value] if key == 'notes+' else value
-        errors = validate(updated, compose_schema(catalog, 'wf-card', enabled_modules))
-        if errors:
-            raise ValueError('; '.join(f'{e.path}: {e.message}' for e in errors))
-        if not is_legal_plan(updated['stage_plan'], catalog=catalog):
-            raise ValueError('stage_plan 不合階段序')
+        failures = [(e.path, f'{e.path}: {e.message}') for e
+                    in validate(updated, compose_schema(catalog, 'wf-card', enabled_modules))]
+        # stage_plan 自己已有 schema 失敗時⛔ 不再算階段序：同鍵同名次、min 穩定 ⇒ 回報結果不變，
+        # 且免得 is_legal_plan 對非法型別另拋成別的訊息。其餘情況兩者同池，⛔ 不被 schema 先驗吞掉。
+        broken_plan = [path for path, _ in failures
+                       if path == '/stage_plan' or path.startswith('/stage_plan/')]
+        if not broken_plan and not is_legal_plan(updated['stage_plan'], catalog=catalog):
+            failures.append(('/stage_plan', 'stage_plan 不合階段序'))
+        if failures:
+            raise ValueError(_first_failure(failures, items))
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
     changed = [key for key in dict.fromkeys(_normalized(key) for key, _ in items)

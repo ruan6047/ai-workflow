@@ -580,7 +580,9 @@ def test_same_layer_reports_first_in_input_order(card, catalog):
         result, fake = run(card, catalog, [first + '=1', second + '=2'])
         wrote_nothing(result, fake, 'D3', first)
         body_text = mutations(fake, 'post_comment')[0][1]['body']
-        assert body_text.index(first) < body_text.index(second), body_text
+        # A11 第④層：本文恰一項、⛔ 不以「; 」串接（⛔ 不保留 r1 釘住的聚合本文）
+        assert body_text == f'拒收・D3・/{first}: 不符合 additionalProperties', body_text
+        assert second not in body_text and '; ' not in body_text
     for argv, needle in (([f'source_sha="{SHA40}"', 'parent="WF-999"'], 'source_sha 不在遠端'),
                          (['parent="WF-999"', f'source_sha="{SHA40}"'], 'parent 不存在')):
         fake = parent_fake(card, catalog, {2: card | {'card_id': 'WF-002', 'source_issue': 2}})
@@ -626,3 +628,89 @@ def test_run_passes_argv_list_to_edit(monkeypatch, tmp_path):
     assert edit_module.run(['WF-001', '--set', 'a=1', '--set', 'b=2'],
                            client=None, root=tmp_path, catalog=None) == 0
     assert type(seen['assignments']) is list and seen['assignments'] == ['a=1', 'b=2']
+
+
+def reject_body(fake):
+    """恰一則 wf:reject 的本文（A11 第④層要求本文恰含一個失敗項）。"""
+    comment, = [kw for name, kw in mutations(fake, 'post_comment')
+                if kw['first_line'] == 'wf:reject']
+    return comment['body']
+
+
+LAYER_FOUR_PAIRS = [  # (argv, argv 最前那一項的失敗文字, 另一項的 pointer)
+    (['when=1', 'feature=2'], '/when: 不符合 type', '/feature'),
+    (['feature=2', 'when=1'], '/feature: 不符合 type', '/when'),
+    (['zz_unknown=2', 'when=1'], '/zz_unknown: 不符合 additionalProperties', '/when'),
+    (['when=1', 'zz_unknown=2'], '/when: 不符合 type', '/zz_unknown'),
+]
+
+
+@pytest.mark.parametrize('argv,reported,absent', LAYER_FOUR_PAIRS)
+def test_layer_four_reports_only_the_first_set_in_input_order(card, catalog, argv, reported, absent):
+    """A11 第④層：本文恰一個失敗項、⛔ 不以「; 」串接，且該項＝argv 中 --set 出現序最前的那一個。"""
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3', reported)
+    assert reject_body(fake) == '拒收・D3・' + reported, reject_body(fake)
+    assert '; ' not in reject_body(fake) and absent not in reject_body(fake)
+    assert card_face(fake) == card
+
+
+STAGE_PLAN_SET = 'stage_plan=' + json.dumps(['需求', '審核'], ensure_ascii=False)
+
+
+@pytest.mark.parametrize('argv,reported', [
+    ([STAGE_PLAN_SET, 'feature=2'], 'stage_plan 不合階段序'),
+    (['feature=2', STAGE_PLAN_SET], '/feature: 不符合 type'),
+])
+def test_layer_four_stage_plan_competes_with_schema_by_input_order(card, catalog, argv, reported):
+    """A11 第④層：stage_plan 階段序失敗與同層 schema 失敗同池比序，⛔ 不因 schema 先驗被吞掉。"""
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3', reported)
+    assert reject_body(fake) == '拒收・D3・' + reported, reject_body(fake)
+    assert '; ' not in reject_body(fake)
+    assert card_face(fake) == card
+
+
+def test_layer_four_failure_outside_the_set_keys_is_still_reported(card, catalog):
+    """A11 第④層：對不到任何 --set 的失敗排在全部可歸屬項之後，仍須回報、⛔ 不得被丟棄。"""
+    card['service_goal'] = 1  # 卡面既有欄本就不合 schema，且⛔ 不在本次 --set 內
+    result, fake = run(card, catalog, ['feature="合法"'])
+    wrote_nothing(result, fake, 'D3', '/service_goal: 不符合 type')
+    assert reject_body(fake) == '拒收・D3・/service_goal: 不符合 type', reject_body(fake)
+    assert card_face(fake) == card
+    result, fake = run(card, catalog, ['feature=2'])  # 可歸屬項仍排在對不到 --set 的失敗之前
+    wrote_nothing(result, fake, 'D3', '/feature: 不符合 type')
+    assert reject_body(fake) == '拒收・D3・/feature: 不符合 type', reject_body(fake)
+
+
+@pytest.mark.parametrize('drift,columns,values', [
+    ({}, [], {}),
+    ({'級別': {'name': 'T2'}}, ['級別'], {'級別': {'name': 'T3'}}),
+    ({'級別': {'name': 'T2'}, '狀態': {'name': '待辦'}}, ['狀態', '級別'],
+     {'級別': {'name': 'T3'}, '狀態': {'name': '進行中'}}),
+])
+def test_multi_set_without_projection_key_still_reconciles(catalog, drift, columns, values):
+    """A8 (ii)(iii)：非投影鍵變動 ⇒ ⛔ 不因本次變動回寫投影欄，但仍照 core/verbs.md §2 讀 Project 並對帳。
+
+    k=0／1／2 三組：client.project ≥ 1 次；恰 k 欄漂移 ⇒ write_project_field 恰 k 次、
+    重寫值取自卡面 JSON、印一行「重寫投影欄：」、rc=0 且⛔ 不拒收。
+    """
+    from .test_brief_sections import card as brief_card
+    from .test_card_gate_and_projection import board_client, BOARD
+    from wf.verbs.edit import edit
+    client = board_client(catalog, brief_card(tier='T3'), values=dict(BOARD) | drift)
+    lines = []
+    result = edit(10, ['feature="改過"', 'when="乙"'], client=client, catalog=catalog,
+                  project_owner='fake', project_number=1, emit=lines.append)
+    assert result.rc == 0
+    names = [name for name, _ in client.calls]
+    assert names.count('project') >= 1, names  # §2 對帳⛔ 不得為 0
+    assert names.count('update_card_body') == 1, names
+    assert names.count('post_comment') == 1
+    written = [prepared[2]['fieldId'] for name, prepared in client.calls
+               if name == 'write_project_field']
+    assert written == columns, written
+    assert [line for line in lines if line.startswith('重寫投影欄：')] == (
+        ['重寫投影欄：' + '、'.join(columns)] if columns else [])
+    board = client.board['items'][0]['fieldValues']
+    assert {name: board[name] for name in values} == values  # 取自卡面 JSON，⛔ 不取板上原值
