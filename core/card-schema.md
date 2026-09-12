@@ -102,8 +102,9 @@ last_confirmed: 2026-09-08
 ## 4 · `wf-note`
 
 ```json schema
-{"$id": "wf-note", "type": "object", "additionalProperties": false, "required": ["text", "origin"],
- "properties": {"text": {"type": "string", "minLength": 1}, "origin": {"type": "string", "format": "uri"}}}
+{"$id": "wf-note", "type": "object", "additionalProperties": false, "required": ["id", "text", "origin"],
+ "properties": {"id": {"type": "string", "pattern": "^T-(需求|研究|規劃|執行|審核|部署|維護|結案)-[0-9]{2}$"},
+                "text": {"type": "string", "minLength": 1}, "origin": {"type": "string", "format": "uri"}}}
 ```
 
 ## 5 · 投影欄

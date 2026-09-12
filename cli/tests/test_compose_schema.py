@@ -201,3 +201,27 @@ def test_all_declared_card_fields_from_original(catalog):
         assert set(module["adds"]["fields"]) == set(fields)
         assert all(schema["properties"][key] == value for key, value in fields.items())
         print("CARD_FIELDS", module["name"], list(fields))
+
+
+# A2：§4 wf-note 與 §1 notes.items 是同一份契約；兩處都從 load_blocks 讀出後比較，⛔ 不重打常數。
+def test_wf_note_three_key_contract_and_id_pattern_equals_notes_items(catalog):
+    note = catalog.schemas["wf-note"].data
+    items = catalog.schemas["wf-card"].data["properties"]["notes"]["items"]
+    assert note["additionalProperties"] is False
+    assert note["required"] == items["required"] == ["id", "text", "origin"]
+    assert set(note["properties"]) == {"id", "text", "origin"}
+    assert "schema_version" not in note["properties"]
+    assert note["properties"]["id"]["pattern"] == items["properties"]["id"]["pattern"]
+    assert note["properties"]["text"]["minLength"] == 1
+    assert note["properties"]["origin"]["format"] == "uri"
+    schema = compose_schema(catalog, "wf-note")
+    good = {"id": "T-執行-01", "text": "逐字", "origin": "https://example.invalid/1"}
+    assert validate(good, schema) == []
+    cases = [({"id": "bad"}, ("/id", "pattern")), ({"text": ""}, ("/text", "minLength")),
+             ({"extra": 1}, ("/extra", "additionalProperties"))]
+    for patch, expected in cases:
+        assert [(e.path, e.keyword) for e in validate(good | patch, schema)] == [expected]
+    for key in good:
+        missing = {k: v for k, v in good.items() if k != key}
+        assert [(e.path, e.keyword) for e in validate(missing, schema)] == [("/" + key, "required")]
+    print("WF_NOTE_ID_PATTERN", note["properties"]["id"]["pattern"])

@@ -14,9 +14,12 @@ class InvalidCommentURL(ValueError):
     """留言 URL 不能解析；呼叫端當 D4。"""
 
 
-def block_span(body, label, required=True):
-    if label not in ('wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note'):
-        raise CardBodyError(f'不支援的區塊：{label}')
+LABELS = ('wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note')
+MULTI_LABELS = ('wf-note',)  # 複數區塊的白名單；其餘標籤機械擋在 block_spans 內，⛔ 不靠呼叫端自律
+
+
+def _scan(body, label):
+    """掃出該標籤的全部區塊範圍，與「結尾還開著的圍欄正好是該標籤」與否。"""
     spans, fence, start, offset = [], None, None, 0
     for line in body.splitlines(keepends=True):
         marker = line.rstrip('\r\n')
@@ -28,11 +31,30 @@ def block_span(body, label, required=True):
                 spans.append((start, offset))
             fence = None
         offset += len(line)
-    if not spans and fence != '```json ' + label and not required:
+    return spans, fence == '```json ' + label
+
+
+def block_span(body, label, required=True):
+    if label not in LABELS:
+        raise CardBodyError(f'不支援的區塊：{label}')
+    spans, dangling = _scan(body, label)
+    if not spans and not dangling and not required:
         return None
-    if len(spans) != 1 or fence == '```json ' + label:
+    if len(spans) != 1 or dangling:
         raise CardBodyError(f'{label} 區塊缺少、重複或未閉合')
     return spans[0]
+
+
+def block_spans(body, label):
+    """一則留言內該標籤的 N 個區塊範圍（N≥0，依出現序）；只對 MULTI_LABELS 開放。
+    未閉合的圍欄正好是該標籤時區塊邊界無法辨認 ⇒ CardBodyError（留言級）；別的標籤
+    未閉合⛔ 不吞掉已閉合的本標籤區塊。"""
+    if label not in MULTI_LABELS:
+        raise CardBodyError(f'不支援的複數區塊：{label}')
+    spans, dangling = _scan(body, label)
+    if dangling:
+        raise CardBodyError(f'{label} 區塊未閉合')
+    return spans
 
 
 def read_block(body, label, required=True):

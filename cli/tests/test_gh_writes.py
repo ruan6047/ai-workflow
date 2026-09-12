@@ -237,3 +237,22 @@ def test_block_value_separates_absent_from_null(label):
     # 對照組：read_block 把 null 與不存在都壓成 None，正是分不出來的成因。
     assert read_block(text('null'), label, required=False) is None
     assert read_block('純散文', label, required=False) is None
+
+
+# A1：複數定位只對 wf-note 開放；四標籤由 block_spans 內的白名單機械擋住，⛔ 不靠呼叫端自律。
+@pytest.mark.parametrize('label', ['wf-card', 'wf-intake', 'wf-return', 'wf-ruling'])
+def test_block_spans_only_for_wf_note_and_unterminated(label):
+    from wf.gh.writes import block_spans  # 缺陷版本沒有這支：ImportError 即紅
+    note = '```json wf-note\n{"a": 1}\n```\n'
+    with pytest.raises(CardBodyError, match='不支援的複數區塊'):
+        block_spans(f'```json {label}\n{{"a": 1}}\n```\n', label)
+    with pytest.raises(CardBodyError, match='不支援的複數區塊'):  # 同一輸入換標籤即通過（負控）
+        block_spans(note, label)
+    assert block_spans('純散文', 'wf-note') == []
+    body = note + '中間散文\n' + note.replace('{"a": 1}', '{"a": 2}')
+    assert [json.loads(note[a:b]) for a, b in block_spans(note, 'wf-note')] == [{'a': 1}]
+    assert [json.loads(body[a:b]) for a, b in block_spans(body, 'wf-note')] == [{'a': 1}, {'a': 2}]
+    with pytest.raises(CardBodyError, match='wf-note 區塊未閉合'):
+        block_spans(note.removesuffix('```\n'), 'wf-note')
+    # 別的標籤未閉合時 wf-note 的邊界仍可辨認 ⇒ ⛔ 不吞掉已閉合的那個。
+    assert len(block_spans(note + f'```json {label}\n{{}}\n', 'wf-note')) == 1
