@@ -714,3 +714,43 @@ def test_multi_set_without_projection_key_still_reconciles(catalog, drift, colum
         ['重寫投影欄：' + '、'.join(columns)] if columns else [])
     board = client.board['items'][0]['fieldValues']
     assert {name: board[name] for name in values} == values  # 取自卡面 JSON，⛔ 不取板上原值
+
+
+BROKEN_NOTES = [('number', 1), ('null', None), ('object', {}), ('string', 'x'), ('missing', None)]
+NOTE_SET = 'notes+=' + json.dumps({'id': 'T-需求-01', 'text': 'x',
+                                   'origin': 'https://example.test'}, ensure_ascii=False)
+
+
+@pytest.mark.parametrize('notes_first', [False, True])
+@pytest.mark.parametrize('label,value', BROKEN_NOTES, ids=[name for name, _ in BROKEN_NOTES])
+def test_layer_four_notes_append_onto_broken_notes_is_attributable(card, catalog, label, value,
+                                                                   notes_first):
+    """A11 第④層：卡面既有 notes 非陣列（含缺欄）時，notes+ 的疊加失敗仍須進同池並歸屬 /notes。
+
+    ⛔ 不得在收集 schema failures 前就拋出而蓋掉 argv 更前面的 when 失敗；
+    四型別×正逆序 8 組＋缺欄 2 組，全部零業務寫入、恰 1 則 wf:reject、本文恰一項。
+    """
+    if label == 'missing':
+        del card['notes']
+    else:
+        card['notes'] = value
+    argv = [NOTE_SET, 'when=1'] if notes_first else ['when=1', NOTE_SET]
+    expected = '拒收・D3・/notes' if notes_first else '拒收・D3・/when: 不符合 type'
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3')
+    assert reject_body(fake).startswith(expected), reject_body(fake)
+    assert '; ' not in reject_body(fake), reject_body(fake)
+    if not notes_first:
+        assert '/notes' not in reject_body(fake), reject_body(fake)
+    assert card_face(fake) == card
+
+
+@pytest.mark.parametrize('notes_first', [False, True])
+def test_layer_four_notes_append_onto_valid_notes_keeps_input_order(card, catalog, notes_first):
+    """正控：既有 notes=[] 時同兩序照 argv 比序，證明上一組的紅不是探針本身失效。"""
+    argv = ['notes+={}', 'when=1'] if notes_first else ['when=1', 'notes+={}']
+    expected = '/notes/0/id: 不符合 required' if notes_first else '/when: 不符合 type'
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3', expected)
+    assert reject_body(fake) == '拒收・D3・' + expected, reject_body(fake)
+    assert card_face(fake) == card

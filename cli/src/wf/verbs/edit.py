@@ -96,11 +96,17 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
                                     for k in block.data.get('adds', {}).get('counters', [])}:
         report('模組欄由 `move` 寫')  # verbs.md §2 末句無「拒」字，硬擋只 D1–D4／P1–P5
     try:  # ④疊加後整卡 schema 與 stage_plan 階段序：整批疊完只驗一次
-        updated = deepcopy(current)
+        updated, failures = deepcopy(current), []
         for key, value in items:
-            updated[_normalized(key)] = current['notes'] + [value] if key == 'notes+' else value
-        failures = [(e.path, f'{e.path}: {e.message}') for e
-                    in validate(updated, compose_schema(catalog, 'wf-card', enabled_modules))]
+            if key != 'notes+':
+                updated[key] = value
+            elif isinstance(current.get('notes'), list):
+                updated['notes'] = current['notes'] + [value]
+            else:  # 既有 notes 非陣列（含缺欄）：疊加不出來也是本層失敗，歸屬 /notes 一起比序，
+                # ⛔ 不提早拋出而蓋掉 argv 更前面的項；排在 validate 之前 ⇒ 同鍵同名次時報這一句。
+                failures.append(('/notes', '/notes: notes+ 無法疊加：既有 notes 不是陣列'))
+        failures += [(e.path, f'{e.path}: {e.message}') for e
+                     in validate(updated, compose_schema(catalog, 'wf-card', enabled_modules))]
         # stage_plan 自己已有 schema 失敗時⛔ 不再算階段序：同鍵同名次、min 穩定 ⇒ 回報結果不變，
         # 且免得 is_legal_plan 對非法型別另拋成別的訊息。其餘情況兩者同池，⛔ 不被 schema 先驗吞掉。
         broken_plan = [path for path, _ in failures
