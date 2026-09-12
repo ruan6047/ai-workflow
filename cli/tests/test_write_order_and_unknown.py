@@ -65,7 +65,7 @@ def run_case(case, tmp_path, root, client, catalog):
         result = review(10, file=sheet(tmp_path), role='executor',
                         client=client, root=root, emit=lines.append)
     else:
-        result = edit(10, 'owner=' + json.dumps(LONG_ACTOR, ensure_ascii=False), client=client,
+        result = edit(10, ['owner=' + json.dumps(LONG_ACTOR, ensure_ascii=False)], client=client,
                       catalog=catalog, project_owner='fake', project_number=1, emit=lines.append)
     return result, lines
 
@@ -132,7 +132,7 @@ def test_valid_input_still_reconciles_the_drifted_column(tmp_path, catalog, verb
                         emit=lines.append)
         assert first_lines(client) == ['wf:return']
     else:
-        result = edit(10, 'feature="改過"', client=client, catalog=catalog,
+        result = edit(10, ['feature="改過"'], client=client, catalog=catalog,
                       project_owner='fake', project_number=1, emit=lines.append)
     assert result.rc == 0, result.reason
     assert REWRITE in lines, lines

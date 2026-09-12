@@ -62,7 +62,7 @@ def oversized_client(catalog, verb):
 def run_one(verb, tmp_path, root, client, catalog):
     lines = []
     if verb == 'edit':
-        return edit(10, 'feature="改過"', client=client, catalog=catalog, project_owner='fake',
+        return edit(10, ['feature="改過"'], client=client, catalog=catalog, project_owner='fake',
                     project_number=1, emit=lines.append), lines
     if verb == 'move':  # 派工邊 執行/待辦 → 執行/進行中，--actor 給的新 owner 合法
         return move(10, '執行/進行中', client=client, root=root, catalog=catalog,

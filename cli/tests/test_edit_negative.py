@@ -11,7 +11,7 @@ from .test_compose_schema import ROOT
 MUTATIONS = {
     'version': ("updated['spec_version'] += 1", "updated['spec_version'] += 0", 'test_spec_version'),
     'hash': ("return hashlib.sha256(raw.encode('utf-8')).hexdigest()", "return 'broken'", 'test_hash_and_non_spec_version'),
-    'same': ("if key in current and _equal(current[key], value):", "if False:", 'test_same_value_is_silent'),
+    'same': ("not (key in current and _equal(current[key], updated[key]))", "True", 'test_same_value_is_silent'),
     'review': ("'edit during review')", "'broken')", 'test_review_comments'),
 }
 

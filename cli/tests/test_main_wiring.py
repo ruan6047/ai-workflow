@@ -165,7 +165,7 @@ def test_edit_never_forwards_item_id_to_write_card(card, catalog, monkeypatch):
 
     monkeypatch.setattr(edit_module, 'write_card', spy)
     fake = simulated(card, catalog)
-    result = edit_module.edit(1, 'feature="改過"', client=fake, catalog=catalog)
+    result = edit_module.edit(1, ['feature="改過"'], client=fake, catalog=catalog)
     assert result.rc == 0 and mutations(fake, 'update_card_body')
     assert len(seen) == 1
     assert_no_item_id(seen[0])
@@ -180,6 +180,6 @@ def test_edit_never_forwards_item_id_to_write_card(card, catalog, monkeypatch):
 def test_edit_writes_no_projection_field(card, catalog):
     """驗收 4 的行為面：edit 一路走完不碰任何 Project 欄寫入或讀取。"""
     fake = simulated(card, catalog)
-    result = edit.edit(1, 'feature="改過二"', client=fake, catalog=catalog)
+    result = edit.edit(1, ['feature="改過二"'], client=fake, catalog=catalog)
     assert result.rc == 0
     assert [name for name, _ in fake.calls if 'project' in name] == []

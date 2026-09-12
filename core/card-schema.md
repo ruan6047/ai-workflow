@@ -98,7 +98,7 @@ schema 只管結構；完整性（欄位有沒有填）由 `open`／`move` 印�
 | stage、state、owner、branch、source_sha、blocked | CLI（`move`；`stage`／`state` 建卡時由 `open` 寫 `initial`；`owner` 在 escalation 換人時由 PM `edit`，`modules/escalation` §1） | — | brief、Project、D1、D4 |
 | notes | 任何角色經 `edit --set notes+=`（查核者除外，`roles/reviewer.md` §2），來源＝`wf:note` 留言；`last_cited` 不存卡面，由 `snapshot` 推得 | — | notes、brief |
 
-規格欄＝acceptance／verification／non_scope／resources；`edit` 改任一欄 ⇒ `spec_version` +1。本表「誰填」欄＝落欄者；起草／核可／轉錄／落欄的分法住 `core/conflict-resolution.md` §1，「必填時點」是完整性檢查的時點、⛔ 不是授權期間（同檔 §2）。
+規格欄＝acceptance／verification／non_scope／resources；`edit` 一次提交改到其中任一欄 ⇒ `spec_version` +1（同一次改幾個規格欄都只 +1）。本表「誰填」欄＝落欄者；起草／核可／轉錄／落欄的分法住 `core/conflict-resolution.md` §1，「必填時點」是完整性檢查的時點、⛔ 不是授權期間（同檔 §2）。
 
 ## 3 · 清單項 `wf-intake`
 

@@ -61,7 +61,7 @@ def run_one(verb, tmp_path, root, client, catalog):
                     actor='executor:new', emit=lines.append), lines
     if verb != 'edit':
         return run_verb(verb, tmp_path, root, client)
-    return edit(10, 'feature="改過"', client=client, catalog=catalog, project_owner='fake',
+    return edit(10, ['feature="改過"'], client=client, catalog=catalog, project_owner='fake',
                 project_number=1, emit=lines.append), lines
 
 
@@ -152,7 +152,7 @@ def test_dropping_the_field_name_wrapper_loses_the_column_in_the_edit_rejection(
     上一條對 edit 的『本文含級別』斷言必 FAIL。"""
     client = drifted_client(catalog, tier_options=False)
     result = edit_without_the_field_name_wrapper()(
-        10, 'feature="改過"', client=client, catalog=catalog, project_owner='fake',
+        10, ['feature="改過"'], client=client, catalog=catalog, project_owner='fake',
         project_number=1, emit=lambda line: None)
     body = rejects(client)[0]['body']
     assert result.rc != 0
