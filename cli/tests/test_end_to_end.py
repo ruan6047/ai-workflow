@@ -308,3 +308,20 @@ def test_offline_guard_negative_control():
     with socket.socket() as connection:
         with pytest.raises(AssertionError, match='E2E_DENIED'):
             connection.connect(('127.0.0.1', 9))
+
+
+def test_multi_set_edit_writes_once_through_main(workspace, capsys):
+    """CLI-003：經 main dispatch 一次帶三個 --set ⇒ 恰 1 次 update_card_body、恰 1 則 3 列的 wf:edit。"""
+    client, root = workspace
+    step = Flow(client, root, capsys)
+    step(['open', '10'], at='需求/待辦')
+    before = len([1 for name, _ in client.calls if name == 'update_card_body'])
+    step(['edit', 'WF-001', '--set', 'feature="多欄原子提交"', '--set', 'service_goal="服務目標"',
+          '--set', f'stage_plan={json.dumps(PLAN, ensure_ascii=False)}'], at='需求/待辦')
+    writes = [kw for name, kw in client.calls if name == 'update_card_body'][before:]
+    edits = [kw for name, kw in client.calls
+             if name == 'post_comment' and kw['first_line'] == 'wf:edit']
+    assert len(writes) == 1, writes
+    assert len(edits) == 1 and len(edits[0]['body'].split('\n')) == 3, edits
+    assert step.card()['feature'] == '多欄原子提交'
+    assert step.card()['service_goal'] == '服務目標' and step.card()['stage_plan'] == PLAN

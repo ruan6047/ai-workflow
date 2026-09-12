@@ -16,7 +16,8 @@ from .test_write_flow import body, mutations, simulated
 def run(card, catalog, assignment, *, fake=None, **kwargs):
     from wf.verbs.edit import edit
     fake = fake or simulated(card, catalog)
-    result = edit(1, assignment, client=fake, catalog=catalog, **kwargs)
+    result = edit(1, [assignment] if isinstance(assignment, str) else assignment,
+                  client=fake, catalog=catalog, **kwargs)
     return result, fake
 
 
@@ -350,3 +351,406 @@ def test_invalid_card_body(card, catalog, bad):
     fake.responses['issue'] = {'body': '```json wf-card\n' + bad + '\n```'}
     result, fake = run(card, catalog, 'feature="valid"', fake=fake)
     rejected(result, fake, 'D3')
+
+
+# ── CLI-003：一次 wf edit 多個 --set 的原子提交（core/verbs.md §1 edit 列／§2） ──
+
+SHA40 = 'a' * 40
+LONG_OWNER = 'owner=' + json.dumps({'role': 'executor', 'actor': 'a' * 1025}, ensure_ascii=False)
+
+
+def card_face(fake, number=1):
+    """假遠端當下的卡面 JSON（零寫入時＝原卡）。"""
+    from wf.verbs._common import block_object
+    return block_object(fake.responses['issue'](number=number)['body'], 'wf-card')
+
+
+def edit_lines(fake):
+    comment, = [kw for name, kw in mutations(fake, 'post_comment') if kw['first_line'] == 'wf:edit']
+    return comment['body'].split('\n')
+
+
+def wrote_nothing(result, fake, code, needle=''):
+    """整次零寫入＋恰 1 則 wf:reject（A3／A4／A11 共用）。"""
+    rejected(result, fake, code, needle)
+    assert not [kw for name, kw in mutations(fake, 'post_comment')
+                if kw['first_line'] == 'wf:edit']
+
+
+def test_multi_set_one_write_one_comment(card, catalog):
+    """A1：三個不同欄（含非投影鍵）一次提交 ⇒ 1 次 update_card_body、1 則 wf:edit、本文 3 列。"""
+    result, fake = run(card, catalog, ['feature="甲"', 'when="乙"', 'tier="T3"'])
+    assert result.rc == 0
+    assert result.card['feature'] == '甲' and result.card['when'] == '乙'
+    assert result.card['tier'] == 'T3'
+    assert len(mutations(fake, 'update_card_body')) == 1
+    comments = mutations(fake, 'post_comment')
+    assert len(comments) == 1 and comments[0][1]['first_line'] == 'wf:edit'
+    assert len(edit_lines(fake)) == 3
+
+
+def test_multi_set_comment_lines_and_order(card, catalog):
+    """A2：每列＝「<欄>、<原值 hash> → <新值 hash>」，列序＝argv 序；單欄本文＝基線單列無尾換行。"""
+    from wf.verbs.edit import _hash  # F-執行者-04：import 驗證器，⛔ 不重打 sha256 常數
+    argv = ['when="乙"', 'feature="甲"', 'service_goal="丙"']
+    result, fake = run(card, catalog, argv)
+    assert result.rc == 0
+    expected = [f'when、{_hash(card["when"])} → {_hash("乙")}',
+                f'feature、{_hash(card["feature"])} → {_hash("甲")}',
+                f'service_goal、{_hash(card["service_goal"])} → {_hash("丙")}']
+    comment, = mutations(fake, 'post_comment')
+    assert comment[1]['body'] == '\n'.join(expected)
+    result, fake = run(card, catalog, ['feature="甲"'])
+    single, = mutations(fake, 'post_comment')
+    assert single[1]['body'] == f'feature、{_hash(card["feature"])} → {_hash("甲")}'
+    assert '\n' not in single[1]['body'] and not single[1]['body'].endswith('\n')
+
+
+@pytest.mark.parametrize('argv,names', [
+    (['feature="甲"', 'feature="乙"'], ['feature']),
+    (['notes+={"id":"T-需求-01","text":"x","origin":"https://a.test"}', 'notes=[]'], ['notes']),
+    (['notes=[]', 'notes+={"id":"T-需求-01","text":"x","origin":"https://a.test"}'], ['notes']),
+    (['feature="甲"', 'when="乙"', 'when="丙"', 'feature="丁"'], ['when', 'feature']),
+])
+def test_duplicate_set_is_rejected_before_any_write(card, catalog, argv, names):
+    """A3：正規化後同一卡面鍵出現 2 次以上 ⇒ 整次拒收、零寫入；重複欄名依第二次出現序逐字列出。"""
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3', '重複欄位：' + '、'.join(names))
+    assert card_face(fake) == card
+
+
+def test_duplicate_notes_append_and_replace_is_rejected(card, catalog):
+    """A3：notes+ 與 notes 同鍵、兩個 notes+ 亦同鍵（需求方 2026-09-12 裁定：先正規化再判重）。"""
+    note = json.dumps({'id': 'T-需求-01', 'text': 'x', 'origin': 'https://a.test'},
+                      ensure_ascii=False)
+    for argv in (['notes+=' + note, 'notes=[]'], ['notes+=' + note, 'notes+=' + note]):
+        result, fake = run(card, catalog, argv)
+        wrote_nothing(result, fake, 'D3', '重複欄位：notes')
+        assert card_face(fake)['notes'] == card['notes']
+
+
+FAILURES = {
+    'a-缺等號': 'feature',
+    'b-非法JSON': 'service_goal=unquoted',
+    'c-欄名不在schema': 'unknown=1',
+    'd-疊加後schema不過': 'resources=[1]',
+    'e-D1禁寫': 'stage="執行"',
+    'f-D3禁寫': 'card_id="WF-999"',
+    'g-D4來源SHA': f'source_sha="{SHA40}"',
+    'h-D4父卡': 'parent="WF-999"',
+}
+LEGAL = 'feature="合法"'
+
+
+def failing_fake(card, catalog, case):
+    if case == 'g-D4來源SHA':
+        fake = simulated(card, catalog)
+        fake.responses['commit_exists'] = False
+        return fake, {}
+    if case == 'h-D4父卡':
+        return (parent_fake(card, catalog, {2: card | {'card_id': 'WF-002', 'source_issue': 2}}),
+                {'project_owner': 'owner', 'project_number': 1})
+    return simulated(card, catalog), {}
+
+
+@pytest.mark.parametrize('case', list(FAILURES))
+@pytest.mark.parametrize('legal_first', [True, False])
+def test_partial_failure_writes_nothing(card, catalog, case, legal_first):
+    """A4：八類失敗各一組 × 合法項在前／在後 ⇒ rc≠0、零卡面寫入、零投影寫入、零 wf:edit、恰 1 則 wf:reject。"""
+    fake, kwargs = failing_fake(card, catalog, case)
+    argv = [LEGAL, FAILURES[case]] if legal_first else [FAILURES[case], LEGAL]
+    result, fake = run(card, catalog, argv, fake=fake, **kwargs)
+    wrote_nothing(result, fake, 'D1' if case == 'e-D1禁寫' else
+                  ('D4' if case.startswith(('g-', 'h-')) else 'D3'))
+    assert card_face(fake)['feature'] != '合法'
+    assert card_face(fake) == card
+
+
+def test_spec_version_bumps_once_for_multi_spec_fields(card, catalog):
+    """A5：四個規格欄一次提交 ⇒ spec_version 恰 +1；混入非規格欄不變；只改非規格欄 ⇒ +0。"""
+    spec_argv = [key + '=' + json.dumps(value, ensure_ascii=False) for key, value in SPEC_VALUES]
+    result, _ = run(card, catalog, spec_argv)
+    assert result.rc == 0 and result.card['spec_version'] == card['spec_version'] + 1
+    result, _ = run(card, catalog, spec_argv + ['feature="甲"'])
+    assert result.rc == 0 and result.card['spec_version'] == card['spec_version'] + 1
+    result, _ = run(card, catalog, ['feature="甲"', 'when="乙"'])
+    assert result.rc == 0 and result.card['spec_version'] == card['spec_version']
+
+
+def test_multi_set_value_with_equals_and_newline(card, catalog, tmp_path):
+    """A6：值含 =／換行／JSON 陣列逐字寫入；且 edit.py 單檔只有一處 partition('=')、⛔ 無第二 parser。"""
+    from wf.verbs.edit import main
+    fake = simulated(card, catalog)
+    fake.responses['issues'] = [{'number': 1, 'body': body(card)}]
+    goal = '第一行\n第二行=x'
+    assert main(['WF-001', '--set', 'feature="a=b"',
+                 '--set', 'service_goal=' + json.dumps(goal, ensure_ascii=False),
+                 '--set', 'resources=' + json.dumps(['file:a=b', 'file:c'], ensure_ascii=False)],
+                client=fake, catalog=catalog, root=tmp_path) == 0
+    written = mutations(fake, 'update_card_body')[0][1]['card_json']
+    assert written['feature'] == 'a=b'
+    assert written['service_goal'] == goal
+    assert written['resources'] == ['file:a=b', 'file:c']
+    source = (ROOT / 'cli/src/wf/verbs/edit.py').read_text(encoding='utf-8')
+    assert source.count("partition('=')") == 1, source.count("partition('=')")
+    assert "split('=')" not in source and 're.split' not in source
+
+
+def test_multi_set_all_same_values_is_silent(card, catalog):
+    """A7：全項等值 ⇒ rc=0、零寫入零留言；部分等值 ⇒ wf:edit 只列實際變動的欄。"""
+    card['feature'], card['when'] = '甲', '乙'
+    result, fake = run(card, catalog, ['feature="甲"', 'when="乙"'])
+    assert result.rc == 0 and result.card == card
+    assert not mutations(fake)
+    result, fake = run(card, catalog, ['feature="甲"', 'when="丙"', 'service_goal="丁"'])
+    assert result.rc == 0
+    assert [line.split('、')[0] for line in edit_lines(fake)] == ['when', 'service_goal']
+
+
+def test_multi_set_projection_written_once(catalog, capsys):
+    """A8：變動鍵含投影鍵 ⇒ 五欄依 §2 序回寫恰 1 次；不含投影鍵 ⇒ ⛔ 不碰 Project；審核階段仍只另貼 1 則。"""
+    from .test_brief_sections import card as brief_card
+    from .test_card_gate_and_projection import board_client
+    from wf.verbs.edit import edit
+    client = board_client(catalog, brief_card(tier='T3'))
+    result = edit(10, ['tier="T4"', 'feature="改過"'], client=client, catalog=catalog,
+                  project_owner='fake', project_number=1, emit=lambda line: None)
+    assert result.rc == 0 and result.card['tier'] == 'T4'
+    written = [prepared[2]['fieldId'] for name, prepared in client.calls
+               if name == 'write_project_field']
+    assert written == list(projection(catalog))
+    assert len([1 for name, _ in client.calls if name == 'update_card_body']) == 1
+
+
+def test_multi_set_without_projection_key_leaves_the_board_alone(catalog):
+    """A8 負控：多欄提交但變動鍵不含投影鍵 ⇒ 零 write_project_field，板上級別不動。"""
+    from .test_brief_sections import card as brief_card
+    from .test_card_gate_and_projection import board_client
+    from wf.verbs.edit import edit
+    client = board_client(catalog, brief_card(tier='T3'))
+    result = edit(10, ['feature="改過"', 'when="乙"'], client=client, catalog=catalog,
+                  project_owner='fake', project_number=1, emit=lambda line: None)
+    assert result.rc == 0
+    assert [name for name, _ in client.calls if name == 'write_project_field'] == []
+    assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T3'}
+
+
+def test_multi_set_during_review_posts_one_extra_comment(card, catalog):
+    """A8：審核階段的多欄提交仍只另貼恰 1 則 edit during review（該次共 2 則）。"""
+    card['stage'] = '審核'
+    result, fake = run(card, catalog, ['feature="甲"', 'when="乙"'])
+    assert result.rc == 0
+    comments = mutations(fake, 'post_comment')
+    assert [kw['first_line'] for _, kw in comments] == ['wf:edit', 'wf:edit']
+    assert len(comments[0][1]['body'].split('\n')) == 2
+    assert comments[1][1]['body'] == 'edit during review'
+
+
+LAYER_PAIRS = {  # ①賦值語法 → ②重複欄位 → ③禁寫 → ④schema／stage_plan → ⑤D4 → ⑥投影預算與對帳
+    '①×②': (['feature', 'when="甲"', 'when="乙"'], 'D3', '--set 須為欄=JSON'),
+    '②×③': (['when="甲"', 'when="乙"', 'stage="執行"'], 'D3', '重複欄位：when'),
+    '③×④': (['stage="執行"', 'unknown=1'], 'D1', 'stage 只由 move 寫'),
+    '④×⑤': (['unknown=1', f'source_sha="{SHA40}"'], 'D3', 'unknown'),
+    '⑤×⑥': ([f'source_sha="{SHA40}"', LONG_OWNER], 'D4', 'source_sha 不在遠端'),
+}
+
+
+@pytest.mark.parametrize('pair', list(LAYER_PAIRS))
+def test_error_priority_across_layers(card, catalog, pair):
+    """A11：相鄰層雙錯的正序與逆序，wf:reject 本文逐字相同且指向較前的層；兩序皆零寫入。"""
+    argv, code, needle = LAYER_PAIRS[pair]
+    bodies = []
+    for order in (argv, list(reversed(argv))):
+        fake = simulated(card, catalog)
+        fake.responses['commit_exists'] = False
+        result, fake = run(card, catalog, order, fake=fake)
+        wrote_nothing(result, fake, code, needle)
+        assert card_face(fake) == card
+        bodies.append(mutations(fake, 'post_comment')[0][1]['body'])
+    assert bodies[0] == bodies[1], bodies
+
+
+def test_same_layer_reports_first_in_input_order(card, catalog):
+    """A11：同層多錯回報 argv 中 --set 出現順序最前的那一個（③、④、⑤ 三層各一組正逆序）。"""
+    for argv, code, needle in ((['stage="執行"', 'card_id="WF-999"'], 'D1', 'stage 只由 move 寫'),
+                               (['card_id="WF-999"', 'stage="執行"'], 'D3', 'card_id 不可由 edit 改')):
+        result, fake = run(card, catalog, argv)
+        wrote_nothing(result, fake, code, needle)
+    for first, second in (('alpha_unknown', 'beta_unknown'), ('beta_unknown', 'alpha_unknown')):
+        result, fake = run(card, catalog, [first + '=1', second + '=2'])
+        wrote_nothing(result, fake, 'D3', first)
+        body_text = mutations(fake, 'post_comment')[0][1]['body']
+        # A11 第④層：本文恰一項、⛔ 不以「; 」串接（⛔ 不保留 r1 釘住的聚合本文）
+        assert body_text == f'拒收・D3・/{first}: 不符合 additionalProperties', body_text
+        assert second not in body_text and '; ' not in body_text
+    for argv, needle in (([f'source_sha="{SHA40}"', 'parent="WF-999"'], 'source_sha 不在遠端'),
+                         (['parent="WF-999"', f'source_sha="{SHA40}"'], 'parent 不存在')):
+        fake = parent_fake(card, catalog, {2: card | {'card_id': 'WF-002', 'source_issue': 2}})
+        fake.responses['commit_exists'] = False
+        result, fake = run(card, catalog, argv, fake=fake,
+                           project_owner='owner', project_number=1)
+        wrote_nothing(result, fake, 'D4', needle)
+    result, fake = run(card, catalog, ['feature', 'when'])  # 同層兩個缺 = 分隔
+    wrote_nothing(result, fake, 'D3', '--set 須為欄=JSON')
+
+
+@pytest.mark.parametrize('bare', ['feature="A"', '', 'notes+=[]'])
+def test_edit_rejects_bare_str_assignments(card, catalog, bare):
+    """A12：第二參數為裸 str ⇒ 立即 TypeError 逸出，且零卡面寫入、零投影寫入、零留言（含零 wf:reject）。"""
+    from wf.verbs.edit import edit
+    fake = simulated(card, catalog)
+    with pytest.raises(TypeError):
+        edit(1, bare, client=fake, catalog=catalog)
+    assert not mutations(fake)  # ⛔ 不以 rc≠0 當通過證據：逐字元迭代路徑的 rc 也非零
+    assert not fake.calls
+
+
+@pytest.mark.parametrize('seq', [list, tuple])
+def test_edit_accepts_list_and_tuple(card, catalog, seq):
+    """A12 正控：list 與 tuple 皆正常。"""
+    from wf.verbs.edit import edit
+    fake = simulated(card, catalog)
+    result = edit(1, seq(['feature="甲"', 'when="乙"']), client=fake, catalog=catalog)
+    assert result.rc == 0 and result.card['feature'] == '甲' and result.card['when'] == '乙'
+
+
+def test_run_passes_argv_list_to_edit(monkeypatch, tmp_path):
+    """A12：CLI 介面不變——run 以可重複 --set 收 argv，組成 list 後才傳入 edit()。"""
+    from wf.verbs import edit as edit_module
+    from wf.verbs._write import WriteResult
+    seen = {}
+
+    def spy(card, assignments, **kwargs):
+        seen['assignments'] = assignments
+        return WriteResult(0)
+
+    monkeypatch.setattr(edit_module, 'edit', spy)
+    assert edit_module.run(['WF-001', '--set', 'a=1', '--set', 'b=2'],
+                           client=None, root=tmp_path, catalog=None) == 0
+    assert type(seen['assignments']) is list and seen['assignments'] == ['a=1', 'b=2']
+
+
+def reject_body(fake):
+    """恰一則 wf:reject 的本文（A11 第④層要求本文恰含一個失敗項）。"""
+    comment, = [kw for name, kw in mutations(fake, 'post_comment')
+                if kw['first_line'] == 'wf:reject']
+    return comment['body']
+
+
+LAYER_FOUR_PAIRS = [  # (argv, argv 最前那一項的失敗文字, 另一項的 pointer)
+    (['when=1', 'feature=2'], '/when: 不符合 type', '/feature'),
+    (['feature=2', 'when=1'], '/feature: 不符合 type', '/when'),
+    (['zz_unknown=2', 'when=1'], '/zz_unknown: 不符合 additionalProperties', '/when'),
+    (['when=1', 'zz_unknown=2'], '/when: 不符合 type', '/zz_unknown'),
+]
+
+
+@pytest.mark.parametrize('argv,reported,absent', LAYER_FOUR_PAIRS)
+def test_layer_four_reports_only_the_first_set_in_input_order(card, catalog, argv, reported, absent):
+    """A11 第④層：本文恰一個失敗項、⛔ 不以「; 」串接，且該項＝argv 中 --set 出現序最前的那一個。"""
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3', reported)
+    assert reject_body(fake) == '拒收・D3・' + reported, reject_body(fake)
+    assert '; ' not in reject_body(fake) and absent not in reject_body(fake)
+    assert card_face(fake) == card
+
+
+STAGE_PLAN_SET = 'stage_plan=' + json.dumps(['需求', '審核'], ensure_ascii=False)
+
+
+@pytest.mark.parametrize('argv,reported', [
+    ([STAGE_PLAN_SET, 'feature=2'], 'stage_plan 不合階段序'),
+    (['feature=2', STAGE_PLAN_SET], '/feature: 不符合 type'),
+])
+def test_layer_four_stage_plan_competes_with_schema_by_input_order(card, catalog, argv, reported):
+    """A11 第④層：stage_plan 階段序失敗與同層 schema 失敗同池比序，⛔ 不因 schema 先驗被吞掉。"""
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3', reported)
+    assert reject_body(fake) == '拒收・D3・' + reported, reject_body(fake)
+    assert '; ' not in reject_body(fake)
+    assert card_face(fake) == card
+
+
+def test_layer_four_failure_outside_the_set_keys_is_still_reported(card, catalog):
+    """A11 第④層：對不到任何 --set 的失敗排在全部可歸屬項之後，仍須回報、⛔ 不得被丟棄。"""
+    card['service_goal'] = 1  # 卡面既有欄本就不合 schema，且⛔ 不在本次 --set 內
+    result, fake = run(card, catalog, ['feature="合法"'])
+    wrote_nothing(result, fake, 'D3', '/service_goal: 不符合 type')
+    assert reject_body(fake) == '拒收・D3・/service_goal: 不符合 type', reject_body(fake)
+    assert card_face(fake) == card
+    result, fake = run(card, catalog, ['feature=2'])  # 可歸屬項仍排在對不到 --set 的失敗之前
+    wrote_nothing(result, fake, 'D3', '/feature: 不符合 type')
+    assert reject_body(fake) == '拒收・D3・/feature: 不符合 type', reject_body(fake)
+
+
+@pytest.mark.parametrize('drift,columns,values', [
+    ({}, [], {}),
+    ({'級別': {'name': 'T2'}}, ['級別'], {'級別': {'name': 'T3'}}),
+    ({'級別': {'name': 'T2'}, '狀態': {'name': '待辦'}}, ['狀態', '級別'],
+     {'級別': {'name': 'T3'}, '狀態': {'name': '進行中'}}),
+])
+def test_multi_set_without_projection_key_still_reconciles(catalog, drift, columns, values):
+    """A8 (ii)(iii)：非投影鍵變動 ⇒ ⛔ 不因本次變動回寫投影欄，但仍照 core/verbs.md §2 讀 Project 並對帳。
+
+    k=0／1／2 三組：client.project ≥ 1 次；恰 k 欄漂移 ⇒ write_project_field 恰 k 次、
+    重寫值取自卡面 JSON、印一行「重寫投影欄：」、rc=0 且⛔ 不拒收。
+    """
+    from .test_brief_sections import card as brief_card
+    from .test_card_gate_and_projection import board_client, BOARD
+    from wf.verbs.edit import edit
+    client = board_client(catalog, brief_card(tier='T3'), values=dict(BOARD) | drift)
+    lines = []
+    result = edit(10, ['feature="改過"', 'when="乙"'], client=client, catalog=catalog,
+                  project_owner='fake', project_number=1, emit=lines.append)
+    assert result.rc == 0
+    names = [name for name, _ in client.calls]
+    assert names.count('project') >= 1, names  # §2 對帳⛔ 不得為 0
+    assert names.count('update_card_body') == 1, names
+    assert names.count('post_comment') == 1
+    written = [prepared[2]['fieldId'] for name, prepared in client.calls
+               if name == 'write_project_field']
+    assert written == columns, written
+    assert [line for line in lines if line.startswith('重寫投影欄：')] == (
+        ['重寫投影欄：' + '、'.join(columns)] if columns else [])
+    board = client.board['items'][0]['fieldValues']
+    assert {name: board[name] for name in values} == values  # 取自卡面 JSON，⛔ 不取板上原值
+
+
+BROKEN_NOTES = [('number', 1), ('null', None), ('object', {}), ('string', 'x'), ('missing', None)]
+NOTE_SET = 'notes+=' + json.dumps({'id': 'T-需求-01', 'text': 'x',
+                                   'origin': 'https://example.test'}, ensure_ascii=False)
+
+
+@pytest.mark.parametrize('notes_first', [False, True])
+@pytest.mark.parametrize('label,value', BROKEN_NOTES, ids=[name for name, _ in BROKEN_NOTES])
+def test_layer_four_notes_append_onto_broken_notes_is_attributable(card, catalog, label, value,
+                                                                   notes_first):
+    """A11 第④層：卡面既有 notes 非陣列（含缺欄）時，notes+ 的疊加失敗仍須進同池並歸屬 /notes。
+
+    ⛔ 不得在收集 schema failures 前就拋出而蓋掉 argv 更前面的 when 失敗；
+    四型別×正逆序 8 組＋缺欄 2 組，全部零業務寫入、恰 1 則 wf:reject、本文恰一項。
+    """
+    if label == 'missing':
+        del card['notes']
+    else:
+        card['notes'] = value
+    argv = [NOTE_SET, 'when=1'] if notes_first else ['when=1', NOTE_SET]
+    expected = '拒收・D3・/notes' if notes_first else '拒收・D3・/when: 不符合 type'
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3')
+    assert reject_body(fake).startswith(expected), reject_body(fake)
+    assert '; ' not in reject_body(fake), reject_body(fake)
+    if not notes_first:
+        assert '/notes' not in reject_body(fake), reject_body(fake)
+    assert card_face(fake) == card
+
+
+@pytest.mark.parametrize('notes_first', [False, True])
+def test_layer_four_notes_append_onto_valid_notes_keeps_input_order(card, catalog, notes_first):
+    """正控：既有 notes=[] 時同兩序照 argv 比序，證明上一組的紅不是探針本身失效。"""
+    argv = ['notes+={}', 'when=1'] if notes_first else ['when=1', 'notes+={}']
+    expected = '/notes/0/id: 不符合 required' if notes_first else '/when: 不符合 type'
+    result, fake = run(card, catalog, argv)
+    wrote_nothing(result, fake, 'D3', expected)
+    assert reject_body(fake) == '拒收・D3・' + expected, reject_body(fake)
+    assert card_face(fake) == card

@@ -134,7 +134,7 @@ def test_review_posts_no_verdict_when_the_card_face_is_rejected(tmp_path):
 def test_edit_writes_back_the_projection_when_a_projection_key_changes(tmp_path, catalog):
     """FINAL-2a 正向：`--set tier=` ⇒ 卡面與板上都變；`json wf-projection` 五欄全部回寫。"""
     client = board_client(catalog, card(tier='T3'))
-    result = edit(10, 'tier="T4"', client=client, catalog=catalog,
+    result = edit(10, ['tier="T4"'], client=client, catalog=catalog,
                   project_owner='fake', project_number=1)
     assert result.rc == 0 and result.card['tier'] == 'T4'
     assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T4'}
@@ -147,7 +147,7 @@ def test_edit_writes_back_the_projection_when_a_projection_key_changes(tmp_path,
 def test_edit_leaves_the_board_alone_for_non_projection_keys(tmp_path, catalog):
     """FINAL-2a 負控：同一條路徑改非投影鍵 `feature` ⇒ 零投影欄寫入，板上級別不動。"""
     client = board_client(catalog, card(tier='T3'))
-    result = edit(10, 'feature="改過"', client=client, catalog=catalog,
+    result = edit(10, ['feature="改過"'], client=client, catalog=catalog,
                   project_owner='fake', project_number=1)
     assert result.rc == 0
     # 試算（prepare_project_field）是讀不是寫；此列要的是零投影欄「寫入」。
@@ -165,7 +165,7 @@ def test_next_verb_rewrites_the_drifted_projection_column(tmp_path, catalog, ver
     client = board_client(catalog, card(tier='T1', branch='wf/WF-001', source_sha='b' * 40))
     lines = []
     if verb == 'edit':
-        result = edit(10, 'feature="改過"', client=client, catalog=catalog,
+        result = edit(10, ['feature="改過"'], client=client, catalog=catalog,
                       project_owner='fake', project_number=1, emit=lines.append)
     else:
         result, lines = run_verb(verb, tmp_path, root, client)
@@ -318,7 +318,7 @@ def ruling_client(catalog, card_json, kind=None):
 def test_tier_downgrade_hint(tmp_path, catalog, capsys, start, target, kind, expected):
     """FINAL-5：降級而缺裁定或 kind 不符才印，只印不擋；升級與同值 ⛔ 不印（含負控四組）。"""
     client = ruling_client(catalog, card(tier=start), kind)
-    result = edit(10, f'tier="{target}"', client=client, catalog=catalog,
+    result = edit(10, [f'tier="{target}"'], client=client, catalog=catalog,
                   ruling=None if kind is None else RULING_URL,
                   project_owner='fake', project_number=1)
     assert result.rc == 0
