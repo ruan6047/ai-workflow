@@ -4,8 +4,8 @@ core/return.md schema 的 required、core/glossary.md「來源（四個）」、
 modules/resource-lock／initiative／identity §0。
 
 段序、段名與誰填逐字讀 `core/dispatch.md` 的表，⛔ 不抄進程式碼；CLI 段只搬事實、⛔ 不改寫
-不合併（第零條）。除 D3 的一則 `wf:reject` 外不寫任何遠端、⛔ 不自動 merge；`--for` 分派＝
-TARGETS 字典。卡號查找、留言區塊與板上事實住 verbs/_common.py。
+不合併（第零條）。讀側驗卡失敗＝本機硬擋、零遠端寫入；§2 對帳的投影回寫與其失敗拒收仍在。
+⛔ 不自動 merge；`--for` 分派＝TARGETS 字典。卡號查找、留言區塊與板上事實住 verbs/_common.py。
 """
 from datetime import date
 import json
@@ -23,7 +23,7 @@ from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
 from wf.verbs._common import (CardShapeError, Printer, block_object, board_facts, card_number,
                               comment_blocks, enabled_modules, parse_args, repo_cards)
-from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
+from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
 from wf.verbs import closeout
@@ -38,6 +38,7 @@ UNKNOWN_PREVIOUS = '未能取得前輪 findings'
 NO_CONTRACT, BAD_CONTRACT = '專案層未宣告', '契約檔不合 schema'
 NO_MERGE_TREE, CONFLICT = '未能比對 merge-tree', 'merge-tree 衝突'
 TEMPLATE_HEAD = '交回單 JSON 樣板'
+HARD_BLOCK = '硬擋・'  # core/verbs.md §2 本機硬擋行的前綴（`硬擋・<D 編號>・<原因>`）
 NOTE_ID = re.compile(r'^[0-9]+\. ([FPT]-.+?-[0-9]{2})：')
 DAYS = re.compile(r'^\|[ \t]*rule_confirm_days[ \t]*\|[ \t]*([0-9]+)', re.M)
 CONTRACT = re.compile(r'^```json wf-contract[ \t]*\r?\n(.*?)^```[ \t]*\r?$', re.M | re.S)
@@ -144,9 +145,12 @@ def _capability(ctx):
     return [f'{key}.{field}：{_plain(value.get(field))}' for field in ('level', 'reason')]
 
 def _notes(ctx):
-    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。"""
+    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。
+    內層非零結果存進 ctx 交給 `brief()` 承接（內層 emit 是 no-op，⛔ 不在這裡印、⛔ 不重跑）。"""
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
                    for_role=ctx.target, emit=lambda line: None)
+    if result.rc != 0:
+        ctx.failed = result
     ctx.note_ids = [m[1] for m in map(NOTE_ID.match, result.printed) if m]
     return list(result.printed)
 
@@ -248,7 +252,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
     except (ValueError, TypeError, KeyError) as exc:
-        return reject(client, number, 'D3', str(exc), tuple(report))
+        return blocked(report, 'D3', str(exc))
     match = DAYS.search((Path(root) / PARAMS).read_text(encoding='utf-8'))
     if match is None:
         report('未能讀取 rule_confirm_days，未評估過期')
@@ -259,21 +263,28 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
         enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
     except CardShapeError as exc:
-        return reject(client, number, 'D3', str(exc), tuple(report))
+        return blocked(report, 'D3', str(exc))
     failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
                         enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
-                        printed=tuple(report)) or reconcile_projection(
+                        fail=lambda reason: blocked(report, 'D3', reason)) or reconcile_projection(
                             current, client=client, catalog=catalog, location=cfg['project'],
                             project=project, number=number, report=report)
     if failed is not None:
         return failed
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
-                          catalog=catalog, cfg=cfg, project=project, note_ids=[],
+                          catalog=catalog, cfg=cfg, project=project, note_ids=[], failed=None,
                           days=None if match is None else int(match[1]),
                           today=date.today() if today is None else today)
     if target == 'closeout':
         ctx.trailers = trailers
-    for name, mark, lines in TARGETS[target](ctx):
+    rows = TARGETS[target](ctx)
+    if ctx.failed is not None:  # 內層 notes 非零：只把它已算好的本機硬擋行與 rc／reason 往上帶
+        for line in ctx.failed.printed:  # ⛔ 不重跑、⛔ 不增寫遠端（含第二則 wf:reject）
+            if line.startswith(HARD_BLOCK):  # 內層 emit 是 no-op，這一行只能由 brief 印
+                report(line)
+        return WriteResult(ctx.failed.rc, reason=ctx.failed.reason,
+                           rejection=ctx.failed.rejection, printed=tuple(report))
+    for name, mark, lines in rows:
         report('## ' + name)
         report(mark)
         for line in lines:

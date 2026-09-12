@@ -74,6 +74,22 @@ def first_lines(client):
     return [kwargs['first_line'] for name, kwargs in client.calls if name == 'post_comment']
 
 
+LOCAL = ('notes', 'brief')  # WF-003：讀側 D3 ＝本機硬擋、遠端零寫入；review 的拒收逐字不變
+
+
+def hard_blocks(lines):
+    """本機硬擋行（core/verbs.md §2 `硬擋・<D 編號>・<原因>`）。"""
+    return [line for line in lines if line.startswith('硬擋・')]
+
+
+def assert_local_hard_block(client, result, lines, code='D3'):
+    """讀側 D3 的三件事，斷言序固定：① 寫入呼叫集合為空（⛔ 不先取 writes[0]——零寫入下必
+    IndexError，會把修好誤報成探針崩潰）② rc=1 ③ 本機恰一行硬擋，原因逐字等於 WriteResult.reason。"""
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert result.rc == 1 and result.reason
+    assert hard_blocks(lines) == [f'硬擋・{code}・{result.reason}']
+
+
 # ── FINAL-1：卡面 D3（鍵集合封閉、整卡拒）在 notes／brief／review ────────────────
 
 def run_verb(name, tmp_path, root, client):
@@ -88,10 +104,18 @@ def run_verb(name, tmp_path, root, client):
 
 @pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])
 def test_illegal_card_key_is_rejected_once_by_every_verb(tmp_path, verb):
-    """FINAL-1 正向：卡面多一個 `unexpected` 鍵 ⇒ rc≠0、恰一則 wf:reject、⛔ 無其他寫入。"""
+    """FINAL-1 正向：卡面多一個 `unexpected` 鍵 ⇒ rc≠0、該卡動詞停。
+
+    WF-003：notes／brief 的讀側 D3 改為本機硬擋＋遠端零寫入；review 逐字不變＝恰一則 wf:reject。
+    """
     root = make_root(tmp_path, project=False)
     client = make_client(card(unexpected='非法鍵', branch='wf/WF-001', source_sha='b' * 40))
-    result, _ = run_verb(verb, tmp_path, root, client)
+    result, lines = run_verb(verb, tmp_path, root, client)
+    if verb in LOCAL:
+        assert_local_hard_block(client, result, lines)
+        assert 'unexpected' in result.reason
+        print('FINAL-1', verb, hard_blocks(lines)[0])
+        return
     assert result.rc != 0
     writes = [name for name, _ in client.calls if name in WRITES]
     assert writes == ['post_comment'], writes
@@ -386,8 +410,9 @@ def victim_card(catalog, **changes):
 @pytest.mark.parametrize('variant', VARIANTS)
 def test_prevalidation_precedes_enablement_for_every_victim_verb(tmp_path, catalog, monkeypatch,
                                                                  verb, variant):
-    """8 敵意值 × 3 個受害動詞：上界預驗先擋 ⇒ rc=1、恰一則 wf:reject、理由是 schema path、
-    首次留言前零寫入，且 is_enabled 一次都沒被呼叫（A2）。
+    """8 敵意值 × 3 個受害動詞：上界預驗先擋 ⇒ rc=1、理由是 schema path，且 is_enabled 一次都
+    沒被呼叫（A2）。留痕處置依動詞分：WF-003 後 notes／brief 是本機硬擋＋遠端零寫入，
+    review 逐字不變＝恰一則 wf:reject 且首次留言前零寫入。
 
     基線行為＝stage_plan 為 None／5 時 is_enabled 拋未攔截的 TypeError（見負控）。
     """
@@ -399,12 +424,15 @@ def test_prevalidation_precedes_enablement_for_every_victim_verb(tmp_path, catal
     changes, pointer = shape_variants(catalog)[variant]
     root = make_root(tmp_path, project=False)
     client = make_client(victim_card(catalog, **changes))
-    result, _ = run_verb(verb, tmp_path, root, client)
+    result, lines = run_verb(verb, tmp_path, root, client)
     assert result.rc == 1
     assert calls == []
-    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
-    assert first_lines(client) == ['wf:reject']
-    assert rejects(client)[0]['body'] == '拒收・D3・' + result.reason
+    if verb in LOCAL:
+        assert_local_hard_block(client, result, lines)
+    else:
+        assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
+        assert first_lines(client) == ['wf:reject']
+        assert rejects(client)[0]['body'] == '拒收・D3・' + result.reason
     assert result.reason.startswith('/'), result.reason
     assert pointer in result.reason, result.reason
     print('WF-004', verb, variant, result.reason)
@@ -468,9 +496,12 @@ def test_exact_schema_still_rejects_a_disabled_module_state(tmp_path, catalog, v
     disabled = legal | {'stage_plan': [s for s in legal['stage_plan'] if s != stage], 'stage': '執行'}
     _common.prevalidate_card(disabled, catalog)  # 不拋＝上界放行；擋下來的是後面那道
     client = make_client(disabled)
-    result, _ = run_verb(verb, tmp_path, make_root(tmp_path, project=False), client)
+    result, lines = run_verb(verb, tmp_path, make_root(tmp_path, project=False), client)
     assert result.rc == 1
-    assert first_lines(client) == ['wf:reject']
+    if verb in LOCAL:  # WF-003：check_card 失敗在讀側動詞＝本機硬擋、遠端零寫入
+        assert_local_hard_block(client, result, lines)
+    else:
+        assert first_lines(client) == ['wf:reject']
     assert '/state' in result.reason, result.reason
     print('WF-004 停用模組 state', verb, result.reason)
 
@@ -486,9 +517,72 @@ def test_reject_reason_names_only_the_real_path(tmp_path, catalog, verb):
     state, = research['adds']['enums']['states']
     root = make_root(tmp_path, project=False)
     client = make_client(victim_card(catalog, state=state, parent=5))
-    result, _ = run_verb(verb, tmp_path, root, client)
+    result, lines = run_verb(verb, tmp_path, root, client)
     assert result.rc == 1
-    body = rejects(client)[0]['body']
+    if verb in LOCAL:  # WF-003：本機硬擋行取代 wf:reject 本文，指認的欄一樣不得多也不得少
+        assert_local_hard_block(client, result, lines)
+        body = hard_blocks(lines)[0]
+    else:
+        body = rejects(client)[0]['body']
     assert '/parent' in body, body
     assert '/state' not in body, body
     print('WF-004 指認正確欄', verb, body)
+
+
+# ── WF-003：notes／brief 的三個直接讀側 D3 出口窮舉（2 × 3 ＝ 6 格）與負控 ──────────
+
+EXITS = ('block_object', 'prevalidate_card', 'check_card')
+
+
+def exit_client(catalog, exit_name):
+    """三個直接讀側出口各一張固定壞卡；⛔ 不與其他維度做笛卡兒乘積。
+
+    block_object＝wf-card 區塊解析或型別失敗；prevalidate_card＝啟用判定前的上界預驗失敗
+    （CardShapeError）；check_card＝上界放行而精確 schema 擋下（模組未啟用而帶它的 state）。
+    """
+    if exit_name == 'block_object':
+        return make_client('前言\n```json wf-card\n{壞掉\n```\n')
+    if exit_name == 'prevalidate_card':
+        return make_client(victim_card(catalog, stage_plan=5))
+    research, = (b.data for b in catalog.by_label('yaml wf-module') if b.data['name'] == 'research')
+    state, = research['adds']['enums']['states']
+    stage = research['enable_if']['stage']
+    legal = victim_card(catalog, state=state)
+    disabled = legal | {'stage_plan': [s for s in legal['stage_plan'] if s != stage], 'stage': '執行'}
+    _common.prevalidate_card(disabled, catalog)  # 不拋＝上界放行 ⇒ 擋下它的只能是 check_card
+    return make_client(disabled)
+
+
+@pytest.mark.parametrize('verb', LOCAL)
+@pytest.mark.parametrize('exit_name', EXITS)
+def test_every_read_side_d3_exit_is_a_local_hard_block(tmp_path, catalog, verb, exit_name):
+    """WF-003 窮舉：2 個動詞 × 3 個直接讀側出口 ＝ 6 格，逐格寫入呼叫集合為空、rc=1、
+    本機恰一行 `硬擋・D3・<原因>`；少於 6 格即代表出口母體宣稱不成立。"""
+    root = make_root(tmp_path, project=False)
+    client = exit_client(catalog, exit_name)
+    result, lines = run_verb(verb, tmp_path, root, client)
+    assert_local_hard_block(client, result, lines)
+    print('WF-003 出口', exit_name, verb, hard_blocks(lines)[0])
+
+
+@pytest.mark.parametrize('verb', LOCAL)
+@pytest.mark.parametrize('exit_name', EXITS)
+def test_read_side_exit_negative_control_is_caught_by_the_zero_write_assertion(
+        tmp_path, catalog, monkeypatch, verb, exit_name):
+    """WF-003 負控（6 格）：把 notes／brief 的本機硬擋處置換回 `_write.reject` ⇒ 零寫入斷言
+    必須響，且響的原因是替身確實記錄到 post_comment(first_line='wf:reject')，
+    ⛔ 不是 TypeError／IndexError／AttributeError 之類在斷言之前拋出的例外。"""
+    root = make_root(tmp_path, project=False)
+    client = exit_client(catalog, exit_name)
+    for module in LOCAL:
+        monkeypatch.setattr(f'wf.verbs.{module}.blocked',
+                            lambda report, code, reason: _write.reject(client, 10, code, reason,
+                                                                       tuple(report)))
+    result, lines = run_verb(verb, tmp_path, root, client)
+    assert result.rc == 1
+    assert [kwargs['body'] for kwargs in rejects(client)] == ['拒收・D3・' + result.reason]
+    with pytest.raises(AssertionError) as caught:
+        assert_local_hard_block(client, result, lines)
+    assert 'post_comment' in str(caught.value), str(caught.value)
+    assert hard_blocks(lines) == []
+    print('WF-003 負控', exit_name, verb, rejects(client)[0]['body'])
