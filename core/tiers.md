@@ -11,8 +11,8 @@ last_confirmed: 2026-09-09
 
 | 級別 | 最低要求 | 規劃階段 | 查核者獨立性 |
 |---|---|---|---|
-| T0 | 直推 main；格式與連結自查 | 跳過 | 無；審核階段由執行者以 `role=reviewer` 自貼裁決（自查即裁決） |
-| T1 | 直推 main；聚焦自查；⛔ 不改 versioned source、設定、生成物、規格文字 | 跳過 | 無；審核階段由執行者以 `role=reviewer` 自貼裁決（自查即裁決） |
+| T0 | 預設分支有 required status checks 時走分支＋PR，否則直推 main；格式與連結自查 | 跳過 | 無；審核階段由執行者以 `role=reviewer` 自貼裁決（自查即裁決） |
+| T1 | 預設分支有 required status checks 時走分支＋PR，否則直推 main；聚焦自查；⛔ 不改 versioned source、設定、生成物、規格文字 | 跳過 | 無；審核階段由執行者以 `role=reviewer` 自貼裁決（自查即裁決） |
 | T2 | 分支＋聚焦回歸測試＋獨立查核 | 必跑 | 不同實體 |
 | T3 | T2 加規格與驗收條件、self_run、merge 前 required check | 必跑 | 不同實體 |
 | T4 | T3 加兩則裁決、需求方 sign-off、實測證據 | 必跑，離開前附質詢 | 兩位查核者彼此不同家族 |
