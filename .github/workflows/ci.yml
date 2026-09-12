@@ -1,11 +1,16 @@
 name: CI
 
-# secret-scan＝P4、commit-trailer＝P5、reachability＝core/state-machine.md。
-# ⛔ 不再有掃描 docs 的 job。
+# 本檔＝執行 artifact；P1–P5 的條文居所＝core/platform.md。
+# job → 被測物（穩定對應）：
+#   secret-scan    ＝ P4
+#   commit-trailer ＝ P5（.github/scripts/trailer_check.py）
+#   reachability   ＝ core/state-machine.md §5（.github/scripts/reachability.py）
+#   cli-tests      ＝ CLI 的測試目錄 cli/tests（被測物＝cli/src）
+# ⛔ 不再有掃描 docs 的 job；⛔ 不加沒有被測物的 job。
 #
-# ruleset「main must be green」（id 20768920）的 required check＝secret-scan、commit-trailer、reachability
-#（ruleset 不留空 job。）
-# P1–P5 的條文居所＝core/platform.md；本檔只是執行 artifact。
+# 上面是本檔有哪些 job，⛔ 不是「哪些 job 被設為 required check」的宣稱。
+# 後者是會漂移的當下值，⛔ 不登記在本檔也⛔ 不登記在 core/platform.md，
+# 用 core/platform.md §2 的唯讀查法現查。
 
 on:
   push:
