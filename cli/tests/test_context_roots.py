@@ -255,3 +255,190 @@ def test_config_keys_accept_null_and_valid_values(tmp_path):
     (tmp_path / '.wf/modules.json').write_text(json.dumps({'rules': None, 'remote': None}), encoding='utf-8')
     cfg = load_project_config(tmp_path)
     assert cfg['rules'] is None and cfg['remote'] is None
+
+
+# ═══════════════════ main() 層共用：自舉工作區、板上有卡的替身、七動詞驅動 ═══════════════════
+from .fakes import FakeGhClient  # noqa: E402
+from .test_brief_sections import card as brief_card  # noqa: E402
+from .test_card_gate_and_projection import BOARD  # noqa: E402
+from .test_end_to_end import E2EClient  # noqa: E402
+from .test_open_verb import block, intake, issue, item  # noqa: E402
+from wf.verbs.main import main  # noqa: E402
+
+SHA = 'b' * 40
+MUTATIONS = ('update_card_body', 'post_comment', 'write_project_field', 'add_to_project',
+             'remove_from_project', 'close_issue')
+FAKE_REMOTE = 'https://github.com/fake/repo.git'  # slug＝FakeGhClient.repo，板上 item 的 nameWithOwner 才對得上
+
+
+def workspace(tmp_path, *, project=True, name='W', git_remote=None, config=None):
+    """自舉形狀：四個規則目錄 symlink＋`.wf`；git_remote 給定時另 init 並加 origin。"""
+    root = rules_root(tmp_path, name)
+    (root / '.wf').mkdir()
+    (root / '.wf/modules.json').write_text(json.dumps(
+        {'areas': ['WF'], 'modules': [], 'project': {'owner': 'fake', 'number': 1} if project else None}
+        if config is None else config), encoding='utf-8')
+    if git_remote is not None:
+        env = git_env(tmp_path)
+        git(root, 'init', '-q', '-b', 'main', env=env)
+        git(root, 'remote', 'add', 'origin', git_remote, env=env)
+    return root
+
+
+def on_board_card(**changes):
+    return brief_card(**{'branch': 'wf/WF-001', 'source_sha': SHA, 'stage_plan': ['需求', '執行', '審核', '結案'],
+                         **changes})
+
+
+def stateful(catalog, card_json=None, *, rows=(), items=None, **responses):
+    """#10 帶卡且在板上（投影欄＝BOARD）、#11 是清單項；E2EClient 記住自己貼的留言。"""
+    card_json = on_board_card() if card_json is None else card_json
+    rows = [issue(10, card=card_json), issue(11, body='清單項\n' + block('wf-intake', intake())), *rows]
+    items = [item(10) | {'fieldValues': dict(BOARD)}] if items is None else items  # id=ITEM10；open 新加的是 ITEM
+    client = E2EClient(catalog, rows, items)
+    client.responses.setdefault('merge_base', SHA)
+    client.responses.update(responses)
+    return client
+
+
+def verb_args(tmp_path, ref='WF-001'):
+    sheet = tmp_path / 'return.json'
+    sheet.write_text('{}', encoding='utf-8')
+    return {'open': ['11'], 'move': [ref, '--to', '待確認', '--source-sha', SHA],
+            'edit': [ref, '--set', 'feature="改過"'], 'notes': [ref], 'brief': [ref, '--for', 'executor'],
+            'review': [ref, '--file', str(sheet), '--role', 'executor'],
+            'snapshot': ['--out', str(tmp_path / 'out')]}
+
+
+def mutation_calls(client):
+    return [name for name, _ in client.calls if name in MUTATIONS]
+
+
+# ── V1：rules_root=R 與 project_root=P 不同時，規則資產全解析到 R、專案資產全解析到 P、兩集合不相交 ──
+def test_external_dual_root_separates_rules_and_project_assets(tmp_path, monkeypatch, capsys):
+    from wf.verbs import brief as brief_module, closeout as closeout_module
+    rules = rules_root(tmp_path, 'R')
+    project = project_root(tmp_path, 'P', config={'areas': ['WF'], 'modules': [], 'project': {'owner': 'fake', 'number': 1}},
+                           remote=FAKE_REMOTE)
+    catalog = load_blocks(FilesystemRulesSource(rules))
+    opened, git_roots = [], []
+    real_open = pathlib.Path.open
+
+    def spy(self, *args, **kwargs):  # 記開檔的絕對路徑本身（⛔ 不 resolve：R 的規則目錄是 symlink，resolve 會跳到本 repo）
+        opened.append(pathlib.Path(self).absolute())
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, 'open', spy)
+    for module in (brief_module, closeout_module):
+        monkeypatch.setattr(module, 'merge_tree',
+                            lambda base, head, root='.', **k: git_roots.append(pathlib.Path(root).resolve()) or 0)
+    client = stateful(catalog, pulls_for_branch=[{'number': 11}], is_ancestor=True,
+                      pull_request={'merge_commit_sha': 'd' * 40, 'head': {'sha': 'c' * 40}},
+                      ci_checks={'check_runs': [], 'statuses': []})
+    prefix = ['--rules-root', str(rules)]
+    args = verb_args(tmp_path)
+    args['snapshot'] = []  # 缺省輸出目錄＝<project_root>/.wf/snapshot：證明 snapshot 輸出落在 P
+    args['brief-reviewer'] = ['WF-001', '--for', 'reviewer']
+    args['brief-closeout'] = ['WF-001', '--for', 'closeout']
+    for name in ('notes', 'brief', 'brief-reviewer', 'brief-closeout', 'review', 'edit', 'move', 'open', 'snapshot'):
+        verb = name.split('-')[0]
+        assert main([*prefix, verb, *args[name]], client=client, root=project, env={}) == 0, (name, capsys.readouterr())
+    capsys.readouterr()
+    r_root, p_root = rules.resolve(), project.resolve()
+    rule_opens = sorted({p.relative_to(r_root).as_posix() for p in opened if p.is_relative_to(r_root)})
+    project_opens = sorted({p.relative_to(p_root).as_posix() for p in opened if p.is_relative_to(p_root)})
+    others = sorted({str(p) for p in opened if not (p.is_relative_to(r_root) or p.is_relative_to(p_root))})
+    assert rule_opens and all(path.split('/')[0] in RULE_DIRS for path in rule_opens), rule_opens
+    assert project_opens and all(path.split('/')[0] == '.wf' for path in project_opens), project_opens
+    assert '.wf/snapshot/snapshot.json' in project_opens and '.wf/modules.json' in project_opens
+    assert others == [str((tmp_path / 'return.json').resolve())], others  # 只剩交回單檔（呼叫端給的絕對路徑）
+    assert not [p for p in rule_opens if p.startswith('.wf')]
+    assert not [p for p in project_opens if p.split('/')[0] in RULE_DIRS]
+    assert git_roots and set(git_roots) == {p_root}  # git -C 工作樹＝P
+    assert client.context.rules.identity == str(r_root) and client.context.project.root.canonical == str(p_root)
+    print('V1 rule_opens', rule_opens)
+    print('V1 project_opens', project_opens)
+    # 負控：R／P 對調 ⇒ 每個動詞回 typed 錯誤 rc≠0（不是 KeyError／FileNotFoundError），零 API 讀取
+    for name in ('notes', 'brief', 'review', 'edit', 'move', 'open', 'snapshot'):
+        swapped = stateful(catalog)
+        rc = main(['--rules-root', str(project), '--project-root', str(rules), name, *args[name]],
+                  client=swapped, root=None, env={})
+        err = capsys.readouterr().err
+        assert rc == 1 and '缺 core' in err and 'Error' not in err and 'Traceback' not in err, (name, err)
+        assert swapped.calls == []
+
+
+# ── V5：main(root=R) 與無 root（cwd=R）的行為、rc、輸出相同；--rules-root 分流；旗標在動詞後必須失敗 ──
+def test_invocation_shape_is_backward_compatible(tmp_path, monkeypatch, capsys):
+    from wf.verbs import snapshot as snapshot_module
+    rules = workspace(tmp_path, project=False, name='R')
+    project = project_root(tmp_path, 'P', remote=FAKE_REMOTE)
+    outputs = {}
+    for name, kwargs in (('root', dict(root=rules)), ('cwd', {})):
+        if name == 'cwd':
+            monkeypatch.chdir(rules)
+        client = FakeGhClient(issues=[])
+        assert main(['snapshot', '--out', str(tmp_path / name)], client=client, env={}, **kwargs) == 0
+        data = json.loads((tmp_path / name / 'snapshot.json').read_text(encoding='utf-8'))
+        outputs[name] = (data | {'generated_at': None}, capsys.readouterr().out, client.context.project.root.canonical)
+    assert outputs['root'] == outputs['cwd']
+    assert outputs['root'][1] == '無 Project 設定\n' and outputs['root'][0]['cards'] == []  # 基線 fa884be 同形狀
+    assert outputs['root'][2] == str(rules.resolve())
+    opened = []
+    real_open = pathlib.Path.open
+    monkeypatch.setattr(pathlib.Path, 'open',
+                        lambda self, *a, **k: opened.append(pathlib.Path(self).absolute()) or real_open(self, *a, **k))
+    client = FakeGhClient(issues=[])
+    assert main(['--rules-root', str(rules), 'snapshot', '--out', str(tmp_path / 'split')],
+                client=client, root=project, env={}) == 0
+    monkeypatch.setattr(pathlib.Path, 'open', real_open)
+    assert client.context.rules.identity == str(rules.resolve()) and client.context.catalog.by_label('json wf-enums')
+    assert client.context.project.root.canonical == str(project.resolve())
+    assert any(p.is_relative_to(rules.resolve() / 'core') for p in opened)
+    assert (project.resolve() / '.wf/modules.json') in opened
+    assert not any(p.is_relative_to(project.resolve() / 'core') for p in opened)
+    assert (tmp_path / 'split/snapshot.json').is_file()
+    capsys.readouterr()
+    seen = []
+    monkeypatch.setattr(snapshot_module, 'run', lambda argv, **kwargs: seen.append(argv) or 0)
+    assert main(['snapshot', '--rules-root', str(rules)], client=FakeGhClient(issues=[]), root=project, env={}) == 2
+    assert seen == [] and capsys.readouterr().err.strip() == 'wf <open|move|edit|notes|brief|review|snapshot> …'
+
+
+# ── V6：rules.path 以 project_root 為 base（.wf 為 base 指到不存在）；旗標各自勝過設定鍵；型別不合＝ProjectConfigError ──
+def test_config_keys_precedence_and_relative_base(tmp_path, monkeypatch, capsys):
+    from wf.context import RootError, resolve_path
+    from wf.verbs import notes as notes_module
+    env = git_env(tmp_path)
+    config = {'areas': ['WF'], 'modules': [], 'project': None, 'rules': {'path': 'vendor/wf-rules'},
+              'remote': 'upstream'}
+    project = project_root(tmp_path, 'P6', config=config, env=env, remote=None)
+    git(project, 'remote', 'add', 'origin', 'https://github.com/consumer/right.git', env=env)
+    git(project, 'remote', 'add', 'upstream', 'https://github.com/parent/base.git', env=env)
+    (project / 'vendor').mkdir()
+    rules_root(project / 'vendor', 'wf-rules')
+    other = rules_root(tmp_path, 'R6')
+    seen = []
+    monkeypatch.setattr(notes_module, 'run', lambda argv, **kwargs: seen.append(kwargs['context']) or 7)
+    assert main(['notes', 'WF-001'], client=FakeGhClient(), root=project, env={}) == 7
+    ctx = seen[-1]
+    assert ctx.rules.identity == str((project / 'vendor/wf-rules').resolve())
+    assert ctx.rules.provenance == Provenance('project_config', 'rules.path')
+    assert ctx.repository.name_with_owner == 'parent/base' and ctx.repository.provenance.kind == 'project_config'
+    assert_every_resolved_field_has_provenance(ctx)  # V4：bootstrap 產出的 Context 也全欄有 provenance
+    with pytest.raises(RootError):  # 負控：以 .wf 為 base 會指到不存在路徑
+        resolve_path('vendor/wf-rules', project / '.wf', Provenance('project_config', 'rules.path'))
+    assert main(['--rules-root', str(other), '--remote', 'origin', 'notes', 'WF-001'],
+                client=FakeGhClient(), root=project, env={}) == 7
+    ctx = seen[-1]
+    assert ctx.rules.identity == str(other.resolve()) and ctx.rules.provenance == Provenance('cli', '--rules-root')
+    assert ctx.repository.name_with_owner == 'consumer/right'
+    assert ctx.repository.provenance == Provenance('cli', '--remote origin')
+    (project / '.wf/modules.json').write_text(json.dumps(config | {'rules': 'vendor/wf-rules'}), encoding='utf-8')
+    capsys.readouterr()
+    assert main(['notes', 'WF-001'], client=FakeGhClient(), root=project, env={}) == 1
+    assert capsys.readouterr().err.startswith('.wf/modules.json 不合法：rules')
+    (project / '.wf/modules.json').write_text(json.dumps(config | {'rules': {'path': 'vendor/absent'}}), encoding='utf-8')
+    assert main(['notes', 'WF-001'], client=FakeGhClient(), root=project, env={}) == 1
+    assert 'rules.path 不可讀' in capsys.readouterr().err
+    print('V6 rules', ctx.rules.identity, ctx.repository)

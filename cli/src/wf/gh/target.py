@@ -1,21 +1,21 @@
-"""消費 core/verbs.md §2（檢查先於首次遠端寫入；身分衝突走本機硬擋零寫入）、ADOPTION.md §2
-（`remote`／`project` 鍵）。resolved target identity 的解析：remote precedence ①顯式 `--remote`
-②設定鍵 ③current branch upstream ④全部 remote（唯一者即選定，多者經 API canonical stable ID 合併，
-ID 相同才合併、仍多義即 fail-loud）；`GH_REPO` 不在 precedence 內（本機身分缺席時成唯一候選，否則
-只作 stable ID 核對）；Project 與 repository 的最低關聯＝被操作 item 的 content.repository stable ID
-等於 resolved repository（Project 可跨 repo、不要求 owner 相同、project:null 合法）；permission 只產
-`PermissionFact` 事實、⛔ 不做政策（逐 operation 放行或阻擋由 WF-016 決定）。
-
-比對一律用 stable ID（node_id）；本層只做身分解析與相等性比對；⛔ 不建 dependency solver、
-⛔ 不耦合具名 consumer、⛔ 不支援 GHES（host 固定 github.com）。
+"""消費 core/verbs.md §2（檢查先於首次遠端寫入；身分衝突走本機硬擋零寫入）、ADOPTION.md §2（`remote`／
+`project` 鍵）。resolved target identity：remote precedence ①顯式 `--remote` ②設定鍵 ③current branch upstream
+④全部 remote（唯一者即選定，多者經 API canonical stable ID 合併，ID 相同才合併、仍多義即 fail-loud）；
+`GH_REPO` 不在 precedence 內（本機身分缺席時成唯一候選，否則只作 stable ID 核對）；Project 與 repository 的
+最低關聯＝被操作 item 的 content.repository stable ID 等於 resolved repository（可跨 repo、不要求 owner 相同、
+project:null 合法）；permission 只產 `PermissionFact` 事實、⛔ 不做政策（逐 operation 放行或阻擋由 WF-016 決定）。
+本機 Git 身分事實 `local_git_facts` 也住這裡（唯讀 plumbing；gh/localgit.py 依既有不變式只包 merge-tree）。
+比對一律用 stable ID；⛔ 不建 dependency solver、⛔ 不耦合具名 consumer、⛔ 不支援 GHES（host 固定 github.com）。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import subprocess
 
 from wf.context import ContextError, Provenance, TargetIdentityError
 from wf.gh.client import GhError, PermissionDenied
+from wf.gh.localgit import LocalGitFacts, LocalGitUnavailable, RemoteFact
 
 SLUG = re.compile(r'^(?:[a-z+]+://)?(?:[^@/]+@)?github\.com[/:]([^/:]+/[^/:]+?)(?:\.git)?/?$')
 PERMISSION_STATES = ('allowed', 'denied', 'unknown')
@@ -66,6 +66,32 @@ class PermissionFact:
     state: str
     source: str
     reason: str
+
+
+def local_git_facts(root, *, runner=None):
+    """六類事實各自取源（`--path-format=absolute` 讓 git-dir／common-dir 不含相對 cwd 前綴）；
+    root 不在 git 工作樹內＝None（事實缺席，⛔ 不是錯誤）；git 不可執行＝LocalGitUnavailable。"""
+    runner = subprocess.run if runner is None else runner
+
+    def out(*args):
+        try:
+            result = runner(('git', '-C', str(root), *args), capture_output=True, text=True, check=False,
+                            timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise LocalGitUnavailable(str(exc)) from exc
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    layout = out('rev-parse', '--path-format=absolute', '--show-toplevel', '--git-dir', '--git-common-dir')
+    if layout is None:
+        return None
+    top_level, git_dir, common_dir = layout.splitlines()[:3]
+    ref = out('symbolic-ref', '--quiet', 'HEAD')
+    upstream = out('for-each-ref', '--format=%(upstream:remotename)', ref) if ref else None
+    remotes = tuple(RemoteFact(name, out('remote', 'get-url', name) or '',
+                               out('remote', 'get-url', '--push', name) or '', name == upstream)
+                    for name in (out('remote') or '').split())
+    return LocalGitFacts(top_level, git_dir, common_dir, out('rev-parse', '--verify', '--quiet', 'HEAD'),
+                         ref, remotes)
 
 
 def slug_of(url):
@@ -141,9 +167,9 @@ def resolve_project(location, lookup):
 
 
 def permission_fact(subject, source, value):
-    """value＝API 欄位值（bool／viewerPermission 字串／缺欄位＝None）或讀取時的例外；只翻譯成事實、
-    ⛔ 不判該不該。true／false 與 WRITE 以上／以下＝API 明確回報 ⇒ allowed／denied；403＝明確拒絕 ⇒
-    denied；401（憑證遭拒）、404（資源不可見）、傳輸未完成、缺欄位 ⇒ unknown（未知⛔ 不冒充允許或拒絕）。"""
+    """value＝API 欄位值（bool／viewerPermission／缺欄位＝None）或讀取時的例外；只翻譯成事實、⛔ 不判該不該。
+    true／false、WRITE 以上／以下＝API 明確回報 ⇒ allowed／denied；403 ⇒ denied；401、404、傳輸未完成、
+    缺欄位 ⇒ unknown（未知⛔ 不冒充允許或拒絕）。"""
     if isinstance(value, bool):
         return PermissionFact(subject, 'allowed' if value else 'denied', source, f'{source}={value!r}')
     if isinstance(value, str):

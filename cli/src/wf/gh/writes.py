@@ -1,14 +1,12 @@
 """消費 core/card-schema.md §1／§5、core/verbs.md §2、core/naming.md §3。
 GitHub API 協定與 body 區塊定位；欄名、值與留言首行由呼叫端供給。
 
-static Context gate（core/verbs.md §2「任何遠端寫入前須先取得 static 身分已驗證的 context」）：
-`bind_context` 綁定一次，六個 mutation 原語（update_card_body、post_comment、write_project_field、
-add_to_project、remove_from_project、close_issue）各在發請求前只讀 `context.static_identity_verified`；
-⛔ 不讀 PermissionFact、⛔ 不判三態、⛔ 不重試、⛔ 不做部分失敗補償（逐 operation 政策住 WF-016）。
-保留全域 gate 的理由：單一布林加一次呼叫是最小機制、六個原語天然集中在同一 WriteMixin 是唯一有
-結構保證的收斂點、且可被 ast 列舉驗證（cli/tests/test_context_preflight_order.py）。
-gate 狀態＝instance 的 `context`：真 GhClient 未綁定即 raise；純協定用途的替身（測試把 WriteMixin
-的方法套在 FakeGhClient 上）由替身自帶已驗證的 context，⛔ 不是繞過。
+static Context gate（core/verbs.md §2「任何遠端寫入前須先取得 static 身分已驗證的 context」）：`bind_context`
+綁定一次，六個 mutation 原語（update_card_body、post_comment、write_project_field、add_to_project、
+remove_from_project、close_issue）各在發請求前只讀 `context.static_identity_verified`；⛔ 不讀 PermissionFact、
+⛔ 不判三態、⛔ 不重試、⛔ 不做部分失敗補償（逐 operation 政策住 WF-016）。保留全域 gate 的理由：單一布林加
+一次呼叫是最小機制、六個原語天然集中在同一 WriteMixin 是唯一有結構保證的收斂點、且可被 ast 列舉驗證。
+gate 狀態＝instance 的 `context`：真 GhClient 未綁定即 raise；替身自帶已驗證的 context（⛔ 不是繞過）。
 """
 import json
 import re

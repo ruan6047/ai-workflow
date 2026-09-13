@@ -6,6 +6,8 @@ modules/resource-lock／initiative／identity §0。
 段序、段名與誰填逐字讀 `core/dispatch.md` 的表，⛔ 不抄進程式碼；CLI 段只搬事實、⛔ 不改寫
 不合併（第零條）。讀側驗卡失敗＝本機硬擋、零遠端寫入；§2 對帳的投影回寫與其失敗拒收仍在。
 ⛔ 不自動 merge；`--for` 分派＝TARGETS 字典。卡號查找、留言區塊與板上事實住 verbs/_common.py。
+規則檔（dispatch／params／frontmatter）只經 RulesSource 讀；`.wf/contracts` 與 merge-tree 的工作樹只用 project root；
+基線的預設分支取 resolved repository 的 API 值（無 context 時取 client 綁定值），⛔ 不寫死 main。
 """
 from datetime import date
 import json
@@ -15,21 +17,21 @@ from types import SimpleNamespace
 
 from wf.compose.blocks import Source, load_blocks, projection, source_line
 from wf.compose.enable import is_enabled
-from wf.compose.frontmatter import read_frontmatter
+from wf.compose.frontmatter import parse_frontmatter
 from wf.compose.project_config import load_project_config, module_names
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
+from wf.context import IdentityError, default_branch, rules_of
 from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
 from wf.verbs._common import (CardShapeError, Printer, block_object, board_facts, card_number,
-                              comment_blocks, enabled_modules, parse_args, repo_cards)
+                              comment_blocks, enabled_modules, parse_args, repo_cards, verify_source_issue)
 from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
 from wf.verbs import closeout
 
 DISPATCH, PARAMS = 'core/dispatch.md', 'core/params.md'
-MAIN = 'main'  # 預設分支名（core/dispatch.md 基線列「基線＝main 頭」）
 REVIEWER = 'reviewer'  # core/enums.md roles
 MODULE_SECTION = '0 · 宣告區塊'  # modules/*/module.md 宣告區塊的節名
 HUMAN, UNWIRED, NONE = '（人填）', '模組層未接線', '無'
@@ -55,7 +57,7 @@ def _remote(call, *args, **kwargs):
 
 def _mark(ctx, origin, relative, section):
     """core/handoff.md 每段首行；節名為空不補空 `#`，逾 params.md rule_confirm_days 標 ⚠️。"""
-    front = read_frontmatter(Path(ctx.root) / relative)
+    front = parse_frontmatter(ctx.rules.read_text(relative), relative)
     line = source_line(Source(f'{origin}/{relative}', section, front.name, front.when,
                               front.last_confirmed))
     line = line if section else line.replace('# ·', ' ·', 1)
@@ -65,10 +67,10 @@ def _mark(ctx, origin, relative, section):
         stale = False
     return line + (' ⚠️' if stale else '')
 
-def _rows(root):
-    """core/dispatch.md 的表：(段, 誰填, 內容) 逐列，段名逐字讀檔、⛔ 不抄進程式碼。"""
+def _rows(rules):
+    """core/dispatch.md 的表：(段, 誰填, 內容) 逐列，段名逐字讀檔、⛔ 不抄進程式碼；rules＝RulesSource 或路徑。"""
     rows = [[cell.strip() for cell in line.strip('|').split('|')]
-            for line in (Path(root) / DISPATCH).read_text(encoding='utf-8').splitlines()
+            for line in rules_of(rules).read_text(DISPATCH).splitlines()
             if line.startswith('|')]
     return [row for row in rows if len(row) == 3 and set(row[1]) - set('-: ')][1:]
 
@@ -88,9 +90,9 @@ def _baseline(ctx):
     的真實分岔會漏報無衝突；兩者不同時段內註明。取不到 main 頭＝印未能比對，⛔ 不當成無衝突。"""
     branch, sha = ctx.card.get('branch'), ctx.card.get('source_sha')
     head = _remote(ctx.client.branch_head, branch) if branch else None
-    base = _remote(ctx.client.merge_base, MAIN, branch) if head else None
+    base = _remote(ctx.client.merge_base, ctx.default_branch, branch) if head else None
     lines = [] if base else [NO_BRANCH]
-    base = base or _remote(ctx.client.branch_head, MAIN)
+    base = base or _remote(ctx.client.branch_head, ctx.default_branch)
     lines.append(f'合併基底 SHA：{_plain(base)}')
     if ctx.target != REVIEWER:
         return lines
@@ -102,7 +104,7 @@ def _baseline(ctx):
     exists = _remote(ctx.client.commit_exists, sha)
     lines.append('來源 SHA 未 push' if exists is False
                  else '未能確認來源 SHA 是否已 push' if exists is None else '來源 SHA 已 push')
-    main_head = _remote(ctx.client.branch_head, MAIN)
+    main_head = _remote(ctx.client.branch_head, ctx.default_branch)
     if main_head is None:
         return lines + [NO_MERGE_TREE]
     if main_head != base:
@@ -153,7 +155,7 @@ def _read_notes(ctx):
     if ctx.target == 'closeout':
         return None
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
-                   for_role=ctx.target, emit=lambda line: None)
+                   for_role=ctx.target, emit=lambda line: None, context=ctx.context)
     ctx.notes, ctx.note_ids = result, [m[1] for m in map(NOTE_ID.match, result.printed) if m]
     if result.rc == 0:
         return None
@@ -232,7 +234,7 @@ def _module_sections(ctx):
 def _dispatch_sections(ctx):
     """段序＝表列序；CLI 列依序對位 CLI_SECTIONS，人填列只印段名＋（人填）。"""
     builders, mark, out = iter(CLI_SECTIONS), _mark(ctx, 'core', DISPATCH, ''), []
-    for name, who, note in _rows(ctx.root):
+    for name, who, note in _rows(ctx.rules):
         if f'--for {ctx.target}` 不印' in note:  # 表註逐字：該角色不印此列
             continue
         if who == 'CLI':
@@ -256,18 +258,26 @@ def _template(ctx):
         body.setdefault(key, '')
     return body
 
-def brief(card, *, target, client, root='.', catalog=None, emit=print, today=None, **trailers):
+def brief(card, *, target, client, root='.', catalog=None, emit=print, today=None, context=None,
+          **trailers):
     report = Printer(emit)
-    catalog = load_blocks(root) if catalog is None else catalog
+    rules = rules_of(root if context is None else context.rules)
+    catalog = load_blocks(rules) if catalog is None else catalog
     cfg = load_project_config(root)
-    number, skipped = card_number(card, client)
+    try:
+        number, skipped = card_number(card, client)
+    except IdentityError as exc:
+        return blocked(report, exc.code, str(exc))
     for other in skipped:
         report(f'略過無法解析的 issue #{other}')
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
+        verify_source_issue(current, number)
+    except IdentityError as exc:
+        return blocked(report, exc.code, str(exc))
     except (ValueError, TypeError, KeyError) as exc:
         return blocked(report, 'D3', str(exc))
-    match = DAYS.search((Path(root) / PARAMS).read_text(encoding='utf-8'))
+    match = DAYS.search(rules.read_text(PARAMS))
     if match is None:
         report('未能讀取 rule_confirm_days，未評估過期')
     project = None if cfg['project'] is None else _remote(
@@ -279,6 +289,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     except CardShapeError as exc:
         return blocked(report, 'D3', str(exc))
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
+                          rules=rules, context=context, default_branch=default_branch(client, context),
                           catalog=catalog, cfg=cfg, project=project, note_ids=[], notes=None,
                           report=report, days=None if match is None else int(match[1]),
                           today=date.today() if today is None else today)
@@ -291,7 +302,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
                         fail=lambda reason: blocked(report, 'D3', reason)) \
         or _read_notes(ctx) or reconcile_projection(
             current, client=client, catalog=catalog, location=cfg['project'],
-            project=project, number=number, report=report)
+            project=project, number=number, report=report, context=context)
     if failed is not None:
         return failed
     for name, mark, lines in TARGETS[target](ctx):
@@ -307,7 +318,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
         report(json.dumps(_template(ctx), ensure_ascii=False, indent=2))
     return WriteResult(0, card=current, printed=tuple(report))
 
-def run(argv, *, client, root='.', catalog=None):
+def run(argv, *, client, root='.', catalog=None, context=None):
     """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。`--for` 值域＝TARGETS 的鍵。"""
     args = parse_args('wf brief', argv, ('card', {}), ('--for', {'dest': 'target', 'required': True,
                                                                    'choices': sorted(TARGETS)}),
@@ -315,4 +326,5 @@ def run(argv, *, client, root='.', catalog=None):
                       ('--reviewed-by', {'action': 'append'}))
     trailers = {key: getattr(args, key) for key in
                 ('requested_by', 'planned_by', 'implemented_by', 'reviewed_by')} if args.target == 'closeout' else {}
-    return brief(args.card, target=args.target, client=client, root=root, catalog=catalog, **trailers).rc
+    return brief(args.card, target=args.target, client=client, root=root, catalog=catalog, context=context,
+                 **trailers).rc

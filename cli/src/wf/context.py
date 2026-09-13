@@ -1,17 +1,14 @@
-"""Context 值物件、RulesSource 與公開契約形狀；消費 core/verbs.md §2（檢查先於首次遠端寫入、
-留痕綁被拒的那一次遠端寫入、身分衝突走本機硬擋零寫入）與 ADOPTION.md §2（`rules`／`remote` 鍵、
-三個全域旗標）。
-
-三個居所：規則資產只經 `RulesSource`（rules root）讀；專案資產（`.wf/`、snapshot 輸出、本機 git
-工作樹）只用 `ProjectRoot`；遠端動詞只消費 `Context.repository`／`project_board`。本層只做身分解析
-與存在性／相等性比對，⛔ 不判規則內容、⛔ 不判卡面語意、⛔ 不產統計數字（第零條）。
-`RulesSource` 是 operation-lifetime capability：只承諾列舉資產、讀內容、穩定 identity、provenance
-四件，且只承諾單次 operation 期間可讀；⛔ 無永久 materialization／copy／cache／install（WF-015）。
-`public_contract()`／`contract_digest()`＝本契約的單一權威形狀，只用標準庫。
+"""Context 值物件、RulesSource 與公開契約形狀；消費 core/verbs.md §2（檢查先於首次遠端寫入、留痕綁被拒的
+遠端寫入、身分衝突走本機硬擋零寫入）與 ADOPTION.md §2（`rules`／`remote` 鍵、三個全域旗標）。
+三個居所：規則資產只經 `RulesSource` 讀；專案資產（`.wf/`、snapshot 輸出、本機 git 工作樹）只用 `ProjectRoot`；
+遠端動詞只消費 `Context.repository`／`project_board`。本層只做身分解析與存在性／相等性比對，⛔ 不判規則
+內容、⛔ 不判卡面語意、⛔ 不產統計數字（第零條）。`RulesSource`＝operation-lifetime capability：只承諾列舉
+資產、讀內容、穩定 identity、provenance 四件且只在單次 operation 期間可讀；⛔ 無永久 materialization／
+copy／cache／install（WF-015）。`public_contract()`／`contract_digest()`＝本契約的單一權威形狀，只用標準庫。
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass, fields
 import hashlib
 import inspect
@@ -40,8 +37,8 @@ class RulesSourceError(ContextError):
 
 
 class IdentityError(ContextError):
-    """身分衝突或卡面承載不一致：本機硬擋一行 `硬擋・<code>・<原因>`、零遠端寫入（core/verbs.md §2
-    留痕條：沒有被拒的遠端寫入就⛔ 不貼 `wf:reject`）。code＝D 編號。"""
+    """身分衝突或卡面承載不一致：本機硬擋一行 `硬擋・<code>・<原因>`、零遠端寫入（§2 留痕條：沒有被拒的
+    遠端寫入就⛔ 不貼 `wf:reject`）。code＝D 編號。"""
     code = 'D3'
 
 
@@ -85,7 +82,7 @@ class RulesSource(Protocol):
     identity: str
     provenance: Provenance
 
-    def iter_assets(self, pattern: str) -> Iterator[str]:
+    def iter_assets(self, pattern: str) -> Iterable[str]:
         """相對路徑（posix、排序穩定）；pattern 逐段比對，語意同 Path.glob。"""
         ...
 
@@ -115,8 +112,8 @@ def _strict(path, error, what):
 
 
 class FilesystemRulesSource:
-    """檔案系統 adapter：identity＝`Path.resolve(strict=True)` 的 canonical 路徑（同一目錄的 symlink 別名、
-    含 `..`、相對寫法解析到同一 identity）；只在本次 operation 期間讀，⛔ 不複製、⛔ 不快取。"""
+    """檔案系統 adapter：identity＝`Path.resolve(strict=True)` 的 canonical 路徑（symlink 別名、含 `..`、
+    相對寫法解析到同一 identity）；只在本次 operation 期間讀，⛔ 不複製、⛔ 不快取。"""
 
     def __init__(self, root, provenance=None):
         self._root = _strict(root, RulesSourceError, 'rules root')
@@ -160,17 +157,16 @@ def default_branch(client, context):
 
 
 def static_identity_verified(project, rules, repository, board):
-    """A12 static Context gate 恰三項：roots（project_root canonical、rules source 可列舉且 canonical）、
-    repository（stable ID 唯一）、configured Project（唯一 node_id 或合法為 null）。輸入已是解析成功的
-    值物件（失敗早已 raise）；⛔ 不讀 PermissionFact、⛔ 不含任何需 target issue／card／item 的檢查。"""
+    """static Context gate 恰三項：roots（project_root canonical、rules source 可列舉且 canonical）、repository
+    （stable ID 唯一）、configured Project（唯一 node_id 或合法為 null）。輸入已是解析成功的值物件（失敗早已
+    raise）；⛔ 不讀 PermissionFact、⛔ 不含任何需 target issue／card／item 的檢查。"""
     roots = bool(project.root.canonical) and bool(rules.identity) and bool(rules.iter_assets('core/*.md'))
     return roots and bool(repository.stable_id) and (board is None or bool(board.node_id))
 
 
 def public_contract():
-    """公開契約：frozen dataclass 以 dataclasses.fields 取 (name, str(type))；RulesSource Protocol 以
-    typing.get_type_hints 取屬性註記、inspect.signature 取公開 method 簽章（fields 對 Protocol 回空集合，
-    ⛔ 不可混用）；合併成只含 JSON primitive 的排序穩定 dict。"""
+    """frozen dataclass 以 dataclasses.fields 取 (name, str(type))；RulesSource Protocol 以 get_type_hints 取
+    屬性註記、inspect.signature 取公開 method 簽章（fields 對 Protocol 回空集合，⛔ 不可混用）；只含 JSON primitive。"""
     from wf.gh.localgit import LocalGitFacts, RemoteFact
     from wf.gh.target import (PermissionFact, ProjectIdentity, ProjectItemRef, RepositoryIdentity,
                               TargetIssue)

@@ -138,3 +138,119 @@ def test_static_gate_does_not_depend_on_permission_state():
         "        raise ContextNotVerified('x')\n")
     assert decision_words(reachable_functions(sloppy, [GATE])[GATE]) & PERMISSION_WORDS == {
         'permissions', 'state', 'denied'}  # 負控：讀 fact.state 的分支必被抓到
+
+
+# ═══════════════════ V16：static gate 與三項 operation precondition 各自先於自己的第一個 mutation ═══════════════════
+import sys  # noqa: E402
+
+from wf.compose.blocks import load_blocks  # noqa: E402
+from wf.verbs.main import DISPATCH, main  # noqa: E402
+from .test_context_roots import (FAKE_REMOTE, MUTATIONS, mutation_calls, on_board_card, stateful,  # noqa: E402
+                                 verb_args, workspace)
+from .test_open_verb import issue  # noqa: E402
+
+PRECONDITIONS = {'verify_source_issue': 'precondition:source_issue', 'card_number': 'precondition:duplicate',
+                 'check_item_repository': 'precondition:item_repository'}
+
+
+def instrument(monkeypatch, client):
+    """把三項 precondition 的呼叫記進同一份 client.calls 序列（動詞模組各自 import 了名稱，逐模組替換）。"""
+    for module_name, module in list(sys.modules.items()):
+        if not module_name.startswith('wf.'):
+            continue
+        for name, marker in PRECONDITIONS.items():
+            original = getattr(module, name, None)
+            if original is None or not callable(original):
+                continue
+
+            def wrapped(*args, _original=original, _marker=marker, **kwargs):
+                result = _original(*args, **kwargs)
+                client.calls.append((_marker, {}))
+                return result
+            monkeypatch.setattr(module, name, wrapped)
+
+
+def sequence(client):
+    return [name for name, _ in client.calls]
+
+
+def assert_order(seq, *, verb):
+    """(a) bind_context 先於全部 mutation；(b) source_issue、(c) duplicate 先於該動詞第一個 mutation；
+    (d) item_repository 先於第一個 write_project_field；三者彼此不要求先後但全晚於 static gate。"""
+    first_mutation = next((i for i, name in enumerate(seq) if name in MUTATIONS), None)
+    first_field = next((i for i, name in enumerate(seq) if name == 'write_project_field'), None)
+    gate = seq.index('bind_context')
+    if first_mutation is not None:
+        assert gate < first_mutation, (verb, seq)
+    for marker, boundary in (('precondition:source_issue', first_mutation), ('precondition:duplicate', first_mutation),
+                             ('precondition:item_repository', first_field)):
+        if marker in seq:
+            assert seq.index(marker) > gate, (verb, marker, seq)
+            if boundary is not None:
+                assert seq.index(marker) < boundary, (verb, marker, seq)
+
+
+def test_static_gate_and_each_operation_precondition_precede_their_own_mutation(tmp_path, monkeypatch, capsys):
+    root = workspace(tmp_path, name='W16')
+    catalog = load_blocks(root)
+    args = verb_args(tmp_path)
+    expected_markers = {'open': {'precondition:item_repository'},
+                        'move': {'precondition:source_issue', 'precondition:duplicate', 'precondition:item_repository'},
+                        'edit': {'precondition:source_issue', 'precondition:duplicate', 'precondition:item_repository'},
+                        'notes': {'precondition:source_issue', 'precondition:duplicate', 'precondition:item_repository'},
+                        'brief': {'precondition:source_issue', 'precondition:duplicate', 'precondition:item_repository'},
+                        'review': {'precondition:source_issue', 'precondition:duplicate', 'precondition:item_repository'},
+                        'snapshot': set()}
+    sequences = {}
+    for verb in DISPATCH:
+        client = stateful(catalog)
+        instrument(monkeypatch, client)
+        assert main([verb, *args[verb]], client=client, root=root, env={}) == 0, (verb, capsys.readouterr())
+        seq = sequence(client)
+        assert_order(seq, verb=verb)
+        assert {name for name in seq if name.startswith('precondition:')} >= expected_markers[verb], (verb, seq)
+        if verb in ('open', 'move', 'edit', 'review'):
+            assert any(name in MUTATIONS for name in seq), (verb, seq)  # 成功路徑真的有 mutation 可比序
+        else:
+            assert mutation_calls(client) == [], (verb, seq)
+        sequences[verb] = seq
+        print('V16', verb, seq)
+    assert mutation_calls(stateful(catalog)) == []
+    # 四種失敗路徑：各自 mutation 呼叫數為 0；snapshot 全程為 0。static gate 的失敗要有本機身分（有 remote 的
+    # 工作區）讓 GH_REPO 只作核對；open 的目標是清單項 #11、其新 item 由 add_to_project 回傳，故後三種不影響它。
+    gated_root = workspace(tmp_path, name='W16g', git_remote=FAKE_REMOTE)
+    failures = {
+        'static-gate': (lambda: stateful(catalog), gated_root, {'GH_REPO': 'wrong/target'}, lambda c: c.responses.update(
+            repository=lambda slug: {'node_id': f'R_{slug}', 'full_name': slug, 'default_branch': 'main',
+                                     'viewer_permission': 'ADMIN'})),
+        'source_issue': (lambda: stateful(catalog, on_board_card(source_issue=999)), root, {}, lambda c: None),
+        'duplicate': (lambda: stateful(catalog, rows=[issue(12, card=on_board_card(source_issue=12))]), root, {},
+                      lambda c: None),
+        'item_repository': (lambda: stateful(catalog), root, {}, lambda c: c.board['items'][0]['content'].__setitem__(
+            'repository', {'id': 'R_OTHER', 'nameWithOwner': 'fake/repo'})),
+    }
+    for label, (make, at, env, tweak) in failures.items():
+        for verb in DISPATCH:
+            client = make()
+            tweak(client)
+            rc = main([verb, *args[verb]], client=client, root=at, env=env)
+            capsys.readouterr()
+            expected_rc = 1 if label == 'static-gate' else 0 if verb in ('snapshot', 'open') else 1
+            assert rc == expected_rc, (label, verb, rc, sequence(client))
+            if rc:
+                assert mutation_calls(client) == [], (label, verb, sequence(client))
+            if verb == 'snapshot':
+                assert mutation_calls(client) == [], (label, verb)
+    # 負控：把任一 precondition 挪到其 mutation 之後，對應子斷言必須變紅
+    for marker in ('precondition:source_issue', 'precondition:duplicate', 'precondition:item_repository'):
+        seq = list(sequences['move'])
+        seq.remove(marker)
+        boundary = 'write_project_field' if marker.endswith('item_repository') else next(n for n in seq if n in MUTATIONS)
+        seq.insert(seq.index(boundary) + 1, marker)
+        with pytest.raises(AssertionError):
+            assert_order(seq, verb='move')
+    seq = list(sequences['move'])
+    seq.remove('bind_context')
+    seq.insert(seq.index('update_card_body') + 1, 'bind_context')
+    with pytest.raises(AssertionError):
+        assert_order(seq, verb='move')

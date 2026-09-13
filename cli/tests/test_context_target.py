@@ -10,10 +10,10 @@ import pytest
 
 from wf.context import ContextError, Provenance, TargetIdentityError
 from wf.gh.client import NotFound, PermissionDenied, TransportError
-from wf.gh.localgit import LocalGitFacts, RemoteFact, local_git_facts
+from wf.gh.localgit import LocalGitFacts, RemoteFact
 from wf.gh.target import (PERMISSION_STATES, PermissionFact, RepositoryCandidate, RepositoryIdentity,
-                          check_item_repository, item_ref, permission_fact, permission_facts,
-                          resolve_repository, select_remotes, slug_of)
+                          check_item_repository, item_ref, local_git_facts, permission_fact,
+                          permission_facts, resolve_repository, select_remotes, slug_of)
 from .test_context_roots import git, git_env
 
 URLS = {'origin': 'https://github.com/consumer/right.git', 'fork': 'git@github.com:someone/fork.git',
@@ -185,3 +185,196 @@ def test_project_item_repository_stable_id_pure_check():
         check_item_repository(item_ref({'id': 'I3', 'content': {'__typename': 'Issue', 'repository': {'id': 'R_other', 'nameWithOwner': 'consumer/right'}}}), identity)
     with pytest.raises(TargetIdentityError, match='I4 所屬 repository x/y ≠ resolved consumer/right'):
         check_item_repository(item_ref({'id': 'I4', 'content': {'__typename': 'Issue', 'repository': {'nameWithOwner': 'x/y'}}}), identity)
+
+
+# ═══════════════════ main() 層：V9／V11／V12／V13 執行期／V17 ═══════════════════
+import json  # noqa: E402
+
+from wf.compose.blocks import load_blocks  # noqa: E402
+from wf.verbs.main import DISPATCH, main  # noqa: E402
+from .fakes import FakeGhClient  # noqa: E402
+from .test_context_roots import (SHA, mutation_calls, on_board_card, project_root, stateful,  # noqa: E402
+                                 verb_args, workspace)
+from .test_open_verb import issue, item  # noqa: E402
+
+RULES = Path(__file__).resolve().parents[2]
+
+
+def per_slug(slug):
+    """注入 stable ID：每個 slug 各自一顆（拼寫不同＝不同 repo）。"""
+    return {'node_id': f'R_{slug}', 'full_name': slug, 'default_branch': 'main', 'viewer_permission': 'ADMIN'}
+
+
+def recorders(monkeypatch):
+    calls = {}
+    for name, module in DISPATCH.items():
+        calls[name] = []
+        monkeypatch.setattr(module, 'run', (lambda rows: lambda argv, **kwargs: rows.append(kwargs) or 7)(calls[name]))
+    return calls
+
+
+# ── V9：GH_REPO 是 assertion、不在 precedence 內 ──
+def test_gh_repo_is_assertion_outside_precedence(tmp_path, monkeypatch, capsys):
+    calls = recorders(monkeypatch)
+    # (a) 無本機 identity ⇒ GH_REPO 成唯一候選並被採用
+    rules = workspace(tmp_path, project=False, name='R9')
+    client = FakeGhClient()
+    assert main(['notes', 'WF-001'], client=client, root=rules, env={'GH_REPO': 'env/only'}) == 7
+    assert [kw['slug'] for name, kw in client.calls if name == 'repository'] == ['env/only']
+    assert client.context.repository.provenance == Provenance('env', 'GH_REPO')
+    assert client.context.git is None
+    capsys.readouterr()
+    for rows in calls.values():
+        rows.clear()
+    # (b) 有本機 identity 且 GH_REPO 指向不同 stable ID ⇒ 七動詞逐一 rc≠0、零 mutation、動詞未被呼叫
+    env = git_env(tmp_path)
+    project = project_root(tmp_path, 'P9', env=env, remote='https://github.com/consumer/right.git')
+    for part in ('core', 'roles', 'stages', 'modules'):
+        (project / part).symlink_to(RULES / part, target_is_directory=True)
+    args = verb_args(tmp_path)
+    for verb in DISPATCH:
+        client = FakeGhClient(repository=per_slug)
+        rc = main([verb, *args[verb]], client=client, root=project, env={'GH_REPO': 'wrong/target'})
+        err = capsys.readouterr().err
+        assert rc == 1 and err == ('硬擋・D4・GH_REPO wrong/target 的 stable ID R_wrong/target ≠ resolved '
+                                   'R_consumer/right（consumer/right）\n'), (verb, err)
+        assert mutation_calls(client) == [] and calls[verb] == []
+        assert [kw['slug'] for name, kw in client.calls if name == 'repository'] == ['consumer/right', 'wrong/target']
+    # (c) 給定 --remote 時 GH_REPO 不改變被選 remote，只改變被核對的 assertion
+    git(project, 'remote', 'add', 'fork', 'https://github.com/someone/fork.git', env=env)
+    client = FakeGhClient(repository=per_slug)
+    rc = main(['--remote', 'fork', 'notes', 'WF-001'], client=client, root=project, env={'GH_REPO': 'consumer/right'})
+    err = capsys.readouterr().err
+    assert rc == 1 and 'GH_REPO consumer/right 的 stable ID R_consumer/right ≠ resolved R_someone/fork' in err
+    client = FakeGhClient(repository=per_slug)
+    assert main(['--remote', 'fork', 'notes', 'WF-001'], client=client, root=project, env={'GH_REPO': 'someone/fork'}) == 7
+    assert client.context.repository.name_with_owner == 'someone/fork'
+    assert client.context.repository.provenance == Provenance('cli', '--remote fork')
+    assert [kw['slug'] for name, kw in client.calls if name == 'repository'] == ['someone/fork', 'someone/fork']
+    print('V9', client.context.repository)
+
+
+# ── V11：default_branch='trunk' 的 fake repository metadata：brief 基線、closeout、review 回退全用 trunk ──
+def test_default_branch_comes_from_resolved_repository(tmp_path, monkeypatch, capsys):
+    from wf.verbs import brief as brief_module, closeout as closeout_module
+    for module in (brief_module, closeout_module):
+        monkeypatch.setattr(module, 'merge_tree', lambda *a, **k: 0)
+    root = workspace(tmp_path, name='W11')
+    catalog = load_blocks(root)
+    trunk = lambda slug: per_slug(slug) | {'default_branch': 'trunk'}
+    sheet = tmp_path / 'return.json'
+    sheet.write_text('{}', encoding='utf-8')
+    runs = [(['brief', 'WF-001', '--for', 'executor'], on_board_card()),
+            (['brief', 'WF-001', '--for', 'reviewer'], on_board_card()),
+            (['brief', 'WF-001', '--for', 'closeout'], on_board_card()),
+            (['review', 'WF-001', '--file', str(sheet), '--role', 'executor'],
+             on_board_card(stage='需求', state='待辦', branch=None, source_sha=None))]
+    observed = []
+    for argv, card in runs:
+        client = stateful(catalog, card, repository=trunk, pulls_for_branch=[{'number': 11}], is_ancestor=True,
+                          pull_request={'merge_commit_sha': 'd' * 40, 'head': {'sha': 'c' * 40}},
+                          ci_checks={'check_runs': [], 'statuses': []})
+        if argv[0] == 'review':
+            client.board['items'][0]['fieldValues'] |= {'階段': {'name': '需求'}, '狀態': {'name': '待辦'}}
+        assert main(argv, client=client, root=root, env={}) == 0, (argv, capsys.readouterr())
+        assert client.context.repository.default_branch == 'trunk'
+        for name, kw in client.calls:
+            if name in ('branch_head', 'merge_base', 'is_ancestor'):
+                observed.append((argv[0], name, kw))
+    branches = [kw.get('branch', kw.get('base')) for _, name, kw in observed if name != 'merge_base'] + \
+        [kw['base'] for _, name, kw in observed if name == 'merge_base']
+    assert observed and 'main' not in branches
+    assert 'trunk' in branches
+    assert {name for _, name, _ in observed} == {'branch_head', 'merge_base', 'is_ancestor'}
+    assert any(name == 'branch_head' and kw == {'branch': 'trunk'} for verb, name, kw in observed if verb == 'review')
+    print('V11', observed)
+
+
+# ── V12：跨 repo Project；item stable ID＝resolved 才過（owner 不同仍過）；不同即 fail-loud 零 mutation；project:null 印無 Project 設定 ──
+def test_project_item_repository_stable_id_must_equal_resolved_repository(tmp_path, capsys):
+    root = workspace(tmp_path, name='W12', config={'areas': ['WF'], 'modules': [], 'project': {'owner': 'other-owner', 'number': 3}})
+    catalog = load_blocks(root)
+    from .test_card_gate_and_projection import BOARD
+    ours = item(10) | {'fieldValues': dict(BOARD)}
+    ours['content']['repository'] = {'id': 'R_FAKE', 'nameWithOwner': 'fake/repo'}
+    foreign = item(10, 'other/repo') | {'id': 'ITEM-OTHER', 'fieldValues': dict(BOARD)}
+    foreign['content']['repository'] = {'id': 'R_OTHER', 'nameWithOwner': 'other/repo'}
+    client = stateful(catalog, items=[foreign, ours])
+    assert main(['edit', 'WF-001', '--set', 'feature="跨 repo 板"'], client=client, root=root, env={}) == 0
+    assert 'update_card_body' in mutation_calls(client) and client.context.project_board.owner == 'other-owner'
+    bad = item(10) | {'fieldValues': dict(BOARD)}
+    bad['content']['repository'] = {'id': 'R_OTHER', 'nameWithOwner': 'fake/repo'}  # 名稱相同、stable ID 不同＝改名／轉移後的分裂腦
+    for argv in (['edit', 'WF-001', '--set', 'feature="x"'], ['move', 'WF-001', '--to', '待確認', '--source-sha', SHA],
+                 ['notes', 'WF-001'], ['brief', 'WF-001', '--for', 'executor']):
+        client = stateful(catalog, items=[foreign, bad])
+        rc = main(argv, client=client, root=root, env={})
+        out = capsys.readouterr().out
+        assert rc == 1 and any(line.startswith('硬擋・D4・Project item ITEM10 所屬 repository R_OTHER ≠ resolved R_FAKE')
+                               for line in out.splitlines()), (argv, out)
+        assert mutation_calls(client) == [], argv
+    client = stateful(catalog)
+    client.responses['repository'] = lambda slug: per_slug(slug) | {'node_id': 'R_RESOLVED'}  # open：add_to_project 回傳 R_FAKE ≠ resolved
+    rc = main(['open', '11'], client=client, root=root, env={})
+    out = capsys.readouterr().out
+    assert rc == 1 and '硬擋・D4・Project item ITEM 所屬 repository R_FAKE ≠ resolved R_RESOLVED' in out
+    assert mutation_calls(client) == ['add_to_project'] and '已完成的寫入：add_to_project item ITEM' in out
+    plain = workspace(tmp_path, name='W12n', project=False)
+    client = stateful(load_blocks(plain))
+    assert main(['notes', 'WF-001'], client=client, root=plain, env={}) == 0
+    assert '無 Project 設定' in capsys.readouterr().out and client.context.project_board is None
+
+
+# ── V13（執行期）：同一 context 在 allowed／denied／unknown 三種事實下 static_identity_verified 與 rc 相同，零 mutation ──
+@pytest.mark.parametrize('capability,state', [
+    ({'id': 'PVT_1', 'viewerCanUpdate': True}, 'allowed'), ({'id': 'PVT_1', 'viewerCanUpdate': False}, 'denied'),
+    ({'id': 'PVT_1'}, 'unknown')])
+def test_permission_state_never_changes_static_gate_or_rc(tmp_path, capsys, capability, state):
+    root = workspace(tmp_path, name='W13')
+    client = stateful(load_blocks(root), capability=capability)
+    assert main(['notes', 'WF-001'], client=client, root=root, env={}) == 0
+    assert client.context.static_identity_verified is True
+    facts = {fact.subject: fact for fact in client.context.permissions}
+    assert facts['project'].state == state and facts['repository'].state == 'allowed'
+    assert f'permission・project・{state}・projectV2.viewerCanUpdate・' in capsys.readouterr().err
+    assert mutation_calls(client) == []
+
+
+# ── V17：字串與數字 ref 都核對 source_issue；duplicate card_id 排序穩定、零寫入；snapshot 兩張都記入 ──
+@pytest.mark.parametrize('ref', ['WF-001', '10'])
+@pytest.mark.parametrize('verb', ['brief', 'notes', 'review', 'edit', 'move'])
+def test_string_and_numeric_card_ref_both_verify_source_issue(tmp_path, capsys, verb, ref):
+    root = workspace(tmp_path, name='W17')
+    catalog = load_blocks(root)
+    args = verb_args(tmp_path, ref)
+    client = stateful(catalog, on_board_card(source_issue=999))
+    rc = main([verb, *args[verb]], client=client, root=root, env={})
+    out = capsys.readouterr().out
+    assert rc == 1, (verb, ref, out)
+    assert [line for line in out.splitlines() if line.startswith('硬擋・')] == ["硬擋・D3・source_issue 999 ≠ 承載 issue #10"]
+    assert mutation_calls(client) == []
+    control = stateful(catalog)
+    assert main([verb, *args[verb]], client=control, root=root, env={}) == 0, (verb, ref, capsys.readouterr())
+    assert not [line for line in capsys.readouterr().out.splitlines() if line.startswith('硬擋・')]
+
+
+def test_duplicate_card_id_is_stable_and_zero_write(tmp_path, capsys):
+    root = workspace(tmp_path, name='W17d')
+    catalog = load_blocks(root)
+    twin = issue(11, card=on_board_card(source_issue=11))  # #11 也帶 WF-001
+    messages = {}
+    for order in ('forward', 'reverse'):
+        client = stateful(catalog, rows=[twin])
+        rows = list(client.rows.values())
+        client.responses['issues'] = lambda state, rows=rows: rows if order == 'forward' else rows[::-1]
+        for verb, argv in (('notes', ['notes', 'WF-001']), ('edit', ['edit', 'WF-001', '--set', 'feature="x"'])):
+            rc = main(argv, client=client, root=root, env={})
+            out = capsys.readouterr().out
+            assert rc == 1 and mutation_calls(client) == []
+            messages.setdefault(verb, set()).add(next(line for line in out.splitlines() if line.startswith('硬擋・')))
+    assert messages == {'notes': {'硬擋・D3・card_id WF-001 重複：issue [10, 11]'},
+                        'edit': {'硬擋・D3・card_id WF-001 重複：issue [10, 11]'}}
+    client = stateful(catalog, rows=[twin])
+    assert main(['snapshot', '--out', str(tmp_path / 'snap')], client=client, root=root, env={}) == 0
+    data = json.loads((tmp_path / 'snap/snapshot.json').read_text(encoding='utf-8'))
+    assert sorted((row['card_id'], row['number']) for row in data['cards']) == [('WF-001', 10), ('WF-001', 11)]
+    assert mutation_calls(client) == []

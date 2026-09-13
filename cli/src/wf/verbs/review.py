@@ -1,6 +1,6 @@
 """消費 core/verbs.md §1 review／§2／§3、core/return.md 段落表／schema／末段必填性、
 core/naming.md §3／§4、core/tiers.md §1、core/enums.md 值域、modules/*/module.md §0。
-D4 階段限定與規劃前 main 回退依 core/verbs.md §1 review 列。
+D4 階段限定與規劃前預設分支回退依 core/verbs.md §1 review 列（預設分支取 resolved repository 的 API 值）。
 刻意降級：gh/localgit.py 只有 merge_tree，無本機頭、log、diffstat 介面；
 印未能取得，⛔ 不繞過 gh 層新增 git 子指令，也不得推論本機與遠端相同。
 """
@@ -12,16 +12,17 @@ from wf.compose.blocks import load_blocks, projection
 from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
+from wf.context import IdentityError, default_branch, rules_of
 from wf.gh.client import NotFound
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, comment_blocks,
-                              enabled_modules, parse_args)
-from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
+                              enabled_modules, parse_args, verify_source_issue)
+from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection, reject
 from wf.verbs.notes import notes, read_comments
 
 
-def _missing(root, data, current, role, sections, report):
+def _missing(rules, data, current, role, sections, report):
     """直接讀 return.md 末段的缺段列舉；不建立完整性規則系統或 schema 副本。"""
-    text = (Path(root) / 'core/return.md').read_text(encoding='utf-8')
+    text = rules.read_text('core/return.md')
     line = next(line for line in text.splitlines() if line.startswith('一則留言只有一個'))
     clauses = line.split('缺段（', 1)[1].split('。', 1)[0].split('；')
     for clause in clauses:
@@ -57,13 +58,13 @@ def _empty_text(value, path, report, markers, schema):
             _empty_text(item, f'{path}[{index}]', report, markers, schema.get('items', {}))
 
 
-def _hints(data, current, number, role, sections, schema, client, root, catalog, report):
-    _missing(root, data, current, role, sections, report)
+def _hints(data, current, number, role, sections, schema, client, root, catalog, report, rules, context):
+    _missing(rules, data, current, role, sections, report)
     result = notes(number, client=client, root=root, catalog=catalog, emit=lambda line: None,
                    # 失敗處置歸呼叫它的頂層動詞：review 的讀側 D3 留痕逐字維持基線的一則
                    # wf:reject，⛔ 不隨 notes／brief 的本機硬擋一起消失（`notes` 的 fail 參數）。
                    fail=lambda report_, code, reason: reject(client, number, code, reason,
-                                                             tuple(report_)))
+                                                             tuple(report_)), context=context)
     if result.rc:
         return result  # notes 已寫拒收；不得再寫第二則留言。
     covered = {item['id'] for item in data.get('note_responses', [])}
@@ -105,15 +106,22 @@ def _head(client, branch, sha_schema):
     return sha if not validate(sha, sha_schema) and sha != '0' * 40 else None
 
 
-def review(card, *, file, role, client, root='.', catalog=None, emit=print):
+def review(card, *, file, role, client, root='.', catalog=None, emit=print, context=None):
     report = Printer(emit)
-    catalog = load_blocks(root) if catalog is None else catalog
+    rules = rules_of(root if context is None else context.rules)
+    catalog = load_blocks(rules) if catalog is None else catalog
     cfg = load_project_config(root)
-    number, skipped = card_number(card, client)
+    try:
+        number, skipped = card_number(card, client)
+    except IdentityError as exc:
+        return blocked(report, exc.code, str(exc))
     for other in skipped:
         report(f'略過無法解析的 issue #{other}')
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
+        verify_source_issue(current, number)  # 身分不一致＝本機硬擋零寫入，⛔ 不貼 wf:reject
+    except IdentityError as exc:
+        return blocked(report, exc.code, str(exc))
     except (ValueError, TypeError, KeyError) as exc:
         return reject(client, number, 'D3', str(exc), tuple(report))
     project = None if cfg['project'] is None else client.project(
@@ -146,7 +154,7 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
         if sha is None and execution:
             return reject(client, number, 'D4', 'branch 缺少或遠端 ref 無法解析為 commit SHA', tuple(report))
         if sha is None:
-            sha = _head(client, 'main', schema['properties']['source_sha'])
+            sha = _head(client, default_branch(client, context), schema['properties']['source_sha'])
         report('未能比對本機分支頭')
     data.update(card_id=current.get('card_id'), iteration=current.get('iteration'), role=role, source_sha=sha)
     errors = validate(data, schema)
@@ -154,8 +162,8 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
         return reject(client, number, 'D3', '; '.join(f'{e.path}: {e.message}' for e in errors), tuple(report))
     # §2 檢查先於首次遠端寫入：交回單 D3 與來源 SHA D4 都過了才對帳，⛔ 不在拒收前寫板。
     failed = reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
-                                  project=project, number=number, report=report) or _hints(
-        data, current, number, role, sections, schema, client, root, catalog, report)
+                                  project=project, number=number, report=report, context=context) or _hints(
+        data, current, number, role, sections, schema, client, root, catalog, report, rules, context)
     if failed is not None:
         return failed
     report('未能取得 git 附錄')
@@ -165,10 +173,11 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print):
     return WriteResult(0, card=current, printed=tuple(report))
 
 
-def run(argv, *, client, root='.', catalog=None):
+def run(argv, *, client, root='.', catalog=None, context=None):
     """七動詞入口接線由 verbs/main.py 負責；role 值域取 return schema。"""
-    catalog = load_blocks(root) if catalog is None else catalog
+    catalog = load_blocks(rules_of(root if context is None else context.rules)) if catalog is None else catalog
     args = parse_args('wf review', argv, ('card', {}), ('--file', {'required': True}),
                       ('--role', {'required': True, 'choices':
                                   compose_schema(catalog, 'wf-return')['properties']['role']['enum']}))
-    return review(args.card, file=args.file, role=args.role, client=client, root=root, catalog=catalog).rc
+    return review(args.card, file=args.file, role=args.role, client=client, root=root, catalog=catalog,
+                  context=context).rc
