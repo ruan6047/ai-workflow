@@ -1,0 +1,44 @@
+{
+  "provenance": "真實 API 回應",
+  "method": "repository",
+  "args": [
+    "ruan6047/ai-workflow"
+  ],
+  "page_size": 100,
+  "exchanges": [
+    {
+      "request": [
+        "gh",
+        "api",
+        "graphql",
+        "--method",
+        "POST",
+        "-f",
+        "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){\n          id nameWithOwner defaultBranchRef{name} viewerPermission}}",
+        "-f",
+        "owner=ruan6047",
+        "-f",
+        "name=ai-workflow"
+      ],
+      "source_command": "gh api graphql --method POST -f 'query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){\n          id nameWithOwner defaultBranchRef{name} viewerPermission}}' -f owner=ruan6047 -f name=ai-workflow",
+      "recorded_at": "2026-09-13T21:52:31.909007+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"data\":{\"repository\":{\"id\":\"R_kgDOTR4r3w\",\"nameWithOwner\":\"ruan6047/ai-workflow\",\"defaultBranchRef\":{\"name\":\"main\"},\"viewerPermission\":\"ADMIN\"}}}",
+        "stderr": ""
+      }
+    }
+  ],
+  "observed": {
+    "node_id": "R_kgDOTR4r3w",
+    "full_name": "ruan6047/ai-workflow",
+    "default_branch": "main",
+    "viewer_permission": "ADMIN"
+  },
+  "observed_shape": {
+    "default_branch": "str",
+    "full_name": "str",
+    "node_id": "str",
+    "viewer_permission": "str"
+  }
+}

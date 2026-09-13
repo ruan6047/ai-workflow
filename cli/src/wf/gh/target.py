@@ -19,6 +19,7 @@ from wf.gh.client import GhError, PermissionDenied
 
 SLUG = re.compile(r'^(?:[a-z+]+://)?(?:[^@/]+@)?github\.com[/:]([^/:]+/[^/:]+?)(?:\.git)?/?$')
 PERMISSION_STATES = ('allowed', 'denied', 'unknown')
+WRITE_LEVELS = ('WRITE', 'MAINTAIN', 'ADMIN')  # GitHub viewerPermission 的可寫層級（API 自身定義）
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,8 @@ def resolve_repository(candidates, *, lookup, assertion=None):
     candidate, payload = rows[0]
     detail = candidate.provenance.detail + ('' if len(rows) == 1 else
                                             '（合併 ' + '、'.join(c.slug for c, _ in rows) + '）')
+    if not payload.get('default_branch'):
+        raise ContextError(f"repository {payload['full_name']} 無預設分支（空 repo）：無法推導基線")
     identity = RepositoryIdentity(stable_id, payload['full_name'], payload['default_branch'],
                                   Provenance(candidate.provenance.kind, detail))
     if assertion is not None:
@@ -138,11 +141,13 @@ def resolve_project(location, lookup):
 
 
 def permission_fact(subject, source, value):
-    """value＝API 欄位值（bool／缺欄位＝None）或讀取時的例外；只翻譯成事實、⛔ 不判該不該。
-    true／false＝API 明確回報 ⇒ allowed／denied；403＝明確拒絕 ⇒ denied；401（憑證遭拒）、404
-    （資源不可見）、傳輸未完成、缺欄位 ⇒ unknown（未知⛔ 不冒充允許或拒絕）。"""
+    """value＝API 欄位值（bool／viewerPermission 字串／缺欄位＝None）或讀取時的例外；只翻譯成事實、
+    ⛔ 不判該不該。true／false 與 WRITE 以上／以下＝API 明確回報 ⇒ allowed／denied；403＝明確拒絕 ⇒
+    denied；401（憑證遭拒）、404（資源不可見）、傳輸未完成、缺欄位 ⇒ unknown（未知⛔ 不冒充允許或拒絕）。"""
     if isinstance(value, bool):
         return PermissionFact(subject, 'allowed' if value else 'denied', source, f'{source}={value!r}')
+    if isinstance(value, str):
+        return PermissionFact(subject, 'allowed' if value in WRITE_LEVELS else 'denied', source, f'{source}={value}')
     if value is None:
         return PermissionFact(subject, 'unknown', source, f'{source} 缺欄位')
     if isinstance(value, PermissionDenied):
@@ -154,8 +159,8 @@ def permission_fact(subject, source, value):
 
 def permission_facts(repository_payload, project_payload):
     """每個 subject 一筆事實，原樣掛進 Context；⛔ 不以 probe mutation 驗權限。"""
-    hint = (repository_payload or {}).get('permissions') or {}
-    facts = [permission_fact('repository', 'repository.permissions.push', hint.get('push'))]
+    facts = [permission_fact('repository', 'repository.viewerPermission',
+                             (repository_payload or {}).get('viewer_permission'))]
     if project_payload is not None:
         facts.append(permission_fact('project', 'projectV2.viewerCanUpdate', project_payload.get('viewerCanUpdate')))
     return tuple(facts)

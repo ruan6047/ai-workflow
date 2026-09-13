@@ -11,6 +11,7 @@ from .test_gh_recording import FIXTURES, REPO, Replay, load, shape, scenarios
 @pytest.mark.parametrize('name', [
     'issue', 'issue_exists', 'issue_open', 'comments', 'comment', 'commit',
     'commit_exists', 'branch', 'pr', 'ci', 'ancestor', 'merge_base', 'project',
+    'repository', 'capability',
 ])
 def test_real_recording_replays_same_output_and_types(name):
     fixture = load(name)
@@ -48,7 +49,22 @@ def test_project_pagination_and_raw_projection_values():
         assert item['fieldValues'] == {name: source[f'f{i}'] for i, name in enumerate(fixture['args'][2])}
     assert any((item['content'] or {}).get('repository', {}).get('nameWithOwner') == REPO
                for item in actual['items'])
+    assert all((item['content'] or {}).get('repository', {}).get('id')  # 每個 Issue／PR item 帶 repository stable ID
+               for item in actual['items'] if (item['content'] or {}).get('__typename') in ('Issue', 'PullRequest'))
     runner.assert_consumed()
+
+
+def test_repository_and_capability_carry_stable_ids_and_permission_hints():
+    """真實錄製：repository 的 node_id／full_name／default_branch 與 permissions 提示；capability 的 id 與 viewerCanUpdate。"""
+    repository = load('repository')
+    assert repository['observed']['full_name'] == REPO and repository['observed']['node_id'].startswith('R_')
+    assert isinstance(repository['observed']['default_branch'], str)
+    assert set(repository['observed']) == {'node_id', 'full_name', 'default_branch', 'viewer_permission'}
+    assert repository['observed']['viewer_permission'] in ('ADMIN', 'MAINTAIN', 'WRITE', 'TRIAGE', 'READ')
+    capability = load('capability')
+    assert capability['observed']['id'].startswith('PVT_') and isinstance(capability['observed']['viewerCanUpdate'], bool)
+    project = load('project')
+    assert project['observed']['id'] == capability['observed']['id']  # 同一 Project：capability 的 id 就是 items 查詢用的 node id
 
 
 def test_fixture_inventory_covers_public_read_operations():
@@ -93,6 +109,24 @@ def test_hand_constructed_errors_are_separate(rc, stdout, stderr, error):
     with pytest.raises(error) as caught:
         GhClient(REPO, runner=runner).issue(228)
     assert type(caught.value) is error
+
+
+def test_is_ancestor_default_branch_needs_binding():
+    """A7：未綁定 context 又未給 branch ⇒ GhError、零請求；明給 branch 照舊；綁定後取 resolved 值。"""
+    from types import SimpleNamespace
+    calls = []
+
+    def runner(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout=json.dumps({'status': 'ahead'}), stderr='')
+    client = GhClient(REPO, runner=runner)
+    with pytest.raises(GhError, match='預設分支未解析'):
+        client.is_ancestor('abc')
+    assert calls == []
+    assert client.is_ancestor('abc', 'trunk') is True and 'compare/abc...trunk' in calls[-1][2]
+    client.bind_context(SimpleNamespace(static_identity_verified=True,
+                                        repository=SimpleNamespace(default_branch='develop')))
+    assert client.is_ancestor('abc') is True and 'compare/abc...develop' in calls[-1][2]
 
 
 @pytest.mark.parametrize('method,args', [('issue_exists', [228]), ('commit_exists', ['abc'])])

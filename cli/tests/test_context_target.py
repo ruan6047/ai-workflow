@@ -93,6 +93,8 @@ def test_candidates_merge_only_on_equal_stable_id():
         assert needle in message, message
     with pytest.raises(ContextError, match='未能取得 repo'):
         resolve_repository([], lookup=lookup_by({}))
+    with pytest.raises(ContextError, match='無預設分支'):
+        resolve_repository(found[:1], lookup=lambda slug: {'node_id': 'R', 'full_name': slug, 'default_branch': None})
 
     def failing(slug):
         raise TransportError('dial tcp')
@@ -152,20 +154,22 @@ def test_worktree_facts_are_not_collapsed(tmp_path, monkeypatch):
 
 # ── V13：permission 只產事實：七種輸入 → allowed／denied／unknown，四欄非空，state 在三值值域 ──
 @pytest.mark.parametrize('value,state', [
-    (True, 'allowed'), (False, 'denied'), (None, 'unknown'), ({'push': True}, 'allowed'),
+    (True, 'allowed'), (False, 'denied'), (None, 'unknown'), ({'viewer_permission': 'WRITE'}, 'allowed'),
     (PermissionDenied('gh: Bad credentials (HTTP 401)'), 'unknown'),
     (PermissionDenied('gh: Forbidden (HTTP 403)'), 'denied'),
     (NotFound('gh: Not Found (HTTP 404)'), 'unknown'), (TransportError('dial tcp'), 'unknown')])
 def test_permission_facts_are_pure_facts_with_four_fields(value, state):
-    if isinstance(value, dict):  # repository permission hint 走 permission_facts 的 payload 路徑
-        fact, = permission_facts({'permissions': value}, None)
+    if isinstance(value, dict):  # repository permission hint（viewerPermission）走 permission_facts 的 payload 路徑
+        fact, = permission_facts(value, None)
     else:
         fact = permission_fact('project', 'projectV2.viewerCanUpdate', value)
     assert isinstance(fact, PermissionFact) and fact.state == state
     assert all(getattr(fact, name) for name in ('subject', 'state', 'source', 'reason'))
     assert fact.state in PERMISSION_STATES
-    both = permission_facts({'permissions': {'push': False}}, {'viewerCanUpdate': True})
+    both = permission_facts({'viewer_permission': 'READ'}, {'viewerCanUpdate': True})
     assert [(f.subject, f.state) for f in both] == [('repository', 'denied'), ('project', 'allowed')]
+    assert [permission_facts({'viewer_permission': level}, None)[0].state
+            for level in ('ADMIN', 'MAINTAIN', 'WRITE', 'TRIAGE', 'READ')] == ['allowed'] * 3 + ['denied'] * 2
     assert [f.state for f in permission_facts({}, {})] == ['unknown', 'unknown']
     print('V13', value if not isinstance(value, Exception) else type(value).__name__, '→', fact)
 

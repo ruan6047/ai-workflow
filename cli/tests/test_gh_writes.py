@@ -5,8 +5,16 @@ from types import SimpleNamespace
 import pytest
 
 from wf.gh.client import GhClient, PermissionDenied
-from wf.gh.writes import (CardBodyError, InvalidCommentURL, block_span, block_value,
+from wf.gh.writes import (CardBodyError, ContextNotVerified, InvalidCommentURL, block_span, block_value,
                           read_block, card_span, read_card)
+
+VERIFIED = SimpleNamespace(static_identity_verified=True, repository=SimpleNamespace(default_branch='main'))
+
+
+def bound(client):
+    """static Context gate 已綁定且通過的 client（本檔只驗協定；gate 本身住 test_context_preflight_order.py）。"""
+    client.bind_context(VERIFIED)
+    return client
 
 
 class ApiFake:
@@ -37,7 +45,7 @@ def test_update_only_card_content_and_rereads_latest_body(newline, create):
     prefix = (prefix + '```json wf-card\n').replace('\n', newline)
     suffix = suffix.replace('\n', newline)
     runner = ApiFake(prefix + '{"old":1}' + newline + suffix)
-    client = GhClient('a/b', runner=runner)
+    client = bound(GhClient('a/b', runner=runner))
     runner.body = '剛加入的散文' + newline + runner.body
     before = runner.body
     result = client.update_card_body(295, {'新': ['值', 2]}, create=create)
@@ -54,7 +62,7 @@ def test_update_only_card_content_and_rereads_latest_body(newline, create):
 @pytest.mark.parametrize('original', ['', '原散文', '原散文\n', '原散文\r\n第二行', '原散文\r\n'])
 def test_create_appends_preserving_prose(original):
     runner = ApiFake(original)
-    result = GhClient('a/b', runner=runner).update_card_body(295, {'new': True}, create=True)
+    result = bound(GhClient('a/b', runner=runner)).update_card_body(295, {'new': True}, create=True)
     assert result['body'].encode().startswith(original.encode())
     newline = '\r\n' if '\r\n' in original else '\n'
     separator = newline if original.endswith(newline) else newline * 2
@@ -66,14 +74,14 @@ def test_create_appends_preserving_prose(original):
 def test_bad_card_never_patches(text):
     runner = ApiFake(text)
     with pytest.raises(CardBodyError, match='wf-card 區塊缺少、重複或未閉合'):
-        GhClient('a/b', runner=runner).update_card_body(295, {})
+        bound(GhClient('a/b', runner=runner)).update_card_body(295, {})
     assert len(runner.calls) == 1
 
 
 def test_create_duplicate_never_patches():
     runner = ApiFake('```json wf-card\n{}\n```\n' * 2)
     with pytest.raises(CardBodyError):
-        GhClient('a/b', runner=runner).update_card_body(295, {}, create=True)
+        bound(GhClient('a/b', runner=runner)).update_card_body(295, {}, create=True)
     assert len(runner.calls) == 1
 
 
@@ -114,7 +122,7 @@ def test_bad_url_is_identifiable_without_network(url):
 def test_field_name_id_option_resolution_and_clear(value, data_type, operation):
     runner = ApiFake()
     project = {'id': 'PROJECT', 'fields': [{'name': '呼叫端欄', 'id': 'FIELD', 'dataType': data_type}]}
-    client = GhClient('a/b', runner=runner)
+    client = bound(GhClient('a/b', runner=runner))
     client.write_project_field(client.prepare_project_field(project, 'ITEM', '呼叫端欄', value))
     payload = json.loads(runner.calls[-1][1]['input'])
     assert operation in payload['query']
@@ -127,7 +135,7 @@ def test_field_name_id_option_resolution_and_clear(value, data_type, operation):
 
 def test_add_remove_close_and_comment_interfaces():
     runner = ApiFake()
-    client = GhClient('a/b', runner=runner)
+    client = bound(GhClient('a/b', runner=runner))
     client.add_to_project('PROJECT', 'ISSUE')
     client.remove_from_project('PROJECT', 'ITEM')
     client.close_issue(295)
@@ -144,7 +152,7 @@ def test_add_remove_close_and_comment_interfaces():
 def test_write_errors_keep_classification():
     runner = lambda *a, **kw: SimpleNamespace(returncode=1, stdout='', stderr='gh: forbidden (HTTP 403)')
     with pytest.raises(PermissionDenied):
-        GhClient('a/b', runner=runner).post_comment(295, 'wf:reject', 'reason')
+        bound(GhClient('a/b', runner=runner)).post_comment(295, 'wf:reject', 'reason')
 
 
 def test_branch_queries_empty_nonempty_and_encoding():
@@ -173,6 +181,7 @@ def test_issues_filters_pr_and_keeps_paging():
     ('issue', [1]), ('comments', [1]), ('comment', [1]), ('project', ['a', 1, ['欄']]),
     ('commit_exists', ['abc']), ('branch_head', ['main']), ('pull_request', [1]),
     ('ci_checks', ['abc']), ('is_ancestor', ['abc']), ('issues', []), ('pulls_for_branch', ['branch']),
+    ('repository', ['a/b']), ('capability', ['a', 1]),
 ])
 def test_shared_fake_programmable_reads(method, args):
     from .fakes import FakeGhClient
@@ -203,7 +212,7 @@ def test_shared_fake_records_all_writes_in_order():
 @pytest.mark.parametrize('value,data_type', [('選值', 'SINGLE_SELECT'), ('逐字', 'TEXT'), (None, 'SINGLE_SELECT')])
 def test_prepared_field_writes_without_resolving_again(value, data_type):
     runner = ApiFake()
-    client = GhClient('a/b', runner=runner)
+    client = bound(GhClient('a/b', runner=runner))
     project = {'id': 'PROJECT', 'fields': [{'name': '呼叫端欄', 'id': 'FIELD', 'dataType': data_type}]}
     prepared = client.prepare_project_field(project, 'ITEM', '呼叫端欄', value)
     assert all('input' not in kwargs for args, kwargs in runner.calls)
@@ -256,3 +265,25 @@ def test_block_spans_only_for_wf_note_and_unterminated(label):
         block_spans(note.removesuffix('```\n'), 'wf-note')
     # 別的標籤未閉合時 wf-note 的邊界仍可辨認 ⇒ ⛔ 不吞掉已閉合的那個。
     assert len(block_spans(note + f'```json {label}\n{{}}\n', 'wf-note')) == 1
+
+
+def test_unbound_client_refuses_every_mutation_before_any_request():
+    """static Context gate：未綁定的真 GhClient 六個原語全 raise ContextNotVerified、零請求；
+    綁定 static_identity_verified=False 亦拒；綁定 True 才發請求。"""
+    runner = ApiFake('```json wf-card\n{}\n```\n')
+    client = GhClient('a/b', runner=runner)
+    prepared = ('clearProjectV2ItemFieldValue', 'ClearProjectV2ItemFieldValueInput',
+                {'projectId': 'P', 'itemId': 'I', 'fieldId': 'F'})
+    attempts = {'update_card_body': (295, {}), 'post_comment': (295, 'x', 'y'), 'write_project_field': (prepared,),
+                'add_to_project': ('P', 'I'), 'remove_from_project': ('P', 'I'), 'close_issue': (295,)}
+    for stage in (None, SimpleNamespace(static_identity_verified=False, repository=SimpleNamespace(default_branch='main'))):
+        if stage is not None:
+            client.bind_context(stage)
+        for name, args in attempts.items():
+            with pytest.raises(ContextNotVerified):
+                getattr(client, name)(*args)
+        assert runner.calls == [], runner.calls
+    bound(client).close_issue(295)
+    assert len(runner.calls) == 1 and runner.calls[0][0][2] == 'repos/a/b/issues/295'
+    from .fakes import FakeGhClient
+    assert FakeGhClient().context.static_identity_verified is True  # 替身預設已過 gate（直呼動詞的測試）

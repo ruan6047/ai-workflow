@@ -1,0 +1,43 @@
+{
+  "provenance": "真實 API 回應",
+  "method": "capability",
+  "args": [
+    "ruan6047",
+    8
+  ],
+  "page_size": 100,
+  "exchanges": [
+    {
+      "request": [
+        "gh",
+        "api",
+        "graphql",
+        "--method",
+        "POST",
+        "-f",
+        "query=query($owner:String!,$number:Int!){\n          repositoryOwner(login:$owner){... on ProjectV2Owner{\n            projectV2(number:$number){id title viewerCanUpdate}}}}",
+        "-f",
+        "owner=ruan6047",
+        "-F",
+        "number=8"
+      ],
+      "source_command": "gh api graphql --method POST -f 'query=query($owner:String!,$number:Int!){\n          repositoryOwner(login:$owner){... on ProjectV2Owner{\n            projectV2(number:$number){id title viewerCanUpdate}}}}' -f owner=ruan6047 -F number=8",
+      "recorded_at": "2026-09-13T21:52:32.456911+00:00",
+      "response": {
+        "returncode": 0,
+        "stdout": "{\"data\":{\"repositoryOwner\":{\"projectV2\":{\"id\":\"PVT_kwHOAvJcys4Bi3ZO\",\"title\":\"aiwf 任務看板\",\"viewerCanUpdate\":true}}}}",
+        "stderr": ""
+      }
+    }
+  ],
+  "observed": {
+    "id": "PVT_kwHOAvJcys4Bi3ZO",
+    "title": "aiwf 任務看板",
+    "viewerCanUpdate": true
+  },
+  "observed_shape": {
+    "id": "str",
+    "title": "str",
+    "viewerCanUpdate": "bool"
+  }
+}
