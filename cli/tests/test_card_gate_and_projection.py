@@ -5,6 +5,7 @@
 每條各一正向與一負控（roles/conduct-common.md §1：先證明比對真的會響）；
 所有 GitHub 操作由 cli/tests 既有替身接住，⛔ 不碰網路。
 """
+from copy import deepcopy
 import json
 from pathlib import Path
 import socket
@@ -586,3 +587,58 @@ def test_read_side_exit_negative_control_is_caught_by_the_zero_write_assertion(
     assert 'post_comment' in str(caught.value), str(caught.value)
     assert hard_blocks(lines) == []
     print('WF-003 負控', exit_name, verb, rejects(client)[0]['body'])
+
+
+# ── WF-003-R1.1-1：內層 notes 的讀側 D3 ⛔ 不得排在外層對帳（首次投影寫入）之後 ──────
+
+def drifting_nested_client(catalog, good):
+    """板上級別 T3、卡面 T1（有漂移，對帳一旦跑就會寫板，肉眼可辨）；issue() 第一次回合法卡、
+    第二次（內層 notes 重讀）回壞 JSON。⛔ 不用 project=False——那正是遮蔽外層對帳寫入的做法。"""
+    client = board_client(catalog, good)
+    original, count = client.responses['issue'], [0]
+
+    def issue(number):
+        count[0] += 1
+        row = original(number=number)
+        return row if count[0] == 1 else dict(row, body='```json wf-card\n{壞掉\n```')
+
+    client.responses['issue'] = issue
+    return client, count
+
+
+def test_nested_notes_d3_leaves_the_board_untouched_with_a_live_project(tmp_path, catalog):
+    """WF-003-R1.1-1 正向：Project 真的在、且卡面 T1／板上 T3 有漂移，內層 notes 第二次讀卡
+    落 D3 ⇒ 寫入呼叫集合為空、板上級別仍 T3（⛔ 無寫一半的中間態）、本機恰一行硬擋、rc=1。
+
+    被審 SHA eca85c52472c7933ff95a2fd9bb9abd0c5026c31 在同一替身下是
+    all_remote_writes=['write_project_field']、板上級別 T3→T1、
+    emit=['重寫投影欄：級別','硬擋・D3・wf-card JSON 解析失敗']。
+    """
+    root = make_root(tmp_path)  # project=True：Project 設定在，對帳會真的走到
+    client, count = drifting_nested_client(catalog, card(tier='T1'))
+    before = deepcopy(client.board['items'][0]['fieldValues'])
+    lines = []
+    result = brief(10, target='executor', client=client, root=root, catalog=catalog,
+                   emit=lines.append)
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert client.board['items'][0]['fieldValues'] == before
+    assert before['級別'] == {'name': 'T3'}          # 漂移真的存在，⛔ 不是無事可對帳
+    assert count[0] == 2, count                      # 內層確實重讀了一次，⛔ 不是走不到
+    assert result.rc == 1 and result.reason == 'wf-card JSON 解析失敗'
+    assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
+    assert lines == hard_blocks(lines)               # ⛔ 未印「重寫投影欄：」＝對帳沒跑過
+    print('WF-003-R1.1-1', lines, [n for n, _ in client.calls if n in WRITES])
+
+
+def test_the_same_drift_is_still_reconciled_when_the_nested_read_succeeds(tmp_path, catalog):
+    """WF-003-R1.1-1 負控：同一張漂移卡、同一條路徑，內層第二次讀卡改成合法 ⇒ 對帳照樣把板上
+    重寫成 T1 並印那一行、rc=0。證明上一條擋下的是順序，⛔ 不是把對帳整個關掉。"""
+    root = make_root(tmp_path)
+    client = board_client(catalog, card(tier='T1'))
+    lines = []
+    result = brief(10, target='executor', client=client, root=root, catalog=catalog,
+                   emit=lines.append)
+    assert result.rc == 0
+    assert '重寫投影欄：級別' in lines, lines
+    assert client.board['items'][0]['fieldValues']['級別'] == {'name': 'T1'}
+    assert hard_blocks(lines) == []

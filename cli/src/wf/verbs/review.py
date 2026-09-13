@@ -59,7 +59,11 @@ def _empty_text(value, path, report, markers, schema):
 
 def _hints(data, current, number, role, sections, schema, client, root, catalog, report):
     _missing(root, data, current, role, sections, report)
-    result = notes(number, client=client, root=root, catalog=catalog, emit=lambda line: None)
+    result = notes(number, client=client, root=root, catalog=catalog, emit=lambda line: None,
+                   # 失敗處置歸呼叫它的頂層動詞：review 的讀側 D3 留痕逐字維持基線的一則
+                   # wf:reject，⛔ 不隨 notes／brief 的本機硬擋一起消失（`notes` 的 fail 參數）。
+                   fail=lambda report_, code, reason: reject(client, number, code, reason,
+                                                             tuple(report_)))
     if result.rc:
         return result  # notes 已寫拒收；不得再寫第二則留言。
     covered = {item['id'] for item in data.get('note_responses', [])}

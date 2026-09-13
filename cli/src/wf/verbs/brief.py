@@ -144,15 +144,29 @@ def _capability(ctx):
     value = ctx.card.get(key) if isinstance(ctx.card.get(key), dict) else {}
     return [f'{key}.{field}：{_plain(value.get(field))}' for field in ('level', 'reason')]
 
-def _notes(ctx):
-    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。
-    內層非零結果存進 ctx 交給 `brief()` 承接（內層 emit 是 no-op，⛔ 不在這裡印、⛔ 不重跑）。"""
+def _read_notes(ctx):
+    """內層 `notes` 的重讀與驗卡。§2「檢查先於首次遠端寫入」⇒ 這一步必須排在本動詞的對帳
+    （會寫投影欄）之前：內層會再讀一次卡，它的讀側 D3 若排在對帳之後，就會留下「板已改、動詞
+    才失敗」的中間態。非零時只把內層已算好的 rc／reason 與本機硬擋行往上帶（內層 emit 是
+    no-op，這一行只能由 brief 印），⛔ 不重跑、⛔ 不增寫遠端（含第二則 wf:reject）。
+    `--for closeout` 不印注意事項段（closeout.sections ⛔ 不呼叫 notes），故不讀。"""
+    if ctx.target == 'closeout':
+        return None
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
                    for_role=ctx.target, emit=lambda line: None)
-    if result.rc != 0:
-        ctx.failed = result
-    ctx.note_ids = [m[1] for m in map(NOTE_ID.match, result.printed) if m]
-    return list(result.printed)
+    ctx.notes, ctx.note_ids = result, [m[1] for m in map(NOTE_ID.match, result.printed) if m]
+    if result.rc == 0:
+        return None
+    for line in result.printed:
+        if line.startswith(HARD_BLOCK):
+            ctx.report(line)
+    return WriteResult(result.rc, reason=result.reason, rejection=result.rejection,
+                       printed=tuple(ctx.report))
+
+def _notes(ctx):
+    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；⛔ 不重跑——結果由
+    `_read_notes` 在對帳之前算好（正式 id 同時取出供樣板）。"""
+    return list(ctx.notes.printed)
 
 def _side_effects(ctx):
     """副作用入口列：`.wf/contracts/*.md` 的 `json wf-contract` 區塊，用 compose/validate.py 驗。"""
@@ -264,27 +278,23 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
         enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
     except CardShapeError as exc:
         return blocked(report, 'D3', str(exc))
-    failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
-                        enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
-                        fail=lambda reason: blocked(report, 'D3', reason)) or reconcile_projection(
-                            current, client=client, catalog=catalog, location=cfg['project'],
-                            project=project, number=number, report=report)
-    if failed is not None:
-        return failed
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
-                          catalog=catalog, cfg=cfg, project=project, note_ids=[], failed=None,
-                          days=None if match is None else int(match[1]),
+                          catalog=catalog, cfg=cfg, project=project, note_ids=[], notes=None,
+                          report=report, days=None if match is None else int(match[1]),
                           today=date.today() if today is None else today)
     if target == 'closeout':
         ctx.trailers = trailers
-    rows = TARGETS[target](ctx)
-    if ctx.failed is not None:  # 內層 notes 非零：只把它已算好的本機硬擋行與 rc／reason 往上帶
-        for line in ctx.failed.printed:  # ⛔ 不重跑、⛔ 不增寫遠端（含第二則 wf:reject）
-            if line.startswith(HARD_BLOCK):  # 內層 emit 是 no-op，這一行只能由 brief 印
-                report(line)
-        return WriteResult(ctx.failed.rc, reason=ctx.failed.reason,
-                           rejection=ctx.failed.rejection, printed=tuple(report))
-    for name, mark, lines in rows:
+    # §2 檢查先於首次遠端寫入：本動詞與內層 `notes` 兩次讀卡的驗證全部排在對帳（第一次投影
+    # 寫入）之前，任一個讀側 D3 成立時該次執行對遠端零寫入；投影欄算不出的拒收仍歸對帳。
+    failed = check_card(current, client=client, number=number, catalog=catalog,
+                        enabled_modules=[module['name'] for module in enabled],
+                        fail=lambda reason: blocked(report, 'D3', reason)) \
+        or _read_notes(ctx) or reconcile_projection(
+            current, client=client, catalog=catalog, location=cfg['project'],
+            project=project, number=number, report=report)
+    if failed is not None:
+        return failed
+    for name, mark, lines in TARGETS[target](ctx):
         report('## ' + name)
         report(mark)
         for line in lines:

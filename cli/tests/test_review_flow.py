@@ -260,3 +260,57 @@ def test_comment_counter_detects_forbidden_mutation():
                                  'value': {'text': '完成'}}))
     assert [name for name, _ in client.calls if name in WRITES] == ['update_card_body', 'write_project_field']
     print('WRITE_NEGATIVE_CONTROL detected update_card_body and write_project_field')
+
+
+# ── WF-003-R1.1-2：review 內部的 notes 消費者，其 D3 留痕逐字維持基線 ────────────
+
+def nested_client(good):
+    """issue() 第一次回合法卡（review 自己的驗卡面全過），第二次由 `_hints` 內層 `notes`
+    重讀時回壞 JSON。⛔ 不改交回單、⛔ 不改角色，只換第二次讀到的 body。"""
+    client = make_client(good)
+    original, count = client.responses['issue'], [0]
+
+    def issue(number):
+        count[0] += 1
+        row = original(number=number)
+        return row if count[0] == 1 else dict(row, body='```json wf-card\n{壞掉\n```')
+
+    client.responses['issue'] = issue
+    return client, count
+
+
+@pytest.mark.parametrize('role', ['reviewer', 'executor'])
+def test_nested_notes_d3_still_posts_exactly_one_reject(tmp_path, role):
+    """WF-003-R1.1-2 正向：`review._hints` 的內層 `notes` 落讀側 D3 ⇒ 恰一則
+    first_line='wf:reject'、本文逐字 `拒收・D3・wf-card JSON 解析失敗`、rc=1、⛔ 無硬擋行、
+    ⛔ 不貼 wf:return／wf:verdict——與基線 005bab29ae1c3a3fbfc4a3520c56aca198a565d8 逐字相同。
+
+    被審 SHA eca85c52472c7933ff95a2fd9bb9abd0c5026c31 在同一替身下是 all_remote_writes=[]、
+    零留言、printed 反而多一行 `硬擋・D3・wf-card JSON 解析失敗`。
+    """
+    root = make_root(tmp_path, project=False)
+    client, count = nested_client(card(branch='wf/WF-001', source_sha='b' * 40))
+    path = tmp_path / 'return.json'
+    path.write_text('{}', encoding='utf-8')
+    lines = []
+    result = review(10, file=path, role=role, client=client, root=root, emit=lines.append)
+    assert count[0] == 2, count                      # 內層確實重讀了一次，⛔ 不是走不到
+    assert result.rc == 1 and result.reason == 'wf-card JSON 解析失敗'
+    posted = [kwargs for name, kwargs in client.calls if name == 'post_comment']
+    assert [kwargs['first_line'] for kwargs in posted] == ['wf:reject']
+    assert posted[0]['body'] == '拒收・D3・' + result.reason
+    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
+    assert [line for line in result.printed if line.startswith('硬擋・')] == []
+    print('WF-003-R1.1-2', role, posted[0]['body'])
+
+
+def test_the_same_nested_notes_is_a_local_hard_block_for_the_notes_verb(tmp_path):
+    """WF-003-R1.1-2 負控：同一張壞卡直接跑 `notes` 動詞 ⇒ 本機硬擋、零留言。
+    證明上一條拿到的一則 wf:reject 來自呼叫端契約的隔離，⛔ 不是把本機硬擋整個改回去。"""
+    root = make_root(tmp_path, project=False)
+    client = make_client('```json wf-card\n{壞掉\n```')
+    lines = []
+    result = notes(10, client=client, root=root, emit=lines.append)
+    assert result.rc == 1 and result.reason == 'wf-card JSON 解析失敗'
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert [line for line in lines if line.startswith('硬擋・')] == ['硬擋・D3・' + result.reason]
