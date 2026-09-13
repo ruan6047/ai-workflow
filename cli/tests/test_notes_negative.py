@@ -75,25 +75,36 @@ def test_no_project_prints_resource_lock_notice(tmp_path):
     assert not any(name == 'project' for name, _ in client.calls)
 
 
+def hard_blocks(lines):
+    """本機硬擋行（core/verbs.md §2 `硬擋・<D 編號>・<原因>`）。"""
+    return [line for line in lines if line.startswith('硬擋・')]
+
+
 def test_d3_on_broken_card_json(tmp_path):
-    """驗收 9：卡面 JSON 壞 → rc≠0、恰一則 wf:reject、無其他寫入。"""
+    """驗收 9／WF-003：卡面 JSON 壞＝讀側 D3 ⇒ rc≠0、遠端零寫入、本機恰一行 `硬擋・D3・<原因>`。
+
+    斷言序＝先驗寫入呼叫集合為空，再從本機行讀 D 編號與原因；⛔ 不先取 writes[0]（零寫入下
+    必 IndexError，會把修好誤報成崩潰）。基線 005bab29ae1c3a3fbfc4a3520c56aca198a565d8 在
+    同一輸入下是一則 post_comment(first_line='wf:reject', body='拒收・D3・…')、stdout 零行。
+    """
     root = make_root(tmp_path, stages=['implementation.md'])
     client = make_client('前言\n' + block('wf-card', '{壞掉的 JSON'))
-    result = notes(10, client=client, root=root, emit=lambda line: None)
-    assert result.rc != 0
-    writes = [(name, data) for name, data in client.calls if name in WRITES]
-    assert [name for name, _ in writes] == ['post_comment']
-    assert writes[0][1]['first_line'] == 'wf:reject'
-    assert writes[0][1]['body'].startswith('拒收・D3・')
+    lines = []
+    result = notes(10, client=client, root=root, emit=lines.append)
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert result.rc == 1 and result.reason
+    assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
 
 
 def test_null_card_block_is_d3(tmp_path):
-    """null 區塊探針：本卡 wf-card 值為 null ⇒ D3 一則 wf:reject（不是物件）。"""
+    """null 區塊探針／WF-003：本卡 wf-card 值為 null ⇒ 讀側 D3 本機硬擋（不是物件）、遠端零寫入。"""
     root = make_root(tmp_path, stages=['implementation.md'])
     client = make_client('前言\n```json wf-card\nnull\n```\n')
-    result = notes(10, client=client, root=root, emit=lambda line: None)
-    assert result.rc != 0 and '不是物件' in result.reason
-    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
+    lines = []
+    result = notes(10, client=client, root=root, emit=lines.append)
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert result.rc == 1 and '不是物件' in result.reason
+    assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
 
 
 @pytest.mark.parametrize('value', ['null', '[]', '"x"'])
@@ -115,11 +126,13 @@ def test_card_id_lookup_skips_null_issue_and_prints(tmp_path):
 
 
 def test_d3_positive_control_valid_card_writes_nothing(tmp_path):
-    """負控：同一路徑換成合法卡面即不寫 wf:reject。"""
+    """負控：同一路徑換成合法卡面即 rc=0 且無硬擋行（零寫入兩邊都成立，故另比硬擋行）。"""
     root = make_root(tmp_path, stages=['implementation.md'])
     client = make_client(card())
-    assert notes(10, client=client, root=root, emit=lambda line: None).rc == 0
+    lines = []
+    assert notes(10, client=client, root=root, emit=lines.append).rc == 0
     assert [name for name, _ in client.calls if name in WRITES] == []
+    assert hard_blocks(lines) == []
 
 
 URL = 'https://github.com/fake/repo/issues/10#issuecomment-1'

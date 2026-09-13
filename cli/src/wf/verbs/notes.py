@@ -15,7 +15,7 @@ from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, enabled_modules,
                               note_blocks, parse_args)
-from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
+from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
 
 ITEM = re.compile(r'^- ([FPT]-.+-[0-9]{2})：(.+)$')
 BACKTICK = re.compile(r'`([^`]+)`')
@@ -67,9 +67,14 @@ def _sorted_relative(root, pattern):
     return sorted(path.relative_to(Path(root)).as_posix() for path in Path(root).glob(pattern))
 
 
-def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, emit=print):
-    """verbs/main.py 可直接呼叫；除 D3 的一則 wf:reject 與 §2 對帳的投影回寫外不寫任何遠端。
-    for_role＝`brief --for` 的角色（§3 第 1 條）；缺省取卡面 owner.role。"""
+def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, emit=print,
+          fail=None):
+    """verbs/main.py 可直接呼叫；讀側驗卡失敗＝本機硬擋、零遠端寫入；§2 對帳的投影回寫與其
+    失敗拒收仍在。for_role＝`brief --for` 的角色（§3 第 1 條）；缺省取卡面 owner.role。
+    fail＝讀側驗卡失敗的處置，取 (report, code, reason) 同 `_write.blocked`；缺省即本機硬擋。
+    失敗處置歸**呼叫它的那個頂層動詞**的契約：`review` 這個內部消費者傳入既有的遠端拒收，
+    其留痕逐字維持基線，⛔ 不因 notes／brief 改成本機硬擋而消失。"""
+    handle = blocked if fail is None else fail
     report = Printer(emit)
     catalog = load_blocks(root) if catalog is None else catalog
     cfg = load_project_config(root)
@@ -79,7 +84,7 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
     except (ValueError, TypeError, KeyError) as exc:
-        return reject(client, number, 'D3', str(exc), tuple(report))
+        return handle(report, 'D3', str(exc))
     enums, = catalog.by_label('json wf-enums')
     if stage is not None and stage not in enums.data['stages']['enum']:
         report(f'階段 {stage} 不在 enums.stages，改用卡當前階段')
@@ -93,10 +98,10 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
         enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
     except CardShapeError as exc:
-        return reject(client, number, 'D3', str(exc), tuple(report))
+        return handle(report, 'D3', str(exc))
     failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
                         enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
-                        printed=tuple(report)) or reconcile_projection(
+                        fail=lambda reason: handle(report, 'D3', reason)) or reconcile_projection(
                             current, client=client, catalog=catalog, location=cfg['project'],
                             project=project, number=number, report=report)
     if failed is not None:

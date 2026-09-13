@@ -4,8 +4,8 @@ core/return.md schema 的 required、core/glossary.md「來源（四個）」、
 modules/resource-lock／initiative／identity §0。
 
 段序、段名與誰填逐字讀 `core/dispatch.md` 的表，⛔ 不抄進程式碼；CLI 段只搬事實、⛔ 不改寫
-不合併（第零條）。除 D3 的一則 `wf:reject` 外不寫任何遠端、⛔ 不自動 merge；`--for` 分派＝
-TARGETS 字典。卡號查找、留言區塊與板上事實住 verbs/_common.py。
+不合併（第零條）。讀側驗卡失敗＝本機硬擋、零遠端寫入；§2 對帳的投影回寫與其失敗拒收仍在。
+⛔ 不自動 merge；`--for` 分派＝TARGETS 字典。卡號查找、留言區塊與板上事實住 verbs/_common.py。
 """
 from datetime import date
 import json
@@ -23,7 +23,7 @@ from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
 from wf.verbs._common import (CardShapeError, Printer, block_object, board_facts, card_number,
                               comment_blocks, enabled_modules, parse_args, repo_cards)
-from wf.verbs._write import WriteResult, check_card, reconcile_projection, reject
+from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
 from wf.verbs import closeout
@@ -38,6 +38,7 @@ UNKNOWN_PREVIOUS = '未能取得前輪 findings'
 NO_CONTRACT, BAD_CONTRACT = '專案層未宣告', '契約檔不合 schema'
 NO_MERGE_TREE, CONFLICT = '未能比對 merge-tree', 'merge-tree 衝突'
 TEMPLATE_HEAD = '交回單 JSON 樣板'
+HARD_BLOCK = '硬擋・'  # core/verbs.md §2 本機硬擋行的前綴（`硬擋・<D 編號>・<原因>`）
 NOTE_ID = re.compile(r'^[0-9]+\. ([FPT]-.+?-[0-9]{2})：')
 DAYS = re.compile(r'^\|[ \t]*rule_confirm_days[ \t]*\|[ \t]*([0-9]+)', re.M)
 CONTRACT = re.compile(r'^```json wf-contract[ \t]*\r?\n(.*?)^```[ \t]*\r?$', re.M | re.S)
@@ -143,12 +144,29 @@ def _capability(ctx):
     value = ctx.card.get(key) if isinstance(ctx.card.get(key), dict) else {}
     return [f'{key}.{field}：{_plain(value.get(field))}' for field in ('level', 'reason')]
 
-def _notes(ctx):
-    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；正式 id 供樣板。"""
+def _read_notes(ctx):
+    """內層 `notes` 的重讀與驗卡。§2「檢查先於首次遠端寫入」⇒ 這一步必須排在本動詞的對帳
+    （會寫投影欄）之前：內層會再讀一次卡，它的讀側 D3 若排在對帳之後，就會留下「板已改、動詞
+    才失敗」的中間態。非零時只把內層已算好的 rc／reason 與本機硬擋行往上帶（內層 emit 是
+    no-op，這一行只能由 brief 印），⛔ 不重跑、⛔ 不增寫遠端（含第二則 wf:reject）。
+    `--for closeout` 不印注意事項段（closeout.sections ⛔ 不呼叫 notes），故不讀。"""
+    if ctx.target == 'closeout':
+        return None
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
                    for_role=ctx.target, emit=lambda line: None)
-    ctx.note_ids = [m[1] for m in map(NOTE_ID.match, result.printed) if m]
-    return list(result.printed)
+    ctx.notes, ctx.note_ids = result, [m[1] for m in map(NOTE_ID.match, result.printed) if m]
+    if result.rc == 0:
+        return None
+    for line in result.printed:
+        if line.startswith(HARD_BLOCK):
+            ctx.report(line)
+    return WriteResult(result.rc, reason=result.reason, rejection=result.rejection,
+                       printed=tuple(ctx.report))
+
+def _notes(ctx):
+    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；⛔ 不重跑——結果由
+    `_read_notes` 在對帳之前算好（正式 id 同時取出供樣板）。"""
+    return list(ctx.notes.printed)
 
 def _side_effects(ctx):
     """副作用入口列：`.wf/contracts/*.md` 的 `json wf-contract` 區塊，用 compose/validate.py 驗。"""
@@ -248,7 +266,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
     except (ValueError, TypeError, KeyError) as exc:
-        return reject(client, number, 'D3', str(exc), tuple(report))
+        return blocked(report, 'D3', str(exc))
     match = DAYS.search((Path(root) / PARAMS).read_text(encoding='utf-8'))
     if match is None:
         report('未能讀取 rule_confirm_days，未評估過期')
@@ -259,20 +277,23 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
         enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
     except CardShapeError as exc:
-        return reject(client, number, 'D3', str(exc), tuple(report))
-    failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
-                        enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
-                        printed=tuple(report)) or reconcile_projection(
-                            current, client=client, catalog=catalog, location=cfg['project'],
-                            project=project, number=number, report=report)
-    if failed is not None:
-        return failed
+        return blocked(report, 'D3', str(exc))
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
-                          catalog=catalog, cfg=cfg, project=project, note_ids=[],
-                          days=None if match is None else int(match[1]),
+                          catalog=catalog, cfg=cfg, project=project, note_ids=[], notes=None,
+                          report=report, days=None if match is None else int(match[1]),
                           today=date.today() if today is None else today)
     if target == 'closeout':
         ctx.trailers = trailers
+    # §2 檢查先於首次遠端寫入：本動詞與內層 `notes` 兩次讀卡的驗證全部排在對帳（第一次投影
+    # 寫入）之前，任一個讀側 D3 成立時該次執行對遠端零寫入；投影欄算不出的拒收仍歸對帳。
+    failed = check_card(current, client=client, number=number, catalog=catalog,
+                        enabled_modules=[module['name'] for module in enabled],
+                        fail=lambda reason: blocked(report, 'D3', reason)) \
+        or _read_notes(ctx) or reconcile_projection(
+            current, client=client, catalog=catalog, location=cfg['project'],
+            project=project, number=number, report=report)
+    if failed is not None:
+        return failed
     for name, mark, lines in TARGETS[target](ctx):
         report('## ' + name)
         report(mark)

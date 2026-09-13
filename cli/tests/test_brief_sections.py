@@ -272,24 +272,37 @@ def test_contract_blocks_three_cases(tmp_path):
         assert dict(sections(lines))['副作用入口'][1:] == ['專案層未宣告']
 
 
+def hard_blocks(lines):
+    """本機硬擋行（core/verbs.md §2 `硬擋・<D 編號>・<原因>`）。"""
+    return [line for line in lines if line.startswith('硬擋・')]
+
+
 def test_broken_card_json_is_d3_with_one_reject_comment(tmp_path):
-    """驗收 10／verbs.md §1 brief 硬擋：卡面 JSON 解析失敗＝D3，一則 wf:reject。"""
+    """驗收 10／verbs.md §1 brief 硬擋（WF-003 改後）：卡面 JSON 解析失敗＝讀側 D3 ⇒
+    遠端零寫入、rc=1、本機恰一行 `硬擋・D3・<原因>`。
+
+    斷言序＝先驗寫入呼叫集合為空，再從本機行讀 D 編號與原因。基線
+    005bab29ae1c3a3fbfc4a3520c56aca198a565d8 在同一輸入下是一則
+    post_comment(first_line='wf:reject', body='拒收・D3・…')、stdout 零行。
+    """
     root = make_root(tmp_path)
     client = make_client('前言\n```json wf-card\n{壞掉\n```\n')
-    result = brief(10, target='executor', client=client, root=root, emit=lambda line: None)
-    assert result.rc == 1
-    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
-    call = dict(client.calls[-1][1])
-    assert call['first_line'] == 'wf:reject' and call['body'].startswith('拒收・D3・')
+    lines = []
+    result = brief(10, target='executor', client=client, root=root, emit=lines.append)
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert result.rc == 1 and result.reason
+    assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
 
 
 def test_null_card_block_is_d3(tmp_path):
-    """null 區塊探針：本卡 wf-card 區塊值為 null ⇒ D3 一則 wf:reject（訊息含「不是物件」）。"""
+    """null 區塊探針／WF-003：本卡 wf-card 區塊值為 null ⇒ 讀側 D3 本機硬擋、遠端零寫入。"""
     root = make_root(tmp_path)
     client = make_client('前言\n```json wf-card\nnull\n```\n')
-    result = brief(10, target='executor', client=client, root=root, emit=lambda line: None)
+    lines = []
+    result = brief(10, target='executor', client=client, root=root, emit=lines.append)
+    assert [name for name, _ in client.calls if name in WRITES] == []
     assert result.rc == 1 and '不是物件' in result.reason
-    assert [name for name, _ in client.calls if name in WRITES] == ['post_comment']
+    assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
 
 
 def test_card_id_lookup_skips_null_issue_and_prints(tmp_path):
@@ -308,3 +321,61 @@ def test_healthy_run_writes_nothing(tmp_path):
     result, _ = emitted(client, root, 'reviewer')
     assert result.rc == 0
     assert [name for name, _ in client.calls if name in WRITES] == []
+
+
+# ── WF-003：brief 承接內部 notes 的非零結果（組合路徑，1 個）────────────────────
+
+BROKEN = '前言\n```json wf-card\n{壞掉\n```\n'
+
+
+def nested_client(good, broken):
+    """issue() 第一次回合法卡、第二次回壞卡：brief 自己的驗卡面過了，內部 `notes` 重讀才壞。
+    brief 到 `_notes` 之前只讀一次 issue（卡號是 int ⇒ 不走 repo_cards，`_baseline` 只讀 ref）。"""
+    first = iter([issue_row(10, good)['body']])
+    return Client(issue=lambda number: {'number': number, 'node_id': f'I{number}', 'state': 'open',
+                                        'body': next(first, broken)},
+                  issues=[issue_row(10, good)], comments=[],
+                  project={'id': 'PROJECT', 'fields': [], 'items': []},
+                  branch_head='a' * 40, merge_base='b' * 40, commit_exists=True)
+
+
+def test_nested_notes_failure_propagates_with_zero_remote_writes(tmp_path):
+    """WF-003 組合路徑：內層 `notes` 落讀側 D3 ⇒ brief 回 rc=1、reason 逐字等於內層 notes 的
+    reason、本機恰一行 `硬擋・D3・<原因>`（內層 emit 是 no-op，這一行只能由 brief 印）、
+    寫入呼叫集合為空，且 ⛔ 不印任何區段或樣板。
+
+    基線 005bab29ae1c3a3fbfc4a3520c56aca198a565d8 在同一替身下是 brief.rc=0、reason=''，
+    唯一遠端寫入是內層 notes 的 post_comment(first_line='wf:reject')。
+    """
+    root = make_root(tmp_path, project=False)
+    client = nested_client(card(), BROKEN)
+    lines = []
+    result = brief(10, target='executor', client=client, root=root, emit=lines.append)
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert result.rc == 1
+    assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
+    assert TEMPLATE_HEAD not in lines and not [line for line in lines if line.startswith('## ')]
+    from wf.verbs.notes import notes as notes_verb
+    inner = notes_verb(10, client=make_client(BROKEN), root=root, for_role='executor',
+                       emit=lambda line: None)
+    assert result.reason == inner.reason and inner.rc == 1
+
+
+def test_nested_notes_negative_control_reject_stub_is_caught_by_zero_writes(tmp_path, monkeypatch):
+    """組合路徑負控：把 notes 的本機硬擋處置換回 `_write.reject` ⇒ 零寫入斷言必須響，
+    且響的原因是替身確實記錄到 post_comment(first_line='wf:reject')，⛔ 不是任何例外。"""
+    from wf.verbs import _write
+    root = make_root(tmp_path, project=False)
+    client = nested_client(card(), BROKEN)
+    monkeypatch.setattr('wf.verbs.notes.blocked',
+                        lambda report, code, reason: _write.reject(client, 10, code, reason,
+                                                                   tuple(report)))
+    lines = []
+    result = brief(10, target='executor', client=client, root=root, emit=lines.append)
+    posted = [kwargs for name, kwargs in client.calls
+              if name == 'post_comment' and kwargs['first_line'] == 'wf:reject']
+    assert len(posted) == 1 and posted[0]['body'].startswith('拒收・D3・')
+    with pytest.raises(AssertionError) as caught:
+        assert [name for name, _ in client.calls if name in WRITES] == []
+    assert 'post_comment' in str(caught.value)
+    assert result.rc == 1 and hard_blocks(lines) == []  # 硬擋行同時消失＝那條斷言也會響

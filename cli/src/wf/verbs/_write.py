@@ -29,6 +29,15 @@ def reject(client, number, code, reason, printed=()):
     return WriteResult(1, reason=reason, rejection=comment, printed=printed)
 
 
+def blocked(report, code, reason):
+    """本機硬擋（§2 留痕綁被拒的那一次遠端寫入）：沒有遠端寫入可擋時只印一行
+    `硬擋・<code>・<原因>`，⛔ 不碰 client、⛔ 不寫任何遠端，rejection 留 None。
+    折行規則與 reject 相同（換行折成空白）；report＝呼叫端的 Printer。"""
+    reason = ' '.join(reason.splitlines())
+    report(f'硬擋・{code}・{reason}')
+    return WriteResult(1, reason=reason, printed=tuple(report))
+
+
 def projected(card, catalog, check=False):
     """check=True 另驗 §5 max_bytes（UTF-8 位元組，D3）；snapshot 唯讀對帳（§2 例外）要原值，故預設不驗。"""
     values = {}
@@ -186,14 +195,16 @@ def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
     return list(fields)
 
 
-def check_card(card, *, client, number, catalog, enabled_modules=(), printed=()):
-    """§2 D3 鍵集合封閉、整卡拒：不合成後 schema 即一則 wf:reject，該卡動詞⛔ 不再往下跑。"""
+def check_card(card, *, client, number, catalog, enabled_modules=(), printed=(), fail=None):
+    """§2 D3 鍵集合封閉、整卡拒：不合成後 schema 即該卡動詞⛔ 不再往下跑。
+    fail＝呼叫端指定的失敗處置（取原因字串回 WriteResult）；缺省＝寫一則 wf:reject 的遠端拒收，
+    讀側動詞改傳本機硬擋（blocked）。"""
     schema = compose_schema(catalog, 'wf-card', enabled_modules)
     failures = validate(card, schema)
     if not failures:
         return None
-    return reject(client, number, 'D3',
-                  '; '.join(f'{e.path}: {e.message}' for e in failures), printed)
+    reason = '; '.join(f'{e.path}: {e.message}' for e in failures)
+    return reject(client, number, 'D3', reason, printed) if fail is None else fail(reason)
 
 
 def reconcile_projection(card, *, client, catalog, location, project, number, report):
