@@ -2,6 +2,8 @@
 core/card-schema.md §1／§4、core/handoff.md 來源標記、core/enums.md stages、
 modules/pitfalls-13/module.md §1。所有遠端操作由手構替身接住。
 """
+import ast
+import dataclasses
 import json
 from pathlib import Path
 import re
@@ -13,7 +15,10 @@ import pytest
 
 from .fakes import FakeGhClient
 from wf.compose.blocks import load_blocks
-from wf.verbs.notes import notes, run
+from wf.verbs import _write
+from wf.verbs._write import NotesResult, WriteResult
+from wf.verbs.notes import Note, notes, run
+from wf.verbs.open import OpenResult
 
 
 RULES = Path(__file__).resolve().parents[2]
@@ -213,3 +218,79 @@ def test_run_parses_stage_flag(tmp_path):
     root = make_root(tmp_path, stages=['implementation.md'])
     assert run(['10', '--stage', '執行'], client=make_client(card(stage='需求')),
                root=root, catalog=load_blocks(root)) == 0
+
+
+def candidate_comment(identifier='T-執行-09'):
+    """一則合法的 wf-note 候選留言；候選 id ⛔ 不得進正式通道。"""
+    return [{'id': 1, 'url': 'https://example.invalid/c1', 'author': 'a',
+             'created_at': '2026-09-01T00:00:00Z',
+             'body': block('wf-note', {'id': identifier, 'text': '候選條目',
+                                       'origin': 'https://example.invalid/9'})}]
+
+
+def test_success_result_carries_the_ordered_formal_ids(tmp_path):
+    """CLI-002：rc==0 回 `_write.NotesResult`；note_ids 逐項、逐序等於編號行的 id。
+    四來源各 1 條的母體同 test_four_sources_in_order_with_continuous_numbering。"""
+    root = make_root(tmp_path, stages=['implementation.md'], roles=['executor.md'],
+                     modules=['demo'], listed=['demo'], project_stage='執行')
+    client = make_client(card(notes=[{'id': 'T-執行-01', 'text': '卡面條目',
+                                      'origin': 'https://example.invalid/1'}]),
+                         comments=candidate_comment())
+    result, lines = emitted(client, root)
+    assert result.rc == 0 and isinstance(result, NotesResult)
+    assert list(result.note_ids) == [identifier for _, identifier in numbered(lines)]
+    assert [index for index, _ in numbered(lines)] == list(range(1, len(result.note_ids) + 1))
+    assert result.note_ids == ('F-執行-01', 'F-執行者-01', 'F-demo-01', 'P-執行-01', 'T-執行-01')
+    assert 'T-執行-09' not in result.note_ids  # 候選⛔ 不進正式通道
+    assert [name for name, _ in client.calls if name in WRITES] == []
+
+
+def holds_note(value):
+    """遞迴查值裡有沒有 `notes.Note` 實例；容器只走 list／tuple／set／dict。"""
+    if isinstance(value, Note):
+        return True
+    if isinstance(value, (list, tuple, set)):
+        return any(holds_note(item) for item in value)
+    if isinstance(value, dict):
+        return any(holds_note(item) for item in value.values())
+    return False
+
+
+def module_imports(text):
+    """模組級 import 的完整模組名集合（相對 import ⛔ 不計）。"""
+    found = set()
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.Import):
+            found.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            found.add(node.module)
+    return found
+
+
+def test_note_source_shape_is_neither_exposed_nor_frozen(tmp_path):
+    """CLI-002：公開的只有 str 的 id。Note 型別、text、mark、欄位序維持本模組私有——
+    結果沒有任何欄位承載 Note，`_write.py` 也 ⛔ 不 import `wf.verbs.notes`。"""
+    names = [field.name for field in dataclasses.fields(NotesResult)]
+    assert names == ['rc', 'card', 'reason', 'rejection', 'printed', 'note_ids']
+    root = make_root(tmp_path, stages=['implementation.md'], roles=['executor.md'])
+    result, _ = emitted(make_client(card()), root)
+    assert result.note_ids and all(type(item) is str for item in result.note_ids)
+    assert not any(holds_note(getattr(result, name)) for name in names)
+    assert holds_note((Note('T-執行-01', 'x', 'y'),))  # 負控：這個查法真的抓得到 Note
+    imported = module_imports(Path(_write.__file__).read_text(encoding='utf-8'))
+    assert 'wf.verbs.notes' not in imported, sorted(imported)
+    assert 'wf.verbs.notes' in module_imports('from wf.verbs.notes import Note\n')  # 負控
+    print('NOTES_PRIVACY _write.py 模組級 import：', sorted(imported))
+
+
+def test_shared_positional_fields_are_unchanged():
+    """CLI-002：共用五欄的欄位序不動，新欄只長在 NotesResult；`open.OpenResult` 的第六個
+    位置參數仍是 unverified（WF-003 的位置實參因此 ⛔ 不被錯綁）。"""
+    base = ['rc', 'card', 'reason', 'rejection', 'printed']
+    assert [field.name for field in dataclasses.fields(WriteResult)] == base
+    assert [field.name for field in dataclasses.fields(OpenResult)] == base + ['unverified']
+    assert dataclasses.fields(OpenResult)[5].name == 'unverified'
+    assert [field.name for field in dataclasses.fields(NotesResult)] == base + ['note_ids']
+    # 負控：第六個位置參數確實落進 unverified，⛔ 不是被新欄接走
+    assert OpenResult(0, None, '', None, (), ({'item': 'X'},)).unverified == ({'item': 'X'},)
+    print('RESULT_FIELDS', [field.name for field in dataclasses.fields(NotesResult)])

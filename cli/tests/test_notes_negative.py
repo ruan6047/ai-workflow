@@ -96,6 +96,21 @@ def test_d3_on_broken_card_json(tmp_path):
     assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
 
 
+def test_failure_path_keeps_the_plain_write_result(tmp_path):
+    """CLI-002／WF-003：rc≠0 仍回 `_write.WriteResult` 本身，⛔ 不帶 note_ids；
+    reason／rejection／printed 三欄語意不變（恰一行硬擋、rejection 留 None、零遠端寫入）。"""
+    from wf.verbs._write import WriteResult
+    root = make_root(tmp_path, stages=['implementation.md'])
+    client = make_client('前言\n' + block('wf-card', '{壞掉的 JSON'))
+    lines = []
+    result = notes(10, client=client, root=root, emit=lines.append)
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    assert result.rc == 1 and type(result) is WriteResult
+    assert not hasattr(result, 'note_ids')
+    assert result.rejection is None and result.printed == tuple(lines)
+    assert hard_blocks(lines) == ['硬擋・D3・' + result.reason]
+
+
 def test_null_card_block_is_d3(tmp_path):
     """null 區塊探針／WF-003：本卡 wf-card 值為 null ⇒ 讀側 D3 本機硬擋（不是物件）、遠端零寫入。"""
     root = make_root(tmp_path, stages=['implementation.md'])

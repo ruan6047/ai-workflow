@@ -379,3 +379,79 @@ def test_nested_notes_negative_control_reject_stub_is_caught_by_zero_writes(tmp_
         assert [name for name, _ in client.calls if name in WRITES] == []
     assert 'post_comment' in str(caught.value)
     assert result.rc == 1 and hard_blocks(lines) == []  # 硬擋行同時消失＝那條斷言也會響
+
+
+# CLI-002：消費者取 id 的通道＝`_write.NotesResult.note_ids`，與印法無關。以下的擾動只改
+# 「印出來的字」，⛔ 不改任何資料；本檔的樣板測試與 test_review_flow.py 的覆蓋率提示測試共用。
+NOTE_PROSE = re.compile(r'^([0-9]+)\. ([FPT]-.+?-[0-9]{2})：')  # 基線消費者用的散文反解析式
+PERTURBATIONS = {
+    'double_space_after_number': lambda line: re.sub(r'^([0-9]+\. )', r'\1 ', line),
+    'ascii_colon_after_id': lambda line: re.sub(r'^([0-9]+\. [FPT]-.+?-[0-9]{2})：', r'\1:', line),
+}
+CANDIDATE = [{'id': 1, 'url': 'https://example.invalid/c1', 'author': 'a',
+              'created_at': '2026-09-01T00:00:00Z',
+              'body': block('wf-note', {'id': 'T-執行-09', 'text': '候選條目',
+                                        'origin': 'https://example.invalid/9'})}]
+
+
+def formal_card():
+    """帶正式卡面 notes 的執行階段卡；候選留言的 id ⛔ 不得出現在正式通道。"""
+    return card(branch='wf/WF-001', source_sha='b' * 40,
+                notes=[{'id': 'T-執行-01', 'text': '卡面條目',
+                        'origin': 'https://example.invalid/2'}])
+
+
+@pytest.fixture
+def perturb(monkeypatch):
+    """把 `_common.Printer.__call__` 換成對每一行套 transform 之後才收集並印。"""
+    def apply(transform):
+        from wf.verbs._common import Printer
+        original = Printer.__call__
+        monkeypatch.setattr(Printer, '__call__',
+                            lambda self, line: original(self, transform(line)))
+    return apply
+
+
+def prose_ids(lines):
+    """基線兩個消費者的取 id 法：從印出來的編號行反解析。"""
+    return [match[2] for match in map(NOTE_PROSE.match, lines) if match]
+
+
+def assert_prose_goes_blind(tmp_path, perturb, variant, label):
+    """擾動的正面控制：套上之後，散文反解析在 notes 的 printed 上取得的 id 與 note_ids 不再
+    相等且筆數變少（某些行還會誤配到別處的 `-NN：`），而同一次執行的 note_ids 逐項不變。
+    ⛔ 不做這一步，印法無關的斷言就只是在比兩次一樣的輸出，什麼都沒證明。"""
+    from wf.verbs.notes import notes as notes_verb
+
+    def run(name):
+        root = make_root(tmp_path, name=name, project=False)
+        lines = []
+        result = notes_verb(10, client=make_client(formal_card(), comments=CANDIDATE),
+                            root=root, for_role='executor', emit=lines.append)
+        assert result.rc == 0
+        return result, lines
+
+    plain, plain_lines = run(f'{label}-blind-plain')
+    perturb(PERTURBATIONS[variant])
+    shifted, shifted_lines = run(f'{label}-blind-{variant}')
+    assert prose_ids(plain_lines) == list(plain.note_ids) and len(plain.note_ids) > 5
+    assert prose_ids(shifted_lines) != list(shifted.note_ids)
+    assert len(prose_ids(shifted_lines)) < len(prose_ids(plain_lines))
+    assert list(shifted.note_ids) == list(plain.note_ids)
+    print('PRINTER_NEGATIVE_CONTROL', label, variant, '散文命中', len(prose_ids(plain_lines)),
+          '→', len(prose_ids(shifted_lines)), '；note_ids', len(plain.note_ids), '筆不變')
+
+
+@pytest.mark.parametrize('variant', sorted(PERTURBATIONS))
+def test_template_note_ids_are_printer_independent(tmp_path, perturb, variant):
+    """CLI-002：印法擾動下，樣板 note_responses 的 id 列表與未擾動時逐字相同。"""
+    def run(name):
+        root = make_root(tmp_path, name=name, project=False)
+        _, lines = emitted(make_client(formal_card(), comments=CANDIDATE), root)
+        return [item['id'] for item in template(lines)['note_responses']]
+
+    plain = run(f'a3-brief-plain-{variant}')
+    assert_prose_goes_blind(tmp_path, perturb, variant, f'a3-brief-{variant}')
+    shifted = run(f'a3-brief-shifted-{variant}')
+    assert shifted == plain and len(plain) > 5
+    print('BRIEF_TEMPLATE_IDS', variant, len(plain), '筆逐字相同')

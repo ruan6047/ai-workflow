@@ -17,7 +17,7 @@ from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, enabled_modules,
                               note_blocks, parse_args, verify_source_issue)
-from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
+from wf.verbs._write import NotesResult, blocked, check_card, reconcile_projection
 
 ITEM = re.compile(r'^- ([FPT]-.+-[0-9]{2})：(.+)$')
 BACKTICK = re.compile(r'`([^`]+)`')
@@ -145,7 +145,7 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     _candidates(client, number, catalog, report, current)
     if any(module['name'] == 'pitfalls-13' for module in enabled):
         _pitfalls(rules, stage, report)
-    return WriteResult(0, card=current, printed=tuple(report))
+    return NotesResult(0, card=current, printed=tuple(report), note_ids=tuple(note.id for note in items))
 
 
 def read_comments(client, number, report, label):

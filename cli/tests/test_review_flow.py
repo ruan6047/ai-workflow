@@ -14,7 +14,9 @@ from wf.gh.client import NotFound
 from wf.gh.writes import read_block
 from wf.verbs.notes import notes
 from wf.verbs.review import review, run
-from .test_brief_sections import block, card, make_client, make_root, WRITES
+from .test_brief_sections import (CANDIDATE, PERTURBATIONS, WRITES, assert_prose_goes_blind,
+                                  block, card, formal_card, make_client, make_root,
+                                  perturb)  # noqa: F401（perturb 是 fixture，靠名字注入）
 
 
 @pytest.fixture(autouse=True)
@@ -314,3 +316,20 @@ def test_the_same_nested_notes_is_a_local_hard_block_for_the_notes_verb(tmp_path
     assert result.rc == 1 and result.reason == 'wf-card JSON 解析失敗'
     assert [name for name, _ in client.calls if name in WRITES] == []
     assert [line for line in lines if line.startswith('硬擋・')] == ['硬擋・D3・' + result.reason]
+
+
+@pytest.mark.parametrize('variant', sorted(PERTURBATIONS))
+def test_uncovered_hints_are_printer_independent(tmp_path, perturb, variant):
+    """CLI-002：印法擾動下，`note_responses 未覆蓋：<id>` 行集合與未擾動時逐字相同。
+    覆蓋率提示取的是 `_write.NotesResult.note_ids`，⛔ 不從 notes 的 printed 反解析。"""
+    def run(name):
+        root = make_root(tmp_path, name=name, project=False)
+        _, lines, _, _ = invoke(tmp_path, root=root,
+                                client=make_client(formal_card(), comments=CANDIDATE))
+        return [line for line in lines if line.startswith('note_responses 未覆蓋：')]
+
+    plain = run(f'a3-review-plain-{variant}')
+    assert_prose_goes_blind(tmp_path, perturb, variant, f'a3-review-{variant}')
+    shifted = run(f'a3-review-shifted-{variant}')
+    assert shifted == plain and len(plain) > 5
+    print('REVIEW_UNCOVERED', variant, len(plain), '筆逐字相同')

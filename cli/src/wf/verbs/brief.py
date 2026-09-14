@@ -41,8 +41,7 @@ NO_CONTRACT, BAD_CONTRACT = '專案層未宣告', '契約檔不合 schema'
 NO_MERGE_TREE, CONFLICT = '未能比對 merge-tree', 'merge-tree 衝突'
 TEMPLATE_HEAD = '交回單 JSON 樣板'
 HARD_BLOCK = '硬擋・'  # core/verbs.md §2 本機硬擋行的前綴（`硬擋・<D 編號>・<原因>`）
-NOTE_ID = re.compile(r'^[0-9]+\. ([FPT]-.+?-[0-9]{2})：')
-DAYS = re.compile(r'^\|[ \t]*rule_confirm_days[ \t]*\|[ \t]*([0-9]+)', re.M)
+DAYS =re.compile(r'^\|[ \t]*rule_confirm_days[ \t]*\|[ \t]*([0-9]+)', re.M)
 CONTRACT = re.compile(r'^```json wf-contract[ \t]*\r?\n(.*?)^```[ \t]*\r?$', re.M | re.S)
 
 
@@ -156,8 +155,9 @@ def _read_notes(ctx):
         return None
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
                    for_role=ctx.target, emit=lambda line: None, context=ctx.context)
-    ctx.notes, ctx.note_ids = result, [m[1] for m in map(NOTE_ID.match, result.printed) if m]
+    ctx.notes = result
     if result.rc == 0:
+        ctx.note_ids = list(result.note_ids)  # 正式 id 通道（_write.NotesResult），⛔ 不反解析 printed
         return None
     for line in result.printed:
         if line.startswith(HARD_BLOCK):
