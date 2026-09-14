@@ -31,7 +31,7 @@ last_confirmed: 2026-09-06
     "flags": [],
     "counters": [],
     "move_prints": ["resources_intersection"],
-    "notes": ["F-resource-lock-01", "F-resource-lock-02", "F-resource-lock-03", "F-resource-lock-04"],
+    "notes": [{"id": "F-resource-lock-01"}, {"id": "F-resource-lock-02"}, {"id": "F-resource-lock-03"}, {"id": "F-resource-lock-04"}],
     "handoff_sections": [
       "資源宣告逐條",
       "寫入集交集"

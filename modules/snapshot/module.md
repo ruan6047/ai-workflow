@@ -26,7 +26,7 @@ last_confirmed: 2026-09-06
       "remove": []
     },
     "flags": [],
-    "notes": ["F-snapshot-01"],
+    "notes": [{"id": "F-snapshot-01"}],
     "handoff_sections": []
   },
   "project_inputs": [],

@@ -209,3 +209,27 @@ def test_run_wires_for_choices_and_card_id_lookup(tmp_path):
     with pytest.raises(NotFound):
         brief('WF-404', target='executor', client=make_client(card()), root=root,
               emit=lines.append)
+
+
+def test_brief_for_and_review_role_compose_the_same_requested_role(tmp_path):
+    """A2／V5：同一張 owner.role=executor 的卡，`brief --for <role>` 的樣板 id 序列與 `review --role <role>`
+    要求覆蓋的 id 序列逐項相等，且兩邊都只讀該次明示的 requested role 那份角色檔——⛔ 不與 owner.role
+    聯集、⛔ 不回退。`--role` 是必填選項，本項⛔ 不驗任何缺省回退行為。"""
+    from .test_brief_sections import template
+    from wf.verbs.review import review
+    root = make_root(tmp_path)
+    data = card(owner={'role': 'executor', 'actor': 'me'}, branch='wf/WF-001', source_sha='b' * 40)
+    path = tmp_path / 'return.json'
+    path.write_text('{}', encoding='utf-8')
+    for role, own, other in (('reviewer', 'F-查核者-', 'F-執行者-'), ('executor', 'F-執行者-', 'F-查核者-')):
+        _, lines = emitted(make_client(data), root, role)
+        briefed = [item['id'] for item in template(lines)['note_responses']]
+        printed = []
+        result = review(10, file=path, role=role, client=make_client(data), root=root, emit=printed.append)
+        assert result.rc == 0
+        reviewed = [line.removeprefix('note_responses 未覆蓋：') for line in printed
+                    if line.startswith('note_responses 未覆蓋：')]
+        assert briefed == reviewed and len(briefed) > 5, role
+        assert any(identifier.startswith(own) for identifier in briefed), role
+        assert not any(identifier.startswith(other) for identifier in briefed), role
+        print('SAME_REQUESTED_ROLE', role, len(briefed), '筆逐項相等；對稱差 0')

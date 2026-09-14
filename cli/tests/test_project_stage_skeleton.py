@@ -44,7 +44,7 @@ def test_skeleton_covers_every_stage_enum_value(tmp_path):
 def test_skeleton_accepts_p_note_line(tmp_path):
     """A2：檔尾補一行條目後，`_file_notes` 每階段恰收 1 條，id／text／mark 逐字相符。
 
-    mark 的逐字比對同時釘 A3 的後半（無 frontmatter ⇒ 只印 `[來源: <來源>/<檔>]`）。
+    mark 的逐字比對同時釘 A3 的後半（無 frontmatter ⇒ 只印 `[來源: <kind>:<path>]`，project 的 path 相對 project root）。
     合成樹缺檔時 `is_file` 斷言先紅，⛔ 不讓 append 自己造出被測物。
     """
     root = make_root(tmp_path)
@@ -60,7 +60,7 @@ def test_skeleton_accepts_p_note_line(tmp_path):
         assert len(items) == 1, (stage, items)
         assert items[0].id == note_id
         assert items[0].text == text
-        assert items[0].mark == f'[來源: project/{relative}]'
+        assert items[0].mark == f'[來源: project:{relative}]'
 
 
 def test_skeleton_has_no_frontmatter_and_stays_empty(tmp_path):

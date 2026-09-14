@@ -29,7 +29,7 @@ last_confirmed: 2026-09-06
       "remove": []
     },
     "flags": [],
-    "notes": ["F-db-contract-01", "F-db-contract-02", "F-db-contract-03"],
+    "notes": [{"id": "F-db-contract-01"}, {"id": "F-db-contract-02"}, {"id": "F-db-contract-03"}],
     "handoff_sections": [
       "DB 契約段（namespace、lock、備份、回滾、驗證命令）"
     ]

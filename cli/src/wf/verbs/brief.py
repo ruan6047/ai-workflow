@@ -54,12 +54,11 @@ def _remote(call, *args, **kwargs):
     except GhError:
         return None
 
-def _mark(ctx, origin, relative, section):
-    """core/handoff.md 每段首行；節名為空不補空 `#`，逾 params.md rule_confirm_days 標 ⚠️。"""
+def _mark(ctx, kind, relative, section):
+    """core/handoff.md 每段首行 `[來源: <kind>:<path>#<節> · …]`（path 相對 rules root，⛔ 不把 kind 串進 path）；
+    節名為空不補 `#`，逾 params.md rule_confirm_days 標 ⚠️。"""
     front = parse_frontmatter(ctx.rules.read_text(relative), relative)
-    line = source_line(Source(f'{origin}/{relative}', section, front.name, front.when,
-                              front.last_confirmed))
-    line = line if section else line.replace('# ·', ' ·', 1)
+    line = source_line(Source(kind, relative, section, front.name, front.when, front.last_confirmed))
     try:
         stale = ctx.days is not None and (ctx.today - date.fromisoformat(front.last_confirmed)).days > ctx.days
     except ValueError:
@@ -154,10 +153,13 @@ def _read_notes(ctx):
     if ctx.target == 'closeout':
         return None
     result = notes(ctx.number, client=ctx.client, root=ctx.root, catalog=ctx.catalog,
-                   for_role=ctx.target, emit=lambda line: None, context=ctx.context)
+                   for_role=ctx.target, emit=lambda line: None, context=ctx.context,
+                   listing=ctx.listing.append)  # 編號行的專用通道（§3），⛔ 不從 printed 反解析
     ctx.notes = result
     if result.rc == 0:
         ctx.note_ids = list(result.note_ids)  # 正式 id 通道（_write.NotesResult），⛔ 不反解析 printed
+        for line in result.printed:  # 候選與診斷行留在 CLI 操作輸出，⛔ 不進注意事項段（A7）
+            ctx.report(line)
         return None
     for line in result.printed:
         if line.startswith(HARD_BLOCK):
@@ -166,9 +168,10 @@ def _read_notes(ctx):
                        printed=tuple(ctx.report))
 
 def _notes(ctx):
-    """注意事項列：`notes` 的編號清單全文逐行搬入，⛔ 不重寫合成；⛔ 不重跑——結果由
-    `_read_notes` 在對帳之前算好（正式 id 同時取出供樣板）。"""
-    return list(ctx.notes.printed)
+    """注意事項列：只搬 `notes` 的編號清單（帶正式 id 的 `<n>. <id>：` 行，經 `listing` 通道逐行取得、
+    段內行數＝`NotesResult.note_ids` 筆數），⛔ 不重寫合成、⛔ 不重跑——結果由 `_read_notes` 在對帳之前
+    算好（正式 id 同時取出供樣板）；候選（`wf:note`）與診斷行⛔ 不在本段。"""
+    return list(ctx.listing)
 
 def _side_effects(ctx):
     """副作用入口列：`.wf/contracts/*.md` 的 `json wf-contract` 區塊，用 compose/validate.py 驗。"""
@@ -290,7 +293,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
         return blocked(report, 'D3', str(exc))
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
                           rules=rules, context=context, default_branch=default_branch(client, context),
-                          catalog=catalog, cfg=cfg, project=project, note_ids=[], notes=None,
+                          catalog=catalog, cfg=cfg, project=project, note_ids=[], notes=None, listing=[],
                           report=report, days=None if match is None else int(match[1]),
                           today=date.today() if today is None else today)
     if target == 'closeout':

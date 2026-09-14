@@ -1,10 +1,13 @@
 """消費 core/dispatch.md `json wf-module-sections`、modules/resource-lock／initiative／identity §0，
 以及 verbs/move_modules.py 的交集函式；段名逐字取自宣告，未啟用不印。
 """
+from pathlib import Path
+import shutil
+
 import pytest
 
 from .test_brief_sections import (SOURCE, card, emitted, issue_row, make_client, make_root,
-                                  sections)
+                                  sections, template)
 from wf.compose.blocks import load_blocks
 from wf.verbs.brief import MODULE_SECTIONS
 
@@ -44,7 +47,7 @@ def test_enabled_modules_add_sections_named_verbatim(tmp_path):
     assert '模組層未接線' not in lines
     body = dict(sections(lines))
     for title in expected:
-        assert SOURCE.match(body[title][0]) and 'module/modules/' in body[title][0]
+        assert SOURCE.match(body[title][0]) and 'module:modules/' in body[title][0]
 
 
 def test_module_section_contents(tmp_path):
@@ -125,3 +128,27 @@ def test_every_declared_brief_section_is_wired(tmp_path):
     pairs = {(name, index) for name, names in declared.data['brief'].items()
              for index in range(len(names))}
     assert pairs == set(MODULE_SECTIONS)
+
+
+def test_module_note_roles_filter_and_absent_means_all_roles(tmp_path):
+    """A4／V7：模組 §0 `adds.notes` 的 {id, roles}——`roles` 缺席的條目在四個角色的組合都出現；
+    宣告 `roles` 的條目只在列名角色的組合出現。brief 只有 executor／reviewer 兩個 --for，其餘兩角色以
+    `notes(for_role=…)` 取同一組合函式的輸出。"""
+    from wf.verbs.notes import notes as notes_verb
+    root = make_root(tmp_path, listed=['scoped'])
+    shutil.copytree(Path(__file__).resolve().parent / 'fixtures/notes/modules/scoped', root / 'modules/scoped')
+    enums, = load_blocks(root).by_label('json wf-enums')
+    seen = {}
+    for role in enums.data['roles']['enum']:
+        if role in ('executor', 'reviewer'):
+            _, lines = emitted(make_client(card(owner=MINE)), root, role)
+            seen[role] = [item['id'] for item in template(lines)['note_responses']]
+        else:
+            seen[role] = list(notes_verb(10, client=make_client(card(owner=MINE)), root=root, for_role=role,
+                                         emit=lambda line: None).note_ids)
+    assert set(seen) == {'requester', 'pm', 'executor', 'reviewer'}
+    assert all('F-scoped-01' in ids for ids in seen.values())
+    assert [role for role, ids in seen.items() if 'F-scoped-02' in ids] == ['reviewer']
+    assert sorted(role for role, ids in seen.items() if 'F-scoped-03' in ids) == ['executor', 'pm']
+    assert 'F-scoped-02' not in seen['executor']  # brief --for executor 讀的是 executor 這份 requested role
+    print('MODULE_ROLES', {role: [i for i in ids if i.startswith('F-scoped-')] for role, ids in seen.items()})

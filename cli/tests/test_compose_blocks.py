@@ -1,4 +1,5 @@
 """驗證 core/card-schema.md §1、state-machine.md §3、naming.md §5 與 handoff.md 每段首行。"""
+from dataclasses import fields
 import json
 from pathlib import Path
 import ast
@@ -6,7 +7,7 @@ import ast
 import pytest
 
 from wf.compose.blocks import (
-    BadJSONError, DuplicateIDError, MissingBlockError, UnknownLabelError,
+    BadJSONError, DuplicateIDError, MissingBlockError, Source, UnknownLabelError,
     SkippedFence, load_blocks, read_blocks, require_blocks, source_line,
 )
 from wf.compose.frontmatter import MissingFrontmatterError, read_frontmatter
@@ -135,7 +136,31 @@ def test_source_line_preserves_old_date_and_empty_section(tmp_path):
     rule(tmp_path, '```json schema\n{"$id":"test"}\n```\n')
     block, = read_blocks(tmp_path, "core/example.md")
     assert block.source.section == ""
-    assert source_line(block.source) == "[來源: core/example.md# · sample：讀取：測試 · confirmed 2000-01-01]"
+    assert source_line(block.source) == "[來源: core:core/example.md · sample：讀取：測試 · confirmed 2000-01-01]"
+
+
+def test_source_is_kind_and_path_in_separate_fields(tmp_path):
+    """A6／V4：來源內部結構＝{kind, path, section}，kind ∈ core／module／project／card；path 是相對該 kind
+    root 可直接開啟的路徑（card＝完整 Issue URL），文字輸出 `[來源: <kind>:<path>#<節> · …]`，
+    ⛔ 不把 kind 串進 path（負控：基線 `core/core/…` 形狀不再出現）。"""
+    rule(tmp_path, "## 節\n```json schema\n{\"$id\":\"test\"}\n```\n")
+    rule(tmp_path, "## 0 · 宣告區塊\n```yaml wf-module\n{\"name\": \"x\"}\n```\n", relative="modules/x/module.md")
+    core, = read_blocks(tmp_path, "core/example.md")
+    module, = read_blocks(tmp_path, "modules/x/module.md")
+    assert (core.source.kind, core.source.path, core.source.section) == ("core", "core/example.md", "節")
+    assert (module.source.kind, module.source.path) == ("module", "modules/x/module.md")
+    for block in (core, module):
+        assert (tmp_path / block.source.path).is_file()
+        assert block.source.path.split("/")[0] in ("core", "modules")  # path ⛔ 不帶 kind 前綴
+    assert source_line(core.source) == "[來源: core:core/example.md#節 · sample：讀取：測試 · confirmed 2000-01-01]"
+    project = Source("project", ".wf/stages/執行.md", "")
+    card = Source("card", "https://github.com/o/r/issues/3", "notes")
+    assert source_line(project) == "[來源: project:.wf/stages/執行.md]"
+    assert source_line(card) == "[來源: card:https://github.com/o/r/issues/3#notes]"
+    assert card.path.startswith("https://github.com/") and ":" not in card.kind
+    for line in (source_line(core.source), source_line(module.source), source_line(project), source_line(card)):
+        assert not any(shape in line for shape in ("core/core", "module/modules", "project/.wf", "card/issues")), line
+    assert [f.name for f in fields(Source)][:3] == ["kind", "path", "section"]
 
 
 def test_empty_file_optional_scan_and_unclosed_fence(tmp_path):

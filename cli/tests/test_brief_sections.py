@@ -23,7 +23,7 @@ FIXTURES = Path(__file__).resolve().parent / 'fixtures/brief'
 TODAY = date(2026, 9, 8)
 WRITES = ('update_card_body', 'post_comment', 'write_project_field',
           'add_to_project', 'remove_from_project', 'close_issue')
-SOURCE = re.compile(r'^\[來源: (core|module|project|card)/[^ ]+ · [^：]+：.+ · '
+SOURCE = re.compile(r'^\[來源: (core|module|project|card):[^ ]+ · [^：]+：.+ · '
                     r'confirmed \d{4}-\d{2}-\d{2}\]( ⚠️)?$')
 NUMBERED = re.compile(r'^([0-9]+)\. ([^：]+)：')
 
@@ -156,9 +156,13 @@ def test_every_section_first_line_is_a_source_line(tmp_path):
     assert len(got) == 14
     for name, content in got:
         assert SOURCE.match(content[0]), (name, content[0])
-    assert SOURCE.match('[來源: core/core/dispatch.md · dispatch：何時 · confirmed 2026-09-07]')
+    assert SOURCE.match('[來源: core:core/dispatch.md · dispatch：何時 · confirmed 2026-09-07]')
     assert not SOURCE.match('[來源: 亂寫]')
-    assert not SOURCE.match('[來源: other/core/dispatch.md · a：b · confirmed 2026-09-07]')
+    assert not SOURCE.match('[來源: other:core/dispatch.md · a：b · confirmed 2026-09-07]')
+    assert not SOURCE.match('[來源: core/core/dispatch.md · dispatch：何時 · confirmed 2026-09-07]')  # 基線串接形狀
+    for name, content in got:  # A6：kind 之後的 path 相對 rules root 可直接開啟
+        kind, _, where = content[0].removeprefix('[來源: ').split(' ', 1)[0].partition(':')
+        assert kind in ('core', 'module') and (root / where.split('#', 1)[0]).is_file(), (name, content[0])
 
 
 @pytest.mark.parametrize('days,flagged', [(0, False), (90, False), (91, True), (100, True)])
@@ -216,7 +220,8 @@ def test_capability_prints_level_and_reason_not_tier_basis(tmp_path):
 
 
 def test_notes_section_is_the_notes_verb_output(tmp_path):
-    """驗收 9：注意事項段逐行搬 notes 的清單；候選也在，但不進樣板 id。"""
+    """驗收 9／A7：注意事項段逐行搬 notes 的編號清單（逐字同 `wf notes` 的編號行）；候選留在
+    CLI 操作輸出、⛔ 不進段、⛔ 不進樣板 id。"""
     from wf.verbs.notes import notes as notes_verb
     root = make_root(tmp_path)
     note = {'text': '候選條目', 'origin': 'https://example.invalid/1'}
@@ -228,12 +233,50 @@ def test_notes_section_is_the_notes_verb_output(tmp_path):
     expected = notes_verb(10, client=make_client(data, comments=comments), root=root,
                           for_role='executor', emit=lambda line: None).printed
     body = dict(sections(lines))
-    assert body['注意事項'][1:] == list(expected)
+    assert body['注意事項'][1:] == [line for line in expected if NUMBERED.match(line)]
     candidates = [line for line in expected if line.startswith('候選')]
-    assert len(candidates) == 1
+    assert len(candidates) == 1 and candidates[0] in lines and candidates[0] not in body['注意事項']
     ids = [match[2] for match in map(NUMBERED.match, expected) if match]
     assert 'T-執行-01' in ids and len(ids) > 5
     assert [item['id'] for item in template(lines)['note_responses']] == ids
+
+
+def test_notes_section_carries_only_formal_id_lines(tmp_path):
+    """A7／V8：段內行數＝`NotesResult.note_ids` 筆數且逐項對位 `<n>. <id>：`；候選行與六種診斷行
+    （略過無法解析的 issue、無 Project 設定、owner 未填、模組宣告未在 §2、候選區塊不合法、13 族踩坑清冊）
+    皆不在段內、但仍在同一次執行的 CLI stdout。"""
+    from wf.verbs.notes import notes as notes_verb
+    root = make_root(tmp_path, listed=['pitfalls-13', 'ghost'], project=False)
+    shutil.copytree(Path(__file__).resolve().parent / 'fixtures/notes/modules/ghost', root / 'modules/ghost')
+    comments = [{'id': 1, 'url': 'https://example.invalid/c1', 'author': 'a', 'created_at': '2026-09-01T00:00:00Z',
+                 'body': block('wf-note', {'id': 'T-執行-09', 'text': '候選', 'origin': 'https://example.invalid/9'})
+                 + block('wf-note', '{壞掉的 JSON')}]
+    data = card(owner=None, notes=[{'id': 'T-執行-01', 'text': '卡面條目', 'origin': 'https://example.invalid/2'}])
+    rows = [issue_row(3, '```json wf-card\nnull\n```\n'), issue_row(10, data)]
+    lines = []
+    result = brief('WF-001', target='executor', client=make_client(rows=rows, comments=comments), root=root,
+                   emit=lines.append)
+    assert result.rc == 0
+    section = dict(sections(lines))['注意事項'][1:]
+    inner = notes_verb(10, client=make_client(rows=rows, comments=comments), root=root, for_role='executor',
+                       emit=lambda line: None)
+    assert len(section) == len(inner.note_ids) == len(template(lines)['note_responses'])
+    assert [line.startswith(f'{index}. {identifier}：')
+            for line, (index, identifier) in zip(section, enumerate(inner.note_ids, 1))] == [True] * len(section)
+    diagnostics = ['略過無法解析的 issue #3', '無 Project 設定，未評估 resource-lock',
+                   '模組 ghost 宣告 F-ghost-02 未在 §2',
+                   '候選 https://example.invalid/c1 區塊 2 不合法：wf-note JSON 解析失敗',
+                   '候選：候選｜https://example.invalid/9｜https://example.invalid/c1']
+    pitfalls = [line for line in lines if line.startswith('13 族踩坑清冊 ')]
+    assert len(pitfalls) == 13
+    for line in diagnostics + pitfalls:
+        assert line in lines and line not in section, line
+    # brief 一律以 `--for` 明示 requested role ⇒ 「卡面 owner 未填，角色注意事項全印」在 brief 路徑不可能出現
+    assert '卡面 owner 未填，角色注意事項全印' not in lines
+    assert '卡面 owner 未填，角色注意事項全印' in notes_verb(10, client=make_client(rows=rows, comments=comments),
+                                                     root=root, emit=lambda line: None).printed  # 只在 notes 動詞
+    print('NOTES_SECTION', len(section), '行＝note_ids 筆數；診斷', len(diagnostics), '種與踩坑清冊', len(pitfalls),
+          '行留在 stdout')
 
 
 def test_template_carries_required_keys_and_acceptance(tmp_path):
