@@ -128,6 +128,15 @@ def _local_head(ref, remote, git_root):
     return () if local == remote else (f'本機分支頭 ≠ 遠端頭：{local} ≠ {remote}',)
 
 
+def _one_line(exc):
+    """失敗原因的呈現邊界（`core/return.md`「卡與身分」列、`core/verbs.md` §1 review 列的「各恰一行」）：
+    真 Git 的 stderr 常是多行——ownership 檢查失敗就是 fatal 行＋提示行＋空行＋指令行——直接內插會讓
+    stdout 與 body 各多出幾行。這裡把所有空白序列（含換行、tab）折成單一空格，⛔ 不截斷內容。
+    折完仍為空（例外自身無訊息）＝退到例外型別名，⛔ 不冒充已知原因、⛔ 不讓原因變空。
+    正規化只做在呈現這一層：gh/localrev.py 仍原樣保留該次 stderr，⛔ 不在資料層改寫事實。"""
+    return ' '.join(str(exc).split()) or type(exc).__name__
+
+
 def _appendix(base, head, git_root):
     """return.md「卡與身分」列的 git 附錄：base＝遠端預設分支頭、head＝已解析的 `source_sha`，
     在 project root 的本機工作樹上算；commit 清單用兩點、改動面用三點（三點左端取 merge-base，
@@ -144,7 +153,7 @@ def _appendix(base, head, git_root):
         return ([f'{COMMITS}（{base}..{head}）：'] + log_commits(base, head, root=git_root)
                 + [f'{CHANGES}（{base}...{head}）：'] + diff_stat(base, head, root=git_root))
     except LocalRevUnavailable as exc:
-        return [f'{NO_APPENDIX}：{exc}']
+        return [f'{NO_APPENDIX}：{_one_line(exc)}']
 
 
 def review(card, *, file, role, client, root='.', catalog=None, emit=print, context=None):

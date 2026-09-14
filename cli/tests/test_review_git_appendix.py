@@ -12,10 +12,12 @@ import subprocess
 
 import pytest
 
+from wf.compose.blocks import load_blocks
 from wf.gh import localrev
 from wf.verbs.review import NO_APPENDIX, NO_LOCAL_HEAD, review
 
 from .test_brief_sections import RULES, WRITES, card, make_client, make_root
+from .test_card_gate_and_projection import board_client
 
 REVIEW_PY = RULES / 'cli/src/wf/verbs/review.py'
 SCAFFOLD_RUN = subprocess.run  # 測試自己建工作樹用的真 runner；護欄只管受測程式碼跑什麼
@@ -322,3 +324,92 @@ def test_local_reads_precede_the_first_remote_write(tmp_path, monkeypatch, role)
     assert local and writes, names
     assert max(local) < min(writes), names
     print('ORDER', role, 'localrev', local, 'writes', writes)
+
+
+# ── CLI-001-R1.2-01：真 Git 多行 stderr 在失敗呈現邊界折成單一非空原因 ──────────
+
+# Apple Git 2.50.1 實測：ownership 檢查失敗的 stderr 是 4 行（fatal 行、To add an exception 行、
+# 空行、git config 提示行）。這組環境變數讓 git 在自己擁有的目錄上也走那條路徑，
+# ⛔ 不需要真的換 owner，也⛔ 不改 repo 內容。
+DUBIOUS_OWNER = {'GIT_TEST_ASSUME_DIFFERENT_OWNER': '1', 'GIT_CONFIG_COUNT': '1',
+                 'GIT_CONFIG_KEY_0': 'safe.directory', 'GIT_CONFIG_VALUE_0': ''}
+
+
+def prose(body):
+    """留言 body 裡 `wf-return` 圍欄之後的散文段（git 附錄就印在這裡）。"""
+    return body.split('\n```\n\n', 1)[1].rstrip('\n')
+
+
+@pytest.mark.parametrize('role', ['executor', 'reviewer'])
+def test_multiline_git_stderr_is_normalised_to_one_line(tmp_path, monkeypatch, role):
+    """CLI-001-R1.2-01：真 Git 的多行 stderr 進到失敗呈現邊界後，stdout 與 body 各恰一行。
+
+    ⛔ 不只數前綴出現次數——前綴數一次、內容卻夾 embedded newline 時 body 會變成 4 行，
+    正是本 finding 的失效模式。這裡直接量散文段的實際列數。
+    """
+    root = make_root(tmp_path, project=False)
+    main_sha, branch_sha = worktree(root)
+    for key, value in DUBIOUS_OWNER.items():
+        monkeypatch.setenv(key, value)
+    # 前置條件：同一條指令的原始 stderr 真的是多行；不是就代表這台 git ⛔ 不走 ownership 路徑，
+    # 本負控會失去意義，故先 fail-loud，⛔ 不 skip、⛔ 不讓它安靜地綠。
+    probe = SCAFFOLD_RUN(('git', '-C', str(root), 'rev-parse', '--verify', '--quiet',
+                          f'{main_sha}^{{commit}}'), capture_output=True, text=True, timeout=60)
+    stderr = (probe.stderr or '').strip()
+    assert probe.returncode != 0 and '\n' in stderr, (probe.returncode, stderr)
+    assert len(stderr.splitlines()) >= 3, stderr
+
+    client = make_client(card(branch='wf/WF-001', source_sha=branch_sha),
+                         branch_head=heads({'main': main_sha, 'wf/WF-001': branch_sha}))
+    result, lines, posted = run_review(tmp_path, root, client, role=role)
+    assert result.rc == 0 and len(posted) == 1
+    assert posted[0]['first_line'] == ('wf:return' if role == 'executor' else 'wf:verdict')
+    assert all('\n' not in line for line in lines), lines
+    failures = [line for line in lines if line.startswith(NO_APPENDIX)]
+    assert len(failures) == 1, failures
+    assert prose(posted[0]['body']).splitlines() == [failures[0]]  # 散文段實際列數＝1
+    reason = failures[0].partition('：')[2]
+    assert reason == ' '.join(stderr.split())  # 非空、內容⛔ 未被截斷，只是空白序列折成單一空格
+    assert reason.strip() and '\n' not in reason
+    print('MULTILINE_STDERR', role, '原始', len(stderr.splitlines()), '行 →', 1, '行：', failures[0])
+
+
+# ── CLI-001-R1.1-1：對帳真的寫板時，localrev 與 body 組裝仍早於第一次遠端寫入 ────
+
+@pytest.fixture(scope='module')
+def catalog():
+    return load_blocks(RULES)
+
+
+@pytest.mark.parametrize('role', ['executor', 'reviewer'])
+def test_local_reads_precede_the_projection_write(tmp_path, monkeypatch, catalog, role):
+    """CLI-001-R1.1-1：板上投影欄漂移（卡面 T1／板上 T3）⇒ reconcile 真的呼叫 write_project_field；
+    在那個母體上，所有 localrev 呼叫與 body 組裝仍全部早於第一次遠端寫入。
+
+    既有的 ::test_local_reads_precede_the_first_remote_write 用 project=False，reconcile 直接
+    return None、⛔ 不寫板，第一個 WRITES 恆為最後的 post_comment——查核者的變異 c 在那個母體上
+    不會響。本條把母體換成真的會寫板的那一種。
+    """
+    root = make_root(tmp_path)  # project=True：.wf/modules.json 有 project，對帳才會走到寫板
+    main_sha, branch_sha = worktree(root)
+    client = board_client(catalog, card(tier='T1', branch='wf/WF-001', source_sha=branch_sha),
+                          branch_head=heads({'main': main_sha, 'wf/WF-001': branch_sha}))
+    real = subprocess.run
+
+    def recorded(argv, *args, **kwargs):
+        client.calls.append(('localrev', {'argv': list(argv)}))
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(localrev.subprocess, 'run', recorded)
+    result, lines, posted = run_review(tmp_path, root, client, role=role)
+    assert result.rc == 0 and len(posted) == 1
+    assert '重寫投影欄：級別' in lines, lines          # 對帳確實發生，⛔ 不是走空路
+    names = [name for name, _ in client.calls]
+    assert 'write_project_field' in names, names      # 第一次遠端寫入是寫板，⛔ 不是 post_comment
+    local = [index for index, name in enumerate(names) if name == 'localrev']
+    writes = [index for index, name in enumerate(names) if name in WRITES]
+    assert local and writes, names
+    assert names[writes[0]] == 'write_project_field', names
+    assert max(local) < min(writes), names
+    assert NO_APPENDIX not in posted[0]['body']       # 附錄成功，body 在寫板前就組好了
+    print('ORDER_WITH_DRIFT', role, 'localrev', local, 'writes', writes, names[writes[0]])
