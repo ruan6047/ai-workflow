@@ -28,6 +28,18 @@ class WriteResult:
     printed: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class NotesResult(WriteResult):
+    """`notes` rc==0 的正式成功通道：note_ids＝該次印出的注意事項 id，順序同編號行的出現序。
+    消費者（review 的覆蓋率提示、brief 的交回單樣板）比 id 一律讀這一欄，⛔ 不從 printed 的
+    散文反解析——編號後的空白數或 id 後的冒號換成 ASCII 都⛔ 不得改變消費結果。
+    只承載 `str`：`notes.Note` 這個型別本身與它的 text／mark／欄位序維持 notes.py 私有，
+    ⛔ 不進跨模組契約（本檔因此⛔ 不 import `wf.verbs.notes`）。
+    新欄只長在本子類：共用的五欄位置序不動，`open.OpenResult` 的第六位置參數⛔ 不被錯綁。
+    rc≠0 一律回原本的 `WriteResult`（本機硬擋／遠端拒收），⛔ 不帶本欄。"""
+    note_ids: tuple[str, ...] = ()
+
+
 def reject(client, number, code, reason, printed=()):
     reason = ' '.join(reason.splitlines())
     comment = client.post_comment(number, 'wf:reject', f'拒收・{code}・{reason}')

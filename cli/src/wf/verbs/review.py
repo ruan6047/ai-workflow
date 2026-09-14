@@ -68,10 +68,9 @@ def _hints(data, current, number, role, sections, schema, client, root, catalog,
     if result.rc:
         return result  # notes 已寫拒收；不得再寫第二則留言。
     covered = {item['id'] for item in data.get('note_responses', [])}
-    for line in result.printed:
-        match = re.match(r'^[0-9]+\. ([FPT]-.+?-[0-9]{2})：', line)
-        if match and match[1] not in covered:
-            report(f'note_responses 未覆蓋：{match[1]}')
+    for note_id in result.note_ids:  # 正式 id 通道（_write.NotesResult），⛔ 不反解析 printed
+        if note_id not in covered:
+            report(f'note_responses 未覆蓋：{note_id}')
     _empty_text(data.get('note_responses', []), 'note_responses', report,
                 ('not_applicable', 'found'), schema['properties']['note_responses'])
     for index, item in enumerate(data.get('unverified', [])):
