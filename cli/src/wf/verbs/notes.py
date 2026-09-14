@@ -1,26 +1,30 @@
 """消費 core/verbs.md §1 notes／§2／§3、core/naming.md §3／§4、
 core/card-schema.md §1 notes 欄／§4 wf-note、core/handoff.md 每段首行、
-core/enums.md stages、modules/pitfalls-13/module.md §1。
+core/enums.md stages／roles、roles/conduct-common.md §1／§2、modules/*/module.md §0 adds.notes／§2、
+modules/pitfalls-13/module.md §1。
 規則資產（stages／roles／modules）只經 RulesSource 讀；專案資產（`.wf/stages/<階段>.md`）只從 project root 讀。
+`compose_notes`＝純組合邊界（§3 六段、同次組合 id 唯一）：⛔ 不讀遠端、⛔ 不寫遠端；§2 對帳只由動詞 `notes` 明確呼叫。
 """
 from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from wf.compose.blocks import Source, load_blocks, projection, source_line
+from wf.compose.blocks import (Source, load_blocks, note_scopes, projection, read_asset, section_lines,
+                               source_line)
 from wf.compose.frontmatter import parse_frontmatter
 from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
-from wf.context import IdentityError, RulesSourceError, rules_of
+from wf.context import IdentityError, rules_of
 from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, enabled_modules,
                               note_blocks, parse_args, verify_source_issue)
 from wf.verbs._write import NotesResult, blocked, check_card, reconcile_projection
 
-ITEM = re.compile(r'^- ([FPT]-.+-[0-9]{2})：(.+)$')
+ITEM = re.compile(r'^- ([FPT]-[^：]+-[0-9]{2})：(.+)$')  # id ⛔ 不跨全形冒號：內文含 `-NN：` 也不被吃進 id
 BACKTICK = re.compile(r'`([^`]+)`')
+COMMON = 'roles/conduct-common.md'  # §3 第 ② 段：§1／§2 全角色，⛔ 不套角色過濾
 
 
 @dataclass(frozen=True)
@@ -30,55 +34,62 @@ class Note:
     mark: str
 
 
-def _section(text, heading):
-    """只取該 ## 節的行；heading 為 None 時取全檔。其餘散文由 ITEM 過濾。"""
-    if heading is None:
-        return '', text.splitlines()
-    title, lines, keep = '', [], False
-    for line in text.splitlines():
-        if line.startswith('## '):
-            keep = line.startswith('## ' + heading)
-            title = line[3:] if keep else title
-        elif keep:
-            lines.append(line)
-    return title, lines
+class DuplicateNoteId(ValueError):
+    """同一次組合出現重複 id（§3）：訊息列該 id 與其全部來源標記，⛔ 不折疊、⛔ 不判內容。"""
 
 
-def _mark(origin, relative, section, meta):
-    """core/handoff.md 的每段首行，前面補來源四值；無 frontmatter 則省略後兩段。"""
-    if meta is None:
-        return f'[來源: {origin}/{relative}' + (f'#{section}]' if section else ']')
-    return source_line(Source(f'{origin}/{relative}', section, *meta))
-
-
-def _read(source, relative):
-    """source＝RulesSource（規則資產）或專案 root 路徑（`.wf/stages/<階段>.md`）；缺檔＝None。"""
-    if isinstance(source, (str, Path)):
-        path = Path(source) / relative
-        return path.read_text(encoding='utf-8') if path.is_file() else None
-    try:
-        return source.read_text(relative)
-    except RulesSourceError:
-        return None
-
-
-def _file_notes(source, relative, heading, origin, prefix=''):
-    text = _read(source, relative)
+def _file_notes(source, relative, heading, kind, prefix=''):
+    text = read_asset(source, relative)
     if text is None:
         return []
     front = parse_frontmatter(text, relative, diagnostics=[])
-    meta = (front.name, front.when, front.last_confirmed) if front.name else None
-    section, lines = _section(text, heading)
-    mark = _mark(origin, relative, section, meta)
+    meta = (front.name, front.when, front.last_confirmed) if front.name else (None,) * 3
+    section, lines = section_lines(text, heading)
+    mark = source_line(Source(kind, relative, section, *meta))
     return [Note(match[1], match[2], mark)
             for match in (ITEM.match(line) for line in lines)
             if match is not None and match[1].startswith(prefix)]
 
 
+def compose_notes(rules, root, *, stage, role, enabled, card, number, repo, report):
+    """§3 六段固定累加：① 階段檔 §6（F-<階段>-）→ ② conduct-common §1／§2（F-共用-）→ ③ requested role 的
+    角色檔 §4（role None＝全部角色檔）→ ④ 已啟用模組 §2（宣告 roles 者只給列名角色）→ ⑤ 專案層 → ⑥ 卡面 notes。
+    純組合：⛔ 不碰 client、⛔ 不對帳；同一 id 出現兩次以上＝DuplicateNoteId（列全部來源標記）。"""
+    items = []
+    for relative in rules.iter_assets('stages/*.md'):
+        items += _file_notes(rules, relative, '6', 'core', f'F-{stage}-')
+    for heading in ('1', '2'):
+        items += _file_notes(rules, COMMON, heading, 'core', 'F-共用-')
+    for relative in rules.iter_assets('roles/*.md'):
+        if role is None or Path(relative).stem == role:  # §3：角色檔只取 requested role 那份
+            items += _file_notes(rules, relative, '4', 'core', 'F-')
+    for module in enabled:
+        found = _file_notes(rules, f"modules/{module['name']}/module.md", '2', 'module')
+        scoped = note_scopes(module)
+        items += [note for note in found
+                  if role is None or scoped.get(note.id) is None or role in scoped[note.id]]
+        for declared in scoped:
+            if declared not in {note.id for note in found}:
+                report(f"模組 {module['name']} 宣告 {declared} 未在 §2")
+    items += _file_notes(root, f'.wf/stages/{stage}.md', None, 'project')
+    mark = source_line(Source('card', f'https://github.com/{repo}/issues/{number}', 'notes'))
+    items += [Note(note['id'], note['text'], mark) for note in card.get('notes') or []]
+    marks = {}
+    for note in items:
+        marks.setdefault(note.id, []).append(note.mark)
+    duplicated = {identifier: where for identifier, where in marks.items() if len(where) > 1}
+    if duplicated:
+        raise DuplicateNoteId('重複注意事項 id：' + '；'.join(
+            f"{identifier} {'、'.join(where)}" for identifier, where in duplicated.items()))
+    return items
+
+
 def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, emit=print,
-          fail=None, context=None):
+          fail=None, context=None, listing=None):
     """verbs/main.py 可直接呼叫；讀側驗卡失敗＝本機硬擋、零遠端寫入；§2 對帳的投影回寫與其
-    失敗拒收仍在。for_role＝`brief --for` 的角色（§3 第 1 條）；缺省取卡面 owner.role。
+    失敗拒收仍在（只在此動詞層呼叫，⛔ 不在 compose_notes）。for_role＝該次明示的 requested role
+    （`brief --for`／`review --role`，§3 第 1 條）；缺省取卡面 owner.role。listing＝編號行的專用輸出通道：
+    給定時編號行只走它、⛔ 不進 report（brief 搬注意事項段用，⛔ 不反解析 printed）。
     fail＝讀側驗卡失敗的處置，取 (report, code, reason) 同 `_write.blocked`；缺省即本機硬擋。
     失敗處置歸**呼叫它的那個頂層動詞**的契約：`review` 這個內部消費者傳入既有的遠端拒收，
     其留痕逐字維持基線，⛔ 不因 notes／brief 改成本機硬擋而消失。"""
@@ -124,24 +135,13 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     role = (current.get('owner') or {}).get('role') if for_role is None else for_role
     if role is None:
         report('卡面 owner 未填，角色注意事項全印')
-    items = []
-    for relative in rules.iter_assets('stages/*.md'):
-        items += _file_notes(rules, relative, '6', 'core', f'F-{stage}-')
-    for relative in rules.iter_assets('roles/*.md'):
-        if role is None or Path(relative).stem == role:  # §3：角色檔只取 owner.role／--for 那份
-            items += _file_notes(rules, relative, '4', 'core', 'F-')
-    for module in enabled:
-        relative = f"modules/{module['name']}/module.md"
-        found = _file_notes(rules, relative, '2', 'module')
-        items += found
-        for declared in module.get('adds', {}).get('notes', []):
-            if declared not in {note.id for note in found}:
-                report(f"模組 {module['name']} 宣告 {declared} 未在 §2")
-    items += _file_notes(root, f'.wf/stages/{stage}.md', None, 'project')
-    mark = _mark('card', f'issues/{number}', 'notes', None)
-    items += [Note(note['id'], note['text'], mark) for note in current.get('notes') or []]
+    try:
+        items = compose_notes(rules, root, stage=stage, role=role, enabled=enabled, card=current,
+                              number=number, repo=client.repo, report=report)
+    except DuplicateNoteId as exc:  # 結構性拒絕：不輸出清單、⛔ 不判內容
+        return handle(report, 'D3', str(exc))
     for index, note in enumerate(items, 1):
-        report(f'{index}. {note.id}：{note.text} {note.mark}')
+        (report if listing is None else listing)(f'{index}. {note.id}：{note.text} {note.mark}')
     _candidates(client, number, catalog, report, current)
     if any(module['name'] == 'pitfalls-13' for module in enabled):
         _pitfalls(rules, stage, report)
@@ -185,7 +185,7 @@ def _candidates(client, number, catalog, report, card):
 def _pitfalls(rules, stage, report):
     """族名逐字取 modules/pitfalls-13/module.md §1 第 2–3 條的反引號字串。"""
     text = rules.read_text('modules/pitfalls-13/module.md')
-    bullets = [line for line in _section(text, '1')[1] if line.startswith('- ')]
+    bullets = [line for line in section_lines(text, '1')[1] if line.startswith('- ')]
     families = BACKTICK.findall(bullets[1])
     if stage == '執行':
         families += BACKTICK.findall(bullets[2])

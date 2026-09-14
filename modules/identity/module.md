@@ -26,7 +26,7 @@ last_confirmed: 2026-09-06
       "remove": []
     },
     "flags": [],
-    "notes": ["F-identity-01"],
+    "notes": [{"id": "F-identity-01"}],
     "handoff_sections": [
       "身分三格（GitHub 帳號／session ID／訊息定位）"
     ]

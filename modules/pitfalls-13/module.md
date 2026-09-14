@@ -26,7 +26,7 @@ last_confirmed: 2026-09-06
       "remove": []
     },
     "flags": [],
-    "notes": ["F-pitfalls-13-01"],
+    "notes": [{"id": "F-pitfalls-13-01"}],
     "handoff_sections": [
       "13 族踩坑清冊（每族恰一行，已檢查／不適用／發現）"
     ]

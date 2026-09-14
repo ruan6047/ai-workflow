@@ -42,7 +42,7 @@ last_confirmed: 2026-09-05
       "remove": []
     },
     "flags": [],
-    "notes": ["F-research-01", "F-research-02", "F-research-03", "F-research-04"],
+    "notes": [{"id": "F-research-01"}, {"id": "F-research-02"}, {"id": "F-research-03"}, {"id": "F-research-04"}],
     "handoff_sections": ["量測紀錄（可重跑）", "結論"]
   },
   "project_inputs": [],

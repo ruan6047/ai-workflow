@@ -68,7 +68,9 @@ def _empty_text(value, path, report, markers, schema):
 
 def _hints(data, current, number, role, sections, schema, client, root, catalog, report, rules, context):
     _missing(rules, data, current, role, sections, report)
-    result = notes(number, client=client, root=root, catalog=catalog, emit=lambda line: None,
+    # §3 第 1 條：角色檔取該次 `--role` 明示的 requested role 那份（與 `brief --for` 同一來源），
+    # ⛔ 不與卡面 owner.role 聯集、⛔ 不回退（`--role` 必填，無缺省情形）。
+    result = notes(number, client=client, root=root, catalog=catalog, for_role=role, emit=lambda line: None,
                    # 失敗處置歸呼叫它的頂層動詞：review 的讀側 D3 留痕逐字維持基線的一則
                    # wf:reject，⛔ 不隨 notes／brief 的本機硬擋一起消失（`notes` 的 fail 參數）。
                    fail=lambda report_, code, reason: reject(client, number, code, reason,

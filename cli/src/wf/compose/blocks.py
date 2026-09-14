@@ -10,11 +10,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from wf.context import rules_of
+from wf.context import RulesSourceError, rules_of
 from .frontmatter import parse_frontmatter
 
 LABELS = frozenset(("json schema", "json wf-enums", "json wf-state-machine",
                     "json wf-module-sections", "yaml wf-module", "json wf-projection"))
+KINDS = ("core", "module", "project", "card")  # core/handoff.md 每段首行的 <kind>（core/glossary.md「來源（四個）」）
 
 
 class BlockError(ValueError):
@@ -45,11 +46,15 @@ class SkippedFence(BlockError):
 
 @dataclass(frozen=True)
 class Source:
+    """來源＝{kind, path, section}（core/handoff.md 每段首行、core/verbs.md §3）：kind ∈ KINDS；path 相對該 kind
+    的 root 可直接開啟——core／module 相對 rules root、project 相對 project root、card＝完整 Issue URL；
+    ⛔ 不把 kind 串進 path。name／when／last_confirmed 取該檔 frontmatter；無 frontmatter（專案層、卡面）為 None。"""
+    kind: str
     path: str
     section: str
-    name: str
-    when: str
-    last_confirmed: str
+    name: str | None = None
+    when: str | None = None
+    last_confirmed: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,9 +82,52 @@ def projection(catalog: Catalog) -> dict:
     return json.loads(block.raw)
 
 
+def kind_of(relative: Path | str) -> str:
+    """規則資產的 kind：`modules/` 下＝module，其餘（core／stages／roles）＝core。"""
+    return "module" if Path(relative).as_posix().startswith("modules/") else "core"
+
+
 def source_line(source: Source) -> str:
-    return (f"[來源: {source.path}#{source.section} · {source.name}：{source.when}"
-            f" · confirmed {source.last_confirmed}]")
+    """`[來源: <kind>:<path>#<節> · <name>：<when> · confirmed <日期>]`；節為空不補 `#`，無 frontmatter 只印前段。"""
+    head = f"[來源: {source.kind}:{source.path}" + (f"#{source.section}" if source.section else "")
+    if source.name is None:
+        return head + "]"
+    return head + f" · {source.name}：{source.when} · confirmed {source.last_confirmed}]"
+
+
+def read_asset(source, relative: str) -> str | None:
+    """source＝RulesSource（規則資產）或專案 root 路徑（`.wf/stages/<階段>.md`）；缺檔＝None。"""
+    if isinstance(source, (str, Path)):
+        path = Path(source) / relative
+        return path.read_text(encoding="utf-8") if path.is_file() else None
+    try:
+        return source.read_text(relative)
+    except RulesSourceError:
+        return None
+
+
+def note_scopes(module: dict) -> dict:
+    """modules/*/module.md §0 `adds.notes` 的 {id, roles} → {id: roles 或 None}；roles 缺席＝全角色（None）。
+    形狀的封閉驗證住 WF-011（CI 對帳 `.github/scripts/reachability.py`），此處⛔ 不拒收——
+    非物件元素只當 id、roles 非陣列當缺席。"""
+    entries = (item if isinstance(item, dict) else {"id": item}
+               for item in module.get("adds", {}).get("notes", []))
+    return {entry.get("id"): entry["roles"] if isinstance(entry.get("roles"), list) else None
+            for entry in entries}
+
+
+def section_lines(text: str, heading: str | None) -> tuple[str, list[str]]:
+    """只取該 `## <heading>` 節的 (節名, 行)；heading 為 None 時取全檔、節名空。散文由呼叫端過濾。"""
+    if heading is None:
+        return "", text.splitlines()
+    title, lines, keep = "", [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            keep = line.startswith("## " + heading)
+            title = line[3:] if keep else title
+        elif keep:
+            lines.append(line)
+    return title, lines
 
 
 def read_blocks(root: Path | str, relative: Path | str,
@@ -111,7 +159,7 @@ def read_blocks(root: Path | str, relative: Path | str,
                     data = json.loads(raw)
                 except json.JSONDecodeError as error:
                     raise BadJSONError(path, section, str(error)) from error
-                source = Source(path, section, metadata.name, metadata.when,
+                source = Source(kind_of(path), path, section, metadata.name, metadata.when,
                                 metadata.last_confirmed)
                 result.append(Block(label, data, raw, source))
                 label = None

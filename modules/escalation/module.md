@@ -44,7 +44,7 @@ last_confirmed: 2026-09-06
     "flags": [],
     "counters": ["escalation_count"],
     "move_prints": ["escalation_threshold"],
-    "notes": ["F-escalation-01", "F-escalation-02", "F-escalation-03", "F-escalation-04"],
+    "notes": [{"id": "F-escalation-01"}, {"id": "F-escalation-02"}, {"id": "F-escalation-03"}, {"id": "F-escalation-04"}],
     "handoff_sections": ["升級單（三次退回逐字理由、四選一各值證據）"]
   },
   "project_inputs": [],

@@ -216,3 +216,47 @@ def test_source_is_within_the_line_budget():
     """驗收 10：src ≤200 行。"""
     from wf.verbs import notes as module
     assert len(Path(module.__file__).read_text(encoding='utf-8').splitlines()) <= 200
+
+
+CARD_MARK = '[來源: card:https://github.com/fake/repo/issues/10#notes]'
+
+
+def test_duplicate_note_id_is_rejected_with_every_source(tmp_path, monkeypatch):
+    """A5／V6：同一次組合出現重複 id ⇒ 立即拒絕（rc≠0、不輸出清單），訊息列該 id 與其全部（≥2）來源標記、
+    ⛔ 不折疊。負控 A＝專案層寫入與角色檔相同的 F-執行者-01；負控 B＝卡面 notes 同一 T-執行-01 兩筆；
+    正控＝無重複時 rc=0、清單照印。review 的內層消費者同一形狀走既有遠端拒收（恰一則 wf:reject）。"""
+    root = make_root(tmp_path, stages=['implementation.md'], roles=['executor.md'], project_stage='執行')
+    project_file = root / '.wf/stages/執行.md'
+    project_file.write_text('- F-執行者-01：專案層撞號的條目。\n', encoding='utf-8')
+    client = make_client(card())
+    result, lines = emitted(client, root)
+    assert result.rc == 1 and numbered(lines) == []
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    blocked, = hard_blocks(lines)
+    assert blocked.startswith('硬擋・D3・') and 'F-執行者-01' in blocked
+    assert blocked.count('[來源: core:roles/executor.md#4') == 1
+    assert blocked.count('[來源: project:.wf/stages/執行.md]') == 1
+    twice = [{'id': 'T-執行-01', 'text': '先', 'origin': 'https://example.invalid/1'},
+             {'id': 'T-執行-01', 'text': '後', 'origin': 'https://example.invalid/2'}]
+    project_file.write_text('- P-執行-01：專案層條目。\n', encoding='utf-8')
+    client = make_client(card(notes=twice))
+    result, lines = emitted(client, root)
+    assert result.rc == 1 and numbered(lines) == []
+    blocked, = hard_blocks(lines)
+    assert 'T-執行-01' in blocked and blocked.count(CARD_MARK) == 2  # 兩個來源標記相同也逐一列出
+    assert [name for name, _ in client.calls if name in WRITES] == []
+    client = make_client(card(notes=twice[:1]))  # 正控：拿掉第二筆即 rc=0、清單照印
+    result, lines = emitted(client, root)
+    assert result.rc == 0 and hard_blocks(lines) == []
+    assert numbered(lines) == [(1, 'F-執行-01'), (2, 'F-執行者-01'), (3, 'P-執行-01'), (4, 'T-執行-01')]
+    from wf.verbs.review import review  # 內層消費者：review 的 fail＝遠端拒收，恰一則 wf:reject
+    monkeypatch.setattr('wf.verbs.review.rev_parse', lambda *a, **k: None)
+    path = tmp_path / 'return.json'
+    path.write_text('{}', encoding='utf-8')
+    client = make_client(card(notes=twice, branch='wf/WF-001', source_sha='b' * 40))
+    client.responses['branch_head'] = 'a' * 40
+    result = review(10, file=path, role='reviewer', client=client, root=root, emit=lambda line: None)
+    posted = [kwargs for name, kwargs in client.calls if name == 'post_comment']
+    assert result.rc == 1 and [kwargs['first_line'] for kwargs in posted] == ['wf:reject']
+    assert posted[0]['body'].startswith('拒收・D3・') and posted[0]['body'].count(CARD_MARK) == 2
+    print('DUPLICATE_ID 負控 A／B 各拒 1 次、正控 rc=0；review 路徑恰一則 wf:reject')

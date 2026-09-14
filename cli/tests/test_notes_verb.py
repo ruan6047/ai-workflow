@@ -1,9 +1,10 @@
 """消費 core/verbs.md §1 notes／§2／§3、core/naming.md §3／§4、
-core/card-schema.md §1／§4、core/handoff.md 來源標記、core/enums.md stages、
-modules/pitfalls-13/module.md §1。所有遠端操作由手構替身接住。
+core/card-schema.md §1／§4、core/handoff.md 來源標記、core/enums.md stages／roles、
+roles/conduct-common.md §1／§2、modules/pitfalls-13/module.md §1。所有遠端操作由手構替身接住。
 """
 import ast
 import dataclasses
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -17,7 +18,7 @@ from .fakes import FakeGhClient
 from wf.compose.blocks import load_blocks
 from wf.verbs import _write
 from wf.verbs._write import NotesResult, WriteResult
-from wf.verbs.notes import Note, notes, run
+from wf.verbs.notes import ITEM, Note, notes, run
 from wf.verbs.open import OpenResult
 
 
@@ -25,6 +26,8 @@ RULES = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / 'fixtures/notes'
 WRITES = ('update_card_body', 'post_comment',
           'write_project_field', 'add_to_project', 'remove_from_project', 'close_issue')
+ID_SHAPE = re.compile(r'^[FPT]-[^：]+-[0-9]{2}$')  # core/naming.md §4 的 id 形狀（複驗用，⛔ 不是 ITEM 的複製品）
+ROLE_PREFIX = {'executor': 'F-執行者-', 'pm': 'F-PM-', 'reviewer': 'F-查核者-', 'requester': 'F-需求方-'}
 
 
 def block(label, value):
@@ -89,6 +92,15 @@ def numbered(lines):
     return [(int(hit[1]), hit[2]) for hit in hits if hit]
 
 
+def roles_enum(root):
+    """執行期讀合成樹 core/enums.md 的 roles 值域，⛔ 不重打常數。"""
+    enums, = load_blocks(root).by_label('json wf-enums')
+    return enums.data['roles']['enum']
+
+
+ALL_ROLES = ['conduct-common.md', 'executor.md', 'pm.md', 'requester.md', 'reviewer.md']
+
+
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
     def forbidden(*args, **kwargs):
@@ -97,17 +109,41 @@ def deny_network(monkeypatch):
     monkeypatch.setattr(subprocess, 'run', forbidden)
 
 
-def test_four_sources_in_order_with_continuous_numbering(tmp_path):
-    """驗收 1：四來源各 1 條 → F(核心)、F(模組)、P、T，編號 1..n 連續。"""
-    root = make_root(tmp_path, stages=['implementation.md'], roles=['executor.md'],
+def test_six_segments_in_order_with_continuous_numbering(tmp_path):
+    """A1：六段各至少 1 條 → ① 階段 F-執行-、② conduct-common F-共用-、③ 角色 F-執行者-、
+    ④ 模組 F-demo-、⑤ 專案 P-、⑥ 卡面 T-，編號 1..n 連續、區間互不交錯。"""
+    root = make_root(tmp_path, stages=['implementation.md'], roles=['conduct-common.md', 'executor.md'],
                      modules=['demo'], listed=['demo'], project_stage='執行')
     client = make_client(card(notes=[{'id': 'T-執行-01', 'text': '卡面條目',
                                       'origin': 'https://example.invalid/1'}]))
     result, lines = emitted(client, root)
     assert result.rc == 0
-    assert numbered(lines) == [(1, 'F-執行-01'), (2, 'F-執行者-01'), (3, 'F-demo-01'),
-                               (4, 'P-執行-01'), (5, 'T-執行-01')]
+    assert numbered(lines) == [(1, 'F-執行-01'), (2, 'F-共用-01'), (3, 'F-共用-02'), (4, 'F-執行者-01'),
+                               (5, 'F-demo-01'), (6, 'P-執行-01'), (7, 'T-執行-01')]
+    assert list(result.note_ids) == [identifier for _, identifier in numbered(lines)]
     assert [name for name, _ in client.calls if name in WRITES] == []
+
+
+def test_conduct_common_sits_between_stage_and_role_for_every_role(tmp_path):
+    """A3／V2：四個角色（值域讀 core/enums.md）各自的組合都是 階段 → F-共用-* → 該角色，
+    conduct-common ⛔ 不套角色過濾；相對沒有 conduct-common 的合成樹，每個組合恆 +N（N＝fixture 條數）。"""
+    with_common = make_root(tmp_path / 'a', stages=['implementation.md'], roles=ALL_ROLES)
+    without = make_root(tmp_path / 'b', stages=['implementation.md'],
+                        roles=[name for name in ALL_ROLES if name != 'conduct-common.md'])
+    common = ['F-共用-01', 'F-共用-02']
+    deltas = set()
+    for role in roles_enum(with_common):
+        owner = {'role': role, 'actor': 'x'}
+        _, lines = emitted(make_client(card(owner=owner)), with_common)
+        ids = [identifier for _, identifier in numbered(lines)]
+        assert ids == ['F-執行-01', *common, f'{ROLE_PREFIX[role]}01'], role
+        _, baseline = emitted(make_client(card(owner=owner)), without)
+        deltas.add(len(ids) - len(numbered(baseline)))
+    assert deltas == {len(common)}
+    _, everyone = emitted(make_client(card(owner=None)), with_common)  # owner null＝角色檔全印
+    ids = [identifier for _, identifier in numbered(everyone)]
+    assert ids[:3] == ['F-執行-01', *common] and ids.count('F-共用-01') == 1
+    print('CONDUCT_COMMON 四角色 delta 集合', sorted(deltas))
 
 
 def test_core_order_stages_then_roles_by_filename(tmp_path):
@@ -120,10 +156,13 @@ def test_core_order_stages_then_roles_by_filename(tmp_path):
 
 
 def test_only_id_shaped_bullets_inside_the_section_are_read(tmp_path):
-    """驗收 2：散文、無 id 條列、別階段、非兩位數 NN、§6 以外的行都不讀。"""
-    root = make_root(tmp_path, stages=['implementation.md'])
+    """驗收 2：散文、無 id 條列、別階段、非兩位數 NN、§6 以外的行都不讀。
+    A8 隔離負控：條文內文含 `-NN：` 時 id 仍止於第一個全形冒號（基線正則會捕成
+    `F-共用-01：見 core/params.md P-x-99`）；既有六個負控行為不變。"""
+    root = make_root(tmp_path, stages=['implementation.md'], roles=['conduct-common.md'])
     _, lines = emitted(make_client(card()), root)
-    assert numbered(lines) == [(1, 'F-執行-01')]
+    assert numbered(lines) == [(1, 'F-執行-01'), (2, 'F-共用-01'), (3, 'F-共用-02')]
+    assert lines[1].startswith('2. F-共用-01：見 core/params.md P-x-99：該欄。 [來源: ')
     body = (FIXTURES / 'stages/implementation.md').read_text(encoding='utf-8')
     population = [line for line in body.splitlines()
                   if line.strip() and not line.startswith(('#', '-' * 3, 'name', 'when',
@@ -131,8 +170,45 @@ def test_only_id_shaped_bullets_inside_the_section_are_read(tmp_path):
     rejected = [line for line in body.splitlines() if '⛔ 不該被讀' in line]
     assert len(rejected) == 5
     assert not any(any(text in line for line in lines) for text in rejected)
+    isolated = ITEM.match('- F-共用-01：見 core/params.md P-x-99：該欄。')
+    assert (isolated[1], isolated[2]) == ('F-共用-01', '見 core/params.md P-x-99：該欄。')
+    for line in ('- F-執行-001：三位數。', '- F-執行-2：一位數。', '- F-執行-01:半形冒號。',
+                 '- 執行-01：無前綴。', '- X-執行-01：X 前綴。', '  - F-執行-01：縮排。'):
+        assert ITEM.match(line) is None, line
+    for line in ('- P-執行-01：專案。', '- T-執行-01：卡面。', '- F-pitfalls-13-01：模組名含數字。'):
+        assert ITEM.match(line) is not None, line
     print('母體：檔內非標題非 frontmatter 行', len(population), '行，明示不可讀',
-          len(rejected), '行，輸出取 1 行')
+          len(rejected), '行，輸出取 1 行；隔離負控 1 行、既有負控 6 行、正控 3 行')
+
+
+def corpus_ids(root):
+    """真規則語料：stages §6、roles §4、conduct-common §1／§2、modules §2 的全部 id（production 抽取）。"""
+    from wf.context import rules_of
+    from wf.verbs.notes import _file_notes
+    rules = rules_of(root)
+    found = []
+    for relative in rules.iter_assets('stages/*.md'):
+        found += _file_notes(rules, relative, '6', 'core')
+    for relative in rules.iter_assets('roles/*.md'):
+        found += _file_notes(rules, relative, '4', 'core')
+    for heading in ('1', '2'):
+        found += _file_notes(rules, 'roles/conduct-common.md', heading, 'core')
+    for relative in rules.iter_assets('modules/*/module.md'):
+        found += _file_notes(rules, relative, '2', 'module')
+    return [note.id for note in found]
+
+
+def test_every_corpus_id_is_still_read_under_the_narrow_item(tmp_path):
+    """A8 正控（V3）：現行全部語料 id（含 conduct-common 的 F-共用-01…23）逐一仍被收，
+    形狀複驗 0 例外、重複 0；conduct-common 的 id 恰為連號 01…23。"""
+    root = make_root(tmp_path, real=True)
+    ids = corpus_ids(root)
+    assert ids and [identifier for identifier in ids if not ID_SHAPE.match(identifier)] == []
+    assert len(ids) == len(set(ids))
+    common = [identifier for identifier in ids if identifier.startswith('F-共用-')]
+    assert common == [f'F-共用-{index:02d}' for index in range(1, 24)]
+    assert not any('：' in identifier for identifier in ids)
+    print('CORPUS_IDS', len(ids), '個，F-共用', len(common), '個，形狀例外 0')
 
 
 def test_stage_prefix_separates_executor_role_from_execution_stage(tmp_path):
@@ -144,29 +220,32 @@ def test_stage_prefix_separates_executor_role_from_execution_stage(tmp_path):
 
 
 def test_source_marks_carry_origin_and_frontmatter(tmp_path):
-    """驗收 5 與 PM 預設：四值來源前綴；T- 無 frontmatter 省略後兩段。"""
+    """A6：來源標記 `<kind>:<path>`——core／module 的 path 相對 rules root、project 相對
+    project root、card＝完整 canonical Issue URL；T-／P- 無 frontmatter 省略後兩段。"""
     root = make_root(tmp_path, stages=['implementation.md'], modules=['demo'],
                      listed=['demo'], project_stage='執行')
     client = make_client(card(notes=[{'id': 'T-執行-01', 'text': '卡面條目',
                                       'origin': 'https://example.invalid/1'}]))
     _, lines = emitted(client, root)
-    assert lines[0] == ('1. F-執行-01：核心階段條目。 [來源: core/stages/implementation.md'
+    assert lines[0] == ('1. F-執行-01：核心階段條目。 [來源: core:stages/implementation.md'
                         '#6 · 注意事項 · implementation-fixture：合成順序與條列文法的樣本'
                         ' · confirmed 2026-09-08]')
-    assert lines[1].endswith('[來源: module/modules/demo/module.md#2 · 注意事項'
+    assert lines[1].endswith('[來源: module:modules/demo/module.md#2 · 注意事項'
                              ' · demo：合成順序樣本的假模組 · confirmed 2026-09-08]')
-    assert lines[2].endswith('[來源: project/.wf/stages/執行.md]')
-    assert lines[3].endswith('[來源: card/issues/10#notes]')
+    assert lines[2].endswith('[來源: project:.wf/stages/執行.md]')
+    assert lines[3].endswith('[來源: card:https://github.com/fake/repo/issues/10#notes]')
+    for shape in ('core/core', 'core/stages', 'module/modules', 'project/.wf', 'card/issues'):
+        assert not any(shape in line for line in lines), shape
 
 
 def test_card_notes_keep_their_order(tmp_path):
-    """驗收 5：卡面 notes 欄兩條照序印，來源標記＝card。"""
+    """驗收 5：卡面 notes 欄兩條照序印，來源標記＝card 的完整 Issue URL。"""
     root = make_root(tmp_path)
     entries = [{'id': 'T-執行-01', 'text': '先', 'origin': 'https://example.invalid/1'},
                {'id': 'T-執行-02', 'text': '後', 'origin': 'https://example.invalid/2'}]
     _, lines = emitted(make_client(card(notes=entries)), root)
     assert numbered(lines) == [(1, 'T-執行-01'), (2, 'T-執行-02')]
-    assert all(line.endswith('[來源: card/issues/10#notes]') for line in lines)
+    assert all(line.endswith('[來源: card:https://github.com/fake/repo/issues/10#notes]') for line in lines)
 
 
 def test_project_stage_file_missing_prints_nothing(tmp_path):
@@ -180,9 +259,10 @@ def test_project_stage_file_missing_prints_nothing(tmp_path):
 
 
 def test_enabled_module_notes_and_declaration_mismatch(tmp_path):
-    """驗收 3：真 escalation 印四條；ghost 宣告的 F-ghost-02 未在 §2 印一行、rc=0。"""
+    """驗收 3／A4：真 escalation（宣告已是 {id} 物件）印四條；ghost 宣告的 F-ghost-02 未在 §2 印一行、rc=0。"""
     real = make_root(tmp_path / 'a', real=True, listed=['escalation'])
-    _, lines = emitted(make_client(card()), real)
+    result, lines = emitted(make_client(card()), real)
+    assert result.rc == 0
     assert [i for _, i in numbered(lines) if i.startswith('F-escalation-')] == [
         'F-escalation-01', 'F-escalation-02', 'F-escalation-03', 'F-escalation-04']
     off = make_root(tmp_path / 'b', real=True, listed=[])
@@ -193,6 +273,129 @@ def test_enabled_module_notes_and_declaration_mismatch(tmp_path):
     assert result.rc == 0
     assert '模組 ghost 宣告 F-ghost-02 未在 §2' in mismatch
     assert numbered(mismatch) == [(1, 'F-ghost-01')]
+
+
+def load_reachability():
+    spec = importlib.util.spec_from_file_location('reachability', RULES / '.github/scripts/reachability.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_module_declaration_id_roles_object_is_consumed(tmp_path):
+    """A4／V7：兩個 consumer 對 {id, roles} 都不拋例外——notes.py 依 roles 過濾（缺席＝全角色），
+    reachability.notes_errors 對帳仍相等（0 錯）；真 repo 的 11 個模組宣告同樣 0 錯。"""
+    root = make_root(tmp_path, modules=['scoped'], listed=['scoped'])
+    seen = {}
+    for role in roles_enum(root):
+        result, lines = emitted(make_client(card(owner={'role': role, 'actor': 'x'})), root)
+        assert result.rc == 0
+        seen[role] = [i for _, i in numbered(lines)]
+    assert all('F-scoped-01' in ids for ids in seen.values())
+    assert [role for role, ids in seen.items() if 'F-scoped-02' in ids] == ['reviewer']
+    assert sorted(role for role, ids in seen.items() if 'F-scoped-03' in ids) == ['executor', 'pm']
+    reachability = load_reachability()
+    body = (FIXTURES / 'modules/scoped/module.md').read_text(encoding='utf-8')
+    declared, = load_blocks(root).by_label('yaml wf-module')
+    assert reachability.notes_errors('scoped', declared.data['adds']['notes'], body) == []
+    for path in sorted((RULES / 'modules').glob('*/module.md')):
+        text = path.read_text(encoding='utf-8')
+        data = json.loads(reachability.MODBLOCK.search(text).group(1))
+        assert reachability.notes_errors(data['name'], data['adds']['notes'], text) == [], path
+        assert all(isinstance(item, dict) for item in data['adds']['notes']), path
+    print('MODULE_ROLES', {role: len(ids) for role, ids in seen.items()})
+
+
+SOURCE_MARK = re.compile(r'\[來源: ([a-z]+):([^ #\]]+)(?:#[^ \]]*)?(?: · [^\]]*)?\]')
+
+
+def test_every_file_source_path_opens_from_its_declared_root(tmp_path, monkeypatch):
+    """A6／V4：掃描面＝notes／brief --for executor／reviewer／closeout／review 在 fixture 上實際輸出的
+    全部來源標記；kind≠card 者以宣告 root 逐一開啟成功率 100%，card 者＝完整 canonical Issue URL；
+    ⛔ 不再出現 core/core、module/modules、project/.wf、card/issues 串接形狀。本機 git 子指令以替身取代。"""
+    from .test_brief_modules import project_item
+    from .test_brief_sections import block as brief_block, card as brief_card, issue_row, make_client as brief_client
+    from .test_brief_sections import make_root as brief_root
+    from wf.verbs.brief import brief
+    from wf.verbs.review import review
+    monkeypatch.setattr('wf.verbs.brief.merge_tree', lambda *a, **k: 0)
+    monkeypatch.setattr('wf.verbs.closeout.merge_tree', lambda *a, **k: 0)
+    monkeypatch.setattr('wf.verbs.review.rev_parse', lambda *a, **k: None)
+    root = brief_root(tmp_path, listed=['identity', 'pitfalls-13'], contracts=['contract-ok.md'])
+    shutil.copytree(FIXTURES / 'modules/scoped', root / 'modules/scoped')
+    (root / '.wf/stages').mkdir()
+    (root / '.wf/stages/執行.md').write_text('- P-執行-01：專案層條目。\n', encoding='utf-8')
+    data = brief_card(owner={'role': 'executor', 'actor': 'me'}, resources=['file:a'], parent='WF-000',
+                      parent_spec_version=1, branch='wf/WF-001', source_sha='b' * 40,
+                      notes=[{'id': 'T-執行-01', 'text': '卡面', 'origin': 'https://example.invalid/2'}])
+    rows = [issue_row(10, data),
+            issue_row(11, brief_card(card_id='WF-002', source_issue=11, resources=['file:a'],
+                                     owner={'role': 'executor', 'actor': 'other'})),
+            issue_row(12, brief_card(card_id='WF-000', source_issue=12, spec_version=3))]
+    comments = [{'id': 1, 'url': 'https://example.invalid/c1', 'author': 'a', 'created_at': '2026-09-01T00:00:00Z',
+                 'body': brief_block('wf-note', {'id': 'T-執行-09', 'text': '候選', 'origin': 'https://example.invalid/9'})}]
+
+    def client():
+        return brief_client(rows=rows, items=[project_item(11, 'WF-002')], comments=comments,
+                            pulls_for_branch=[])
+    outputs = {'notes': []}
+    notes(10, client=client(), root=root, emit=outputs['notes'].append)
+    for target in ('executor', 'reviewer', 'closeout'):
+        outputs[f'brief --for {target}'] = []
+        assert brief(10, target=target, client=client(), root=root, emit=outputs[f'brief --for {target}'].append).rc == 0
+    path = tmp_path / 'return.json'
+    path.write_text('{}', encoding='utf-8')
+    outputs['review --role executor'] = []
+    assert review(10, file=path, role='executor', client=client(), root=root,
+                  emit=outputs['review --role executor'].append).rc == 0
+    marks, kinds = [], set()
+    for verb, lines in outputs.items():
+        for line in lines:
+            for kind, where in SOURCE_MARK.findall(line):
+                marks.append((verb, kind, where))
+                kinds.add(kind)
+    assert kinds == {'core', 'module', 'project', 'card'}
+    unopenable = [(verb, kind, where) for verb, kind, where in marks
+                  if kind != 'card' and not (root / where).is_file()]
+    assert unopenable == []
+    assert all(where == 'https://github.com/fake/repo/issues/10' for _, kind, where in marks if kind == 'card')
+    for shape in ('core/core', 'module/modules', 'project/.wf', 'card/issues'):
+        assert not any(shape in line for lines in outputs.values() for line in lines), shape
+    print('SOURCE_MARKS', len(marks), '個；kind 分布',
+          {kind: sum(1 for _, k, _ in marks if k == kind) for kind in sorted(kinds)},
+          '；逐動詞', {verb: sum(1 for v, _, _ in marks if v == verb) for verb in outputs})
+
+
+def test_compose_alone_performs_no_remote_write(tmp_path, monkeypatch):
+    """A9／V9：直接跑組合函式（不經動詞 orchestration）⇒ 替身零呼叫、零遠端寫入、⛔ 不進對帳；
+    正控：同一計數器對動詞 `notes` 會響（動詞層明確呼叫 reconcile_projection），且對直接寫入會響。"""
+    from wf.compose.project_config import load_project_config
+    from wf.context import rules_of
+    from wf.verbs import notes as module
+    from wf.verbs._common import enabled_modules
+    from wf.verbs.notes import compose_notes
+    root = make_root(tmp_path, stages=['implementation.md'], roles=['conduct-common.md', 'executor.md'],
+                     modules=['demo'], listed=['demo'], project_stage='執行')
+    data = card(notes=[{'id': 'T-執行-01', 'text': '卡面條目', 'origin': 'https://example.invalid/1'}])
+    reconciled = []
+    original = module.reconcile_projection
+    monkeypatch.setattr(module, 'reconcile_projection',
+                        lambda *a, **k: reconciled.append('reconcile_projection') or original(*a, **k))
+    client = make_client(data)
+    catalog = load_blocks(root)
+    enabled = enabled_modules(catalog, load_project_config(root), data, client=None, project=None, number=10)
+    printed = []
+    items = compose_notes(rules_of(root), root, stage='執行', role='executor', enabled=enabled, card=data,
+                          number=10, repo=client.repo, report=printed.append)
+    assert [note.id for note in items] == ['F-執行-01', 'F-共用-01', 'F-共用-02', 'F-執行者-01',
+                                           'F-demo-01', 'P-執行-01', 'T-執行-01']
+    assert client.calls == [] and reconciled == [] and printed == []
+    result, _ = emitted(client, root)  # 正控：動詞層才呼叫對帳
+    assert result.rc == 0 and reconciled == ['reconcile_projection']
+    assert [name for name, _ in client.calls if name in WRITES] == []  # 無投影不等 ⇒ 仍零寫入
+    client.update_card_body(10, data)  # 計數器對直接寫入會響
+    assert [name for name, _ in client.calls if name in WRITES] == ['update_card_body']
+    print('COMPOSE_PURE 組合函式呼叫替身 0 次；動詞層 reconcile_projection 1 次')
 
 
 def test_pitfalls_template_two_layers(tmp_path):
@@ -230,7 +433,7 @@ def candidate_comment(identifier='T-執行-09'):
 
 def test_success_result_carries_the_ordered_formal_ids(tmp_path):
     """CLI-002：rc==0 回 `_write.NotesResult`；note_ids 逐項、逐序等於編號行的 id。
-    四來源各 1 條的母體同 test_four_sources_in_order_with_continuous_numbering。"""
+    來源各 1 條的母體同 test_six_segments_in_order_with_continuous_numbering（無 conduct-common fixture）。"""
     root = make_root(tmp_path, stages=['implementation.md'], roles=['executor.md'],
                      modules=['demo'], listed=['demo'], project_stage='執行')
     client = make_client(card(notes=[{'id': 'T-執行-01', 'text': '卡面條目',

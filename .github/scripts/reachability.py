@@ -58,15 +58,48 @@ def load_modules() -> list[dict]:
 NOTE_ID = re.compile(r"^- ([^：\s]+)：", re.M)  # §2 每條起首的 id，形狀另驗，⛔ 不因不合形狀而漏抓
 
 
-def notes_errors(name: str, declared: list, body: str) -> list[str]:
-    """§0 adds.notes 與 §2 條列 id 的對帳：只比 id 集合、順序與前綴，⛔ 不讀條文內容。"""
+def role_values() -> list[str]:
+    """core/enums.md 的 roles 值域（adds.notes[].roles 的唯一居所），⛔ 不重打常數。"""
+    e = ENUMBLOCK.search((ROOT / "core/enums.md").read_text(encoding="utf-8"))
+    return json.loads(e.group(1))["roles"]["enum"] if e else []
+
+
+def declared_ids(name: str, declared: list, roles: list[str]) -> tuple[list, list[str]]:
+    """§0 adds.notes 元素的最小形狀（core/verbs.md §3 ④）：同址物件 `{id, roles}`，`roles` 缺席＝全角色（合法），
+    存在時須為無重複、值在 roles 值域內的陣列。回傳 (可對帳的 id 序列, 可讀錯誤行)；⛔ 不是 schema／validator（WF-011）。"""
+    ids, errs = [], []
+    for index, item in enumerate(declared):
+        where = f"{name}: adds.notes[{index}]"
+        if not isinstance(item, dict):
+            errs.append(f"{where} 元素 {item!r} 不是 {{id, roles}} 物件（舊字串形狀）")
+            continue
+        if not isinstance(item.get("id"), str):
+            errs.append(f"{where} 物件缺 id：{item!r}")
+            continue
+        ids.append(item["id"])
+        if "roles" not in item:
+            continue  # 缺席＝全角色，合法
+        scope = item["roles"]
+        if not isinstance(scope, list):
+            errs.append(f"{where} roles 不是陣列：{scope!r}")
+            continue
+        foreign = [r for r in scope if not isinstance(r, str) or r not in roles]  # 逐元素先驗「值域內字串」
+        if foreign:  # 刻意先於 set()：物件／陣列元素不可雜湊，先雜湊會拋 TypeError 而不是可讀行（R1）
+            errs.append(f"{where} roles 含值域外的值：{foreign!r}（值域 {roles}）")
+        elif len(set(scope)) != len(scope):  # 全為合法字串才驗重複
+            errs.append(f"{where} roles 有重複值：{scope!r}")
+    return ids, errs
+
+
+def notes_errors(name: str, declared: list, body: str, roles: list[str] | None = None) -> list[str]:
+    """§0 adds.notes 與 §2 條列 id 的對帳：只比元素形狀、id 集合、順序與前綴，⛔ 不讀條文內容。"""
+    ids, errs = declared_ids(name, declared, role_values() if roles is None else roles)
     sec = body.split("## 2 · 注意事項", 1)
     listed = NOTE_ID.findall(sec[1]) if len(sec) == 2 else []
-    errs = []
-    if declared != listed:
-        errs.append(f"{name}: adds.notes={declared} ≠ §2 條列={listed}")
+    if ids != listed:
+        errs.append(f"{name}: adds.notes={ids} ≠ §2 條列={listed}")
     shape = re.compile(rf"^F-{re.escape(name)}-\d{{2}}$")
-    for i in declared + [x for x in listed if x not in declared]:
+    for i in ids + [x for x in listed if x not in ids]:
         if not shape.match(i):
             errs.append(f"{name}: id {i} 不是 F-{name}-NN 形狀")
     return errs
@@ -408,16 +441,47 @@ def selftest(sm: dict) -> int:
         print(f"selftest_{name}: {'PASS' if ok else 'FAIL'}（{len(errs)} 條錯誤）")
         bad += not ok
     good = "```yaml wf-module\n{}\n```\n## 2 · 注意事項\n\n- F-x-01：a。\n- F-x-02：b。\n"
-    e_ok = notes_errors("x", ["F-x-01", "F-x-02"], good)
-    e_missing = notes_errors("x", [], good)
-    e_order = notes_errors("x", ["F-x-02", "F-x-01"], good)
-    e_prefix = notes_errors("x", ["F-y-01", "F-x-02"], good.replace("F-x-01", "F-y-01"))
-    e_shape = notes_errors("x", ["F-x-extra-01", "F-x-02"], good.replace("F-x-01", "F-x-extra-01"))
-    e_listed_prefix = notes_errors("x", [], good.replace("F-x-01", "P-x-01").replace("F-x-02", "P-x-02"))
-    e_listed_digits = notes_errors("x", [], good.replace("F-x-01", "F-x-1").replace("F-x-02", "F-x-2"))
+    roles = ["requester", "pm", "executor", "reviewer"]  # 只供負控形狀；正式值域由 role_values() 讀 core/enums.md
+
+    def notes_probe(declared, body=good):
+        """每條控制各自獨立跑：未修正的 notes_errors 對物件元素會拋 TypeError，
+        此處攔成可辨識的失敗行，讓該條負控印 FAIL 而⛔ 不炸掉整個 selftest。"""
+        try:
+            return notes_errors("x", declared, body, roles)
+        except Exception as exc:  # noqa: BLE001（負控有效性證明：traceback＝該條 FAIL）
+            return [f"traceback: {type(exc).__name__}: {exc}"]
+
+    def readable(errs, phrase):
+        """該形狀被報成含指定片語的可讀錯誤行（元素壞掉時 id 序列對帳也會一併響），且⛔ 無 traceback 行。"""
+        return any(phrase in e for e in errs) and not any(e.startswith("traceback") for e in errs)
+
+    two = [{"id": "F-x-01"}, {"id": "F-x-02"}]
+    e_ok = notes_probe(two)
+    e_missing = notes_probe([])
+    e_order = notes_probe([{"id": "F-x-02"}, {"id": "F-x-01"}])
+    e_prefix = notes_probe([{"id": "F-y-01"}, {"id": "F-x-02"}], good.replace("F-x-01", "F-y-01"))
+    e_shape = notes_probe([{"id": "F-x-extra-01"}, {"id": "F-x-02"}], good.replace("F-x-01", "F-x-extra-01"))
+    e_listed_prefix = notes_probe([], good.replace("F-x-01", "P-x-01").replace("F-x-02", "P-x-02"))
+    e_listed_digits = notes_probe([], good.replace("F-x-01", "F-x-1").replace("F-x-02", "F-x-2"))
+    # A4／A10 五種非法形狀，各自須報成可讀錯誤行（⛔ 不是未攔截 traceback）；正控：roles 缺席＝全角色 PASS。
+    controls = {
+        "old_string_element": (notes_probe(["F-x-01", {"id": "F-x-02"}]), "不是 {id, roles} 物件"),
+        "object_missing_id": (notes_probe([{"roles": ["pm"]}, {"id": "F-x-02"}]), "物件缺 id"),
+        "roles_not_array": (notes_probe([{"id": "F-x-01", "roles": "pm"}, {"id": "F-x-02"}]), "roles 不是陣列"),
+        "roles_duplicate_value": (notes_probe([{"id": "F-x-01", "roles": ["pm", "pm"]}, {"id": "F-x-02"}]), "roles 有重複值"),
+        "roles_out_of_enum": (notes_probe([{"id": "F-x-01", "roles": ["pm", "ghost"]}, {"id": "F-x-02"}]), "roles 含值域外的值"),
+        # R1（Astra major）：不可雜湊的值域外元素——物件與陣列——也須報可讀行，⛔ 不是 set() 的 TypeError
+        "roles_object_element": (notes_probe([{"id": "F-x-01", "roles": [{}]}, {"id": "F-x-02"}]), "roles 含值域外的值"),
+        "roles_array_element": (notes_probe([{"id": "F-x-01", "roles": [[]]}, {"id": "F-x-02"}]), "roles 含值域外的值"),
+    }
+    e_roles_absent = notes_probe([{"id": "F-x-01"}, {"id": "F-x-02", "roles": ["reviewer"]}])  # 一缺席一列名，皆合法
+    for label, (errs, phrase) in controls.items():
+        print(f"  selftest_module_notes_negative_{label}: {'PASS' if readable(errs, phrase) else 'FAIL'}（{errs}）")
+    print(f"  selftest_module_notes_positive_roles_absent_is_all_roles: {'PASS' if not e_roles_absent else 'FAIL'}（{e_roles_absent}）")
     ok = (not e_ok and len(e_missing) == 1 and len(e_order) == 1 and len(e_prefix) == 1 and len(e_shape) == 1
-          and e_listed_prefix and e_listed_digits)
-    print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 6 條）")
+          and e_listed_prefix and e_listed_digits
+          and all(readable(errs, phrase) for errs, phrase in controls.values()) and not e_roles_absent)
+    print(f"selftest_module_notes_consistency: {'PASS' if ok else 'FAIL'}（負控 {6 + len(controls)} 條、正控 2 條）")
     bad = bad or not ok
     ret, oth = {"m": {"A"}}, {"m": {"B"}}
     s_ok = sections_errors("m", ["A", "B"], ret, oth)

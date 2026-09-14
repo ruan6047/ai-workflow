@@ -17,7 +17,7 @@ last_confirmed: 2026-09-08
   "fact_source": "modules.json",
   "adds": {"fields": [], "stages": [], "enums": {"states": []},
            "transitions": {"add": [], "remove": []},
-           "flags": [], "notes": ["F-demo-01"], "handoff_sections": []},
+           "flags": [], "notes": [{"id": "F-demo-01"}], "handoff_sections": []},
   "project_inputs": [],
   "params": {}
 }
