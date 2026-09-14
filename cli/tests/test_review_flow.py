@@ -13,20 +13,60 @@ from wf.compose.schema import compose_schema
 from wf.gh.client import NotFound
 from wf.gh.writes import read_block
 from wf.verbs.notes import notes
-from wf.verbs.review import review, run
+from wf.verbs.review import NO_APPENDIX, NO_LOCAL_HEAD, review, run
 from .test_brief_sections import (CANDIDATE, PERTURBATIONS, WRITES, assert_prose_goes_blind,
                                   block, card, formal_card, make_client, make_root,
                                   perturb)  # noqa: F401（perturb 是 fixture，靠名字注入）
 
+ALLOWED_GIT = {'rev-parse', 'log', 'diff'}  # review 的本機唯讀取源；⛔ 不含任何寫入型子指令
+
+
+def git_subcommand(argv):
+    """`git [全域旗標…] <子指令>` 的子指令；`-C` 另吃一個值。不是 git ⇒ None。"""
+    if not argv or Path(argv[0]).name != 'git':
+        return None
+    rest = list(argv[1:])
+    while rest:
+        token = rest.pop(0)
+        if token == '-C' and rest:
+            rest.pop(0)
+        elif not token.startswith('-'):
+            return token
+    return None
+
+
+def strict_offline(monkeypatch, token):
+    """嚴格放行（需求方 2026-09-14 裁定）：只有本機 git 的 rev-parse／log／diff 可跑——
+    `review` 的本機分支頭比對與 git 附錄走 gh/localrev.py 這三個唯讀子指令（CLI-001）。
+    字串型 shell command、gh／curl／wget／ssh、其他 git 子指令與任何其他子程序一律擋；
+    socket 連線一律擋（roles/conduct-common.md §1）。"""
+    real = subprocess.run
+
+    def denied(*args, **kwargs):
+        raise AssertionError(token)
+
+    def guarded(argv, *args, **kwargs):
+        if isinstance(argv, (str, bytes)) or git_subcommand([str(item) for item in argv]) not in ALLOWED_GIT:
+            denied()
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, 'connect', denied)
+    monkeypatch.setattr(subprocess, 'run', guarded)
+
+
+
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    def denied(*args, **kwargs):
-        raise AssertionError('REVIEW_NETWORK_DENIED')
-    monkeypatch.setattr(socket.socket, 'connect', denied)
-    monkeypatch.setattr(subprocess, 'run', denied)
+    strict_offline(monkeypatch, 'REVIEW_NETWORK_DENIED')
     with pytest.raises(AssertionError, match='REVIEW_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
+    with pytest.raises(AssertionError, match='REVIEW_NETWORK_DENIED'):
+        subprocess.run('git rev-parse HEAD')          # 字串型 shell command
+    with pytest.raises(AssertionError, match='REVIEW_NETWORK_DENIED'):
+        subprocess.run(['git', 'push', 'origin'])     # 寫入型 git 子指令
+    with pytest.raises(AssertionError, match='REVIEW_NETWORK_DENIED'):
+        subprocess.run(['python', '-c', 'pass'])      # 其他子程序
 
 
 def invoke(tmp_path, *, data=None, changes=None, role='executor', listed=(), comments=(),
@@ -107,13 +147,14 @@ def test_sources_and_identity_are_overwritten(tmp_path, role, expected):
     returned = read_block(posted['body'], 'wf-return')
     assert returned == dict(card_id='WF-001', iteration=2, role=role, source_sha=expected)
     assert posted['first_line'] == ('wf:return' if role == 'executor' else 'wf:verdict')
-    if role == 'executor':
-        assert '未能比對本機分支頭' in lines
-    else:
-        assert not [call for call in client.calls if call[0] == 'branch_head']
-    assert '未能取得 git 附錄' in lines
+    if role == 'executor':  # tmp root 不是 git 工作樹＝本機狀態取不到（CLI-001 驗收 1(c)）
+        assert NO_LOCAL_HEAD in lines
+    else:  # reviewer 只讀遠端預設分支頭當 git 附錄的 base，⛔ 不讀卡面分支的遠端頭
+        assert [args['branch'] for name, args in client.calls if name == 'branch_head'] == ['main']
+    appendix = [line for line in lines if line.startswith(NO_APPENDIX)]
+    assert len(appendix) == 1 and appendix[0].partition('：')[2].strip()
     assert posted['body'].count('```json wf-return\n') == 1
-    assert posted['body'].endswith('\n```\n\n未能取得 git 附錄\n')
+    assert posted['body'].endswith('\n```\n\n' + appendix[0] + '\n')
 
 
 def test_reviewer_null_sha_is_d3(tmp_path):
