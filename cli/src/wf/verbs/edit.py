@@ -1,6 +1,8 @@
 """消費 core/verbs.md §1 edit／§2、core/card-schema.md §1／§2／§5 wf-projection、
 core/enums.md tiers、core/ruling.md kind、core/naming.md §3、modules/*/module.md §0；
 設定介面依 ADOPTION.md §2。
+operation-level precondition（core/verbs.md §2）：duplicate card_id、source_issue 承載核對在讀到卡面之後、
+item 的 repository stable ID 在取得 item 之後，都先於本動詞第一個遠端 mutation；失敗＝本機硬擋一行、零遠端寫入。
 """
 from copy import deepcopy
 from dataclasses import replace
@@ -12,11 +14,13 @@ from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.transitions import is_legal_plan
 from wf.compose.validate import validate, _equal
+from wf.context import IdentityError
 from wf.gh.client import GhError, NotFound
+from wf.gh.target import check_item_repository, item_ref
 from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (Printer, block_object, board_cards, board_items, card_number,
-                              chain_depth, comment_blocks, parse_args)
-from wf.verbs._write import (WriteResult, prepare_card, projection_values, reconcile_projection,
+                              chain_depth, comment_blocks, parse_args, verify_source_issue)
+from wf.verbs._write import (WriteResult, blocked, prepare_card, projection_values, reconcile_projection,
                              reject, write_card)
 
 SPEC_KEYS = ('acceptance', 'verification', 'non_scope', 'resources')
@@ -52,14 +56,17 @@ def _first_failure(failures, items):
 
 
 def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
-         project_owner=None, project_number=None, emit=print):
+         project_owner=None, project_number=None, emit=print, context=None):
     """card 為卡 ID 或 issue 號；assignments 為 `<欄>=<JSON>` 字串序列（⛔ 不收裸 str）；
     catalog／已啟用模組由呼叫端供給。整次提交要嘛全寫、要嘛零寫入。"""
     if isinstance(assignments, str):  # 裸 str 會被逐字元迭代成誤拒，且須早於任何遠端讀寫與 try
         raise TypeError('assignments 須為 <欄>=<JSON> 字串序列，⛔ 不收裸 str')
     assignments = list(assignments)
-    number, skipped = card_number(card, client)
     report = Printer(emit)
+    try:
+        number, skipped = card_number(card, client)
+    except IdentityError as exc:
+        return blocked(report, exc.code, str(exc))
 
     def refuse(code, reason):
         return reject(client, number, code, reason, tuple(report))
@@ -70,6 +77,7 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
         report('無裁定連結')
     try:  # ①賦值語法：全部 --set 逐項解析完才進下一層（層序由需求方 2026-09-12 裁定）
         current = block_object(client.issue(number)['body'], 'wf-card')
+        verify_source_issue(current, number)
         items = []
         for assignment in assignments:
             key, separator, raw = assignment.partition('=')
@@ -78,6 +86,8 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
             value = json.loads(raw)
             json.dumps(value, allow_nan=False)
             items.append((key, value))
+    except IdentityError as exc:
+        return blocked(report, exc.code, str(exc))
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
     seen, duplicates = set(), {}  # ②正規化後重複欄位：順序＝各欄第二次出現的先後
@@ -155,7 +165,13 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
         'owner': project_owner, 'number': project_number}
     board = None if location is None else client.project(project_owner, project_number,
                                                          projection(catalog))
-    item_id = board_items(board, client.repo, include_archived=True).get(number, {}).get('id')
+    item = board_items(board, client.repo, include_archived=True).get(number)
+    item_id = item['id'] if item else None
+    if item is not None and context is not None:  # A8：取得 item 之後、本動詞首次 mutation 之前
+        try:
+            check_item_repository(item_ref(item), context.repository)
+        except IdentityError as exc:
+            return blocked(report, exc.code, str(exc))
     # §1 edit 寫格：投影鍵變動即回寫該欄（§2 順序）；其餘鍵 ⛔ 不碰 Project。
     target = ({'project_owner': project_owner, 'project_number': project_number, 'item_id': item_id}
               if set(changed) & {spec['key'] for spec in projection(catalog).values()}
@@ -169,7 +185,7 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
             except (ValueError, TypeError, KeyError) as exc:
                 raise ValueError(f'{name} 投影欄無法解析：{exc}') from exc
         failed = reconcile_projection(current, client=client, catalog=catalog, location=location,
-                                      project=board, number=number, report=report)
+                                      project=board, number=number, report=report, context=context)
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
     if failed is not None:  # 對帳自己的欄算不出＝已拒收（舊卡欄由 reconcile 先算後寫）
@@ -188,7 +204,7 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
     return replace(result, printed=tuple(report))
 
 
-def run(argv=None, *, client, root='.', catalog=None, enabled_modules=()):
+def run(argv=None, *, client, root='.', catalog=None, enabled_modules=(), context=None):
     """七動詞統一入口名；參數次序同其餘動詞的 run，行為不變。"""
     args = parse_args('wf edit', argv, ('card', {}),
                       ('--set', {'required': True, 'action': 'append', 'dest': 'assignments'}),
@@ -196,7 +212,7 @@ def run(argv=None, *, client, root='.', catalog=None, enabled_modules=()):
     config = load_project_config(root)
     project = config['project'] or {}
     return edit(args.card, args.assignments, client=client, catalog=catalog,
-                ruling=args.ruling, enabled_modules=enabled_modules,
+                ruling=args.ruling, enabled_modules=enabled_modules, context=context,
                 project_owner=project.get('owner'), project_number=project.get('number')).rc
 
 

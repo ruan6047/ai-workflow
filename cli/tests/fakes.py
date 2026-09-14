@@ -1,11 +1,24 @@
 """共用手構替身；消費 core/verbs.md §2。"""
 from copy import deepcopy
+from types import SimpleNamespace
+
+REPOSITORY_ID = 'R_FAKE'  # 替身的 repository stable ID：任何 slug 都回同一顆（同一 repo 的不同拼寫）
+PROJECT_ID = 'PVT_FAKE'
+DEFAULTS = {  # bootstrap 期的兩個身分讀取：未程式化時給可解析的預設，讓直呼 main() 的既有測試照常
+    'repository': lambda slug: {'node_id': REPOSITORY_ID, 'full_name': slug, 'default_branch': 'main',
+                                'viewer_permission': 'ADMIN'},
+    'capability': lambda owner, number: {'id': PROJECT_ID, 'title': 'fake', 'viewerCanUpdate': True},
+}
 
 
 class FakeGhClient:
-    """responses 可給固定回應或 callable(**kwargs)；寫入只記 calls，不修改遠端模型。"""
+    """responses 可給固定回應或 callable(**kwargs)；寫入只記 calls，不修改遠端模型。
+    context：直呼動詞的測試沒有 bootstrap，替身自帶「已通過 static gate」的樁；經 main() 時由
+    bind_context 換成真 Context（呼叫序記入 calls，供 preflight 時序測試）。"""
 
     repo = 'fake/repo'  # 與 post_comment 的 html_url 同一 repo；子類可覆寫
+    default_branch = 'main'  # 直呼動詞時的預設分支；bind_context 後改取 resolved 值
+    context = SimpleNamespace(static_identity_verified=True)
 
     def __init__(self, **responses):
         self.responses = responses
@@ -13,8 +26,19 @@ class FakeGhClient:
 
     def _read(self, method, **kwargs):
         self.calls.append((method, deepcopy(kwargs)))
-        value = self.responses[method]
+        value = self.responses[method] if method in self.responses else DEFAULTS[method]
         return deepcopy(value(**kwargs) if callable(value) else value)
+
+    def bind_context(self, context):
+        self.calls.append(('bind_context', {'static_identity_verified': context.static_identity_verified}))
+        self.context = context
+        self.default_branch = context.repository.default_branch
+
+    def repository(self, slug):
+        return self._read('repository', slug=slug)
+
+    def capability(self, owner, number):
+        return self._read('capability', owner=owner, number=number)
 
     def issue(self, number):
         return self._read('issue', number=number)
@@ -69,7 +93,8 @@ class FakeGhClient:
 
     def add_to_project(self, project_id, issue_id):
         self.calls.append(('add_to_project', dict(project_id=project_id, issue_id=issue_id)))
-        return {'data': {'addProjectV2ItemById': {'item': {'id': 'ITEM'}}}}
+        return {'data': {'addProjectV2ItemById': {'item': {'id': 'ITEM', 'content': {
+            '__typename': 'Issue', 'repository': {'id': REPOSITORY_ID, 'nameWithOwner': self.repo}}}}}}
 
     def remove_from_project(self, project_id, item_id):
         self.calls.append(('remove_from_project', dict(project_id=project_id, item_id=item_id)))

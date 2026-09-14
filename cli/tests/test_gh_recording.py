@@ -34,7 +34,9 @@ def scenarios():
         'ci': ('ci_checks', [HEAD]),
         'ancestor': ('is_ancestor', [MERGE, 'main']),
         'merge_base': ('merge_base', [SHA, MERGE]),
-        'project': ('project', ['ruan6047', 4, projection_names()]),
+        'project': ('project', ['ruan6047', 8, projection_names()]),
+        'repository': ('repository', [REPO]),
+        'capability': ('capability', ['ruan6047', 8]),
     }
 
 
@@ -67,10 +69,13 @@ def load(name):
     return json.loads((FIXTURES / f'{name}.json').read_text())
 
 
-def record():
+def record(only=None):
+    """only＝只重錄這些 fixture 名（缺省全部）；每個 fixture 的 provenance 都是真實 API 回應。"""
     from wf.gh.client import GhClient
     FIXTURES.mkdir(parents=True, exist_ok=True)
     for name, (method, args) in scenarios().items():
+        if only is not None and name not in only:
+            continue
         if name == 'comment':
             args = [load('comments')['observed'][0]['id']]
         exchanges = []
@@ -88,7 +93,9 @@ def record():
             exchanges.append(exchange)
             return response
 
-        client = GhClient(REPO, runner=recording_runner, page_size=1 if name == 'comments' else 100)
+        # project 對本 repo 的板（21 項）以 page_size=10 錄，讓 items 分頁 >1 頁仍成立。
+        client = GhClient(REPO, runner=recording_runner,
+                          page_size=1 if name == 'comments' else 10 if name == 'project' else 100)
         result = getattr(client, method)(*args)
         fixture = dict(provenance='真實 API 回應', method=method, args=args,
                        page_size=client.page_size, exchanges=exchanges,
@@ -137,8 +144,8 @@ def verify_live():
 
 if __name__ == '__main__':
     import sys
-    if sys.argv[1:] == ['--record']:
-        record()
+    if sys.argv[1:2] == ['--record']:
+        record(sys.argv[2:] or None)
     elif sys.argv[1:] == ['--verify-live']:
         verify_live()
     else:

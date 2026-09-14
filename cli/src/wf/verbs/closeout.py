@@ -1,8 +1,8 @@
 """消費 core/verbs.md §1 brief／§2、core/ruling.md 表、core/dispatch.md
 wf-module-sections.closeout、core/handoff.md 每段首行、core/platform.md P5、
 core/return.md findings／review_result、stages/closeout.md §2／§4。
+規則檔（ruling／platform）只經 ctx.rules 讀；預設分支＝ctx.default_branch（resolved repository 的 API 值）。
 """
-from pathlib import Path
 import re
 
 from wf.compose.enable import is_enabled
@@ -72,7 +72,7 @@ def _current(ctx, records, complete):
             sha = pr.get('merge_commit_sha')
             lines.append(f"PR #{pull['number']} merge SHA：{sha or '未能取得 merge SHA'}")
             try:
-                ancestor = ctx.client.is_ancestor(sha) if sha else None
+                ancestor = ctx.client.is_ancestor(sha, ctx.default_branch) if sha else None
                 lines.append('是否 main 祖先：' + (_plain(ancestor) if ancestor is not None else '未能取得'))
             except GhError as exc:
                 lines.append(f'未能取得 main 祖先關係：{exc}')
@@ -92,7 +92,7 @@ def _current(ctx, records, complete):
         head = ctx.card.get('source_sha')
         if not head:
             raise LocalGitUnavailable('來源 SHA 未填')
-        base = ctx.client.branch_head('main')
+        base = ctx.client.branch_head(ctx.default_branch)
         rc = merge_tree(base, head, root=ctx.root)
         lines.append(f"分支衝突：{'成立' if rc == 1 else '不成立'}；證據：merge-tree {base} {head} rc={rc}")
     except (GhError, LocalGitUnavailable) as exc:
@@ -104,7 +104,7 @@ def sections(ctx):
     from wf.verbs.brief import HUMAN, MODULE_SECTION, _mark
     timeline, ctx.closeout_returns, complete = _returns(ctx)
     builders = iter((timeline, _current(ctx, ctx.closeout_returns, complete)))
-    rows = [line.strip('|').split('|') for line in (Path(ctx.root) / RULING).read_text().splitlines()
+    rows = [line.strip('|').split('|') for line in ctx.rules.read_text(RULING).splitlines()
             if line.startswith('| ')][1:]
     declared, = ctx.catalog.by_label('json wf-module-sections')
     modules = {b.data['name']: b.data for b in ctx.catalog.by_label('yaml wf-module')}
@@ -126,7 +126,7 @@ def squash(ctx):
     from wf.verbs.brief import _plain
     verdicts = [(author, data) for author, data, _, _ in ctx.closeout_returns
                 if data.get('role') == 'reviewer' and data.get('iteration') == ctx.card.get('iteration')]
-    text = (Path(ctx.root) / 'core/platform.md').read_text()
+    text = ctx.rules.read_text('core/platform.md')
     allowed = re.search(r'P5 允許集合＝([^；]+)', text)[1].split('、')
     lines, trailers = [], []
     for key in allowed:

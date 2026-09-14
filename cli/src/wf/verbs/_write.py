@@ -1,5 +1,8 @@
 """消費 core/verbs.md §2、core/card-schema.md §1／§5／§6、core/naming.md §3。
 呼叫端供給 catalog、模組與 Project 定位；不讀設定、不印、不產生動詞留言。
+operation-level precondition：`reconcile_projection` 在取得 item 之後、對帳的首次 write_project_field 之前，
+以 context.repository 比對該 item 的 content.repository stable ID（core/verbs.md §2「操作級身分檢查各自
+先於其 mutation；身分衝突走本機硬擋零寫入」）；⛔ 不產生 write plan、token、retry 或 compensation。
 """
 from copy import deepcopy
 from dataclasses import dataclass
@@ -10,6 +13,8 @@ from wf.compose.blocks import projection
 from wf.compose.schema import compose_schema
 from wf.compose.transitions import is_legal_plan
 from wf.compose.validate import validate, _equal
+from wf.context import IdentityError
+from wf.gh.target import check_item_repository, item_ref
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import block_object, board_items, field_values
 
@@ -207,16 +212,22 @@ def check_card(card, *, client, number, catalog, enabled_modules=(), printed=(),
     return reject(client, number, 'D3', reason, printed) if fail is None else fail(reason)
 
 
-def reconcile_projection(card, *, client, catalog, location, project, number, report):
-    """§2 對帳：不等即以卡面 JSON 重寫該欄後續跑並印，⛔ 不拒收；無 Project／不在板上略過；欄算不出＝零業務寫入的單一 D3 拒收（回非 None，呼叫端即停）。"""
+def reconcile_projection(card, *, client, catalog, location, project, number, report, context=None):
+    """§2 對帳：不等即以卡面 JSON 重寫該欄後續跑並印，⛔ 不拒收；無 Project／不在板上略過；欄算不出＝零業務寫入的單一 D3 拒收（回非 None，呼叫端即停）。
+    context 給定時先比對 item 的 repository stable ID（A8）：不等＝本機硬擋、零寫入（含⛔ 不貼 wf:reject）。"""
     if location is None or project is None or any(
             spec['key'] not in card for spec in projection(catalog).values()):
         return None  # 缺投影鍵＝各動詞的驗卡面（check_card／prepare_card）處置，此處 ⛔ 不對帳
-    item_id = board_items(project, client.repo, include_archived=True).get(number, {}).get('id')
-    if item_id is None:
+    item = board_items(project, client.repo, include_archived=True).get(number)
+    if item is None:
         return None
+    if context is not None:
+        try:
+            check_item_repository(item_ref(item), context.repository)
+        except IdentityError as exc:
+            return blocked(report, exc.code, str(exc))
     try:
-        changed = reconcile(card, client=client, catalog=catalog, item_id=item_id,
+        changed = reconcile(card, client=client, catalog=catalog, item_id=item['id'],
                             project_owner=location['owner'], project_number=location['number'])
     except (ValueError, TypeError, KeyError) as exc:
         return reject(client, number, 'D3', str(exc), tuple(report))

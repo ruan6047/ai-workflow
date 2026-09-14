@@ -27,6 +27,7 @@ from wf.compose.enable import is_enabled
 from wf.compose.project_config import load_project_config, module_names
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
+from wf.context import rules_of
 from wf.gh.writes import CardBodyError, block_value
 from wf.verbs._common import Printer, board_items, field_values, note_blocks, parse_args
 from wf.verbs._write import projected
@@ -106,10 +107,11 @@ def _markdown(data):
     return '\n'.join(lines) + '\n'
 
 
-def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
-    """對狀態面只讀（§1 snapshot 列「寫」欄）；對帳只印不重寫（core/verbs.md §2 末）。"""
+def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print, context=None):
+    """對狀態面只讀（§1 snapshot 列「寫」欄）；對帳只印不重寫（core/verbs.md §2 末）。
+    規則經 RulesSource（context.rules 或 root）；本機輸出只落 project root（`<root>/.wf/snapshot`）。"""
     report = Printer(lambda line: emit(_encodable(line)))  # 印出也會撞到同一個編碼邊界
-    catalog = load_blocks(root) if catalog is None else catalog
+    catalog = load_blocks(rules_of(root if context is None else context.rules)) if catalog is None else catalog
     cfg = load_project_config(root)
     location, listed = cfg['project'], module_names(cfg)
 
@@ -206,7 +208,7 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print):
     return SnapshotResult(0, data, tuple(report), paths)
 
 
-def run(argv, *, client, root='.', catalog=None):
+def run(argv, *, client, root='.', catalog=None, context=None):
     """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
     args = parse_args('wf snapshot', argv, ('--out', {}))
-    return snapshot(client=client, root=root, catalog=catalog, out=args.out).rc
+    return snapshot(client=client, root=root, catalog=catalog, out=args.out, context=context).rc

@@ -14,7 +14,9 @@
 {"modules": [],
  "merge_method": "squash",
  "areas": ["WF", "CLI", "DOC", "OPS"],
- "project": null}
+ "project": null,
+ "rules": null,
+ "remote": null}
 ```
 
 - `modules` 只列專案級模組（escalation、resource-lock、pitfalls-13、identity、snapshot、db-contract）；卡級模組（research、deploy、maintenance、initiative、stat-redline）看卡面，⛔ 不列。
@@ -23,6 +25,9 @@
 - `areas` 是卡ID 前綴枚舉（`core/naming.md` §1）。
 - `project` 是 CLI 定位板的唯一居所（owner 字串＋number 整數）；缺它動詞不寫投影欄、只印「無 Project 設定」。種子填 `null`，§3 的 Project 建好後回填 `{"owner": …, "number": …}`。
 - 有資料庫才建 `.wf/contracts/DATABASE_CONTRACT.md`；同時 ≥2 執行者才建 `.wf/contracts/CONTROL_PLANE.md`。
+- `rules` 是 rules source（`core/`、`roles/`、`stages/`、`modules/` 四個規則目錄）的唯一居所：`null`＝規則就在 project_root；`{"path": …}` 相對 project_root（⛔ 不相對 `.wf`）。本檔⛔ 不指定 canonical install mode（submodule、package、vendor 都只要該路徑可讀）。
+- `remote` 是 git remote 的名稱（⛔ 不是 URL）：CLI 依 ①`--remote` ②本鍵 ③current branch 的 upstream ④唯一 remote 決定 repository；多個 remote 只在 API stable ID 相同時合併，否則 fail-loud、⛔ 不猜 origin。`GH_REPO` 不在這條序列內：本機身分缺席時成唯一候選，存在時只作核對。
+- project_root／rules_root 分工：`.wf/`、snapshot 輸出、本機 git 工作樹一律相對 project_root；規則資產一律相對 rules root。三個全域旗標只認動詞之前：`wf [--project-root <p>] [--rules-root <p>] [--remote <name>] <verb> …`，旗標值相對 invocation cwd，並各自勝過同名設定鍵。
 
 ## 3 · Project 五欄
 

@@ -1,5 +1,7 @@
-"""消費 ADOPTION.md §2（含 `project` 定位形狀）。
-只讀專案設定與正規化缺省值；不判模組是否應啟用，不連網。
+"""消費 ADOPTION.md §2（含 `project` 定位形狀、`rules`／`remote` 鍵）。
+只讀專案設定與正規化缺省值並驗型別；不判模組是否應啟用，不連網。
+`rules`＝null 或 {"path": 非空字串}（rules source 唯一居所，相對 project_root）；`remote`＝null 或
+remote 名稱（⛔ 不是 URL）；兩者的解析與 precedence 住 verbs/main.py，⛔ 不在此讀路徑。
 """
 import json
 from pathlib import Path
@@ -37,6 +39,13 @@ def load_project_config(root) -> dict:
         if (not isinstance(project, dict) or not isinstance(project.get('owner'), str)
                 or type(project.get('number')) is not int):
             raise ProjectConfigError('project 須有字串 owner 與整數 number')
+    rules = cfg.get('rules')  # 缺鍵＝null；⛔ 不物化預設鍵（既有測試釘住缺檔時的四鍵形狀）
+    if rules is not None and (not isinstance(rules, dict) or set(rules) != {'path'}
+                              or not isinstance(rules['path'], str) or not rules['path']):
+        raise ProjectConfigError('rules 須為 null 或 {"path": 非空字串}')
+    remote = cfg.get('remote')
+    if remote is not None and (not isinstance(remote, str) or not remote or ':' in remote):
+        raise ProjectConfigError('remote 須為 null 或 remote 名稱（非 URL）')
     return cfg
 
 

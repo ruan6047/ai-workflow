@@ -1,6 +1,7 @@
 """消費 core/verbs.md §1 notes／§2／§3、core/naming.md §3／§4、
 core/card-schema.md §1 notes 欄／§4 wf-note、core/handoff.md 每段首行、
 core/enums.md stages、modules/pitfalls-13/module.md §1。
+規則資產（stages／roles／modules）只經 RulesSource 讀；專案資產（`.wf/stages/<階段>.md`）只從 project root 讀。
 """
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,10 +12,11 @@ from wf.compose.frontmatter import parse_frontmatter
 from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
+from wf.context import IdentityError, RulesSourceError, rules_of
 from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, enabled_modules,
-                              note_blocks, parse_args)
+                              note_blocks, parse_args, verify_source_issue)
 from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
 
 ITEM = re.compile(r'^- ([FPT]-.+-[0-9]{2})：(.+)$')
@@ -49,11 +51,21 @@ def _mark(origin, relative, section, meta):
     return source_line(Source(f'{origin}/{relative}', section, *meta))
 
 
-def _file_notes(root, relative, heading, origin, prefix=''):
-    path = Path(root) / relative
-    if not path.is_file():
+def _read(source, relative):
+    """source＝RulesSource（規則資產）或專案 root 路徑（`.wf/stages/<階段>.md`）；缺檔＝None。"""
+    if isinstance(source, (str, Path)):
+        path = Path(source) / relative
+        return path.read_text(encoding='utf-8') if path.is_file() else None
+    try:
+        return source.read_text(relative)
+    except RulesSourceError:
+        return None
+
+
+def _file_notes(source, relative, heading, origin, prefix=''):
+    text = _read(source, relative)
+    if text is None:
         return []
-    text = path.read_text(encoding='utf-8')
     front = parse_frontmatter(text, relative, diagnostics=[])
     meta = (front.name, front.when, front.last_confirmed) if front.name else None
     section, lines = _section(text, heading)
@@ -63,12 +75,8 @@ def _file_notes(root, relative, heading, origin, prefix=''):
             if match is not None and match[1].startswith(prefix)]
 
 
-def _sorted_relative(root, pattern):
-    return sorted(path.relative_to(Path(root)).as_posix() for path in Path(root).glob(pattern))
-
-
 def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, emit=print,
-          fail=None):
+          fail=None, context=None):
     """verbs/main.py 可直接呼叫；讀側驗卡失敗＝本機硬擋、零遠端寫入；§2 對帳的投影回寫與其
     失敗拒收仍在。for_role＝`brief --for` 的角色（§3 第 1 條）；缺省取卡面 owner.role。
     fail＝讀側驗卡失敗的處置，取 (report, code, reason) 同 `_write.blocked`；缺省即本機硬擋。
@@ -76,13 +84,20 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     其留痕逐字維持基線，⛔ 不因 notes／brief 改成本機硬擋而消失。"""
     handle = blocked if fail is None else fail
     report = Printer(emit)
-    catalog = load_blocks(root) if catalog is None else catalog
+    rules = rules_of(root if context is None else context.rules)
+    catalog = load_blocks(rules) if catalog is None else catalog
     cfg = load_project_config(root)
-    number, skipped = card_number(card, client)
+    try:
+        number, skipped = card_number(card, client)
+    except IdentityError as exc:
+        return handle(report, exc.code, str(exc))
     for other in skipped:
         report(f'略過無法解析的 issue #{other}')
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
+        verify_source_issue(current, number)
+    except IdentityError as exc:
+        return handle(report, exc.code, str(exc))
     except (ValueError, TypeError, KeyError) as exc:
         return handle(report, 'D3', str(exc))
     enums, = catalog.by_label('json wf-enums')
@@ -103,21 +118,21 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
                         enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
                         fail=lambda reason: handle(report, 'D3', reason)) or reconcile_projection(
                             current, client=client, catalog=catalog, location=cfg['project'],
-                            project=project, number=number, report=report)
+                            project=project, number=number, report=report, context=context)
     if failed is not None:
         return failed
     role = (current.get('owner') or {}).get('role') if for_role is None else for_role
     if role is None:
         report('卡面 owner 未填，角色注意事項全印')
     items = []
-    for relative in _sorted_relative(root, 'stages/*.md'):
-        items += _file_notes(root, relative, '6', 'core', f'F-{stage}-')
-    for relative in _sorted_relative(root, 'roles/*.md'):
+    for relative in rules.iter_assets('stages/*.md'):
+        items += _file_notes(rules, relative, '6', 'core', f'F-{stage}-')
+    for relative in rules.iter_assets('roles/*.md'):
         if role is None or Path(relative).stem == role:  # §3：角色檔只取 owner.role／--for 那份
-            items += _file_notes(root, relative, '4', 'core', 'F-')
+            items += _file_notes(rules, relative, '4', 'core', 'F-')
     for module in enabled:
         relative = f"modules/{module['name']}/module.md"
-        found = _file_notes(root, relative, '2', 'module')
+        found = _file_notes(rules, relative, '2', 'module')
         items += found
         for declared in module.get('adds', {}).get('notes', []):
             if declared not in {note.id for note in found}:
@@ -129,7 +144,7 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
         report(f'{index}. {note.id}：{note.text} {note.mark}')
     _candidates(client, number, catalog, report, current)
     if any(module['name'] == 'pitfalls-13' for module in enabled):
-        _pitfalls(root, stage, report)
+        _pitfalls(rules, stage, report)
     return WriteResult(0, card=current, printed=tuple(report))
 
 
@@ -167,9 +182,9 @@ def _candidates(client, number, catalog, report, card):
                 report(f"候選：{data['text']}｜{data['origin']}｜{url}")
 
 
-def _pitfalls(root, stage, report):
+def _pitfalls(rules, stage, report):
     """族名逐字取 modules/pitfalls-13/module.md §1 第 2–3 條的反引號字串。"""
-    text = (Path(root) / 'modules/pitfalls-13/module.md').read_text(encoding='utf-8')
+    text = rules.read_text('modules/pitfalls-13/module.md')
     bullets = [line for line in _section(text, '1')[1] if line.startswith('- ')]
     families = BACKTICK.findall(bullets[1])
     if stage == '執行':
@@ -178,7 +193,7 @@ def _pitfalls(root, stage, report):
         report(f'13 族踩坑清冊 {family}：已檢查／不適用／發現')
 
 
-def run(argv, *, client, root='.', catalog=None):
+def run(argv, *, client, root='.', catalog=None, context=None):
     """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
     args = parse_args('wf notes', argv, ('card', {}), ('--stage', {}))
-    return notes(args.card, client=client, root=root, catalog=catalog, stage=args.stage).rc
+    return notes(args.card, client=client, root=root, catalog=catalog, stage=args.stage, context=context).rc

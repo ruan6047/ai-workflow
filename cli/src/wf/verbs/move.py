@@ -1,11 +1,12 @@
 """消費 core/verbs.md §1 move／§2、core/state-machine.md §1–4、
 core/card-schema.md §1／§2／§5、core/enums.md 值域、core/naming.md §2／§3、
 core/ruling.md 必要鍵、core/return.md 區塊、core/tiers.md §1、stages/closeout.md §2。
+operation-level precondition（§2）：duplicate card_id、source_issue 承載核對、item 的 repository stable ID
+都在讀到卡面／取得 item 之後、本動詞第一個遠端 mutation 之前；失敗＝本機硬擋一行、零遠端寫入。
 """
 from copy import deepcopy
 from dataclasses import replace
 import json
-from pathlib import Path
 import re
 
 from wf.compose.blocks import load_blocks, projection
@@ -14,14 +15,16 @@ from wf.compose.project_config import load_project_config, module_names, Project
 from wf.compose.schema import compose_schema
 from wf.compose.transitions import blocked_node, expand, is_legal_move, is_legal_plan
 from wf.compose.validate import validate
+from wf.context import IdentityError, default_branch, rules_of
 from wf.gh.client import NotFound
+from wf.gh.target import check_item_repository, item_ref
 from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (block_object, board_facts, board_items, card_number, comment_blocks,
-                              missing_fields, parse_args, prevalidate_card)
+                              missing_fields, parse_args, prevalidate_card, verify_source_issue)
 from wf.verbs._write import WriteResult, prepare_card, projection_values, reconcile, reject, write_card
 
 
-def _ruling_prints(comment, current, number, expected, *, client, catalog, root):
+def _ruling_prints(comment, current, number, expected, *, client, catalog, rules):
     """印項組合；區塊、作者與所屬 issue 的純讀住 _common.comment_blocks（與 review 共用）。"""
     printed, blocks = [], {}
     if comment is not None:
@@ -50,7 +53,7 @@ def _ruling_prints(comment, current, number, expected, *, client, catalog, root)
         printed.extend(f'wf-ruling：{e.path}: {e.message}' for e in validate(ruling, schema))
         if isinstance(ruling, dict):
             # 必要鍵住原件散文；不把 kind 的鍵清單另存於 CLI。
-            text = (Path(root) / 'core/ruling.md').read_text(encoding='utf-8')
+            text = rules.read_text('core/ruling.md')
             pairs = dict(re.findall(r'([a-z_]+)＝([a-z_]+(?:、[a-z_]+)*)', text))
             kind = ruling.get('kind')
             for key in (pairs.get(kind, '') if isinstance(kind, str) else '').split('、'):
@@ -59,7 +62,13 @@ def _ruling_prints(comment, current, number, expected, *, client, catalog, root)
     return printed
 
 
-def _terminal_prints(card, client):
+def _hard_block(printed, exc):
+    """身分不一致：本機一行、零遠端寫入（§2 留痕條：沒有被拒的遠端寫入就⛔ 不貼 wf:reject）。"""
+    printed.append(f'硬擋・{exc.code}・{exc}')
+    return WriteResult(1, reason=str(exc))
+
+
+def _terminal_prints(card, client, default):
     printed = []
     branch = card['branch']
     if branch is None:
@@ -72,7 +81,7 @@ def _terminal_prints(card, client):
         printed.append('PR 狀態：' + json.dumps(pr, ensure_ascii=False))
         printed.append('CI 狀態：' + json.dumps(client.ci_checks(pr['head']['sha']), ensure_ascii=False))
         sha = pr.get('merge_commit_sha')
-        printed.append(f'merge SHA {sha} 是否 main 祖先：{client.is_ancestor(sha)}'
+        printed.append(f'merge SHA {sha} 是否 main 祖先：{client.is_ancestor(sha, default)}'
                        if sha else 'merge SHA 未填')
     try:
         printed.append(f'分支 {branch}：{client.branch_head(branch)}')
@@ -82,10 +91,9 @@ def _terminal_prints(card, client):
 
 
 def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=None,
-         ruling=None, emit=print):
+         ruling=None, emit=print, context=None):
     """卡 ID 或 issue 號；move_modules 接收一般 stage/state 節點，阻塞展開僅供 D1。"""
-    number, skipped = card_number(card, client)
-    printed = [f'略過無法解析的 issue #{other}' for other in skipped]
+    printed = []
 
     def finish(result):
         lines = tuple([*printed, *result.printed])
@@ -95,6 +103,12 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
             emit(result.reason)
         return replace(result, printed=lines)
 
+    try:
+        number, skipped = card_number(card, client)
+    except IdentityError as exc:
+        return finish(_hard_block(printed, exc))
+    printed += [f'略過無法解析的 issue #{other}' for other in skipped]
+
     def refuse(code, reason):
         return finish(reject(client, number, code, reason))
 
@@ -102,12 +116,17 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         config = load_project_config(root)
     except ProjectConfigError as exc:
         return finish(WriteResult(0, printed=(str(exc),)))
-    catalog = load_blocks(root) if catalog is None else catalog
+    rules = rules_of(root if context is None else context.rules)
+    catalog = load_blocks(rules) if catalog is None else catalog
     location = config['project']
     project = client.project(**location, field_names=projection(catalog)) if location else None
-    item_id = board_items(project, client.repo, include_archived=True).get(number, {}).get('id')
+    item = board_items(project, client.repo, include_archived=True).get(number)
+    item_id = item['id'] if item else None
     try:
         current = block_object(client.issue(number)['body'], 'wf-card')
+        verify_source_issue(current, number)
+        if item is not None and context is not None:  # A8：取得 item 之後、本動詞首次 mutation 之前
+            check_item_repository(item_ref(item), context.repository)
         snapshot = projection_values(project, item_id) if item_id else None
         if current.get('schema_version') == 1:
             current, _ = prepare_card(current, current, snapshot, catalog, ())
@@ -140,6 +159,8 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         origin = (blocked_node(current['stage'], current['blocked']['from'])
                   if current['state'] == '阻塞' else from_node)
         target = blocked_node(target_stage, current['state']) if target_state == '阻塞' else to_node
+    except IdentityError as exc:
+        return finish(_hard_block(printed, exc))
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
     if edges.plan_unfilled:
@@ -159,8 +180,8 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     if ruling is None and (expected or to_node == '清單'):
         printed.append('缺 --ruling')
     printed.extend(_ruling_prints(comment, current, number, expected,
-                                 client=client, catalog=catalog, root=root))
-    missing = missing_fields(current, root) if current['stage'] == '需求' and target_stage != '需求' else []
+                                 client=client, catalog=catalog, rules=rules))
+    missing = missing_fields(current, rules) if current['stage'] == '需求' and target_stage != '需求' else []
     if missing and to_node != '清單':  # 非空且不是撤銷才印
         printed.append('缺欄清單：' + '、'.join(missing))
     if current['stage'] == '規劃' and target_stage != '規劃':
@@ -190,7 +211,7 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         updated = apply_counters(updated, from_node, to_node, **kwargs)
         printed.extend(module_prints(updated, from_node, to_node, **kwargs, project=project, client=client))
     if target in edges.terminal_nodes:
-        printed.extend(_terminal_prints(updated, client))
+        printed.extend(_terminal_prints(updated, client, default_branch(client, context)))
     try:
         updated, values = prepare_card(updated, current, snapshot, catalog, enabled_names)
         if item_id:
@@ -218,11 +239,11 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     return finish(result)
 
 
-def run(argv=None, *, client, root='.', catalog=None):
+def run(argv=None, *, client, root='.', catalog=None, context=None):
     """verbs/main.py 的參數接點；不修改總入口。"""
     args = parse_args('wf move', argv, ('card', {}), ('--to', {'required': True}), ('--actor', {}),
                       ('--source-sha', {}), ('--ruling', {}))
-    return move(**vars(args), client=client, root=root, catalog=catalog).rc
+    return move(**vars(args), client=client, root=root, catalog=catalog, context=context).rc
 
 
 main = run

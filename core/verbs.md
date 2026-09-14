@@ -41,6 +41,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 - 硬擋只落在寫壞資料（D1、D3）與指向不存在（D2、D4）；其餘一律印。
 - 缺陷的留痕走狀態面（卡面 JSON 與留言），⛔ 不另開 log。
 - 模組欄只由該模組條文指定的動詞寫；`adds.counters` 列的欄⛔ 不由 `edit --set` 改，改了即印「模組欄由 `move` 寫」。
+- 任何遠端寫入前須先取得 static 身分已驗證的 context（roots 可讀且 canonical、resolved repository 的 stable ID 唯一、`project` 鍵解析到唯一 Project 或合法為 null）；操作級身分檢查（卡面 `source_issue`＝承載 issue、`card_id` 在 repo 內唯一、被操作 item 的 repository stable ID＝resolved repository）各自先於其 mutation；身分衝突走本機硬擋零寫入（一行 `硬擋・<D 編號>・<原因>`，`snapshot` 例外＝記入本機輸出並續跑）；permission 事實只隨 context 攜帶、逐 operation 政策不在本條。
 
 ## 3 · notes 合成
 

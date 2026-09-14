@@ -1,6 +1,8 @@
 """消費 core/verbs.md §1 open／§2、core/card-schema.md §1–3／§5、
 core/naming.md §1、core/state-machine.md §1–3、core/glossary.md 清單項／撤銷卡、
 modules/initiative/module.md §0–1、ADOPTION.md §2。
+operation-level precondition（core/verbs.md §2）：撤銷卡復板時核對 source_issue＝承載 issue；context 給定時
+核對清單項所屬 repository 與 add_to_project 回傳 item 的 repository stable ID（在首次 write_project_field 之前）。
 """
 from copy import deepcopy
 from dataclasses import dataclass
@@ -11,8 +13,10 @@ from wf.compose.enable import is_enabled
 from wf.compose.project_config import load_project_config, module_names, ProjectConfigError
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
+from wf.context import IdentityError, rules_of
+from wf.gh.target import check_item_repository, check_target_issue, item_ref, target_issue
 from wf.verbs._common import (block_object, board_items, chain_depth, missing_fields, parse_args,
-                              prevalidate_card, repo_cards)
+                              prevalidate_card, repo_cards, verify_source_issue)
 from wf.verbs._write import WriteResult, prepare_card, reject, write_card
 
 
@@ -33,7 +37,8 @@ def _initial_card(schema):
     return card
 
 
-def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None, emit=print):
+def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None, emit=print,
+               context=None):
     """verbs/main.py 可直接呼叫；所有 GitHub 操作經注入的 client，印項亦保留於結果。"""
     printed, unverified = [], []
 
@@ -49,13 +54,18 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
     def refuse(code, reason):
         return finish(reject(client, number, code, reason))
 
+    def hard_block(exc, done=''):  # 身分不一致：本機一行、⛔ 不貼 wf:reject；done＝已完成的寫入（有才列）
+        printed.append(f'硬擋・{exc.code}・{exc}' + done)
+        return finish(WriteResult(1, reason=str(exc)))
+
     try:
         cfg = load_project_config(root)
     except ProjectConfigError as exc:
         printed.append(str(exc))
         unverified.append({'item': '建卡', 'kind': 'cannot', 'reason': str(exc)})
         return finish(WriteResult(0))
-    catalog = load_blocks(root) if catalog is None else catalog
+    rules = rules_of(root if context is None else context.rules)
+    catalog = load_blocks(rules) if catalog is None else catalog
     location = cfg['project']
     board = client.project(**location, field_names=projection(catalog)) if location else None
     if board is None:
@@ -72,6 +82,10 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         intake = None if current is not None else block_object(source['body'], 'wf-intake', required=False)
         if current is None and intake is None:
             return refuse('D2', '不是清單項也不是撤銷卡')
+        if current is not None:
+            verify_source_issue(current, number)
+        if context is not None:
+            check_target_issue(target_issue(source, number), context.repository)
         if current is None:
             errors = validate(intake, compose_schema(catalog, 'wf-intake'))
             if errors:
@@ -120,7 +134,7 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
             for name, value in values.items():
                 client.prepare_project_field(board, '', name, value)
         depth, broken = chain_depth(card, cards)
-        printed.append('缺欄清單：' + '、'.join(missing_fields(card, root)))
+        printed.append('缺欄清單：' + '、'.join(missing_fields(card, rules)))
         printed.append(f'鏈深：{depth}' if broken is None else '鏈深無法計算：parent 鏈有循環或缺卡')
         if broken is not None:
             unverified.append({'item': '鏈深', 'kind': 'cannot', 'reason': 'parent 鏈有循環或缺卡'})
@@ -131,12 +145,19 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
             printed.append(f'清單項留言數：{count}')
             if count:
                 printed.append(f'{count} 則留言，開卡前讀全部（F-需求-02）')
+    except IdentityError as exc:
+        return hard_block(exc)
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
     item_id = None
     if board is not None:
-        added = client.add_to_project(board['id'], source['node_id'])
-        item_id = added['data']['addProjectV2ItemById']['item']['id']
+        added = client.add_to_project(board['id'], source['node_id'])['data']['addProjectV2ItemById']['item']
+        item_id = added['id']
+        if context is not None:  # A8：取得 item_id 之後、首次 write_project_field 之前；item 取自 mutation 回傳
+            try:
+                check_item_repository(item_ref(added, 'addProjectV2ItemById.item'), context.repository)
+            except IdentityError as exc:
+                return hard_block(exc, f'（已完成的寫入：add_to_project item {item_id}）')
     result = write_card(card, client=client, number=number, catalog=catalog,
                         project_owner=location['owner'] if location else None,
                         project_number=location['number'] if location else None,
@@ -147,8 +168,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
     return finish(result)
 
 
-def run(argv, *, client, root='.', catalog=None):
+def run(argv, *, client, root='.', catalog=None, context=None):
     """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
     args = parse_args('wf open', argv, ('issue', {'type': int}), ('--parent', {}), ('--area', {}))
     return open_issue(args.issue, client=client, root=root, catalog=catalog,
-                      parent=args.parent, area=args.area).rc
+                      parent=args.parent, area=args.area, context=context).rc

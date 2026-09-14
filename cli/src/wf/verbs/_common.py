@@ -1,17 +1,20 @@
 """動詞層共用的純讀函式；消費 core/verbs.md §1（open／edit／move／notes／brief 列）／§2、
 core/card-schema.md §1／§2 表／§5、core/naming.md §3、core/return.md 與 core/ruling.md 區塊、
 modules/resource-lock/module.md §0 板上事實。GitHub 讀取全經注入的 client；不寫、不印，印項由各動詞組。
+兩項 operation-level precondition（core/verbs.md §2「操作級身分檢查各自先於其 mutation」）：`card_number` 對字串
+ref 抓 duplicate card_id、`verify_source_issue` 核對 `source_issue`＝承載 issue；都在動詞讀到卡面之後、首次遠端
+寫入之前呼叫，失敗＝本機硬擋（IdentityError）、零遠端寫入。規則原件經 RulesSource 讀，⛔ 不從 project root 讀。
 """
 import argparse
 import json
-from pathlib import Path
 import re
 
 from wf.compose.blocks import projection
 from wf.compose.enable import is_enabled
 from wf.compose.project_config import module_names
 from wf.compose.schema import compose_schema
-from wf.compose.validate import validate
+from wf.compose.validate import _equal, validate
+from wf.context import DuplicateCardId, SourceIssueMismatch, rules_of
 from wf.gh.client import NotFound
 from wf.gh.writes import CardBodyError, block_spans, block_value, read_block
 
@@ -72,17 +75,23 @@ def comment_blocks(comment, labels=('wf-return', 'wf-ruling')):
     return {'author': comment.get('author'), 'issue': int(tail) if tail.isdigit() else None,
             'blocks': blocks, 'errors': errors}
 
-def _collect(pairs):
-    """(issue 號, body) 序列 → card_id → (issue 號, 卡面)，與無法解析而略過的 issue 號。"""
-    cards, skipped = {}, []
+def _parsed(pairs, skipped):
+    """(issue 號, body) 序列 → 逐張 (issue 號, 卡面)；無法解析者記入 skipped、略過。"""
     for number, body in pairs:
         try:
             card = block_object(body, 'wf-card', required=False)
         except CardBodyError:
-            card = None
             skipped.append(number)
+            continue
         if card is not None:
-            cards[card.get('card_id')] = (number, card)
+            yield number, card
+
+
+def _collect(pairs):
+    """card_id → (issue 號, 卡面)，與無法解析而略過的 issue 號。"""
+    cards, skipped = {}, []
+    for number, card in _parsed(pairs, skipped):
+        cards[card.get('card_id')] = (number, card)
     return cards, skipped
 
 def repo_cards(client):
@@ -90,13 +99,29 @@ def repo_cards(client):
     return _collect((issue['number'], issue.get('body')) for issue in client.issues(state='all'))
 
 def card_number(ref, client):
-    """卡 ID 或 issue 號 → (issue 號, 略過的 issue 號)；別的 issue 壞區塊只略過，呼叫端印。"""
+    """卡 ID 或 issue 號 → (issue 號, 略過的 issue 號)；別的 issue 壞區塊只略過，呼叫端印。
+    同一 card_id 出現在多個 issue＝DuplicateCardId，列出排序穩定的全部 issue 號（⛔ 不依 API 列舉序）。"""
     if isinstance(ref, int) or str(ref).isdigit():
         return int(ref), []
-    cards, skipped = repo_cards(client)
-    if ref not in cards:
+    skipped, holders = [], {}
+    for number, card in _parsed(((issue['number'], issue.get('body')) for issue in client.issues(state='all')),
+                                skipped):
+        holders.setdefault(card.get('card_id'), []).append(number)
+    if ref not in holders:
         raise NotFound(f'card 不存在：{ref}')
-    return cards[ref][0], skipped
+    numbers = sorted(holders[ref])
+    if len(numbers) > 1:
+        raise DuplicateCardId(f'card_id {ref} 重複：issue {numbers}')
+    return numbers[0], skipped
+
+
+def verify_source_issue(card, number):
+    """卡面 `source_issue` 必須等於承載該卡的 issue 號；不等＝SourceIssueMismatch（本機硬擋 D3、零遠端寫入）。
+    字串 card_id ref 與數字 issue ref 兩路徑都在讀到卡面後呼叫。型別不是整數（含 bool）⛔ 不在此判：
+    那是 schema 的 D3（各動詞既有拒收路徑逐字不變）。"""
+    value = card.get('source_issue')
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and not _equal(value, number):
+        raise SourceIssueMismatch(f'source_issue {value!r} ≠ 承載 issue #{number}')
 
 def board_items(project, repo=None, *, include_archived=False):
     """Project 上的 issue 項：issue 號 → item；repo 給定時只取該 repo，封存項預設排除。"""
@@ -166,9 +191,9 @@ def chain_depth(card, cards):
         parent = cards[parent][1].get('parent')
     return depth, None
 
-def missing_fields(card, root):
-    """必填時點直接讀 core/card-schema.md §2 表；零不是空值。"""
-    text = (Path(root) / 'core/card-schema.md').read_text(encoding='utf-8')
+def missing_fields(card, rules):
+    """必填時點直接讀 core/card-schema.md §2 表（rules＝RulesSource 或規則目錄路徑）；零不是空值。"""
+    text = rules_of(rules).read_text('core/card-schema.md')
     section = re.split(r'^## ', re.split(r'^## 2\b.*$', text, flags=re.M)[1], flags=re.M)[0]
     fields = [key for line in section.splitlines()
               for cells in [[cell.strip() for cell in line.split('|')[1:-1]]]

@@ -1,5 +1,12 @@
 """消費 core/card-schema.md §1／§5、core/verbs.md §2、core/naming.md §3。
 GitHub API 協定與 body 區塊定位；欄名、值與留言首行由呼叫端供給。
+
+static Context gate（core/verbs.md §2「任何遠端寫入前須先取得 static 身分已驗證的 context」）：`bind_context`
+綁定一次，六個 mutation 原語（update_card_body、post_comment、write_project_field、add_to_project、
+remove_from_project、close_issue）各在發請求前只讀 `context.static_identity_verified`；⛔ 不讀 PermissionFact、
+⛔ 不判三態、⛔ 不重試、⛔ 不做部分失敗補償（逐 operation 政策住 WF-016）。保留全域 gate 的理由：單一布林加
+一次呼叫是最小機制、六個原語天然集中在同一 WriteMixin 是唯一有結構保證的收斂點、且可被 ast 列舉驗證。
+gate 狀態＝instance 的 `context`：真 GhClient 未綁定即 raise；替身自帶已驗證的 context（⛔ 不是繞過）。
 """
 import json
 import re
@@ -12,6 +19,17 @@ class CardBodyError(ValueError):
 
 class InvalidCommentURL(ValueError):
     """留言 URL 不能解析；呼叫端當 D4。"""
+
+
+class ContextNotVerified(RuntimeError):
+    """mutation 原語在 static Context gate 未綁定或未通過時發請求前 raise；該次零遠端寫入。"""
+
+
+def _verified(client):
+    """static gate 的唯一判定：只讀 static_identity_verified；⛔ 不讀 permission 事實。"""
+    context = getattr(client, 'context', None)
+    if context is None or not context.static_identity_verified:
+        raise ContextNotVerified('static Context gate 未綁定或未通過：拒絕遠端寫入')
 
 
 LABELS = ('wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note')
@@ -91,7 +109,15 @@ def read_card(body):
 
 
 class WriteMixin:
+    context = None  # 未綁定；bind_context 後＝Context（static_identity_verified 由 bootstrap 決定一次）
+
+    def bind_context(self, context):
+        """綁定 static Context gate（一次）；同時把 resolved default branch 掛到 client（A7）。"""
+        self.context = context
+        self.default_branch = context.repository.default_branch
+
     def update_card_body(self, number, card_json, create=False):
+        _verified(self)
         body = self.issue(number)['body'] or ''
         span = block_span(body, 'wf-card', required=not create)
         newline = '\r\n' if '\r\n' in body else '\n'
@@ -106,6 +132,7 @@ class WriteMixin:
                              payload={'body': body[:start] + content + body[end:]})
 
     def post_comment(self, number, first_line, body):
+        _verified(self)
         return self._request(f'repos/{self.repo}/issues/{number}/comments', method='POST',
                              payload={'body': first_line + '\n' + body})
 
@@ -145,6 +172,7 @@ class WriteMixin:
         return operation, input_type, inputs
 
     def write_project_field(self, prepared):
+        _verified(self)
         return self._mutation(*prepared, 'projectV2Item{id}')
 
     def _mutation(self, operation, input_type, inputs, selection):
@@ -153,13 +181,18 @@ class WriteMixin:
             'variables': {'input': inputs}})
 
     def add_to_project(self, project_id, issue_id):
+        """回傳的 item 帶 content.repository{id}：open 在首次 write_project_field 前比對 stable ID 用。"""
+        _verified(self)
         return self._mutation('addProjectV2ItemById', 'AddProjectV2ItemByIdInput',
-                              {'projectId': project_id, 'contentId': issue_id}, 'item{id}')
+                              {'projectId': project_id, 'contentId': issue_id},
+                              'item{id content{__typename ... on Issue{repository{id nameWithOwner}}}}')
 
     def remove_from_project(self, project_id, item_id):
+        _verified(self)
         return self._mutation('deleteProjectV2Item', 'DeleteProjectV2ItemInput',
                               {'projectId': project_id, 'itemId': item_id}, 'deletedItemId')
 
     def close_issue(self, number):
+        _verified(self)
         return self._request(f'repos/{self.repo}/issues/{number}', method='PATCH',
                              payload={'state': 'closed'})

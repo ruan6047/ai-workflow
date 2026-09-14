@@ -1,6 +1,9 @@
 """消費 core/verbs.md §1–2、core/dispatch.md「基線」、core/naming.md §3、
 core/platform.md P1–P5、core/card-schema.md §5。
 投影名稱由呼叫端依規則提供；此層只保留 API 事實，不內建規則或解析本文。
+`repository`／`capability` 供 resolved target identity 的 stable ID（node_id）與 permission 事實取源；
+Project items 帶 `content.repository{id nameWithOwner}` 供 item 所屬 repository 的 stable ID 比對。
+預設分支⛔ 不寫死：`default_branch` 由 `bind_context` 取 resolved repository 的 API 值。
 """
 import json
 import re
@@ -63,6 +66,8 @@ def _error(rc, payload, stderr):
 class GhClient(WriteMixin):
     """GitHub 介接層；runner 採 subprocess.run 的參數與回傳介面。"""
 
+    default_branch = None  # 未綁定 context＝未知；⛔ 不預設 main
+
     def __init__(self, repo, *, runner=None, page_size=100):
         self.repo = '/'.join(quote(part, safe='') for part in repo.split('/'))
         self.runner = subprocess.run if runner is None else runner
@@ -106,6 +111,32 @@ class GhClient(WriteMixin):
             if len(batch) < self.page_size:
                 return items
             page += 1
+
+    def repository(self, slug):
+        """repository 的身分事實（GraphQL，只取四欄：REST `repos/{slug}` 整包帶 `temp_clone_token` 鍵，
+        錄製守門會擋）：stable ID（node_id）、full_name、default_branch（空 repo＝None）、
+        viewer_permission（未認證＝None）；slug 逐字取自呼叫端，⛔ 不用 self.repo。"""
+        owner, _, name = slug.partition('/')
+        query = '''query($owner:String!,$name:String!){repository(owner:$owner,name:$name){
+          id nameWithOwner defaultBranchRef{name} viewerPermission}}'''
+        data = self._request('graphql', query=query, variables={'owner': owner, 'name': name})
+        repository = data['data']['repository']
+        if repository is None:
+            raise GhError('GraphQL 未提供 repository；無法確定不存在')
+        return {'node_id': repository['id'], 'full_name': repository['nameWithOwner'],
+                'default_branch': (repository.get('defaultBranchRef') or {}).get('name'),
+                'viewer_permission': repository.get('viewerPermission')}
+
+    def capability(self, owner, number):
+        """ProjectV2 的 node id 與 viewerCanUpdate 事實；未提供＝GhError（無法確定不存在）。"""
+        query = '''query($owner:String!,$number:Int!){
+          repositoryOwner(login:$owner){... on ProjectV2Owner{
+            projectV2(number:$number){id title viewerCanUpdate}}}}'''
+        data = self._request('graphql', query=query, variables={'owner': owner, 'number': number})
+        project = (data['data']['repositoryOwner'] or {}).get('projectV2')
+        if project is None:
+            raise GhError('GraphQL 未提供 Project；無法確定不存在')
+        return project
 
     def issue(self, number):
         """保留 body、state 與其餘 API 欄位。"""
@@ -169,7 +200,11 @@ class GhClient(WriteMixin):
     def _compare(self, base, head):
         return self._rest(f'compare/{quote(base, safe="")}...{quote(head, safe="")}?per_page=1')
 
-    def is_ancestor(self, sha, branch='main'):
+    def is_ancestor(self, sha, branch=None):
+        """branch 缺省＝綁定 context 後的 resolved default branch；未綁定又未給＝GhError。"""
+        branch = self.default_branch if branch is None else branch
+        if branch is None:
+            raise GhError('預設分支未解析：先 bind_context 或明給 branch')
         return self._compare(sha, branch)['status'] in ('ahead', 'identical')
 
     def merge_base(self, base, head):
@@ -214,8 +249,8 @@ class GhClient(WriteMixin):
         )
         items_query = '''query($id:ID!,$size:Int!,$cursor:String){node(id:$id){... on ProjectV2{
           items(first:$size,after:$cursor){nodes{id isArchived content{__typename
-            ... on Issue{number url repository{nameWithOwner}}
-            ... on PullRequest{number url repository{nameWithOwner}}
+            ... on Issue{number url repository{id nameWithOwner}}
+            ... on PullRequest{number url repository{id nameWithOwner}}
             ... on DraftIssue{id}} SELECTIONS}pageInfo{hasNextPage endCursor}}}}}'''.replace('SELECTIONS', selections)
         items = self._connection(items_query, variables, 'node', 'items')
         for item in items:

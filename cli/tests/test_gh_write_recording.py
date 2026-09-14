@@ -15,6 +15,7 @@ from wf.gh.client import GhClient
 from wf.gh.writes import card_span, read_card
 from wf.verbs._write import reject
 from .test_gh_recording import REPO, shape
+from .test_gh_writes import bound
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 's05'
 SECRET = re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|(?:Authorization\s*:\s*(?:Bearer|token)\s+)\S+', re.I)
@@ -125,12 +126,12 @@ def record():
     for case, args in [('write_restore', []), ('issues', []),
                        ('pulls_for_branch', ['claude/wf-step6-cli']), ('comment_urls', urls)]:
         recorder = Recorder()
-        observed = exercise(GhClient(REPO, runner=recorder), case, args)
+        observed = exercise(bound(GhClient(REPO, runner=recorder)), case, args)
         fixture = {'provenance': '真實 API 回應', 'method': case, 'args': args,
                    'exchanges': recorder.exchanges, 'observed': observed, 'observed_shape': shape(observed)}
         ensure_clean(fixture)
         replay = WriteReplay(fixture)
-        assert exercise(GhClient(REPO, runner=replay), case, args) == observed
+        assert exercise(bound(GhClient(REPO, runner=replay)), case, args) == observed
         replay.assert_consumed()
         (FIXTURES / (case + '.json')).write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + '\n')
         print(json.dumps({'case': case, 'requests': len(recorder.exchanges), 'live_equals_replay': True,
@@ -142,7 +143,7 @@ def record():
 def test_real_recording_replay(case):
     fixture = load_case(case)
     replay = WriteReplay(fixture)
-    actual = exercise(GhClient(REPO, runner=replay), case, fixture['args'])
+    actual = exercise(bound(GhClient(REPO, runner=replay)), case, fixture['args'])
     assert actual == fixture['observed']
     assert shape(actual) == fixture['observed_shape']
     assert fixture['provenance'] == '真實 API 回應'
@@ -188,9 +189,9 @@ def test_live_readonly_and_existing_suite():
     for case in READ_CASES:
         fixture = load_case(case)
         recorder = Recorder()
-        actual = exercise(GhClient(REPO, runner=recorder), case, fixture['args'])
+        actual = exercise(bound(GhClient(REPO, runner=recorder)), case, fixture['args'])
         replay = WriteReplay({'exchanges': recorder.exchanges})
-        assert exercise(GhClient(REPO, runner=replay), case, fixture['args']) == actual
+        assert exercise(bound(GhClient(REPO, runner=replay)), case, fixture['args']) == actual
         replay.assert_consumed()
     expected = load_case('write_restore')['observed']['before_hash']
     assert hash_body(GhClient(REPO).issue(295)['body']) == expected
