@@ -82,10 +82,12 @@ def declared_ids(name: str, declared: list, roles: list[str]) -> tuple[list, lis
         scope = item["roles"]
         if not isinstance(scope, list):
             errs.append(f"{where} roles 不是陣列：{scope!r}")
-        elif len(set(scope)) != len(scope):
+            continue
+        foreign = [r for r in scope if not isinstance(r, str) or r not in roles]  # 逐元素先驗「值域內字串」
+        if foreign:  # 刻意先於 set()：物件／陣列元素不可雜湊，先雜湊會拋 TypeError 而不是可讀行（R1）
+            errs.append(f"{where} roles 含值域外的值：{foreign!r}（值域 {roles}）")
+        elif len(set(scope)) != len(scope):  # 全為合法字串才驗重複
             errs.append(f"{where} roles 有重複值：{scope!r}")
-        elif [r for r in scope if r not in roles]:
-            errs.append(f"{where} roles 含值域外的值：{[r for r in scope if r not in roles]!r}（值域 {roles}）")
     return ids, errs
 
 
@@ -468,6 +470,9 @@ def selftest(sm: dict) -> int:
         "roles_not_array": (notes_probe([{"id": "F-x-01", "roles": "pm"}, {"id": "F-x-02"}]), "roles 不是陣列"),
         "roles_duplicate_value": (notes_probe([{"id": "F-x-01", "roles": ["pm", "pm"]}, {"id": "F-x-02"}]), "roles 有重複值"),
         "roles_out_of_enum": (notes_probe([{"id": "F-x-01", "roles": ["pm", "ghost"]}, {"id": "F-x-02"}]), "roles 含值域外的值"),
+        # R1（Astra major）：不可雜湊的值域外元素——物件與陣列——也須報可讀行，⛔ 不是 set() 的 TypeError
+        "roles_object_element": (notes_probe([{"id": "F-x-01", "roles": [{}]}, {"id": "F-x-02"}]), "roles 含值域外的值"),
+        "roles_array_element": (notes_probe([{"id": "F-x-01", "roles": [[]]}, {"id": "F-x-02"}]), "roles 含值域外的值"),
     }
     e_roles_absent = notes_probe([{"id": "F-x-01"}, {"id": "F-x-02", "roles": ["reviewer"]}])  # 一缺席一列名，皆合法
     for label, (errs, phrase) in controls.items():
