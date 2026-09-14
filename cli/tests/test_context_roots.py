@@ -11,6 +11,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 from types import SimpleNamespace
 import zipfile
 
@@ -112,18 +113,31 @@ def test_rules_source_capability_contract_is_transport_agnostic(tmp_path, monkey
     assert not isinstance(traversable, pathlib.Path)  # zip 下 files() 是 zipfile 的 Traversable
     source = TraversableRulesSource(traversable, f'zip:{archive}')
     filesystem = load_blocks(FilesystemRulesSource(ROOT))
-    zipped = load_blocks(source)
+
+    def no_materialization(*args, **kwargs):  # 整個 operation（load_blocks）期間⛔ 不得落地任何暫存檔／目錄／解壓
+        raise AssertionError('zip RulesSource 不得 materialize')
+
+    with monkeypatch.context() as guard:
+        for name in ('NamedTemporaryFile', 'TemporaryDirectory', 'mkdtemp', 'mkstemp'):
+            guard.setattr(tempfile, name, no_materialization)
+        for name in ('extract', 'extractall'):
+            guard.setattr(zipfile.ZipFile, name, no_materialization)
+        zipped = load_blocks(source)
     assert [(b.label, b.data, b.raw, b.source) for b in zipped.blocks] == \
         [(b.label, b.data, b.raw, b.source) for b in filesystem.blocks]
     assert zipped.schemas == filesystem.schemas and set(zipped.schemas) == {
         'wf-card', 'wf-contract', 'wf-intake', 'wf-note', 'wf-return', 'wf-ruling'}
     assert source.iter_assets('core/*.md') == FilesystemRulesSource(ROOT).iter_assets('core/*.md')
-    with as_file(traversable) as materialized:
-        assert materialized.is_dir() and (materialized / 'core').is_dir()
-    assert not materialized.exists()  # as_file 的落地只活在 context 內：operation-lifetime，⛔ 無永久 materialization
+    # as_file 的落地只活在 context 內（operation-lifetime，⛔ 無永久 materialization）。以單一檔案成員示範：
+    # requires-python >=3.11，而 as_file 對目錄 Traversable 自 3.12 才支援（3.11 對目錄拋 IsADirectoryError）。
+    member = traversable.joinpath(*source.iter_assets('core/*.md')[0].split('/'))
+    with as_file(member) as materialized:
+        assert materialized.is_file() and materialized.read_bytes() == member.read_bytes()
+    assert not materialized.exists()
     for name in ('path', 'materialize', '__fspath__'):
         assert not hasattr(source, name) and name not in vars(RulesSource)
-    print('V2 blocks', len(zipped.blocks), 'schemas', sorted(zipped.schemas))
+    print('V2 blocks', len(zipped.blocks), 'schemas', sorted(zipped.schemas), 'as_file member', member.name,
+          'python', sys.version_info[:2])
 
 
 # ── V3：symlink 別名、含 ..、相對路徑 → 同一 canonical identity；broken symlink 與缺 sentinel typed 失敗 ──
