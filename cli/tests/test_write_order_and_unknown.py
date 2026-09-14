@@ -6,6 +6,7 @@
 每條各一正向一負控（roles/conduct-common.md §1）；GitHub 全由既有替身接住，⛔ 不碰網路。
 """
 import json
+from pathlib import Path
 import socket
 import subprocess
 
@@ -26,6 +27,42 @@ REWRITE = '重寫投影欄：級別'
 LONG_ACTOR = {'role': 'executor', 'actor': 'a' * 1025}  # 投影值 executor:… > max_bytes 1024
 
 
+ALLOWED_GIT = {'rev-parse', 'log', 'diff'}  # review 的本機唯讀取源；⛔ 不含任何寫入型子指令
+
+
+def git_subcommand(argv):
+    """`git [全域旗標…] <子指令>` 的子指令；`-C` 另吃一個值。不是 git ⇒ None。"""
+    if not argv or Path(argv[0]).name != 'git':
+        return None
+    rest = list(argv[1:])
+    while rest:
+        token = rest.pop(0)
+        if token == '-C' and rest:
+            rest.pop(0)
+        elif not token.startswith('-'):
+            return token
+    return None
+
+
+def strict_offline(monkeypatch, token):
+    """嚴格放行（需求方 2026-09-14 裁定）：只有本機 git 的 rev-parse／log／diff 可跑——
+    `review` 的本機分支頭比對與 git 附錄走 gh/localrev.py 這三個唯讀子指令（CLI-001）。
+    字串型 shell command、gh／curl／wget／ssh、其他 git 子指令與任何其他子程序一律擋；
+    socket 連線一律擋（roles/conduct-common.md §1）。"""
+    real = subprocess.run
+
+    def denied(*args, **kwargs):
+        raise AssertionError(token)
+
+    def guarded(argv, *args, **kwargs):
+        if isinstance(argv, (str, bytes)) or git_subcommand([str(item) for item in argv]) not in ALLOWED_GIT:
+            denied()
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, 'connect', denied)
+    monkeypatch.setattr(subprocess, 'run', guarded)
+
+
 @pytest.fixture(scope='module')
 def catalog():
     return load_blocks(RULES)
@@ -33,12 +70,15 @@ def catalog():
 
 @pytest.fixture(autouse=True)
 def deny_network(monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError('WRITE_ORDER_NETWORK_DENIED')
-    monkeypatch.setattr(socket.socket, 'connect', forbidden)
-    monkeypatch.setattr(subprocess, 'run', forbidden)
+    strict_offline(monkeypatch, 'WRITE_ORDER_NETWORK_DENIED')
     with pytest.raises(AssertionError, match='WRITE_ORDER_NETWORK_DENIED'):
         subprocess.run(['gh', 'api', 'negative-control'])
+    with pytest.raises(AssertionError, match='WRITE_ORDER_NETWORK_DENIED'):
+        subprocess.run('git rev-parse HEAD')          # 字串型 shell command
+    with pytest.raises(AssertionError, match='WRITE_ORDER_NETWORK_DENIED'):
+        subprocess.run(['git', 'push', 'origin'])     # 寫入型 git 子指令
+    with pytest.raises(AssertionError, match='WRITE_ORDER_NETWORK_DENIED'):
+        subprocess.run(['python', '-c', 'pass'])      # 其他子程序
 
 
 # ── FINAL2-1：對帳（會寫投影欄）⛔ 不得搶在完整驗證之前 ────────────────────────

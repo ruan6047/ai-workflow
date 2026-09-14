@@ -1,8 +1,11 @@
 """消費 core/verbs.md §1 review／§2／§3、core/return.md 段落表／schema／末段必填性、
 core/naming.md §3／§4、core/tiers.md §1、core/enums.md 值域、modules/*/module.md §0。
 D4 階段限定與規劃前預設分支回退依 core/verbs.md §1 review 列（預設分支取 resolved repository 的 API 值）。
-刻意降級：gh/localgit.py 只有 merge_tree，無本機頭、log、diffstat 介面；
-印未能取得，⛔ 不繞過 gh 層新增 git 子指令，也不得推論本機與遠端相同。
+本機分支頭比對與 git 附錄的唯讀 git 子指令全走 gh/localrev.py（⛔ 不在本層自己開 subprocess）：
+比對對象＝`refs/heads/<卡面 branch>`，`branch` null 時＝`refs/heads/<預設分支>`；附錄 base＝遠端預設
+分支頭、head＝已補進交回單的 `source_sha`，在 project root 的本機工作樹上算。取不到就印一行帶
+非空原因（rc 仍 0），⛔ 不印空區段、⛔ 不冒充無改動、⛔ 不推論本機與遠端相同。
+兩者的本機讀取與 body 組裝都在首次遠端寫入之前（§2 檢查先於首次遠端寫入）。
 """
 import json
 from pathlib import Path
@@ -14,10 +17,15 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.context import IdentityError, default_branch, rules_of
 from wf.gh.client import NotFound
+from wf.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, comment_blocks,
                               enabled_modules, parse_args, verify_source_issue)
 from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection, reject
 from wf.verbs.notes import notes, read_comments
+
+NO_LOCAL_HEAD = '未能比對本機分支頭'
+NO_APPENDIX = '未能取得 git 附錄'
+COMMITS, CHANGES = 'commit 清單', '改動面'
 
 
 def _missing(rules, data, current, role, sections, report):
@@ -105,6 +113,49 @@ def _head(client, branch, sha_schema):
     return sha if not validate(sha, sha_schema) and sha != '0' * 40 else None
 
 
+def _local_head(ref, remote, git_root):
+    """verbs.md §1 review 列的本機分支頭比對：本機 `refs/heads/<ref>` 等於遠端頭＝兩句都⛔ 不印；
+    不等＝恰一行同時帶兩個 40 碼 SHA；本機 git 狀態取不到（非工作樹、git 不可執行、本機無該 ref）
+    ＝恰印「未能比對本機分支頭」，⛔ 不推論兩邊相同、⛔ 不因此改 rc。"""
+    if not ref or remote is None:
+        return (NO_LOCAL_HEAD,)
+    try:
+        local = rev_parse(f'refs/heads/{ref}', root=git_root)
+    except LocalRevUnavailable:
+        return (NO_LOCAL_HEAD,)
+    if local is None:
+        return (NO_LOCAL_HEAD,)
+    return () if local == remote else (f'本機分支頭 ≠ 遠端頭：{local} ≠ {remote}',)
+
+
+def _one_line(exc):
+    """失敗原因的呈現邊界（`core/return.md`「卡與身分」列、`core/verbs.md` §1 review 列的「各恰一行」）：
+    真 Git 的 stderr 常是多行——ownership 檢查失敗就是 fatal 行＋提示行＋空行＋指令行——直接內插會讓
+    stdout 與 body 各多出幾行。這裡把所有空白序列（含換行、tab）折成單一空格，⛔ 不截斷內容。
+    折完仍為空（例外自身無訊息）＝退到例外型別名，⛔ 不冒充已知原因、⛔ 不讓原因變空。
+    正規化只做在呈現這一層：gh/localrev.py 仍原樣保留該次 stderr，⛔ 不在資料層改寫事實。"""
+    return ' '.join(str(exc).split()) or type(exc).__name__
+
+
+def _appendix(base, head, git_root):
+    """return.md「卡與身分」列的 git 附錄：base＝遠端預設分支頭、head＝已解析的 `source_sha`，
+    在 project root 的本機工作樹上算；commit 清單用兩點、改動面用三點（三點左端取 merge-base，
+    兩點會把只在 base 上變動的檔算進來）。任一端缺席或子指令失敗＝恰一行帶非空原因，
+    ⛔ 不印空區段、⛔ 不冒充無改動。"""
+    try:
+        if base is None:
+            raise LocalRevUnavailable('未能取得遠端預設分支頭')
+        if head is None:
+            raise LocalRevUnavailable('來源 SHA 未解析為 commit SHA')
+        for label, revision in (('base', base), ('head', head)):
+            if rev_parse(revision, root=git_root) is None:
+                raise LocalRevUnavailable(f'本機沒有 {label}：{revision}')
+        return ([f'{COMMITS}（{base}..{head}）：'] + log_commits(base, head, root=git_root)
+                + [f'{CHANGES}（{base}...{head}）：'] + diff_stat(base, head, root=git_root))
+    except LocalRevUnavailable as exc:
+        return [f'{NO_APPENDIX}：{_one_line(exc)}']
+
+
 def review(card, *, file, role, client, root='.', catalog=None, emit=print, context=None):
     report = Printer(emit)
     rules = rules_of(root if context is None else context.rules)
@@ -143,31 +194,42 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print, cont
     schema = compose_schema(catalog, 'wf-return', enabled)
     sections = {key: spec for name in enabled
                 for key, spec in schema['$defs']['module_return_sections'].get(name, {}).items()}
+    sha_schema = schema['properties']['source_sha']
     sha = current.get('source_sha')
+    # 本機 git 一律用 project root：無 context（自舉直呼、測試）時才退到 root 參數。
+    git_root = root if context is None else context.project.root.canonical
+    remote_default = []  # 遠端預設分支頭本次只讀一次：executor 的回退與附錄 base 同一顆
     if role == 'executor':
         enums, = catalog.by_label('json wf-enums')
         stages = enums.data['stages']['enum']
         execution = current.get('stage') in stages[stages.index('執行'):]
         branch = current.get('branch')
-        sha = _head(client, branch, schema['properties']['source_sha']) if branch else None
+        sha = _head(client, branch, sha_schema) if branch else None
         if sha is None and execution:
             return reject(client, number, 'D4', 'branch 缺少或遠端 ref 無法解析為 commit SHA', tuple(report))
-        if sha is None:
-            sha = _head(client, default_branch(client, context), schema['properties']['source_sha'])
-        report('未能比對本機分支頭')
+        default = default_branch(client, context)
+        if sha is None:  # 規劃前的回退：遠端側取源仍是遠端預設分支頭（§1 review 列）
+            remote_default.append(_head(client, default, sha_schema))
+            sha = remote_default[0]
+        for line in _local_head(branch or default, sha, git_root):
+            report(line)
     data.update(card_id=current.get('card_id'), iteration=current.get('iteration'), role=role, source_sha=sha)
     errors = validate(data, schema)
     if errors:
         return reject(client, number, 'D3', '; '.join(f'{e.path}: {e.message}' for e in errors), tuple(report))
-    # §2 檢查先於首次遠端寫入：交回單 D3 與來源 SHA D4 都過了才對帳，⛔ 不在拒收前寫板。
+    if not remote_default:
+        remote_default.append(_head(client, default_branch(client, context), sha_schema))
+    # §2 檢查先於首次遠端寫入：本機 ref 讀取、log、diffstat 與 body 組裝全在對帳（會寫板）之前。
+    appendix = _appendix(remote_default[0], sha, git_root)
+    body = '```json wf-return\n' + json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False)
+    body += '\n```\n\n' + '\n'.join(appendix) + '\n'
     failed = reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
                                   project=project, number=number, report=report, context=context) or _hints(
         data, current, number, role, sections, schema, client, root, catalog, report, rules, context)
     if failed is not None:
         return failed
-    report('未能取得 git 附錄')
-    body = '```json wf-return\n' + json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False)
-    body += '\n```\n\n未能取得 git 附錄\n'
+    for line in appendix:
+        report(line)
     client.post_comment(number, 'wf:return' if role == 'executor' else 'wf:verdict', body)
     return WriteResult(0, card=current, printed=tuple(report))
 

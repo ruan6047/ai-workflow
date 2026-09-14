@@ -9,7 +9,7 @@ last_confirmed: 2026-09-07
 
 | 段 | 誰填 | 內容 |
 |---|---|---|
-| 卡與身分 | CLI | 同派工單；另列 `source_sha`、commit 清單（`git log`）、改動面（`git diff --stat` 每檔一列）、`finding_id` 由作者依 `core/naming.md` §4 填 |
+| 卡與身分 | CLI | 同派工單；另列 `source_sha` 與 git 附錄——取源＝base＝遠端預設分支頭、head＝`source_sha`；計算位置＝project root 的本機工作樹；commit 清單（`git log --no-color --pretty=format:%H %s <base>..<head>`，兩點）、改動面（`git diff --stat --no-color <base>...<head>`，三點，每檔一列）；任一端不在本機、root 非 git 工作樹或子指令非零＝stdout 與 body 各恰一行「未能取得 git 附錄：<原因>」（`<原因>` 非空，取自該次失敗的 stderr 或 ref 缺席事實），rc 仍 0、⛔ 不印空區段、⛔ 不冒充「無改動」；`finding_id` 由作者依 `core/naming.md` §4 填 |
 | self_run | 人 | 實跑的指令、rc、原始輸出 |
 | 逐條驗收 | 人 | 每條 `acceptance`：做法／證據／falsifier，⛔ 不合併 |
 | 失誤登記 | 執行者 | 逐項：失誤／何時／影響／補救；無則逐字「無」 |
