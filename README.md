@@ -25,6 +25,7 @@
 
 - 讀規則的順序：`core/glossary.md` → `core/state-machine.md` → 你的角色檔 `roles/` → 當下階段檔 `stages/`。
 - 新專案怎麼接：`ADOPTION.md`。
+- 執行環境：本框架唯一支援的 Python 版本是 3.14（`cli/pyproject.toml` 的 `requires-python` 逐字為 `>=3.14`；`.github/workflows/ci.yml` 裡每一個有 Python 消費點的 job 都以 `actions/setup-python` 釘 `"3.14"`）；⛔ 不承諾 3.11、3.12 或 3.13，⛔ 無以 Python 版本為維度的 CI 矩陣。
 - 活卡與看板：`gh project list --owner <帳號>` 取板號，再 `gh project item-list <N> --owner <帳號>`。
 - 平台硬擋現況：`gh api repos/<owner>/<repo>/rulesets`。
 - 舊制規則與範本：`archive/rules-2026-09/`（唯讀，僅供對照）。

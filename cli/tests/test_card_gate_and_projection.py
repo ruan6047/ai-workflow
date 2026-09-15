@@ -487,9 +487,20 @@ def test_prevalidation_stub_restores_the_typeerror(tmp_path, catalog, monkeypatc
     monkeypatch.setattr(_common, 'prevalidate_card', lambda *a, **k: None)
     root = make_root(tmp_path, project=False)
     client = make_client(victim_card(catalog, stage_plan=5))
-    with pytest.raises(TypeError, match="argument of type 'int' is not iterable"):
+    with pytest.raises(TypeError) as excinfo:
         run_verb(verb, tmp_path, root, client)
-    print('WF-004 負控', verb, '樁掉 prevalidate_card ⇒ TypeError 重現')
+    # 刻意：只斷言「例外類別＋產生點」，⛔ 不斷言 CPython 的訊息全文。
+    # 為什麼：產品契約是「上界預驗缺席時，stage_plan=5 會在啟用判定那行未攔截地炸開」；
+    # 訊息措辭是 CPython 的實作細節、⛔ 不是契約。產生點鎖在 compose/enable.py 的 `is_enabled`，
+    # 即 `condition["stage"] in card.get("stage_plan", [])` 那行。
+    # ⛔ 不得推出：這兩條斷言可以刪成只剩 `pytest.raises(TypeError)`。那樣一個與預驗
+    # 無關的 TypeError 也會靜默通過，本負控就失去鑑別力。
+    # ⛔ 也不得推出：`is_enabled` 改名或搬走那行 `in` 時可以刪掉本負控。那會讓本條以
+    # 可見的紅出現（⛔ 非靜默通過），處置是把斷言改到新的產生點。
+    entry = excinfo.traceback[-1]
+    assert entry.path.name == 'enable.py', entry.path
+    assert entry.name == 'is_enabled', entry.name
+    print('WF-004 負控', verb, '樁掉 prevalidate_card ⇒ TypeError 重現於', entry.path.name, entry.name)
 
 
 @pytest.mark.parametrize('verb', ['notes', 'brief', 'review'])

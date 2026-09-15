@@ -6,6 +6,7 @@
 - required status checks 至少 `secret-scan`、`commit-trailer`（P4、P5）；有可達性檢查的專案加 `reachability`。
 - 合併方式只留一種按鈕，值同時寫進 `.wf/modules.json` 的 `merge_method`（P3）。
 - 複製 `secret-scan` 與 `commit-trailer` 兩個 job 與 `.github/scripts/trailer_check.py`；`reachability` 檢查的是本 repo 的規則檔，採用專案⛔ 不複製。
+- 本框架唯一支援的 Python 版本是 3.14；複製上一條的 job 時須一併帶走該 job 的 `actions/setup-python` 步驟（`python-version: "3.14"`），否則下游會跑到 runner 內建的未釘選 `python3`。
 - commit trailer 鍵集合與必填時機依 `roles/conduct-common.md` §2。
 
 ## 2 · `.wf/modules.json` 種子
