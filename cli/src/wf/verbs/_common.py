@@ -10,7 +10,7 @@ import json
 import re
 
 from wf.compose.blocks import projection
-from wf.compose.enable import is_enabled
+from wf.compose.enable import activate
 from wf.compose.project_config import module_names
 from wf.compose.schema import compose_schema
 from wf.compose.validate import _equal, validate
@@ -169,14 +169,15 @@ def prevalidate_card(card, catalog):
     if errors:
         raise CardShapeError('; '.join(f'{e.path}: {e.message}' for e in errors))
 
-def enabled_modules(catalog, cfg, card, *, client=None, project=None, number=None):
-    """modules/*/module.md §0 enable_if 的啟用判定：專案設定＋卡面＋板上事實（open／move 同判）。
+def module_activation(catalog, cfg, card, *, client=None, project=None, number=None):
+    """動詞層取得啟用集合的唯一入口（core/modules.md §2）：專案設定＋卡面＋板上事實 → Activation。
+    七個動詞都只經這裡，⛔ 不自行組合 modules_list 與 predicate（test_module_validation.py 的結構測試釘住）。
     第一行的上界預驗＝§1 合成順序：卡面結構不合上界時 ⛔ 不做啟用判定。"""
     prevalidate_card(card, catalog)
     facts = board_facts(project, catalog, self_number=number,
                         repo=None if client is None else client.repo)
-    return [block.data for block in catalog.by_label('yaml wf-module')
-            if is_enabled(block.data, modules_list=module_names(cfg), card=card, board_facts=facts)]
+    return activate([block.data for block in catalog.by_label('yaml wf-module')],
+                    modules_list=module_names(cfg), card=card, board_facts=facts)
 
 def chain_depth(card, cards):
     """parent 鏈深 (層數, 斷點)；斷點 None＝走完、'循環'、或第一個缺的 card_id。"""

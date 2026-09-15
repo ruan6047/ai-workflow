@@ -16,16 +16,15 @@ import re
 from types import SimpleNamespace
 
 from wf.compose.blocks import Source, load_blocks, projection, source_line
-from wf.compose.enable import is_enabled
 from wf.compose.frontmatter import parse_frontmatter
-from wf.compose.project_config import load_project_config, module_names
+from wf.compose.project_config import load_project_config
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.context import IdentityError, default_branch, rules_of
 from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
-from wf.verbs._common import (CardShapeError, Printer, block_object, board_facts, card_number,
-                              comment_blocks, enabled_modules, parse_args, repo_cards, verify_source_issue)
+from wf.verbs._common import (CardShapeError, Printer, block_object, card_number,
+                              comment_blocks, module_activation, parse_args, repo_cards, verify_source_issue)
 from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
 from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
@@ -219,15 +218,12 @@ MODULE_SECTIONS = {('resource-lock', 0): _listing('resources'), ('resource-lock'
                    ('initiative', 0): _spec_baseline, ('identity', 0): lambda ctx: [HUMAN]}
 
 def _module_sections(ctx):
-    """dispatch.md `wf-module-sections` 的 brief 鍵＋compose/enable.py is_enabled；板上事實同 notes／move（_common）。"""
+    """dispatch.md `wf-module-sections` 的 brief 鍵；名單＝單一啟用入口算出的 `capable`
+    （core/modules.md §3 七項之一 ⇒ 只有 maturity=ready 且已啟用者貢獻），⛔ 不在此重判啟用。"""
     declared, = ctx.catalog.by_label('json wf-module-sections')
-    modules = {block.data['name']: block.data for block in ctx.catalog.by_label('yaml wf-module')}
-    facts = board_facts(ctx.project, ctx.catalog, self_number=ctx.number, repo=ctx.client.repo)
-    listed, out = module_names(ctx.cfg), []
+    capable, out = {module['name'] for module in ctx.activation.capable}, []
     for name, titles in declared.data['brief'].items():
-        module = modules.get(name)
-        if module is None or not is_enabled(module, modules_list=listed, card=ctx.card,
-                                            board_facts=facts):
+        if name not in capable:
             continue
         mark = _mark(ctx, 'module', f'modules/{name}/module.md', MODULE_SECTION)
         out += [(title, mark, MODULE_SECTIONS.get((name, index), _unwired)(ctx))
@@ -288,12 +284,13 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     if cfg['project'] is not None and project is None:
         report('未能讀取 Project')
     try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
-        enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+        activation = module_activation(catalog, cfg, current, client=client, project=project, number=number)
     except CardShapeError as exc:
         return blocked(report, 'D3', str(exc))
     ctx = SimpleNamespace(card=current, number=number, target=target, client=client, root=root,
                           rules=rules, context=context, default_branch=default_branch(client, context),
-                          catalog=catalog, cfg=cfg, project=project, note_ids=[], notes=None, listing=[],
+                          catalog=catalog, cfg=cfg, project=project, activation=activation,
+                          note_ids=[], notes=None, listing=[],
                           report=report, days=None if match is None else int(match[1]),
                           today=date.today() if today is None else today)
     if target == 'closeout':
@@ -301,7 +298,7 @@ def brief(card, *, target, client, root='.', catalog=None, emit=print, today=Non
     # §2 檢查先於首次遠端寫入：本動詞與內層 `notes` 兩次讀卡的驗證全部排在對帳（第一次投影
     # 寫入）之前，任一個讀側 D3 成立時該次執行對遠端零寫入；投影欄算不出的拒收仍歸對帳。
     failed = check_card(current, client=client, number=number, catalog=catalog,
-                        enabled_modules=[module['name'] for module in enabled],
+                        enabled_modules=activation.names,
                         fail=lambda reason: blocked(report, 'D3', reason)) \
         or _read_notes(ctx) or reconcile_projection(
             current, client=client, catalog=catalog, location=cfg['project'],

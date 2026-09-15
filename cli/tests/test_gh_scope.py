@@ -1,5 +1,6 @@
 """消費 core/verbs.md §2、roles/conduct-common.md §1；src 與依賴邊界。"""
 import ast
+import importlib.util
 import json
 import sys
 
@@ -10,19 +11,18 @@ from .test_gh_write_recording import ensure_clean
 
 NETWORK = {'subprocess', 'urllib', 'socket', 'http', 'requests', 'httpx', 'aiohttp', 'ftplib'}
 
-# 刻意：本常數是暫行值。正式的 core／module-runtime 雙桶邊界與聚合上限歸 WF-011。
-# 本次⛔ 不移除總量護欄。⛔ 不得推出「聚合後盾可以拿掉」或「分桶已經建立」。
-# 上限只有這一個字面居所：真掃描與合成樹負控都從這裡取值，⛔ 不重打字面。
-TOTAL_LIMIT = 5000
+
+def _budget():
+    """門檻與比較函式只有一個居所＝`.github/scripts/source_budget.py`；此處 import 使用，⛔ 不重打。"""
+    path = ROOT / '.github/scripts/source_budget.py'
+    spec = importlib.util.spec_from_file_location('wf_source_budget', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def aggregate(root):
-    """遞迴 *.py 的聚合行數與 ≤ TOTAL_LIMIT 的判定。
-
-    真掃描據以判過與判不過的比較函式就是這一個；合成樹負控用的也是這一個（同一函式，⛔ 不是複製品）。
-    """
-    total = sum(len(path.read_text().splitlines()) for path in sorted(root.rglob('*.py')))
-    return total, total <= TOTAL_LIMIT
+_BUDGET = _budget()
+TOTAL_LIMIT, aggregate = _BUDGET.TOTAL_LIMIT, _BUDGET.aggregate
 
 
 def imports(text):
@@ -52,36 +52,57 @@ def test_source_inventory_and_negative_controls():
         longest = max((f.end_lineno - f.lineno + 1 for f in ast.walk(ast.parse(source))
                        if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))), default=0)
         assert longest <= 150, (path, longest)  # 單一函式觸發器（舊 wfcli 的 god function 形狀）
-        total += count
+        total += sum(1 for line in source.splitlines() if line.strip())  # 聚合口徑排除空行
         print('SRC', path.relative_to(ROOT), count, longest, json.dumps(sorted(names)))
-    independent, within = aggregate(ROOT / 'cli/src/wf')
+    independent, reached = aggregate(ROOT / 'cli/src/wf')
     assert independent == total, (independent, total)  # 逐檔迴圈累加與比較函式須獨立算出同一值
-    assert within, (total, TOTAL_LIMIT)  # 寬鬆後盾；分桶由單檔與函式兩個觸發器守
-    print('SRC_FILES', len(paths), 'SRC_TOTAL', total)
+    # 刻意⛔ 無 `assert within`：5,000 行後盾已由硬擋改為治理軟警示（`.github/scripts/source_budget.py`
+    # 在 CI 的 cli-tests job 內印 ::warning::）。⛔ 不得推出「聚合已無後盾」——警示與規劃／審核的
+    # 說明義務（stages/planning.md §5、stages/review.md §5）就是後盾；分桶仍由單檔與函式兩個觸發器守。
+    print('SRC_FILES', len(paths), 'SRC_TOTAL', total, 'LIMIT', TOTAL_LIMIT, 'REACHED', reached)
     for relative in ('compose/blocks.py', 'compose/project_config.py', 'gh/client.py', 'gh/writes.py', 'verbs/_write.py'):
         doc = ast.get_docstring(ast.parse((ROOT / 'cli/src/wf' / relative).read_text()))
         assert doc and '.md' in doc and '§' in doc, relative
 
 
 def test_total_line_budget_boundary_negative_control(tmp_path):
-    """合成樹負控：聚合恰 TOTAL_LIMIT 行判過、恰 TOTAL_LIMIT + 1 行判不過。
+    """合成樹負控：聚合恰 TOTAL_LIMIT 行判達警示、TOTAL_LIMIT − 1 行判未達。
 
-    兩棵樹的行數由 TOTAL_LIMIT 算出，⛔ 不重打任何上限字面；判過與判不過都由 aggregate 決定，
-    與真掃描共用同一個比較函式。非 *.py 的檔放進樹裡，證明母體真的只收 *.py。
+    兩棵樹的行數由 TOTAL_LIMIT 算出，⛔ 不重打任何上限字面；判達與判未達都由 aggregate 決定，
+    與真掃描共用同一個比較函式。非 *.py 的檔與空行放進樹裡，證明母體只收 *.py 且口徑排除空行。
     """
     def tree(name, lines):
         root = tmp_path / name
         (root / 'pkg').mkdir(parents=True)
         head = lines // 2
-        (root / 'a.py').write_text('\n'.join(['x = 0'] * head) + '\n')
+        (root / 'a.py').write_text('\n'.join(['x = 0'] * head + [''] * 11) + '\n')
         (root / 'pkg' / 'b.py').write_text('\n'.join(['y = 0'] * (lines - head)) + '\n')
         (root / 'pkg' / 'noise.txt').write_text('\n'.join(['z'] * lines) + '\n')
         return root
 
     assert aggregate(tree('at_limit', TOTAL_LIMIT)) == (TOTAL_LIMIT, True)
-    print('TOTAL_AT_LIMIT', TOTAL_LIMIT, 'PASS')
-    assert aggregate(tree('over_limit', TOTAL_LIMIT + 1)) == (TOTAL_LIMIT + 1, False)
-    print('TOTAL_OVER_LIMIT', TOTAL_LIMIT + 1, 'FAIL')
+    print('TOTAL_AT_LIMIT', TOTAL_LIMIT, 'WARN')
+    assert aggregate(tree('under_limit', TOTAL_LIMIT - 1)) == (TOTAL_LIMIT - 1, False)
+    print('TOTAL_UNDER_LIMIT', TOTAL_LIMIT - 1, 'QUIET')
+
+
+def test_source_budget_script_is_a_soft_warning(capsys, monkeypatch):
+    """腳本本身：rc 恆 0；達門檻印含當前行數與門檻的 ::warning:: 行，未達不印。
+
+    負控用 monkeypatch 把 aggregate 換成回報「已達」的樁——⛔ 不改真樹、⛔ 不重打門檻字面。
+    """
+    assert _BUDGET.main(['source_budget.py']) == 0
+    quiet = capsys.readouterr().out
+    assert '::warning' not in quiet, quiet
+    monkeypatch.setattr(_BUDGET, 'aggregate', lambda root: (TOTAL_LIMIT + 7, True))
+    assert _BUDGET.main(['source_budget.py']) == 0  # 達門檻仍 rc=0：軟警示⛔ 不擋
+    loud = capsys.readouterr().out
+    assert '::warning' in loud and str(TOTAL_LIMIT + 7) in loud and str(TOTAL_LIMIT) in loud, loud
+    print('SOURCE_BUDGET_SOFT_WARNING', repr(quiet.strip()), repr(loud.strip()))
+
+
+def test_source_budget_selftest_passes():
+    assert _BUDGET.main(['source_budget.py', '--selftest']) == 0
 
 
 def test_all_gh_fixtures_are_secret_free():

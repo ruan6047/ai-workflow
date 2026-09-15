@@ -13,7 +13,6 @@ from wf.verbs._common import block_object, board_items, field_values
 
 # 狀態與階段字面＝各模組 §1 條文的語意，逐字對應該模組宣告的 id；值域住 core/enums.md。
 RETURNED, IN_PROGRESS, ESCALATED, EXEC_STAGE = '退回', '進行中', '升級', '執行'
-UNIMPLEMENTED = '未實作的模組印項／計數 {}'
 NO_PROJECT = '無 Project 設定，未評估 {}'
 
 
@@ -47,16 +46,14 @@ def escalation_count(card, from_node, to_node):
 
 
 def escalation_threshold(card, from_node, to_node, *, module, config, **_):
-    """escalation §1 第 3 條「達」；現值取 .wf/modules.json 的 params，缺則模組宣告的種子。"""
+    """escalation §1 第 3 條「達」；現值取 .wf/modules.json 的 params，缺則模組宣告的種子。
+
+    刻意⛔ 不留「escalate_after 不合法，改用種子 N」的靜默退回：型別不符種子已由
+    ModuleValidation 在任何遠端寫入前擋掉（core/modules.md §4），⛔ 不得推出「壞型別會被容忍」。
+    """
     seed = module['params']['escalate_after']
     threshold = module_params(config, module['name']).get('escalate_after', seed)
-    lines = []
-    if type(threshold) is not int:
-        lines.append(f'escalate_after 不合法，改用種子 {seed}')
-        threshold = seed
-    if card.get('escalation_count', 0) >= threshold:
-        lines.append('達升級門檻')
-    return lines
+    return ['達升級門檻'] if card.get('escalation_count', 0) >= threshold else []
 
 
 def resources_intersection(card, from_node, to_node, *, catalog, project, client, **_):
@@ -117,9 +114,7 @@ def apply_counters(card, from_node, to_node, *, catalog, config, enabled_names):
     card = deepcopy(card)
     for module in _declarations(catalog, enabled_names):
         for identifier in module['adds'].get('counters', []):
-            counter = COUNTERS.get(identifier)
-            if counter is not None:
-                card[identifier] = counter(card, from_node, to_node)
+            card[identifier] = COUNTERS[identifier](card, from_node, to_node)
     return card
 
 
@@ -133,15 +128,9 @@ def module_prints(card, from_node, to_node, *, catalog, config, enabled_names,
             if project is None and module['enable_if']['kind'] == 'other_actor_card_in_state':
                 lines.append(NO_PROJECT.format(module['name']))
             continue
-        adds = module['adds']
-        for identifier in adds.get('counters', []):
-            if identifier not in COUNTERS:
-                lines.append(UNIMPLEMENTED.format(identifier))
-        for identifier in adds.get('move_prints', []):
-            emit = MOVE_PRINTS.get(identifier)
-            if emit is None:
-                lines.append(UNIMPLEMENTED.format(identifier))
-                continue
-            lines.extend(emit(card, from_node, to_node, module=module, config=config,
-                              catalog=catalog, project=project, client=client))
+        # 到得了這裡的模組都是 maturity=ready 且已啟用 ⇒ 宣告的 id 必有實作（ModuleValidation
+        # 的雙向核對，core/modules.md §5）。刻意直接索引：缺鍵要炸，⛔ 不留「未實作的模組印項／計數」印。
+        for identifier in module['adds'].get('move_prints', []):
+            lines.extend(MOVE_PRINTS[identifier](card, from_node, to_node, module=module, config=config,
+                                                 catalog=catalog, project=project, client=client))
     return lines

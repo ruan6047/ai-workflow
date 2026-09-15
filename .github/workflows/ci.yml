@@ -5,7 +5,7 @@ name: CI
 #   secret-scan    ＝ P4
 #   commit-trailer ＝ P5（.github/scripts/trailer_check.py）
 #   reachability   ＝ core/state-machine.md §5（.github/scripts/reachability.py）
-#   cli-tests      ＝ CLI 的測試目錄 cli/tests（被測物＝cli/src）
+#   cli-tests      ＝ CLI 的測試目錄 cli/tests（被測物＝cli/src），並印行數治理軟警示（.github/scripts/source_budget.py，rc 恆 0）
 # ⛔ 不再有掃描 docs 的 job；⛔ 不加沒有被測物的 job。
 #
 # 上面是本檔有哪些 job，⛔ 不是「哪些 job 被設為 required check」的宣稱。
@@ -96,3 +96,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -e "cli[dev]"
       - run: python -m pytest cli/tests -q
+      # 治理軟警示：被測物＝cli/src/wf，rc 恆 0，⛔ 不擋。放在既有 job 內（⛔ 不加新 job），
+      # 讓警示出現在 Checks 註記而非只留在 pytest 的被吞 stdout。
+      - name: CLI production source 行數治理軟警示
+        run: python .github/scripts/source_budget.py
