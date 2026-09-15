@@ -129,7 +129,10 @@ def test_rules_source_capability_contract_is_transport_agnostic(tmp_path, monkey
         'wf-card', 'wf-contract', 'wf-intake', 'wf-note', 'wf-return', 'wf-ruling'}
     assert source.iter_assets('core/*.md') == FilesystemRulesSource(ROOT).iter_assets('core/*.md')
     # as_file 的落地只活在 context 內（operation-lifetime，⛔ 無永久 materialization）。以單一檔案成員示範：
-    # requires-python >=3.11，而 as_file 對目錄 Traversable 自 3.12 才支援（3.11 對目錄拋 IsADirectoryError）。
+    # 刻意以單一檔案成員示範：cli/pyproject.toml 的 requires-python 逐字為 >=3.14，
+    # as_file 對目錄 Traversable 自 3.12 起已支援，因此這裡用檔案成員⛔ 不再是版本限制。
+    # 為什麼：本條要驗的是 operation-lifetime 落地與回收，單一檔案成員是最小的可觀察形狀。
+    # ⛔ 不得推出：本條在量測 Python 版本相容性，也⛔ 不得推出框架仍承諾 3.11、3.12 或 3.13。
     member = traversable.joinpath(*source.iter_assets('core/*.md')[0].split('/'))
     with as_file(member) as materialized:
         assert materialized.is_file() and materialized.read_bytes() == member.read_bytes()
