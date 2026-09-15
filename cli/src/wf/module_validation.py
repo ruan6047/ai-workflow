@@ -66,6 +66,9 @@ def _declaration_errors(module, domains, where):
     else:
         for key in sorted(set(adds) - set(ADDS_KEYS)):
             out.append(f"{where}: adds 未知子鍵 {key}；子鍵集合封閉為 {list(ADDS_KEYS)}")
+        for key, _ in HOOKS:  # §5 雙向核對只讀這兩個子鍵，型別不對就在這裡具名收，⛔ 不靜默略過
+            if key in adds and not isinstance(adds[key], list):
+                out.append(f"{where}: adds.{key} 型別 {_type_name(adds[key])}；期望 array（§5 雙向核對的 id 列）")
     condition = module.get("enable_if")
     if not isinstance(condition, dict):
         out.append(f"{where}: enable_if 型別 {_type_name(condition)}；期望 object")
@@ -93,8 +96,9 @@ def _config_errors(entries, declarations):
             out.append(f"{where}: 未知模組名；期望 {sorted(declarations)} 之一")
             continue
         if name in seen:
+            # 重複判定與參數診斷分開累加：記下重複後⛔ 不 continue，否則該筆的未知 params 鍵與
+            # 錯型值會被靜默漏掉，違反「兩側錯誤同一次執行全部收齊」。
             out.append(f"{where}: 重複模組名；modules[].name 須唯一")
-            continue
         seen.add(name)
         seeds = declarations[name].get("params")
         seeds = seeds if isinstance(seeds, dict) else {}
@@ -105,6 +109,18 @@ def _config_errors(entries, declarations):
                 out.append(f"{where}: params.{key} 型別 {_type_name(value)} 不符宣告種子；"
                            f"期望 {_type_name(seeds[key])}")
     return out
+
+
+def _hook_ids(module, key):
+    """`adds.<key>` 的 id 列；`adds` 非 object 或該子鍵非 array ⇒ 空列。
+
+    刻意只取形狀可用的部分：這些結構錯型已由 `_declaration_errors` 具名收進同一份 `lines`，
+    在這裡再拋 `AttributeError`／`TypeError` 只會讓整批已收集的診斷連同兩側錯誤一起遺失。
+    ⛔ 不得推出「錯型的 adds 通過驗證」——該次 `ModuleValidation.ok` 仍為假。
+    """
+    adds = module.get("adds")
+    ids = adds.get(key) if isinstance(adds, dict) else None
+    return ids if isinstance(ids, list) else []
 
 
 def _hook_errors(declarations):
@@ -119,7 +135,7 @@ def _hook_errors(declarations):
         implemented = set(getattr(registry, attribute, {}))
         declared_ready, declared_any = set(), set()
         for module in declarations.values():
-            ids = (module.get("adds") or {}).get(key) or []
+            ids = _hook_ids(module, key)
             declared_any.update(ids)
             if module.get("maturity") == READY:
                 declared_ready.update(ids)

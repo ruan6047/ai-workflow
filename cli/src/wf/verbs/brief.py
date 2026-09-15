@@ -26,7 +26,6 @@ from wf.gh.localgit import LocalGitUnavailable, merge_tree
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number,
                               comment_blocks, module_activation, parse_args, repo_cards, verify_source_issue)
 from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
-from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
 from wf.verbs.notes import notes
 from wf.verbs import closeout
 
@@ -194,7 +193,14 @@ CLI_SECTIONS = (_identity, lambda ctx: [_plain(ctx.card.get('core_pain'))],
                 _previous_findings, _capability, _notes, _side_effects)
 
 def _intersection(ctx):
-    """寫入集交集＝`move_modules` 的交集函式（缺則未接線）；語意住 resource-lock §1。"""
+    """寫入集交集＝`move_modules` 的交集函式（缺則未接線）；語意住 resource-lock §1。
+
+    刻意在函式內 import production registry（同 verbs/move.py）：頂層 import 會讓 registry 的
+    `ImportError` 在 `main` 可呼叫之前就炸掉整個 CLI，繞過 core/modules.md §5 的 `ModuleValidation`
+    邊界、stdout 一行修正資訊都印不出來。⛔ 不得推出「registry 缺席可以續跑」——本函式只在
+    ModuleValidation 通過之後才被走到。
+    """
+    from wf.verbs.move_modules import IN_PROGRESS, MOVE_PRINTS, NO_PROJECT
     emit = MOVE_PRINTS.get('resources_intersection')
     if emit is None:
         return [UNWIRED]

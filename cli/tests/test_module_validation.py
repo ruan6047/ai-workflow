@@ -5,6 +5,9 @@
 """
 import ast
 import json
+import os
+import re
+import subprocess
 import sys
 
 import pytest
@@ -14,10 +17,12 @@ from .test_compose_schema import ROOT
 from wf.compose.blocks import Block, Catalog, Source, load_blocks
 from wf.compose.enable import KINDS, READY, activate
 from wf.compose.schema import compose_schema
-from wf.module_validation import (ADDS_KEYS, DECLARATION_KEYS, ModuleValidationError,
-                                  validate_modules)
+from wf.context import rules_of
+from wf.module_validation import (ADDS_KEYS, DECLARATION_KEYS, HOOKS, REGISTRY,
+                                  ModuleValidationError, validate_modules)
 from wf.verbs.main import main
 from wf.verbs.move_modules import COUNTERS, MOVE_PRINTS
+from wf.verbs.notes import compose_notes
 
 CATALOG = load_blocks(ROOT)
 DECLARED = {block.data['name']: block.data for block in CATALOG.by_label('yaml wf-module')}
@@ -227,13 +232,18 @@ BAD_CONFIG = {'modules': [{'name': 'ghost'}, {'name': 'escalation', 'params': {'
               'areas': ['WF'], 'project': None}
 
 
-@pytest.mark.parametrize('verb,argv', [
+# 活的 consumer 母體＝main.DISPATCH 的七個業務動詞；fail-closed 相關的負控一律跑滿七個。
+VERB_CASES = (
     ('open', ['10']), ('move', ['WF-001', '--to', '待辦']),
     ('edit', ['WF-001', '--set', 'feature="a"']), ('notes', ['WF-001']),
     ('brief', ['WF-001', '--for', 'executor']),
     ('review', ['WF-001', '--file', 'r.json', '--role', 'executor']),
     ('snapshot', ['--out', 'o']),
-])
+)
+GOOD_CONFIG = {'modules': [{'name': 'escalation'}], 'areas': ['WF'], 'project': None}
+
+
+@pytest.mark.parametrize('verb,argv', VERB_CASES)
 def test_invalid_config_refuses_every_verb_with_zero_remote_calls(tmp_path, capsys, verb, argv):
     """既有專案的無效 `.wf/modules.json`：七個動詞一律 rc=1、stdout 逐條、對 GitHub 與 Project
     零呼叫（含零讀取 ⇒ 必然零寫入）。"""
@@ -299,3 +309,195 @@ def test_ready_is_the_only_capable_maturity_literal():
     assert READY == 'ready'
     enums, = CATALOG.by_label('json wf-enums')
     assert READY in enums.data['module_maturity']['enum']
+
+
+# ── 退回修補：四個阻擋 finding 的可證偽負控 ──────────────────────────────────
+
+# 冷啟動探針：在任何 wf 模組載入之前讓 production registry 無法 import，⛔ 不用 sys.modules 事後
+# 覆寫（那要求 import 已經成功過，驗不到 import 期的崩潰）。每個動詞各開一個全新 process。
+PROBE_HEAD = '''
+import sys
+from importlib.abc import MetaPathFinder
+
+TARGET = sys.argv[1]
+
+
+class RegistryUnavailable(MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name == TARGET:
+            raise ImportError('probe: production registry unavailable')
+        return None
+
+
+sys.meta_path.insert(0, RegistryUnavailable())
+'''
+COLD_START_PROBE = PROBE_HEAD + '''
+from wf.verbs.main import main
+sys.exit(main(sys.argv[2:], env={}))
+'''
+PROBE_SELFTEST = PROBE_HEAD + '''
+import importlib
+importlib.import_module(TARGET)
+'''
+
+
+@pytest.mark.parametrize('verb,argv', VERB_CASES)
+def test_cold_start_registry_failure_is_reported_by_module_validation(tmp_path, verb, argv):
+    """WF-011-R1.1-01／WF-011-R1.2-01：registry 在 import 期就不可用時，七個業務動詞仍由
+    `ModuleValidation` 一次輸出完整修正資訊——rc=1、stdout 逐條、stderr 無 traceback。
+    舊實作在 `verbs/brief.py` 頂層 import registry ⇒ `main` 尚未可呼叫即崩潰，stdout 為空。"""
+    root = adopted(tmp_path, GOOD_CONFIG, name=f'cold-{verb}')
+    env = {**os.environ, 'PYTHONPATH': os.pathsep.join([str(ROOT / 'cli/src'), *sys.path]),
+           'PYTHONDONTWRITEBYTECODE': '1'}
+    done = subprocess.run([sys.executable, '-c', COLD_START_PROBE, REGISTRY,
+                           '--project-root', str(root), verb, *argv],
+                          capture_output=True, text=True, env=env, cwd=str(tmp_path))
+    lines = [line for line in done.stdout.splitlines() if line.startswith('模組宣告或設定不可用・')]
+    assert done.returncode == 1, (verb, done.returncode, done.stdout, done.stderr)
+    assert lines, (verb, done.stdout, done.stderr)
+    assert all('載入 production registry 失敗（ImportError' in line for line in lines), lines
+    assert 'Traceback' not in done.stderr, (verb, done.stderr)
+    print('COLD_START', verb, 'rc=1', lines)
+
+
+def test_cold_start_probe_is_effective_and_the_healthy_path_still_reaches_the_verb(tmp_path):
+    """負控的負控：同一顆探針不注入時七動詞照常越過 ModuleValidation（證明 rc=1 不是恆真），
+    且探針確實讓 registry 無法 import（證明上一條不是沒注入）。"""
+    root = adopted(tmp_path, GOOD_CONFIG, name='cold-control')
+    env = {**os.environ, 'PYTHONPATH': os.pathsep.join([str(ROOT / 'cli/src'), *sys.path]),
+           'PYTHONDONTWRITEBYTECODE': '1'}
+    injected = subprocess.run([sys.executable, '-c', PROBE_SELFTEST, REGISTRY],
+                              capture_output=True, text=True, env=env, cwd=str(tmp_path))
+    assert injected.returncode == 1, (injected.returncode, injected.stdout, injected.stderr)
+    assert 'probe: production registry unavailable' in injected.stderr, injected.stderr
+    clean = subprocess.run(
+        [sys.executable, '-c',
+         'import sys\nfrom wf.verbs.main import main\nsys.exit(main(sys.argv[1:], env={}))',
+         '--project-root', str(root), 'notes', 'WF-001'],
+        capture_output=True, text=True, env=env, cwd=str(tmp_path))
+    assert not [line for line in clean.stdout.splitlines()
+                if line.startswith('模組宣告或設定不可用・')], clean.stdout
+    print('COLD_START_CONTROL blocked_stderr=1 clean_stdout_without_module_lines=1')
+
+
+DUPLICATE_ROW = [{'name': 'escalation'},
+                 {'name': 'escalation', 'params': {'bogus': 1, 'escalate_after': '3'}}]
+
+
+def test_a_duplicate_entry_still_reports_its_unknown_and_mistyped_params():
+    """WF-011-R1.1-02／WF-011-R1.2-02：同一筆 `modules[]` 同時是重複、帶未知 params 鍵、帶錯型值時，
+    三類在同一次執行全部收齊。舊實作在記下重複後 `continue` ⇒ 只剩一條。"""
+    report = validate_modules(CATALOG, {**SEED, 'modules': DUPLICATE_ROW})
+    row = [line for line in report.lines
+           if line.startswith(".wf/modules.json modules[1] 'escalation':")]
+    assert any('重複模組名；modules[].name 須唯一' in line for line in row), row
+    assert any('未知 params 鍵 bogus；期望' in line for line in row), row
+    assert any('params.escalate_after 型別 string 不符宣告種子；期望 integer' in line
+               for line in row), row
+    assert len(row) == 3, row
+    print('DUPLICATE_ROW_AGGREGATED', row)
+
+
+@pytest.mark.parametrize('verb,argv', VERB_CASES)
+def test_the_duplicate_row_diagnostics_reach_stdout_for_every_verb(tmp_path, capsys, verb, argv):
+    """同一筆設定經七個動詞的主入口：三條都落 stdout、rc=1、對 GitHub 與 Project 零呼叫。"""
+    root = adopted(tmp_path, {'modules': DUPLICATE_ROW, 'areas': ['WF'], 'project': None},
+                   name=f'dup-{verb}')
+    client = FakeGhClient()
+    assert main([verb, *argv], client=client, root=root, env={}) == 1
+    out = capsys.readouterr()
+    lines = [line for line in out.out.splitlines() if line.startswith('模組宣告或設定不可用・')]
+    assert len(lines) == 3, out.out
+    assert client.calls == [], client.calls
+    print('DUPLICATE_ROW_FAIL_CLOSED', verb, lines)
+
+
+def _adds(**changes):
+    """以 escalation 的真 adds 為底改一個子鍵；⛔ 不重打九個子鍵字面。"""
+    return {**DECLARED['escalation']['adds'], **changes}
+
+
+@pytest.mark.parametrize('case,adds,needle', [
+    ('adds_is_integer', 123, 'adds 型別 integer；期望 object'),
+    ('adds_is_array', ['bad'], 'adds 型別 list；期望 object'),
+    ('counters_is_integer', _adds(counters=42), 'adds.counters 型別 integer；期望 array'),
+    ('move_prints_is_string', _adds(move_prints='escalation_threshold'),
+     'adds.move_prints 型別 string；期望 array'),
+])
+def test_malformed_adds_is_diagnosed_and_never_discards_the_other_errors(case, adds, needle):
+    """WF-011-R1.1-03／WF-011-R1.2-03：`adds` 非 object、或 §5 雙向核對要讀的 `adds.*` 非 array 時，
+    仍回傳 `ModuleValidation`（⛔ 不拋 AttributeError／TypeError），且已收集的另一側診斷不遺失。"""
+    assert {key for key, _ in HOOKS} == {'counters', 'move_prints'}  # 母體＝§5 讀的兩個子鍵，兩案全覆蓋
+    report = validate_modules(catalog_of(declaration(adds=adds)),
+                              {**SEED, 'modules': [{'name': 'ghost'}]})
+    assert not report.ok, case
+    assert any(needle in line for line in report.lines), (case, report.lines)
+    assert any("'ghost': 未知模組名" in line for line in report.lines), (case, report.lines)
+    print('MALFORMED_ADDS', case, report.lines)
+
+
+@pytest.mark.parametrize('adds', [['bad'], {'counters': 42}])
+def test_malformed_adds_reaches_stdout_through_the_real_entrypoint(tmp_path, capsys, monkeypatch, adds):
+    """同樣兩種錯型走真主入口：rc=1、stdout 同時帶宣告與設定兩側、替身零呼叫。"""
+    broken = declaration(adds=adds)
+    monkeypatch.setattr('wf.verbs.main.load_blocks',
+                        lambda rules: catalog_of(broken))
+    root = adopted(tmp_path, {'modules': [{'name': 'ghost'}], 'areas': ['WF'], 'project': None},
+                   name=f'adds-{_type_names(adds)}')
+    client = FakeGhClient()
+    assert main(['notes', 'WF-001'], client=client, root=root, env={}) == 1
+    out = capsys.readouterr()
+    lines = [line for line in out.out.splitlines() if line.startswith('模組宣告或設定不可用・')]
+    assert any('escalation: adds' in line for line in lines), lines
+    assert any("'ghost': 未知模組名" in line for line in lines), lines
+    assert client.calls == [], client.calls
+    print('MALFORMED_ADDS_ENTRYPOINT', lines)
+
+
+def _type_names(value):
+    return type(value).__name__
+
+
+# ── 非 ready 模組的 notes：規則文字與實際行為唯一且一致 ──────────────────────
+
+PREAMBLE = re.compile(r'^## 0 · 宣告區塊\s*\n\s*\n(.+?)\n', re.M | re.S)
+CONTRADICTION = '非 `ready` 時下列每一項都不存在'  # 舊前言逐字片段；修復後 11 份皆不得再出現
+CORE_NOTES_RULE = '`adds.notes` ⛔ 不在七項內'     # core/modules.md §3 逐字片段
+
+
+def test_every_module_preamble_agrees_with_core_modules_on_non_ready_notes():
+    """WF-011-R1.1-04：11 份 `modules/*/module.md` §0 前言、`core/modules.md` §3、`compose_notes`
+    對「已啟用但非 `ready` 的模組 §2 條文」給同一答案：照常進 notes 合成。
+    舊前言逐字宣稱非 `ready` 時每一項都不存在（唯 `fields` 例外）⇒ 與 §3 及實際行為相反。"""
+    core = (ROOT / 'core/modules.md').read_text(encoding='utf-8')
+    assert CORE_NOTES_RULE in core, 'core/modules.md §3 的 notes 例外不見了'
+    checked = {}
+    for name in sorted(DECLARED):
+        text = (ROOT / f'modules/{name}/module.md').read_text(encoding='utf-8')
+        found = PREAMBLE.search(text)
+        assert found is not None, name
+        preamble = found[1]
+        assert CONTRADICTION not in preamble, (name, preamble)
+        assert '`adds.notes`' in preamble and 'notes 合成' in preamble, (name, preamble)
+        checked[name] = len(preamble)
+    assert len(checked) == len(DECLARED) == 11, checked
+    print('PREAMBLES_CONSISTENT', checked)
+
+
+def test_enabled_non_ready_modules_still_contribute_notes(tmp_path):
+    """行為面同一件事：`compose_notes` 收 `enabled`（⛔ 不是 `capable`），非 ready 模組的 §2 條文
+    仍在合成結果內；負控＝只給 ready 宣告時那些條目全數消失。"""
+    modules = [block.data for block in CATALOG.by_label('yaml wf-module')]
+    ready = [module for module in modules if module['maturity'] == READY]
+    non_ready_names = {module['name'] for module in modules if module['maturity'] != READY}
+    assert non_ready_names, '負控失效：repo 沒有非 ready 模組'
+    shared = dict(stage='執行', role='reviewer', card={}, number=10,
+                  repo='ruan6047/ai-workflow', report=lambda line: None)
+    rules = rules_of(ROOT)
+    every = compose_notes(rules, tmp_path, enabled=modules, **shared)
+    only_ready = compose_notes(rules, tmp_path, enabled=ready, **shared)
+    extra = [note for note in every if note.id not in {item.id for item in only_ready}]
+    assert extra, (non_ready_names, [note.id for note in every])
+    assert all(any(f'modules/{name}/module.md' in note.mark for name in non_ready_names)
+               for note in extra), [(note.id, note.mark) for note in extra]
+    print('NON_READY_NOTES', len(extra), sorted(note.id for note in extra))
