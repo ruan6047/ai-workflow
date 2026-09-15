@@ -13,7 +13,7 @@ last_confirmed: 2026-09-07
 
 ## 2 · 狀態值域
 
-值住 `core/enums.md`：核心＝`states_core`＋`states_terminal` 的 完成，加正交的 `state_blocked`。階段 delta：結案加 停止（終態）。模組 delta：research 加 不可判定、escalation 加 升級、maintenance 加 運行中。完成 只在結案階段有值（`only_in_stage`）；結案階段沒有 待辦、進行中（`states_remove`），入口＝結案／待確認。CLI 的 choices＝核心 ∪ 階段 delta ∪ 已啟用模組的值；未啟用的值寫不進去（→ [archive/rules-2026-09/AI_WORKFLOW.md §0.0 狀態值域](../archive/rules-2026-09/AI_WORKFLOW.md)；決策紀錄 C6）。
+值住 `core/enums.md`：核心＝`states_core`＋`states_terminal` 的 完成，加正交的 `state_blocked`。階段 delta：結案加 停止（終態）。模組 delta：research 加 不可判定、escalation 加 升級。完成 只在結案階段有值（`only_in_stage`）；結案階段沒有 待辦、進行中（`states_remove`），入口＝結案／待確認。CLI 的 choices＝核心 ∪ 階段 delta ∪ 已啟用模組的值；未啟用的值寫不進去（→ [archive/rules-2026-09/AI_WORKFLOW.md §0.0 狀態值域](../archive/rules-2026-09/AI_WORKFLOW.md)；決策紀錄 C6）。
 
 ## 3 · 核心轉移表
 
@@ -53,7 +53,7 @@ last_confirmed: 2026-09-07
 - 模組宣告區塊裡 `transitions.add` 與 `transitions.remove` 各列若干 `{from, to, condition}`（可帶 `if`），記法同上。
 - 合成表＝核心 ∪ add − remove，再按該卡 `stage_plan` 展開；不在計畫內的階段沒有邊。
 - 模組加狀態時，其 add 必同時給進邊與至少一條可達結案的出邊。
-- 三個模組的 delta 住各自 `modules/<name>/module.md` §0 宣告，條文住同檔 §1。
+- 模組的 delta 住各自 `modules/<name>/module.md` §0 宣告，條文住同檔 §1；只有 `maturity=ready` 的模組貢獻 delta（`core/modules.md`）。
 
 ## 5 · 可達性測試
 

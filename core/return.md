@@ -53,9 +53,7 @@ last_confirmed: 2026-09-07
    "stat-redline": {"redlines": {"label": "紅線區塊（本卡的窗口與門檻）", "type": "array", "items": {"type": "string"}},
                     "adversarial_tests": {"label": "對抗性反測表（≥3 角度，各寫支持／推翻／未能檢定）", "type": "array", "items": {"type": "object", "required": ["angle", "result"], "additionalProperties": false, "properties": {"angle": {"type": "string"}, "result": {"enum": ["支持", "推翻", "未能檢定", "不適用"]}, "text": {"type": "string"}}}}},
    "pitfalls-13": {"pitfall_families": {"label": "13 族踩坑清冊（每族恰一行，已檢查／不適用／發現）", "type": "string"}},
-   "db-contract": {"db_contract": {"label": "DB 契約段（namespace、lock、備份、回滾、驗證命令）", "type": "string"}},
-   "deploy": {"deploy_facts": {"label": "部署事實（環境／時間／SHA／驗證）", "type": "string"}},
-   "maintenance": {"run_status": {"label": "運行狀態（活著的證據）", "type": "string"}}}}}
+   "db-contract": {"db_contract": {"label": "DB 契約段（namespace、lock、備份、回滾、驗證命令）", "type": "string"}}}}}
 ```
 
 一則留言只有一個 `wf-return` 區塊。缺段（`review` 印，⛔ 不是 D3）：全級別＝`self_run`、`acceptance`；T2 以上另＝`unverified`、`note_responses`、`out_of_scope`（空陣列＝逐字「無」）；`role=reviewer` 另＝`review_result`、`core_pain_resolved`、`findings`；`role=executor` 另＝`mistakes`；已啟用模組的交回單段不分級別。CLI 只印 id 未覆蓋 `notes` 清單、`not_applicable`／`found` 而 text 空、`unverified.reason` 空、模組段內 `不適用`／`發現` 而 text 空、交回單欄位不一致（`review_result` 對 `findings`，PM 判），⛔ 不判內容。
