@@ -82,6 +82,8 @@ def test_total_line_budget_boundary_negative_control(tmp_path):
 
     assert aggregate(tree('at_limit', TOTAL_LIMIT)) == (TOTAL_LIMIT, True)
     print('TOTAL_AT_LIMIT', TOTAL_LIMIT, 'WARN')
+    assert aggregate(tree('over_limit', TOTAL_LIMIT + 1)) == (TOTAL_LIMIT + 1, True)
+    print('TOTAL_OVER_LIMIT', TOTAL_LIMIT + 1, 'WARN')
     assert aggregate(tree('under_limit', TOTAL_LIMIT - 1)) == (TOTAL_LIMIT - 1, False)
     print('TOTAL_UNDER_LIMIT', TOTAL_LIMIT - 1, 'QUIET')
 

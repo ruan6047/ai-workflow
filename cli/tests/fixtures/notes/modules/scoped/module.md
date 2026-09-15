@@ -15,6 +15,8 @@ last_confirmed: 2026-09-08
   "enable_when": "專案 .wf/modules.json 列出",
   "enable_if": {"kind": "project_module_listed"},
   "fact_source": "modules.json",
+  "scope": "project",
+  "maturity": "manual",
   "adds": {"fields": [], "stages": [], "enums": {"states": []},
            "transitions": {"add": [], "remove": []},
            "flags": [],

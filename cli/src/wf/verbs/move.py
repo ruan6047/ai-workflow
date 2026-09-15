@@ -22,7 +22,6 @@ from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (block_object, board_facts, board_items, card_number, comment_blocks,
                               missing_fields, parse_args, prevalidate_card, verify_source_issue)
 from wf.verbs._write import WriteResult, prepare_card, projection_values, reconcile, reject, write_card
-from wf.verbs.move_modules import apply_counters, module_prints
 
 
 def _ruling_prints(comment, current, number, expected, *, client, catalog, rules):
@@ -203,8 +202,10 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         updated['blocked'] = {'from': current['state'], 'ruling': ruling}
     elif current['state'] == '阻塞':
         updated['blocked'] = None
-    # registry 載不進來＝ModuleValidation 的明確失敗（core/modules.md §5），在 bootstrap 就擋掉；
-    # 刻意⛔ 不在此留 ImportError 降級印，⛔ 不得推出「模組層可以未接線續跑」。
+    # registry 載不進來＝ModuleValidation 的明確失敗（core/modules.md §5），在 bootstrap 就擋掉。
+    # 刻意保留函式內 import（D1 之後才載，是既有的注入點），但⛔ 無 try/except：
+    # ImportError 要一路炸上來，⛔ 不得推出「模組層可以未接線續跑」。
+    from wf.verbs.move_modules import apply_counters, module_prints
     kwargs = dict(catalog=catalog, config=config, enabled_names=enabled_names)
     updated = apply_counters(updated, from_node, to_node, **kwargs)
     printed.extend(module_prints(updated, from_node, to_node, **kwargs, project=project, client=client))

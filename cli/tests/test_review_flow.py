@@ -3,6 +3,7 @@
 """
 import json
 from pathlib import Path
+import re
 import socket
 import subprocess
 
@@ -83,6 +84,20 @@ def invoke(tmp_path, *, data=None, changes=None, role='executor', listed=(), com
     assert [name for name, _ in writes] == ['post_comment'], writes
     posted = writes[0][1]
     return result, lines, posted, client
+
+
+def promote(root, name):
+    """把 tmp root 內某模組的 maturity 改成 ready。
+
+    core/modules.md §3：module_return_sections 只由 capable 貢獻 ⇒ 要測段標籤與 marker 語意，
+    被測模組必須是 ready。⛔ 不動 repo 內的規則，只改這份複本；非 ready 的零貢獻另有測試釘。
+    """
+    path = root / f'modules/{name}/module.md'
+    text = path.read_text(encoding='utf-8')
+    assert '"maturity": "ready"' not in text, name
+    path.write_text(re.sub(r'"maturity": "[a-z]+"', '"maturity": "ready"', text, count=1),
+                    encoding='utf-8')
+    return root
 
 
 def finding(**changes):
@@ -176,7 +191,7 @@ def test_missing_sections_follow_tier_and_role(tmp_path, tier, role):
 
 
 def test_enabled_module_schema_and_labels(tmp_path):
-    root = make_root(tmp_path, listed=['stat-redline'], project=False)
+    root = promote(make_root(tmp_path, listed=['stat-redline'], project=False), 'stat-redline')
     schema = compose_schema(load_blocks(root), 'wf-return', ['stat-redline'])
     sections = schema['$defs']['module_return_sections']['stat-redline']
     changes = {'tier': 'T1', 'tier_basis': {'sensitive': ['statistics'], 'recoverable': 'reversible', 'blast': 'file'}}
@@ -194,6 +209,22 @@ def test_enabled_module_schema_and_labels(tmp_path):
 def test_module_fields_not_enabled_are_unknown(tmp_path):
     result, _, posted, _ = invoke(tmp_path, data={'redlines': []})
     assert result.rc != 0 and posted['body'].startswith('拒收・D3・')
+
+
+def test_non_ready_module_contributes_no_return_sections(tmp_path):
+    """core/modules.md §3：module_return_sections 是自動能力七項之一 ⇒ 非 ready 的模組即使
+    enable_if 成立也零貢獻。負控＝同一張卡在 promote 後段標籤就出現（上面那條）。"""
+    root = make_root(tmp_path, listed=['stat-redline'], project=False)
+    changes = {'tier': 'T1', 'tier_basis': {'sensitive': ['statistics'], 'recoverable': 'reversible', 'blast': 'file'}}
+    labels = [spec['label'] for spec in compose_schema(
+        load_blocks(root), 'wf-return', ['stat-redline'])['$defs']['module_return_sections']['stat-redline'].values()]
+    assert labels, '段標籤仍住 core/return.md，宣告未 ready ⛔ 不代表標籤消失'
+    result, lines, _, _ = invoke(tmp_path, root=root, changes=changes)
+    assert result.rc == 0
+    assert not [line for line in lines if any(label in line for label in labels)], lines
+    result, _, posted, _ = invoke(tmp_path, root=root, data={'redlines': []}, changes=changes)
+    assert result.rc != 0 and posted['body'].startswith('拒收・D3・')  # 欄位仍是未知鍵
+    print('NON_READY_NO_RETURN_SECTIONS stat-redline', labels)
 
 
 def test_notes_uses_formal_list_and_excludes_candidates(tmp_path):
@@ -265,9 +296,10 @@ def test_run_parses_card_file_role(tmp_path):
 
 
 def test_module_free_text_is_not_a_status(tmp_path):
+    root = promote(make_root(tmp_path, project=False), 'stat-redline')
     changes = {'tier_basis': {'sensitive': ['statistics'], 'recoverable': 'reversible', 'blast': 'file'}}
     data = {'adversarial_tests': [{'angle': '發現', 'result': '支持', 'text': ''}]}
-    result, lines, _, _ = invoke(tmp_path, changes=changes, data=data)
+    result, lines, _, _ = invoke(tmp_path, root=root, changes=changes, data=data)
     assert result.rc == 0
     assert 'adversarial_tests[0]：text 空' not in lines
     print('MODULE_TEXT_NEGATIVE_CONTROL angle=發現 is prose; result=不適用 is checked elsewhere')

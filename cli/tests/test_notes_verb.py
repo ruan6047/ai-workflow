@@ -372,7 +372,7 @@ def test_compose_alone_performs_no_remote_write(tmp_path, monkeypatch):
     from wf.compose.project_config import load_project_config
     from wf.context import rules_of
     from wf.verbs import notes as module
-    from wf.verbs._common import enabled_modules
+    from wf.verbs._common import module_activation
     from wf.verbs.notes import compose_notes
     root = make_root(tmp_path, stages=['implementation.md'], roles=['conduct-common.md', 'executor.md'],
                      modules=['demo'], listed=['demo'], project_stage='執行')
@@ -383,7 +383,8 @@ def test_compose_alone_performs_no_remote_write(tmp_path, monkeypatch):
                         lambda *a, **k: reconciled.append('reconcile_projection') or original(*a, **k))
     client = make_client(data)
     catalog = load_blocks(root)
-    enabled = enabled_modules(catalog, load_project_config(root), data, client=None, project=None, number=10)
+    enabled = module_activation(catalog, load_project_config(root), data,
+                                client=None, project=None, number=10).enabled
     printed = []
     items = compose_notes(rules_of(root), root, stage='執行', role='executor', enabled=enabled, card=data,
                           number=10, repo=client.repo, report=printed.append)

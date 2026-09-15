@@ -2,6 +2,7 @@
 以及 verbs/move_modules.py 的交集函式；段名逐字取自宣告，未啟用不印。
 """
 from pathlib import Path
+import re
 import shutil
 
 import pytest
@@ -24,6 +25,25 @@ def project_item(number, card_id, *, state='進行中', actor='other', archived=
                             '卡ID': {'text': card_id}}}
 
 
+LISTED = ['identity', 'resource-lock']  # 兩者 scope=project ⇒ 先列入 .wf/modules.json 才談 enable_if
+
+
+def promote(root, *names):
+    """把 tmp root 內指定模組的 maturity 改成 ready。
+
+    core/modules.md §3：`adds.handoff_sections` 與 `wf-module-sections` 都是自動能力七項之一 ⇒
+    段要出現，模組必須是 ready。本檔測的是段名與段內容的接線，⛔ 不是成熟度本身；⛔ 不動 repo 內
+    的規則，只改這份複本。非 ready 的零貢獻由 test_non_ready_modules_contribute_no_brief_sections 釘。
+    """
+    for name in names:
+        path = root / f'modules/{name}/module.md'
+        text = path.read_text(encoding='utf-8')
+        assert '"maturity": "ready"' not in text, name
+        path.write_text(re.sub(r'"maturity": "[a-z]+"', '"maturity": "ready"', text, count=1),
+                        encoding='utf-8')
+    return root
+
+
 def wired(**changes):
     """三個模組同時啟用：板上有別人的進行中卡、卡有 parent、identity 列在專案設定。"""
     data = card(owner=MINE, resources=['file:a'], parent='WF-000',
@@ -37,7 +57,7 @@ def wired(**changes):
 
 def test_enabled_modules_add_sections_named_verbatim(tmp_path):
     """驗收 7：段名逐字＝各模組 adds.handoff_sections，順序依 wf-module-sections.brief。"""
-    root = make_root(tmp_path, listed=['identity'])
+    root = promote(make_root(tmp_path, listed=LISTED), 'resource-lock', 'identity')
     declared, = load_blocks(root).by_label('json wf-module-sections')
     expected = [name for names in declared.data['brief'].values() for name in names]
     assert len(expected) == 4
@@ -52,7 +72,7 @@ def test_enabled_modules_add_sections_named_verbatim(tmp_path):
 
 def test_module_section_contents(tmp_path):
     """驗收 7：資源宣告逐條、寫入集交集（move_modules 函式）、規格基線兩值並列、身分三格人填。"""
-    root = make_root(tmp_path, listed=['identity'])
+    root = promote(make_root(tmp_path, listed=LISTED), 'resource-lock', 'identity')
     declared, = load_blocks(root).by_label('json wf-module-sections')
     lock, initiative, identity = (declared.data['brief'][name] for name in
                                  ('resource-lock', 'initiative', 'identity'))
@@ -66,7 +86,7 @@ def test_module_section_contents(tmp_path):
 
 def test_no_intersection_and_missing_parent_are_reported(tmp_path):
     """負控：資源不相交印無；父卡不在板上印未找到父卡。"""
-    root = make_root(tmp_path, listed=['identity'])
+    root = promote(make_root(tmp_path, listed=LISTED), 'resource-lock', 'identity')
     data = card(owner=MINE, resources=['file:z'], parent='WF-404', parent_spec_version=2)
     rows = [issue_row(10, data),
             issue_row(11, card(card_id='WF-002', source_issue=11, resources=['file:a'],
@@ -95,7 +115,7 @@ def test_null_parent_card_block_is_skipped(tmp_path):
 @pytest.mark.parametrize('exclusion', ['archived', 'foreign'])
 def test_archived_or_foreign_items_are_not_board_facts(tmp_path, exclusion):
     """整併：brief 的板上事實與 move／notes 同一函式——封存項或別 repo 的進行中卡⛔ 不撐起 resource-lock。"""
-    root = make_root(tmp_path, listed=['identity'])
+    root = promote(make_root(tmp_path, listed=LISTED), 'resource-lock', 'identity')
     other = project_item(11, 'WF-002', archived=exclusion == 'archived')
     if exclusion == 'foreign':
         other['content']['repository']['nameWithOwner'] = 'other/repo'
@@ -107,6 +127,23 @@ def test_archived_or_foreign_items_are_not_board_facts(tmp_path, exclusion):
     assert set(declared.data['brief']['resource-lock']).isdisjoint(name for name, _ in sections(lines))
     _, live = emitted(make_client(rows=rows, items=[project_item(11, 'WF-002')]), root)  # 負控
     assert declared.data['brief']['resource-lock'][1] in dict(sections(live))
+
+
+def test_non_ready_modules_contribute_no_brief_sections(tmp_path):
+    """core/modules.md §3：resource-lock（experimental）與 identity（manual）即使列入 .wf/modules.json
+    且 enable_if 成立，也⛔ 不貢獻派工單模組段；同一張卡在 promote 後這些段名就出現（負控在同題）。"""
+    quiet = make_root(tmp_path, listed=LISTED, name='quiet')
+    declared, = load_blocks(quiet).by_label('json wf-module-sections')
+    non_ready = [title for name in ('resource-lock', 'identity')
+                 for title in declared.data['brief'][name]]
+    _, lines = emitted(wired(), quiet)
+    names = [name for name, _ in sections(lines)]
+    assert set(non_ready).isdisjoint(names), names
+    assert declared.data['brief']['initiative'][0] in names  # ready 的 initiative 仍在
+    loud = promote(make_root(tmp_path, listed=LISTED, name='loud'), 'resource-lock', 'identity')
+    _, loud_lines = emitted(wired(), loud)
+    assert set(non_ready) <= {name for name, _ in sections(loud_lines)}
+    print('NON_READY_NO_BRIEF_SECTIONS', non_ready)
 
 
 def test_disabled_modules_print_nothing(tmp_path):

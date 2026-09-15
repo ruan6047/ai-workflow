@@ -76,9 +76,13 @@ def test_ruling_table_and_enabled_titles(tmp_path, listed):
              if line.startswith('| ')][1:]
     declared = json.loads(re.search(r'```json wf-module-sections\n(.*?)\n```',
                                     (root / 'core/dispatch.md').read_text(), re.S)[1])['closeout']
+    # core/modules.md §3：裁定單模組段只由 maturity=ready 且已啟用的模組貢獻。
+    ready = {path.parent.name for path in sorted((root / 'modules').glob('*/module.md'))
+             if '"maturity": "ready"' in path.read_text(encoding='utf-8')}
+    contributing = [module for module in declared if module in listed and module in ready]
     expected = []
     for name, who, note in table:
-        expected += ([title for module, titles in declared.items() if module in listed for title in titles]
+        expected += ([title for module in contributing for title in declared[module]]
                      if 'wf-module-sections.closeout' in note else [name.strip()])
     actual = [line[3:] for line in lines if line.startswith('## ')]
     assert actual == expected

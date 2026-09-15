@@ -15,6 +15,8 @@ last_confirmed: 2026-09-08
   "enable_when": "測試指定",
   "enable_if": {"kind": "project_module_listed"},
   "fact_source": "modules.json",
+  "scope": "project",
+  "maturity": "ready",
   "adds": {
     "fields": [],
     "stages": [],

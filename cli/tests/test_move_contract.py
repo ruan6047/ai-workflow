@@ -15,9 +15,9 @@ from .test_move_core import setup, catalog, deny_network, calls, reject, ROOT, W
 from .test_open_verb import issue, item, expected_card
 
 
-@pytest.mark.parametrize('board_actor,new_actor,enabled', [('old', 'new', True),
+@pytest.mark.parametrize('board_actor,new_actor,board_predicate', [('old', 'new', True),
     ('old', 'old', False), ('new', 'new', False), ('new', 'old', True)])
-def test_order_signatures_and_new_actor_facts(setup, monkeypatch, board_actor, new_actor, enabled):
+def test_order_signatures_and_new_actor_facts(setup, monkeypatch, board_actor, new_actor, board_predicate):
     other = item(20)
     other['fieldValues'] = {'狀態': {'name': '進行中'}, 'owner': {'text': f'executor:{board_actor}'}}
     client, kwargs = setup(items=[other], rows=[issue(20, expected_card(card_id='WF-020'))],
@@ -30,7 +30,9 @@ def test_order_signatures_and_new_actor_facts(setup, monkeypatch, board_actor, n
         assert (from_node, to_node) == ('執行/待辦', '執行/進行中')
         assert card['iteration'] == 8 and card['source_sha'] is None
         assert card['owner']['actor'] == new_actor
-        assert ('resource-lock' in enabled_names) == enabled
+        # resource-lock 落 experimental ⇒ ⛔ 不進自動能力組合（core/modules.md §3）：
+        # 板上 predicate 成立與否都不改變 enabled_names——experimental ⛔ 不新增 production 開關。
+        assert 'resource-lock' not in enabled_names, board_predicate
         assert 'escalation' in enabled_names
         assert config['modules'] == [{'name': 'escalation', 'params': {'escalate_after': 5}}]
         assert catalog is kwargs['catalog']
@@ -71,7 +73,9 @@ def test_enabled_names_all_declarations_not_only_config(setup, monkeypatch, proj
                            parent='WF-002', db_scope='write', modules=[{'name': 'snapshot'}])
     module = ModuleType('wf.verbs.move_modules')
     def counters(card, from_node, to_node, *, catalog, config, enabled_names):
-        assert enabled_names == {'research', 'deploy', 'maintenance', 'initiative', 'snapshot'}
+        # 全部宣告都過 scope ∧ enable_if，但只有 maturity=ready 的進自動能力組合：
+        # deploy／maintenance（unavailable）與 snapshot（experimental）⛔ 不在內。
+        assert enabled_names == {'research', 'initiative'}
         assert 'db-contract' not in enabled_names  # db_scope 不取代原件的 project_module_listed。
         return card
     def prints(card, from_node, to_node, *, catalog, config, enabled_names, project, client):
@@ -146,7 +150,7 @@ def test_src_inventory_and_stdlib_negative_control():
     calls_in_source = [node.func.id for node in ast.walk(tree)
                        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)]
     assert calls_in_source.count('load_project_config') == 1
-    assert 'module_names' in calls_in_source and 'is_enabled' in calls_in_source
+    assert 'module_names' in calls_in_source and 'activate' in calls_in_source
     assert not any(isinstance(node, ast.Constant) and isinstance(node.value, str) and 'modules.json' in node.value
                    for node in ast.walk(tree))
     print('負控外部依賴：' + json.dumps(external(imported('import requests'))))
