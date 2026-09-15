@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import re
 
 from wf.compose.blocks import load_blocks, projection
-from wf.compose.enable import is_enabled
+from wf.compose.enable import activate
 from wf.compose.project_config import load_project_config, module_names, ProjectConfigError
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
@@ -125,8 +125,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
                 printed.append('無 Project 設定，未驗 parent 在板')
                 unverified.append({'item': f'parent {target} 在板', 'kind': 'deferred',
                                    'reason': '僅驗 repo 內 card_id 相符的卡'})
-        enabled = [b.data['name'] for b in catalog.blocks if b.label == 'yaml wf-module'
-                   and is_enabled(b.data, modules_list=module_names(cfg), card=card)]
+        enabled = activate([b.data for b in catalog.blocks if b.label == 'yaml wf-module'],
+                           modules_list=module_names(cfg), card=card).names
         if current is None and 'initiative' in enabled:
             card['parent_spec_version'] = cards[card['parent']][1]['spec_version']
         card, values = prepare_card(card, current, None, catalog, enabled)

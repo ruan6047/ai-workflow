@@ -8,6 +8,7 @@ import pytest
 
 from wf.compose.blocks import load_blocks
 from wf.compose.project_config import load_project_config
+from wf.module_validation import ModuleValidationError, validate_modules
 from wf.verbs.move_modules import apply_counters, module_prints
 
 RULES = Path(__file__).resolve().parents[2]
@@ -108,14 +109,26 @@ def test_params_missing_falls_back_to_module_seed(catalog, tmp_path):
 
 
 @pytest.mark.parametrize('bad', ['3', 3.0, True, None, [3]])
-def test_params_non_integer_prints_and_uses_seed(catalog, tmp_path, bad):
-    _, _, prints = run_edges(catalog, config(tmp_path, {'escalate_after': bad}))
-    assert all('escalate_after 不合法，改用種子 3' in lines for lines in prints)
-    assert [THRESHOLD in lines for lines in prints] == [False, False, True, True]
+def test_params_non_integer_is_rejected_before_any_consumer_runs(catalog, tmp_path, bad):
+    """WF-011：「escalate_after 不合法，改用種子 N」的靜默退回移除。型別不符宣告種子由
+    ModuleValidation 在任何遠端寫入前擋下（core/modules.md §4），消費端⛔ 不再容忍壞型別。"""
+    cfg = config(tmp_path, {'escalate_after': bad})
+    report = validate_modules(catalog, cfg)
+    assert not report.ok
+    assert any('params.escalate_after' in line and '不符宣告種子' in line for line in report.lines), report.lines
+    with pytest.raises(ModuleValidationError):
+        report.raise_for_status()
+    print('PARAM_TYPE_REJECTED', repr(bad), report.lines)
+
+
+def test_valid_integer_param_passes_module_validation(catalog, tmp_path):
+    """負控：合法值時 ModuleValidation 零錯誤，證明上一測的命中不是常駐字串。"""
+    report = validate_modules(catalog, config(tmp_path, {'escalate_after': 3}))
+    assert report.ok, report.lines
 
 
 def test_valid_integer_param_prints_no_complaint(catalog, tmp_path):
-    """負控：合法值時不得出現不合法印句，證明上一測的命中不是常駐字串。"""
+    """合法值時消費端不印任何抱怨（門檻印項本身另由 run_edges 的四條邊斷言）。"""
     _, _, prints = run_edges(catalog, config(tmp_path, {'escalate_after': 3}))
     assert not any('不合法' in line for lines in prints for line in lines)
 

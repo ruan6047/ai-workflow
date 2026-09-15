@@ -450,16 +450,16 @@ def victim_card(catalog, **changes):
 @pytest.mark.parametrize('variant', VARIANTS)
 def test_prevalidation_precedes_enablement_for_every_victim_verb(tmp_path, catalog, monkeypatch,
                                                                  verb, variant):
-    """8 敵意值 × 3 個受害動詞：上界預驗先擋 ⇒ rc=1、理由是 schema path，且 is_enabled 一次都
-    沒被呼叫（A2）。留痕處置依動詞分：WF-003 後 notes／brief 是本機硬擋＋遠端零寫入，
-    review 逐字不變＝恰一則 wf:reject 且首次留言前零寫入。
+    """8 敵意值 × 3 個受害動詞：上界預驗先擋 ⇒ rc=1、理由是 schema path，且單一啟用入口
+    `activate` 一次都沒被呼叫（A2）。留痕處置依動詞分：WF-003 後 notes／brief 是本機硬擋＋遠端
+    零寫入，review 逐字不變＝恰一則 wf:reject 且首次留言前零寫入。
 
-    基線行為＝stage_plan 為 None／5 時 is_enabled 拋未攔截的 TypeError（見負控）。
+    三個受害動詞都只經 `_common.module_activation` ⇒ 樁掉 `_common.activate` 就覆蓋全部
+    （WF-011 後 brief ⛔ 不再自帶 enable 匯入）。基線行為＝stage_plan 為 None／5 時啟用判定
+    拋未攔截的 TypeError（見負控）。
     """
     calls = []
-    monkeypatch.setattr(_common, 'is_enabled',
-                        lambda *a, **k: calls.append(a) or pytest.fail('⛔ 不得做啟用判定'))
-    monkeypatch.setattr('wf.verbs.brief.is_enabled',
+    monkeypatch.setattr(_common, 'activate',
                         lambda *a, **k: calls.append(a) or pytest.fail('⛔ 不得做啟用判定'))
     changes, pointer = shape_variants(catalog)[variant]
     root = make_root(tmp_path, project=False)

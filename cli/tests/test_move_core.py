@@ -63,8 +63,8 @@ def deny_network(monkeypatch):
         raise AssertionError('MOVE_NETWORK_DENIED')
     monkeypatch.setattr(subprocess, 'run', forbidden)
     monkeypatch.setattr(socket.socket, 'connect', forbidden)
-    # 即使日後 move_modules 進工作樹，核心測試仍明確模擬未接線。
-    monkeypatch.setitem(sys.modules, 'wf.verbs.move_modules', None)
+    # WF-011：⛔ 不再把 move_modules 樁成 None——「模組層未接線」的降級路徑已移除，
+    # registry 載不進來改由 ModuleValidation 在任何遠端寫入前擋（core/modules.md §5）。
 
 
 @pytest.fixture
@@ -114,7 +114,8 @@ def test_legal_body_projection_order_and_log(setup, catalog):
     field_index = max(i for i, (name, _) in enumerate(client.calls) if name == 'write_project_field')
     assert any(name == 'issue' for name, _ in client.calls[field_index + 1:])
     assert body_index < field_index
-    assert '模組層未接線' in result.printed
+    # 未列任何模組 ⇒ 自動能力組合是空的；⛔ 不再有「模組層未接線」降級印。
+    assert '模組層未接線' not in result.printed
 
 
 @pytest.mark.parametrize('stage,state,to', [('執行', '待辦', '執行/待確認'),
@@ -146,7 +147,7 @@ def test_non_dispatch_actor_preserves_owner_without_print(setup):
     result = move(10, '待確認', actor='reviewer:new', source_sha=SHA, **kwargs)
     assert result.rc == 0
     assert result.card['owner'] == {'role': 'executor', 'actor': 'old'}
-    assert result.printed == ('模組層未接線',)
+    assert result.printed == ()  # 降級印移除後這條路徑零印項
 
 
 @pytest.mark.parametrize('state', ['待辦', '退回', '升級'])
@@ -327,7 +328,7 @@ def test_prevalidation_precedes_is_legal_plan_and_enablement(setup, catalog, mon
     """
     monkeypatch.setattr('wf.verbs.move.is_legal_plan',
                         lambda *a, **k: pytest.fail('上界預驗未過時 ⛔ 不得判階段序'))
-    monkeypatch.setattr('wf.verbs.move.is_enabled',
+    monkeypatch.setattr('wf.verbs.move.activate',
                         lambda *a, **k: pytest.fail('上界預驗未過時 ⛔ 不得做啟用判定'))
     changes, pointer = shape_variants(catalog)[variant]
     client, kwargs = setup()

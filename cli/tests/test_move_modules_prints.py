@@ -212,17 +212,20 @@ def fixture_catalog():
     return Catalog(read_blocks(FIXTURES, 'modules/nope/module.md'), {})
 
 
-def test_declared_but_unregistered_ids_print_unimplemented(fixture_catalog):
-    lines = module_prints(card(), *DISPATCH, catalog=fixture_catalog,
-                          config=load_project_config(RULES), enabled_names=['nope'],
-                          project=None, client=None)
-    assert lines == ['未實作的模組印項／計數 nope_count', '未實作的模組印項／計數 nope']
+def test_declared_but_unregistered_ids_fail_loudly(fixture_catalog):
+    """WF-011：「未實作的模組印項／計數 {}」降級印移除。maturity=ready 而 registry 缺實作的宣告
+    在 bootstrap 就被 ModuleValidation 擋（cli/tests/test_module_validation.py 釘住）；真的走到
+    這一層＝內部不變式被打破，須大聲炸，⛔ 不得靜默續跑。"""
+    with pytest.raises(KeyError, match='nope'):
+        module_prints(card(), *DISPATCH, catalog=fixture_catalog,
+                      config=load_project_config(RULES), enabled_names=['nope'],
+                      project=None, client=None)
 
 
-def test_unregistered_counter_is_not_written_to_card(fixture_catalog):
-    moved = apply_counters(card(), *DISPATCH, catalog=fixture_catalog,
-                           config=load_project_config(RULES), enabled_names=['nope'])
-    assert 'nope_count' not in moved
+def test_unregistered_counter_fails_loudly(fixture_catalog):
+    with pytest.raises(KeyError, match='nope_count'):
+        apply_counters(card(), *DISPATCH, catalog=fixture_catalog,
+                       config=load_project_config(RULES), enabled_names=['nope'])
 
 
 def test_module_without_counters_or_prints_keys_is_tolerated(catalog):

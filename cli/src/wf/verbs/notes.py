@@ -18,7 +18,7 @@ from wf.compose.validate import validate, _equal
 from wf.context import IdentityError, rules_of
 from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
-from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, enabled_modules,
+from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, module_activation,
                               note_blocks, parse_args, verify_source_issue)
 from wf.verbs._write import NotesResult, blocked, check_card, reconcile_projection
 
@@ -122,11 +122,11 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     else:
         project = client.project(**cfg['project'], field_names=projection(catalog))
     try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
-        enabled = enabled_modules(catalog, cfg, current, client=client, project=project, number=number)
+        activation = module_activation(catalog, cfg, current, client=client, project=project, number=number)
     except CardShapeError as exc:
         return handle(report, 'D3', str(exc))
     failed = check_card(current, client=client, number=number, catalog=catalog,  # 驗卡面過了
-                        enabled_modules=[module['name'] for module in enabled],  # 才對帳（§2）
+                        enabled_modules=activation.names,  # 才對帳（§2）
                         fail=lambda reason: handle(report, 'D3', reason)) or reconcile_projection(
                             current, client=client, catalog=catalog, location=cfg['project'],
                             project=project, number=number, report=report, context=context)
@@ -136,14 +136,14 @@ def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, em
     if role is None:
         report('卡面 owner 未填，角色注意事項全印')
     try:
-        items = compose_notes(rules, root, stage=stage, role=role, enabled=enabled, card=current,
+        items = compose_notes(rules, root, stage=stage, role=role, enabled=activation.enabled, card=current,
                               number=number, repo=client.repo, report=report)
     except DuplicateNoteId as exc:  # 結構性拒絕：不輸出清單、⛔ 不判內容
         return handle(report, 'D3', str(exc))
     for index, note in enumerate(items, 1):
         (report if listing is None else listing)(f'{index}. {note.id}：{note.text} {note.mark}')
     _candidates(client, number, catalog, report, current)
-    if any(module['name'] == 'pitfalls-13' for module in enabled):
+    if any(module['name'] == 'pitfalls-13' for module in activation.enabled):
         _pitfalls(rules, stage, report)
     return NotesResult(0, card=current, printed=tuple(report), note_ids=tuple(note.id for note in items))
 

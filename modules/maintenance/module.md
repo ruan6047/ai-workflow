@@ -9,7 +9,7 @@ last_confirmed: 2026-09-05
 
 ## 0 · 宣告區塊
 
-啟用條件＝`enable_if`（CLI 判啟用的唯一依據；`enable_when` 是同義散文、只給人讀；事實來源＝`fact_source`）；未啟用時下列每一項都不存在，唯 `fields` 的結構合法性例外（`core/card-schema.md` §1 (b)）。宣告以 YAML 的 JSON 子集書寫，CLI 與 CI 以 JSON 讀。
+啟用真相與自動能力的規則住 `core/modules.md`：`scope` 決定啟用（`enable_when` 是同義散文、只給人讀；事實來源＝`fact_source`），`maturity` 決定自動能力，封閉鍵集合與值域皆在該檔；未啟用時下列每一項都不存在，唯 `fields` 的結構合法性例外（`core/card-schema.md` §1 (b)）；已啟用但非 `ready` 時只有 `core/modules.md` §3 的自動能力七項不生效，`adds.notes` ⛔ 不在七項內、§2 條文照常進 notes 合成（`core/verbs.md` §3 ④）。宣告以 YAML 的 JSON 子集書寫，CLI 與 CI 以 JSON 讀。
 
 ```yaml wf-module
 {
@@ -17,39 +17,19 @@ last_confirmed: 2026-09-05
   "enable_when": "卡面 stage_plan 含 維護",
   "enable_if": {"kind": "stage_plan_has", "stage": "維護"},
   "fact_source": "卡面 JSON",
+  "scope": "card",
+  "maturity": "unavailable",
   "adds": {
     "fields": [],
-    "stages": [
-      "維護"
-    ],
-    "enums": {"states": [
-      "運行中"
-    ]},
+    "stages": [],
+    "enums": {"states": []},
     "transitions": {
-      "add": [
-        {
-          "from": "維護/待辦",
-          "to": "維護/運行中",
-          "condition": "上線"
-        },
-        {
-          "from": "維護/運行中",
-          "to": "維護/進行中",
-          "condition": "事件處理"
-        },
-        {
-          "from": "維護/運行中",
-          "to": "結案/待確認",
-          "condition": "結束維護"
-        }
-      ],
+      "add": [],
       "remove": []
     },
     "flags": [],
     "notes": [],
-    "handoff_sections": [
-      "運行狀態（活著的證據）"
-    ]
+    "handoff_sections": []
   },
   "project_inputs": [],
   "params": {}

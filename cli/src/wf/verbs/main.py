@@ -1,7 +1,7 @@
 """入口。動詞集合固定為七個（core/verbs.md §1）；本檔只做分派，各動詞住 verbs/<name>.py。
 
 消費 core/verbs.md §1 七列／§2（檢查先於首次遠端寫入；任何遠端寫入前須先取得 static 身分已驗證的 context；
-身分衝突走本機硬擋零寫入）、ADOPTION.md §2（`.wf/modules.json`、`rules`／`remote` 鍵、三個全域旗標）。
+身分衝突走本機硬擋零寫入）、ADOPTION.md §2（`.wf/modules.json`、`rules`／`remote` 鍵、三個全域旗標）、core/modules.md §5（模組可用性 fail-closed）。
 本檔只解析全域旗標、定 project_root 與 rules source、載 catalog、解析 resolved target identity、建 client 並
 綁定 static Context gate，再把其餘 argv 交給該動詞的 `run`；⛔ 不判內容、⛔ 不代動詞印、⛔ 不寫遠端。
 public shape：`wf [--project-root <p>] [--rules-root <p>] [--remote <name>] <verb> [動詞參數…]`；三旗標只認
@@ -24,6 +24,7 @@ from wf.gh.client import GhClient
 from wf.gh.localgit import LocalGitUnavailable
 from wf.gh.target import (RepositoryCandidate, local_git_facts, permission_facts, resolve_project,
                           resolve_repository, select_remotes, slug_of)
+from wf.module_validation import ModuleValidationError, validate_modules
 from wf.verbs import brief, edit, move, notes, review, snapshot
 from wf.verbs import open as open_verb
 
@@ -87,6 +88,10 @@ def bootstrap(flags, *, root, env, client):
                               Provenance('default', 'project_root'))
     rules = open_rules_source(rules_path.canonical, rules_path.provenance)
     catalog = load_blocks(rules)
+    # core/modules.md §5 fail-closed：模組可用性在任何 API 讀取與任何遠端寫入之前判定。
+    # 刻意放在 client 綁定之前 ⇒ 不過時該次執行對 GitHub 與 Project 零呼叫；
+    # ⛔ 不得推出「可用旗標或環境變數放行」——無效設定自下一次相關指令起一律拒絕操作。
+    validate_modules(catalog, config).raise_for_status()
     try:
         facts = local_git_facts(project_path.canonical)
     except LocalGitUnavailable:
@@ -116,6 +121,11 @@ def main(argv=None, *, client=None, root=None, env=None) -> int:
         context, client = bootstrap(flags, root=root, env=os.environ if env is None else env, client=client)
     except ProjectConfigError as exc:
         print(f'.wf/modules.json 不合法：{exc}', file=sys.stderr)
+        return 1
+    except ModuleValidationError as exc:
+        # core/modules.md §5：完整修正資訊落 stdout（⛔ 不是 stderr），逐條、⛔ 不折疊。
+        for line in exc.lines:
+            print(f'模組宣告或設定不可用・{line}')
         return 1
     except IdentityError as exc:
         print(f'硬擋・{exc.code}・{exc}', file=sys.stderr)

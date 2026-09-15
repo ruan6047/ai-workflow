@@ -10,7 +10,7 @@ import json
 import re
 
 from wf.compose.blocks import load_blocks, projection
-from wf.compose.enable import is_enabled
+from wf.compose.enable import activate
 from wf.compose.project_config import load_project_config, module_names, ProjectConfigError
 from wf.compose.schema import compose_schema
 from wf.compose.transitions import blocked_node, expand, is_legal_move, is_legal_plan
@@ -148,10 +148,10 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
             if dispatch:
                 updated['owner'] = {'role': role, 'actor': name}
         facts = board_facts(project, catalog, self_number=number, repo=client.repo)
-        enabled = [b.data for b in catalog.by_label('yaml wf-module')
-                   if is_enabled(b.data, modules_list=module_names(config), card=updated,
-                                 board_facts=facts)]
-        enabled_names = {m['name'] for m in enabled}
+        activation = activate([b.data for b in catalog.by_label('yaml wf-module')],
+                              modules_list=module_names(config), card=updated, board_facts=facts)
+        enabled = activation.capable  # 自動能力七項（core/modules.md §3）只收 capable
+        enabled_names = set(activation.names)
         errors = validate(current, compose_schema(catalog, 'wf-card', enabled_names))
         if errors:
             raise ValueError('; '.join(f'{e.path}: {e.message}' for e in errors))
@@ -202,14 +202,13 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         updated['blocked'] = {'from': current['state'], 'ruling': ruling}
     elif current['state'] == '阻塞':
         updated['blocked'] = None
-    try:
-        from wf.verbs.move_modules import apply_counters, module_prints
-    except ImportError:
-        printed.append('模組層未接線')
-    else:
-        kwargs = dict(catalog=catalog, config=config, enabled_names=enabled_names)
-        updated = apply_counters(updated, from_node, to_node, **kwargs)
-        printed.extend(module_prints(updated, from_node, to_node, **kwargs, project=project, client=client))
+    # registry 載不進來＝ModuleValidation 的明確失敗（core/modules.md §5），在 bootstrap 就擋掉。
+    # 刻意保留函式內 import（D1 之後才載，是既有的注入點），但⛔ 無 try/except：
+    # ImportError 要一路炸上來，⛔ 不得推出「模組層可以未接線續跑」。
+    from wf.verbs.move_modules import apply_counters, module_prints
+    kwargs = dict(catalog=catalog, config=config, enabled_names=enabled_names)
+    updated = apply_counters(updated, from_node, to_node, **kwargs)
+    printed.extend(module_prints(updated, from_node, to_node, **kwargs, project=project, client=client))
     if target in edges.terminal_nodes:
         printed.extend(_terminal_prints(updated, client, default_branch(client, context)))
     try:

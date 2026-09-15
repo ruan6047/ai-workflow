@@ -5,11 +5,9 @@ core/return.md findings／review_result、stages/closeout.md §2／§4。
 """
 import re
 
-from wf.compose.enable import is_enabled
-from wf.compose.project_config import module_names
 from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
-from wf.verbs._common import board_facts, comment_blocks
+from wf.verbs._common import comment_blocks
 
 RULING = 'core/ruling.md'
 
@@ -107,14 +105,12 @@ def sections(ctx):
     rows = [line.strip('|').split('|') for line in ctx.rules.read_text(RULING).splitlines()
             if line.startswith('| ')][1:]
     declared, = ctx.catalog.by_label('json wf-module-sections')
-    modules = {b.data['name']: b.data for b in ctx.catalog.by_label('yaml wf-module')}
-    facts = board_facts(ctx.project, ctx.catalog, self_number=ctx.number, repo=ctx.client.repo)
+    capable = {module['name'] for module in ctx.activation.capable}
     out, mark = [], _mark(ctx, 'core', RULING, '')
     for name, who, note in ([c.strip() for c in row] for row in rows):
         if 'wf-module-sections.closeout' in note:
             for module, titles in declared.data['closeout'].items():
-                if module in modules and is_enabled(modules[module], modules_list=module_names(ctx.cfg),
-                                                     card=ctx.card, board_facts=facts):
+                if module in capable:  # core/modules.md §3：裁定單模組段只由 capable 貢獻
                     out += [(title, _mark(ctx, 'module', f'modules/{module}/module.md', MODULE_SECTION),
                              [HUMAN]) for title in titles]
         else:

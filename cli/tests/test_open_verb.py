@@ -508,7 +508,7 @@ VARIANTS = sorted(shape_variants(load_blocks(RULES)))
 @pytest.mark.parametrize('variant', VARIANTS)
 def test_prevalidation_precedes_parent_d4(setup, catalog, monkeypatch, variant):
     """8 敵意值：open 的上界預驗在 parent D4 與啟用判定之前 ⇒ D3＋schema path，⛔ 無 Python 內部字串。"""
-    monkeypatch.setattr('wf.verbs.open.is_enabled',
+    monkeypatch.setattr('wf.verbs.open.activate',
                         lambda *a, **k: pytest.fail('上界預驗未過時 ⛔ 不得做啟用判定'))
     changes, pointer = shape_variants(catalog)[variant]
     client, kwargs = setup(body=block('wf-card', expected_card(**changes)))

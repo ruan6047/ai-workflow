@@ -19,7 +19,7 @@ from wf.context import IdentityError, default_branch, rules_of
 from wf.gh.client import NotFound
 from wf.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, comment_blocks,
-                              enabled_modules, parse_args, verify_source_issue)
+                              module_activation, parse_args, verify_source_issue)
 from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection, reject
 from wf.verbs.notes import notes, read_comments
 
@@ -179,8 +179,8 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print, cont
     project = None if cfg['project'] is None else client.project(
         **cfg['project'], field_names=projection(catalog))
     try:  # §1 合成順序：上界預驗不過＝啟用判定不得發生，落既有 D3。
-        enabled = [module['name'] for module in
-                   enabled_modules(catalog, cfg, current, client=client, project=project, number=number)]
+        enabled = module_activation(catalog, cfg, current, client=client, project=project,
+                                    number=number).names
     except CardShapeError as exc:
         return reject(client, number, 'D3', str(exc), tuple(report))
     failed = check_card(current, client=client, number=number, catalog=catalog,

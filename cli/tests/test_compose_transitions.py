@@ -1,6 +1,6 @@
 """驗證 core/state-machine.md §1–4、core/enums.md 值域、card-schema.md §1、verbs.md §2 D1。
 
-modules/{escalation,research,maintenance}/module.md §0；reachability.py 僅為等價對照。
+modules/{escalation,research,deploy,maintenance}/module.md §0；reachability.py 僅為等價對照。
 """
 import ast
 from copy import deepcopy
@@ -65,7 +65,7 @@ def test_equivalence_matrix(catalog, oracle):
             count += 1
             edge_equal += 1
             universe_equal += 1
-    assert count == len(plans) * len(cases) == 128
+    assert count == len(plans) * len(cases) == 64  # delta 模組＝escalation、research（maintenance 已 unavailable）
     print(f"MATRIX plans={len(plans)} module_cases={len(cases)} cases={count} "
           f"edges_equal={edge_equal} universe_equal={universe_equal}")
 
@@ -100,8 +100,7 @@ def test_next_skips_close_and_last_enters_close(catalog):
 
 @pytest.mark.parametrize("name,stage,state", [
     ("escalation", "執行", "升級"), ("research", "研究", "不可判定"),
-    ("maintenance", "維護", "運行中"),
-])
+])  # maintenance 落 unavailable ⇒ 不再加 運行中（core/modules.md §3）
 def test_nonterminal_includes_module_states_and_from_is_exact(catalog, name, stage, state):
     plan = subject.legal_plans(catalog=catalog)[-1]
     edges = subject.expand(plan, [module(name)], catalog=catalog)
@@ -111,6 +110,27 @@ def test_nonterminal_includes_module_states_and_from_is_exact(catalog, name, sta
     assert edges[blocked] == {f"{stage}/{state}"}
     assert f"{stage}/待辦" not in edges[blocked]
     assert f"{stage}/{state}" not in subject.universe(plan, [], catalog=catalog)
+
+
+def test_deploy_and_maintenance_inject_nothing(catalog, oracle):
+    """驗收 3 的三個落定事實，各自可證偽：
+
+    ① reachability 的 delta 模組集合不含 maintenance；
+    ② 任一合法 stage_plan 的合成 nonterminal 不含 運行中——連 deploy／maintenance 都餵進去也一樣；
+    ③ deploy 的 `adds.stages` 已空 ⇒ reachability 的 `enabled()` 那個 consumer 對它無事可做。
+    負控＝research 的 `adds.stages` 仍非空，證明母體與偵測器都還活著。
+    """
+    delta = [item["name"] for item in oracle.delta_modules(oracle.load_modules())]
+    assert "maintenance" not in delta and "deploy" not in delta, delta
+    assert delta == ["escalation", "research"], delta
+    unavailable = [module(name) for name in ("deploy", "maintenance")]
+    for plan in subject.legal_plans(catalog=catalog):
+        nodes = subject.universe(plan, unavailable, catalog=catalog)
+        assert not [node for node in nodes if node.endswith("/運行中")], (plan, sorted(nodes))
+        assert nodes == subject.universe(plan, [], catalog=catalog), plan
+    assert module("deploy")["adds"]["stages"] == [] == module("maintenance")["adds"]["stages"]
+    assert module("research")["adds"]["stages"] == ["研究"]  # 負控：consumer 本身還有事做
+    print("ZERO_INJECTION delta=" + str(delta), "plans=" + str(len(subject.legal_plans(catalog=catalog))))
 
 
 @pytest.mark.parametrize("has_planning", [False, True])
