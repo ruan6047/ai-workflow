@@ -1,8 +1,8 @@
 """消費 core/verbs.md §2（檢查先於首次遠端寫入、寫入順序、留痕、CLI 只讀三種留言區塊）、
 core/naming.md §3 首行標記、core/return.md 區塊。
 
-動詞層純計算的唯一居所：結果物件與五鍵收據、遠端寫入失敗分類、write plan 帳本，
-以及同一操作重跑的身分比對（operation fingerprint）。
+動詞層純計算的唯一居所：結果物件與五鍵收據、遠端寫入失敗分類、write plan 帳本、
+同一操作重跑的身分比對（operation fingerprint），以及 `open` D2／`move` D1 的回讀分流。
 ⛔ 不自己發遠端請求（`wf.gh.writes` 的六原語仍是唯一出口）、⛔ 不 retry、⛔ 不 rollback、
 ⛔ 不讀任何事件留言 body。兩個留痕出口（`reject`／`blocked`）刻意留在 `_write.py`：
 `wf:reject` 的 `post_comment` 呼叫點是 core/verbs.md §2 留痕條的居所，⛔ 不因本卡而搬家。
@@ -12,6 +12,7 @@ import functools
 import hashlib
 import json
 
+from wf.compose.validate import _equal
 from wf.gh.client import GhError, NotFound, NotLoggedIn, PermissionDenied, TransportError
 from wf.gh.writes import MUTATIONS, dry_run
 
@@ -216,3 +217,67 @@ def already_posted(previous, payload):
     判定證據只取 `wf-return` 區塊（在 `wf.gh.writes.LABELS` 內），⛔ 不讀散文、⛔ 不讀首行。"""
     mine = fingerprint(payload)
     return any(isinstance(block, dict) and fingerprint(block) == mine for block in previous)
+
+
+@dataclass(frozen=True)
+class BoardDecision:
+    """`open` 在板上時的回讀分流結果；verdict ∈ new／resume／converge／refuse。"""
+    verdict: str
+    item_id: str | None = None
+    completed: tuple[str, ...] = ()
+    line: str = ''
+
+
+def board_decision(plan_card, current, item):
+    """core/verbs.md §2 D2 的回讀分流（WF-016）。純計算：⛔ 不碰 client、⛔ 不寫任何遠端。
+
+    回讀證據只取卡面 `wf-card` 區塊與板上有沒有這一項，⛔ 不讀 `wf:move`／`wf:edit`／`wf:reject`
+    事件留言的 body（其 body 無任何 CLI 可讀區塊，本卡⛔ 不為它新增可讀區塊）。
+
+    ⓐ 不在板上＝`new`，照常 add_to_project。
+    ⓑ 在板上而卡面無 `wf-card`＝回讀是本次 write plan 的前綴（上一次只完成 add_to_project）：
+       `resume`——沿用板上既有 item、⛔ 不重複 add_to_project，已完成項列進 completed_writes。
+    ⓒ 在板上而卡面與本次 plan 全等＝`converge`：rc=0、⛔ 不重寫。
+    ⓓ 其餘（他人已推進的卡）＝`refuse`，維持基線的 D2 編號與逐字理由「已在板上」。
+    """
+    if item is None:
+        return BoardDecision('new')
+    done = (f'add_to_project・{item["id"]}',)
+    if current is None:
+        return BoardDecision('resume', item['id'], done,
+                             f'已在板上而卡面無 wf-card：續作剩餘寫入（已完成的寫入：{done[0]}）')
+    if _equal(current, plan_card):
+        return BoardDecision('converge', item['id'], (*done, 'update_card_body・卡面 JSON'),
+                             '已在板上且卡面與本次寫入全等：收斂、⛔ 不重寫')
+    return BoardDecision('refuse')
+
+
+def move_resume(current, from_node, to_node, legal, printed, *, client, number, catalog,
+                location, item_id):
+    """core/verbs.md §2 D1 的回讀分流（WF-016）。回 None＝轉移合法、照常往下跑。
+
+    回讀證據＝卡面 `wf-card` 區塊的 `stage`／`state` 與五個投影欄，⛔ 不讀事件留言 body。
+    轉移不合法時：
+    · 卡面回讀不是本次目標＝維持基線的 D1 編號與逐字理由 `<from> → <to> 不在合成表內`；
+    · 卡面回讀已是本次目標而五欄全等＝上一次已整批完成 ⇒ rc=0 收斂、⛔ 不重寫；
+    · 卡面回讀已是本次目標而五欄不等＝回讀是本次 plan 的前綴 ⇒ 續作剩餘的投影欄寫入，
+      並把上一次已完成的卡面 JSON 寫入一併列進 completed_writes。
+    ⛔ 不 retry、⛔ 不 rollback、⛔ 不補發事件留言（CLI ⛔ 不讀事件留言，無從得知它貼出與否）。
+    """
+    # 函式內 import：`_write` 模組級已 import 本檔的結果物件，互引會成環（同 move.py 對
+    # move_modules 的既有做法）。⛔ 不得推出「本檔可以自己發遠端寫入」——寫入仍只經六原語。
+    from wf.verbs._write import reconcile, reject
+    if legal:
+        return None
+    if from_node != to_node:
+        return reject(client, number, 'D1', f'{from_node} → {to_node} 不在合成表內')
+    done = ['update_card_body・卡面 JSON']
+    changed = [] if item_id is None else reconcile(
+        current, client=client, catalog=catalog, item_id=item_id,
+        project_owner=location['owner'], project_number=location['number'])
+    if changed:
+        printed.append('續作剩餘寫入・投影欄：' + '、'.join(changed))
+        done += [f'write_project_field・{name}' for name in changed]
+    else:
+        printed.append(f'卡面回讀已等於本次目標 {to_node}：收斂、⛔ 不重寫')
+    return receipt(WriteResult(0, card=current), done)

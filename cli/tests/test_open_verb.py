@@ -194,8 +194,12 @@ def test_restore_preserves_every_key_except_initial(setup):
     assert not any(name == 'comments' for name, _ in client.calls)
 
 
-@pytest.mark.parametrize('body', [None, block('wf-card', expected_card())])
-def test_d2_already_on_board(setup, body):
+@pytest.mark.parametrize('stage,state', [('規劃', '待辦'), ('執行', '進行中'), ('需求', '進行中')])
+def test_d2_when_the_card_face_is_not_this_write(setup, stage, state):
+    """WF-016：在板上時改以卡面 `wf-card` 回讀分流（core/verbs.md §2）。卡面已被他人推進到
+    別的節點＝維持基線的 D2 編號與逐字理由「已在板上」；零遠端寫入。
+    「板上而卡面無 wf-card」與「板上而卡面全等」兩種回讀由 test_resume_readback.py 釘住。"""
+    body = block('wf-card', expected_card(stage=stage, state=state))
     client, kwargs = setup(body=body, items=[item(10)])
     assert_reject(client, open_issue(10, **kwargs), 'D2')
 

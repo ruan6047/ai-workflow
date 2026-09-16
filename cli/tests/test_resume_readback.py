@@ -18,13 +18,22 @@ from wf.compose.blocks import load_blocks
 from wf.gh.writes import LABELS, read_block
 from wf.verbs.review import IDENTICAL_RETURN, review
 
+from wf.verbs.move import move
+from wf.verbs.open import open_issue
+
 from .test_brief_sections import card, make_root
 from .test_card_gate_and_projection import board_client
+from .test_move_core import MoveClient
+from .test_open_verb import MemoryClient, block, expected_card, intake, issue, item
 from .test_review_flow import strict_offline
 
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTOR = dict(branch='wf/WF-001', source_sha='b' * 40)
 ROLES = ('executor', 'reviewer')
+PLAN = ['需求', '規劃', '執行', '審核', '結案']
+INTAKE = '前言\n' + block('wf-intake', intake())
+MUTATIONS = ('add_to_project', 'update_card_body', 'write_project_field',
+             'remove_from_project', 'close_issue', 'post_comment')
 
 
 @pytest.fixture(scope='module')
@@ -105,3 +114,99 @@ def test_stateless_comments_break_the_convergence(catalog, root, tmp_path, role)
     assert len(blocks) == 2, blocks
     assert IDENTICAL_RETURN not in lines, lines
     print('RERUN_STATELESS', role, '| wf-return 區塊數', len(blocks))
+
+
+# ── A5：`open` D2 與 `move` D1 的回讀分流 ──────────────────────────────────────
+
+def written(client):
+    return [name for name, _ in client.calls if name in MUTATIONS]
+
+
+def open_on_board(catalog, root, body):
+    """卡已在板上（item 已存在）時跑一次 `open`，回 (client, result, 印項)。"""
+    client = MemoryClient(catalog, [issue(10, body=body)], [item(10)])
+    lines = []
+    return client, open_issue(10, client=client, root=root, catalog=catalog, emit=lines.append), lines
+
+
+# (甲)(乙)(丙) 三組：卡面回讀分別是「無 wf-card」「與本次 plan 全等」「stage／state 不是本次目標」
+CASES = {
+    '甲・板上而卡面無 wf-card': (INTAKE, 0, ''),
+    '乙・板上而卡面與本次 plan 全等': (block('wf-card', expected_card()), 0, ''),
+    '丙・板上而卡面已被推進': (block('wf-card', expected_card(stage='規劃', state='待辦')), 1, '已在板上'),
+}
+
+
+@pytest.mark.parametrize('name', list(CASES))
+def test_open_d2_branches_on_card_readback(catalog, root, name):
+    body, rc, reason = CASES[name]
+    client, result, lines = open_on_board(catalog, root, body)
+    assert (result.rc, result.reason) == (rc, reason), (name, result)
+    if name.startswith('丙'):
+        assert written(client) == ['post_comment'], written(client)    # 只有那一則 wf:reject 留痕
+    elif name.startswith('乙'):
+        assert written(client) == [], (name, written(client))          # 全等＝收斂、⛔ 不重寫
+        assert result.completed_writes, result
+    else:
+        assert 'add_to_project' not in written(client), written(client)  # 續作＝⛔ 不重複加板
+        assert 'update_card_body' in written(client), written(client)
+        assert any(entry.startswith('add_to_project') for entry in result.completed_writes), result
+    print('OPEN_D2', name, '| rc', result.rc, '| reason', repr(result.reason),
+          '| completed_writes', json.dumps(list(getattr(result, 'completed_writes', ())),
+                                           ensure_ascii=False),
+          '| 卡面回讀', json.dumps(read_block(client.rows[10]['body'], 'wf-card', required=False) is not None),
+          '| 寫入', json.dumps(written(client)))
+
+
+def test_open_d2_cases_do_not_collapse_into_one_verdict(catalog, root):
+    """A5 負控：三組的 (rc, reason) ⛔ 不得全等——基線上實測三例都是 (1, '已在板上')，
+    全等即代表分流沒生效。"""
+    verdicts = []
+    for name, (body, _, _) in CASES.items():
+        _, result, _ = open_on_board(catalog, root, body)
+        verdicts.append((result.rc, result.reason))
+    assert len(set(verdicts)) > 1, verdicts
+    print('OPEN_D2_VERDICTS', json.dumps(verdicts, ensure_ascii=False))
+
+
+def move_case(catalog, root, *, drift=False):
+    current = expected_card(stage='執行', state='進行中', stage_plan=PLAN, iteration=7,
+                            owner={'role': 'executor', 'actor': 'old'}, source_sha='a' * 40,
+                            branch='old/branch')
+    client = MoveClient(catalog, current)
+    if drift:  # 上一次只寫完卡面 JSON，五個投影欄還沒整批寫完
+        client.board['items'][0]['fieldValues']['級別'] = {'name': 'T3'}
+    lines = []
+    return client, lines, current
+
+
+def test_move_d1_converges_when_the_card_face_is_already_the_target(catalog, root):
+    """重跑 `move --to <卡面已在的節點>`：回讀與本次目標全等 ⇒ rc=0 收斂、零遠端寫入。"""
+    client, lines, _ = move_case(catalog, root)
+    result = move(10, '執行/進行中', client=client, root=root, catalog=catalog, emit=lines.append)
+    assert result.rc == 0 and written(client) == [], (result, written(client))
+    assert result.completed_writes and any('update_card_body' in e for e in result.completed_writes)
+    assert any('收斂' in line for line in lines), lines
+    print('MOVE_D1_CONVERGE rc', result.rc, '| completed_writes',
+          json.dumps(list(result.completed_writes), ensure_ascii=False), '|', json.dumps(lines, ensure_ascii=False))
+
+
+def test_move_d1_resumes_the_remaining_projection_writes(catalog, root):
+    """同一重跑但投影欄還沒整批寫完：回讀是本次 plan 的前綴 ⇒ 續作剩餘寫入並列出已完成項。"""
+    client, lines, _ = move_case(catalog, root, drift=True)
+    result = move(10, '執行/進行中', client=client, root=root, catalog=catalog, emit=lines.append)
+    assert result.rc == 0
+    assert written(client) == ['write_project_field'], written(client)
+    assert [e for e in result.completed_writes if e.startswith('write_project_field')], result
+    assert any(line.startswith('續作剩餘寫入・投影欄：') for line in lines), lines
+    print('MOVE_D1_RESUME rc', result.rc, '| completed_writes',
+          json.dumps(list(result.completed_writes), ensure_ascii=False), '|', json.dumps(lines, ensure_ascii=False))
+
+
+def test_move_d1_keeps_the_baseline_refusal_for_a_real_illegal_edge(catalog, root):
+    """A5 負控：卡面回讀不是本次目標時，D1 的編號與逐字理由維持基線。"""
+    client, lines, _ = move_case(catalog, root)
+    result = move(10, '結案/完成', client=client, root=root, catalog=catalog, emit=lines.append)
+    assert result.rc == 1 and result.reason == '執行/進行中 → 結案/完成 不在合成表內', result
+    assert written(client) == ['post_comment'], written(client)   # 只有那一則 wf:reject
+    print('MOVE_D1_REFUSE', repr(result.reason))
