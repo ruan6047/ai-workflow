@@ -10,7 +10,7 @@ import pytest
 
 from wf.compose.blocks import load_blocks, projection
 from wf.gh.client import NotFound, PermissionDenied, TransportError
-from wf.gh.writes import WriteMixin, read_card
+from wf.gh.writes import WriteMixin, dry_run, read_card
 from wf.verbs._write import projected
 from wf.verbs.move import move, run
 from .test_open_verb import (MemoryClient, VARIANTS, block, expected_card, issue, item,
@@ -43,12 +43,14 @@ class MoveClient(MemoryClient):
 
     def close_issue(self, number):
         result = super().close_issue(number)
-        self.rows[number]['state'] = 'closed'
+        if not dry_run(self):  # --dry-run：⛔ 不動替身的狀態
+            self.rows[number]['state'] = 'closed'
         return result
 
     def remove_from_project(self, project_id, item_id):
         result = super().remove_from_project(project_id, item_id)
-        self.board['items'] = [i for i in self.board['items'] if i['id'] != item_id]
+        if not dry_run(self):
+            self.board['items'] = [i for i in self.board['items'] if i['id'] != item_id]
         return result
 
 

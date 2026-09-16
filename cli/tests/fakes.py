@@ -1,6 +1,12 @@
-"""共用手構替身；消費 core/verbs.md §2。"""
+"""共用手構替身；消費 core/verbs.md §2。
+
+`--dry-run`：六個 mutation 原語各自先問 `wf.gh.writes.dry_run`（生產碼的同一個判定，
+import 使用、⛔ 不在替身重打），帶旗標時⛔ 不記 calls、⛔ 不動替身的狀態——否則測到的是替身
+自己的行為，而不是 gate。"""
 from copy import deepcopy
 from types import SimpleNamespace
+
+from wf.gh.writes import DRY_RUN_ITEM, dry_run
 
 REPOSITORY_ID = 'R_FAKE'  # 替身的 repository stable ID：任何 slug 都回同一顆（同一 repo 的不同拼寫）
 PROJECT_ID = 'PVT_FAKE'
@@ -77,29 +83,46 @@ class FakeGhClient:
         return self._read('pulls_for_branch', branch=branch)
 
     def update_card_body(self, number, card_json, create=False):
+        if dry_run(self):
+            return None
         self.calls.append(('update_card_body', dict(number=number, card_json=deepcopy(card_json), create=create)))
         return {'number': number, 'body': ''}
 
     def post_comment(self, number, first_line, body):
+        if dry_run(self):
+            return None
         self.calls.append(('post_comment', dict(number=number, first_line=first_line, body=body)))
         return {'id': 1, 'html_url': f'https://github.com/fake/repo/issues/{number}#issuecomment-1',
                 'body': first_line + '\n' + body}
 
     def write_project_field(self, prepared):
         """投影欄的唯一寫入口；prepared 由 prepare_project_field 產。"""
+        if dry_run(self):
+            return None
         self.calls.append(('write_project_field', deepcopy(prepared)))
         operation, _, inputs = prepared
         return {'data': {operation: {'projectV2Item': {'id': inputs['itemId']}}}}
 
-    def add_to_project(self, project_id, issue_id):
-        self.calls.append(('add_to_project', dict(project_id=project_id, issue_id=issue_id)))
-        return {'data': {'addProjectV2ItemById': {'item': {'id': 'ITEM', 'content': {
+    def added(self, item_id):
+        """add_to_project 的回傳形狀；`--dry-run` 也回等形（只是 item id 是 `(dry-run)`），
+        讓 open 的 stable ID 比對照常跑（同 wf.gh.writes.dry_run_item）。"""
+        return {'data': {'addProjectV2ItemById': {'item': {'id': item_id, 'content': {
             '__typename': 'Issue', 'repository': {'id': REPOSITORY_ID, 'nameWithOwner': self.repo}}}}}}
 
+    def add_to_project(self, project_id, issue_id):
+        if dry_run(self):
+            return self.added(DRY_RUN_ITEM)
+        self.calls.append(('add_to_project', dict(project_id=project_id, issue_id=issue_id)))
+        return self.added('ITEM')
+
     def remove_from_project(self, project_id, item_id):
+        if dry_run(self):
+            return None
         self.calls.append(('remove_from_project', dict(project_id=project_id, item_id=item_id)))
         return {'data': {'deleteProjectV2Item': {'deletedItemId': item_id}}}
 
     def close_issue(self, number):
+        if dry_run(self):
+            return None
         self.calls.append(('close_issue', dict(number=number)))
         return {'number': number, 'state': 'closed'}

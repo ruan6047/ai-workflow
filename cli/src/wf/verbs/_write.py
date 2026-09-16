@@ -15,7 +15,7 @@ from wf.compose.transitions import is_legal_plan
 from wf.compose.validate import validate, _equal
 from wf.context import IdentityError
 from wf.gh.target import check_item_repository, item_ref
-from wf.gh.writes import CardBodyError
+from wf.gh.writes import CardBodyError, dry_run
 from wf.verbs._common import block_object, board_items, field_values
 # 結果物件、五鍵收據與動詞的共同失敗出口住 `_ops.py`（WF-016 起的唯一居所）；此處 import 再匯出：
 # 既有的 `from wf.verbs._write import WriteResult` 呼叫端一字不改，六個動詞也只從這一個動詞層
@@ -183,6 +183,8 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
         client.write_project_field(field)
     # 三個 post-write 出口一律帶已完成的寫入：此處卡面已寫，投影欄則以 fields 是否為空為準
     done = (*printed, *written_so_far(values if fields else {}))
+    if dry_run(client):  # 六原語一次都沒發請求 ⇒ 回讀必然不等；⛔ 不得把 dry-run 讀成 D3 回讀不等
+        return WriteResult(0, card=card, printed=printed)
     try:
         actual_card = block_object(client.issue(number)['body'], 'wf-card')
         actual = (lookup_values(fetch_project(), item_id, fetch_project)

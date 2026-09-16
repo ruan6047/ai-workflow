@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 import functools
 
 from wf.gh.client import GhError, NotFound, NotLoggedIn, PermissionDenied, TransportError
-from wf.gh.writes import MUTATIONS
+from wf.gh.writes import MUTATIONS, dry_run
 
 
 @dataclass(frozen=True)
@@ -97,11 +97,12 @@ def is_event_comment(primitive, target):
 
 class WriteLedger:
     """一次動詞執行的 write plan 與部分完成收據。
-    plan＝依序登記的（原語, 資源），⛔ 不管成敗；completed＝實際完成的那些；
-    pending＝正在發的那一筆，供失敗時定位 phase。⛔ 不存 body、⛔ 不存 payload、⛔ 不存憑證。"""
+    plan＝依序登記的（原語, 資源），⛔ 不管成敗；completed＝實際完成的那些（`--dry-run` 下恆空，
+    因為六原語一次都沒發請求）；pending＝正在發的那一筆，供失敗時定位 phase。
+    ⛔ 不存 body、⛔ 不存 payload、⛔ 不存憑證。"""
 
-    def __init__(self, verb):
-        self.verb = verb
+    def __init__(self, verb, dry):
+        self.verb, self.dry = verb, dry
         self.plan, self.completed, self.pending = [], [], None
 
     def begin(self, primitive, target):
@@ -109,7 +110,8 @@ class WriteLedger:
         self.plan.append(self.pending)
 
     def done(self):
-        self.completed.append(self.pending)
+        if not self.dry:
+            self.completed.append(self.pending)
         self.pending = None
 
     def receipt(self):
@@ -122,7 +124,7 @@ class WriteProxy:
 
     def __init__(self, client, verb):
         self.client = client
-        self.ledger = WriteLedger(verb)
+        self.ledger = WriteLedger(verb, dry_run(client))
 
     def __getattr__(self, name):
         target = getattr(self.client, name)
@@ -156,6 +158,19 @@ def failure(verb, exc, ledger, emit):
                             completed_writes=done, next_action=action)
 
 
+def planned(result, ledger, emit):
+    """`--dry-run` 的出口：印出本次的 write plan（原語名與順序，⛔ 不印 body 與 payload）。
+    刻意⛔ 不在不帶旗標時印：成功路徑的 stdout 行集合必須與基線相同。"""
+    if not ledger.dry:
+        return result
+    lines = [f'write plan・{ledger.verb}・--dry-run・本次遠端 mutation 0 次',
+             *(f'write plan・{index}・{primitive}・{target}'
+               for index, (primitive, target) in enumerate(ledger.plan, 1))]
+    for line in lines:
+        emit(line)
+    return replace(result, printed=(*result.printed, *lines))
+
+
 def guarded(verb):
     """動詞本體的共同失敗出口（core/verbs.md §2）。包一層 WriteProxy 記帳，把六原語逸出的
     GhError／OSError 收斂成 OperationOutcome（rc≠0），例外⛔ 不再逸出動詞。
@@ -170,7 +185,8 @@ def guarded(verb):
                 return run(*args, **kwargs)
             proxy = WriteProxy(client, verb)
             try:
-                return run(*args, **{**kwargs, 'client': proxy})
+                return planned(run(*args, **{**kwargs, 'client': proxy}), proxy.ledger,
+                               kwargs.get('emit', print))
             except (GhError, OSError) as exc:
                 if proxy.ledger.pending is None:
                     raise

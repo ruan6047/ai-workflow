@@ -15,7 +15,7 @@ from .fakes import FakeGhClient
 from wf.compose.blocks import load_blocks, projection
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
-from wf.gh.writes import WriteMixin, read_block
+from wf.gh.writes import WriteMixin, dry_run, read_block
 from wf.verbs import _write
 from wf.verbs.open import missing_fields, open_issue, run
 
@@ -81,6 +81,8 @@ class MemoryClient(FakeGhClient):
 
     def add_to_project(self, project_id, issue_id):
         result = super().add_to_project(project_id, issue_id)
+        if dry_run(self):
+            return result  # --dry-run：⛔ 不把 item 加進替身的板，否則測到的是替身而不是 gate
         number, = (n for n, row in self.rows.items() if row['node_id'] == issue_id)
         self.board['items'].append(item(number) | {'id': 'ITEM'})
         self.hidden = 'ITEM'
@@ -105,6 +107,8 @@ class MemoryClient(FakeGhClient):
         return deepcopy(self.rows[number])
 
     def write_project_field(self, prepared):
+        if dry_run(self):
+            return None
         self.calls.append(('write_project_field', deepcopy(prepared)))
         operation, _, inputs = prepared
         row, = (i for i in self.board['items'] if i['id'] == inputs['itemId'])
