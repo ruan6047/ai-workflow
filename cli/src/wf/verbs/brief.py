@@ -25,7 +25,7 @@ from wf.gh.client import GhError
 from wf.gh.localgit import LocalGitUnavailable, merge_tree
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number,
                               comment_blocks, module_activation, parse_args, repo_cards, verify_source_issue)
-from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection
+from wf.verbs._write import WriteResult, blocked, check_card, guarded, reconcile_projection
 from wf.verbs.notes import notes
 from wf.verbs import closeout
 
@@ -263,6 +263,7 @@ def _template(ctx):
         body.setdefault(key, '')
     return body
 
+@guarded('brief')
 def brief(card, *, target, client, root='.', catalog=None, emit=print, today=None, context=None,
           **trailers):
     report = Printer(emit)

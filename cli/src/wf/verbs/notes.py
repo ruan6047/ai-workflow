@@ -20,7 +20,7 @@ from wf.gh.client import GhError
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, module_activation,
                               note_blocks, parse_args, verify_source_issue)
-from wf.verbs._write import NotesResult, blocked, check_card, reconcile_projection
+from wf.verbs._write import NotesResult, blocked, check_card, guarded, reconcile_projection
 
 ITEM = re.compile(r'^- ([FPT]-[^：]+-[0-9]{2})：(.+)$')  # id ⛔ 不跨全形冒號：內文含 `-NN：` 也不被吃進 id
 BACKTICK = re.compile(r'`([^`]+)`')
@@ -84,6 +84,7 @@ def compose_notes(rules, root, *, stage, role, enabled, card, number, repo, repo
     return items
 
 
+@guarded('notes')
 def notes(card, *, client, root='.', catalog=None, stage=None, for_role=None, emit=print,
           fail=None, context=None, listing=None):
     """verbs/main.py 可直接呼叫；讀側驗卡失敗＝本機硬擋、零遠端寫入；§2 對帳的投影回寫與其

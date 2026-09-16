@@ -17,15 +17,10 @@ from wf.context import IdentityError
 from wf.gh.target import check_item_repository, item_ref
 from wf.gh.writes import CardBodyError
 from wf.verbs._common import block_object, board_items, field_values
-
-
-@dataclass(frozen=True)
-class WriteResult:
-    rc: int
-    card: dict | None = None
-    reason: str = ''
-    rejection: dict | None = None
-    printed: tuple[str, ...] = ()
+# 結果物件、五鍵收據與動詞的共同失敗出口住 `_ops.py`（WF-016 起的唯一居所）；此處 import 再匯出：
+# 既有的 `from wf.verbs._write import WriteResult` 呼叫端一字不改，六個動詞也只從這一個動詞層
+# 共用面取 `guarded`（`notes.py` 有 200 行上限）。`reject`／`blocked` 仍定義在本檔。
+from wf.verbs._ops import OperationOutcome, WriteResult, guarded, receipt  # noqa: F401
 
 
 @dataclass(frozen=True)

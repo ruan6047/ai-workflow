@@ -5,7 +5,7 @@ operation-level precondition（core/verbs.md §2）：撤銷卡復板時核對 s
 核對清單項所屬 repository 與 add_to_project 回傳 item 的 repository stable ID（在首次 write_project_field 之前）。
 """
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 
 from wf.compose.blocks import load_blocks, projection
@@ -17,7 +17,8 @@ from wf.context import IdentityError, rules_of
 from wf.gh.target import check_item_repository, check_target_issue, item_ref, target_issue
 from wf.verbs._common import (block_object, board_items, chain_depth, missing_fields, parse_args,
                               prevalidate_card, repo_cards, verify_source_issue)
-from wf.verbs._write import WriteResult, prepare_card, reject, write_card
+from wf.verbs._ops import OperationOutcome
+from wf.verbs._write import WriteResult, guarded, prepare_card, reject, write_card
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ def _initial_card(schema):
     return card
 
 
+@guarded('open')
 def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None, emit=print,
                context=None):
     """verbs/main.py 可直接呼叫；所有 GitHub 操作經注入的 client，印項亦保留於結果。"""
@@ -48,6 +50,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
             emit(line)
         if result.rc:
             emit(result.reason)
+        if isinstance(result, OperationOutcome):  # 收據型結果原樣帶出，⛔ 不把五鍵降級掉
+            return replace(result, printed=lines)
         return OpenResult(result.rc, result.card, result.reason, result.rejection,
                           lines, tuple(unverified))
 

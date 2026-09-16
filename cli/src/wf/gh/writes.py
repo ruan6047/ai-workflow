@@ -32,6 +32,10 @@ def _verified(client):
         raise ContextNotVerified('static Context gate 未綁定或未通過：拒絕遠端寫入')
 
 
+MUTATIONS = ('add_to_project', 'close_issue', 'post_comment',
+             'remove_from_project', 'update_card_body', 'write_project_field')
+
+
 LABELS = ('wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note')
 MULTI_LABELS = ('wf-note',)  # 複數區塊的白名單；其餘標籤機械擋在 block_spans 內，⛔ 不靠呼叫端自律
 

@@ -8,6 +8,7 @@ import pytest
 from wf.compose.blocks import Block, Catalog, projection
 from wf.gh.client import NotFound, PermissionDenied, TransportError
 from wf.gh.writes import WriteMixin
+from wf.verbs._ops import EQUAL_SILENT
 from wf.verbs._write import reconcile
 from .test_compose_schema import ROOT, card, catalog
 from .test_write_flow import body, mutations, simulated
@@ -754,3 +755,29 @@ def test_layer_four_notes_append_onto_valid_notes_keeps_input_order(card, catalo
     wrote_nothing(result, fake, 'D3', expected)
     assert reject_body(fake) == '拒收・D3・' + expected, reject_body(fake)
     assert card_face(fake) == card
+
+
+def test_equal_edit_prints_event_comment_unknown(card, catalog):
+    """A7／裁定 G8 甲：`edit` 的「全項等值＝沉默」出口**無條件**印一行指出事件留言結果不明。
+
+    CLI ⛔ 不讀事件留言 body，跨進程重跑分辨不出上一次的 `wf:edit` 是貼成功還是失敗未補，
+    故等值沉默⛔ 不得被讀成事件已補上；該次仍是零遠端寫入。
+    """
+    card['feature'] = '不變'
+    lines = []
+    result, fake = run(card, catalog, 'feature="不變"', emit=lines.append)
+    assert result.rc == 0 and not mutations(fake)
+    assert EQUAL_SILENT in lines, lines
+    assert lines.count(EQUAL_SILENT) == 1 and result.printed == tuple(lines)
+    print('EQUAL_SILENT_EXIT', json.dumps(lines, ensure_ascii=False))
+
+
+def test_changed_edit_does_not_print_event_comment_unknown(card, catalog):
+    """A7 負控②：確有欄位變動的非等值路徑⛔ 不得印同一行——兩條路徑印同一行即判變異沒生效
+    （roles/conduct-common.md §1 F-共用-06）。"""
+    card['feature'] = '原值'
+    lines = []
+    result, fake = run(card, catalog, 'feature="新值"', emit=lines.append)
+    assert result.rc == 0 and [name for name, _ in mutations(fake)] == ['update_card_body', 'post_comment']
+    assert EQUAL_SILENT not in lines, lines
+    print('CHANGED_EXIT', json.dumps(lines, ensure_ascii=False))

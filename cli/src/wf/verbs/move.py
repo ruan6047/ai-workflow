@@ -21,7 +21,8 @@ from wf.gh.target import check_item_repository, item_ref
 from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (block_object, board_facts, board_items, card_number, comment_blocks,
                               missing_fields, parse_args, prevalidate_card, verify_source_issue)
-from wf.verbs._write import WriteResult, prepare_card, projection_values, reconcile, reject, write_card
+from wf.verbs._write import (WriteResult, guarded, prepare_card, projection_values, reconcile,
+                             reject, write_card)
 
 
 def _ruling_prints(comment, current, number, expected, *, client, catalog, rules):
@@ -90,6 +91,7 @@ def _terminal_prints(card, client, default):
     return printed
 
 
+@guarded('move')
 def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=None,
          ruling=None, emit=print, context=None):
     """卡 ID 或 issue 號；move_modules 接收一般 stage/state 節點，阻塞展開僅供 D1。"""
