@@ -1,13 +1,16 @@
 """消費 core/verbs.md §2（檢查先於首次遠端寫入、寫入順序、留痕、CLI 只讀三種留言區塊）、
 core/naming.md §3 首行標記、core/return.md 區塊。
 
-動詞層純計算的唯一居所：結果物件與五鍵收據、遠端寫入失敗分類、write plan 帳本。
+動詞層純計算的唯一居所：結果物件與五鍵收據、遠端寫入失敗分類、write plan 帳本，
+以及同一操作重跑的身分比對（operation fingerprint）。
 ⛔ 不自己發遠端請求（`wf.gh.writes` 的六原語仍是唯一出口）、⛔ 不 retry、⛔ 不 rollback、
 ⛔ 不讀任何事件留言 body。兩個留痕出口（`reject`／`blocked`）刻意留在 `_write.py`：
 `wf:reject` 的 `post_comment` 呼叫點是 core/verbs.md §2 留痕條的居所，⛔ 不因本卡而搬家。
 """
 from dataclasses import dataclass, replace
 import functools
+import hashlib
+import json
 
 from wf.gh.client import GhError, NotFound, NotLoggedIn, PermissionDenied, TransportError
 from wf.gh.writes import MUTATIONS, dry_run
@@ -193,3 +196,23 @@ def guarded(verb):
                 return failure(verb, exc, proxy.ledger, kwargs.get('emit', print))
         return guard
     return decorate
+
+
+def fingerprint(payload):
+    """同一操作重跑的身分比對（需求方 2026-09-16 裁定①逐字「operation fingerprint／operation ID
+    只用於同一操作重跑的身分比對，⛔ 不用它判斷內容語意」）。
+
+    口徑＝canonical JSON 的 sha256 逐字相等，與 `wf.compose.validate._equal` 同層級的機械比對；
+    ⛔ 不比對內容同義、⛔ 不判斷該不該（core/verbs.md §2）。
+    只回字串給本機判定用：⛔ 不得被送進任何請求的 payload 或 header、⛔ 不寫進卡面、⛔ 不新增 D 類。
+    """
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                     separators=(',', ':'), allow_nan=False)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def already_posted(previous, payload):
+    """卡上既有的那些 `wf-return` 區塊裡，有沒有與本次交回單逐字相同的一則。
+    判定證據只取 `wf-return` 區塊（在 `wf.gh.writes.LABELS` 內），⛔ 不讀散文、⛔ 不讀首行。"""
+    mine = fingerprint(payload)
+    return any(isinstance(block, dict) and fingerprint(block) == mine for block in previous)

@@ -39,6 +39,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 - 六個 mutation 原語的寫入失敗一律收斂成結果物件（rc≠0）、例外⛔ 不逸出動詞；該結果物件帶 `error_kind`、`phase`、`retryable`、`completed_writes`、`next_action` 五鍵，`completed_writes` 逐字列出該次失敗之前已完成的遠端寫入原語。`retryable` 只是事實宣告：CLI ⛔ 不自動 retry、⛔ 不自動 rollback、⛔ 不做跨資源補償。讀取失敗⛔ 不由本條收斂。
 - `wf:move`／`wf:edit`／`wf:reject` 事件留言寫入失敗時，`next_action` 逐字指出事件留言未貼出且 CLI ⛔ 不自動補發；`edit` 的「全項等值＝沉默」出口無條件印一行指出事件留言結果不明。事件留言的判定只看首行標記（`core/naming.md` §3），CLI ⛔ 不讀其 body、⛔ 不為它新增可讀區塊、⛔ 不自動補發、⛔ 不去重。
 - `--dry-run` 是總入口的全域旗標（⛔ 不逐動詞加），gate 落在六個 mutation 原語：帶旗標的那一次執行對遠端零 mutation，並印出本次的 write plan（原語名與順序，⛔ 不印 body 與 payload）；不帶旗標時⛔ 不印 plan。同一場景帶旗標印出的 plan 與不帶旗標實際發生的 mutation 序列在原語名與順序上逐一相符。
+- 同一操作重跑以 operation fingerprint（待寫內容的 canonical JSON 逐字相等）只做身分比對：`review` 在卡上已有內容全等的 `wf-return` 區塊時 rc=0、⛔ 不重貼並印一行；改動交回單任一欄即照常新增。fingerprint ⛔ 不用來判斷內容語意、⛔ 不新增 D 類、⛔ 不寫進卡面、⛔ 不進任何請求的 payload 或 header。
 - CLI 只讀三種留言區塊：`wf-return`、`wf-ruling`、`wf-note`；散文與首行不讀。
 - CLI ⛔ 不產生統計數字、⛔ 不比對內容同義、⛔ 不判斷該不該。
 - 硬擋只落在寫壞資料（D1、D3）與指向不存在（D2、D4）；其餘一律印。
