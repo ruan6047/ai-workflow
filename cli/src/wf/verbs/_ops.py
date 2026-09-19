@@ -63,7 +63,17 @@ PHASES = {'update_card_body': '卡面 JSON', 'write_project_field': '投影欄',
 # 事件留言的判定只看 core/naming.md §3 的首行標記；⛔ 不讀 body、⛔ 不為事件留言新增可讀區塊。
 EVENT_MARKERS = ('wf:move', 'wf:edit', 'wf:reject')
 EVENT_PHASE = '事件留言'
-EVENT_NEXT = '事件留言未貼出：CLI ⛔ 不自動補發，請人工確認該事件是否需要補貼'
+# 事件留言寫入失敗的收據＝**結果不明**，⛔ 不是「未貼出」。依查核序 1 finding WF-016-R1.1-004
+# 逐字「A7 要求的確定未貼出措辭與第 9 項禁止由 transport 推論未生效衝突」：post_comment 沒取得
+# 回應時，CLI 分辨不出它是未送達遠端還是已寫入而回應遺失（PM 2026-09-19 在真機遇過後者形狀）。
+# ⛔ 不得由 transport 例外推論遠端狀態：斷言遠端狀態已確定的四個字串（未貼出／已貼出／未送出／
+# 已送出）在本卡全部收據面作廢，本骨架刻意一個都不含。不明狀態一律只由 next_action 承載——
+# 失敗的那一筆 post_comment ⛔ 不進 completed_writes，而它的缺席⛔ 不得被讀成該留言確定未貼出。
+# <首行標記> 與 <issue 號> 由該次執行的變數格式化，⛔ 不手打字面。
+EVENT_HEAD = '事件留言寫入無回應・結果不明'
+EVENT_NEXT = (f'{EVENT_HEAD}：{{marker}}（{{issue}}）的 post_comment 未取得回應，CLI 無法分辨它是'
+              '未送達遠端還是已寫入而回應遺失；⛔ 不自動補發、⛔ 不讀其 body、⛔ 不得據此推論其'
+              '遠端狀態。請人工開啟該卡確認該事件留言是否存在，缺則人工補貼。')
 RESUME_NEXT = '先回讀遠端狀態再決定是否重跑本動詞；CLI ⛔ 不自動 retry、⛔ 不自動 rollback'
 # 終態 `move` 續作 `close_issue` 時它本身再失敗（core/verbs.md §2 move D1 分流條）：收據要讓
 # 操作者知道 issue 在本次回讀時仍是 open、本次關閉沒取得回應，且重跑同一 `move` 會從回讀重新分流。
@@ -206,7 +216,10 @@ def failure(verb, exc, ledger, emit):
     event = is_event_comment(primitive, target)
     kind, retryable = classify(exc)
     phase = EVENT_PHASE if event else PHASES.get(primitive, primitive or '未知')
-    action = (f'{EVENT_NEXT}（{target}）' if event
+    # 事件留言的 target 逐字是 `#<issue 號> <首行標記>`（`resource`），兩段直接餵進骨架，
+    # ⛔ 不手打字面、⛔ 不讀 body。
+    issue_ref, _, marker = target.partition(' ')
+    action = (EVENT_NEXT.format(marker=marker, issue=issue_ref) if event
               else CLOSE_NEXT if primitive == 'close_issue' else RESUME_NEXT)
     done = ledger.receipt()
     lines = [f'遠端寫入失敗・{verb}・{kind}・{phase}・{target}・retryable={retryable}',
