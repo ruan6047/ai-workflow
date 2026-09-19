@@ -12,6 +12,7 @@ import ast
 import inspect
 import json
 from pathlib import Path
+import re
 import socket
 import subprocess
 
@@ -20,6 +21,7 @@ import pytest
 from wf.compose.blocks import load_blocks
 from wf.gh import writes as gh_writes
 from wf.gh.client import GhError, TransportError
+from wf.verbs import main
 from wf.verbs._ops import EQUAL_SILENT, EVENT_HEAD, EVENT_NEXT, EVENT_PHASE
 from wf.verbs.edit import edit
 from wf.verbs.move import move
@@ -87,19 +89,78 @@ class Site:
         return f'{self.path.name}:{self.lineno} {self.primitive}' + (f' [{self.marker}]' if self.marker else '')
 
 
+def verb_trees():
+    """`cli/src/wf/verbs/*.py` 的 AST，依模組檔名索引。"""
+    return {path: ast.parse(path.read_text(encoding='utf-8'))
+            for path in sorted(VERBS_DIR.glob('*.py'))}
+
+
+TREES = verb_trees()
+
+
+def function_index(trees):
+    """全部 verbs 模組內的 FunctionDef，依函式名索引（同名者一起收）。
+    ⛔ 不做型別推導：名稱相同即一併納入，母體因此只會過寬、⛔ 不會漏掉可達站點。"""
+    index = {}
+    for path, tree in trees.items():
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                index.setdefault(node.name, []).append((path, node))
+    return index
+
+
+def called_names(node):
+    """該函式體內全部呼叫的被呼叫者名字（`f(…)` 取 id、`x.f(…)` 取 attr）。"""
+    names = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call):
+            names.add(getattr(child.func, 'id', None) or getattr(child.func, 'attr', None))
+    return names - {None}
+
+
+def reachable_functions():
+    """入口可達性：從 `wf.verbs.main.VERBS` 的七個動詞各自的 `run` 出發，在 verbs 層的函式名
+    呼叫圖上做傳遞閉包。VERBS 由 import 取得（F-執行者-04：⛔ 不重打常數）。"""
+    index = function_index(TREES)
+    entries = [(path, node) for verb in main.VERBS
+               for path, node in index.get('run', ()) if path.stem == verb]
+    assert len(entries) == len(main.VERBS), (sorted(main.VERBS), [str(p) for p, _ in entries])
+    seen, queue = set(), list(entries)
+    while queue:
+        key = queue.pop()
+        if key in seen:
+            continue
+        seen.add(key)
+        for name in called_names(key[1]):
+            queue.extend(target for target in index.get(name, ()) if target not in seen)
+    return seen
+
+
+REACHABLE = reachable_functions()
+
+
+def _inside(path, node, functions):
+    return any(other_path == path and other.lineno <= node.lineno <= other.end_lineno
+               for other_path, other in functions)
+
+
 def write_sites():
-    """母體＝`cli/src/wf/verbs/*.py` 內 `client.<原語>(…)` 的呼叫點；原語名取自 AST 枚舉的六原語。"""
-    sites = []
-    for path in sorted(VERBS_DIR.glob('*.py')):
-        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+    """母體＝`cli/src/wf/verbs/*.py` 內 `client.<原語>(…)` 的呼叫點，且該呼叫點所在的函式
+    從 `wf.verbs.main.VERBS` 的動詞入口可達；原語名取自 AST 枚舉的六原語。
+    查核序 1 finding WF-016-R1.1-005 逐字：「write_sites 也只做 client.<原語> 的 AST 掃描，
+    未從 VERBS 建呼叫圖」——入口可達性因此由 `reachable_functions` 產生，⛔ 不重打站點清單。"""
+    sites, orphan = [], []
+    for path, tree in TREES.items():
+        for node in ast.walk(tree):
             if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                     and node.func.attr in MUTATIONS
                     and isinstance(node.func.value, ast.Name) and node.func.value.id == 'client'):
-                sites.append(Site(path, node.func.attr, node))
-    return sites
+                site = Site(path, node.func.attr, node)
+                (sites if _inside(path, node, REACHABLE) else orphan).append(site)
+    return sites, orphan
 
 
-SITES = write_sites()
+SITES, UNREACHABLE_SITES = write_sites()
 
 
 # ── 注入：在既有替身上加能力，⛔ 不另起一套替身 ────────────────────────────────
@@ -274,6 +335,12 @@ def test_every_reachable_write_site_returns_an_outcome(catalog, root, tmp_path):
     該次注入之前替身實際收到的原語序列。負控＝不注入時零 outcome。"""
     assert len(SITES) > 0, '母體為 0 ⇒ 測具無效'
     print('WRITE_SITE_POPULATION', len(SITES), 'MUTATIONS', json.dumps(sorted(MUTATIONS)))
+    # 入口可達性枚舉的另一半：掃到但**從 VERBS 入口不可達**的呼叫點。逐字印出，
+    # ⛔ 不讓呼叫圖靜默吃掉站點（母體變小會讓本條變弱而看不出來）。
+    print('WRITE_SITE_UNREACHABLE', len(UNREACHABLE_SITES),
+          json.dumps([str(site) for site in UNREACHABLE_SITES]))
+    print('WRITE_SITE_ENTRIES', json.dumps(sorted(main.VERBS)),
+          'REACHABLE_FUNCTIONS', len(REACHABLE))
     for site in SITES:
         print('WRITE_SITE', site)
     unreached = []
@@ -296,15 +363,101 @@ def test_every_reachable_write_site_returns_an_outcome(catalog, root, tmp_path):
     print('WRITE_SITES_COVERED', len(SITES))
 
 
+FAILURE_KEYS = ('error_kind', 'phase', 'retryable')
+D_CODE = re.compile(r'(?:拒收|硬擋)・(D[1-4])・')
+ENUMERATION = ('uv run --extra dev pytest cli/tests/test_remote_ops_envelope.py'
+               '::test_no_injection_yields_no_outcome -q -s')
+
+
+def is_outcome(result):
+    """「本條的結果物件」＝同時帶 `error_kind`／`phase`／`retryable`／`completed_writes`／
+    `next_action` 五鍵者。
+
+    五鍵長在 `_ops.OperationOutcome` 上，而本卡 A5 的續作／收斂收據用的是同一個類別（rc=0，
+    只填 `completed_writes`，失敗三鍵留 None）。⛔ 不以 `hasattr` 單獨判：那會把 A5 的收斂收據
+    誤判成本條的結果物件。判準＝五鍵都在**且**失敗三鍵都已填值（＝這一次真的有遠端寫入失敗）。
+    D1–D4 硬擋的拒收結果是 `_ops.WriteResult`，五鍵一個都沒有，本判準對它恆假 ⇒ ⛔ 不計入本款。"""
+    return (all(hasattr(result, key) for key in FIVE_KEYS)
+            and all(getattr(result, key) is not None for key in FAILURE_KEYS))
+
+
+def d_code(result, lines):
+    """該次拒收／硬擋的 D 編號：先看 `wf:reject` 留言 body，再看本機硬擋行；都沒有＝None。"""
+    texts = [result.rejection['body']] if isinstance(result.rejection, dict) else []
+    for text in [*texts, *lines]:
+        found = D_CODE.search(text)
+        if found:
+            return found[1]
+    return None
+
+
+def reject_trace(client):
+    """該次有沒有寫 `wf:reject` 留痕（core/verbs.md §2 留痕條）。"""
+    return [kwargs for name, kwargs in client.calls
+            if name == 'post_comment' and kwargs.get('first_line') == 'wf:reject']
+
+
+def measured(name, catalog, root, tmp_path):
+    """不注入跑同一場景一次，回該次實測到的 (rc, D 編號, 逐字理由, wf:reject 留痕有無, 原語序列)
+    與「有沒有產生本條的結果物件」。基線值由本函式在**同一次執行內**跑出，⛔ 不手打、⛔ 不跨執行沿用。"""
+    lines = []
+    client, call = scenario_named(name, catalog, root, tmp_path, lines.append)
+    result = call(client)
+    return {'rc': result.rc, 'D': d_code(result, lines), 'reason': result.reason,
+            'reject': bool(reject_trace(client)), 'mutations': performed(client),
+            'outcome': is_outcome(result)}
+
+
 def test_no_injection_yields_no_outcome(catalog, root, tmp_path):
-    """A1 負控：同一組場景不注入時⛔ 不得出現任何 outcome，`next_action` 一律為空。
-    負控不響即判測具無效（roles/conduct-common.md §1 F-共用-05）。"""
-    for name, build in scenarios(catalog, root, tmp_path):
-        client, call = build()
-        result = call(client)
-        assert getattr(result, 'error_kind', None) is None, (name, result)
-        assert getattr(result, 'next_action', '') == '', (name, result)
-        print('NO_INJECTION', name, 'rc', result.rc, 'mutations', json.dumps(performed(client)))
+    """A1 負控（查核序 1 finding WF-016-R1.1-005）。逐站點各跑一次不注入的同一場景：
+
+    ①⛔ 不得產生本條的結果物件（五鍵齊且失敗三鍵已填）；D1–D4 硬擋的拒收結果⛔ 不計入本款。
+    ②母體按**該場景在本次執行內實測的 rc** 分兩類，兩類的負控條件各自不同：
+      (甲) 實測 rc=0 的站點——不注入時必須 rc=0，且該次遠端寫入原語序列與基線逐一相符；
+      (乙) 實測 rc≠0 的站點（D1–D4 硬擋）——必須維持同一 D 編號、同一逐字理由、同一 rc，
+           且該次 `wf:reject` 留痕的有無與基線相同。
+    ⛔ 不以絕對 rc=0 為負控條件：依 §2 留痕條，D 類硬擋的站點在不注入時本來就 rc≠0 並寫一則
+    `wf:reject` 留言，對這些站點要求 rc=0 恆假、會把既有正確行為誤判成缺陷。
+    基線值由同一次執行的第一跑取得並印出，第二跑比對；兩類站點數逐字印出，⛔ 不手打。"""
+    groups = {'甲': [], '乙': []}
+    for site in SITES:
+        name, _, _ = reach(site, catalog, root, tmp_path)
+        assert name is not None, site
+        base = measured(name, catalog, root, tmp_path)
+        again = measured(name, catalog, root, tmp_path)
+        assert not base['outcome'] and not again['outcome'], (site, name, base, again)   # ①
+        kind = '甲' if base['rc'] == 0 else '乙'
+        groups[kind].append(str(site))
+        if kind == '甲':                                                                  # ②(甲)
+            assert again['rc'] == 0, (site, name, again)
+            assert again['mutations'] == base['mutations'], (site, name, base, again)
+        else:                                                                             # ②(乙)
+            assert base['D'] is not None, (site, name, base)
+            assert (again['rc'], again['D'], again['reason'], again['reject']) == (
+                base['rc'], base['D'], base['reason'], base['reject']), (site, name, base, again)
+        print('NO_INJECTION', kind, site, '|', name, '| rc', base['rc'], '| D 編號', base['D'],
+              '| 逐字理由', json.dumps(base['reason'], ensure_ascii=False),
+              '| wf:reject 留痕', json.dumps(base['reject']),
+              '| mutations', json.dumps(base['mutations']),
+              '| 本條的結果物件', json.dumps(base['outcome']))
+    assert len(groups['甲']) + len(groups['乙']) == len(SITES), groups
+    for kind, label in (('甲', '基線 rc=0'), ('乙', '基線 rc≠0（D1–D4 硬擋）')):
+        print(f'NO_INJECTION_CLASS ({kind}) {label} 站點數', len(groups[kind]),
+              json.dumps(groups[kind], ensure_ascii=False), '| 枚舉指令', ENUMERATION)
+        if not groups[kind]:
+            print(f'NO_INJECTION_CLASS_EMPTY ({kind}) 類站點數為 0；產生該數字的枚舉指令＝'
+                  + ENUMERATION)
+
+
+def test_no_injection_negative_control_is_not_vacuous(catalog, root, tmp_path):
+    """A1 負控的測具有效性（F-共用-05：只跑正向是零資訊）：`is_outcome` 必須能響。
+    同一場景**注入**時必須被判成本條的結果物件；不注入時⛔ 不得。"""
+    site = SITES[0]
+    name, _, injected = reach(site, catalog, root, tmp_path)
+    assert name is not None and is_outcome(injected), (site, name, injected)
+    assert not measured(name, catalog, root, tmp_path)['outcome'], (site, name)
+    print('NO_INJECTION_TOOL_CHECK', site, '|', name, '| 注入時 is_outcome', True,
+          '| 不注入時 is_outcome', False)
 
 
 def test_read_path_failures_still_propagate(catalog, root):
