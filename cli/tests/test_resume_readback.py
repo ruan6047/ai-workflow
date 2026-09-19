@@ -339,3 +339,38 @@ def test_terminal_move_reports_the_receipt_when_close_issue_fails_again(catalog,
     print('MOVE_TERMINAL_CLOSE_FAILS rc', result.rc, '| completed_writes',
           json.dumps(list(result.completed_writes), ensure_ascii=False),
           '| next_action', result.next_action)
+
+
+def test_previously_confirmed_projection_remains_in_close_retry_receipt(catalog, root):
+    """查核序 2 finding WF-016-R1.1-002 的形狀：同一終態操作**連續兩次** `close_issue` 失敗。
+
+    第二跑走 `_ops.move_resume`（卡面已是本次目標 ⇒ 轉移不合法而 from==to），此時五個投影欄的
+    回讀證據已經與卡面全等（第一跑寫成的），本次因此零投影寫入。A5 逐字要的是「已完成的前綴」
+    ——`completed_writes` 必須列出回讀證據確認已完成的 `update_card_body` **與五個
+    `write_project_field`**，⛔ 不是只列本次已完成的那些。
+    """
+    current = expected_card(stage='結案', state='待確認', stage_plan=PLAN, iteration=7,
+                            owner={'role': 'executor', 'actor': 'old'}, source_sha='a' * 40,
+                            branch='old/branch')
+    client = CloseFailsClient(catalog, current)
+    first_lines, second_lines = [], []
+    first = move(10, '結案/完成', client=client, root=root, catalog=catalog, emit=first_lines.append)
+    first_writes = written(client)
+    assert first.rc != 0 and first.error_kind == 'transport', (first, first_lines)
+    assert first_writes.count('write_project_field') == len(projection(catalog)), first_writes
+    client.calls.clear()
+    second = move(10, '結案/完成', client=client, root=root, catalog=catalog, emit=second_lines.append)
+    second_writes = written(client)
+    assert second.rc != 0 and second.error_kind == 'transport', (second, second_lines)
+    assert client.issue_is_open(10) is True, '替身的 issue state 必須具狀態'
+    assert second_writes == [], second_writes          # 本次零寫入：卡面與五欄回讀都已全等
+    fields = [entry for entry in second.completed_writes if entry.startswith('write_project_field')]
+    assert any(entry.startswith('update_card_body') for entry in second.completed_writes), second
+    assert len(fields) == len(projection(catalog)), (fields, second.completed_writes)
+    assert not any(entry.startswith('close_issue') for entry in second.completed_writes), second
+    print('MOVE_TERMINAL_CLOSE_RETRY | 第一跑 completed_writes',
+          json.dumps(list(first.completed_writes), ensure_ascii=False),
+          '| 第一跑寫入', json.dumps(first_writes),
+          '| 第二跑 completed_writes', json.dumps(list(second.completed_writes), ensure_ascii=False),
+          '| 第二跑寫入', json.dumps(second_writes),
+          '| next_action', second.next_action)

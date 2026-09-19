@@ -197,8 +197,22 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
 
 
 def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
+    """`reconcile_readback` 只取「本次寫了哪些欄」的薄包裝；既有呼叫端一字不改。"""
+    return reconcile_readback(card, client=client, catalog=catalog, item_id=item_id,
+                              project_owner=project_owner, project_number=project_number)[1]
+
+
+def reconcile_readback(card, *, client, catalog, project_owner, project_number, item_id):
+    """§2 對帳，另把回讀證據拆成兩半回報：`(confirmed, changed)`。
+
+    confirmed＝板上現值已經等於卡面 JSON 的那些投影欄。刻意分出這一半：回讀證據顯示它們在
+    **先前某次執行**就已寫成，是本次 write plan 的**已完成前綴**（core/verbs.md §2 D1 分流條），
+    續作路徑的收據要列得出它們（查核序 2 finding WF-016-R1.1-002 逐字「第二次 rc=1、issue=open、
+    second_writes=[]，completed_writes=[update_card_body]」）。⛔ 不得由 confirmed 出現在收據
+    推論「本次發過這些請求」——本次真的發出去的只有 changed，也只有 changed 進帳本。"""
     project = client.project(project_owner, project_number, projection(catalog))
     values, actual, fields = projected(card, catalog, check=True), projection_values(project, item_id), {}
+    confirmed = [key for key, value in values.items() if _equal(actual.get(key), value)]
     for name in [key for key, value in values.items() if not _equal(actual.get(key), value)]:
         try:  # §2 檢查先於首次遠端寫入：不等的欄整批算完（含單選選項解析）才開始寫
             fields[name] = client.prepare_project_field(project, item_id, name, values[name])
@@ -206,7 +220,7 @@ def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
             raise ValueError(f'{name} 投影欄無法解析：{exc}') from exc
     for field in fields.values():
         client.write_project_field(field)
-    return list(fields)
+    return confirmed, list(fields)
 
 
 def check_card(card, *, client, number, catalog, enabled_modules=(), printed=(), fail=None):

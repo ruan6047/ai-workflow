@@ -349,34 +349,41 @@ def move_resume(current, from_node, to_node, legal, printed, *, client, number, 
       ∧ 承載 issue 的 state 為 `closed`；三者同時成立才判 rc=0 收斂。只要 issue 仍為 `open`，
       即使卡面與五欄全等也⛔ 不得判收斂，一律判為 plan 的前綴並續作 `close_issue`
       （查核序 1 finding WF-016-R1.1-002 逐字「現行規劃把完成條件縮成卡面與投影而漏掉尚未完成
-      的 close」）；`close_issue` 本身再失敗時由 `guarded` 收斂成 rc≠0 的結果物件，收據帶回讀
-      證據確認的 `update_card_body` 與本次已完成的 `write_project_field`，`next_action`＝CLOSE_NEXT。
-    · 非終態而五欄不等＝回讀是本次 plan 的前綴 ⇒ 續作剩餘的投影欄寫入，並把上一次已完成的
-      卡面 JSON 寫入一併列進 completed_writes。
+      的 close」）；`close_issue` 本身再失敗時由 `guarded` 收斂成 rc≠0 的結果物件，收據帶**已完成
+      的前綴**（回讀證據確認的 `update_card_body` 與已完成的 `write_project_field`，⛔ 不限本次
+      寫的那些），`next_action`＝CLOSE_NEXT。
+    · 非終態而五欄不等＝回讀是本次 plan 的前綴 ⇒ 續作剩餘的投影欄寫入，並把回讀證據確認已完成
+      的卡面 JSON 與投影欄一併列進 completed_writes。
     ⛔ 不 retry、⛔ 不 rollback、⛔ 不補發事件留言（CLI ⛔ 不讀事件留言，無從得知它貼出與否）。
     撤銷邊（`move --to 清單`）的 `remove_from_project` 本輪⛔ 不納入回讀證據面（需求方
     2026-09-19 裁定；已列入交回單 out_of_scope 上呈）。
     """
     # 函式內 import：`_write` 模組級已 import 本檔的結果物件，互引會成環（同 move.py 對
     # move_modules 的既有做法）。⛔ 不得推出「本檔可以自己發遠端寫入」——寫入仍只經六原語。
-    from wf.verbs._write import reconcile, reject
+    from wf.verbs._write import reconcile_readback, reject
     if legal:
         return None
     if from_node != to_node:
         return reject(client, number, 'D1', f'{from_node} → {to_node} 不在合成表內')
-    done = ['update_card_body・卡面 JSON']
-    changed = [] if item_id is None else reconcile(
+    confirmed, changed = ([], []) if item_id is None else reconcile_readback(
         current, client=client, catalog=catalog, item_id=item_id,
         project_owner=location['owner'], project_number=location['number'])
+    # 收據要的是**已完成的前綴**，⛔ 不是「本次已完成的」：prefix＝回讀證據確認先前某次執行
+    # 已寫成的那些（卡面 JSON ＋ 板上現值已等於卡面的投影欄），done 再接上本次真的發出去的。
+    # 查核序 2 finding WF-016-R1.1-002 逐字量到的缺口就在這裡：連續兩次 close_issue 失敗時第二次
+    # 本次零投影寫入，只記「本次已完成的」會讓那五欄從收據消失。
+    # ⛔ 不得由 prefix 在收據裡推論「本次發過這些請求」——本次發出的只在帳本的 completed。
+    prefix = ['update_card_body・卡面 JSON',
+              *(f'write_project_field・{name}' for name in confirmed)]
+    done = [*prefix, *(f'write_project_field・{name}' for name in changed)]
     if changed:
         printed.append('續作剩餘寫入・投影欄：' + '、'.join(changed))
-        done += [f'write_project_field・{name}' for name in changed]
     if terminal and client.issue_is_open(number):
-        # 卡面那一筆來自回讀、⛔ 不是本次發出的請求，故走帳本的 observed：`close_issue` 再失敗時
-        # 共同失敗出口的 completed_writes 才列得出它（投影欄那些是本次寫的，帳本已有）。
+        # prefix 那些來自回讀、⛔ 不是本次發出的請求，故走帳本的 observed：`close_issue` 再失敗時
+        # 共同失敗出口的 completed_writes 才列得出它們（changed 那些是本次寫的，帳本已有）。
         ledger = getattr(client, 'ledger', None)
         if ledger is not None:
-            ledger.observe(done[:1])
+            ledger.observe(prefix)
         printed.append(f'承載 issue 仍為 open：回讀是本次 plan 的前綴，續作 close_issue（#{number}）')
         client.close_issue(number)
         done.append(f'close_issue・#{number}')
