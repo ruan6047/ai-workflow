@@ -20,10 +20,13 @@ from wf.gh.client import NotFound
 from wf.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
 from wf.verbs._common import (CardShapeError, Printer, block_object, card_number, comment_blocks,
                               module_activation, parse_args, verify_source_issue)
-from wf.verbs._write import WriteResult, blocked, check_card, reconcile_projection, reject
+from wf.verbs._ops import already_posted
+from wf.verbs._write import (WriteResult, blocked, check_card, guarded, reconcile_projection,
+                             reject)
 from wf.verbs.notes import notes, read_comments
 
 NO_LOCAL_HEAD = '未能比對本機分支頭'
+IDENTICAL_RETURN = '卡上已存在等同的交回單（operation fingerprint 相同）：⛔ 不重貼'
 NO_APPENDIX = '未能取得 git 附錄'
 COMMITS, CHANGES = 'commit 清單', '改動面'
 
@@ -66,7 +69,8 @@ def _empty_text(value, path, report, markers, schema):
             _empty_text(item, f'{path}[{index}]', report, markers, schema.get('items', {}))
 
 
-def _hints(data, current, number, role, sections, schema, client, root, catalog, report, rules, context):
+def _hints(data, current, number, role, sections, schema, client, root, catalog, report, rules,
+           context, previous):
     _missing(rules, data, current, role, sections, report)
     # §3 第 1 條：角色檔取該次 `--role` 明示的 requested role 那份（與 `brief --for` 同一來源），
     # ⛔ 不與卡面 owner.role 聯集、⛔ 不回退（`--role` 必填，無缺省情形）。
@@ -93,9 +97,12 @@ def _hints(data, current, number, role, sections, schema, client, root, catalog,
         parsed = comment_blocks(comment, ('wf-return',))
         for error in parsed['errors']:
             report(f'既有交回單未能解析：{error}')
-        _, previous = parsed['blocks']['wf-return']
-        if isinstance(previous, dict) and isinstance(previous.get('findings'), list):
-            existing.update(item['finding_id'] for item in previous['findings']
+        _, block = parsed['blocks']['wf-return']
+        if not isinstance(block, dict):
+            continue
+        previous.append(block)  # S3 的重跑身分比對只取這一種區塊，⛔ 不讀散文、⛔ 不讀首行
+        if isinstance(block.get('findings'), list):
+            existing.update(item['finding_id'] for item in block['findings']
                             if isinstance(item, dict) and isinstance(item.get('finding_id'), str))
     for item in data.get('findings', []):
         if item['finding_id'] in existing:
@@ -158,6 +165,7 @@ def _appendix(base, head, git_root):
         return [f'{NO_APPENDIX}：{_one_line(exc)}']
 
 
+@guarded('review')
 def review(card, *, file, role, client, root='.', catalog=None, emit=print, context=None):
     report = Printer(emit)
     rules = rules_of(root if context is None else context.rules)
@@ -225,13 +233,17 @@ def review(card, *, file, role, client, root='.', catalog=None, emit=print, cont
     appendix = _appendix(remote_default[0], sha, git_root)
     body = '```json wf-return\n' + json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False)
     body += '\n```\n\n' + '\n'.join(appendix) + '\n'
+    previous = []
     failed = reconcile_projection(current, client=client, catalog=catalog, location=cfg['project'],
                                   project=project, number=number, report=report, context=context) or _hints(
-        data, current, number, role, sections, schema, client, root, catalog, report, rules, context)
+        data, current, number, role, sections, schema, client, root, catalog, report, rules, context, previous)
     if failed is not None:
         return failed
     for line in appendix:
         report(line)
+    if already_posted(previous, data):  # 同一操作重跑＝收斂，⛔ 不重複貼正式裁決（core/verbs.md §2）
+        report(IDENTICAL_RETURN)
+        return WriteResult(0, card=current, printed=tuple(report))
     client.post_comment(number, 'wf:return' if role == 'executor' else 'wf:verdict', body)
     return WriteResult(0, card=current, printed=tuple(report))
 

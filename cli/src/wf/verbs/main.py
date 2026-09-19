@@ -32,19 +32,27 @@ DISPATCH = {'open': open_verb, 'move': move, 'edit': edit, 'notes': notes,
             'brief': brief, 'review': review, 'snapshot': snapshot}
 VERBS = tuple(DISPATCH)
 GLOBAL_FLAGS = ('--project-root', '--rules-root', '--remote')
+# 無值的全域旗標（需求方 2026-09-16 裁定 G4：`--dry-run` 掛總入口、⛔ 不逐動詞加）。
+# 刻意與 GLOBAL_FLAGS 分開宣告：那三個是「旗標帶一個值」的形狀，共用一組會把 `--dry-run` 的
+# 下一個 token 吃掉；也讓既有釘住 GLOBAL_FLAGS 內容的測試維持原義。
+BOOLEAN_FLAGS = ('--dry-run',)
 
 
 def global_flags(argv):
-    """前綴迴圈：只消耗動詞之前的三旗標（`--x v` 或 `--x=v`，重複以後者為準）；形狀不對、或三旗標
-    出現在動詞之後（⛔ 不傳給動詞的 parse_args）＝None（呼叫端印用法、rc=2）。"""
+    """前綴迴圈：只消耗動詞之前的全域旗標（帶值的三個寫 `--x v` 或 `--x=v`，重複以後者為準；
+    `--dry-run` 不帶值）；形狀不對、或全域旗標出現在動詞之後（⛔ 不傳給動詞的 parse_args）
+    ＝None（呼叫端印用法、rc=2）。"""
     flags, rest = {}, list(argv)
     while rest and rest[0].startswith('--'):
         name, has_value, value = rest[0].partition('=')
+        if name in BOOLEAN_FLAGS and not has_value:
+            flags[name], rest = True, rest[1:]
+            continue
         if name not in GLOBAL_FLAGS or (not has_value and len(rest) < 2):
             return None
         flags[name] = value if has_value else rest[1]
         rest = rest[1 if has_value else 2:]
-    if any(token.partition('=')[0] in GLOBAL_FLAGS for token in rest[1:]):
+    if any(token.partition('=')[0] in GLOBAL_FLAGS + BOOLEAN_FLAGS for token in rest[1:]):
         return None
     return flags, rest
 
@@ -133,6 +141,8 @@ def main(argv=None, *, client=None, root=None, env=None) -> int:
     except (ContextError, BlockError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    # G4：`--dry-run` 只在此掛上 client 一顆布林，gate 住 gh/writes.py 的六原語（⛔ 不逐動詞加旗標）。
+    client.dry_run = '--dry-run' in flags
     for fact in context.permissions:  # 只印事實；逐 operation 的放行或阻擋⛔ 不在此（WF-016）
         print(f'permission・{fact.subject}・{fact.state}・{fact.source}・{fact.reason}', file=sys.stderr)
     return DISPATCH[argv[0]].run(argv[1:], client=client, root=Path(context.project.root.canonical),

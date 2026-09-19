@@ -15,17 +15,12 @@ from wf.compose.transitions import is_legal_plan
 from wf.compose.validate import validate, _equal
 from wf.context import IdentityError
 from wf.gh.target import check_item_repository, item_ref
-from wf.gh.writes import CardBodyError
+from wf.gh.writes import CardBodyError, dry_run
 from wf.verbs._common import block_object, board_items, field_values
-
-
-@dataclass(frozen=True)
-class WriteResult:
-    rc: int
-    card: dict | None = None
-    reason: str = ''
-    rejection: dict | None = None
-    printed: tuple[str, ...] = ()
+# 結果物件、五鍵收據與動詞的共同失敗出口住 `_ops.py`（WF-016 起的唯一居所）；此處 import 再匯出：
+# 既有的 `from wf.verbs._write import WriteResult` 呼叫端一字不改，六個動詞也只從這一個動詞層
+# 共用面取 `guarded`（`notes.py` 有 200 行上限）。`reject`／`blocked` 仍定義在本檔。
+from wf.verbs._ops import OperationOutcome, WriteResult, guarded, receipt  # noqa: F401
 
 
 @dataclass(frozen=True)
@@ -188,6 +183,8 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
         client.write_project_field(field)
     # 三個 post-write 出口一律帶已完成的寫入：此處卡面已寫，投影欄則以 fields 是否為空為準
     done = (*printed, *written_so_far(values if fields else {}))
+    if dry_run(client):  # 六原語一次都沒發請求 ⇒ 回讀必然不等；⛔ 不得把 dry-run 讀成 D3 回讀不等
+        return WriteResult(0, card=card, printed=printed)
     try:
         actual_card = block_object(client.issue(number)['body'], 'wf-card')
         actual = (lookup_values(fetch_project(), item_id, fetch_project)
@@ -200,8 +197,22 @@ def write_card(card_json, projection_values=None, *, client, number, catalog,
 
 
 def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
+    """`reconcile_readback` 只取「本次寫了哪些欄」的薄包裝；既有呼叫端一字不改。"""
+    return reconcile_readback(card, client=client, catalog=catalog, item_id=item_id,
+                              project_owner=project_owner, project_number=project_number)[1]
+
+
+def reconcile_readback(card, *, client, catalog, project_owner, project_number, item_id):
+    """§2 對帳，另把回讀證據拆成兩半回報：`(confirmed, changed)`。
+
+    confirmed＝板上現值已經等於卡面 JSON 的那些投影欄。刻意分出這一半：回讀證據顯示它們在
+    **先前某次執行**就已寫成，是本次 write plan 的**已完成前綴**（core/verbs.md §2 D1 分流條），
+    續作路徑的收據要列得出它們（查核序 2 finding WF-016-R1.1-002 逐字「第二次 rc=1、issue=open、
+    second_writes=[]，completed_writes=[update_card_body]」）。⛔ 不得由 confirmed 出現在收據
+    推論「本次發過這些請求」——本次真的發出去的只有 changed，也只有 changed 進帳本。"""
     project = client.project(project_owner, project_number, projection(catalog))
     values, actual, fields = projected(card, catalog, check=True), projection_values(project, item_id), {}
+    confirmed = [key for key, value in values.items() if _equal(actual.get(key), value)]
     for name in [key for key, value in values.items() if not _equal(actual.get(key), value)]:
         try:  # §2 檢查先於首次遠端寫入：不等的欄整批算完（含單選選項解析）才開始寫
             fields[name] = client.prepare_project_field(project, item_id, name, values[name])
@@ -209,7 +220,7 @@ def reconcile(card, *, client, catalog, project_owner, project_number, item_id):
             raise ValueError(f'{name} 投影欄無法解析：{exc}') from exc
     for field in fields.values():
         client.write_project_field(field)
-    return list(fields)
+    return confirmed, list(fields)
 
 
 def check_card(card, *, client, number, catalog, enabled_modules=(), printed=(), fail=None):

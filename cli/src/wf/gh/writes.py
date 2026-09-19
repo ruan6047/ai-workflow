@@ -32,6 +32,30 @@ def _verified(client):
         raise ContextNotVerified('static Context gate 未綁定或未通過：拒絕遠端寫入')
 
 
+MUTATIONS = ('add_to_project', 'close_issue', 'post_comment',
+             'remove_from_project', 'update_card_body', 'write_project_field')
+DRY_RUN_ITEM = '(dry-run)'
+
+
+def dry_run(client):
+    """`--dry-run` gate 的唯一判定（需求方 2026-09-16 裁定 G4 逐字「G4 取全域旗標：--dry-run 掛
+    main.py 全域、gate 落在 gh/writes.py 六原語，⛔ 不逐動詞加旗標」）。
+    只讀 client 上由 `verbs/main.py` 設的那一顆布林：⛔ 不讀旗標字面、⛔ 不逐動詞判、
+    ⛔ 不讀環境變數。未設＝False ⇒ 既有呼叫端行為不變。"""
+    return bool(getattr(client, 'dry_run', False))
+
+
+def dry_run_item(client):
+    """`--dry-run` 下 add_to_project 的等形回傳。刻意回等形而非 None：`open` 取 item id 之後、
+    首次 write_project_field 之前要做 content.repository stable ID 比對（core/verbs.md §2
+    「操作級身分檢查各自先於其 mutation」），⛔ 不得因 dry-run 而少掉那個檢查。
+    id 逐字為 `(dry-run)`：⛔ 不得被讀成真的 Project item id。"""
+    repository = client.context.repository
+    return {'data': {'addProjectV2ItemById': {'item': {'id': DRY_RUN_ITEM, 'content': {
+        '__typename': 'Issue', 'repository': {'id': repository.stable_id,
+                                              'nameWithOwner': repository.name_with_owner}}}}}}
+
+
 LABELS = ('wf-card', 'wf-intake', 'wf-return', 'wf-ruling', 'wf-note')
 MULTI_LABELS = ('wf-note',)  # 複數區塊的白名單；其餘標籤機械擋在 block_spans 內，⛔ 不靠呼叫端自律
 
@@ -118,6 +142,8 @@ class WriteMixin:
 
     def update_card_body(self, number, card_json, create=False):
         _verified(self)
+        if dry_run(self):
+            return None
         body = self.issue(number)['body'] or ''
         span = block_span(body, 'wf-card', required=not create)
         newline = '\r\n' if '\r\n' in body else '\n'
@@ -133,6 +159,8 @@ class WriteMixin:
 
     def post_comment(self, number, first_line, body):
         _verified(self)
+        if dry_run(self):
+            return None
         return self._request(f'repos/{self.repo}/issues/{number}/comments', method='POST',
                              payload={'body': first_line + '\n' + body})
 
@@ -173,6 +201,8 @@ class WriteMixin:
 
     def write_project_field(self, prepared):
         _verified(self)
+        if dry_run(self):
+            return None
         return self._mutation(*prepared, 'projectV2Item{id}')
 
     def _mutation(self, operation, input_type, inputs, selection):
@@ -183,16 +213,22 @@ class WriteMixin:
     def add_to_project(self, project_id, issue_id):
         """回傳的 item 帶 content.repository{id}：open 在首次 write_project_field 前比對 stable ID 用。"""
         _verified(self)
+        if dry_run(self):
+            return dry_run_item(self)
         return self._mutation('addProjectV2ItemById', 'AddProjectV2ItemByIdInput',
                               {'projectId': project_id, 'contentId': issue_id},
                               'item{id content{__typename ... on Issue{repository{id nameWithOwner}}}}')
 
     def remove_from_project(self, project_id, item_id):
         _verified(self)
+        if dry_run(self):
+            return None
         return self._mutation('deleteProjectV2Item', 'DeleteProjectV2ItemInput',
                               {'projectId': project_id, 'itemId': item_id}, 'deletedItemId')
 
     def close_issue(self, number):
         _verified(self)
+        if dry_run(self):
+            return None
         return self._request(f'repos/{self.repo}/issues/{number}', method='PATCH',
                              payload={'state': 'closed'})

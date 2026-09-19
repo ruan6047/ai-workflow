@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from .fakes import FakeGhClient
+from .fakes import FakeGhClient, dry_run  # dry_run 委派到 wf.gh.writes.dry_run；A8 兩版皆可載入（見 fakes.py）
 from wf.compose.blocks import load_blocks, projection
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
@@ -81,6 +81,8 @@ class MemoryClient(FakeGhClient):
 
     def add_to_project(self, project_id, issue_id):
         result = super().add_to_project(project_id, issue_id)
+        if dry_run(self):
+            return result  # --dry-run：⛔ 不把 item 加進替身的板，否則測到的是替身而不是 gate
         number, = (n for n, row in self.rows.items() if row['node_id'] == issue_id)
         self.board['items'].append(item(number) | {'id': 'ITEM'})
         self.hidden = 'ITEM'
@@ -105,6 +107,8 @@ class MemoryClient(FakeGhClient):
         return deepcopy(self.rows[number])
 
     def write_project_field(self, prepared):
+        if dry_run(self):
+            return None
         self.calls.append(('write_project_field', deepcopy(prepared)))
         operation, _, inputs = prepared
         row, = (i for i in self.board['items'] if i['id'] == inputs['itemId'])
@@ -190,8 +194,12 @@ def test_restore_preserves_every_key_except_initial(setup):
     assert not any(name == 'comments' for name, _ in client.calls)
 
 
-@pytest.mark.parametrize('body', [None, block('wf-card', expected_card())])
-def test_d2_already_on_board(setup, body):
+@pytest.mark.parametrize('stage,state', [('規劃', '待辦'), ('執行', '進行中'), ('需求', '進行中')])
+def test_d2_when_the_card_face_is_not_this_write(setup, stage, state):
+    """WF-016：在板上時改以卡面 `wf-card` 回讀分流（core/verbs.md §2）。卡面已被他人推進到
+    別的節點＝維持基線的 D2 編號與逐字理由「已在板上」；零遠端寫入。
+    「板上而卡面無 wf-card」與「板上而卡面全等」兩種回讀由 test_resume_readback.py 釘住。"""
+    body = block('wf-card', expected_card(stage=stage, state=state))
     client, kwargs = setup(body=body, items=[item(10)])
     assert_reject(client, open_issue(10, **kwargs), 'D2')
 

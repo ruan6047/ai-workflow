@@ -5,7 +5,7 @@ operation-level precondition（core/verbs.md §2）：撤銷卡復板時核對 s
 核對清單項所屬 repository 與 add_to_project 回傳 item 的 repository stable ID（在首次 write_project_field 之前）。
 """
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 
 from wf.compose.blocks import load_blocks, projection
@@ -15,9 +15,10 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.context import IdentityError, rules_of
 from wf.gh.target import check_item_repository, check_target_issue, item_ref, target_issue
-from wf.verbs._common import (block_object, board_items, chain_depth, missing_fields, parse_args,
-                              prevalidate_card, repo_cards, verify_source_issue)
-from wf.verbs._write import WriteResult, prepare_card, reject, write_card
+from wf.verbs._common import (block_object, board_items, chain_depth, field_values, missing_fields,
+                              parse_args, prevalidate_card, repo_cards, verify_source_issue)
+from wf.verbs._ops import OperationOutcome, board_decision, receipt
+from wf.verbs._write import WriteResult, guarded, prepare_card, reject, write_card
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ def _initial_card(schema):
     return card
 
 
+@guarded('open')
 def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None, emit=print,
                context=None):
     """verbs/main.py 可直接呼叫；所有 GitHub 操作經注入的 client，印項亦保留於結果。"""
@@ -48,6 +50,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
             emit(line)
         if result.rc:
             emit(result.reason)
+        if isinstance(result, OperationOutcome):  # 收據型結果原樣帶出，⛔ 不把五鍵降級掉
+            return replace(result, printed=lines)
         return OpenResult(result.rc, result.card, result.reason, result.rejection,
                           lines, tuple(unverified))
 
@@ -73,9 +77,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         unverified.append({'item': 'D2 在板判定', 'kind': 'deferred',
                            'reason': '無 Project 設定，依 PM 預設視為不在板'})
     # 封存項仍在板上（core/verbs.md §2 D2：封存⛔ 不是撤銷卡），故 include_archived。
-    on_board = set(board_items(board, client.repo, include_archived=True))
-    if number in on_board:
-        return refuse('D2', '已在板上')
+    items = board_items(board, client.repo, include_archived=True)
+    on_board = set(items)
     source = client.issue(number)
     try:
         current = block_object(source['body'], 'wf-card', required=False)
@@ -149,8 +152,20 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         return hard_block(exc)
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
-    item_id = None
-    if board is not None:
+    # §2 D2 的回讀分流（WF-016）：在板上時先比回讀證據與本次 write plan，⛔ 不再一律拒收。
+    # 回讀證據面含五個投影欄（`values`＝本次要寫進去的那批、`field_values` ＝板上現值）：
+    # 只比卡面會把「卡面已寫成、投影欄還沒寫」誤判成收斂（查核序 1 finding WF-016-R1.1-001）。
+    on_item = items.get(number)
+    decision = board_decision(card, current, on_item, values if board is not None else None,
+                              field_values(on_item) if on_item is not None else None)
+    if decision.verdict == 'refuse':
+        return refuse('D2', '已在板上')
+    if decision.line:
+        printed.append(decision.line)
+    if decision.verdict == 'converge':
+        return finish(receipt(WriteResult(0, card=current), decision.completed))
+    item_id = decision.item_id  # resume 時沿用板上既有 item，⛔ 不重複 add_to_project
+    if board is not None and item_id is None:
         added = client.add_to_project(board['id'], source['node_id'])['data']['addProjectV2ItemById']['item']
         item_id = added['id']
         if context is not None:  # A8：取得 item_id 之後、首次 write_project_field 之前；item 取自 mutation 回傳
@@ -162,6 +177,8 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
                         project_owner=location['owner'] if location else None,
                         project_number=location['number'] if location else None,
                         item_id=item_id, enabled_modules=enabled, create=True)
+    if decision.completed and not result.rc:  # 續作：上一次已完成的 add_to_project 要出現在收據
+        result = receipt(result, decision.completed)
     if result.rc == 0 and current is not None:
         # §1 open 寫格：撤銷卡復板沿用 card_id／iteration 並寫轉移記錄留言（形狀同 move）。
         client.post_comment(number, 'wf:move', f"清單 → {machine['initial']}")

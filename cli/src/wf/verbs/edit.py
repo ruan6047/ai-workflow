@@ -20,8 +20,9 @@ from wf.gh.target import check_item_repository, item_ref
 from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (Printer, block_object, board_cards, board_items, card_number,
                               chain_depth, comment_blocks, parse_args, verify_source_issue)
-from wf.verbs._write import (WriteResult, blocked, prepare_card, projection_values, reconcile_projection,
-                             reject, write_card)
+from wf.verbs._ops import EQUAL_SILENT
+from wf.verbs._write import (WriteResult, blocked, guarded, prepare_card, projection_values,
+                             reconcile_projection, reject, write_card)
 
 SPEC_KEYS = ('acceptance', 'verification', 'non_scope', 'resources')
 
@@ -55,6 +56,7 @@ def _first_failure(failures, items):
     return min(failures, key=rank)[1]
 
 
+@guarded('edit')
 def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
          project_owner=None, project_number=None, emit=print, context=None):
     """card 為卡 ID 或 issue 號；assignments 為 `<欄>=<JSON>` 字串序列（⛔ 不收裸 str）；
@@ -191,6 +193,7 @@ def edit(card, assignments, *, client, catalog, ruling=None, enabled_modules=(),
     if failed is not None:  # 對帳自己的欄算不出＝已拒收（舊卡欄由 reconcile 先算後寫）
         return replace(failed, printed=tuple(report))
     if not changed:  # 全項等值＝沉默：⛔ 不寫卡面、⛔ 不貼留言
+        report(EQUAL_SILENT)  # 裁定 G8 甲：本出口無條件印（理由與負控住 _ops.EQUAL_SILENT）
         return WriteResult(0, card=current, printed=tuple(report))
     if set(changed) & set(SPEC_KEYS):  # 規格欄整次提交只 +1，不論改了幾個規格欄
         updated['spec_version'] += 1

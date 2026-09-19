@@ -21,7 +21,9 @@ from wf.gh.target import check_item_repository, item_ref
 from wf.gh.writes import InvalidCommentURL
 from wf.verbs._common import (block_object, board_facts, board_items, card_number, comment_blocks,
                               missing_fields, parse_args, prevalidate_card, verify_source_issue)
-from wf.verbs._write import WriteResult, prepare_card, projection_values, reconcile, reject, write_card
+from wf.verbs._ops import move_resume
+from wf.verbs._write import (WriteResult, guarded, prepare_card, projection_values, reconcile,
+                             reject, write_card)
 
 
 def _ruling_prints(comment, current, number, expected, *, client, catalog, rules):
@@ -90,6 +92,7 @@ def _terminal_prints(card, client, default):
     return printed
 
 
+@guarded('move')
 def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=None,
          ruling=None, emit=print, context=None):
     """卡 ID 或 issue 號；move_modules 接收一般 stage/state 節點，阻塞展開僅供 D1。"""
@@ -165,8 +168,11 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
         return refuse('D3', str(exc))
     if edges.plan_unfilled:
         printed.append('stage_plan 空（合成表只有需求階段）')
-    if not is_legal_move(origin, target, edges):
-        return refuse('D1', f'{from_node} → {to_node} 不在合成表內')
+    resumed = move_resume(current, from_node, to_node, is_legal_move(origin, target, edges), printed,  # §2 D1 回讀分流
+                          client=client, number=number, catalog=catalog, location=location,
+                          item_id=item_id, terminal=target in edges.terminal_nodes)
+    if resumed is not None:
+        return finish(resumed)
     if source_sha is not None and not client.commit_exists(source_sha):
         return refuse('D4', f'source_sha 不在遠端：{source_sha}')
     comment = None
