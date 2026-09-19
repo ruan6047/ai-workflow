@@ -73,6 +73,7 @@ def synthetic(tmp_path, name='synth'):
 def test_every_adopt_step_has_a_named_home(tmp_path):
     rules = FilesystemRulesSource(ROOT, Provenance('cli', '--rules-root'))
     homes = step_homes(rules)
+    assert len(STEPS) == 5, STEPS                     # 基數恰 5：空集合或殘缺集合⛔ 不滿足本條
     for step in STEPS:
         assert homes.get(step), step
         assert len(homes[step]) == 1, (step, homes[step])
@@ -82,7 +83,7 @@ def test_every_adopt_step_has_a_named_home(tmp_path):
     assert domain == set(STEPS), sorted(domain ^ set(STEPS))
     print('DOMAIN verbs.md', sorted(domain), 'adopt.md', sorted(homes), 'constant', sorted(STEPS))
     numbers = [heading.split(' ')[0] for heading, _ in sections(rules.read_text(ADOPT_HOME))]
-    assert numbers == ['1', '2', '3', '4', '5'], numbers  # 五個固定節齊備且順序不可換
+    assert numbers == ['0', '1', '2', '3', '4', '5'], numbers  # 六個固定節齊備且順序不可換
     lines = len(rules.read_text(ADOPT_HOME).splitlines())
     assert lines <= core_file_limit(rules), (lines, core_file_limit(rules))
     print('ADOPT_MD sections', numbers, 'lines', lines, 'limit', core_file_limit(rules))
@@ -135,3 +136,101 @@ def test_the_areas_comparison_is_effective(tmp_path):
     same = json.loads(config.read_text(encoding='utf-8'))['areas']
     assert same == seed, (same, seed)  # 判準在這棵樹上不成立 ⇒ 判準有分辨力
     print('NEGATIVE_CONTROL areas_equal', same)
+
+
+def tables(text):
+    """(表頭欄名, 逐列欄值) 依出現序；⛔ 不解析非表格行、⛔ 不寫行號（F-共用-16）。"""
+    found, rows = [], None
+    for line in text.splitlines():
+        if not line.strip().startswith('|'):
+            rows = None
+            continue
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if rows is None:
+            rows = []
+            found.append((tuple(cells), rows))
+        elif set(''.join(cells)) - set('-: '):
+            rows.append(cells)
+    return found
+
+
+def table_named(text, *headers):
+    """取表頭欄名逐字等於 `headers` 的那一個表；⛔ 以欄名取、⛔ 不以出現位置取。"""
+    matched = [rows for head, rows in tables(text) if head == headers]
+    assert len(matched) == 1, (headers, [head for head, _ in tables(text)])
+    return matched[0]
+
+
+def repo_rules():
+    return FilesystemRulesSource(ROOT, Provenance('cli', '--rules-root'))
+
+
+def adopt_section(rules, number):
+    """`core/adopt.md` 的第 number 節 (標題, 內文)；`rules` 給 None 即本 repo 的規則本體。"""
+    source = repo_rules() if rules is None else rules_of(rules)
+    found = [(heading, body) for heading, body in sections(source.read_text(ADOPT_HOME))
+             if heading.split(' ')[0] == number]
+    assert len(found) == 1, (number, found)
+    return found[0]
+
+
+SOURCE_ID = re.compile(r'`([a-z]+\.[a-z_]+)`')
+RECONCILIATION_COLUMNS = ('列名', '左側（取源 ID）', '右側（取源 ID）', '粒度')
+SMOKE_COLUMNS = ('項名', '取源 ID')
+DEFECT_COLUMNS = ('缺陷代號', '⛔ 不合法的形狀')
+
+
+def reconciliation_sources(rules=None):
+    """`core/adopt.md` §1 對帳表的 (列名 → 取源 ID 集合)；⛔ 不重打。"""
+    _, body = adopt_section(rules, '1')
+    return {row[0].strip('`'): tuple(SOURCE_ID.findall(row[1]) + SOURCE_ID.findall(row[2]))
+            for row in table_named(body, *RECONCILIATION_COLUMNS)}
+
+
+def smoke_sources(rules=None):
+    """`core/adopt.md` §3 smoke 取源表的 (項名 → 取源 ID 集合)；⛔ 不重打。"""
+    _, body = adopt_section(rules, '3')
+    return {row[0].strip('`'): tuple(SOURCE_ID.findall(row[1]))
+            for row in table_named(body, *SMOKE_COLUMNS)}
+
+
+def manifest_defects(rules=None):
+    """`core/adopt.md` §2 結構宣告表的缺陷代號，依出現序。"""
+    _, body = adopt_section(rules, '2')
+    return tuple(row[0].strip('`') for row in table_named(body, *DEFECT_COLUMNS))
+
+
+def consumers_of(mapping, source):
+    return tuple(name for name, ids in mapping.items() if source in ids)
+
+
+SYNTHETIC_EXCLUSIONS = ('本 repo 工作樹', '`.git/`', '`archive/`')
+SYNTHETIC_INDEPENDENCE = '⛔ 不依賴本 repo 歷史存在'
+
+
+def test_the_synthetic_tree_definition_is_a_named_home():
+    """A1 後半：`core/adopt.md` §0 是「合成 consumer 樹」的具名居所，逐字含三個排除項與獨立性條文，
+    且其餘各條引用的掃描面字串與該段的段名逐字一致。"""
+    rules = FilesystemRulesSource(ROOT, Provenance('cli', '--rules-root'))
+    heading, body = adopt_section(rules, '0')
+    name = heading.split('·')[1].strip()
+    assert body.strip(), heading
+    for token in SYNTHETIC_EXCLUSIONS:
+        assert token in body, (token, body)
+    assert SYNTHETIC_INDEPENDENCE in body, body
+    quoted = re.search(r'掃描面＝(.+?)（`core/adopt\.md` §0）', body)
+    assert quoted and quoted[1] == name, (name, quoted and quoted[1])
+    print('SYNTHETIC_TREE_HOME', f'{ADOPT_HOME}#{heading}', 'name', name,
+          'exclusions', list(SYNTHETIC_EXCLUSIONS), 'independence', SYNTHETIC_INDEPENDENCE)
+
+
+def test_the_synthetic_tree_definition_check_is_effective(tmp_path):
+    """負控（必須會響）：合成副本內刪掉 §0 的任一排除項或獨立性條文後，同一個判準必須轉紅。"""
+    for victim in (*SYNTHETIC_EXCLUSIONS, SYNTHETIC_INDEPENDENCE):
+        rules = synthetic(tmp_path, f'zero-{abs(hash(victim))}')
+        path = Path(rules.identity) / ADOPT_HOME
+        kept = [line for line in path.read_text(encoding='utf-8').splitlines() if victim not in line]
+        path.write_text('\n'.join(kept) + '\n', encoding='utf-8')
+        _, body = adopt_section(rules, '0')
+        assert victim not in body, victim
+        print('NEGATIVE_CONTROL synthetic_definition dropped', victim)

@@ -20,7 +20,8 @@ from wf.verbs import _adopt
 from .test_compose_schema import ROOT
 from .test_context_roots import RULE_DIRS, git, git_env
 
-COPIED = ('cli/pyproject.toml', 'ADOPTION.md', '.github/scripts/trailer_check.py')
+COPIED = ('cli/pyproject.toml', 'ADOPTION.md', '.github/scripts/trailer_check.py',
+          _adopt.FRAGMENT_SOURCE)  # 片段來源檔：`core/adopt.md` §2 片段表，⛔ 不重打路徑
 RULES_PATH = 'vendor/wf'
 
 
@@ -208,3 +209,62 @@ def test_the_three_branches_of_rules_root_location(tmp_path, env):
     for reason in (_adopt.OUTSIDE_PROJECT, _adopt.RULES_IS_PROJECT, _adopt.NOT_FILESYSTEM):
         assert 'Error' not in reason and 'Traceback' not in reason, reason
     print('BRANCHES rules.path/--rules-root/outside/project_root/not-filesystem all resolved')
+
+
+# ── A18：`pin` ⛔ 不與 gitlink SHA 直接比相等，且⛔ 不做 SHA→版本值映射 ─────────────
+import ast  # noqa: E402（本段的判準只用到標準庫 AST；放在此處與上面的 gitlink 形狀分段）
+
+from .test_gh_scope import imports  # noqa: E402（import 集合的解析只有一個居所，⛔ 不重打）
+
+ADOPT_SOURCES = 'cli/src/wf/verbs/_adopt*.py'
+SHA_SOURCES = ('index', 'head', 'checkout', 'source_commit', 'gitlink', 'sha')
+OBJECT_DB = ('cat-file', 'git show', 'rev-parse', 'ls-tree')
+
+
+def _mentions(node, needles):
+    """該運算式的任一識別名／字面是否命中 needles（下界式判定：命中即記為一個站點）。"""
+    text = ast.dump(node)
+    return any(f"'{needle}'" in text or f'"{needle}"' in text for needle in needles)
+
+
+def pin_sha_comparison_sites(text):
+    """把 `pin` 與 gitlink SHA 取源（或 40 碼 hex 字面）作 `==`／`!=` 的站點。"""
+    sites = []
+    for node in ast.walk(ast.parse(text)):
+        if not isinstance(node, ast.Compare):
+            continue
+        if not any(isinstance(op, (ast.Eq, ast.NotEq)) for op in node.ops):
+            continue
+        sides = [node.left, *node.comparators]
+        hexes = [s for s in sides if isinstance(s, ast.Constant)
+                 and isinstance(s.value, str) and len(s.value) == 40
+                 and all(c in '0123456789abcdef' for c in s.value)]
+        if any(_mentions(s, ('pin',)) for s in sides) and (
+                hexes or any(_mentions(s, SHA_SOURCES) for s in sides)):
+            sites.append(ast.dump(node))
+    return sites
+
+
+def test_the_pin_is_never_compared_against_a_gitlink_sha():
+    """掃描面＝`cli/src/wf/verbs/_adopt*.py` 的呼叫圖；明示排除測試替身。"""
+    sources = sorted(ROOT.glob(ADOPT_SOURCES))
+    assert len(sources) == 3, [p.name for p in sources]
+    for path in sources:
+        text = path.read_text(encoding='utf-8')
+        sites = pin_sha_comparison_sites(text)
+        assert sites == [], (path.name, sites)
+        for needle in OBJECT_DB:       # ⛔ 無為了還原版本字串而讀子模組物件庫的站點
+            assert needle not in text, (path.name, needle)
+        assert 'subprocess' not in imports(text), path.name   # ⛔ 不自開子程序
+        print('A18 clean', path.relative_to(ROOT).as_posix(), len(text.splitlines()), 'lines')
+
+
+def test_the_pin_sha_scanner_is_effective():
+    """負控（必須會響）：注入一處 `pin` 與 40 碼 SHA 的相等比較後，掃描器必須命中。"""
+    injected = ("def probe(entry, index):\n"
+                "    if entry['pin'] == '" + '0' * 40 + "':\n"
+                "        return True\n"
+                "    return entry['pin'] != index\n")
+    sites = pin_sha_comparison_sites(injected)
+    assert len(sites) == 2, sites
+    print('NEGATIVE_CONTROL pin_sha_sites', len(sites))

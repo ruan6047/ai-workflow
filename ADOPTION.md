@@ -5,9 +5,9 @@
 - 建 ruleset：main 禁刪、禁改史、`required_linear_history`，bypass 清空（`core/platform.md` P1）。
 - required status checks 至少 `secret-scan`、`commit-trailer`（P4、P5）；有可達性檢查的專案加 `reachability`。
 - 合併方式只留一種按鈕，值同時寫進 `.wf/modules.json` 的 `merge_method`（P3）。
-- 複製 `secret-scan` 與 `commit-trailer` 兩個 job（片段粒度，⛔ 不搬家）；`.github/scripts/trailer_check.py` 由 `wf snapshot --adopt install` 落地並登記進 `.wf/adopt/manifest.json`（所有權住該 manifest，`core/adopt.md` §2）。`reachability` 檢查的是本 repo 的規則檔，採用專案⛔ 不複製。
-- rules source 以 submodule 掛載時，複製的 job 其 `actions/checkout` 須帶 `submodules: true`，否則 runner 上取不到 rules root。
-- 本框架唯一支援的 Python 版本是 3.14；複製上一條的 job 時須一併帶走該 job 的 `actions/setup-python` 步驟（`python-version: "3.14"`），否則下游會跑到 runner 內建的未釘選 `python3`。
+- `secret-scan` 與 `commit-trailer` 兩個 job（片段粒度，⛔ 不搬家）與 `.github/scripts/trailer_check.py` 都由 `wf snapshot --adopt install` 落地並登記進 `.wf/adopt/manifest.json`（承載檔、片段來源檔與所有權住 `core/adopt.md` §2 的片段表與結構宣告，本檔⛔ 不重列）。`reachability` 檢查的是本 repo 的規則檔，採用專案⛔ 不複製。
+- rules source 以 submodule 掛載時，落地的 job 其 `actions/checkout` 須帶 `submodules: true`，否則 runner 上取不到 rules root；該行正是片段來源檔與本 repo `ci.yml` 同名 job 之間**唯一**允許的差異（`core/adopt.md` §2）。
+- 本框架唯一支援的 Python 版本是 3.14；帶 Python 消費點的片段一併帶走該 job 的 `actions/setup-python` 步驟（`python-version: "3.14"`），否則下游會跑到 runner 內建的未釘選 `python3`；哪一個片段帶它住 `core/adopt.md` §2 片段表的第四欄。
 - commit trailer 鍵集合與必填時機依 `roles/conduct-common.md` §2。
 
 ## 2 · `.wf/modules.json` 種子

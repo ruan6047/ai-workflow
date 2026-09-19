@@ -1,12 +1,13 @@
-"""WF-015 A3：`snapshot --adopt bootstrap` 在同一棵合成樹上連跑兩次，樹的路徑集合與每個檔的內容
-摘要逐一相等。消費 core/adopt.md §3。
+"""WF-015 A19 與 A20：`snapshot --adopt bootstrap` 的冪等性，與種子 `rules` 鍵帶著當次解析到的
+rules root。消費 core/adopt.md §3。
 
 口徑＝路徑集合＋內容 SHA-256，⛔ 不比對 mtime；摘要函式與 manifest 的摘要同一居所（`_adopt.digest_of`，
-`import` 使用、⛔ 不重打）。合成樹在 `tmp_path` 內（F-規劃-09 逐字「測試⛔ 不依賴 repo 歷史存在；判準
-在合成樹上驗」），明示排除本 repo 工作樹。
+`import` 使用、⛔ 不重打）。合成樹在 `tmp_path` 內（`core/adopt.md` §0 逐字「⛔ 不依賴本 repo 歷史存在」），明示排除本 repo
+工作樹與 `.git/`。
 """
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -66,16 +67,23 @@ def test_bootstrap_creates_the_seed_and_the_stage_skeleton_when_absent(tmp_path,
     seed = json.loads((rules / 'ADOPTION.md').read_text(encoding='utf-8')
                       .split('```json\n')[1].split('```')[0])
     assert json.loads((bare / '.wf/modules.json').read_text(encoding='utf-8')) == seed
-    stages = _adopt._stages(_adopt.rules_of(rules))
+    stages = _adopt.stages_of(_adopt.rules_of(rules))
     assert stages and all((bare / f'.wf/stages/{s}.md').is_file() for s in stages), stages
     rc2, _ = bootstrap(bare, capsys, rules_root=rules)
     assert rc2 == 0 and digests(bare) == first
     print('SEEDED', sorted(first), 'stages', list(stages))
 
 
+def idempotent(first, second):
+    """判準本體（兩個正控與兩步負控共用）：路徑集合相等且每個檔的內容摘要相等。"""
+    return set(first) == set(second) and all(first[p] == second[p] for p in first)
+
+
 def test_the_idempotence_check_is_effective(tmp_path, env, capsys, monkeypatch):
-    """負控（必須會響）：讓 bootstrap 在產物內寫入一個每次都不同的欄位後，同一個判準必須轉紅；
-    不轉即判「兩次都沒真的跑」或摘要恆等，測具無效（F-共用-06）。"""
+    """負控兩步、順序固定、⛔ 不得省略第①步（`core/adopt.md` §3 的冪等口徑只有摘要一個維度）：
+    ① 造一個「路徑集合不變、第二次某檔內容確實不同」的樣本，判準必須判為⛔ 非冪等（偵測能力存在）；
+    ② 再把摘要函式換成恆回同一常數，同一個樣本必須**改為**被判成冪等（偵測能力消失）。
+    ⛔ 不得用「換成常數摘要後測試轉紅」當負控——常數摘要會讓⛔ 非冪等樣本被判成冪等、測試轉綠。"""
     consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='idem-neg')
     counter = iter(range(1000))
     monkeypatch.setattr(_adopt, '_stage_stub', lambda stage: f'# {stage} 第 {next(counter)} 次\n')
@@ -84,6 +92,47 @@ def test_the_idempotence_check_is_effective(tmp_path, env, capsys, monkeypatch):
     (consumer / '.wf/stages').rename(consumer / '.wf/stages-gone')  # 讓第二次重新建立
     bootstrap(consumer, capsys)
     second = digests(consumer)
-    differing = {p for p in set(first) & set(second) if first[p] != second[p]}
-    assert differing, (sorted(first), sorted(second))
-    print('NEGATIVE_CONTROL timestamped_field differing', sorted(differing))
+    shared = {p: (first[p], second[p]) for p in set(first) & set(second)}
+    sample_first = {p: v[0] for p, v in shared.items()}
+    sample_second = {p: v[1] for p, v in shared.items()}
+    assert set(sample_first) == set(sample_second)                  # 路徑集合不變的樣本
+    assert not idempotent(sample_first, sample_second), sorted(sample_first)   # 第①步
+    print('NEGATIVE_CONTROL step1 detects content drift',
+          sorted(p for p in sample_first if sample_first[p] != sample_second[p]))
+    monkeypatch.setattr(_adopt, 'digest_of', lambda data: 'sha256:constant')
+    blind_first = {p: _adopt.digest_of(b'') for p in sample_first}
+    blind_second = {p: _adopt.digest_of(b'') for p in sample_second}
+    assert idempotent(blind_first, blind_second), (blind_first, blind_second)  # 第②步
+    print('NEGATIVE_CONTROL step2 constant digest hides the drift', _adopt.digest_of(b''))
+
+
+def test_the_seed_carries_the_rules_root_it_was_resolved_with(tmp_path, env, capsys):
+    """A20：bootstrap 寫進種子的 `rules` 值，使同一棵樹上⛔ 不帶任何全域旗標的 preflight 解析到
+    與 bootstrap 當次逐字相同的 rules root。"""
+    consumer, rules, _, _, _ = adopted_consumer(tmp_path, env, name='a20')
+    (consumer / _adopt.CONFIG_PATH).unlink()                        # 讓 bootstrap 自己建種子
+    rc, out = bootstrap(consumer, capsys, rules_root=rules)
+    assert rc == 0, out
+    seed = json.loads((consumer / _adopt.CONFIG_PATH).read_text(encoding='utf-8'))
+    assert seed['rules'] == {'path': RULES_PATH}, seed
+    rc = main(['--project-root', str(consumer), 'snapshot', '--adopt', 'preflight'],
+              client=FakeGhClient(), root=None, env={})
+    printed = capsys.readouterr().out
+    assert rc == 0, printed
+    roots, = [line for line in printed.splitlines()
+              if line.startswith(f'{_adopt.PREFIX}・{_adopt.STATIC_IDENTITY_ITEMS[0]}・')]
+    assert str(Path(rules).resolve()) in roots, (roots, rules)
+    assert roots.split('・')[2] == 'ok', roots
+    print('A20 seed_rules', seed['rules'], 'preflight_roots', roots)
+
+
+def test_the_seed_rules_key_is_null_when_the_rules_are_the_project_root(tmp_path, env, capsys):
+    """負控（必須會響）：規則就在 project_root 的樹上，種子的 `rules` 須仍為 `null`。"""
+    _, rules, _, _, _ = adopted_consumer(tmp_path, env, name='a20-neg-src')
+    here = tmp_path / 'a20-here'
+    shutil.copytree(rules, here)
+    rc, out = bootstrap(here, capsys)
+    assert rc == 0, out
+    seed = json.loads((here / _adopt.CONFIG_PATH).read_text(encoding='utf-8'))
+    assert seed['rules'] is None, seed
+    print('NEGATIVE_CONTROL rules_at_project_root seed_rules', seed['rules'])

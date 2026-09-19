@@ -212,11 +212,27 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print, 
     return SnapshotResult(0, data, tuple(report), paths)
 
 
-def run(argv, *, client, root='.', catalog=None, context=None):
-    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。
+def parse(argv):
+    """本動詞參數的唯一解析處（`run` 與 `run_adopt` 共用）。
     `--adopt` 的值域由 `_adopt.STEPS` 提供（`import` 使用、⛔ 不重打）：argparse 的 `choices` 把值域外的值
     擋在解析層（rc=2、用法行），⛔ 不新增 D 類——`core/verbs.md` §1 `snapshot` 列硬擋欄逐字為「—」。"""
-    args = parse_args('wf snapshot', argv, ('--out', {}), ('--adopt', {'choices': _adopt.STEPS}))
+    return parse_args('wf snapshot', argv, ('--out', {}), ('--adopt', {'choices': _adopt.STEPS}))
+
+
+def run_adopt(argv, scope):
+    """`verbs/main.py` 在本次呼叫就是 `snapshot --adopt <step>` 時的入口；`scope`＝bootstrap 期已解析到的
+    root／rules／config 與身分兩項。
+
+    刻意另開一個入口而⛔ 不在 `run` 加參數：`cli/tests/test_main_wiring.py` 對七個動詞 `run` 的參數序列
+    有逐字斷言、而該檔⛔ 不在本卡 `resources` 內；身分兩項由總入口傳入而⛔ 不在此自 `Context` 取屬性，
+    WF-015 對 `context.repository` 的消費面零改動（A24 的連帶條款）。
+    ⛔ 不得推出「`run` 走⛔ 不到 `--adopt`」——直呼 `run` 時仍以 project_root 解析 rules 後跑同一個 step。"""
+    return _adopt.run_step(parse(argv).adopt, **scope)
+
+
+def run(argv, *, client, root='.', catalog=None, context=None):
+    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
+    args = parse(argv)
     if args.adopt is not None:
-        return _adopt.run_step(args.adopt, root=root, context=context)
+        return _adopt.run_step(args.adopt, root=root)
     return snapshot(client=client, root=root, catalog=catalog, out=args.out, context=context).rc
