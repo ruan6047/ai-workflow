@@ -15,8 +15,8 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
 from wf.context import IdentityError, rules_of
 from wf.gh.target import check_item_repository, check_target_issue, item_ref, target_issue
-from wf.verbs._common import (block_object, board_items, chain_depth, missing_fields, parse_args,
-                              prevalidate_card, repo_cards, verify_source_issue)
+from wf.verbs._common import (block_object, board_items, chain_depth, field_values, missing_fields,
+                              parse_args, prevalidate_card, repo_cards, verify_source_issue)
 from wf.verbs._ops import OperationOutcome, board_decision, receipt
 from wf.verbs._write import WriteResult, guarded, prepare_card, reject, write_card
 
@@ -152,8 +152,12 @@ def open_issue(number, *, client, root='.', catalog=None, parent=None, area=None
         return hard_block(exc)
     except (ValueError, TypeError, KeyError) as exc:
         return refuse('D3', str(exc))
-    # §2 D2 的回讀分流（WF-016）：在板上時先比卡面回讀與本次 write plan，⛔ 不再一律拒收。
-    decision = board_decision(card, current, items.get(number))
+    # §2 D2 的回讀分流（WF-016）：在板上時先比回讀證據與本次 write plan，⛔ 不再一律拒收。
+    # 回讀證據面含五個投影欄（`values`＝本次要寫進去的那批、`field_values` ＝板上現值）：
+    # 只比卡面會把「卡面已寫成、投影欄還沒寫」誤判成收斂（查核序 1 finding WF-016-R1.1-001）。
+    on_item = items.get(number)
+    decision = board_decision(card, current, on_item, values if board is not None else None,
+                              field_values(on_item) if on_item is not None else None)
     if decision.verdict == 'refuse':
         return refuse('D2', '已在板上')
     if decision.line:

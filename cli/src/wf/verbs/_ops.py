@@ -228,17 +228,24 @@ class BoardDecision:
     line: str = ''
 
 
-def board_decision(plan_card, current, item):
+def board_decision(plan_card, current, item, planned_values=None, actual_values=None):
     """core/verbs.md §2 D2 的回讀分流（WF-016）。純計算：⛔ 不碰 client、⛔ 不寫任何遠端。
 
-    回讀證據只取卡面 `wf-card` 區塊與板上有沒有這一項，⛔ 不讀 `wf:move`／`wf:edit`／`wf:reject`
-    事件留言的 body（其 body 無任何 CLI 可讀區塊，本卡⛔ 不為它新增可讀區塊）。
+    回讀證據面＝本次 write plan 中每一個已宣告原語各自的可回讀狀態：板上有沒有這一項
+    （add_to_project）、卡面 `wf-card` 區塊（update_card_body）、五個投影欄（write_project_field）。
+    ⛔ 不讀 `wf:move`／`wf:edit`／`wf:reject` 事件留言的 body（其 body 無任何 CLI 可讀區塊，
+    本卡⛔ 不為它新增可讀區塊）；`open` 的 write plan 不含 `close_issue`，故本函式⛔ 不讀 issue 的
+    open／closed（那一項只屬終態 `move`，住 `move_resume`）。
 
     ⓐ 不在板上＝`new`，照常 add_to_project。
     ⓑ 在板上而卡面無 `wf-card`＝回讀是本次 write plan 的前綴（上一次只完成 add_to_project）：
        `resume`——沿用板上既有 item、⛔ 不重複 add_to_project，已完成項列進 completed_writes。
-    ⓒ 在板上而卡面與本次 plan 全等＝`converge`：rc=0、⛔ 不重寫。
-    ⓓ 其餘（他人已推進的卡）＝`refuse`，維持基線的 D2 編號與逐字理由「已在板上」。
+    ⓒ 在板上、卡面與本次 plan 全等**且五個投影欄與卡面 JSON 全等**＝`converge`：rc=0、⛔ 不重寫。
+    ⓓ 在板上、卡面全等而任一投影欄不等＝回讀仍是 plan 的前綴（上一次卡面寫成、投影欄沒寫完）：
+       `resume` 續作剩餘寫入。刻意⛔ 不以卡面全等單獨判收斂——查核序 1 finding WF-016-R1.1-001
+       逐字「就地註解只把卡面全等定義為 converge，沒有五欄已完成證據」；⛔ 不得由「卡面已寫成」
+       推出「本次操作已整批完成」。
+    ⓔ 其餘（他人已推進的卡）＝`refuse`，維持基線的 D2 編號與逐字理由「已在板上」。
     """
     if item is None:
         return BoardDecision('new')
@@ -246,10 +253,15 @@ def board_decision(plan_card, current, item):
     if current is None:
         return BoardDecision('resume', item['id'], done,
                              f'已在板上而卡面無 wf-card：續作剩餘寫入（已完成的寫入：{done[0]}）')
-    if _equal(current, plan_card):
-        return BoardDecision('converge', item['id'], (*done, 'update_card_body・卡面 JSON'),
-                             '已在板上且卡面與本次寫入全等：收斂、⛔ 不重寫')
-    return BoardDecision('refuse')
+    if not _equal(current, plan_card):
+        return BoardDecision('refuse')
+    written = (*done, 'update_card_body・卡面 JSON')
+    if _equal(actual_values, planned_values):
+        return BoardDecision('converge', item['id'], written,
+                             '已在板上且卡面與五個投影欄都與本次寫入全等：收斂、⛔ 不重寫')
+    return BoardDecision('resume', item['id'], written,
+                         '已在板上且卡面全等而五個投影欄尚未寫完：續作剩餘寫入'
+                         f'（已完成的寫入：{"、".join(written)}）')
 
 
 def move_resume(current, from_node, to_node, legal, printed, *, client, number, catalog,

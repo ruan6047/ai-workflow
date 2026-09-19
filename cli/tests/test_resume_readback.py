@@ -14,8 +14,10 @@ import subprocess
 
 import pytest
 
-from wf.compose.blocks import load_blocks
+from wf.compose.blocks import load_blocks, projection
 from wf.gh.writes import LABELS, read_block
+from wf.verbs._common import field_values
+from wf.verbs._write import projected
 from wf.verbs.review import IDENTICAL_RETURN, review
 
 from wf.verbs.move import move
@@ -122,31 +124,51 @@ def written(client):
     return [name for name, _ in client.calls if name in MUTATIONS]
 
 
-def open_on_board(catalog, root, body):
+def board_item(catalog, filled=None):
+    """板上那一項。filled 給定＝把五個投影欄填成該卡的投影值（上一次已整批寫完）；
+    None＝五欄留空（上一次只完成 add_to_project／卡面 JSON，投影欄還沒寫）。
+    形狀走 `_common.field_values` 讀得懂的 `{'text': …}`／None，⛔ 不另造一套投影欄形狀。"""
+    entry = item(10)
+    if filled is not None:
+        entry['fieldValues'] = {name: None if value is None else {'text': value}
+                                for name, value in projected(filled, catalog).items()}
+    return entry
+
+
+def open_on_board(catalog, root, body, filled=None):
     """卡已在板上（item 已存在）時跑一次 `open`，回 (client, result, 印項)。"""
-    client = MemoryClient(catalog, [issue(10, body=body)], [item(10)])
+    client = MemoryClient(catalog, [issue(10, body=body)], [board_item(catalog, filled)])
     lines = []
     return client, open_issue(10, client=client, root=root, catalog=catalog, emit=lines.append), lines
 
 
-# (甲)(乙)(丙) 三組：卡面回讀分別是「無 wf-card」「與本次 plan 全等」「stage／state 不是本次目標」
+EQUAL = expected_card()
+# 四組：回讀證據面＝卡面 `wf-card` 區塊 ∧ 五個投影欄（A5「本次 write plan 中每一個已宣告原語
+# 各自的可回讀狀態」）。(戊) 是查核序 1 finding WF-016-R1.1-001 的形狀：卡面已寫成、投影欄仍為空。
 CASES = {
-    '甲・板上而卡面無 wf-card': (INTAKE, 0, ''),
-    '乙・板上而卡面與本次 plan 全等': (block('wf-card', expected_card()), 0, ''),
-    '丙・板上而卡面已被推進': (block('wf-card', expected_card(stage='規劃', state='待辦')), 1, '已在板上'),
+    '甲・板上而卡面無 wf-card': (INTAKE, None, 0, ''),
+    '乙・板上而卡面與五個投影欄都與本次 plan 全等': (block('wf-card', EQUAL), EQUAL, 0, ''),
+    '丙・板上而卡面已被推進': (block('wf-card', expected_card(stage='規劃', state='待辦')), None, 1, '已在板上'),
+    '戊・板上而卡面全等、五個投影欄尚未寫完': (block('wf-card', EQUAL), None, 0, ''),
 }
 
 
 @pytest.mark.parametrize('name', list(CASES))
 def test_open_d2_branches_on_card_readback(catalog, root, name):
-    body, rc, reason = CASES[name]
-    client, result, lines = open_on_board(catalog, root, body)
+    body, filled, rc, reason = CASES[name]
+    client, result, lines = open_on_board(catalog, root, body, filled)
     assert (result.rc, result.reason) == (rc, reason), (name, result)
     if name.startswith('丙'):
         assert written(client) == ['post_comment'], written(client)    # 只有那一則 wf:reject 留痕
     elif name.startswith('乙'):
         assert written(client) == [], (name, written(client))          # 全等＝收斂、⛔ 不重寫
         assert result.completed_writes, result
+    elif name.startswith('戊'):
+        # 卡面全等但五欄還沒寫完 ⇒ 回讀是 plan 的前綴：續作剩餘的投影欄寫入，⛔ 不判收斂。
+        assert 'add_to_project' not in written(client), written(client)
+        assert written(client).count('write_project_field') == len(projection(catalog)), written(client)
+        assert any(entry.startswith('add_to_project') for entry in result.completed_writes), result
+        assert any(entry.startswith('update_card_body') for entry in result.completed_writes), result
     else:
         assert 'add_to_project' not in written(client), written(client)  # 續作＝⛔ 不重複加板
         assert 'update_card_body' in written(client), written(client)
@@ -155,18 +177,34 @@ def test_open_d2_branches_on_card_readback(catalog, root, name):
           '| completed_writes', json.dumps(list(getattr(result, 'completed_writes', ())),
                                            ensure_ascii=False),
           '| 卡面回讀', json.dumps(read_block(client.rows[10]['body'], 'wf-card', required=False) is not None),
+          '| 投影欄回讀', json.dumps(field_values(client.board['items'][0]), ensure_ascii=False),
           '| 寫入', json.dumps(written(client)))
 
 
 def test_open_d2_cases_do_not_collapse_into_one_verdict(catalog, root):
-    """A5 負控：三組的 (rc, reason) ⛔ 不得全等——基線上實測三例都是 (1, '已在板上')，
+    """A5 負控：四組的 (rc, reason, 寫入序列) ⛔ 不得全等——基線上實測三例都是 (1, '已在板上')，
     全等即代表分流沒生效。"""
     verdicts = []
-    for name, (body, _, _) in CASES.items():
-        _, result, _ = open_on_board(catalog, root, body)
-        verdicts.append((result.rc, result.reason))
+    for name, (body, filled, _, _) in CASES.items():
+        client, result, _ = open_on_board(catalog, root, body, filled)
+        verdicts.append((result.rc, result.reason, tuple(written(client))))
     assert len(set(verdicts)) > 1, verdicts
-    print('OPEN_D2_VERDICTS', json.dumps(verdicts, ensure_ascii=False))
+    print('OPEN_D2_VERDICTS', json.dumps([[rc, reason, list(seq)] for rc, reason, seq in verdicts],
+                                         ensure_ascii=False))
+
+
+def test_open_d2_converges_only_when_the_projection_is_also_equal(catalog, root):
+    """A5 負控（查核序 1 finding WF-016-R1.1-001）：(乙)(戊) 只差在五個投影欄有沒有寫完，
+    兩者的寫入序列⛔ 不得相同——相同即代表投影欄沒被讀進完成判定。"""
+    equal, equal_result, _ = open_on_board(catalog, root, block('wf-card', EQUAL), EQUAL)
+    prefix, prefix_result, _ = open_on_board(catalog, root, block('wf-card', EQUAL), None)
+    assert written(equal) == [], written(equal)
+    assert written(prefix) != [], written(prefix)
+    assert field_values(prefix.board['items'][0]) == projected(EQUAL, catalog), (
+        field_values(prefix.board['items'][0]))
+    print('OPEN_D2_PROJECTION_EVIDENCE | 五欄全等', json.dumps(written(equal)),
+          '| 五欄未寫完', json.dumps(written(prefix)),
+          '| rc', equal_result.rc, prefix_result.rc)
 
 
 def move_case(catalog, root, *, drift=False):
