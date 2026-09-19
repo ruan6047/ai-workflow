@@ -273,6 +273,25 @@ class StaleProjectionClient(MoveClient):
         return super().write_project_field(prepared)
 
 
+class ClosedIssueClient(MoveClient):
+    """承載 issue 已為 `closed` 的替身（其餘與 `MoveClient` 全同）。
+
+    刻意：A8 的共用場景母體原本⛔ 無任一場景以「終態 `move` 且承載 issue 已為 `closed`」為前置，
+    於是 `_ops.move_resume` 的 `if terminal and client.issue_is_open(number):` 被單點改成
+    `if terminal:` 時 A8 仍全綠（查核序 3 finding WF-016-R1.1-005 實測）。本替身把該前置補進
+    **同一份共用場景建構碼**，讓 A8 的 (乙) 類宣告表在該站點上有一列以「⛔ 不再呼叫 `close_issue`」
+    為新預期的場景，該變異因此必然轉紅。
+    為什麼是改替身的 `rows[ISSUE]['state']` 而⛔ 不是改 `issue_is_open`：`MemoryClient.issue_is_open`
+    讀的就是這份狀態，`close_issue` 成功後同一替身會翻面（A5 逐字「替身的 issue state 必須具狀態」），
+    直接樁掉 `issue_is_open` 會讓替身失去狀態而測到替身本身。
+    ⛔ 不得推出「A5 的 (丁) 與其兩則負控、`test_terminal_move_converges_when_the_issue_is_already_closed`
+    可以由本類取代」——三個判定面各自獨立，本輪只補 A8 這一面。"""
+
+    def __init__(self, catalog, current, rows=(), items=()):
+        super().__init__(catalog, current, rows, items)
+        self.rows[ISSUE]['state'] = 'closed'
+
+
 def move_case(catalog, root, stage, state, to, *, client_class=MoveClient, emit=NOOP):
     current = expected_card(stage=stage, state=state, stage_plan=PLAN, iteration=7,
                             owner={'role': 'executor', 'actor': 'old'}, source_sha='a' * 40,
@@ -304,6 +323,12 @@ def scenarios(catalog, root, tmp_path, emit=NOOP):
         # 路徑上可達，⛔ 不與 move.py 的終態 close_issue 共用場景。
         ('move_terminal_resume', lambda: move_case(catalog, root, '結案', '完成', '結案/完成', emit=emit)),
         ('move_withdraw', lambda: move_case(catalog, root, '需求', '待確認', '清單', emit=emit)),
+        # 終態 `move` 的重跑，前置只差在承載 issue 已為 `closed`：A5 的完成條件三個合取項全部成立
+        # ⇒ rc=0 收斂且該次⛔ 不再呼叫 `close_issue`（`_ops.move_resume` 的 `elif not changed:` 出口）。
+        # 刻意排在 `move_terminal_resume` 之後：`reach` 取第一個打到該站點的場景，本場景⛔ 不呼叫
+        # 任何原語，故 A1 母體既有的站點→場景對應逐字不變（⛔ 不得推出「順序無所謂」）。
+        ('move_terminal_resume_closed', lambda: move_case(catalog, root, '結案', '完成', '結案/完成',
+                                                          client_class=ClosedIssueClient, emit=emit)),
         ('open_intake', lambda: open_case(catalog, root, '前言\n' + block('wf-intake', intake()), emit)),
         ('open_restore', lambda: open_case(catalog, root, block(
             'wf-card', expected_card(card_id='WF-027', stage='規劃', state='待辦', stage_plan=PLAN)), emit)),

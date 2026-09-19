@@ -44,13 +44,21 @@ ROW, PATHLINE, NAMES = 'PARITY_ROW ', 'PARITY_TREE ', 'PARITY_NAMES '
 # 類別 (乙)＝A5 明定改變的場景：基線的實測須逐欄等於 `old`、被審版的實測須逐欄等於 `new`，且
 #   只允許 `changed` 列明的那幾欄有差異，未列明的欄仍須兩版逐字相同。
 #
-# 為什麼只有 `move_terminal_resume` 是 (乙)：A5 改的是 `open` 的 D2 與 `move` 的 D1 兩個**回讀
-# 分流點**。A1 母體的十一個場景中，四個 `open` 場景的板上⛔ 無本卡的 item（`open_case` 建的替身
+# 為什麼只有兩個 `move_terminal_resume*` 是 (乙)：A5 改的是 `open` 的 D2 與 `move` 的 D1 兩個**回讀
+# 分流點**。A1 母體的場景中，四個 `open` 場景的板上⛔ 無本卡的 item（`open_case` 建的替身
 # items 為空），D2 的在板分支一次都到不了；`move_stale_projection`／`move_terminal`／
 # `move_withdraw` 的轉移在合成表內，`move_resume` 逐字「if legal: return None」⇒ 原路往下跑；
 # `edit`／`notes`／`review` 三個動詞不在 A5 的掃描面（A5 逐字「掃描面＝`open`、`move` 兩動詞」）。
-# 只有 `move_terminal_resume` 的 `結案/完成 → 結案/完成` 同時滿足「轉移不在合成表內」與
-# 「from == to」，落在 A5 新增的那一條分流上。
+# 只有 `move_terminal_resume` 與 `move_terminal_resume_closed` 的 `結案/完成 → 結案/完成` 同時滿足
+# 「轉移不在合成表內」與「from == to」，落在 A5 新增的那一條分流上。
+#
+# 這兩列**前置只差在承載 issue 的 open／closed**，刻意成對：A5 完成條件的第三個合取項（issue 的
+# state 為 `closed`）是唯一的變數，兩列的新預期因此在 `mutations` 欄逐字相反（`['close_issue']`
+# vs `[]`）。查核序 3 finding WF-016-R1.1-005 逐字量到的缺口就在這裡——母體原本只有 issue 仍
+# `open` 那一列，`_ops.move_resume` 的 `if terminal and client.issue_is_open(number):` 被單點改成
+# `if terminal:` 時兩版的五欄都不動，A8 全綠而⛔ 不響。補上 `closed` 那一列後，該變異會讓被審版
+# 的 `mutations` 由 `[]` 變成 `['close_issue']`，(乙) 類「被審版實測須逐欄等於新預期五欄」因此必然
+# 轉紅。⛔ 不得推出「一列就夠」——單列時該合取項對五欄恆無分辨力。
 DECLARED = {
     'edit_change': {'class': '甲'},
     'edit_in_review': {'class': '甲'},
@@ -82,6 +90,26 @@ DECLARED = {
         # 新預期五欄：卡面與五欄全等 ⇒ 對帳零投影寫入；issue 仍 open ⇒ 判為 plan 的前綴並續作
         # `close_issue`，收據路徑 rc=0、⛔ 不拒收、⛔ 不留痕。
         'new': {'rc': 0, 'D': None, 'reason': '', 'reject': False, 'mutations': ['close_issue']},
+        'changed': ('rc', 'D', 'reason', 'reject', 'mutations'),
+    },
+    'move_terminal_resume_closed': {
+        'class': '乙',
+        # 依據條文逐字片段（A5 條文＋A5 負控①）
+        'clause': ('**終態 `move` 的完成條件逐字＝卡面 `wf-card` 的 `stage`／`state` 等於本次目標 ∧ '
+                   '五個投影欄與卡面 JSON 全等 ∧ 承載 issue 的 state 為 `closed`；三者同時成立才判 '
+                   'rc=0 收斂。**／負控①逐字「把 (丁) 的前置改成 issue 已為 `closed` 後重跑，必須判 '
+                   'rc=0 收斂且該次⛔ 不再呼叫 `close_issue`」'),
+        # 具體前置
+        'setup': ('`move --to 結案/完成`；卡面 `wf-card` 已是 結案/完成、五個投影欄已與卡面 JSON 全等、'
+                  '承載 issue 已為 `closed`（`test_remote_ops_envelope.scenarios` 的 '
+                  '`move_terminal_resume_closed`，替身＝`ClosedIssueClient`）'),
+        # 舊結果五欄：基線⛔ 無回讀分流、⛔ 不讀 issue state，`結案/完成 → 結案/完成` 不在合成表內
+        # ⇒ 與 `move_terminal_resume` 同走 D1 拒收並依 §2 留痕條寫一則 `wf:reject` 留言。
+        'old': {'rc': 1, 'D': 'D1', 'reason': '結案/完成 → 結案/完成 不在合成表內',
+                'reject': True, 'mutations': ['post_comment']},
+        # 新預期五欄：三個合取項全部成立 ⇒ rc=0 收斂、⛔ 不拒收、⛔ 不留痕，且該次**零遠端寫入原語**
+        # （對帳零投影寫入、⛔ 不重寫卡面、⛔ 不再呼叫 `close_issue`）。
+        'new': {'rc': 0, 'D': None, 'reason': '', 'reject': False, 'mutations': []},
         'changed': ('rc', 'D', 'reason', 'reject', 'mutations'),
     },
 }
