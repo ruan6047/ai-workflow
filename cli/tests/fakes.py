@@ -6,20 +6,36 @@ import 使用、⛔ 不在替身重打），帶旗標時⛔ 不記 calls、⛔ �
 from copy import deepcopy
 from types import SimpleNamespace
 
-# `--dry-run` gate 在替身側的狀態讀取介面。刻意⛔ 不 import `wf.gh.writes.dry_run` 與
-# `wf.gh.writes.DRY_RUN_ITEM`：A8（`cli/tests/test_baseline_parity.py`）的兩個隔離子行程共用
-# 本目錄下的同一份場景建構碼，而基線樹 f69f6216e575ec881222fc20549685795e2fc1c8 的 `cli/src`
-# 還沒有這兩個名字，模組級 import 會讓共用碼在基線子行程載入失敗（A8 逐字「該份碼⛔ 不得
-# import 任一只存在於被審版的名字（`wf.verbs._ops`、`wf.gh.writes.dry_run`、
-# `wf.gh.writes.DRY_RUN_ITEM` 等），版本差異只能經一個在兩版都存在的狀態讀取介面取得」）。
-# 判準逐字與生產碼同一句——只讀 client 自己那一顆布林，⛔ 不讀旗標字面、⛔ 不讀環境變數；
-# 兩者的等價由 `test_dry_run_write_plan.py::test_the_fake_dry_run_gate_is_the_production_gate`
-# 逐值釘住。⛔ 不得推出「替身自己另定了一套 gate」。
-DRY_RUN_ITEM = '(dry-run)'
+from wf.gh import writes  # 兩版共有的**模組**；⛔ 不 from-import 只存在於被審版的名字
+
+# `--dry-run` gate 在替身側的**委派**介面：判定與 item id 都在呼叫時向 `wf.gh.writes` 取，
+# ⛔ 不在替身重打生產常數 `DRY_RUN_ITEM`、⛔ 不重打判定式（F-執行者-04 逐字「驗證器 `import`
+# 使用，⛔ 不重打常數」）。
+#
+# 為什麼是「import 模組 ＋ 呼叫時 getattr」而不是 `from wf.gh.writes import dry_run,
+# DRY_RUN_ITEM`：A8（`cli/tests/test_baseline_parity.py`）的兩個隔離子行程共用本目錄下的同一份
+# 場景建構碼，而基線樹 f69f6216e575ec881222fc20549685795e2fc1c8 的 `cli/src` 還沒有這兩個
+# **名字**，模組級 from-import 會讓共用碼在基線子行程載入失敗（A8 逐字「該份碼⛔ 不得 import
+# 任一只存在於被審版的名字（`wf.verbs._ops`、`wf.gh.writes.dry_run`、`wf.gh.writes.DRY_RUN_ITEM`
+# 等），版本差異只能經一個在兩版都存在的狀態讀取介面取得」）。模組 `wf.gh.writes` 本身兩版都在
+# （實測：基線樹載入 OK 而 `hasattr(writes, 'dry_run')` 為 False），故 import 的是模組、屬性到
+# 呼叫時才取——版本差異就是那個「在兩版都存在的狀態讀取介面」。
+#
+# ⚠️ 邊界：下面「屬性缺席 ⇒ 回 False」的默認值**只針對 `--dry-run` 這一個功能**。理由逐字＝基線
+# ⛔ 無 dry-run 這個功能、A8 的場景一律不帶該旗標，故回 False 逐字等於基線的實際行為（⛔ 不是
+# 猜的默認值）。⛔ 不得把它推廣成「所有跨版本功能缺席時都取默認值」的通則；別的功能要跨版本
+# 共用時各自另行裁定其缺席語意。
+# 委派的有效性（換掉生產側的判定／常數，替身必須跟著換）由
+# `test_dry_run_write_plan.py::test_the_fake_dry_run_gate_delegates_to_the_production_gate`
+# 釘住。⛔ 不得推出「替身自己另定了一套 gate」。
 
 
 def dry_run(client):
-    return bool(getattr(client, 'dry_run', False))
+    gate = getattr(writes, 'dry_run', None)
+    if gate is None:
+        return False  # 基線無此功能；A8 場景不啟用 dry-run
+    return gate(client)
+
 
 REPOSITORY_ID = 'R_FAKE'  # 替身的 repository stable ID：任何 slug 都回同一顆（同一 repo 的不同拼寫）
 PROJECT_ID = 'PVT_FAKE'
@@ -130,7 +146,7 @@ class FakeGhClient:
 
     def add_to_project(self, project_id, issue_id):
         if dry_run(self):
-            return self.added(DRY_RUN_ITEM)
+            return self.added(writes.DRY_RUN_ITEM)  # 生產常數，⛔ 不在替身重打
         self.calls.append(('add_to_project', dict(project_id=project_id, issue_id=issue_id)))
         return self.added('ITEM')
 

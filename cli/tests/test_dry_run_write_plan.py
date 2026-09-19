@@ -136,23 +136,56 @@ def test_dry_run_is_a_global_flag_not_a_per_verb_one():
     print('DRY_RUN_FLAG_SHAPES ok')
 
 
-def test_the_fake_dry_run_gate_is_the_production_gate():
-    """`cli/tests/fakes.py` 的 `dry_run`／`DRY_RUN_ITEM` 刻意⛔ 不 import 生產碼（理由＝A8 的
-    共用場景建構碼必須能在基線樹 f69f6216e575ec881222fc20549685795e2fc1c8 上載入，見 fakes.py
-    就地註解）。本測試把「⛔ 不重打常數」（F-執行者-04）換成逐值釘住的等價檢查：替身側的判定
-    對每一種 client 狀態都必須與 `wf.gh.writes.dry_run` 同值，item id 亦逐字相同。
-    負控：把替身側的判定換成恆 True／恆 False 都必須與生產碼不同值。"""
-    from wf.gh.writes import DRY_RUN_ITEM as PRODUCTION_ITEM, dry_run as production
+def test_the_fake_dry_run_gate_delegates_to_the_production_gate(monkeypatch):
+    """F-執行者-04 逐字「驗證器 `import` 使用，⛔ 不重打常數」在替身側的釘子。
+
+    `cli/tests/fakes.py` import 的是兩版共有的**模組** `wf.gh.writes`，判定與 item id 都在呼叫時
+    才向該模組取（不 from-import 名字的理由＝A8 的共用場景建構碼必須能在基線樹
+    f69f6216e575ec881222fc20549685795e2fc1c8 上載入，見 fakes.py 就地註解）。
+
+    本測試證明那是**委派**而不是複製：把生產側的判定或常數換掉，替身必須跟著換。②③ 兩個變異
+    負控對「在替身重打一份」的寫法會原地不動，故那種寫法會讓本測試轉紅。
+    ④ 另釘基線邊界：`wf.gh.writes` ⛔ 無 `dry_run` 屬性時（＝基線樹的實際形狀）替身回 False，
+    且該默認值逐字⛔ 只適用 `--dry-run` 這一個功能，⛔ 不是跨版本功能缺席的通則。"""
+    from wf.gh import writes
     from . import fakes
-    assert fakes.DRY_RUN_ITEM == PRODUCTION_ITEM, (fakes.DRY_RUN_ITEM, PRODUCTION_ITEM)
+    production = writes.dry_run
+    # 替身⛔ 不得自己定義一份生產常數／判定式的副本（重打的寫法會讓這一條轉紅）。
+    assert not hasattr(fakes, 'DRY_RUN_ITEM'), '替身重打了生產常數 DRY_RUN_ITEM'
+    # ① 逐值等價。`設為 None` 是 iteration 3 那五探針的漏網形狀（只在 None 漂移的變異穿得過去）。
     states = {'未設': SimpleNamespace(), '設為 True': SimpleNamespace(dry_run=True),
               '設為 False': SimpleNamespace(dry_run=False), '設為 0': SimpleNamespace(dry_run=0),
+              '設為 None': SimpleNamespace(dry_run=None),
               '設為非空字串': SimpleNamespace(dry_run='x')}
     for label, probe in states.items():
         assert fakes.dry_run(probe) == production(probe), (label, probe)
         print('FAKE_GATE_EQUIVALENCE', label, json.dumps(production(probe)))
-    vacuous = [label for label, probe in states.items()
-               if (lambda _: True)(probe) == production(probe)]
-    assert len(vacuous) != len(states), '恆 True 與生產碼全等 ⇒ 等價檢查零資訊'
-    print('FAKE_GATE_EQUIVALENCE_NEGATIVE 恆 True 相符的狀態數', len(vacuous), '/', len(states),
-          '| DRY_RUN_ITEM', json.dumps(PRODUCTION_ITEM))
+    # ② 判定式變異負控：恆 True 與恆 False **兩個都實作**（⛔ 不只寫在 docstring 裡）。
+    for label, mutant, constant in (('恆 True', lambda client: True, True),
+                                    ('恆 False', lambda client: False, False)):
+        with monkeypatch.context() as patch:
+            patch.setattr(writes, 'dry_run', mutant)
+            followed = {name: fakes.dry_run(probe) for name, probe in states.items()}
+        assert set(followed.values()) == {constant}, (label, followed)
+        differing = [name for name, probe in states.items() if production(probe) != constant]
+        assert differing, f'{label} 與未變異的生產碼全等 ⇒ 該負控零資訊'
+        print('FAKE_GATE_MUTANT', label, '| 替身跟著變異的狀態數', len(followed),
+              '| 與未變異生產碼不同值的狀態', json.dumps(differing, ensure_ascii=False))
+    # ③ 常數變異負控：換掉生產側的 DRY_RUN_ITEM，替身 add_to_project 的 item id 必須跟著換。
+    sentinel = '(dry-run-sentinel)'
+    client = fakes.FakeGhClient()
+    client.dry_run = True
+    with monkeypatch.context() as patch:
+        patch.setattr(writes, 'DRY_RUN_ITEM', sentinel)
+        drifted = client.add_to_project('PVT', 'I_1')['data']['addProjectV2ItemById']['item']['id']
+    restored = client.add_to_project('PVT', 'I_1')['data']['addProjectV2ItemById']['item']['id']
+    assert (drifted, restored) == (sentinel, writes.DRY_RUN_ITEM), (drifted, restored)
+    assert client.calls == [], client.calls   # `--dry-run` 路徑⛔ 不記 calls
+    print('FAKE_GATE_ITEM_DRIFT', json.dumps([drifted, restored]))
+    # ④ 基線邊界：屬性缺席 ⇒ 回 False（＝基線⛔ 無 dry-run 功能、A8 場景一律不帶該旗標）。
+    with monkeypatch.context() as patch:
+        patch.delattr(writes, 'dry_run')
+        absent = [fakes.dry_run(probe) for probe in states.values()]
+    assert absent == [False] * len(states), absent
+    print('FAKE_GATE_BASELINE_FALLBACK 屬性缺席時的回值', json.dumps(absent),
+          '| 邊界逐字：此默認值⛔ 只適用 --dry-run 這一個功能，⛔ 不推廣成跨版本功能的通則')

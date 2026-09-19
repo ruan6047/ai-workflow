@@ -13,7 +13,7 @@ from wf.gh.client import NotFound, PermissionDenied, TransportError
 from wf.gh.writes import WriteMixin, read_card
 from wf.verbs._write import projected
 from wf.verbs.move import move, run
-from .fakes import dry_run  # A8：共用場景建構碼⛔ 不 import 只存在於被審版的名字（見 fakes.py）
+from .fakes import dry_run  # 委派到 wf.gh.writes.dry_run 的共用介面；A8 兩版皆可載入（見 fakes.py）
 from .test_open_verb import (MemoryClient, VARIANTS, block, expected_card, issue, item,
                              shape_variants)
 

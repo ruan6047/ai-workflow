@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from .fakes import FakeGhClient, dry_run  # A8：⛔ 不 import 只存在於被審版的名字（見 fakes.py）
+from .fakes import FakeGhClient, dry_run  # dry_run 委派到 wf.gh.writes.dry_run；A8 兩版皆可載入（見 fakes.py）
 from wf.compose.blocks import load_blocks, projection
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate

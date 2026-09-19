@@ -10,8 +10,9 @@ A8：對 A1 母體（同一份 AST 枚舉的可達遠端寫入呼叫點，⛔ �
 行程與 `sys.path`，⛔ 不在同一行程內改 `sys.modules`）。基線樹以 `git archive` 於測試期取出至
 tmp（⛔ 不 checkout、⛔ 不建 worktree、⛔ 不動 stash）。兩個子行程**共用同一份場景建構碼**
 ——`test_remote_ops_envelope` 的 `scenarios`／`scenario_named`／`measured`，那一份碼⛔ 不
-import 任一只存在於被審版的名字（`wf.verbs._ops`、`wf.gh.writes.dry_run`、
-`wf.gh.writes.DRY_RUN_ITEM` 已分別改成函式內 import 與 `cli/tests/fakes.py` 的狀態讀取介面），
+import 任一只存在於被審版的名字（`wf.verbs._ops` 已改成函式內 import；`wf.gh.writes.dry_run`、
+`wf.gh.writes.DRY_RUN_ITEM` 改經 `cli/tests/fakes.py` 的委派介面——那裡 import 的是兩版共有的
+**模組** `wf.gh.writes`，兩個名字到呼叫時才以屬性取，基線缺席時逐字回 False），
 ⛔ 不為基線另寫第二份場景表。
 
 ⛔ 不得 skip：基線 SHA 的 git 物件在本機取不到時本檔**失敗並印出原因**，⛔ 不降級成只跑被審版
