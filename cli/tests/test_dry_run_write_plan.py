@@ -82,11 +82,17 @@ def cases(catalog, root, tmp_path):
                                             client=c, root=root, emit=NOOP)),
         'notes': lambda: (board_client(catalog, card(tier='T1', **EXECUTOR)),
                           lambda c: notes(10, client=c, root=root, emit=NOOP)),
-        # `--for closeout` 刻意：非 closeout 的 brief 會先跑內層 `notes`（它自己也對帳一次），
-        # 在 `--dry-run` 下板沒被改到 ⇒ 第二次對帳仍算出同一欄，plan 會比實跑多一筆。
-        # 那是「不寫就不會收斂」的必然，⛔ 不用去重掩蓋；closeout 不呼叫內層 notes，對帳只發生一次。
-        'brief': lambda: (board_client(catalog, card(tier='T1', **EXECUTOR)),
-                          lambda c: brief(10, target='closeout', client=c, root=root, emit=NOOP)),
+        'brief --for closeout': lambda: (
+            board_client(catalog, card(tier='T1', **EXECUTOR)),
+            lambda c: brief(10, target='closeout', client=c, root=root, emit=NOOP)),
+        # 一般 brief（非 closeout）先跑內層 `notes`，內層自己也對帳一次 ⇒ 同一次執行對同一欄
+        # 會經過兩次對帳。查核序 1 finding WF-016-R1.1-003 逐字：「brief(target="reviewer")
+        # 遇級別投影不等：dry-run rc=0、實際寫入=[]、plan=[write_project_field,write_project_field]；
+        # 不帶旗標 rc=0、實際寫入=[write_project_field]」。板上級別＝T3、卡面＝T1 即該形狀。
+        # A3 與新增條文未排除一般 brief，故⛔ 不以只測 closeout 取代契約。
+        'brief --for reviewer': lambda: (
+            board_client(catalog, card(tier='T1', **EXECUTOR)),
+            lambda c: brief(10, target='reviewer', client=c, root=root, emit=NOOP)),
     }
 
 

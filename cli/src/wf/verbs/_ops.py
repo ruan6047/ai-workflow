@@ -129,6 +129,8 @@ class WriteProxy:
     def __init__(self, client, verb):
         self.client = client
         self.ledger = WriteLedger(verb, dry_run(client))
+        self._prepared = []  # [(inputs 物件, (item_id, 欄名, 值))]；⛔ 只在 --dry-run 下累積
+        self._expected = {}  # (item_id, 欄名) → 本次 plan 宣告該欄寫入之後的預期投影值
 
     def __getattr__(self, name):
         target = getattr(self.client, name)
@@ -140,8 +142,49 @@ class WriteProxy:
             self.ledger.begin(name, resource(name, args))
             result = target(*args, **kwargs)
             self.ledger.done()
+            if self.ledger.dry and name == 'write_project_field':
+                self._expect(args[0] if args else None)
             return result
         return recorded
+
+    # ── `--dry-run` 下讓同次操作的回讀反映已宣告的寫入 ──────────────────────────
+    # 刻意：`--dry-run` 一次請求都不發，於是同一次執行內排在後面的**回讀驅動**判定
+    # （`_write.reconcile` 比板上現值與卡面）看到的仍是寫入前的板，會把同一欄再宣告一次；
+    # 不帶旗標時前一筆已真的寫進去，第二次對帳就算不出那一欄。查核序 1 finding
+    # WF-016-R1.1-003 逐字量到的就是這個差：一般 `brief` 先跑內層 `notes`（它自己對帳一次），
+    # plan=[write_project_field, write_project_field] 而實跑=[write_project_field]。
+    # 為什麼放在這一層：六原語的 gate 與帳本都在這裡，⛔ 不改各動詞的對帳邏輯、⛔ 不在 plan
+    # 上做去重（去重會把「同一欄真的被寫兩次」也一起吃掉）。
+    # ⛔ 不得推出「CLI 在 dry-run 下讀到的是遠端真實狀態」——覆蓋的只有本次 plan 已宣告的那幾欄，
+    # 且只活在這一個 WriteProxy 實例裡；不帶旗標時本路徑一行都不走。
+
+    def _expect(self, prepared):
+        """把剛宣告的那一筆投影欄寫入，記成該欄的預期值。prepared 來自 `prepare_project_field`，
+        以 inputs 物件的**同一性**回查原始 (item_id, 欄名, 值)，⛔ 不反解析 GraphQL payload。"""
+        inputs = prepared[2] if isinstance(prepared, tuple) and len(prepared) > 2 else None
+        for held, (item_id, name, value) in self._prepared:
+            if held is inputs:
+                self._expected[(item_id, name)] = value
+                return
+
+    def prepare_project_field(self, project, item_id, name, value):
+        """唯讀的欄與選項解析（⛔ 不是 mutation，故⛔ 不進帳本）；只在 dry-run 下記住原始值。"""
+        prepared = self.client.prepare_project_field(project, item_id, name, value)
+        if self.ledger.dry:
+            self._prepared.append((prepared[2] if len(prepared) > 2 else None,
+                                   (item_id, name, value)))
+        return prepared
+
+    def project(self, *args, **kwargs):
+        """唯讀查 Project；dry-run 下把本次 plan 已宣告的投影欄值覆蓋上去。
+        形狀走 `_common.field_values` 讀得懂的 `{'text': …}`／None，⛔ 不改 items 的其他欄位。"""
+        board = self.client.project(*args, **kwargs)
+        for entry in (board or {}).get('items', ()):
+            for (item_id, name), value in self._expected.items():
+                if entry.get('id') == item_id:
+                    entry.setdefault('fieldValues', {})[name] = (
+                        None if value is None else {'text': value})
+        return board
 
 
 def failure(verb, exc, ledger, emit):
