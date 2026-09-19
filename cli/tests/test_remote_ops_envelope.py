@@ -171,8 +171,8 @@ class Injector:
     `TransportError`，＝留言已寫入遠端、只是回應遺失。CLI 從例外本身分辨不出這兩者，
     A7 負控③ 就是拿兩者的收據逐字比對。"""
 
-    def __init__(self, site, after=False):
-        self.site, self.after, self.fired = site, after, 0
+    def __init__(self, site, after=False, live=True):
+        self.site, self.after, self.live, self.fired = site, after, live, 0
 
     def matches(self, primitive):
         return primitive == self.site.primitive and self.site.on_stack()
@@ -184,7 +184,10 @@ _INJECTING = {}
 def _hook(base, name):
     def method(self, *args, **kwargs):
         injector = self.injector
-        if injector is not None and injector.matches(name):
+        # live=False＝不注入跑：同一個注入器物件照樣掛著，只是⛔ 不拋、⛔ 不計 fired。
+        # `fired` 因此是「注入器有沒有在這一跑上抵達站點並生效」的唯一證據（A1 ②逐字
+        # 「fired 與結果分開記錄、分開斷言」），⛔ 不得被讀成「不注入時實作正確」。
+        if injector is not None and injector.live and injector.matches(name):
             if injector.after:
                 getattr(base, name)(self, *args, **kwargs)
             injector.fired += 1
@@ -201,10 +204,11 @@ def injecting(base):
     return _INJECTING[base]
 
 
-def arm(client, site, after=False):
-    """把既有替身換成帶注入能力的子類（同一個 instance，狀態全保留）。"""
+def arm(client, site, after=False, live=True):
+    """把既有替身換成帶注入能力的子類（同一個 instance，狀態全保留）。
+    live=False＝掛上注入器但⛔ 不注入：兩半跑的替身型別與掛法完全相同，唯一的變數是注入本身。"""
     client.__class__ = injecting(client.__class__)
-    client.injector = Injector(site, after)
+    client.injector = Injector(site, after, live)
     return client.injector
 
 
@@ -363,22 +367,25 @@ def test_every_reachable_write_site_returns_an_outcome(catalog, root, tmp_path):
     print('WRITE_SITES_COVERED', len(SITES))
 
 
-FAILURE_KEYS = ('error_kind', 'phase', 'retryable')
 D_CODE = re.compile(r'(?:拒收|硬擋)・(D[1-4])・')
 ENUMERATION = ('uv run --extra dev pytest cli/tests/test_remote_ops_envelope.py'
                '::test_no_injection_yields_no_outcome -q -s')
 
 
 def is_outcome(result):
-    """「本條的結果物件」＝同時帶 `error_kind`／`phase`／`retryable`／`completed_writes`／
-    `next_action` 五鍵者。
+    """「本條的結果物件」＝`error_kind`／`phase`／`retryable`／`completed_writes`／`next_action`
+    五鍵皆存在**且 `error_kind` 非 null** 者（需求方 2026-09-19 裁定取 A 案，
+    https://github.com/ruan6047/ai-workflow/issues/354#issuecomment-5742453503 ）。
 
-    五鍵長在 `_ops.OperationOutcome` 上，而本卡 A5 的續作／收斂收據用的是同一個類別（rc=0，
-    只填 `completed_writes`，失敗三鍵留 None）。⛔ 不以 `hasattr` 單獨判：那會把 A5 的收斂收據
-    誤判成本條的結果物件。判準＝五鍵都在**且**失敗三鍵都已填值（＝這一次真的有遠端寫入失敗）。
-    D1–D4 硬擋的拒收結果是 `_ops.WriteResult`，五鍵一個都沒有，本判準對它恆假 ⇒ ⛔ 不計入本款。"""
+    刻意逐字照抄該定義、⛔ 不增刪任一條件：查核序 2 finding WF-016-R1.1-005 逐字「is_outcome
+    就地刻意加入三鍵非空條件，與 A1「同時帶五鍵」不同」與「五鍵定義須由 PM／需求方裁定與收據
+    共用型別的落差，不得由 `is_outcome` 自行改寫」。`phase`／`retryable` 是否為 null ⛔ 不得進入
+    本判定式（真值表由 `test_is_outcome_is_exactly_the_ruled_definition` 逐項釘住）。
+    五鍵長在 `_ops.OperationOutcome` 上，而 A5 的續作／收斂收據用同一個類別（rc=0、五鍵齊而
+    `error_kind` 為 null）⇒ 依本定義⛔ 不是本條的結果物件；D1–D4 硬擋的拒收結果是
+    `_ops.WriteResult`、五鍵一個都沒有 ⇒ 本判準對它恆假，⛔ 不計入本款。"""
     return (all(hasattr(result, key) for key in FIVE_KEYS)
-            and all(getattr(result, key) is not None for key in FAILURE_KEYS))
+            and getattr(result, 'error_kind') is not None)
 
 
 def d_code(result, lines):
@@ -408,45 +415,81 @@ def measured(name, catalog, root, tmp_path):
             'outcome': is_outcome(result)}
 
 
-def test_no_injection_yields_no_outcome(catalog, root, tmp_path):
-    """A1 負控（查核序 1 finding WF-016-R1.1-005）。逐站點各跑一次不注入的同一場景：
+def run_site(site, name, catalog, root, tmp_path, *, live):
+    """同一站點、同一場景各跑一次；live=True＝注入，False＝⛔ 不注入。
+    回 (注入器, 結果, 該次 stdout)——`fired` 與結果分開回，⛔ 不由結果推論注入有沒有抵達。"""
+    lines = []
+    client, call = scenario_named(name, catalog, root, tmp_path, lines.append)
+    injector = arm(client, site, live=live)
+    return injector, call(client), lines, client
 
-    ①⛔ 不得產生本條的結果物件（五鍵齊且失敗三鍵已填）；D1–D4 硬擋的拒收結果⛔ 不計入本款。
-    ②母體按**該場景在本次執行內實測的 rc** 分兩類，兩類的負控條件各自不同：
-      (甲) 實測 rc=0 的站點——不注入時必須 rc=0，且該次遠端寫入原語序列與基線逐一相符；
-      (乙) 實測 rc≠0 的站點（D1–D4 硬擋）——必須維持同一 D 編號、同一逐字理由、同一 rc，
-           且該次 `wf:reject` 留痕的有無與基線相同。
-    ⛔ 不以絕對 rc=0 為負控條件：依 §2 留痕條，D 類硬擋的站點在不注入時本來就 rc≠0 並寫一則
-    `wf:reject` 留言，對這些站點要求 rc=0 恆假、會把既有正確行為誤判成缺陷。
-    基線值由同一次執行的第一跑取得並印出，第二跑比對；兩類站點數逐字印出，⛔ 不手打。"""
-    groups = {'甲': [], '乙': []}
+
+def test_no_injection_yields_no_outcome(catalog, root, tmp_path):
+    """A1 的兩則負控（皆須響），逐站點跑**同一母體、同一站點、同一場景**的注入／不注入對照。
+
+    ①不注入時同一母體的每個站點都⛔ 不得產生本條的結果物件（`is_outcome`＝五鍵皆存在且
+      `error_kind` 非 null；A5 的收斂／續作出口雖同樣帶滿五鍵但 `error_kind` 為 null，
+      D1–D4 硬擋的拒收結果⛔ 不帶五鍵，兩者依定義都⛔ 不計入本款）。
+    ②注入半：注入時該站點必須 `fired≥1`、必須產生本條的結果物件、且其 `error_kind` 非 null；
+      不注入時該站點必須 `fired=0`。⛔ 不以絕對 `rc=0` 為判準——依 §2 留痕條，D 類硬擋的站點
+      在不注入時本來就 rc≠0 並寫一則 `wf:reject` 留言，rc 在該類站點上零資訊。
+    `fired` 與結果**分開記錄、分開斷言**：⛔ 不由「注入與不注入兩次的結果相同」推論「注入沒生效」；
+    亦⛔ 不由「`fired≥1`」推論實作已正確處置——`fired≥1` 而該次仍走成功路徑即實作吞掉錯誤。
+
+    本款只驗**被審版自身**的注入／不注入對照；被審版與基線
+    f69f6216e575ec881222fc20549685795e2fc1c8 之間的不注入行為差異由 **A8**
+    （`cli/tests/test_baseline_parity.py`）承接，⛔ 不由本款承接、⛔ 不以本款的對照充當之。"""
+    assert len(SITES) > 0, '母體為 0 ⇒ 測具無效'
     for site in SITES:
         name, _, _ = reach(site, catalog, root, tmp_path)
         assert name is not None, site
-        base = measured(name, catalog, root, tmp_path)
-        again = measured(name, catalog, root, tmp_path)
-        assert not base['outcome'] and not again['outcome'], (site, name, base, again)   # ①
-        kind = '甲' if base['rc'] == 0 else '乙'
-        groups[kind].append(str(site))
-        if kind == '甲':                                                                  # ②(甲)
-            assert again['rc'] == 0, (site, name, again)
-            assert again['mutations'] == base['mutations'], (site, name, base, again)
-        else:                                                                             # ②(乙)
-            assert base['D'] is not None, (site, name, base)
-            assert (again['rc'], again['D'], again['reason'], again['reject']) == (
-                base['rc'], base['D'], base['reason'], base['reject']), (site, name, base, again)
-        print('NO_INJECTION', kind, site, '|', name, '| rc', base['rc'], '| D 編號', base['D'],
-              '| 逐字理由', json.dumps(base['reason'], ensure_ascii=False),
-              '| wf:reject 留痕', json.dumps(base['reject']),
-              '| mutations', json.dumps(base['mutations']),
-              '| 本條的結果物件', json.dumps(base['outcome']))
-    assert len(groups['甲']) + len(groups['乙']) == len(SITES), groups
-    for kind, label in (('甲', '基線 rc=0'), ('乙', '基線 rc≠0（D1–D4 硬擋）')):
-        print(f'NO_INJECTION_CLASS ({kind}) {label} 站點數', len(groups[kind]),
-              json.dumps(groups[kind], ensure_ascii=False), '| 枚舉指令', ENUMERATION)
-        if not groups[kind]:
-            print(f'NO_INJECTION_CLASS_EMPTY ({kind}) 類站點數為 0；產生該數字的枚舉指令＝'
-                  + ENUMERATION)
+        clean_injector, clean, clean_lines, clean_client = run_site(
+            site, name, catalog, root, tmp_path, live=False)
+        live_injector, injected, _, _ = run_site(site, name, catalog, root, tmp_path, live=True)
+        assert clean_injector.fired == 0, (site, name, clean_injector.fired)          # ②不注入半
+        assert not is_outcome(clean), (site, name, clean)                             # ①
+        assert live_injector.fired >= 1, (site, name, live_injector.fired)            # ②注入半
+        assert is_outcome(injected), (site, name, injected)
+        assert injected.error_kind is not None, (site, name, injected)
+        print('NO_INJECTION', site, '|', name, '| fired', clean_injector.fired,
+              '| rc', clean.rc, '| D 編號', d_code(clean, clean_lines),
+              '| 逐字理由', json.dumps(clean.reason, ensure_ascii=False),
+              '| wf:reject 留痕', json.dumps(bool(reject_trace(clean_client))),
+              '| mutations', json.dumps(performed(clean_client)),
+              '| 本條的結果物件', json.dumps(is_outcome(clean)))
+        print('INJECTION', site, '|', name, '| fired', live_injector.fired,
+              '| rc', injected.rc, '| error_kind', json.dumps(injected.error_kind),
+              '| 本條的結果物件', json.dumps(is_outcome(injected)))
+    print('INJECTION_CONTRAST_COVERED', len(SITES), '| 枚舉指令', ENUMERATION)
+
+
+PROBES = {
+    # 探針只餵值、⛔ 不跑動詞：本測試比的是判定式本身，⛔ 不是某一次執行的結果。
+    '五鍵齊而 error_kind 非 null': (dict(error_kind='transport', phase='留言', retryable=True), True),
+    '五鍵齊、error_kind 非 null 而 phase／retryable 為 null': (dict(error_kind='transport'), True),
+    '五鍵齊而 error_kind 為 null（A5 的收斂／續作收據）': (dict(), False),
+}
+
+
+def test_is_outcome_is_exactly_the_ruled_definition():
+    """查核序 2 finding WF-016-R1.1-005 逐字：「is_outcome 就地刻意加入三鍵非空條件，與 A1
+    「同時帶五鍵」不同」、「五鍵定義須由 PM／需求方裁定與收據共用型別的落差，不得由 is_outcome
+    自行改寫」。需求方 2026-09-19 裁定取 A 案：「本條的結果物件」＝五鍵皆存在**且 error_kind
+    非 null**。本測試逐項列出該定義的真值表：只有 error_kind 這一鍵能翻面，`phase`／`retryable`
+    為 null ⛔ 不得改變判定；⛔ 無五鍵的 D1–D4 拒收結果恆假。"""
+    from wf.verbs._ops import OperationOutcome, WriteResult
+    for label, (fields, expected) in PROBES.items():
+        probe = OperationOutcome(1 if fields else 0, **fields)
+        assert all(hasattr(probe, key) for key in FIVE_KEYS), (label, probe)
+        assert is_outcome(probe) is expected, (label, probe, is_outcome(probe))
+        print('IS_OUTCOME_PROBE', label, '| error_kind', json.dumps(probe.error_kind),
+              '| phase', json.dumps(probe.phase), '| retryable', json.dumps(probe.retryable),
+              '| 本條的結果物件', json.dumps(is_outcome(probe)))
+    hard = WriteResult(1, reason='拒收・D1・需求/待確認 → 結案/完成 不在合成表內')
+    assert not any(hasattr(hard, key) for key in FIVE_KEYS), hard
+    assert is_outcome(hard) is False, hard
+    print('IS_OUTCOME_PROBE ⛔ 無五鍵（D1–D4 硬擋的拒收結果）| 本條的結果物件',
+          json.dumps(is_outcome(hard)))
 
 
 def test_no_injection_negative_control_is_not_vacuous(catalog, root, tmp_path):
