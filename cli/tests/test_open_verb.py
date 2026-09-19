@@ -11,11 +11,11 @@ import subprocess
 
 import pytest
 
-from .fakes import FakeGhClient
+from .fakes import FakeGhClient, dry_run  # A8：⛔ 不 import 只存在於被審版的名字（見 fakes.py）
 from wf.compose.blocks import load_blocks, projection
 from wf.compose.schema import compose_schema
 from wf.compose.validate import validate
-from wf.gh.writes import WriteMixin, dry_run, read_block
+from wf.gh.writes import WriteMixin, read_block
 from wf.verbs import _write
 from wf.verbs.open import missing_fields, open_issue, run
 

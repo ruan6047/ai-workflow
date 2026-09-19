@@ -6,7 +6,20 @@ import 使用、⛔ 不在替身重打），帶旗標時⛔ 不記 calls、⛔ �
 from copy import deepcopy
 from types import SimpleNamespace
 
-from wf.gh.writes import DRY_RUN_ITEM, dry_run
+# `--dry-run` gate 在替身側的狀態讀取介面。刻意⛔ 不 import `wf.gh.writes.dry_run` 與
+# `wf.gh.writes.DRY_RUN_ITEM`：A8（`cli/tests/test_baseline_parity.py`）的兩個隔離子行程共用
+# 本目錄下的同一份場景建構碼，而基線樹 f69f6216e575ec881222fc20549685795e2fc1c8 的 `cli/src`
+# 還沒有這兩個名字，模組級 import 會讓共用碼在基線子行程載入失敗（A8 逐字「該份碼⛔ 不得
+# import 任一只存在於被審版的名字（`wf.verbs._ops`、`wf.gh.writes.dry_run`、
+# `wf.gh.writes.DRY_RUN_ITEM` 等），版本差異只能經一個在兩版都存在的狀態讀取介面取得」）。
+# 判準逐字與生產碼同一句——只讀 client 自己那一顆布林，⛔ 不讀旗標字面、⛔ 不讀環境變數；
+# 兩者的等價由 `test_dry_run_write_plan.py::test_the_fake_dry_run_gate_is_the_production_gate`
+# 逐值釘住。⛔ 不得推出「替身自己另定了一套 gate」。
+DRY_RUN_ITEM = '(dry-run)'
+
+
+def dry_run(client):
+    return bool(getattr(client, 'dry_run', False))
 
 REPOSITORY_ID = 'R_FAKE'  # 替身的 repository stable ID：任何 slug 都回同一顆（同一 repo 的不同拼寫）
 PROJECT_ID = 'PVT_FAKE'

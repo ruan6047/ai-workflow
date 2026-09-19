@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import socket
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -133,3 +134,25 @@ def test_dry_run_is_a_global_flag_not_a_per_verb_one():
     assert global_flags(['notes', 'WF-001', '--dry-run']) is None       # 動詞之後＝⛔ 不傳給動詞
     assert global_flags(['--dry-run=1', 'notes', 'WF-001']) is None     # 無值旗標⛔ 不收 `=`
     print('DRY_RUN_FLAG_SHAPES ok')
+
+
+def test_the_fake_dry_run_gate_is_the_production_gate():
+    """`cli/tests/fakes.py` 的 `dry_run`／`DRY_RUN_ITEM` 刻意⛔ 不 import 生產碼（理由＝A8 的
+    共用場景建構碼必須能在基線樹 f69f6216e575ec881222fc20549685795e2fc1c8 上載入，見 fakes.py
+    就地註解）。本測試把「⛔ 不重打常數」（F-執行者-04）換成逐值釘住的等價檢查：替身側的判定
+    對每一種 client 狀態都必須與 `wf.gh.writes.dry_run` 同值，item id 亦逐字相同。
+    負控：把替身側的判定換成恆 True／恆 False 都必須與生產碼不同值。"""
+    from wf.gh.writes import DRY_RUN_ITEM as PRODUCTION_ITEM, dry_run as production
+    from . import fakes
+    assert fakes.DRY_RUN_ITEM == PRODUCTION_ITEM, (fakes.DRY_RUN_ITEM, PRODUCTION_ITEM)
+    states = {'未設': SimpleNamespace(), '設為 True': SimpleNamespace(dry_run=True),
+              '設為 False': SimpleNamespace(dry_run=False), '設為 0': SimpleNamespace(dry_run=0),
+              '設為非空字串': SimpleNamespace(dry_run='x')}
+    for label, probe in states.items():
+        assert fakes.dry_run(probe) == production(probe), (label, probe)
+        print('FAKE_GATE_EQUIVALENCE', label, json.dumps(production(probe)))
+    vacuous = [label for label, probe in states.items()
+               if (lambda _: True)(probe) == production(probe)]
+    assert len(vacuous) != len(states), '恆 True 與生產碼全等 ⇒ 等價檢查零資訊'
+    print('FAKE_GATE_EQUIVALENCE_NEGATIVE 恆 True 相符的狀態數', len(vacuous), '/', len(states),
+          '| DRY_RUN_ITEM', json.dumps(PRODUCTION_ITEM))

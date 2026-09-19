@@ -22,7 +22,6 @@ from wf.compose.blocks import load_blocks
 from wf.gh import writes as gh_writes
 from wf.gh.client import GhError, TransportError
 from wf.verbs import main
-from wf.verbs._ops import EQUAL_SILENT, EVENT_HEAD, EVENT_NEXT, EVENT_PHASE
 from wf.verbs.edit import edit
 from wf.verbs.move import move
 from wf.verbs.notes import notes
@@ -43,6 +42,16 @@ FIVE_KEYS = ('error_kind', 'phase', 'retryable', 'completed_writes', 'next_actio
 PLAN = ['需求', '規劃', '執行', '審核', '結案']
 NOOP = (lambda line: None)
 ISSUE = 10  # 全部場景的承載 issue 號；收據裡的 issue 號由該次執行格式化
+
+
+def ops_strings():
+    """`_ops` 的四個逐字骨架，**在函式內** import。刻意：A8（`cli/tests/test_baseline_parity.py`）
+    的基線子行程共用本檔的場景建構碼（`scenarios`／`scenario_named`／`measured`），而
+    `wf.verbs._ops` 只存在於被審版，模組級 import 會讓本檔在基線樹上載入失敗（A8 逐字「該份碼
+    ⛔ 不得 import 任一只存在於被審版的名字（`wf.verbs._ops`…）」）。
+    ⛔ 不得推出「這些骨架可以在測試內重打」——取值仍只有生產碼一個居所（F-執行者-04）。"""
+    from wf.verbs._ops import EQUAL_SILENT, EVENT_HEAD, EVENT_NEXT, EVENT_PHASE
+    return EQUAL_SILENT, EVENT_HEAD, EVENT_NEXT, EVENT_PHASE
 
 
 # ── 母體：六原語與呼叫點，全部由 AST 枚舉 ──────────────────────────────────────
@@ -538,6 +547,7 @@ def test_event_comment_failure_is_reported_in_the_receipt(catalog, root, tmp_pat
     本身⛔ 不列入——即使 (生效後失敗) 下它其實已經到達替身；②`next_action` 逐字指出該事件留言
     結果不明；③`next_action` 與 stdout 全文⛔ 不得含 FORBIDDEN 四字串。
     負控③：兩種替身的 `next_action` 與 stdout 必須逐字相同。母體為 0 ⇒ 判測具無效。"""
+    _, _, EVENT_NEXT, EVENT_PHASE = ops_strings()
     assert EVENT_SITES, '事件留言寫入點母體為 0 ⇒ 測具無效'
     print('EVENT_SITE_POPULATION', len(EVENT_SITES),
           json.dumps(sorted({site.marker for site in EVENT_SITES})))
@@ -576,6 +586,7 @@ def test_event_comment_failure_is_reported_in_the_receipt(catalog, root, tmp_pat
 def test_event_sites_are_silent_without_injection(catalog, root, tmp_path):
     """A7 負控①：不注入時，同一四個站點所在的場景⛔ 不得出現「事件留言寫入無回應・結果不明」
     字樣；若不注入也印，該判定恆真、零資訊。"""
+    _, EVENT_HEAD, _, _ = ops_strings()
     seen = set()
     for site in EVENT_SITES:
         name, _, _ = reach(site, catalog, root, tmp_path)
@@ -594,6 +605,7 @@ def test_event_sites_are_silent_without_injection(catalog, root, tmp_path):
 def test_the_unknown_event_line_is_not_the_equal_silent_line():
     """A7 ／裁定 G8 甲：失敗路徑那一行與等值沉默那一行**逐字是兩行不同的字串**，
     且前者⛔ 不含後者為子字串——否則 A7 負控②（非等值路徑⛔ 不得印 G8 那一行）會被架空。"""
+    EQUAL_SILENT, _, EVENT_NEXT, _ = ops_strings()
     rendered = EVENT_NEXT.format(marker='wf:edit', issue=f'#{ISSUE}')
     assert rendered != EQUAL_SILENT
     assert EQUAL_SILENT not in rendered and rendered not in EQUAL_SILENT

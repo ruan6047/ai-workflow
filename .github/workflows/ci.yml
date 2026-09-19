@@ -97,12 +97,16 @@ jobs:
 
   cli-tests:
     # 新 CLI 測試 job 隨被測物同 PR 進場。
+    # fetch-depth: 0＝cli/tests/test_baseline_parity.py 要以 `git archive <基線 SHA> cli/src` 取出
+    # 固定基線樹跑隔離子行程；淺 clone 取不到那顆物件時該測試逐字須失敗而不得 skip。
+    # 寫法照抄同檔 secret-scan 與 commit-trailer 兩個 job 的 `with:` 區塊。
     name: cli-tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
