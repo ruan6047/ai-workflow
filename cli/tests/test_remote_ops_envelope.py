@@ -143,6 +143,19 @@ def performed(client):
     return [name for name, _ in client.calls if name in MUTATIONS]
 
 
+def receipt_split(result, client):
+    """收據拆成（回讀證據確認已完成的那些, 本次執行實際發出的那些）並斷言後者逐一相符。
+
+    `completed_writes` ＝ `_ops.WriteLedger.observed` ＋ 本次帳本：前者只在續作路徑上非空
+    （例：終態 `move` 重跑時卡面已寫成，`update_card_body` 由回讀證據確認、⛔ 不是本次發的請求），
+    後者必須與替身實際收到的原語序列逐字同序。⛔ 不把本次沒發生的請求算成本次已完成。"""
+    done = performed(client)
+    kinds = [entry.split('・')[0] for entry in result.completed_writes]
+    cut = len(kinds) - len(done)
+    assert kinds[cut:] == done, (kinds, done)
+    return kinds[:cut], done
+
+
 # ── 場景：每個動詞至少一條可跑通的路徑 ────────────────────────────────────────
 
 @pytest.fixture(scope='module')
@@ -204,6 +217,10 @@ def scenarios(catalog, root, tmp_path):
         ('edit_reject', lambda: (simulated(card(), catalog),
                                  lambda c: edit(10, ['card_id="X"'], client=c, catalog=catalog, emit=NOOP))),
         ('move_terminal', lambda: move_case(catalog, root, '結案', '待確認', '結案/完成')),
+        # 終態 `move` 的重跑：卡面與五欄都已是 結案/完成、承載 issue 仍 open ⇒ `_ops.move_resume`
+        # 續作 `close_issue`（core/verbs.md §2 move D1 分流條的第三個合取項）。該呼叫點只在這一條
+        # 路徑上可達，⛔ 不與 move.py 的終態 close_issue 共用場景。
+        ('move_terminal_resume', lambda: move_case(catalog, root, '結案', '完成', '結案/完成')),
         ('move_withdraw', lambda: move_case(catalog, root, '需求', '待確認', '清單')),
         ('open_intake', lambda: open_case(catalog, root, '前言\n' + block('wf-intake', intake()))),
         ('open_restore', lambda: open_case(catalog, root, block(
@@ -255,9 +272,9 @@ def test_every_reachable_write_site_returns_an_outcome(catalog, root, tmp_path):
             assert hasattr(result, key), (site, key)
         assert result.error_kind == 'transport' and result.retryable is True, (site, result)
         assert result.next_action, (site, result)
-        assert [entry.split('・')[0] for entry in result.completed_writes] == performed(client), (
-            site, result.completed_writes, performed(client))
-        print('INJECTED', site, '|', name, '| rc', result.rc, '| error_kind', result.error_kind,
+        observed, _ = receipt_split(result, client)
+        print('INJECTED', site, '|', name, '| 回讀證據確認', json.dumps(observed),
+              '| rc', result.rc, '| error_kind', result.error_kind,
               '| phase', result.phase, '| completed_writes',
               json.dumps(list(result.completed_writes), ensure_ascii=False))
     assert not unreached, unreached
@@ -301,8 +318,7 @@ def test_event_comment_failure_is_reported_in_the_receipt(catalog, root, tmp_pat
         name, client, result = reach(site, catalog, root, tmp_path)
         assert name is not None, site
         assert result.rc != 0 and result.phase == '事件留言', (site, result)
-        assert [entry.split('・')[0] for entry in result.completed_writes] == performed(client), (
-            site, result.completed_writes, performed(client))
+        receipt_split(result, client)
         assert '事件留言未貼出' in result.next_action and 'CLI ⛔ 不自動補發' in result.next_action, result
         print('EVENT_SITE', site, '|', name, '| completed_writes',
               json.dumps(list(result.completed_writes), ensure_ascii=False),

@@ -41,7 +41,7 @@ CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不�
 - `--dry-run` 是總入口的全域旗標（⛔ 不逐動詞加），gate 落在六個 mutation 原語：帶旗標的那一次執行對遠端零 mutation，並印出本次的 write plan（原語名與順序，⛔ 不印 body 與 payload）；不帶旗標時⛔ 不印 plan。同一場景帶旗標印出的 plan 與不帶旗標實際發生的 mutation 序列在原語名與順序上逐一相符。
 - 同一操作重跑以 operation fingerprint（待寫內容的 canonical JSON 逐字相等）只做身分比對：`review` 在卡上已有內容全等的 `wf-return` 區塊時 rc=0、⛔ 不重貼並印一行；改動交回單任一欄即照常新增。fingerprint ⛔ 不用來判斷內容語意、⛔ 不新增 D 類、⛔ 不寫進卡面、⛔ 不進任何請求的 payload 或 header。
 - `open` 的 D2 在板上時依卡面 `wf-card` 區塊的回讀證據分流：回讀與本次 write plan 全等＝rc=0 收斂且⛔ 不重寫；卡面無 `wf-card`（回讀為 plan 的前綴，上一次只完成加入 Project）＝沿用板上既有 item 續作剩餘寫入並在 `completed_writes` 列出已完成項；其餘（卡面已被推進到別的節點）＝維持原 D2 編號與原逐字理由「已在板上」。
-- `move` 的 D1 在轉移不合法時依卡面 `wf-card` 的 `stage`／`state` 與五個投影欄的回讀證據分流：回讀已是本次目標且五欄全等＝rc=0 收斂且⛔ 不重寫；回讀已是本次目標而五欄不等（回讀為 plan 的前綴）＝續作剩餘的投影欄寫入並在 `completed_writes` 列出已完成項；其餘＝維持原 D1 編號與原逐字理由 `<from> → <to> 不在合成表內`。兩者的回讀證據面⛔ 不含事件留言 body。
+- `move` 的 D1 在轉移不合法時依回讀證據分流；回讀證據面＝本次 write plan 中每一個已宣告原語各自的可回讀狀態，即卡面 `wf-card` 的 `stage`／`state`、五個投影欄，以及本次 plan 含 `close_issue`（進終態）時承載 issue 的 open／closed（唯讀取得；issue 的 open／closed 是 Issue 資源的結構化欄位，與投影欄同類、⛔ 不是留言區塊）。終態 `move` 的完成條件＝卡面 `stage`／`state` 等於本次目標 ∧ 五個投影欄與卡面 JSON 全等 ∧ 承載 issue 的 state 為 `closed`，三者同時成立才判 rc=0 收斂且⛔ 不重寫；只要 issue 仍為 `open`，即使卡面與五欄全等也⛔ 不得判收斂，一律判為 plan 的前綴並續作 `close_issue`。非終態時回讀已是本次目標且五欄全等＝rc=0 收斂且⛔ 不重寫；回讀已是本次目標而五欄不等（回讀為 plan 的前綴）＝續作剩餘的投影欄寫入並在 `completed_writes` 列出已完成項；其餘＝維持原 D1 編號與原逐字理由 `<from> → <to> 不在合成表內`。`close_issue` 本身再失敗時 rc≠0，`completed_writes` 列出 `update_card_body` 與已完成的 `write_project_field`，`next_action` 指出 issue 尚未關閉且需重跑同一 `move`。`open` D2 與 `move` D1 的回讀證據面都⛔ 不含事件留言 body；撤銷邊（`move --to 清單`）的 `remove_from_project` ⛔ 不由本條納入。
 - CLI 只讀三種留言區塊：`wf-return`、`wf-ruling`、`wf-note`；散文與首行不讀。
 - CLI ⛔ 不產生統計數字、⛔ 不比對內容同義、⛔ 不判斷該不該。
 - 硬擋只落在寫壞資料（D1、D3）與指向不存在（D2、D4）；其餘一律印。

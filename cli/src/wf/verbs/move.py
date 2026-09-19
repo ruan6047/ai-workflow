@@ -169,7 +169,8 @@ def move(card, to, *, client, root='.', catalog=None, actor=None, source_sha=Non
     if edges.plan_unfilled:
         printed.append('stage_plan 空（合成表只有需求階段）')
     resumed = move_resume(current, from_node, to_node, is_legal_move(origin, target, edges), printed,  # §2 D1 回讀分流
-                          client=client, number=number, catalog=catalog, location=location, item_id=item_id)
+                          client=client, number=number, catalog=catalog, location=location,
+                          item_id=item_id, terminal=target in edges.terminal_nodes)
     if resumed is not None:
         return finish(resumed)
     if source_sha is not None and not client.commit_exists(source_sha):

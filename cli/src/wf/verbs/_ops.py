@@ -65,6 +65,10 @@ EVENT_MARKERS = ('wf:move', 'wf:edit', 'wf:reject')
 EVENT_PHASE = '事件留言'
 EVENT_NEXT = '事件留言未貼出：CLI ⛔ 不自動補發，請人工確認該事件是否需要補貼'
 RESUME_NEXT = '先回讀遠端狀態再決定是否重跑本動詞；CLI ⛔ 不自動 retry、⛔ 不自動 rollback'
+# 終態 `move` 續作 `close_issue` 時它本身再失敗（core/verbs.md §2 move D1 分流條）：收據要讓
+# 操作者知道 issue 在本次回讀時仍是 open、本次關閉沒取得回應，且重跑同一 `move` 會從回讀重新分流。
+CLOSE_NEXT = ('issue 尚未關閉：本次 close_issue 未取得回應，請重跑同一 move 由回讀重新分流；'
+              'CLI ⛔ 不自動 retry、⛔ 不自動 rollback')
 # 需求方 2026-09-16 裁定 G8 取甲：`edit` 的「全項等值＝沉默」出口**無條件**印這一行。
 # 為什麼無條件：CLI ⛔ 不讀事件留言 body，跨進程重跑時分辨不出上一次的 `wf:edit` 是貼成功
 # 還是失敗未補，使用者仍須能得知事件可能未補上（需求方 2026-09-16 裁定 G1）。
@@ -108,6 +112,13 @@ class WriteLedger:
     def __init__(self, verb, dry):
         self.verb, self.dry = verb, dry
         self.plan, self.completed, self.pending = [], [], None
+        # observed＝本次執行的回讀證據確認「已經完成」的那些寫入（可能發生在先前的執行）。
+        # 刻意與 completed 分開：completed 只記本次真的發出去的請求，⛔ 不把回讀結論混進去。
+        self.observed = []
+
+    def observe(self, entries):
+        """回讀證據確認已完成的寫入逐字進收據，⛔ 不改 plan、⛔ 不算成本次發出的請求。"""
+        self.observed.extend(entry for entry in entries if entry not in self.observed)
 
     def begin(self, primitive, target):
         self.pending = (primitive, target)
@@ -119,7 +130,8 @@ class WriteLedger:
         self.pending = None
 
     def receipt(self):
-        return tuple(f'{primitive}・{target}' for primitive, target in self.completed)
+        return (*self.observed,
+                *(f'{primitive}・{target}' for primitive, target in self.completed))
 
 
 class WriteProxy:
@@ -194,7 +206,8 @@ def failure(verb, exc, ledger, emit):
     event = is_event_comment(primitive, target)
     kind, retryable = classify(exc)
     phase = EVENT_PHASE if event else PHASES.get(primitive, primitive or '未知')
-    action = f'{EVENT_NEXT}（{target}）' if event else RESUME_NEXT
+    action = (f'{EVENT_NEXT}（{target}）' if event
+              else CLOSE_NEXT if primitive == 'close_issue' else RESUME_NEXT)
     done = ledger.receipt()
     lines = [f'遠端寫入失敗・{verb}・{kind}・{phase}・{target}・retryable={retryable}',
              *(f'已完成的寫入：{entry}' for entry in done), f'後續動作：{action}']
@@ -308,16 +321,28 @@ def board_decision(plan_card, current, item, planned_values=None, actual_values=
 
 
 def move_resume(current, from_node, to_node, legal, printed, *, client, number, catalog,
-                location, item_id):
+                location, item_id, terminal=False):
     """core/verbs.md §2 D1 的回讀分流（WF-016）。回 None＝轉移合法、照常往下跑。
 
-    回讀證據＝卡面 `wf-card` 區塊的 `stage`／`state` 與五個投影欄，⛔ 不讀事件留言 body。
+    回讀證據面＝本次 write plan 中每一個已宣告原語各自的可回讀狀態：卡面 `wf-card` 區塊的
+    `stage`／`state`、五個投影欄，以及——當本次 plan 含 `close_issue`（terminal，即進終態）時——
+    承載 issue 的 open／closed（唯讀 `client.issue_is_open`）。issue 的 open／closed 是 Issue 資源的
+    結構化欄位，與投影欄同類、⛔ 不是留言區塊，故本函式⛔ 不觸及「CLI 只讀三種留言區塊」。
+    ⛔ 不讀 `wf:move`／`wf:edit`／`wf:reject` 事件留言的 body。
+
     轉移不合法時：
     · 卡面回讀不是本次目標＝維持基線的 D1 編號與逐字理由 `<from> → <to> 不在合成表內`；
-    · 卡面回讀已是本次目標而五欄全等＝上一次已整批完成 ⇒ rc=0 收斂、⛔ 不重寫；
-    · 卡面回讀已是本次目標而五欄不等＝回讀是本次 plan 的前綴 ⇒ 續作剩餘的投影欄寫入，
-      並把上一次已完成的卡面 JSON 寫入一併列進 completed_writes。
+    · 終態 `move` 的完成條件＝卡面 `stage`／`state` 等於本次目標 ∧ 五個投影欄與卡面 JSON 全等
+      ∧ 承載 issue 的 state 為 `closed`；三者同時成立才判 rc=0 收斂。只要 issue 仍為 `open`，
+      即使卡面與五欄全等也⛔ 不得判收斂，一律判為 plan 的前綴並續作 `close_issue`
+      （查核序 1 finding WF-016-R1.1-002 逐字「現行規劃把完成條件縮成卡面與投影而漏掉尚未完成
+      的 close」）；`close_issue` 本身再失敗時由 `guarded` 收斂成 rc≠0 的結果物件，收據帶回讀
+      證據確認的 `update_card_body` 與本次已完成的 `write_project_field`，`next_action`＝CLOSE_NEXT。
+    · 非終態而五欄不等＝回讀是本次 plan 的前綴 ⇒ 續作剩餘的投影欄寫入，並把上一次已完成的
+      卡面 JSON 寫入一併列進 completed_writes。
     ⛔ 不 retry、⛔ 不 rollback、⛔ 不補發事件留言（CLI ⛔ 不讀事件留言，無從得知它貼出與否）。
+    撤銷邊（`move --to 清單`）的 `remove_from_project` 本輪⛔ 不納入回讀證據面（需求方
+    2026-09-19 裁定；已列入交回單 out_of_scope 上呈）。
     """
     # 函式內 import：`_write` 模組級已 import 本檔的結果物件，互引會成環（同 move.py 對
     # move_modules 的既有做法）。⛔ 不得推出「本檔可以自己發遠端寫入」——寫入仍只經六原語。
@@ -333,6 +358,15 @@ def move_resume(current, from_node, to_node, legal, printed, *, client, number, 
     if changed:
         printed.append('續作剩餘寫入・投影欄：' + '、'.join(changed))
         done += [f'write_project_field・{name}' for name in changed]
-    else:
+    if terminal and client.issue_is_open(number):
+        # 卡面那一筆來自回讀、⛔ 不是本次發出的請求，故走帳本的 observed：`close_issue` 再失敗時
+        # 共同失敗出口的 completed_writes 才列得出它（投影欄那些是本次寫的，帳本已有）。
+        ledger = getattr(client, 'ledger', None)
+        if ledger is not None:
+            ledger.observe(done[:1])
+        printed.append(f'承載 issue 仍為 open：回讀是本次 plan 的前綴，續作 close_issue（#{number}）')
+        client.close_issue(number)
+        done.append(f'close_issue・#{number}')
+    elif not changed:
         printed.append(f'卡面回讀已等於本次目標 {to_node}：收斂、⛔ 不重寫')
     return receipt(WriteResult(0, card=current), done)

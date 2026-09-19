@@ -79,6 +79,12 @@ class FakeGhClient:
     def issues(self, state='all'):
         return self._read('issues', state=state)
 
+    def issue_is_open(self, number):
+        """唯讀：承載 issue 的 open／closed（core/verbs.md §2 終態 move 的第三個回讀證據）。
+        刻意取同一顆 issue 狀態、⛔ 不另存一份：`close_issue` 之後同一替身的回答必須翻面，
+        否則測到的是替身自己的常數，而不是 CLI 有沒有把 issue state 讀進完成判定。"""
+        return self.issue(number).get('state') == 'open'
+
     def pulls_for_branch(self, branch):
         return self._read('pulls_for_branch', branch=branch)
 

@@ -15,6 +15,7 @@ import subprocess
 import pytest
 
 from wf.compose.blocks import load_blocks, projection
+from wf.gh.client import TransportError
 from wf.gh.writes import LABELS, read_block
 from wf.verbs._common import field_values
 from wf.verbs._write import projected
@@ -248,3 +249,93 @@ def test_move_d1_keeps_the_baseline_refusal_for_a_real_illegal_edge(catalog, roo
     assert result.rc == 1 and result.reason == '執行/進行中 → 結案/完成 不在合成表內', result
     assert written(client) == ['post_comment'], written(client)   # 只有那一則 wf:reject
     print('MOVE_D1_REFUSE', repr(result.reason))
+
+
+# ── A5（丁）：終態 `move` 的第三個合取項——承載 issue 的 state 必須為 `closed` ─────────
+
+def terminal_move_case(catalog, root, *, closed=False, client_class=MoveClient):
+    """終態 `move` 重跑：卡面 `wf-card` 已是 結案/完成、五個投影欄也已寫成，差別只在承載 issue。
+    closed=False＝上一次 `close_issue` 之前失敗（issue 仍 open）；True＝上一次已整批完成。"""
+    current = expected_card(stage='結案', state='完成', stage_plan=PLAN, iteration=7,
+                            owner={'role': 'executor', 'actor': 'old'}, source_sha='a' * 40,
+                            branch='old/branch')
+    client = client_class(catalog, current)
+    if closed:
+        client.rows[10]['state'] = 'closed'
+    return client, []
+
+
+def test_terminal_move_resumes_close_issue_when_the_issue_is_still_open(catalog, root):
+    """(丁)：卡面與五欄全等而承載 issue 仍為 open ⇒ ⛔ 不得判收斂，一律判為 plan 的前綴並續作
+    `close_issue`。依查核序 1 finding WF-016-R1.1-002 逐字「現行規劃把完成條件縮成卡面與投影
+    而漏掉尚未完成的 close」。"""
+    client, lines = terminal_move_case(catalog, root)
+    assert client.issue_is_open(10) is True
+    result = move(10, '結案/完成', client=client, root=root, catalog=catalog, emit=lines.append)
+    assert result.rc == 0, (result, lines)
+    assert written(client) == ['close_issue'], written(client)
+    assert client.issue_is_open(10) is False, '替身的 issue state 必須具狀態，否則測的是替身'
+    assert any(e.startswith('update_card_body') for e in result.completed_writes), result
+    assert any(e.startswith('close_issue') for e in result.completed_writes), result
+    print('MOVE_TERMINAL_RESUME rc', result.rc, '| issue state 回讀 open',
+          '| completed_writes', json.dumps(list(result.completed_writes), ensure_ascii=False),
+          '|', json.dumps(lines, ensure_ascii=False))
+
+
+def test_terminal_move_converges_when_the_issue_is_already_closed(catalog, root):
+    """A5 負控①：把 (丁) 的前置改成 issue 已為 `closed` 後重跑，必須判 rc=0 收斂且該次⛔ 不再
+    呼叫 `close_issue`。"""
+    client, lines = terminal_move_case(catalog, root, closed=True)
+    assert client.issue_is_open(10) is False
+    result = move(10, '結案/完成', client=client, root=root, catalog=catalog, emit=lines.append)
+    assert result.rc == 0 and written(client) == [], (result, written(client))
+    assert any('收斂' in line for line in lines), lines
+    print('MOVE_TERMINAL_CONVERGE rc', result.rc, '| issue state 回讀 closed',
+          '| completed_writes', json.dumps(list(result.completed_writes), ensure_ascii=False),
+          '|', json.dumps(lines, ensure_ascii=False))
+
+
+def test_terminal_move_open_and_closed_do_not_collapse(catalog, root):
+    """A5 負控①（續）：兩種前置若得到相同的 (rc, completed_writes)，代表 issue 狀態沒被讀進判定。"""
+    still_open, lines = terminal_move_case(catalog, root)
+    first = move(10, '結案/完成', client=still_open, root=root, catalog=catalog, emit=lines.append)
+    already, other = terminal_move_case(catalog, root, closed=True)
+    second = move(10, '結案/完成', client=already, root=root, catalog=catalog, emit=other.append)
+    assert (first.rc, tuple(first.completed_writes)) != (second.rc, tuple(second.completed_writes))
+    print('MOVE_TERMINAL_VERDICTS | open', json.dumps(
+        [first.rc, list(first.completed_writes), written(still_open)], ensure_ascii=False),
+          '| closed', json.dumps(
+        [second.rc, list(second.completed_writes), written(already)], ensure_ascii=False))
+
+
+def test_terminal_move_negative_control_issue_is_open_pinned_true(catalog, root, monkeypatch):
+    """A5 負控②：把替身的 `issue_is_open` 改為恆 `True` 之後，(丁) 的收斂案例（前置 `closed`）
+    必須轉紅——本測試逐字記下該變異下收斂斷言不再成立（改呼叫 `close_issue`）。
+    仍收斂即代表判定沒讀 issue state。"""
+    monkeypatch.setattr(MoveClient, 'issue_is_open', lambda self, number: True)
+    client, lines = terminal_move_case(catalog, root, closed=True)
+    result = move(10, '結案/完成', client=client, root=root, catalog=catalog, emit=lines.append)
+    assert written(client) == ['close_issue'], written(client)
+    print('MOVE_TERMINAL_MUTATION issue_is_open≡True | rc', result.rc,
+          '| 寫入', json.dumps(written(client)))
+
+
+class CloseFailsClient(MoveClient):
+    """`close_issue` 一律拋 TransportError：續作 `close_issue` 再失敗的那一條路。"""
+
+    def close_issue(self, number):
+        raise TransportError(f'injected TransportError at close_issue #{number}')
+
+
+def test_terminal_move_reports_the_receipt_when_close_issue_fails_again(catalog, root):
+    """(丁) 續作時 `close_issue` 本身再失敗：rc≠0，`completed_writes` 列出回讀證據確認已完成的
+    `update_card_body`，`next_action` 指出 issue 尚未關閉且需重跑同一 `move`。"""
+    client, lines = terminal_move_case(catalog, root, client_class=CloseFailsClient)
+    result = move(10, '結案/完成', client=client, root=root, catalog=catalog, emit=lines.append)
+    assert result.rc != 0 and result.error_kind == 'transport', result
+    assert any(e.startswith('update_card_body') for e in result.completed_writes), result
+    assert not any(e.startswith('close_issue') for e in result.completed_writes), result
+    assert 'issue 尚未關閉' in result.next_action and 'move' in result.next_action, result
+    print('MOVE_TERMINAL_CLOSE_FAILS rc', result.rc, '| completed_writes',
+          json.dumps(list(result.completed_writes), ensure_ascii=False),
+          '| next_action', result.next_action)
