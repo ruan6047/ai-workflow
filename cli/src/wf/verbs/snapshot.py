@@ -15,6 +15,9 @@ ValidationError；非 schema 的兩類原因 errors 為 []。fence 未閉合的�
 note_id 皆為 null 且該則⛔ 不產生任何區塊級項目）、
 formalized_candidates[{card_id, comment_url, created_at, block_index, note_id, note}]
 （與卡面 notes 三鍵逐鍵相等而略過者；⛔ 不靜默丟棄）、last_cited{id: {card_id, comment_url, created_at}}。
+
+`--adopt <step>`（core/adopt.md §3）＝首次採用生命週期的五個 step；給值時本動詞⛔ 不做盤點、⛔ 不落
+snapshot.json／.md，改走 verbs/_adopt.py 的純計算與本機落地。⛔ 不帶 `--adopt` 的既有盤點路徑逐字不變。
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,6 +32,7 @@ from wf.compose.schema import compose_schema
 from wf.compose.validate import validate, _equal
 from wf.context import rules_of
 from wf.gh.writes import CardBodyError, block_value
+from wf.verbs import _adopt
 from wf.verbs._common import Printer, board_items, field_values, note_blocks, parse_args
 from wf.verbs._write import projected
 
@@ -209,6 +213,10 @@ def snapshot(*, client, root='.', catalog=None, out=None, now=None, emit=print, 
 
 
 def run(argv, *, client, root='.', catalog=None, context=None):
-    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。"""
-    args = parse_args('wf snapshot', argv, ('--out', {}))
+    """只解析本動詞參數；七動詞接線由 verbs/main.py 提供。
+    `--adopt` 的值域由 `_adopt.STEPS` 提供（`import` 使用、⛔ 不重打）：argparse 的 `choices` 把值域外的值
+    擋在解析層（rc=2、用法行），⛔ 不新增 D 類——`core/verbs.md` §1 `snapshot` 列硬擋欄逐字為「—」。"""
+    args = parse_args('wf snapshot', argv, ('--out', {}), ('--adopt', {'choices': _adopt.STEPS}))
+    if args.adopt is not None:
+        return _adopt.run_step(args.adopt, root=root, context=context)
     return snapshot(client=client, root=root, catalog=catalog, out=args.out, context=context).rc

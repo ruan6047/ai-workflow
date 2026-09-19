@@ -5,6 +5,9 @@
 最低關聯＝被操作 item 的 content.repository stable ID 等於 resolved repository（可跨 repo、不要求 owner 相同、
 project:null 合法）；permission 只產 `PermissionFact` 事實、⛔ 不做政策（逐 operation 放行或阻擋由 WF-016 決定）。
 本機 Git 身分事實 `local_git_facts` 也住這裡（唯讀 plumbing；gh/localgit.py 依既有不變式只包 merge-tree）。
+consumer superproject 內 rules source 的 gitlink 取源 `gitlink_sha` 同樣住這裡：它與 `local_git_facts` 共用
+同一組失敗語意（事實缺席回 None、只有 git 不可執行才 raise），故落在本檔是沿用既有宣告、⛔ 不新增主張；
+它只取源、⛔ 不比對（四列對帳住 verbs/_adopt.py，第零條）。
 比對一律用 stable ID；⛔ 不建 dependency solver、⛔ 不耦合具名 consumer、⛔ 不支援 GHES（host 固定 github.com）。
 """
 from __future__ import annotations
@@ -19,6 +22,7 @@ from wf.gh.localgit import LocalGitFacts, LocalGitUnavailable, RemoteFact
 
 SLUG = re.compile(r'^(?:[a-z+]+://)?(?:[^@/]+@)?github\.com[/:]([^/:]+/[^/:]+?)(?:\.git)?/?$')
 PERMISSION_STATES = ('allowed', 'denied', 'unknown')
+GITLINK_MODE = '160000'  # git 對 submodule 條目的 mode（git 自身定義，⛔ 不是本框架的值）
 WRITE_LEVELS = ('WRITE', 'MAINTAIN', 'ADMIN')  # GitHub viewerPermission 的可寫層級（API 自身定義）
 
 
@@ -92,6 +96,39 @@ def local_git_facts(root, *, runner=None):
                     for name in (out('remote') or '').split())
     return LocalGitFacts(top_level, git_dir, common_dir, out('rev-parse', '--verify', '--quiet', 'HEAD'),
                          ref, remotes)
+
+
+def _gitlink_of(text, column):
+    """`ls-files -s`／`ls-tree` 的逐筆輸出取 mode 160000 那一筆的 40 碼 SHA；⛔ 無該 mode＝None。
+    `column` 是該指令輸出裡 SHA 的欄序（ls-files -s＝1、ls-tree＝2），刻意由呼叫端給：
+    兩個指令的欄位形狀本來就不同，⛔ 不得推出「可以共用同一個欄序」。"""
+    for record in (text or '').split('\0'):
+        fields = record.split()
+        if len(fields) > column and fields[0] == GITLINK_MODE and len(fields[column]) == 40:
+            return fields[column]
+    return None
+
+
+def gitlink_sha(root, relative, *, runner=None):
+    """consumer superproject（`root`）內 `relative` 這條路徑的 gitlink；回 (索引側, HEAD 側)，
+    各自是 40 碼 commit SHA 或 None。索引側＝`git ls-files -s`（consumer 當下宣告要採用的版本，權威取源）；
+    HEAD 側＝`git ls-tree HEAD`（診斷「已 stage 未 commit」）。兩側刻意⛔ 不折成單值、⛔ 不在本層比對。
+    路徑不是 gitlink、路徑不存在、倉庫尚無 commit、root 非工作樹或 bare＝該側 None（事實缺席，⛔ 不是
+    錯誤，同 `local_git_facts`）；git 不可執行＝LocalGitUnavailable。
+    ⛔ 不得推出「None 代表兩側相同」或「None 代表未採用」——不可得只交給呼叫端標 unknown。"""
+    runner = subprocess.run if runner is None else runner
+
+    def out(*args):
+        try:
+            result = runner(('git', '-C', str(root), *args), capture_output=True, text=True, check=False,
+                            timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise LocalGitUnavailable(str(exc)) from exc
+        return result.stdout if result.returncode == 0 else None
+
+    path = str(relative)
+    return (_gitlink_of(out('ls-files', '-s', '-z', '--', path), 1),
+            _gitlink_of(out('ls-tree', '-z', 'HEAD', '--', path), 2))
 
 
 def slug_of(url):

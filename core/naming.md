@@ -13,7 +13,7 @@ last_confirmed: 2026-09-07
 - NNN 的序號池四件：範圍＝同一 AREA 各自一池，⛔ 不跨 area 共用序號；母體＝全 repo 帶 `wf-card` 區塊的 issue，含已 closed 的、含不在 Project 板上的，⛔ 不是 Project 板上的卡、⛔ 不跨 repo；篩選＝`card_id` 合 `core/card-schema.md` §1 的 pattern 者才進池；遞增＝該 area 池內已用最大序號 +1，池空時視最大序號為 0。
 - 標題 slug 只放 issue 標題；⛔ 不進卡ID。
 - 修復卡 `<原卡>-FIX<n>`，n 從 1 起；只在碼已進 main 的事後查核時開。
-- aiwf 種子 areas：WF、CLI、DOC、OPS。
+- aiwf 本 repo 自己的 `areas` 值：WF、CLI、DOC、OPS。⛔ 不是採用專案的預設值——採用專案自填（`ADOPTION.md` §2）。
 
 ## 2 · 分支
 

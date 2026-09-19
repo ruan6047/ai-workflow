@@ -1,6 +1,6 @@
 [project]
 name = "wf"
-version = "0.0.0"
+version = "1.0.0"
 description = "ai-workflow CLI：七動詞、三目錄（gh／compose／verbs）；schema 執行期讀 core/ 的 fenced 區塊"
 requires-python = ">=3.14"
 dependencies = []

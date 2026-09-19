@@ -25,7 +25,7 @@ from wf.gh.localgit import LocalGitUnavailable
 from wf.gh.target import (RepositoryCandidate, local_git_facts, permission_facts, resolve_project,
                           resolve_repository, select_remotes, slug_of)
 from wf.module_validation import ModuleValidationError, validate_modules
-from wf.verbs import brief, edit, move, notes, review, snapshot
+from wf.verbs import _adopt, brief, edit, move, notes, review, snapshot
 from wf.verbs import open as open_verb
 
 DISPATCH = {'open': open_verb, 'move': move, 'edit': edit, 'notes': notes,
@@ -125,21 +125,36 @@ def main(argv=None, *, client=None, root=None, env=None) -> int:
         print('wf <' + '|'.join(VERBS) + '> …', file=sys.stderr)
         return 2
     flags, argv = parsed
+    adopt_requested = argv[0] == 'snapshot' and any(
+        token.partition('=')[0] == '--adopt' for token in argv[1:])
     try:
         context, client = bootstrap(flags, root=root, env=os.environ if env is None else env, client=client)
+    # WF-015 A7：下面三個分支各自在原有輸出之後呼叫 `_adopt` 的純計算聚合函式，印出與 `--adopt preflight`
+    # 同一份項名清單常數（`import` 使用、⛔ 不重打），bootstrap 未成功而取不到的項一律標 `unknown`。
+    # 純計算、落 stdout、對 GitHub 與 Project 零 mutation（client 在 `bootstrap()` 內尚未 bind_context 即 raise）。
+    # 刻意只在本次呼叫就是 `snapshot --adopt <step>` 時印（`adopt_requested`）：⛔ 不把採用診斷加到別的
+    # 動詞的失敗輸出上——`cli/tests/test_main_wiring.py::test_broken_project_config_prints_one_line_and_
+    # writes_nothing` 對 `notes` 的同一分支有既有逐字斷言 `captured.out == ''` 與 stderr 恰一行，而該檔
+    # ⛔ 不在本卡 `resources` 內。⛔ 不得推出「聚合函式沒有接上三個分支」——接線在此，只是收斂到採用入口。
     except ProjectConfigError as exc:
         print(f'.wf/modules.json 不合法：{exc}', file=sys.stderr)
+        if adopt_requested:
+            _adopt.print_unavailable()
         return 1
     except ModuleValidationError as exc:
         # core/modules.md §5：完整修正資訊落 stdout（⛔ 不是 stderr），逐條、⛔ 不折疊。
         for line in exc.lines:
             print(f'模組宣告或設定不可用・{line}')
+        if adopt_requested:
+            _adopt.print_unavailable()
         return 1
     except IdentityError as exc:
         print(f'硬擋・{exc.code}・{exc}', file=sys.stderr)
         return 1
     except (ContextError, BlockError) as exc:
         print(str(exc), file=sys.stderr)
+        if adopt_requested:
+            _adopt.print_unavailable()
         return 1
     # G4：`--dry-run` 只在此掛上 client 一顆布林，gate 住 gh/writes.py 的六原語（⛔ 不逐動詞加旗標）。
     client.dry_run = '--dry-run' in flags

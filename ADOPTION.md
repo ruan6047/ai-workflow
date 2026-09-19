@@ -5,7 +5,8 @@
 - 建 ruleset：main 禁刪、禁改史、`required_linear_history`，bypass 清空（`core/platform.md` P1）。
 - required status checks 至少 `secret-scan`、`commit-trailer`（P4、P5）；有可達性檢查的專案加 `reachability`。
 - 合併方式只留一種按鈕，值同時寫進 `.wf/modules.json` 的 `merge_method`（P3）。
-- 複製 `secret-scan` 與 `commit-trailer` 兩個 job 與 `.github/scripts/trailer_check.py`；`reachability` 檢查的是本 repo 的規則檔，採用專案⛔ 不複製。
+- 複製 `secret-scan` 與 `commit-trailer` 兩個 job（片段粒度，⛔ 不搬家）；`.github/scripts/trailer_check.py` 由 `wf snapshot --adopt install` 落地並登記進 `.wf/adopt/manifest.json`（所有權住該 manifest，`core/adopt.md` §2）。`reachability` 檢查的是本 repo 的規則檔，採用專案⛔ 不複製。
+- rules source 以 submodule 掛載時，複製的 job 其 `actions/checkout` 須帶 `submodules: true`，否則 runner 上取不到 rules root。
 - 本框架唯一支援的 Python 版本是 3.14；複製上一條的 job 時須一併帶走該 job 的 `actions/setup-python` 步驟（`python-version: "3.14"`），否則下游會跑到 runner 內建的未釘選 `python3`。
 - commit trailer 鍵集合與必填時機依 `roles/conduct-common.md` §2。
 
@@ -14,11 +15,13 @@
 ```json
 {"modules": [],
  "merge_method": "squash",
- "areas": ["WF", "CLI", "DOC", "OPS"],
+ "areas": ["APP"],
  "project": null,
  "rules": null,
  "remote": null}
 ```
+
+- 種子裡的 `areas` 是佔位值。**採用專案的需求方**在抄下本種子時就把它改成本專案自己的 AREA 枚舉，**第一張卡 `open` 之前**填完（缺它配不出卡ID）；⛔ 不沿用 aiwf 自己的 `WF`、`CLI`、`DOC`、`OPS`（那四值住 `core/naming.md` §1，是本 repo 的值、⛔ 不是通用預設）。
 
 - `modules` 只列 `scope=project` 的模組（該值住各 `modules/<name>/module.md` §0，⛔ 不在本檔重列名單）；`scope=card` 的模組看卡面，⛔ 不列。列名是 `scope=project` 啟用的必要條件，`enable_if` 仍須成立（`core/modules.md`）。
 - 加入帶 `adds.enums.states` 的專案級模組時，同一 PR 補狀態欄選項。
@@ -26,7 +29,7 @@
 - `areas` 是卡ID 前綴枚舉（`core/naming.md` §1）。
 - `project` 是 CLI 定位板的唯一居所（owner 字串＋number 整數）；缺它動詞不寫投影欄、只印「無 Project 設定」。種子填 `null`，§3 的 Project 建好後回填 `{"owner": …, "number": …}`。
 - 有資料庫才建 `.wf/contracts/DATABASE_CONTRACT.md`；同時 ≥2 執行者才建 `.wf/contracts/CONTROL_PLANE.md`。
-- `rules` 是 rules source（`core/`、`roles/`、`stages/`、`modules/` 四個規則目錄）的唯一居所：`null`＝規則就在 project_root；`{"path": …}` 相對 project_root（⛔ 不相對 `.wf`）。本檔⛔ 不指定 canonical install mode（submodule、package、vendor 都只要該路徑可讀）。
+- `rules` 是 rules source（`core/`、`roles/`、`stages/`、`modules/` 四個規則目錄）的唯一居所：`null`＝規則就在 project_root；`{"path": …}` 相對 project_root（⛔ 不相對 `.wf`）。canonical install mode 與四列對帳住 `core/adopt.md` §1，本檔⛔ 不重列。
 - `remote` 是 git remote 的名稱（⛔ 不是 URL）：CLI 依 ①`--remote` ②本鍵 ③current branch 的 upstream ④唯一 remote 決定 repository；多個 remote 只在 API stable ID 相同時合併，否則 fail-loud、⛔ 不猜 origin。`GH_REPO` 不在這條序列內：本機身分缺席時成唯一候選，存在時只作核對。
 - project_root／rules_root 分工：`.wf/`、snapshot 輸出、本機 git 工作樹一律相對 project_root；規則資產一律相對 rules root。三個全域旗標只認動詞之前：`wf [--project-root <p>] [--rules-root <p>] [--remote <name>] <verb> …`，旗標值相對 invocation cwd，並各自勝過同名設定鍵。
 
