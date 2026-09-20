@@ -12,8 +12,11 @@ from pathlib import Path
 import re
 import shutil
 
+import pytest
+
 from wf.context import FilesystemRulesSource, Provenance, rules_of
-from wf.verbs._adopt import ASSET_NAMES, SEED_HOME, STEPS
+from wf.verbs._adopt import ASSET_NAMES, CONTROL_SET, MANIFEST_SCHEMA, OWNERSHIPS, SEED_HOME, STEPS, \
+    asset_entry, defect_of
 from .test_compose_schema import ROOT
 from .test_context_roots import RULE_DIRS
 
@@ -309,6 +312,47 @@ def test_the_section_zero_parsers_are_effective(tmp_path):
         path.write_text(text.replace(f'`{victim}`、', '').replace(f'、`{victim}`', ''), encoding='utf-8')
         assert victim not in config_items(rules), victim
         print('NEGATIVE_CONTROL config_item dropped', victim, '->', list(config_items(rules)))
+
+
+CONTROL_ANCHOR = '- **控制檔集合恰一個成員**'
+
+
+def control_set(rules=None):
+    """A2 ②：`core/adopt.md` §2 的**控制檔具名宣告**。它⛔ 不是資產表的一列，故⛔ 不經 `table_named`
+    取；解析法＝該具名條目行上的第一個反引號值。⛔ 不重打成字面（F-執行者-04）。"""
+    _, body = adopt_section(rules, '2')
+    line, = [row for row in body.splitlines() if row.startswith(CONTROL_ANCHOR)]
+    return (re.findall(r'`([^`]+)`', line)[0],)
+
+
+def test_the_control_file_set_has_an_independent_lower_bound():
+    """V10 後半：控制檔集合與 `_adopt` 層常數逐字相等、基數恰 1、⛔ 不在資產表目標欄，
+    且任一 `assets` 項的 `path` 等於它即整份 manifest 不可用（方案 A：控制檔⛔ 不自登記）。"""
+    declared = control_set()
+    assert declared == CONTROL_SET, (declared, CONTROL_SET)
+    assert len(declared) == 1 and len(set(declared)) == 1, declared
+    targets = [row[2] for row in asset_table()]
+    assert not (set(declared) & set(targets)), (declared, targets)
+    healthy = {'schema': MANIFEST_SCHEMA, 'source_commit': None,
+               'assets': [asset_entry('a.txt', OWNERSHIPS[0], 'sha256:0', '1')]}
+    assert defect_of(healthy) is None, healthy                   # 負控：判準⛔ 非恆為假
+    self_listed = {**healthy, 'assets': [*healthy['assets'],
+                                         asset_entry(declared[0], OWNERSHIPS[0], 'sha256:0', '1')]}
+    assert defect_of(self_listed) is not None, self_listed
+    print('CONTROL_SET', list(declared), 'asset_targets', targets,
+          'self_registration_defect', defect_of(self_listed))
+
+
+def test_the_control_set_parser_is_effective(tmp_path):
+    """負控（必須會響）：合成副本內拿掉該具名條目後，同一個解析器必須取不到值。"""
+    rules = synthetic(tmp_path, 'control-decl')
+    path = Path(rules.identity) / ADOPT_HOME
+    kept = [line for line in path.read_text(encoding='utf-8').splitlines()
+            if not line.startswith(CONTROL_ANCHOR)]
+    path.write_text('\n'.join(kept) + '\n', encoding='utf-8')
+    with pytest.raises(ValueError):
+        control_set(rules)
+    print('NEGATIVE_CONTROL control_declaration dropped', CONTROL_ANCHOR)
 
 
 def test_the_asset_table_has_exactly_four_columns_and_matches_the_constant():

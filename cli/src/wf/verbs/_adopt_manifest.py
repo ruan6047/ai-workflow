@@ -13,13 +13,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 MANIFEST_PATH, MANIFEST_SCHEMA = '.wf/adopt/manifest.json', 'wf-adopt-manifest'
+# `core/adopt.md` §2 的**控制檔集合**具名宣告在實作層的對應常數：基數恰 1、⛔ 無來源檔、⛔ 非整檔複製
+# 產生，故它⛔ 不是 `ASSETS` 的一列。刻意與 `ASSETS` 分開宣告：控制檔的生成、更新與移除權限來自該具名
+# 宣告本身，⛔ 非來自任何登記項（方案 A：控制檔⛔ 不自登記）。⛔ 不得推出「可以再加第二個控制檔」。
+CONTROL_SET = (MANIFEST_PATH,)
 TOP_KEYS = ('schema', 'source_commit', 'assets')
 ASSET_KEYS = ('path', 'ownership', 'digest', 'pin')
 OWNERSHIPS = ('framework-managed', 'consumer-owned')
 # core/adopt.md §2「manifest 結構宣告」表的缺陷代號，逐字、同序。⛔ 不在別處重打：
 # `cli/tests/test_adopt_manifest.py` 以解析該表得到的集合與本常數比對，任一側漏一個就轉紅。
 DEFECTS = ('top-keys', 'schema-value', 'source-commit', 'assets-type', 'entry-type',
-           'entry-keys', 'entry-value', 'path-unique')
+           'entry-keys', 'entry-value', 'path-unique', 'control-path')
 NO_MANIFEST = 'manifest 不存在或不可解析'
 VERSION_HOME = 'cli/pyproject.toml'
 # 採用資料的機器可讀居所（`core/adopt.md` §3 `bootstrap`）：CLI ⛔ 不以「文件內第 N 個 json 圍欄」
@@ -102,7 +106,11 @@ def defect_of(value):
         if found is not None:
             return found
     paths = [entry['path'] for entry in value['assets']]
-    return DEFECTS[7] if len(set(paths)) != len(paths) else None
+    if len(set(paths)) != len(paths):
+        return DEFECTS[7]
+    # 方案 A：控制檔⛔ 不在 `assets` 內登記自己。命中即整份 manifest 不可用——否則「自登記」會成為
+    # 一條把控制檔路徑當一般登記項刪除或改寫的旁路。⛔ 不得推出「只要忽略那一項就好」。
+    return DEFECTS[8] if set(paths) & set(CONTROL_SET) else None
 
 
 def read_manifest(root):
@@ -115,12 +123,14 @@ def read_manifest(root):
     return (None, NO_MANIFEST) if defect_of(value) is not None else (value, None)
 
 
-def self_digest(manifest):
-    """manifest 自身那項的摘要前像＝把自己那項的 `digest` 換成空字串後的 canonical JSON。刻意如此：摘要
-    自指算不出定值，而 manifest 又必須被登記。⛔ 不得推出「這個摘要涵蓋檔案位元組」——它釘的是內部一致性。"""
-    blanked = {**manifest, 'assets': [dict(e, digest='') if e.get('path') == MANIFEST_PATH else e
-                                      for e in manifest.get('assets') or []]}
-    return digest_of(json.dumps(blanked, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode())
+def control_unusable(root):
+    """§2 的**前置條件**：控制檔路徑上有一個⛔ 不合結構宣告的既有物（⛔ 非 JSON、目錄、符號連結皆是）。
+    符號連結單獨判是刻意的：它即使指向一份合法 manifest 也算既有物——跟隨它寫回去會寫到樹外。
+    控制檔**⛔ 不存在**⛔ 不是本情形（那是乾淨起點，走正常分支）。"""
+    path = Path(root) / MANIFEST_PATH
+    if path.is_symlink():
+        return True
+    return path.exists() and read_manifest(root)[0] is None
 
 
 def asset_entry(path, ownership, digest, pin):
@@ -130,11 +140,10 @@ def asset_entry(path, ownership, digest, pin):
             'pin': pin if isinstance(pin, str) else ''}
 
 
-def write_manifest(root, assets, source_commit, pin):
-    """assets＝已排序的四鍵項（⛔ 不含 manifest 自身）；本函式補上 manifest 自身那一項後落檔。"""
-    entries = [*assets, asset_entry(MANIFEST_PATH, OWNERSHIPS[0], '', pin)]
-    manifest = {'schema': MANIFEST_SCHEMA, 'source_commit': source_commit, 'assets': entries}
-    entries[-1]['digest'] = self_digest(manifest)
+def write_manifest(root, assets, source_commit):
+    """assets＝已排序的四鍵項。**控制檔⛔ 不在此登記自己**（方案 A，§2 控制檔具名宣告）：本函式
+    只落檔，⛔ 不補任何自身項——補了會命中結構宣告的 `control-path` 列而使整份 manifest 不可用。"""
+    manifest = {'schema': MANIFEST_SCHEMA, 'source_commit': source_commit, 'assets': list(assets)}
     (path := Path(root) / MANIFEST_PATH).parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return manifest

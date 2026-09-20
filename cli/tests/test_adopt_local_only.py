@@ -133,7 +133,11 @@ def test_preflight_and_smoke_degrade_per_item_not_wholesale(tmp_path, env, capsy
     bare, _ = local_tree(tmp_path, env, 'a23-bare')
     rc, out, _ = run(bare, 'smoke', capsys)
     unknowns = [item for item, status in rows_of(out).items() if status == 'unknown']
-    assert rc == 0 and set(unknowns) == set(_adopt.SMOKE_ITEMS[:3]) | set(_adopt.SMOKE_AI_ITEMS), (unknowns, out)
+    # `managed-assets` 在空樹上⛔ 不是 unknown：母體兩項都落在（甲-b）＝未登記且樹上⛔ 不存在 ⇒ fail。
+    # 母體⛔ 不因 manifest 缺席而收窄（`core/adopt.md` §3）。
+    expect = {_adopt.SMOKE_ITEMS[0], _adopt.SMOKE_ITEMS[2], *_adopt.SMOKE_AI_ITEMS}
+    assert rc == 0 and set(unknowns) == expect, (unknowns, out)
+    assert rows_of(out)[_adopt.SMOKE_ITEMS[1]] == 'fail', out
     print('A23 bare_tree_unknowns', unknowns)
 
 

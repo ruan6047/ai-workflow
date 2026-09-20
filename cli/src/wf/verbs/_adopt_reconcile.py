@@ -18,10 +18,9 @@ from wf.compose.project_config import load_project_config
 from wf.context import FilesystemRulesSource, rules_of
 from wf.gh.localgit import LocalGitUnavailable
 from wf.gh.target import gitlink_sha, local_git_facts
-from wf.verbs._adopt_manifest import (CONFIG_PATH, EXIT_SECTION, INSTALL_SET, MANIFEST_PATH,
+from wf.verbs._adopt_manifest import (ASSETS, CONFIG_PATH, EXIT_SECTION, INSTALL_SET, MANIFEST_PATH,
                                       NO_MANIFEST, OWNERSHIPS, STAGE_DIR, VERSION_HOME, digest_of,
-                                      entries_of, legacy_entries, managed_entries, read_manifest,
-                                      self_digest)
+                                      entries_of, legacy_entries, managed_entries, read_manifest)
 
 STATUSES = ('ok', 'fail', 'unknown')
 STATIC_IDENTITY_ITEMS = ('roots', 'repository', 'configured Project')
@@ -33,6 +32,9 @@ SMOKE_ITEMS = ('adopt-manifest', 'managed-assets', 'version-pin', 'project-confi
 # ⛔ 不得推出「湊齊證據後 CLI 就可以改標 `ok`」：判定者是查核者，⛔ 不是本層。
 SMOKE_AI_ITEMS = ('pending-integration', 'legacy-entries')
 AI_EVIDENCE = '證據種類：目標檔逐字內容、來源資產逐字內容、兩者的必要內容識別對照'
+# `core/adopt.md` §3（甲-c）的逐字措辭。本列⛔ 不自行重印 job 名：必要內容識別只有一個居所，
+# 即（乙）類 `pending-integration`；兩列各留一份會漂。
+UNREGISTERED_OCCUPANT = '既有物・未登記・見 pending-integration'
 PREFIX = '採用診斷'
 # 固定措辭：理由字串⛔ 不得含例外類別名（⛔ 不得出現 `Error`、`Traceback` 子字串）——把例外物件轉成
 # 字串印出等於把實作細節當成診斷結果。⛔ 不得推出「例外可以照原樣落到輸出」。
@@ -205,26 +207,33 @@ def asset_digest(root, path):
         return None
 
 
-def _managed_assets_row(root, manifest):
-    """雙向判準，母體＝§2 資產表宣告的目標路徑集合（整檔，⛔ 不含 legacy 項）：每一項都要①在 manifest
-    內有 `framework-managed` 登記、且②在樹上存在且整檔摘要相符。manifest 不存在或結構無效時只標
-    `unknown`（該情形由 §2 承接）。"""
-    if manifest is None:
-        return Row(SMOKE_ITEMS[1], 'unknown', NO_MANIFEST)
+def _member(root, registered, path):
+    """§3 的全函數：對母體每一個成員回 (狀態, 理由)，恰三種情形、⛔ 無第四種。
+    **母體是 `INSTALL_SET`、⛔ 不因樹或 manifest 的狀態收窄**——以「已登記者」定義母體會使本列恆真。"""
+    entry = registered.get(path)
+    if entry is None:                                   # ⛔ 無 framework-managed 登記
+        if asset_digest(root, path) is None:
+            return 'fail', '未登記・樹上⛔ 不存在'       # （甲-b）既未落地也未整合
+        # （甲-c）走過 §2 分支 ② 的零寫入。必要內容識別（job 名）只有一個居所＝`pending-integration`，
+        # 本列⛔ 不自行重印：兩列對同一路徑各留一份 job 名會漂。
+        return 'unknown', UNREGISTERED_OCCUPANT
+    actual = asset_digest(root, path)                   # （甲-a）登記在案 ⇒ 雙向都要成立
+    if actual is None:
+        return 'fail', '已登記・樹上缺席'
+    return ('ok', '已登記・整檔摘要相符') if actual == entry['digest'] \
+        else ('fail', '已登記・整檔摘要⛔ 不符')
+
+
+def _managed_assets_rows(root, manifest):
+    """成員行在前、該項的狀態行在後（§3）：狀態行取成員狀態的最劣者。同一個項名重複印是刻意的——
+    逐成員印出它落在哪一種情形是 §3 的逐字要求，而該項在取源矩陣裡仍是**一個**項。"""
     registered = {entry['path']: entry for entry in managed_entries(manifest)}
-    bad = []
-    for path in INSTALL_SET:
-        entry = registered.get(path)
-        if entry is None:
-            bad.append(f'{path}（未登記）')
-            continue
-        actual = asset_digest(root, path)
-        if actual is None:
-            bad.append(f'{path}（缺席）')
-        elif actual != entry['digest']:
-            bad.append(f'{path}（摘要不符）')
-    return Row(SMOKE_ITEMS[1], 'fail' if bad else 'ok',
-               '、'.join(bad) if bad else '應安裝集合與 manifest 雙向齊備且摘要相符')
+    members = [(path, *_member(root, registered, path)) for path in INSTALL_SET]
+    rows = [Row(SMOKE_ITEMS[1], status, f'{path}・{note}') for path, status, note in members]
+    seen = {status for _, status, _ in members}
+    worst = 'fail' if 'fail' in seen else ('unknown' if 'unknown' in seen else 'ok')
+    return (*rows, Row(SMOKE_ITEMS[1], worst,
+                       f'母體 {len(members)} 項・{"、".join(sorted(seen))}'))
 
 
 def _pending_integration_row(manifest):
@@ -234,7 +243,10 @@ def _pending_integration_row(manifest):
     if manifest is None:
         return Row(SMOKE_ITEMS[5], 'unknown', f'{NO_MANIFEST}；{AI_EVIDENCE}')
     registered = {entry['path'] for entry in managed_entries(manifest)}
-    outstanding = [path for path in INSTALL_SET if path not in registered]
+    # **必要內容識別（CI 資產＝job 名）只有這一個居所**（§3）：`managed-assets` ⛔ 不自行重印它，
+    # 否則兩列對同一路徑各留一份會漂。⛔ 不得推出「印出 job 名＝已驗證它在位」——本項恆 `unknown`。
+    outstanding = [f'{asset.target}（{"、".join(asset.content)}）'
+                   for asset in ASSETS if asset.target not in registered]
     body = '、'.join(outstanding) if outstanding else '⛔ 無待整合資產'
     return Row(SMOKE_ITEMS[5], 'unknown', f'待整合 {len(outstanding)} 項：{body}；{AI_EVIDENCE}')
 
@@ -249,14 +261,11 @@ def _legacy_entries_row(manifest):
                f'legacy {len(found)} 項：{body}；依 {EXIT_SECTION} 由 AI 依證據處理；{AI_EVIDENCE}')
 
 
-def _adopt_manifest_row(root, manifest, absent):
-    if manifest is None:
-        return Row(SMOKE_ITEMS[0], 'unknown', absent)
-    listed = [e for e in manifest['assets'] if e['path'] == MANIFEST_PATH]
-    if len(listed) != 1:
-        return Row(SMOKE_ITEMS[0], 'fail', f'manifest 自身登記項 {len(listed)} 筆，期望 1 筆')
-    same = listed[0]['digest'] == self_digest(manifest)
-    return Row(SMOKE_ITEMS[0], 'ok' if same else 'fail', f'自身登記項摘要{"相符" if same else "不符"}')
+def _adopt_manifest_row(manifest, absent):
+    """語意恰為：控制檔存在且合 §2 結構宣告 ⇒ `ok`，否則⛔ 非 `ok`。**⛔ 不比對控制檔自身的內容摘要**
+    ——方案 A 下控制檔⛔ 不自登記，⛔ 無自指摘要、⛔ 不得再有第二種 `digest` 前像文法。"""
+    return Row(SMOKE_ITEMS[0], 'unknown', absent) if manifest is None \
+        else Row(SMOKE_ITEMS[0], 'ok', f'{MANIFEST_PATH} 存在且合 §2 結構宣告')
 
 
 def _version_pin_row(rules, manifest):
@@ -289,7 +298,7 @@ def _stage_notes_row(root, rules):
 def smoke_rows(root, rules, config=None):
     """SMOKE_ITEMS 逐項；每項只讀 `core/adopt.md` §3 取源表宣告的那些取源（項與項須各自獨立翻面）。"""
     manifest, absent = read_manifest(root)
-    return (_adopt_manifest_row(root, manifest, absent), _managed_assets_row(root, manifest),
+    return (_adopt_manifest_row(manifest, absent), *_managed_assets_rows(root, manifest),
             _version_pin_row(rules, manifest), _project_config_row(root),
             _stage_notes_row(root, rules), _pending_integration_row(manifest),
             _legacy_entries_row(manifest))

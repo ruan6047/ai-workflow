@@ -223,10 +223,12 @@ def break_submodule_checkout(consumer, rules, installed, other, env):
     git(rules, 'checkout', '-q', other, env=env)
 
 
-MUTATORS = {'manifest.pin': break_manifest_pin, 'rules.version': break_rules_version,
-            'manifest.source_commit': break_manifest_source_commit,
-            'gitlink.index': break_gitlink_index, 'gitlink.head': break_gitlink_head,
-            'submodule.checkout': break_submodule_checkout}
+# 變異形狀清單住**本檔**、⛔ 不住 `core/adopt.md`（卡面 A4 ②：規則本體是採用規則的居所、
+# ⛔ 不是測試矩陣的居所）。每個取源一個形狀；驗證器 `import` 取表、⛔ 不重打（F-執行者-04）。
+MUTATORS = {'manifest.pin': (break_manifest_pin,), 'rules.version': (break_rules_version,),
+            'manifest.source_commit': (break_manifest_source_commit,),
+            'gitlink.index': (break_gitlink_index,), 'gitlink.head': (break_gitlink_head,),
+            'submodule.checkout': (break_submodule_checkout,)}
 
 
 def test_the_source_id_vocabulary_is_closed_and_every_source_is_consumed():
@@ -242,21 +244,51 @@ def test_the_source_id_vocabulary_is_closed_and_every_source_is_consumed():
 
 
 def test_each_row_flips_exactly_for_its_declared_sources(tmp_path, env, capsys):
+    """**基線先釘死**＝健康合成樹，四列全部⛔ 非 `unknown`：⛔ 不得在退化基線上驗上下界——
+    子模組未初始化時 `gitlink-checkout` 本來就已是 `unknown`，此時改 `gitlink.index` 只翻兩列，
+    **那是正確結果、⛔ 不是缺陷**。**翻面**＝該列印出的整列（列名・狀態・理由）改變，⛔ 不只比狀態。"""
     table = reconciliation_sources()
-    healthy_tree, _, _, _ = installed_consumer(tmp_path, env, capsys, 'a17-ok')
-    _, out, _ = preflight(healthy_tree, capsys)
-    healthy = {item: rows_of(out)[item][0] for item in FOUR}
-    assert healthy == {item: 'ok' for item in FOUR}, healthy
-    for source, mutate in MUTATORS.items():
-        consumer, rules, installed, other = installed_consumer(
-            tmp_path, env, capsys, f'a17-{source.replace(".", "-")}')
-        mutate(consumer, rules, installed, other, env)
-        _, broken, _ = preflight(consumer, capsys)
-        got = {item: rows_of(broken)[item][0] for item in FOUR}
-        flipped = {item for item in FOUR if got[item] != healthy[item]}
+    for source, shapes in MUTATORS.items():
         declared = {row for row, ids in table.items() if source in ids}
-        assert flipped == declared, (source, sorted(flipped), sorted(declared), got)
-        print('A17 source', source, 'flipped', sorted(flipped), 'declared', sorted(declared), got)
+        flipped_by_source = set()
+        for shape in shapes:
+            consumer, rules, installed, other = installed_consumer(
+                tmp_path, env, capsys, f'a17-{source.replace(".", "-")}-{shape.__name__}')
+            # 基線取**同一棵樹**變異前的那一次執行：理由字串帶該樹自己的 SHA，拿另一棵樹當基線
+            # 會讓三列無條件「翻面」而使上界恆假（那是比較器缺陷、⛔ 不是被測物缺陷）。
+            _, out, _ = preflight(consumer, capsys)
+            healthy = {item: rows_of(out)[item] for item in FOUR}
+            assert {status for status, _ in healthy.values()} == {'ok'}, (source, healthy)
+            shape(consumer, rules, installed, other, env)
+            _, broken, _ = preflight(consumer, capsys)
+            got = {item: rows_of(broken)[item] for item in FOUR}
+            flipped = {item for item in FOUR if got[item] != healthy[item]}
+            # **上界（∀ 形狀）**：⛔ 不得有宣告外的列翻面。⊆ 而⛔ 非 ==——某列與基線逐字相同是
+            # 正確結果，「一次變異翻兩列以上」也⛔ 不構成推翻。
+            assert flipped <= declared, (source, shape.__name__, sorted(flipped - declared), got)
+            flipped_by_source |= flipped
+            print('A17 source', source, 'shape', shape.__name__, 'flipped', sorted(flipped),
+                  'declared', sorted(declared), got)
+        # **下界（∀ 宣告邊，∃ 形狀）**：⛔ 不得有只寫在表上、任何形狀都翻不動的邊。
+        assert flipped_by_source == declared, (source, sorted(flipped_by_source ^ declared))
+
+
+def test_a_legacy_pin_does_not_enter_the_framework_version_aggregation(tmp_path, env, capsys):
+    """A4 ③（序 1 `R7.1-5`）：彙整母體只含 `framework-managed` 且**⛔ 非 legacy** 的項。
+    起點＝一個 `framework-managed` 且 `path` 含 `#` 的 legacy 項，其 `pin` 是舊值。"""
+    consumer, _, _, _ = installed_consumer(tmp_path, env, capsys, 'a16-legacy')
+    _, out, _ = preflight(consumer, capsys)
+    healthy = rows_of(out)[FOUR[0]]
+    assert healthy[0] == 'ok', healthy
+    edit_manifest(consumer, lambda m: m['assets'].append(_adopt.asset_entry(
+        f'{_adopt.INSTALL_SET[0]}#secret-scan', _adopt.OWNERSHIPS[0], 'sha256:0', '0.0.0')))
+    _, out, _ = preflight(consumer, capsys)
+    assert rows_of(out)[FOUR[0]] == healthy, (healthy, rows_of(out)[FOUR[0]])
+    pins = {e['pin'] for e in _adopt.entries_of(
+        json.loads((consumer / _adopt.MANIFEST_PATH).read_text(encoding='utf-8')),
+        _adopt.OWNERSHIPS[0])}
+    assert len(pins) > 1, pins                 # 負控：該樹上確實存在兩個相異 pin ⇒ 判準⛔ 非恆真
+    print('A16 legacy_pin_ignored', healthy, 'managed_pins', sorted(pins))
 
 
 def test_one_unavailable_source_does_not_make_another_row_unknown(tmp_path, env, capsys):
@@ -335,7 +367,7 @@ def test_failure_branches_degrade_per_item_not_wholesale(tmp_path, env, capsys):
     version, _ = _adopt.framework_version(_adopt.rules_of(module_tree))
     assert version, module_tree
     entry = _adopt.asset_entry('x.txt', _adopt.OWNERSHIPS[0], 'sha256:0', version)
-    _adopt.write_manifest(module_tree, [entry], None, version)
+    _adopt.write_manifest(module_tree, [entry], None)
     stored = json.loads((module_tree / _adopt.MANIFEST_PATH).read_text(encoding='utf-8'))
     assert _adopt.defect_of(stored) is None, stored
     _, with_manifest, _ = branch_rows(module_tree, capsys)
@@ -407,10 +439,11 @@ def collect_reasons(tmp_path, env, capsys):
             reasons.extend(reason for _, reason in rows_of(capsys.readouterr().out).values())
 
     sweep(installed_consumer(tmp_path, env, capsys, 'a28')[0])
-    for source, mutate in MUTATORS.items():
+    for source, shapes in MUTATORS.items():
         tree, rules, installed, other = installed_consumer(
             tmp_path, env, capsys, f'a28-{source.replace(".", "-")}')
-        mutate(tree, rules, installed, other, env)
+        for shape in shapes:
+            shape(tree, rules, installed, other, env)
         sweep(tree)
     gone = installed_consumer(tmp_path, env, capsys, 'a28-nomanifest')[0]
     (gone / _adopt.MANIFEST_PATH).unlink()

@@ -42,6 +42,6 @@
 
 停用框架時 `wf snapshot --adopt deactivate` 只移除它有明確權限處置的資產。逐字分三類：
 
-- **由 CLI 移除者**：manifest 內 `ownership`＝`framework-managed` 的**整檔**登記路徑，含 `.wf/adopt/manifest.json` 自己，與因此變空的 `.wf/adopt/` 目錄。
-- **由 AI 依證據處理者**：由執行者 AI 整合進採用專案既有檔案的內容（例：併進既有 workflow 的 `secret-scan` 與 `commit-trailer` 兩個 job），以及 manifest 內 `path` 含 `#` 的 legacy 登記項與其承載檔。CLI 只逐項列出並指向本節，⛔ 不移除、⛔ 不改寫；移除與否由**採用專案的需求方**決定，由**執行者 AI** 依證據執行、查核者核對結果。
+- **由 CLI 移除者**：manifest 內 `ownership`＝`framework-managed` 的**整檔**登記路徑中，**樹上摘要與登記項相符者**；另加控制檔 `.wf/adopt/manifest.json` 與因此變空的 `.wf/adopt/` 目錄——控制檔由 `core/adopt.md` §5 的（二）**具名承接**，⛔ 不是經登記移除的（它⛔ 不自登記）。
+- **由 AI 依證據處理者**：**摘要與登記項⛔ 不相符的 `framework-managed` 登記路徑（＝採用者改過的框架檔）**；由執行者 AI 整合進採用專案既有檔案的內容（例：併進既有 workflow 的 `secret-scan` 與 `commit-trailer` 兩個 job）；以及 manifest 內 `path` 含 `#` 的 legacy 登記項與其承載檔。CLI 只逐項列出並指向本節，⛔ 不移除、⛔ 不改寫；移除與否由**採用專案的需求方**決定，由**執行者 AI** 依證據執行、查核者核對結果。
 - **一律保留者**：Issue、留言、Project 資料、ruleset，與 `consumer-owned` 的 `.wf/`（含 `.wf/modules.json` 與 `.wf/stages/`）。專案歷史一律保留；停用框架⛔ 不等於刪除採用專案的任何紀錄。

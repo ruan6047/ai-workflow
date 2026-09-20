@@ -101,9 +101,29 @@ def break_tree_stages(consumer, rules, monkeypatch):
     sorted((consumer / _adopt.STAGE_DIR).glob('*.md'))[0].unlink()
 
 
-BREAKAGE = {'manifest.file': break_manifest_file, 'tree.assets': break_tree_assets,
-            'rules.version': break_rules_version, 'config.file': break_config_file,
-            'rules.stages': break_rules_stages, 'tree.stages': break_tree_stages}
+def break_manifest_field(consumer, rules, monkeypatch):
+    """第二種粒度：結構仍有效，只把某一項的某一欄值改成⛔ 不正確的值（`pin` 漂掉）。
+    ⛔ 不得以「整份 schema 失效」一種粒度代表整個取源——那會把檔案級依賴表偷偷升成
+    「任意破壞皆全翻」的承諾（序 2 `R5.2-6` 的量測）。"""
+    edit_manifest(consumer, lambda m: m['assets'][0].update(pin='9.9.9'))
+
+
+def break_tree_asset_missing(consumer, rules, monkeypatch):
+    (consumer / _adopt.INSTALL_SET[0]).unlink()
+
+
+# 變異形狀清單住**本檔**、⛔ 不住 `core/adopt.md`（卡面 A6 ②：規則本體是採用規則的居所、
+# ⛔ 不是測試矩陣的居所）。`manifest.file` 至少兩種粒度；`tree.assets` 恰兩種——「目標路徑上有
+# ⛔ 非框架落地的既有物」**⛔ 不進本清單**：要讓路徑未登記必須同時改 manifest，那就⛔ 非「只施加
+# 單一取源」，它是**另一個基線**、由 `STATES['occupied_unregistered']` 承接。
+BREAKAGE = {
+    'manifest.file': (break_manifest_file, break_manifest_field),
+    'tree.assets': (break_tree_assets, break_tree_asset_missing),
+    'rules.version': (break_rules_version,),
+    'config.file': (break_config_file,),
+    'rules.stages': (break_rules_stages,),
+    'tree.stages': (break_tree_stages,),
+}
 
 
 def test_the_source_table_vocabulary_is_closed_and_every_source_is_consumed():
@@ -130,20 +150,36 @@ def test_each_item_flips_exactly_for_its_declared_sources(tmp_path, env, capsys,
         assert _adopt.AI_EVIDENCE in healthy_rows[item][1], (item, healthy_rows[item])
     assert [call for call in client.calls if call[0] in MUTATIONS] == [], client.calls
     print('SMOKE healthy', healthy, 'ai_items', sorted(ai))
-    for source, sabotage in BREAKAGE.items():
-        with monkeypatch.context() as patch:
-            consumer, rules = adopted(tmp_path, env, capsys, f'smoke-{source.replace(".", "-")}')
-            sabotage(consumer, rules, patch)
-            rc, broken, client, broken_rows = smoke(consumer, capsys)
-        assert rc == 0, (source, broken)
-        flipped = {item for item in _adopt.SMOKE_ITEMS if broken_rows[item] != healthy_rows[item]}
+    # **基線先釘死**：健康合成樹的（甲）類五項全部⛔ 非 `unknown`。（乙）類在此⛔ 不進基線斷言——
+    # `core/adopt.md` §3 逐字要求它們**一律標 `unknown`**，把它們算進「七項全部⛔ 非 unknown」
+    # 在任何實作下都不可能成立。該落差已隨本輪交回單上呈需求方裁定，⛔ 不在本檔自行調和。
+    assert {healthy[item] for item in set(_adopt.SMOKE_ITEMS) - ai} == {'ok'}, healthy
+    reached = set()
+    for source, shapes in BREAKAGE.items():
         declared = {item for item, ids in table.items() if source in ids}
-        assert flipped == declared, (source, sorted(flipped), sorted(declared))
-        assert all(status in _adopt.STATUSES for status in broken.values()), broken
-        assert {broken[item] for item in ai} == {'unknown'}, (source, broken)
-        assert [call for call in client.calls if call[0] in MUTATIONS] == [], (source, client.calls)
-        print('SMOKE source', source, 'flipped', sorted(flipped), 'declared', sorted(declared),
-              'statuses', broken)
+        flipped_by_source = set()
+        for shape in shapes:
+            with monkeypatch.context() as patch:
+                consumer, rules = adopted(
+                    tmp_path, env, capsys, f'smoke-{source.replace(".", "-")}-{shape.__name__}')
+                shape(consumer, rules, patch)
+                rc, broken, client, broken_rows = smoke(consumer, capsys)
+            assert rc == 0, (source, broken)
+            flipped = {item for item in _adopt.SMOKE_ITEMS if broken_rows[item] != healthy_rows[item]}
+            # **上界（∀ 形狀）**：⛔ 不得有宣告外的項翻面。某項與基線逐字相同是正確結果、⛔ 不是缺陷，
+            # 故這裡是 ⊆ 而⛔ 不是 ==；「一次變異翻兩項以上」也⛔ 不構成推翻。
+            assert flipped <= declared, (source, shape.__name__, sorted(flipped - declared))
+            flipped_by_source |= flipped
+            assert all(status in _adopt.STATUSES for status in broken.values()), broken
+            assert {broken[item] for item in ai} == {'unknown'}, (source, broken)
+            assert [call for call in client.calls if call[0] in MUTATIONS] == [], client.calls
+            print('SMOKE source', source, 'shape', shape.__name__, 'flipped', sorted(flipped),
+                  'declared', sorted(declared), 'statuses', broken)
+        # **下界（∀ 宣告邊，∃ 形狀）**：⛔ 不得有只寫在表上、任何形狀都翻不動的邊。
+        assert flipped_by_source == declared, (source, sorted(flipped_by_source ^ declared))
+        reached |= declared
+    assert reached == set(_adopt.SMOKE_ITEMS), sorted(reached ^ set(_adopt.SMOKE_ITEMS))
+    assert len(BREAKAGE['manifest.file']) >= 2 and len(BREAKAGE['tree.assets']) == 2, BREAKAGE
 
 
 # ── `managed-assets` 是雙向判準，母體＝§2 資產表宣告的目標路徑集合（整檔）──────────────
@@ -153,28 +189,100 @@ def drift(consumer):
     path.write_bytes(path.read_bytes() + b'\n')
 
 
+def occupied_unregistered(consumer):
+    """（甲-c）：目標路徑上有⛔ 非框架落地的既有物、且⛔ 無 `framework-managed` 登記。
+    這是**另一個基線**、⛔ 不是 `tree.assets` 的變異——要讓路徑未登記必須同時改 manifest。"""
+    edit_manifest(consumer, lambda m: drop_entry(m, _adopt.INSTALL_SET[0]))
+    (consumer / _adopt.INSTALL_SET[0]).write_text('採用者自己的內容\n', encoding='utf-8')
+
+
+# §3 的全函數恰三種情形；五種合成狀態逐一釘死該項的狀態值（卡面 V18 ②）。
 STATES = {
-    'complete': lambda c: None,
-    'file_missing_entry_kept': lambda c: (c / _adopt.INSTALL_SET[0]).unlink(),
-    'file_missing_entry_dropped': lambda c: ((c / _adopt.INSTALL_SET[0]).unlink(),
-                                             edit_manifest(c, lambda m: drop_entry(
-                                                 m, _adopt.INSTALL_SET[0]))),
-    'digest_drift': drift,
+    'complete': (lambda c: None, 'ok'),
+    'file_missing_entry_kept': (lambda c: (c / _adopt.INSTALL_SET[0]).unlink(), 'fail'),
+    'file_missing_entry_dropped': (lambda c: ((c / _adopt.INSTALL_SET[0]).unlink(),
+                                              edit_manifest(c, lambda m: drop_entry(
+                                                  m, _adopt.INSTALL_SET[0]))), 'fail'),
+    'digest_drift': (drift, 'fail'),
+    'occupied_unregistered': (occupied_unregistered, 'unknown'),
 }
 
 
+def member_lines(out):
+    """`managed-assets` 印 1＋|母體| 行（成員行在前、狀態行在後）；本函式只取成員行。"""
+    prefix = f'{_adopt.PREFIX}・{_adopt.SMOKE_ITEMS[1]}・'
+    return [line for line in out.splitlines() if line.startswith(prefix)][:-1]
+
+
 @pytest.mark.parametrize('state', list(STATES))
-def test_managed_assets_is_bidirectional_over_the_declared_targets(tmp_path, env, capsys, state):
-    consumer, _ = adopted(tmp_path, env, capsys, f'bidir-{state}')
+def test_managed_assets_is_a_total_function_over_the_declared_targets(tmp_path, env, capsys, state):
+    """母體＝§2 資產表宣告的目標路徑集合，**⛔ 不因任何樹的狀態而收窄**：五種狀態下成員行數恆等於
+    母體基數，⛔ 不得以縮母體換取該列標 `ok`。"""
+    consumer, _ = adopted(tmp_path, env, capsys, f'total-{state}')
     manifest = json.loads((consumer / _adopt.MANIFEST_PATH).read_text(encoding='utf-8'))
     registered = {e['path'] for e in _adopt.managed_entries(manifest)}
     assert set(_adopt.INSTALL_SET) <= registered, sorted(set(_adopt.INSTALL_SET) - registered)
     assert all('#' not in path for path in _adopt.INSTALL_SET), _adopt.INSTALL_SET
-    STATES[state](consumer)
+    mutate, expected = STATES[state]
+    mutate(consumer)
+    client = FakeGhClient()
+    rc = main(['--project-root', str(consumer), 'snapshot', '--adopt', 'smoke'],
+              client=client, root=None, env={})
+    out = capsys.readouterr().out
+    assert rc == 0 and statuses(out)[_adopt.SMOKE_ITEMS[1]] == expected, (state, out)
+    members = member_lines(out)
+    assert len(members) == len(_adopt.INSTALL_SET), (state, members)   # 全函數：逐一成員各一行
+    for path in _adopt.INSTALL_SET:
+        assert [line for line in members if path in line], (state, path, members)
+    if state == 'occupied_unregistered':
+        hit = [line for line in members if _adopt_reconcile.UNREGISTERED_OCCUPANT in line]
+        assert len(hit) == 1, (hit, members)                           # 該行逐字印那句
+        jobs = [name for asset in _adopt.ASSETS if asset.target == _adopt.INSTALL_SET[0]
+                for name in asset.content]
+        assert jobs, _adopt.ASSETS
+        for job in jobs:
+            assert job not in hit[0], (job, hit[0])   # 本列⛔ 不自印 job 名
+        # 必要內容識別只有一個居所＝（乙）類 `pending-integration`：它**必須**印得出來，
+        # 否則「⛔ 不重印」會退化成「兩列都⛔ 不印」而那個識別就⛔ 無居所。
+        home, = [line for line in out.splitlines()
+                 if line.startswith(f'{_adopt.PREFIX}・{_adopt.SMOKE_ITEMS[5]}・')]
+        for job in jobs:
+            assert job in home, (job, home)
+    print('TOTAL_FUNCTION', state, expected, 'members', members)
+
+
+def test_the_population_is_not_narrowed_by_an_empty_tree(tmp_path, env, capsys):
+    """空母體負控（堵住「以已登記者定義母體」的恆真漏洞）：manifest 缺席、兩個目標路徑皆⛔ 不存在
+    ⇒ 該列⛔ 非 `ok`，且成員行數仍等於母體基數。"""
+    consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='empty-population')
+    assert not (consumer / _adopt.MANIFEST_PATH).exists()
+    for path in _adopt.INSTALL_SET:
+        assert not (consumer / path).exists(), path
+    client = FakeGhClient()
+    rc = main(['--project-root', str(consumer), 'snapshot', '--adopt', 'smoke'],
+              client=client, root=None, env={})
+    out = capsys.readouterr().out
+    assert rc == 0 and statuses(out)[_adopt.SMOKE_ITEMS[1]] != 'ok', out
+    assert len(member_lines(out)) == len(_adopt.INSTALL_SET), out
+    print('EMPTY_POPULATION', statuses(out)[_adopt.SMOKE_ITEMS[1]], member_lines(out))
+
+
+def test_adopt_manifest_checks_existence_and_structure_only(tmp_path, env, capsys):
+    """方案 A：`adopt-manifest` 的語意恰為「存在且合 §2 結構宣告 ⇒ `ok`，否則⛔ 非 `ok`」，
+    且⛔ 無任何自指摘要比對——`self_digest` 已退休、控制檔⛔ 不自登記。"""
+    consumer, _ = adopted(tmp_path, env, capsys, 'manifest-row')
     rc, found, _, _ = smoke(consumer, capsys)
-    expected = 'ok' if state == 'complete' else 'fail'
-    assert rc == 0 and found[_adopt.SMOKE_ITEMS[1]] == expected, (state, found)
-    print('BIDIRECTIONAL', state, found[_adopt.SMOKE_ITEMS[1]], 'install_set', list(_adopt.INSTALL_SET))
+    assert rc == 0 and found[_adopt.SMOKE_ITEMS[0]] == 'ok', found
+    assert not hasattr(_adopt, 'self_digest') and not hasattr(_adopt_reconcile, 'self_digest')
+    # 改掉任一項的 `digest` 但結構仍有效 ⇒ 本項仍 `ok`（它⛔ 不比對內容摘要，那是 managed-assets 的事）
+    edit_manifest(consumer, lambda m: m['assets'][0].update(digest='sha256:0'))
+    rc, drifted, _, _ = smoke(consumer, capsys)
+    assert rc == 0 and drifted[_adopt.SMOKE_ITEMS[0]] == 'ok', drifted
+    edit_manifest(consumer, lambda m: m.update(schema='nope'))       # 負控：結構失效 ⇒ ⛔ 非 ok
+    rc, broken, _, _ = smoke(consumer, capsys)
+    assert rc == 0 and broken[_adopt.SMOKE_ITEMS[0]] != 'ok', broken
+    print('ADOPT_MANIFEST ok/digest_drift/structure_broken',
+          found[_adopt.SMOKE_ITEMS[0]], drifted[_adopt.SMOKE_ITEMS[0]], broken[_adopt.SMOKE_ITEMS[0]])
 
 
 def test_managed_assets_is_not_ok_without_a_manifest(tmp_path, env, capsys):

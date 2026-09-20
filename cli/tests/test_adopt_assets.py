@@ -181,7 +181,7 @@ def prepare(consumer, start):
             outside[asset.target] = found
     if start == 'consumer_owned':
         _adopt.write_manifest(consumer, [_adopt.asset_entry(a.target, _adopt.OWNERSHIPS[1], '', '0')
-                                         for a in _adopt.ASSETS], None, '0')
+                                         for a in _adopt.ASSETS], None)
     return outside
 
 

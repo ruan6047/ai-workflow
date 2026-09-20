@@ -14,12 +14,13 @@ from pathlib import Path
 
 from wf.compose.project_config import load_project_config
 from wf.context import rules_of
-from wf.verbs._adopt_manifest import (ASSET_KEYS, ASSET_NAMES, ASSETS, CONFIG_PATH, DEFECTS, EXIT_SECTION,
-                                      INSTALL_SET, MANIFEST_PATH, MANIFEST_SCHEMA, NO_MANIFEST, OWNERSHIPS,
-                                      PENDING_KEYS, SEED_HOME, STAGES_HOME, STAGE_DIR, TOP_KEYS,
-                                      VERSION_HOME, Asset, asset_entry, defect_of, digest_of, entries_of,
-                                      is_legacy, legacy_entries, managed_entries, pending, read_manifest,
-                                      self_digest, write_manifest)
+from wf.verbs._adopt_manifest import (ASSET_KEYS, ASSET_NAMES, ASSETS, CONFIG_PATH, CONTROL_SET, DEFECTS,
+                                      EXIT_SECTION, INSTALL_SET, MANIFEST_PATH, MANIFEST_SCHEMA,
+                                      NO_MANIFEST, OWNERSHIPS, PENDING_KEYS, SEED_HOME, STAGES_HOME,
+                                      STAGE_DIR, TOP_KEYS, VERSION_HOME, Asset, asset_entry,
+                                      control_unusable, defect_of, digest_of, entries_of, is_legacy,
+                                      legacy_entries, managed_entries, pending, read_manifest,
+                                      write_manifest)
 from wf.verbs._adopt_reconcile import (AI_EVIDENCE, GIT_UNAVAILABLE, NOT_FILESYSTEM, NO_CHECKOUT, NO_HEAD,
                                        NO_INDEX, NO_SOURCE_COMMIT, NO_STAGES, NO_VERSION, OUTSIDE_PROJECT,
                                        PREFIX, RECONCILIATION_ITEMS, RULES_IS_PROJECT, SMOKE_AI_ITEMS,
@@ -36,23 +37,30 @@ OUTSIDE_ROOT = '解析後⛔ 不在 project_root 之下，未刪除'
 # 那是 OUTSIDE_ROOT，兩者是不同判準（`core/adopt.md` §5 末兩條）。
 SYMLINK_PATH = '該路徑在樹上是符號連結，未移除、未跟隨'
 LEGACY_KEPT = f'legacy 登記項，CLI ⛔ 不處置、⛔ 不重寫，依 {EXIT_SECTION} 由 AI 依證據處理'
+# 同一承載檔同時被整檔項與 legacy 項指到時，保留面優先：legacy 承載檔在 §5 逐字是保留面。
+LEGACY_CARRIER = f'該路徑同時是 legacy 登記項的承載檔，未移除，依 {EXIT_SECTION} 由 AI 依證據處理'
+# 摘要與登記項⛔ 不相符＝採用者改過的框架檔（§5）：CLI ⛔ 不刪除，只指向退場節。
+DIGEST_DRIFT = f'樹上摘要與登記項⛔ 不相符（採用者改過的框架檔），未移除，見 {EXIT_SECTION}'
+CONTROL_UNUSABLE = '控制檔路徑上有⛔ 不合 §2 結構宣告的既有物，本次全樹零寫入'
+CONTROL_HOME = 'core/adopt.md §2 控制檔具名宣告'
 ABSENT_SOURCE = '來源資產缺席，未落地'
 NO_SEED = '種子來源不可讀，未建立'
 
 # 本檔是 `_adopt` 層對外的單一名稱面：`_adopt_manifest` 與 `_adopt_reconcile` 的公開名在此轉出，
 # 呼叫端與測試一律 `from wf.verbs import _adopt` 取用（F-執行者-04：`import` 使用、⛔ 不重打常數）。
 __all__ = ['ABSENT_SOURCE', 'AI_EVIDENCE', 'ASSETS', 'ASSET_KEYS', 'ASSET_NAMES', 'Asset', 'CONFIG_PATH',
-           'DEFECTS', 'EXIT_SECTION', 'GIT_UNAVAILABLE', 'INSTALL_SET', 'LEGACY_KEPT', 'MANIFEST_PATH',
+           'CONTROL_HOME', 'CONTROL_SET', 'CONTROL_UNUSABLE', 'DEFECTS', 'DIGEST_DRIFT', 'EXIT_SECTION',
+           'GIT_UNAVAILABLE', 'INSTALL_SET', 'LEGACY_CARRIER', 'LEGACY_KEPT', 'MANIFEST_PATH',
            'MANIFEST_SCHEMA', 'NOT_FILESYSTEM', 'NO_CHECKOUT', 'NO_HEAD', 'NO_INDEX', 'NO_MANIFEST',
            'NO_SEED', 'NO_SOURCE_COMMIT', 'NO_STAGES', 'NO_VERSION', 'OUTSIDE_PROJECT', 'OUTSIDE_ROOT',
            'OWNERSHIPS', 'PENDING_KEYS', 'PENDING_MARK', 'PREFIX', 'RECONCILIATION_ITEMS',
            'RULES_IS_PROJECT', 'Row', 'SEED_HOME', 'SMOKE_AI_ITEMS', 'SMOKE_ITEMS', 'STAGES_HOME',
            'STAGE_DIR', 'STATIC_IDENTITY_ITEMS', 'STATUSES', 'STEPS', 'STEP_PREFIX', 'SYMLINK_PATH',
            'TOP_KEYS', 'UNRESOLVED', 'VERSION_HOME', 'asset_digest', 'asset_entry', 'confined',
-           'defect_of', 'digest_of', 'entries_of', 'framework_version', 'gitlink_facts',
+           'control_unusable', 'defect_of', 'digest_of', 'entries_of', 'framework_version', 'gitlink_facts',
            'gitlink_relative', 'identity_rows', 'is_legacy', 'item_names', 'legacy_entries',
            'managed_entries', 'pending', 'pins_of', 'preflight_rows', 'print_scope', 'read_manifest',
-           'reconcile', 'render', 'rules_of', 'run_step', 'self_digest', 'smoke_rows', 'stages_of',
+           'reconcile', 'render', 'rules_of', 'run_step', 'smoke_rows', 'stages_of',
            'write_manifest']
 
 
@@ -101,22 +109,40 @@ def _install_assets(root, source, owned, version, emit):
     return entries
 
 
+def _blocked(root, step, emit):
+    """§2 的前置條件：控制檔不可用 ⇒ 全樹零位元組寫入、⛔ 不落地、⛔ 不生成控制檔、⛔ 不 raise，
+    交一項未完成項＋固定理由續跑。**這是前置條件、⛔ 不是第三個分支**：⛔ 不得推出「可以先備份再覆寫」
+    ——覆寫它就是把採用者手上那份既有物毀掉，而 CLI ⛔ 不解析它、也就⛔ 無從判斷它是什麼。"""
+    if not control_unusable(root):
+        return False
+    _pending(emit, step, pending(CONTROL_HOME, MANIFEST_PATH, MANIFEST_SCHEMA, 'ADOPTION.md §1'))
+    _say(emit, step, MANIFEST_PATH, CONTROL_UNUSABLE)
+    return True
+
+
+def _carry(previous, landed):
+    """轉移性質的左半：本次之前既有且合 §2 結構宣告的登記項一律逐字保留（⛔ 不分 `ownership`、
+    ⛔ 不丟 legacy）。只排除本次剛落地或剛建立的那些 `path`——同一 `path` ⛔ 不雙重登記，
+    而本次那一份才是樹上實況。⛔ 不得推出「舊項可以整批丟掉再重建」：本次⛔ 未重建的會就此消失。"""
+    return [entry for entry in (previous or {}).get('assets') or [] if entry['path'] not in landed]
+
+
 def step_install(root, rules, config, repository=None, board=None, emit=print, *, runner=None):
-    """框架資產整檔落地＋寫 manifest；既有的 `consumer-owned` 與 legacy 登記項原樣保留。
+    """框架資產整檔落地＋寫 manifest；既有的**全部**合法登記項原樣保留。
     落地**之前**先讀既有 manifest：⛔ 不得先寫再讀，那會讓 consumer 的位元組先被覆寫。"""
     root, source = Path(root), rules_of(rules)
+    if _blocked(root, 'install', emit):
+        return 0
     index, _, _, _ = gitlink_facts(str(root.resolve()), rules, config, runner=runner)
     version, _ = framework_version(rules)
     previous, _ = read_manifest(root)
     owned = {entry['path'] for entry in entries_of(previous, OWNERSHIPS[1])}
     assets = _install_assets(root, source, owned, version, emit)
+    kept = _carry(previous, {entry['path'] for entry in assets})
     # legacy 項逐字留在 manifest 內（⛔ 不重寫、⛔ 不刪除），並在本次輸出列出一次。
-    kept = [entry for entry in (previous or {}).get('assets') or []
-            if entry['path'] != MANIFEST_PATH
-            and (entry['ownership'] == OWNERSHIPS[1] or is_legacy(entry['path']))]
     for entry in legacy_entries(previous):
         _say(emit, 'install', entry['path'], LEGACY_KEPT)
-    write_manifest(root, sorted([*assets, *kept], key=lambda entry: entry['path']), index, version)
+    write_manifest(root, sorted([*assets, *kept], key=lambda entry: entry['path']), index)
     _say(emit, 'install', MANIFEST_PATH, f'source_commit={index}')
     return 0
 
@@ -164,6 +190,8 @@ def step_bootstrap(root, rules, config=None, repository=None, board=None, emit=p
     """冪等：已存在的路徑一律位元組不變、⛔ 不覆寫、⛔ 不合併，並各交一項未完成項；建立的骨架以
     `consumer-owned` 登記進 manifest。"""
     root, created, owned = Path(root), [], []
+    if _blocked(root, 'bootstrap', emit):
+        return 0
     if _bootstrap_config(root, _seed(root, rules), emit):
         created.append(CONFIG_PATH)
     owned += [CONFIG_PATH] if (root / CONFIG_PATH).exists() else []
@@ -178,16 +206,14 @@ def step_bootstrap(root, rules, config=None, repository=None, board=None, emit=p
         owned.append(relative)
     version, _ = framework_version(rules)
     previous, _ = read_manifest(root)
-    entries = [entry for entry in (previous or {}).get('assets') or []
-               if entry['path'] != MANIFEST_PATH
-               and (entry['ownership'] == OWNERSHIPS[0] or is_legacy(entry['path']))]
+    entries = _carry(previous, set(owned))
     for relative in sorted(owned):
         _say(emit, 'bootstrap', relative, '建立' if relative in created else '沿用')
         entries.append(asset_entry(relative, OWNERSHIPS[1],
                                    digest_of((root / relative).read_bytes()), version))
     source = (previous or {}).get('source_commit')
     write_manifest(root, sorted(entries, key=lambda entry: entry['path']),
-                   source if isinstance(source, str) else None, version)
+                   source if isinstance(source, str) else None)
     return 0
 
 
@@ -219,17 +245,26 @@ def confined(root, relative):
 
 def step_deactivate(root, rules=None, config=None, repository=None, board=None, emit=print,
                     *, runner=None):
-    """只看 manifest 的 `ownership` 欄，⛔ 不看路徑前綴、⛔ 不看副檔名。全樹的差異只有一類：
-    `framework-managed` 的**整檔**登記路徑消失。legacy 項與 `consumer-owned` 項逐項列出、零處置。"""
+    """全樹的差異恰兩類（§5）：（一）摘要與登記項相符的 `framework-managed` **整檔**登記路徑消失；
+    （二）控制檔集合的路徑消失，及因此變空的 `.wf/adopt/` 目錄。控制檔由（二）**具名承接**、
+    ⛔ 非經登記移除（方案 A：它⛔ 不自登記）。legacy 項與 `consumer-owned` 項逐項列出、零處置。"""
     root = Path(root)
     manifest, absent = read_manifest(root)
     if manifest is None:
         _say(emit, 'deactivate', MANIFEST_PATH, f'{absent}，本次零刪除')
         return 0
+    # legacy 項所指的**承載檔**是保留面（§5）。它必須在任何 unlink 之前算出來：同一個承載檔可能
+    # 同時被一個整檔項與一個 legacy 項指到，先刪再列 legacy 等於讓保留面被旁路刪除。
+    carriers = {entry['path'].split('#', 1)[0] for entry in legacy_entries(manifest)}
     for entry in sorted(managed_entries(manifest), key=lambda entry: entry['path']):
         target = confined(root, entry['path'])
         # 框架⛔ 不落地符號連結 ⇒ 樹上是連結就是 consumer 的，連同其指向的目標一律零處置
         note = OUTSIDE_ROOT if target is None else (SYMLINK_PATH if target.is_symlink() else None)
+        if note is None and entry['path'] in carriers:
+            note = LEGACY_CARRIER
+        if note is None and target.is_file() and digest_of(target.read_bytes()) != entry['digest']:
+            # 採用者改過的框架檔⛔ 不是框架有明確權限處置的資產（§5 起首）：⛔ 不刪、交 AI 依證據處理
+            note = DIGEST_DRIFT
         if note is not None:
             _say(emit, 'deactivate', entry['path'], note)
             continue
@@ -242,9 +277,12 @@ def step_deactivate(root, rules=None, config=None, repository=None, board=None, 
     for entry in sorted(entries_of(manifest, OWNERSHIPS[1]), key=lambda entry: entry['path']):
         if not is_legacy(entry['path']):
             _say(emit, 'deactivate', entry['path'], f'{OWNERSHIPS[1]}，保留')
-    adopt_dir = (root / MANIFEST_PATH).parent
-    if adopt_dir.is_dir() and not any(adopt_dir.iterdir()):
-        adopt_dir.rmdir()
+    for relative in CONTROL_SET:                      # （二）具名承接，⛔ 非經登記移除
+        if (control := root / relative).is_file():
+            control.unlink()
+            _say(emit, 'deactivate', relative, '已移除（控制檔具名承接）')
+        if (parent := control.parent).is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
     return 0
 
 

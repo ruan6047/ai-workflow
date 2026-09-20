@@ -26,8 +26,9 @@ from .test_context_roots import RULE_DIRS, git, git_env
 
 VERSION_DECLARATION = re.compile(r'^\s*version\s*=', re.M)
 BACKTICKED = re.compile(r'`([a-z_]+)`')
-# 掃描面內可能的落地物：由常數（`import` 取得）算出，⛔ 不逐檔重打。
-CANDIDATES = (*_adopt.INSTALL_SET, _adopt.MANIFEST_PATH)
+# 掃描面內可能的落地物＝資產表的目標路徑集合（`import` 取得，⛔ 不逐檔重打）。**控制檔⛔ 不在內**：
+# 方案 A 下它⛔ 不自登記，其寫入權限來自 §2 的控制檔具名宣告、⛔ 非來自任何登記項。
+CANDIDATES = _adopt.INSTALL_SET
 
 
 def tree_digests(root):
@@ -102,6 +103,9 @@ def test_every_landed_asset_has_exactly_one_four_key_entry(tmp_path, env, capsys
     landed = {path for path in CANDIDATES if _adopt.asset_digest(consumer, path) is not None}
     assert landed, CANDIDATES                                  # 空集合⛔ 不滿足本條
     assert {e['path'] for e in managed} == landed, sorted({e['path'] for e in managed} ^ landed)
+    # 方案 A：控制檔⛔ 不出現在任何 `assets` 項的 `path`（命中即結構宣告的 `control-path` 列）
+    assert not ({e['path'] for e in manifest['assets']} & set(_adopt.CONTROL_SET)), manifest['assets']
+    assert (consumer / _adopt.MANIFEST_PATH).is_file()          # 它仍被生成，只是⛔ 不自登記
     for entry in manifest['assets']:
         assert tuple(entry) == keys, entry                     # 每項恰四鍵、順序固定
         assert entry['ownership'] in _adopt.OWNERSHIPS, entry
@@ -125,8 +129,10 @@ def test_install_touches_no_unregistered_byte(tmp_path, env, capsys):
     registered = {e['path'] for e in manifest_of(consumer)['assets']}
     changed = {p for p in set(before) | set(after) if before.get(p) != after.get(p)}
     assert changed, 'install 什麼都沒動＝本條零資訊'
-    assert changed <= registered, sorted(changed - registered)
-    for path in set(before) - registered:
+    # 零影響的宣告面＝**兩個集合的聯集**（§2）：資產表的目標路徑集合＋控制檔集合（基數恰 1）。
+    declared = registered | set(_adopt.CONTROL_SET)
+    assert changed <= declared, sorted(changed - declared)
+    for path in set(before) - declared:
         assert before[path] == after.get(path), path
     print('UNTOUCHED changed', sorted(changed), 'registered', sorted(registered))
 
@@ -182,6 +188,9 @@ def broken_shapes(healthy):
         'entry_extra_key': mutate(lambda m: m['assets'][0].update(extra='x')),
         'path_not_a_string': mutate(lambda m: m['assets'][0].update(path=7)),
         'top_missing_schema': mutate(lambda m: m.pop('schema')),
+        # 第七種（方案 A）：某項的 `path` 等於控制檔路徑 ⇒ 結構宣告的 `control-path` 列命中
+        'control_path_entry': mutate(lambda m: m['assets'].append(_adopt.asset_entry(
+            _adopt.CONTROL_SET[0], _adopt.OWNERSHIPS[0], 'sha256:0', '0'))),
     }
 
 
@@ -220,10 +229,12 @@ def test_parseable_json_is_not_a_valid_manifest(tmp_path, env, capsys):
         assert run_step(consumer, 'install')[0] == 0, case     # install 的沿用讀取也⛔ 不 raise
         capsys.readouterr()
         after_install = tree_digests(consumer)
+        # 控制檔不可用是**前置條件**（§2）：install 對**全樹**零位元組寫入，含⛔ 不生成控制檔——
+        # 壞 manifest ⛔ 不得成為取得所有權的路徑，也⛔ 不得成為覆寫採用者那份既有物的路徑。
         assert {p for p in set(untouched) | set(after_install)
-                if untouched.get(p) != after_install.get(p)} == {_adopt.MANIFEST_PATH}, case
-        assert [e['path'] for e in _adopt.managed_entries(manifest_of(consumer))
-                if e['path'] != _adopt.MANIFEST_PATH] == [], case
+                if untouched.get(p) != after_install.get(p)} == set(), case
+        # ⛔ 不新登記任何既有路徑：全樹零寫入 ⇒ 控制檔位元組仍逐字等於本次注入的那一份輸入。
+        assert manifest_of(consumer) == value, case
         write_manifest_file(consumer, value)
         for name in consuming:
             assert seen[name][0] != 'ok', (case, name, seen[name])
@@ -249,6 +260,8 @@ def test_the_structural_declaration_rejects_every_listed_defect():
         'entry-keys': {**healthy, 'assets': [{**healthy['assets'][0], 'x': 1}]},
         'entry-value': {**healthy, 'assets': [{**healthy['assets'][0], 'path': 7}]},
         'path-unique': {**healthy, 'assets': [healthy['assets'][0], dict(healthy['assets'][0])]},
+        'control-path': {**healthy, 'assets': [_adopt.asset_entry(
+            _adopt.CONTROL_SET[0], _adopt.OWNERSHIPS[0], 'sha256:0', '1')]},
     }
     assert tuple(probes) == manifest_defects(), (tuple(probes), manifest_defects())
     for tag, value in probes.items():

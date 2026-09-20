@@ -93,7 +93,11 @@ def test_removal_is_classified_by_ownership_and_granularity(tmp_path, env, capsy
     after = digests(consumer)
     assert rc == 0, out
     gone = {path for path in before if path not in after}
-    assert gone == managed, sorted(gone ^ managed)               # 差異只有這一類
+    # 差異恰兩類（`core/adopt.md` §5）：（一）摘要相符的 framework-managed 整檔登記路徑；
+    # （二）控制檔集合（具名承接、⛔ 非經登記移除——方案 A 下它⛔ 不自登記）。
+    expected = managed | set(_adopt.CONTROL_SET)
+    assert gone == expected, sorted(gone ^ expected)
+    assert not (set(_adopt.CONTROL_SET) & managed), sorted(managed)
     assert not [path for path in after if after[path] != before.get(path)], sorted(after)
     assert not (consumer / _adopt.MANIFEST_PATH).parent.exists()  # 清空後的 .wf/adopt 一併移除
     assert (consumer / _adopt.CONFIG_PATH).is_file() and (consumer / _adopt.STAGE_DIR).is_dir()
