@@ -55,7 +55,10 @@ last_confirmed: 2026-09-20
 - 片段資產的判定（`smoke` 與 `deactivate` 共用這一份定義，⛔ 不另立第二套）：
   - `digest` 的前像＝承載檔內該 job 的**逐字文字**：自該 job 的鍵行起、到下一個縮排 ≤ 該鍵行的非空行之前，去掉尾端空白行。故只改動承載檔內⛔ 非框架 job 的位元組時該 `digest` ⛔ 不得改變。
   - 「存在」＝承載檔內有同名 job；「摘要相符」＝該逐字文字的 `sha256:<hex>` 等於該項 `digest`。
-  - 「片段區間」＝上述行區間。`install` 為落地第一個片段而新增的 `jobs:` 標頭行併入片段區間；`deactivate` 移除全部框架片段後 `jobs:` 之下再無鍵時一併移除該標頭行。⛔ 不得推出「`install` 可以改寫承載檔的頂層骨架」——片段區間之外的位元組逐一不變。
+  - 「片段區間」＝上述行區間。`jobs:` 標頭行**屬頂層骨架、⛔ 不屬任何片段區間**：`install` 只在**新建**承載檔時經頂層骨架把它帶進來，對**已存在**的承載檔⛔ 不新增該標頭行；`deactivate` ⛔ 不移除該標頭行（包含移除全部框架片段後 `jobs:` 之下再無鍵的情形）。⛔ 不得推出「`install` 可以改寫承載檔的頂層骨架」——片段區間之外的位元組逐一不變。
+  - job 鍵行的辨識：縮排恰兩格、鍵名後恰一個半形冒號，其後只准空白與一段 `#` 行尾註解（`  secret-scan: # consumer job` 是一個 job 鍵行）。`jobs:` 之下有⛔ 不符該形狀的⛔ 非空白、⛔ 非整行註解的兩格縮排行時，片段邊界**無法安全辨識**，`install` 對該承載檔零寫入並印一行說明。
+  - `install` 與 `deactivate` 都**維持承載檔檔尾有⛔ 無換行的原狀**：為了把新行接上去而補的那個換行⛔ 不屬於任何片段區間，⛔ 不得留在檔尾。行尾序列（LF／CRLF）在片段區間之外逐一保留：讀寫走位元組，⛔ 不做 universal newlines 正規化。
+  - 登記路徑在 consumer 樹上是**符號連結**時，`install` ⛔ 不寫入該路徑、`deactivate` ⛔ 不移除它，各印一行說明：寫穿連結會改到連結指向的（多半⛔ 未登記的）consumer 檔，解析後再刪也是刪錯對象。該判準與 §5「刪除面封閉在 project_root 之內」是**兩條**判準，⛔ 不得以任一條冒充另一條。
 - **manifest 結構宣告**：可解析的 JSON ⛔ 不等於有效 manifest。下表逐列列出⛔ 不合法的形狀；命中任一列即整份 manifest 判為不可解析，全部讀取端回固定理由並續跑、⛔ 不 raise。
 
 | 缺陷代號 | ⛔ 不合法的形狀 |
@@ -80,13 +83,14 @@ last_confirmed: 2026-09-20
 | `commit-trailer` | `.github/workflows/wf.yml` | `.github/adopt/consumer-jobs.yml` | 是 |
 
 - 片段來源檔與框架自身 `.github/workflows/ci.yml` 的同名 job **允許的差異恰一處**：consumer 側在該 job 的 `actions/checkout` 步驟的 `with:` 區塊內多一行逐字 `submodules: true`。該同步是測試義務，⛔ 不只是宣告。`reachability` 與 `cli-tests` 兩個 job 檢查的是本 repo 自己的被測物，⛔ 不進本表。
-- 新建承載檔時，其頂層骨架（至少 `name`、`on`、`permissions`、`jobs` 四鍵，且 `on` 之下同時有 `push` 與 `pull_request`）逐字取自片段來源檔，CLI ⛔ 不另建第二個居所；承載檔已存在時 CLI ⛔ 不改寫其頂層骨架、只在 `jobs:` 之下處置片段。
+- 新建承載檔時，其頂層骨架（至少 `name`、`on`、`permissions`、`jobs` 四鍵，且 `on` 之下同時有 `push` 與 `pull_request`）逐字取自片段來源檔，CLI ⛔ 不另建第二個居所；承載檔已存在時 CLI ⛔ 不改寫其頂層骨架、只在 `jobs:` 之下處置片段。既有承載檔⛔ 無 `jobs:` 標頭時，補上該鍵就是改寫頂層骨架 ⇒ `install` 對該檔零寫入、⛔ 不登記任何片段，並印一行說明。
+- `install` ⛔ 不覆寫整檔登記為 `consumer-owned` 的承載檔：該情形下對該檔零寫入、⛔ 不登記任何片段，並印一行說明。整檔登記與 `<承載檔>#<片段名>` 的片段登記是**兩種**登記，整檔登記涵蓋該檔的全部位元組。
 
 ## 3 · 五個 step
 
 `snapshot --adopt <step>` 的值域封閉為五個，順序即首次採用的順序。⛔ 無第六個 step；要加須需求方裁定。
 
-- `install`：機械。把框架管理的資產從 rules source 落地到 consumer 樹（整檔資產直接寫檔；片段資產自片段來源檔**逐字**取該 job 寫進承載檔，承載檔不存在時以片段來源檔的頂層骨架建立它），並寫 manifest（含 `source_commit`）。⛔ 不動任何未登記的路徑、⛔ 不覆寫既有的 `consumer-owned` 登記項、⛔ 不覆寫承載檔內未登記為 `framework-managed` 的同名 job；上述兩種情形各印一行說明。
+- `install`：機械。把框架管理的資產從 rules source 落地到 consumer 樹（整檔資產直接寫檔；片段資產自片段來源檔**逐字**取該 job 寫進承載檔，承載檔不存在時以片段來源檔的頂層骨架建立它），並寫 manifest（含 `source_commit`）。⛔ 不動任何未登記的路徑、⛔ 不覆寫既有的 `consumer-owned` 登記項（含整檔登記的承載檔）、⛔ 不覆寫承載檔內未登記為 `framework-managed` 的同名 job、⛔ 不寫穿符號連結、⛔ 不在既有承載檔內新增 `jobs:` 標頭、片段邊界無法安全辨識時⛔ 不猜；上述各情形一律對該路徑零寫入並各印一行說明。
 - `preflight`：機械、零寫入。印診斷清單恰七項：static 身分三項（`roots`、`repository`、`configured Project`）與 §1 的對帳四列，順序固定、逐列標 `ok`／`fail`／`unknown`。清單來源是 `_adopt` 層的單一常數，⛔ 不含資料相依的 `ModuleValidation.lines` 列。
 - `bootstrap`：機械、冪等。建立採用專案自有的骨架（`.wf/modules.json` 種子、`.wf/stages/<階段>.md`）並把它們以 `consumer-owned` 登記進 manifest；已存在的檔一律沿用、⛔ 不覆寫。種子的 `rules` 鍵寫入 bootstrap 當次解析到的 rules root（相對 project_root；規則就在 project_root 時寫 `null`），使同一棵樹上⛔ 不帶任何全域旗標的 `preflight` 解析到同一個 rules root。冪等的判準＝連跑兩次後樹的路徑集合與每個檔的內容摘要逐一相等（⛔ 不比對 mtime）。
 - `smoke`：機械、零寫入。逐項印最小端到端檢查，每項標 `ok`／`fail`／`unknown`。取源 ID 的封閉字彙恰六個：`manifest.file`、`tree.assets`、`rules.version`、`config.file`、`rules.stages`、`tree.stages`；表外值⛔ 不得出現，每一個取源至少有一個消費項。`managed-assets` 是**雙向**判準，母體＝應安裝集合（整檔項與上面片段表的片段項）：每一項都必須①在 manifest 內有登記、且②在樹上存在且摘要相符，任一方向任一項⛔ 不成立即該列 `fail`；manifest 不存在或⛔ 不合 §2 結構宣告時該列⛔ 不得標 `ok`。
@@ -117,7 +121,7 @@ last_confirmed: 2026-09-20
 - `deactivate` 只移除 manifest 內 `ownership`＝`framework-managed` 的項（含 manifest 自己）：**整檔**項刪該路徑，**片段**項自承載檔移除該片段區間；移除後刪掉因此變空的 `.wf/adopt/` 目錄。
 - 對 `consumer-owned` 的 `.wf/`（含 `.wf/modules.json`、`.wf/stages/`）零刪除、零改寫；對 Issue、留言、Project 資料與 ruleset 的 mutation 原語呼叫序列長度為 0。
 - 判準只看 manifest 的 `ownership` 欄，⛔ 不看路徑前綴、⛔ 不看副檔名：一項被標成 `framework-managed` 就會被移除，標成 `consumer-owned` 就⛔ 不會。
-- 刪除面封閉在 project_root 之內：某項的 `path` 解析後（含絕對路徑、`..`、經符號連結越出）⛔ 不在 project_root 之下時，該項⛔ 不刪除並印一行說明。
-- `install` 與 `deactivate` 對承載檔是**位元組級可逆**：install 之前⛔ 不存在的承載檔在 deactivate 之後⛔ 不存在；install 之前已存在的承載檔在 deactivate 之後仍存在且位元組與 install 之前逐一相等（含原本⛔ 無任何 job 的承載檔）。
+- 刪除面封閉在 project_root 之內：某項的 `path` 解析後（含絕對路徑、`..`、經符號連結越出）⛔ 不在 project_root 之下時，該項⛔ 不刪除並印一行說明。封閉性看的是**那個名字落在哪裡**，處置的是**那個名字本身**：⛔ 不得以 `resolve()` 後的目標當處置對象，否則登記路徑是樹內符號連結時會刪到連結指向的⛔ 未登記 consumer 檔（樹內刪錯對象，⛔ 不是越界）。
+- `install` 與 `deactivate` 對承載檔是**位元組級可逆**：install 之前⛔ 不存在的承載檔在 deactivate 之後⛔ 不存在；install 之前已存在的承載檔在 deactivate 之後仍存在且位元組與 install 之前逐一相等（含原本⛔ 無任何 job 的承載檔——⛔ 無 `jobs:` 鍵、只有一個⛔ 無子鍵的 `jobs:` 標頭、檔尾⛔ 無換行、行尾為 CRLF 四種形狀皆在本條母體內）。本條與 §2 的片段區間定義同向：`jobs:` 標頭行與接行用的換行都⛔ 不屬片段區間，故兩側都⛔ 不動它們。
 - 專案歷史（git、Issue、留言、Project）一律保留；停用框架⛔ 不等於刪除採用專案的任何紀錄。
 - 未登記的路徑⛔ 不在 `deactivate` 的射程內：manifest 缺席或⛔ 不合 §2 結構宣告時該次執行零刪除，並印一行說明。

@@ -197,9 +197,9 @@ def asset_digest(root, path):
         except OSError:
             return None
     carrier, name = fragment
-    try:
-        text = job_text((Path(root) / carrier).read_text(encoding='utf-8'), name)
-    except OSError:
+    try:  # 位元組口徑：⛔ 不用 universal newlines，CRLF 承載檔的行尾也是片段的逐字文字的一部分
+        text = job_text((Path(root) / carrier).read_bytes().decode('utf-8'), name)
+    except (OSError, ValueError):
         return None
     return None if text is None else digest_of(text.encode('utf-8'))
 

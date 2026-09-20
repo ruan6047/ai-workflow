@@ -1,60 +1,55 @@
 """消費 core/adopt.md §0–§5、core/verbs.md §1 `snapshot` 列（硬擋欄＝「—」：無拒收）／§2、
-ADOPTION.md §1／§2。
-
-首次採用生命週期五個 step 的本機落地與接線；manifest 與片段的純文字層住 `_adopt_manifest.py`，
-診斷的純計算層住 `_adopt_reconcile.py`。本檔對 GitHub 與 Project 的 mutation 原語呼叫序列長度恆為 0：
-⛔ 不 import `wf.gh.client`／`wf.gh.writes`、⛔ 不碰 client。
-
-身分兩項由呼叫端（`verbs/main.py` 的 `bootstrap()`）把已解析到的物件傳進來；本層⛔ 不自 `Context`
-取屬性——WF-015 對 `context.repository` 的消費面零改動（A24 的連帶條款）。
+ADOPTION.md §1／§2。首次採用生命週期五個 step 的本機落地與接線；manifest 與片段的純文字層住
+`_adopt_manifest.py`，診斷的純計算層住 `_adopt_reconcile.py`。本檔對 GitHub 與 Project 的 mutation
+原語呼叫序列長度恆為 0：⛔ 不 import `wf.gh.client`／`wf.gh.writes`、⛔ 不碰 client。身分兩項由呼叫端
+（`verbs/main.py` 的 `bootstrap()`）把已解析到的物件傳進來；本層⛔ 不自 `Context` 取屬性——WF-015 對
+`context.repository` 的消費面零改動（A24 的連帶條款）。
 """
 import json
 from pathlib import Path
 
 from wf.compose.project_config import load_project_config
 from wf.context import rules_of
-from wf.verbs._adopt_manifest import (ASSET_KEYS, CARRIER, CONFIG_PATH, DEFECTS, FRAGMENT_SOURCE,
-                                      FRAGMENTS, INSTALL_SET, MANAGED_ASSETS, MANIFEST_PATH,
-                                      MANIFEST_SCHEMA, NO_MANIFEST, OWNERSHIPS, SEED_HOME, STAGE_DIR,
-                                      TOP_KEYS, VERSION_HOME, asset_entry, defect_of, digest_of,
-                                      entries_of, fragment_of, job_names, job_span, job_text, read_manifest,
-                                      remove_jobs, self_digest, skeleton_of, upsert_job, write_manifest)
-from wf.verbs._adopt_reconcile import (GIT_UNAVAILABLE, NOT_FILESYSTEM, NO_CHECKOUT, NO_HEAD,
-                                       NO_INDEX, NO_SOURCE_COMMIT, NO_STAGES, NO_VERSION,
-                                       OUTSIDE_PROJECT, PREFIX, RECONCILIATION_ITEMS,
-                                       RULES_IS_PROJECT, SMOKE_ITEMS, STATIC_IDENTITY_ITEMS,
-                                       STATUSES, UNRESOLVED, Row, asset_digest, framework_version,
-                                       gitlink_facts, gitlink_relative, identity_rows, item_names,
-                                       pins_of, preflight_rows, reconcile, render, smoke_rows,
-                                       stages_of)
+from wf.verbs._adopt_manifest import (ASSET_KEYS, CARRIER, CONFIG_PATH, DEFECTS, FRAGMENT_SOURCE, FRAGMENTS,
+                                      INSTALL_SET, MANAGED_ASSETS, MANIFEST_PATH, MANIFEST_SCHEMA, NO_MANIFEST,
+                                      OWNERSHIPS, SEED_HOME, STAGE_DIR, TOP_KEYS, VERSION_HOME, asset_entry,
+                                      defect_of, digest_of, entries_of, fragment_of, job_key_of, job_names,
+                                      job_span, job_text, read_manifest, remove_jobs, self_digest, skeleton_of,
+                                      split_lines, unsafe_job_lines, upsert_job, write_manifest)
+from wf.verbs._adopt_reconcile import (GIT_UNAVAILABLE, NOT_FILESYSTEM, NO_CHECKOUT, NO_HEAD, NO_INDEX,
+                                       NO_SOURCE_COMMIT, NO_STAGES, NO_VERSION, OUTSIDE_PROJECT, PREFIX,
+                                       RECONCILIATION_ITEMS, RULES_IS_PROJECT, SMOKE_ITEMS, STATIC_IDENTITY_ITEMS,
+                                       STATUSES, UNRESOLVED, Row, asset_digest, framework_version, gitlink_facts,
+                                       gitlink_relative, identity_rows, item_names, pins_of, preflight_rows,
+                                       reconcile, render, smoke_rows, stages_of)
 
 STEPS = ('install', 'preflight', 'bootstrap', 'smoke', 'deactivate')
 STEP_PREFIX = '採用'
 OUTSIDE_ROOT = '解析後⛔ 不在 project_root 之下，未刪除'
 FOREIGN_JOB = '承載檔內有未登記為 framework-managed 的同名 job，未覆寫'
 KEPT_OWNED = f'已登記為 {OWNERSHIPS[1]}，未覆寫'
+# 登記路徑是符號連結：寫穿它會改到連結指向的（多半⛔ 未登記的）consumer 檔，解析後再刪是刪錯對象
+# ⇒ 兩個生命週期操作一律零處置。⛔ 不得推出「該路徑越界」——那是 OUTSIDE_ROOT，兩者是不同判準。
+SYMLINK_PATH = '該路徑在樹上是符號連結，未寫入、未移除'
+NO_JOBS_KEY = '既有承載檔⛔ 無 `jobs:` 標頭，⛔ 不改寫頂層骨架，未落地片段'
+UNSAFE_JOB = '承載檔內有無法安全辨識的 job 鍵行，未改寫'
 
 # 本檔是 `_adopt` 層對外的單一名稱面：`_adopt_manifest` 與 `_adopt_reconcile` 的公開名在此轉出，
 # 呼叫端與測試一律 `from wf.verbs import _adopt` 取用（F-執行者-04：`import` 使用、⛔ 不重打常數）。
-__all__ = ['ASSET_KEYS', 'CARRIER', 'CONFIG_PATH', 'DEFECTS', 'FOREIGN_JOB', 'FRAGMENTS',
-           'FRAGMENT_SOURCE', 'GIT_UNAVAILABLE', 'INSTALL_SET', 'KEPT_OWNED', 'MANAGED_ASSETS',
-           'MANIFEST_PATH', 'MANIFEST_SCHEMA', 'NOT_FILESYSTEM', 'NO_CHECKOUT', 'NO_HEAD',
-           'NO_INDEX', 'NO_MANIFEST', 'NO_SOURCE_COMMIT', 'NO_STAGES', 'NO_VERSION',
-           'OUTSIDE_PROJECT', 'OUTSIDE_ROOT', 'OWNERSHIPS', 'PREFIX', 'RECONCILIATION_ITEMS',
-           'RULES_IS_PROJECT', 'Row', 'SEED_HOME', 'SMOKE_ITEMS', 'STAGE_DIR',
-           'STATIC_IDENTITY_ITEMS', 'STATUSES', 'STEPS', 'STEP_PREFIX', 'TOP_KEYS', 'UNRESOLVED',
-           'VERSION_HOME', 'asset_digest', 'asset_entry', 'confined', 'defect_of', 'digest_of',
-           'entries_of', 'fragment_of', 'framework_version', 'gitlink_facts', 'gitlink_relative',
-           'identity_rows', 'item_names', 'job_names', 'job_span', 'job_text', 'pins_of',
-           'preflight_rows',
-           'print_scope', 'read_manifest', 'reconcile', 'remove_jobs', 'render', 'rules_of',
-           'run_step', 'self_digest', 'skeleton_of', 'smoke_rows', 'stages_of', 'upsert_job',
-           'write_manifest']
+__all__ = ['ASSET_KEYS', 'CARRIER', 'CONFIG_PATH', 'DEFECTS', 'FOREIGN_JOB', 'FRAGMENTS', 'FRAGMENT_SOURCE', 'GIT_UNAVAILABLE',
+           'INSTALL_SET', 'KEPT_OWNED', 'MANAGED_ASSETS', 'MANIFEST_PATH', 'MANIFEST_SCHEMA', 'NOT_FILESYSTEM', 'NO_CHECKOUT', 'NO_HEAD',
+           'NO_INDEX', 'NO_JOBS_KEY', 'NO_MANIFEST', 'NO_SOURCE_COMMIT', 'NO_STAGES', 'NO_VERSION', 'OUTSIDE_PROJECT', 'OUTSIDE_ROOT',
+           'OWNERSHIPS', 'PREFIX', 'RECONCILIATION_ITEMS', 'RULES_IS_PROJECT', 'Row', 'SEED_HOME', 'SMOKE_ITEMS', 'STAGE_DIR',
+           'STATIC_IDENTITY_ITEMS', 'STATUSES', 'STEPS', 'STEP_PREFIX', 'SYMLINK_PATH', 'TOP_KEYS', 'UNRESOLVED', 'UNSAFE_JOB',
+           'VERSION_HOME', 'asset_digest', 'asset_entry', 'confined', 'defect_of', 'digest_of', 'entries_of', 'fragment_of',
+           'framework_version', 'gitlink_facts', 'gitlink_relative', 'identity_rows', 'item_names', 'job_key_of', 'job_names',
+           'job_span', 'job_text', 'pins_of', 'preflight_rows', 'print_scope', 'read_manifest', 'reconcile', 'remove_jobs', 'render',
+           'rules_of', 'run_step', 'self_digest', 'skeleton_of', 'smoke_rows', 'split_lines', 'stages_of', 'unsafe_job_lines',
+           'upsert_job', 'write_manifest']
 
 
 def print_scope(scope, emit=print):
-    """`verbs/main.py` 三個 bootstrap 失敗分支共用：項名清單與 `--adopt preflight` 逐字相等，
-    **逐項**由該分支實際已解析到的取源決定狀態（⛔ 不連坐、⛔ 不整列冒充 `unknown`）。"""
+    """`verbs/main.py` 三個 bootstrap 失敗分支共用：項名清單與 `--adopt preflight` 逐字相等，**逐項**由該分支實際已解析到的取源決定狀態（⛔ 不連坐）。"""
     for line in render(preflight_rows(scope.get('root'), scope.get('rules'), scope.get('config'),
                                       scope.get('repository'), scope.get('board'))):
         emit(line)
@@ -64,11 +59,20 @@ def _say(emit, step, subject, note):
     emit(f'{STEP_PREFIX}・{step}・{subject}・{note}')
 
 
+def _skip(emit, subject, note):
+    """`install` 對該路徑零寫入時的共用出口：印一行說明、回空登記清單（⛔ 不部分寫入）。"""
+    _say(emit, 'install', subject, note)
+    return []
+
+
 def _install_files(root, source, owned, version, emit):
     entries = []
     for relative in MANAGED_ASSETS:
-        if relative in owned:  # A8：既有 consumer-owned 登記項⛔ 不覆寫、⛔ 不雙重登記
-            _say(emit, 'install', relative, KEPT_OWNED)
+        # A8 既有 consumer-owned 登記項⛔ 不覆寫、⛔ 不雙重登記；寫穿符號連結會改到⛔ 未登記 consumer 檔
+        note = KEPT_OWNED if relative in owned else (
+            SYMLINK_PATH if (root / relative).is_symlink() else None)
+        if note is not None:
+            _say(emit, 'install', relative, note)
             continue
         try:
             data = source.read_text(relative).encode('utf-8')
@@ -84,26 +88,31 @@ def _install_files(root, source, owned, version, emit):
 
 def _install_fragments(root, source, owned, managed, version, emit):
     """片段自片段來源檔**逐字**落地；承載檔缺席時以該來源檔的頂層骨架建立它（⛔ 不另建第二個居所）。
-    承載檔內有未登記為 framework-managed 的同名 job 時，本次對承載檔零寫入——刻意整批中止而⛔ 不只跳過
-    該一個片段：判準要求「該情形下承載檔位元組逐一不變」，逐片段跳過仍會改到承載檔。"""
+    五種情形對承載檔**零寫入**並各印一行：整檔已登記為 `consumer-owned`、該路徑是符號連結、既有承載檔
+    ⛔ 無 `jobs:` 標頭、有無法安全辨識的 job 鍵行、有未登記的同名 job。刻意整批中止而⛔ 不只跳過該一個
+    片段：判準要求該情形下承載檔位元組逐一不變。以 bytes 讀寫、⛔ 不用 universal newlines（§5）。"""
     carrier = root / CARRIER
+    if CARRIER in owned:  # A8：整檔登記為 consumer-owned 的承載檔⛔ 不覆寫（片段登記同理由此中止）
+        return _skip(emit, CARRIER, KEPT_OWNED)
+    if carrier.is_symlink():
+        return _skip(emit, CARRIER, SYMLINK_PATH)
     try:
         source_text = source.read_text(FRAGMENT_SOURCE)
     except Exception:
-        _say(emit, 'install', FRAGMENT_SOURCE, '片段來源檔缺席，未落地')
-        return []
+        return _skip(emit, FRAGMENT_SOURCE, '片段來源檔缺席，未落地')
     existed = carrier.is_file()
-    text = carrier.read_text(encoding='utf-8') if existed else skeleton_of(source_text)
+    text = carrier.read_bytes().decode('utf-8') if existed else skeleton_of(source_text)
     if text is None:
-        _say(emit, 'install', FRAGMENT_SOURCE, '片段來源檔⛔ 無頂層骨架，未落地')
-        return []
-    foreign = [n for n in FRAGMENTS
-               if existed and n in set(job_names(text)) and f'{CARRIER}#{n}' not in managed]
+        return _skip(emit, FRAGMENT_SOURCE, '片段來源檔⛔ 無頂層骨架，未落地')
+    if existed and unsafe_job_lines(text):
+        return _skip(emit, CARRIER, UNSAFE_JOB)
+    present = set(job_names(text)) if existed else set()
+    foreign = [n for n in FRAGMENTS if n in present and f'{CARRIER}#{n}' not in managed]
     for name in foreign:
         _say(emit, 'install', f'{CARRIER}#{name}', FOREIGN_JOB)
     if foreign:
         return []
-    entries = []
+    entries, staged = [], text
     for name in FRAGMENTS:
         if f'{CARRIER}#{name}' in owned:
             _say(emit, 'install', f'{CARRIER}#{name}', KEPT_OWNED)
@@ -112,16 +121,19 @@ def _install_fragments(root, source, owned, managed, version, emit):
         if block is None:
             _say(emit, 'install', f'{CARRIER}#{name}', '片段來源檔⛔ 無該 job，未落地')
             continue
-        text = upsert_job(text, name, block)
+        landed = upsert_job(staged, name, block)
+        if landed is None:  # 既有承載檔⛔ 無 `jobs:` 標頭：該行屬頂層骨架，install ⛔ 不新增它
+            return _skip(emit, CARRIER, NO_JOBS_KEY)
+        staged = landed
         entries.append(asset_entry(f'{CARRIER}#{name}', OWNERSHIPS[0],
                                    digest_of(block.encode('utf-8')), version))
         _say(emit, 'install', f'{CARRIER}#{name}', '已落地')
     if not entries:
         return []
     carrier.parent.mkdir(parents=True, exist_ok=True)
-    carrier.write_text(text, encoding='utf-8')
+    carrier.write_bytes(staged.encode('utf-8'))
     if not existed or CARRIER in managed:  # 承載檔由 install 建立 ⇒ 整檔歸框架，deactivate 時整檔消失
-        entries.append(asset_entry(CARRIER, OWNERSHIPS[0], digest_of(text.encode('utf-8')), version))
+        entries.append(asset_entry(CARRIER, OWNERSHIPS[0], digest_of(staged.encode('utf-8')), version))
         _say(emit, 'install', CARRIER, '已建立' if not existed else '已更新')
     return entries
 
@@ -208,20 +220,26 @@ def step_smoke(root, rules, config=None, repository=None, board=None, emit=print
 
 
 def confined(root, relative):
-    """刪除面封閉在 project_root 之內：絕對路徑、`..`、經符號連結越出者一律回 None。"""
+    """刪除面封閉在 project_root 之內：絕對路徑、`..`、經符號連結越出者一律回 None。回**⛔ 未解析**的
+    `project_root / relative` 本身而⛔ 不是 `resolve()` 後的目標——回目標會在登記路徑是樹內符號連結時刪錯對象（§5）。"""
     base = Path(root).resolve()
+    literal = Path(root) / relative
+    if literal.name in ('', '.', '..'):
+        return None
     try:
-        resolved = (Path(root) / relative).resolve()
+        location = literal.parent.resolve() / literal.name
     except (OSError, RuntimeError):
         return None
-    return resolved if resolved != base and base in resolved.parents else None
+    return literal if location != base and base in location.parents else None
 
 
 def _deactivate_files(root, entries, emit):
     for entry in entries:
         target = confined(root, entry['path'])
-        if target is None:
-            _say(emit, 'deactivate', entry['path'], OUTSIDE_ROOT)
+        # 框架⛔ 不落地符號連結 ⇒ 樹上是連結就是 consumer 的，連同其指向的目標一律零處置
+        note = OUTSIDE_ROOT if target is None else (SYMLINK_PATH if target.is_symlink() else None)
+        if note is not None:
+            _say(emit, 'deactivate', entry['path'], note)
             continue
         gone = target.is_file()
         if gone:
@@ -236,9 +254,11 @@ def _deactivate_fragments(root, entries, emit):
         carriers.setdefault(carrier, []).append(name)
     for carrier, names in sorted(carriers.items()):
         target = confined(root, carrier)
-        note = OUTSIDE_ROOT if target is None else (None if target.is_file() else '承載檔已不在樹上')
+        note = OUTSIDE_ROOT if target is None else (SYMLINK_PATH if target.is_symlink() else
+                                                    (None if target.is_file() else '承載檔已不在樹上'))
         if note is None:
-            target.write_text(remove_jobs(target.read_text(encoding='utf-8'), names), encoding='utf-8')
+            target.write_bytes(
+                remove_jobs(target.read_bytes().decode('utf-8'), names).encode('utf-8'))
         for name in names:
             _say(emit, 'deactivate', f'{carrier}#{name}', note or '已移除')
 

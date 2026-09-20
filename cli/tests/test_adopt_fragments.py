@@ -102,12 +102,19 @@ jobs:
       - run: echo hi
 """
 NO_JOB = """name: consumer own
-# 只有設定與註解，⛔ 無任何 job
+# 只有設定與註解，⛔ 無任何 job，且⛔ 無 `jobs:` 鍵
 on:
   push:
 
 permissions:
   contents: read
+"""
+# A13③ 逐字母體是「⛔ 無任何 job」：一個⛔ 無子鍵的 `jobs:` 標頭本身⛔ 不是 job，故此形狀也在母體內。
+BARE_JOBS = """# 只有設定與註解
+name: mine
+on:
+  push:
+jobs:
 """
 
 
@@ -241,16 +248,31 @@ def test_install_never_overwrites_a_foreign_job(tmp_path, env, capsys):
 
 
 # ── A13：install 與 deactivate 對承載檔位元組級可逆 ───────────────────────────────
-@pytest.mark.parametrize('case,body', [('absent', None), ('consumer_job', CONSUMER_JOB),
-                                       ('no_job', NO_JOB)])
-def test_install_then_deactivate_is_byte_reversible(tmp_path, env, capsys, case, body):
+# `lands`＝該起點上 install 是否落地片段。`no_jobs_key` 的 `lands` 為 False 是**裁定的結果**：
+# `core/adopt.md` §2 末條逐字「承載檔已存在時 CLI ⛔ 不改寫其頂層骨架」，補上 `jobs:` 鍵就是改寫它
+# ⇒ 該起點零寫入並印 `NO_JOBS_KEY`。⛔ 不得推出「⛔ 無 `jobs:` 的專案⛔ 不能採用」——新建承載檔時
+# 該標頭由片段來源檔的頂層骨架帶入（`absent` 起點）。四種被證否或新增的形狀另在
+# `test_adopt_close_loop.py` 逐條對應 finding。
+@pytest.mark.parametrize('case,body,lands', [
+    ('absent', None, True),
+    ('consumer_job', CONSUMER_JOB, True),
+    ('bare_jobs', BARE_JOBS, True),
+    ('no_trailing_newline', CONSUMER_JOB.rstrip('\n'), True),
+    ('crlf', CONSUMER_JOB.replace('\n', '\r\n'), True),
+    ('no_jobs_key', NO_JOB, False)])
+def test_install_then_deactivate_is_byte_reversible(tmp_path, env, capsys, case, body, lands):
     consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name=f'frag-rev-{case}')
     before = None if body is None else carrier_with(consumer, body)
     assert run_step(consumer, 'install')[0] == 0
-    capsys.readouterr()
+    installed = capsys.readouterr().out
     assert (consumer / _adopt.CARRIER).is_file()
+    landed = (consumer / _adopt.CARRIER).read_bytes()
     for name in _adopt.FRAGMENTS:
-        assert name in _adopt.job_names(carrier_text(consumer)), (case, name)
+        assert (name in _adopt.job_names(landed.decode('utf-8'))) is lands, (case, name)
+    if lands and before is not None:
+        assert landed != before, case            # 負控：位元組相等⛔ 非因 install 什麼都沒做
+    if not lands:
+        assert [l for l in installed.splitlines() if _adopt.NO_JOBS_KEY in l], installed
     assert run_step(consumer, 'deactivate')[0] == 0
     capsys.readouterr()
     if before is None:
@@ -258,7 +280,7 @@ def test_install_then_deactivate_is_byte_reversible(tmp_path, env, capsys, case,
     else:
         assert (consumer / _adopt.CARRIER).is_file(), case
         assert (consumer / _adopt.CARRIER).read_bytes() == before, case
-    print('REVERSIBLE', case, 'before', None if before is None else len(before),
+    print('REVERSIBLE', case, 'lands', lands, 'before', None if before is None else len(before),
           'exists_after', (consumer / _adopt.CARRIER).exists())
 
 
