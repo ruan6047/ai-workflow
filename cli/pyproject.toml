@@ -1,6 +1,11 @@
 [project]
 name = "wf"
-version = "1.0.0"
+# 這是 `core/adopt.md` §1 宣告的**框架版本值唯一居所**（`install` 寫進 manifest 每個
+# `framework-managed` 項的 `pin`）。刻意留在 `0.0.0`：WF-015 對它的唯一義務是「居所唯一、`pin` 與
+# 它逐字相同」，⛔ 未要求特定值；而 semver 的 `1.0.0` 是一個「首個穩定公開介面」的語意宣告，撞本卡
+# `non_scope` 逐字「⛔ 不宣告 WF-008 的第一個外部可採用基準」。⛔ 不得推出「版本值永遠是 0.0.0」——
+# 遞增的所有權在宣告 readiness 基準的那張卡（父卡 WF-008 與 WF-012），⛔ 不在實作卡上順手改。
+version = "0.0.0"
 description = "ai-workflow CLI：七動詞、三目錄（gh／compose／verbs）；schema 執行期讀 core/ 的 fenced 區塊"
 requires-python = ">=3.14"
 dependencies = []

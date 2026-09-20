@@ -280,14 +280,21 @@ def test_a_legacy_pin_does_not_enter_the_framework_version_aggregation(tmp_path,
     _, out, _ = preflight(consumer, capsys)
     healthy = rows_of(out)[FOUR[0]]
     assert healthy[0] == 'ok', healthy
+    stale = '9.9.9'                            # 刻意與現行版本值相異：相同就測不出「有沒有進彙整」
+    assert stale != _adopt.framework_version(_adopt.rules_of(consumer))[0], stale
     edit_manifest(consumer, lambda m: m['assets'].append(_adopt.asset_entry(
-        f'{_adopt.INSTALL_SET[0]}#secret-scan', _adopt.OWNERSHIPS[0], 'sha256:0', '0.0.0')))
+        f'{_adopt.INSTALL_SET[0]}#secret-scan', _adopt.OWNERSHIPS[0], 'sha256:0', stale)))
     _, out, _ = preflight(consumer, capsys)
     assert rows_of(out)[FOUR[0]] == healthy, (healthy, rows_of(out)[FOUR[0]])
     pins = {e['pin'] for e in _adopt.entries_of(
         json.loads((consumer / _adopt.MANIFEST_PATH).read_text(encoding='utf-8')),
         _adopt.OWNERSHIPS[0])}
     assert len(pins) > 1, pins                 # 負控：該樹上確實存在兩個相異 pin ⇒ 判準⛔ 非恆真
+    # 再一層負控：同一個 `pin` 掛在**⛔ 非 legacy** 的項上時，該列必須翻成 `fail`（⇒ 彙整真的會響）
+    edit_manifest(consumer, lambda m: m['assets'].append(_adopt.asset_entry(
+        'not-legacy.txt', _adopt.OWNERSHIPS[0], 'sha256:0', stale)))
+    _, out, _ = preflight(consumer, capsys)
+    assert rows_of(out)[FOUR[0]][0] == 'fail', rows_of(out)[FOUR[0]]
     print('A16 legacy_pin_ignored', healthy, 'managed_pins', sorted(pins))
 
 
@@ -350,6 +357,19 @@ def test_failure_branches_print_the_same_item_names(tmp_path, env, capsys):
                             if line.startswith('模組宣告或設定不可用・')]
             assert module_lines and any("'ghost': 未知模組名" in line for line in module_lines), module_lines
             print('MODULE_STDOUT_UNCHANGED', module_lines)
+        if branch == 'ProjectConfigError':
+            # 序 1 `R7.1-3`：該入口在 `load_project_config` 就 raise ⇒ rules 尚未解析到。三列 gitlink
+            # 的狀態 `unknown` 本來就正確，錯的是理由——⛔ 不得陳述「規則來源⛔ 不是檔案系統轉接器」
+            # 這個在該時點⛔ 不成立的事實（A4 ⑥ 的可讀性）。
+            gitlink = [rows[name] for name in _adopt.RECONCILIATION_ITEMS[2:]]
+            assert {status for status, _ in gitlink} == {'unknown'}, gitlink
+            assert {reason for _, reason in gitlink} == {_adopt.UNRESOLVED}, gitlink
+            assert _adopt.NOT_FILESYSTEM not in captured.out, captured.out
+            # 逐列獨立的正面證據：`framework-commit` 的取源是 `manifest.source_commit`，該樹⛔ 無
+            # manifest ⇒ 由 `NO_MANIFEST` 承接，**⛔ 不被** gitlink 的取源狀態連坐成同一個理由。
+            assert rows[_adopt.RECONCILIATION_ITEMS[1]] == ('unknown', _adopt.NO_MANIFEST), rows
+            print('R7.1-3 project_config_branch_reasons', gitlink,
+                  'framework-commit', rows[_adopt.RECONCILIATION_ITEMS[1]])
         print('BRANCH', branch, {name: rows[name][0] for name in rows})
 
 

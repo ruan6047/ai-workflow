@@ -98,6 +98,12 @@ def framework_version(rules):
 
 def gitlink_relative(project_canonical, rules, config):
     """core/adopt.md §1 的三個分支＋一條邊界；回 (相對路徑|None, 理由|None)。"""
+    # `rules is None` 與「別種轉接器」是**兩件事**，⛔ 不得以同一個理由字串冒充：`ProjectConfigError`
+    # 入口在 `load_project_config` 就 raise，該時點 `scope['rules']` 尚未填入 ⇒ 取源**尚未解析到**，
+    # 而⛔ 不是「解析到了、但它⛔ 不是檔案系統轉接器」。兩者狀態同為 `unknown`、理由必須不同：
+    # A4 ⑥ 逐字「診斷輸出的可讀性由查核者 AI 依實際輸出判定」，陳述一個⛔ 不成立的事實⛔ 不可讀。
+    if rules is None:
+        return None, UNRESOLVED
     if not isinstance(rules, FilesystemRulesSource):
         return None, NOT_FILESYSTEM
     if rules.provenance.kind == 'project_config':
@@ -278,6 +284,11 @@ def _version_pin_row(rules, manifest):
 
 
 def _project_config_row(root):
+    # **刻意保留這個 except**：它⛔ 不是經 `verbs/main.py` 的死碼，而是本層被**直呼**時的防線。
+    # 為什麼：`smoke_rows` 是純計算層，`core/verbs.md` §1 `snapshot` 列硬擋欄逐字為「—」⇒ 本層
+    # ⛔ 不得 raise；經 `main.py` 時 `bootstrap()` 會先在 `load_project_config` raise
+    # `ProjectConfigError`，該入口改印七項 preflight 診斷、smoke 一項都⛔ 不印。
+    # ⛔ 不得推出「smoke 能自行承接壞設定檔」——承接者是 `main.py` 那個入口，⛔ 不是本列。
     try:
         areas = load_project_config(root).get('areas') or []
     except Exception:  # ProjectConfigError 與讀檔失敗；⛔ 不外洩例外型別名

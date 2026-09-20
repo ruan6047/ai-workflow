@@ -267,6 +267,25 @@ def test_the_population_is_not_narrowed_by_an_empty_tree(tmp_path, env, capsys):
     print('EMPTY_POPULATION', statuses(out)[_adopt.SMOKE_ITEMS[1]], member_lines(out))
 
 
+def test_the_pure_layer_never_raises_on_an_unparseable_project_config(tmp_path, env, capsys):
+    """序 1 `R7.1-6`：`_project_config_row` 的 `except` ⛔ 不是死碼，是**本層被直呼**時的防線。
+    經 `verbs/main.py` 時 `ProjectConfigError` 在 `bootstrap()` 就 raise、smoke 一項都⛔ 不印；
+    但 `smoke_rows` 是純計算層，`core/verbs.md` §1 `snapshot` 列硬擋欄逐字為「—」⇒ 它⛔ 不得 raise。"""
+    consumer, rules = adopted(tmp_path, env, capsys, 'pure-layer')
+    (consumer / _adopt.CONFIG_PATH).write_text('{壞', encoding='utf-8')
+    rows = _adopt_reconcile.smoke_rows(consumer, rules)       # 直呼：⛔ 不經 main.py
+    found = {row.name: (row.status, row.reason) for row in rows}
+    assert found[_adopt.SMOKE_ITEMS[3]][0] == 'fail', found   # 該分支確實可達
+    for status, reason in found.values():                     # ⛔ 不外洩例外型別名與堆疊
+        assert status in _adopt.STATUSES and 'Error' not in reason and 'Traceback' not in reason
+    # 負控：經 `main.py` 的同一棵樹上該列**一項都⛔ 不印**（承接者是那個入口、⛔ 不是本列）
+    rc = main(['--project-root', str(consumer), 'snapshot', '--adopt', 'smoke'],
+              client=FakeGhClient(), root=None, env={})
+    out = capsys.readouterr().out
+    assert rc == 1 and _adopt.SMOKE_ITEMS[3] not in out, (rc, out)
+    print('R7.1-6 direct_call', found[_adopt.SMOKE_ITEMS[3]], 'via_main rc', rc)
+
+
 def test_adopt_manifest_checks_existence_and_structure_only(tmp_path, env, capsys):
     """方案 A：`adopt-manifest` 的語意恰為「存在且合 §2 結構宣告 ⇒ `ok`，否則⛔ 非 `ok`」，
     且⛔ 無任何自指摘要比對——`self_digest` 已退休、控制檔⛔ 不自登記。"""

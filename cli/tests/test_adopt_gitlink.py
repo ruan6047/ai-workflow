@@ -207,9 +207,14 @@ def test_the_three_branches_of_rules_root_location(tmp_path, env):
     class NotFilesystem:  # RulesSource Protocol 恰四成員、⛔ 無 path ⇒ 定位不到 gitlink
         identity, provenance = 'zip://x', Provenance('cli', 'zip fixture')
     assert _adopt.gitlink_relative(canonical, NotFilesystem(), config) == (None, _adopt.NOT_FILESYSTEM)
-    for reason in (_adopt.OUTSIDE_PROJECT, _adopt.RULES_IS_PROJECT, _adopt.NOT_FILESYSTEM):
+    # 序 1 `R7.1-3`：**尚未解析到取源**與「解析到了、但⛔ 不是檔案系統轉接器」是兩件事。
+    # `ProjectConfigError` 入口在 `load_project_config` 就 raise ⇒ 該時點 rules 是 `None`。
+    assert _adopt.gitlink_relative(canonical, None, config) == (None, _adopt.UNRESOLVED)
+    assert _adopt.UNRESOLVED != _adopt.NOT_FILESYSTEM       # 負控：兩個理由⛔ 不得是同一個字串
+    for reason in (_adopt.OUTSIDE_PROJECT, _adopt.RULES_IS_PROJECT, _adopt.NOT_FILESYSTEM,
+                   _adopt.UNRESOLVED):
         assert 'Error' not in reason and 'Traceback' not in reason, reason
-    print('BRANCHES rules.path/--rules-root/outside/project_root/not-filesystem all resolved')
+    print('BRANCHES rules.path/--rules-root/outside/project_root/not-filesystem/unresolved resolved')
 
 
 # ── A18：`pin` ⛔ 不與 gitlink SHA 直接比相等，且⛔ 不做 SHA→版本值映射 ─────────────
