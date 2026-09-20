@@ -1,4 +1,4 @@
-"""WF-015 iteration 4 兩位查核者九條 finding 的回歸形狀。
+"""WF-015 iteration 4 兩位查核者十條 finding 的回歸形狀。
 
 一條 finding 一個具名測試，形狀逐一取自該條 `evidence` 描述的重現步驟（⛔ 不改寫成別的形狀）：
 
@@ -7,11 +7,16 @@
 | WF-015-R4.1-1 | `test_r411_carrier_without_trailing_newline_is_byte_reversible` |
 | WF-015-R4.1-2 | `test_r412_bare_jobs_header_survives_deactivate` |
 | WF-015-R4.1-3 | `test_r413_the_carrier_header_rule_is_internally_consistent` |
-| WF-015-R4.2-1 | `test_r421_crlf_carrier_is_byte_reversible` |
+| WF-015-R4.2-1 | `test_r421_crlf_carrier_is_byte_reversible`（往返）＋ `test_r421_install_leaves_every_byte_outside_the_fragment_spans`（install 當下） |
 | WF-015-R4.2-2 | `test_r422_consumer_owned_carrier_is_never_rewritten` |
-| WF-015-R4.2-3 | `test_r423_inline_commented_job_key_is_recognised` |
+| WF-015-R4.2-3 | `test_r423_inline_commented_job_key_is_recognised`、`test_r423_an_unrecognisable_job_key_line_stops_the_write`、`test_r423_a_four_space_jobs_block_is_not_recognised_and_stops_the_write` |
 | WF-015-R4.2-4 | `test_r424_symlinked_managed_path_never_touches_its_target` |
 | WF-015-R4.1-4／-5 | `test_r414_r415_return_numbering_has_a_mechanical_check` |
+| WF-015-R5.2-1 | `test_r521_landed_fragment_bytes_equal_the_source_fragment_bytes` |
+
+R4.2-1 的量測時點恰有兩個、⛔ 不可互相取代：**install 當下**（卡面 A5「對未登記的位元組零影響」）與
+**install→deactivate 往返之後**（A13 位元組級可逆）。上一輪只驗往返，故 install 當下的片段外新增位元組
+未被抓到；本檔兩個時點各有一個具名測試。
 
 判準的居所是 `core/adopt.md` §2／§5，常數一律 `import`（F-執行者-04）。合成 consumer 樹＝
 `test_adopt_gitlink.adopted_consumer`（`core/adopt.md` §0）；⛔ 不依賴本 repo 歷史存在。
@@ -283,3 +288,148 @@ def test_r414_r415_return_numbering_has_a_mechanical_check():
     assert stale_ids('現行 32 條：A7／A29／A30／A32', 28) == ['29', '30', '32']
     print('R4.1-4/-5 stale_ids negative', stale_ids('A7／A8', 28),
           'positive', stale_ids('A29／A30／A32', 28))
+
+
+# ── 第二輪三條 blocking 的獨立位元組層 ────────────────────────────────────────────
+# 判準一律對**原始 bytes**，⛔ 不經 `job_text`／`job_span`（F-共用-06 逐字「驗證對原件，⛔ 不對經任何
+# 一層加工的字串」）。`cut()` 只認來源檔那兩個逐字 ASCII 標頭行；兩格縮排在此**刻意重打**：獨立比較器
+# 要與被測物的縮排判定脫鉤，否則同一個 bug 會同時讓被測物與比較器失效。
+NONL = CONSUMER_JOB.rstrip('\n')                       # 檔尾⛔ 無換行
+CRLF_NONL = CONSUMER_JOB.replace('\n', '\r\n').rstrip('\r\n')
+BARE_JOBS_NONL = 'name: own\njobs:'                     # 檔案恰好結束在 `jobs:` 這一行
+FOUR_SPACE = CONSUMER_JOB.replace('  ', '    ').replace('    mine:', f'    {_adopt.FRAGMENTS[0]}:')
+
+
+def cut(data):
+    """回 (切掉兩個框架 job 區間後的剩餘 bytes, {job 名: 該區間的原始 bytes})。"""
+    heads = {b'  ' + name.encode() + b':': name for name in _adopt.FRAGMENTS}
+    lines, spans, blocks = data.splitlines(keepends=True), [], {}
+    for index, line in enumerate(lines):
+        if line.rstrip(b'\r\n') not in heads:
+            continue
+        end = index + 1
+        while end < len(lines) and (not lines[end].strip()
+                                    or len(lines[end]) - len(lines[end].lstrip(b' ')) > 2):
+            end += 1
+        while end > index + 1 and not lines[end - 1].strip():
+            end -= 1
+        spans.append((index, end))
+        blocks[heads[line.rstrip(b'\r\n')]] = b''.join(lines[index:end])
+    kept = b''.join(l for i, l in enumerate(lines) if not any(a <= i < z for a, z in spans))
+    return kept, blocks
+
+
+def source_blocks(rules):
+    return cut((rules / _adopt.FRAGMENT_SOURCE).read_bytes())[1]
+
+
+def test_cut_is_an_effective_comparator(tmp_path, env):
+    """負控（必須會響）：比較器對「區間外多一個位元組」與「區間內少一個位元組」都必須判⛔ 不相等。"""
+    _, rules, _, _, _ = adopted_consumer(tmp_path, env, name='cut-neg')
+    blocks = source_blocks(rules)
+    assert set(blocks) == set(_adopt.FRAGMENTS), sorted(blocks)
+    body = CONSUMER_JOB.encode('utf-8')
+    assert cut(body)[1] == {} and cut(body)[0] == body            # ⛔ 無框架 job ⇒ 全部算區間外
+    spiked = body + blocks[_adopt.FRAGMENTS[0]]
+    assert cut(spiked)[0] == body and cut(spiked)[1][_adopt.FRAGMENTS[0]] == blocks[_adopt.FRAGMENTS[0]]
+    assert cut(spiked + b'\n')[0] != body                          # 區間外多一個位元組 ⇒ 響
+    assert cut(body + blocks[_adopt.FRAGMENTS[0]][:-1])[1][_adopt.FRAGMENTS[0]] != blocks[_adopt.FRAGMENTS[0]]
+    print('NEGATIVE_CONTROL cut outside_extra_byte=True inside_missing_byte=True')
+
+
+# ── WF-015-R4.2-1：install **當下**片段區間之外的位元組逐一相等 ──────────────────────
+@pytest.mark.parametrize('case,body,lands', [
+    ('owned_nonl', NONL, True), ('crlf_nonl', CRLF_NONL, True), ('bare_jobs_nonl', BARE_JOBS_NONL, False),
+    ('owned_lf', CONSUMER_JOB, True), ('crlf', CONSUMER_JOB.replace('\n', '\r\n'), True)])
+def test_r421_install_leaves_every_byte_outside_the_fragment_spans(tmp_path, env, capsys, case, body, lands):
+    """量測時點是 **install 當下**（⛔ 不是 install→deactivate 往返之後）：卡面 A5 逐字
+    「`snapshot --adopt install` 對未登記的位元組零影響」。落地時區間外逐一相等；⛔ 無法⛔ 不補
+    接行換行時（`bare_jobs_nonl`）對承載檔零寫入並印 `UNTERMINATED`。"""
+    consumer, rules, _, _, _ = adopted_consumer(tmp_path, env, name=f'r421-outside-{case}')
+    before = carrier_with(consumer, body)
+    rc, out = step(consumer, 'install', capsys)
+    assert rc == 0, out
+    landed = carrier_bytes(consumer)
+    outside, blocks = cut(landed)
+    assert sorted(blocks) == (sorted(_adopt.FRAGMENTS) if lands else []), (case, sorted(blocks))
+    assert outside == before, (case, outside, before)          # A5②：區間外位元組逐一相等
+    registered = {e['path'] for e in manifest_of(consumer)['assets']}
+    fragments = {p for p in registered if p.startswith(f'{_adopt.CARRIER}#')}
+    if lands:
+        assert landed != before, case                          # 負控：install 真的動過承載檔
+        assert fragments == {f'{_adopt.CARRIER}#{n}' for n in _adopt.FRAGMENTS}, sorted(registered)
+    else:
+        assert landed == before and fragments == set(), (case, sorted(registered))
+        assert [line for line in out.splitlines() if _adopt.UNTERMINATED in line], out
+    print('R4.2-1', case, 'outside_preserved True lands', lands, 'bytes', len(before))
+
+
+# ── WF-015-R4.2-3：⛔ 非兩格縮排的既有 jobs 區塊也算「無法安全辨識」 ────────────────────
+def test_r423_a_four_space_jobs_block_is_not_recognised_and_stops_the_write(tmp_path, env, capsys):
+    """查核序 2 的 `four_space`：四格縮排的既有 `secret-scan` 同時漏過 `job_names` 與保守拒寫時，
+    install 會在同一個 `jobs:` 之下追加兩格縮排的同名鍵 ⇒ 改壞採用專案原本可解析的 workflow。"""
+    consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='r423-four-space')
+    before = carrier_with(consumer, FOUR_SPACE)
+    assert _adopt.job_names(FOUR_SPACE) == (), FOUR_SPACE      # 母體前提：本層辨識⛔ 不到任何 job
+    assert _adopt.unsafe_job_lines(FOUR_SPACE), FOUR_SPACE     # ⇒ 必須收成「無法安全辨識」
+    rc, out = step(consumer, 'install', capsys)
+    assert rc == 0, out
+    assert carrier_bytes(consumer) == before                   # 位元組逐一不變
+    registered = {e['path'] for e in manifest_of(consumer)['assets']}
+    assert not [p for p in registered if p.startswith(f'{_adopt.CARRIER}#')], sorted(registered)
+    assert [line for line in out.splitlines() if _adopt.UNSAFE_JOB in line], out
+    print('R4.2-3c four_space zero_write True, UNSAFE_JOB printed')
+
+
+def test_r423_negative_control_the_two_space_sibling_is_installed(tmp_path, env, capsys):
+    """負控（必須會響）：同一棵樹上把縮排改回兩格後，install 必須落地兩個片段——否則四格那條恆真。"""
+    consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='r423-four-space-neg')
+    before = carrier_with(consumer, CONSUMER_JOB)
+    assert _adopt.unsafe_job_lines(CONSUMER_JOB) == ()
+    rc, out = step(consumer, 'install', capsys)
+    assert rc == 0 and carrier_bytes(consumer) != before, out
+    registered = {e['path'] for e in manifest_of(consumer)['assets']}
+    assert {f'{_adopt.CARRIER}#{n}' for n in _adopt.FRAGMENTS} <= registered, sorted(registered)
+    print('NEGATIVE_CONTROL two_space_sibling installed ->', sorted(registered))
+
+
+# ── WF-015-R5.2-1：片段逐字落地，且 digest 與 smoke ⛔ 不得掩蓋差異 ───────────────────
+@pytest.mark.parametrize('case,body', [
+    ('owned_nonl', NONL), ('crlf_nonl', CRLF_NONL), ('owned_lf', CONSUMER_JOB),
+    ('crlf', CONSUMER_JOB.replace('\n', '\r\n')), ('bare_jobs', BARE_JOBS), ('absent', None)])
+def test_r521_landed_fragment_bytes_equal_the_source_fragment_bytes(tmp_path, env, capsys, case, body):
+    """落地區間的**原始 bytes** 與來源檔同名 job 區間的**原始 bytes** 逐一相等，且該項 `digest`
+    的前像就是落地的那段原始 bytes（⛔ 不是補過換行的加工字串）。"""
+    consumer, rules, _, _, _ = adopted_consumer(tmp_path, env, name=f'r521-{case}')
+    if body is not None:
+        carrier_with(consumer, body)
+    rc, out = step(consumer, 'install', capsys)
+    assert rc == 0, out
+    expected = source_blocks(rules)
+    blocks = cut(carrier_bytes(consumer))[1]
+    entries = {e['path']: e for e in manifest_of(consumer)['assets']}
+    for name in _adopt.FRAGMENTS:
+        assert blocks[name] == expected[name], (case, name, blocks[name], expected[name])
+        entry = entries[f'{_adopt.CARRIER}#{name}']
+        assert entry['digest'] == _adopt.digest_of(blocks[name]), (case, name, entry)
+    rc_smoke, smoke = step(consumer, 'smoke', capsys)
+    assert rc_smoke == 0
+    row, = [l for l in smoke.splitlines() if _adopt.SMOKE_ITEMS[1] in l]
+    assert f'・{_adopt.STATUSES[0]}・' in row, row
+    print('R5.2-1', case, 'verbatim', {n: True for n in _adopt.FRAGMENTS}, row)
+
+
+def test_r521_negative_control_a_one_byte_fragment_edit_is_not_masked(tmp_path, env, capsys):
+    """負控（必須會響）：把落地片段的最後一個位元組拿掉後，同一條 `managed-assets` 必須轉 `fail`
+    ——這正是上一輪被 `job_text` 補換行掩蓋掉的那一個位元組。"""
+    consumer, rules, _, _, _ = adopted_consumer(tmp_path, env, name='r521-neg')
+    carrier_with(consumer, CONSUMER_JOB)
+    assert step(consumer, 'install', capsys)[0] == 0
+    data = carrier_bytes(consumer)
+    assert data.endswith(b'\n'), data[-20:]
+    (consumer / _adopt.CARRIER).write_bytes(data[:-1])          # 只拿掉檔尾那一個 0a
+    rc, smoke = step(consumer, 'smoke', capsys)
+    assert rc == 0
+    row, = [l for l in smoke.splitlines() if _adopt.SMOKE_ITEMS[1] in l]
+    assert f'・{_adopt.STATUSES[1]}・' in row, row
+    print('NEGATIVE_CONTROL one_byte_fragment_edit ->', row)

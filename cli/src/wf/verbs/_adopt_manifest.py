@@ -170,10 +170,13 @@ def job_names(text):
 
 
 def unsafe_job_lines(text):
-    """`jobs:` 之下兩格縮排、⛔ 非空白、⛔ 非整行註解，且⛔ 不是合法 job 鍵行的行。⛔ 非空即「片段邊界
-    無法安全辨識」，呼叫端據以零寫入；⛔ 不得推出「這些行⛔ 不是 job」。"""
-    return tuple(line for line in _jobs_body(text) if _indent(line) == JOB_INDENT
-                 and not line.strip().startswith('#') and job_key_of(line) is None)
+    """`jobs:` 之下每一個⛔ 非空白、⛔ 非整行註解的行都必須是合法 job 鍵行，或是已辨識 job 鍵行之後深於
+    `JOB_INDENT` 的內容行；首行就⛔ 不是 job 鍵行時（例：整個 `jobs:` 區塊用四格縮排）整段都算無法安全辨識。
+    ⛔ 非空即「片段邊界無法安全辨識」，呼叫端據以零寫入；⛔ 不得推出「這些行⛔ 不是 job」。"""
+    body = [line for line in _jobs_body(text) if line.strip() and not line.strip().startswith('#')]
+    if body and job_key_of(body[0]) is None:
+        return tuple(body)
+    return tuple(line for line in body if job_key_of(line) is None and (_indent(line) or 0) <= JOB_INDENT)
 
 
 def job_span(lines, name):
@@ -193,13 +196,10 @@ def job_span(lines, name):
 
 
 def job_text(text, name):
-    """該 job 的逐字文字（§2 的 `digest` 前像）；⛔ 無該 job 回 None。"""
-    lines = split_lines(text)
-    span = job_span(lines, name)
-    if span is None:
-        return None
-    block = ''.join(lines[span[0]:span[1]])
-    return block if block.endswith('\n') else block + '\n'
+    """該 job 的逐字文字（§2 的 `digest` 前像）；⛔ 無該 job 回 None。⛔ 不補檔尾換行：補過的字串既
+    ⛔ 不是落地的位元組，也會讓 `digest` 與實際片段分離而掩蓋逐字差異。"""
+    span = job_span(lines := split_lines(text), name)
+    return None if span is None else ''.join(lines[span[0]:span[1]])
 
 
 def skeleton_of(text):
@@ -210,36 +210,30 @@ def skeleton_of(text):
     return None if start is None else ''.join(lines[:start + 1])
 
 
-def _ensure_newline(text):
-    return text if not text or text.endswith('\n') else text + '\n'
-
-
-def _restore_tail(text, had_newline):
-    """還原檔尾有⛔ 無換行：接行用的換行⛔ 不屬片段區間，留在檔尾會讓 `deactivate` 還原⛔ 不回原位元組（§5）。"""
-    return text[:-1] if (not had_newline and text.endswith('\n')) else text
-
-
 def upsert_job(text, name, block):
-    """把 `block`（逐字片段文字）寫進 `jobs:` 區塊：同名 job 已在就原位取代，否則插在區塊末端。
-    `jobs:` 標頭缺席時回 `None`——該標頭屬頂層骨架，`core/adopt.md` §2 末條逐字「承載檔已存在時
-    CLI ⛔ 不改寫其頂層骨架」；⛔ 不得推出「⛔ 無 `jobs:` 就⛔ 不能採用」（新建時由骨架帶入）。"""
-    tail = text.endswith('\n') or not text
-    lines = split_lines(_ensure_newline(text))
+    """把 `block`（逐字片段文字）寫進 `jobs:` 區塊：同名 job 已在就原位取代，否則插在區塊末端；末端前一行
+    ⛔ 無換行時改插在 `jobs:` 標頭之後。刻意⛔ 不補接行用的換行——§2 逐字「為了把新行接上去而補的那個換行
+    ⛔ 不屬於任何片段區間」，補它就改到片段區間之外的位元組。`jobs:` 標頭缺席、或兩個插點的前一行都⛔ 無
+    換行時回 `None`，呼叫端據以零寫入；⛔ 不得推出「⛔ 無 `jobs:` 就⛔ 不能採用」（新建時由骨架帶入）。"""
+    lines = split_lines(text)
     if (start := jobs_index(lines)) is None:
         return None
-    span = job_span(lines, name)
-    at = span if span is not None else (_jobs_end(lines, start),) * 2
-    lines[at[0]:at[1]] = split_lines(block)
-    return _restore_tail(''.join(lines), tail)
+    if (span := job_span(lines, name)) is None:
+        at = end if lines[(end := _jobs_end(lines, start)) - 1].endswith('\n') else start + 1
+        if not lines[at - 1].endswith('\n'):
+            return None
+        span = (at, at)
+    lines[span[0]:span[1]] = split_lines(block)
+    return ''.join(lines)
 
 
 def remove_jobs(text, names):
     """自承載檔移除指定的片段區間。`jobs:` 標頭行⛔ 不移除：它屬頂層骨架、可能是 consumer 原有的
-    （§2／§5；install 也⛔ 不新增它，兩側對稱）。⛔ 不得推出「可以移除 consumer 自有的 job」。"""
-    tail = text.endswith('\n') or not text
-    lines = split_lines(_ensure_newline(text))
+    （§2／§5；install 也⛔ 不新增它，兩側對稱）。⛔ 不得推出「可以移除 consumer 自有的 job」。純刪行
+    ⛔ 不需要接行用的換行（只有 `split_lines` 的最後一段可能⛔ 無換行，而它⛔ 不會是被刪區間的前一行）。"""
+    lines = split_lines(text)
     for name in names:
         span = job_span(lines, name)
         if span is not None:
             del lines[span[0]:span[1]]
-    return _restore_tail(''.join(lines), tail)
+    return ''.join(lines)

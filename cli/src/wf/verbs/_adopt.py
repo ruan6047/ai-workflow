@@ -33,6 +33,8 @@ KEPT_OWNED = f'已登記為 {OWNERSHIPS[1]}，未覆寫'
 SYMLINK_PATH = '該路徑在樹上是符號連結，未寫入、未移除'
 NO_JOBS_KEY = '既有承載檔⛔ 無 `jobs:` 標頭，⛔ 不改寫頂層骨架，未落地片段'
 UNSAFE_JOB = '承載檔內有無法安全辨識的 job 鍵行，未改寫'
+# 刻意：接行用的換行⛔ 不屬於任何片段區間（`core/adopt.md` §2），補它就改到片段區間之外的位元組（A5）⇒ 零寫入。
+UNTERMINATED = '承載檔的插點前一行⛔ 無換行，補換行會改到片段區間之外的位元組，未改寫'
 
 # 本檔是 `_adopt` 層對外的單一名稱面：`_adopt_manifest` 與 `_adopt_reconcile` 的公開名在此轉出，
 # 呼叫端與測試一律 `from wf.verbs import _adopt` 取用（F-執行者-04：`import` 使用、⛔ 不重打常數）。
@@ -40,7 +42,7 @@ __all__ = ['ASSET_KEYS', 'CARRIER', 'CONFIG_PATH', 'DEFECTS', 'FOREIGN_JOB', 'FR
            'INSTALL_SET', 'KEPT_OWNED', 'MANAGED_ASSETS', 'MANIFEST_PATH', 'MANIFEST_SCHEMA', 'NOT_FILESYSTEM', 'NO_CHECKOUT', 'NO_HEAD',
            'NO_INDEX', 'NO_JOBS_KEY', 'NO_MANIFEST', 'NO_SOURCE_COMMIT', 'NO_STAGES', 'NO_VERSION', 'OUTSIDE_PROJECT', 'OUTSIDE_ROOT',
            'OWNERSHIPS', 'PREFIX', 'RECONCILIATION_ITEMS', 'RULES_IS_PROJECT', 'Row', 'SEED_HOME', 'SMOKE_ITEMS', 'STAGE_DIR',
-           'STATIC_IDENTITY_ITEMS', 'STATUSES', 'STEPS', 'STEP_PREFIX', 'SYMLINK_PATH', 'TOP_KEYS', 'UNRESOLVED', 'UNSAFE_JOB',
+           'STATIC_IDENTITY_ITEMS', 'STATUSES', 'STEPS', 'STEP_PREFIX', 'SYMLINK_PATH', 'TOP_KEYS', 'UNRESOLVED', 'UNSAFE_JOB', 'UNTERMINATED',
            'VERSION_HOME', 'asset_digest', 'asset_entry', 'confined', 'defect_of', 'digest_of', 'entries_of', 'fragment_of',
            'framework_version', 'gitlink_facts', 'gitlink_relative', 'identity_rows', 'item_names', 'job_key_of', 'job_names',
            'job_span', 'job_text', 'pins_of', 'preflight_rows', 'print_scope', 'read_manifest', 'reconcile', 'remove_jobs', 'render',
@@ -88,9 +90,9 @@ def _install_files(root, source, owned, version, emit):
 
 def _install_fragments(root, source, owned, managed, version, emit):
     """片段自片段來源檔**逐字**落地；承載檔缺席時以該來源檔的頂層骨架建立它（⛔ 不另建第二個居所）。
-    五種情形對承載檔**零寫入**並各印一行：整檔已登記為 `consumer-owned`、該路徑是符號連結、既有承載檔
-    ⛔ 無 `jobs:` 標頭、有無法安全辨識的 job 鍵行、有未登記的同名 job。刻意整批中止而⛔ 不只跳過該一個
-    片段：判準要求該情形下承載檔位元組逐一不變。以 bytes 讀寫、⛔ 不用 universal newlines（§5）。"""
+    六種情形對承載檔**零寫入**並各印一行：整檔已登記為 `consumer-owned`、該路徑是符號連結、既有承載檔
+    ⛔ 無 `jobs:` 標頭、有無法安全辨識的 job 鍵行、插點前一行⛔ 無換行、有未登記的同名 job。刻意整批中止
+    而⛔ 不只跳過該片段：判準要求該情形下承載檔位元組逐一不變。以 bytes 讀寫、⛔ 不用 universal newlines（§5）。"""
     carrier = root / CARRIER
     if CARRIER in owned:  # A8：整檔登記為 consumer-owned 的承載檔⛔ 不覆寫（片段登記同理由此中止）
         return _skip(emit, CARRIER, KEPT_OWNED)
@@ -106,6 +108,8 @@ def _install_fragments(root, source, owned, managed, version, emit):
         return _skip(emit, FRAGMENT_SOURCE, '片段來源檔⛔ 無頂層骨架，未落地')
     if existed and unsafe_job_lines(text):
         return _skip(emit, CARRIER, UNSAFE_JOB)
+    if existed and skeleton_of(text) is None:  # 既有承載檔⛔ 無 `jobs:` 標頭：該行屬頂層骨架，install ⛔ 不新增它
+        return _skip(emit, CARRIER, NO_JOBS_KEY)
     present = set(job_names(text)) if existed else set()
     foreign = [n for n in FRAGMENTS if n in present and f'{CARRIER}#{n}' not in managed]
     for name in foreign:
@@ -118,12 +122,12 @@ def _install_fragments(root, source, owned, managed, version, emit):
             _say(emit, 'install', f'{CARRIER}#{name}', KEPT_OWNED)
             continue
         block = job_text(source_text, name)
-        if block is None:
-            _say(emit, 'install', f'{CARRIER}#{name}', '片段來源檔⛔ 無該 job，未落地')
+        if block is None or not block.endswith('\n'):  # 缺換行的來源片段接不進區塊中段，⛔ 不改成補一個
+            _say(emit, 'install', f'{CARRIER}#{name}', '片段來源檔⛔ 無可逐字落地的該 job，未落地')
             continue
         landed = upsert_job(staged, name, block)
-        if landed is None:  # 既有承載檔⛔ 無 `jobs:` 標頭：該行屬頂層骨架，install ⛔ 不新增它
-            return _skip(emit, CARRIER, NO_JOBS_KEY)
+        if landed is None:
+            return _skip(emit, CARRIER, UNTERMINATED)
         staged = landed
         entries.append(asset_entry(f'{CARRIER}#{name}', OWNERSHIPS[0],
                                    digest_of(block.encode('utf-8')), version))
