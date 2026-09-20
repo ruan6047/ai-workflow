@@ -1,5 +1,5 @@
-"""WF-015 A4–A8 與 A15。消費 core/adopt.md §2（項鍵集合、所有權、`path` 兩類文法、`source_commit`、
-結構宣告九列缺陷代號、`pin` 彙整規則）／§1（版本值唯一居所）。
+"""WF-015：manifest 的項鍵集合、所有權、單一 `path` 文法、`source_commit`、結構宣告的缺陷代號、
+`pin` 彙整規則。消費 core/adopt.md §2／§1（版本值唯一居所）。
 
 合成 consumer 樹＝`test_adopt_gitlink.py` 的 `adopted_consumer`（canonical install mode：真 submodule，
 `core/adopt.md` §0）。manifest 的鍵集合、所有權分類與應安裝集合由 `wf.verbs._adopt` `import` 取得、
@@ -27,7 +27,7 @@ from .test_context_roots import RULE_DIRS, git, git_env
 VERSION_DECLARATION = re.compile(r'^\s*version\s*=', re.M)
 BACKTICKED = re.compile(r'`([a-z_]+)`')
 # 掃描面內可能的落地物：由常數（`import` 取得）算出，⛔ 不逐檔重打。
-CANDIDATES = (*_adopt.INSTALL_SET, _adopt.CARRIER, _adopt.MANIFEST_PATH)
+CANDIDATES = (*_adopt.INSTALL_SET, _adopt.MANIFEST_PATH)
 
 
 def tree_digests(root):
@@ -60,18 +60,6 @@ def declared_asset_keys():
     _, body = adopt_section(None, '2')
     clause, = [line for line in body.splitlines() if line.startswith('- `assets` 每項恰')]
     return tuple(BACKTICKED.findall(clause.split('：', 1)[1].split('。')[0]))
-
-
-def outside_fragments(text, names):
-    """把承載檔的片段區間切掉後剩下的位元組（`core/adopt.md` §2「片段區間」定義）。"""
-    lines = text.splitlines(keepends=True)
-    spans = sorted(span for span in (_adopt.job_span(lines, name) for name in names) if span)
-    kept, at = [], 0
-    for start, end in spans:
-        kept.extend(lines[at:start])
-        at = end
-    kept.extend(lines[at:])
-    return ''.join(kept)
 
 
 def consumer_owned(consumer):
@@ -119,12 +107,11 @@ def test_every_landed_asset_has_exactly_one_four_key_entry(tmp_path, env, capsys
         assert entry['ownership'] in _adopt.OWNERSHIPS, entry
     paths = [e['path'] for e in manifest['assets']]
     assert len(set(paths)) == len(paths), paths                # `path` 兩兩相異
-    classes = {p: ('片段' if _adopt.fragment_of(p) else '整檔') for p in paths}
-    assert all(('#' in p) == (classes[p] == '片段') for p in paths), classes
-    assert set(classes.values()) == {'整檔', '片段'}, classes   # 兩類都有，判準⛔ 非空轉
+    # `path` 只有整檔一種文法：CLI 新產生的登記項一律⛔ 不含 `#`（片段文法已隨本卡撤銷）
+    assert all('#' not in p for p in paths), paths
     assert manifest['source_commit'] == installed and len(installed) == 40
     assert [call for call in client.calls if call[0] in MUTATIONS] == [], client.calls
-    print('A4 landed', sorted(landed), 'classes', classes)
+    print('LANDED', sorted(landed), 'paths', sorted(paths))
 
 
 # ── A5：install 對未登記的位元組零影響 ────────────────────────────────────────────
@@ -136,23 +123,12 @@ def test_install_touches_no_unregistered_byte(tmp_path, env, capsys):
     capsys.readouterr()
     after = tree_digests(consumer)
     registered = {e['path'] for e in manifest_of(consumer)['assets']}
-    carriers = {_adopt.fragment_of(p)[0] for p in registered if _adopt.fragment_of(p)}
     changed = {p for p in set(before) | set(after) if before.get(p) != after.get(p)}
     assert changed, 'install 什麼都沒動＝本條零資訊'
-    assert changed <= registered | carriers, sorted(changed - registered - carriers)
-    for path in set(before) - registered - carriers:
+    assert changed <= registered, sorted(changed - registered)
+    for path in set(before) - registered:
         assert before[path] == after.get(path), path
-    print('A5 changed', sorted(changed), 'registered', sorted(registered))
-    # 第二類：承載檔已存在時，片段區間之外的位元組逐一相等
-    from .test_adopt_fragments import CONSUMER_JOB, carrier_with
-    kept, _, _, _, _ = adopted_consumer(tmp_path, env, name='a5-carrier')
-    carrier_with(kept, CONSUMER_JOB)
-    assert run_step(kept, 'install')[0] == 0
-    capsys.readouterr()
-    landed = (kept / _adopt.CARRIER).read_text(encoding='utf-8')
-    assert outside_fragments(landed, _adopt.FRAGMENTS) == CONSUMER_JOB, landed
-    assert set(_adopt.job_names(landed)) == {'mine', *_adopt.FRAGMENTS}, _adopt.job_names(landed)
-    print('A5 carrier outside_fragments identical', len(CONSUMER_JOB), 'bytes')
+    print('UNTOUCHED changed', sorted(changed), 'registered', sorted(registered))
 
 
 def test_the_untouched_check_has_a_negative_control(tmp_path, env, capsys):
@@ -238,8 +214,16 @@ def test_parseable_json_is_not_a_valid_manifest(tmp_path, env, capsys):
             reasons |= {line.split('・', 3)[3] for line in out.splitlines()
                         if line.startswith(f'{_adopt.STEP_PREFIX}・deactivate・{_adopt.MANIFEST_PATH}')}
             write_manifest_file(consumer, value)               # deactivate 之後放回同一份輸入
+        # (d) 壞 manifest ⛔ 不得成為取得所有權的路徑：install 對每一個既有物走零寫入分支，
+        # 且⛔ 不把任何既有路徑新登記為 `framework-managed`（否則重跑一次就把 consumer 的檔收編）。
+        untouched = tree_digests(consumer)
         assert run_step(consumer, 'install')[0] == 0, case     # install 的沿用讀取也⛔ 不 raise
         capsys.readouterr()
+        after_install = tree_digests(consumer)
+        assert {p for p in set(untouched) | set(after_install)
+                if untouched.get(p) != after_install.get(p)} == {_adopt.MANIFEST_PATH}, case
+        assert [e['path'] for e in _adopt.managed_entries(manifest_of(consumer))
+                if e['path'] != _adopt.MANIFEST_PATH] == [], case
         write_manifest_file(consumer, value)
         for name in consuming:
             assert seen[name][0] != 'ok', (case, name, seen[name])
@@ -265,7 +249,6 @@ def test_the_structural_declaration_rejects_every_listed_defect():
         'entry-keys': {**healthy, 'assets': [{**healthy['assets'][0], 'x': 1}]},
         'entry-value': {**healthy, 'assets': [{**healthy['assets'][0], 'path': 7}]},
         'path-unique': {**healthy, 'assets': [healthy['assets'][0], dict(healthy['assets'][0])]},
-        'path-grammar': {**healthy, 'assets': [{**healthy['assets'][0], 'path': 'a#b#c'}]},
     }
     assert tuple(probes) == manifest_defects(), (tuple(probes), manifest_defects())
     for tag, value in probes.items():
@@ -273,10 +256,10 @@ def test_the_structural_declaration_rejects_every_listed_defect():
         print('DEFECT', tag, '->', _adopt.defect_of(value))
 
 
-# ── A8：既有 consumer-owned 登記項⛔ 不覆寫、⛔ 不雙重登記 ────────────────────────
+# ── 既有 consumer-owned 登記項⛔ 不覆寫、⛔ 不雙重登記（`core/adopt.md` §2 分支 ②）────
 def test_install_never_overwrites_a_consumer_owned_entry(tmp_path, env, capsys):
     consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='a8')
-    victim = _adopt.MANAGED_ASSETS[0]
+    victim = _adopt.INSTALL_SET[0]
     (consumer / victim).parent.mkdir(parents=True, exist_ok=True)
     (consumer / victim).write_text('# consumer 自己的內容\n', encoding='utf-8')
     before = hashlib.sha256((consumer / victim).read_bytes()).hexdigest()
@@ -292,9 +275,10 @@ def test_install_never_overwrites_a_consumer_owned_entry(tmp_path, env, capsys):
     matched = [e for e in manifest_of(consumer)['assets'] if e['path'] == victim]
     assert len(matched) == 1, matched
     assert matched[0] == entry, (matched[0], entry)             # 登記項逐鍵不變
-    explained = [line for line in out.splitlines() if _adopt.KEPT_OWNED in line and victim in line]
-    assert explained, out                                       # 印一行說明
-    print('A8 kept', victim, before[:12], explained)
+    explained = [line for line in out.splitlines()
+                 if _adopt.PENDING_MARK in line and f'target={victim}' in line]
+    assert len(explained) == 1, out                             # 印一項未完成項、⛔ 不重複
+    print('KEPT_OWNED', victim, before[:12], explained)
 
 
 # ── A15：`pin` 逐項等於版本值唯一居所 ────────────────────────────────────────────
@@ -304,7 +288,7 @@ def test_pin_equals_the_single_version_home(tmp_path, env, capsys):
     capsys.readouterr()
     version = tomllib.loads((rules / _adopt.VERSION_HOME).read_text(encoding='utf-8'))['project']['version']
     assert isinstance(version, str) and version, version
-    managed = _adopt.entries_of(manifest_of(consumer), _adopt.OWNERSHIPS[0])
+    managed = _adopt.managed_entries(manifest_of(consumer))
     assert managed, manifest_of(consumer)
     assert {e['pin'] for e in managed} == {version}, ({e['pin'] for e in managed}, version)
     homes = [_adopt.VERSION_HOME] if VERSION_DECLARATION.search(

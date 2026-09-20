@@ -18,7 +18,7 @@ from wf.context import public_contract
 from wf.verbs import _adopt
 from wf.verbs.main import main
 from .fakes import FakeGhClient
-from .test_adopt_fragments import MERGE_BASE, changed_files
+from .test_adopt_assets import MERGE_BASE, changed_files
 from .test_adopt_gitlink import adopted_consumer, framework_tree
 from .test_compose_schema import ROOT
 from .test_context_roots import git_env
@@ -91,8 +91,7 @@ def test_local_steps_need_no_github_identity(tmp_path, env, capsys):
     assert stages and all((consumer / f'{_adopt.STAGE_DIR}/{s}.md').is_file() for s in stages), stages
     print('A22 bootstrap', len(stages), 'stage files')
     manifest = json.loads((consumer / _adopt.MANIFEST_PATH).read_text(encoding='utf-8'))
-    whole = [e['path'] for e in _adopt.entries_of(manifest, _adopt.OWNERSHIPS[0])
-             if _adopt.fragment_of(e['path']) is None]
+    whole = [entry['path'] for entry in _adopt.managed_entries(manifest)]
     rc, out, _ = run(consumer, 'deactivate', capsys)
     assert rc == 0, out
     for path in whole:
@@ -117,8 +116,11 @@ def test_preflight_and_smoke_degrade_per_item_not_wholesale(tmp_path, env, capsy
     rc, out, _ = run(consumer, 'smoke', capsys)
     assert rc == 0, out
     smoke = rows_of(out)
-    assert list(smoke) == list(_adopt.SMOKE_ITEMS) and len(smoke) == 5, list(smoke)
-    assert 'unknown' not in smoke.values(), smoke
+    assert list(smoke) == list(_adopt.SMOKE_ITEMS) and len(smoke) == 7, list(smoke)
+    # （甲）類逐項可判；（乙）類**一律** unknown（`core/adopt.md` §3），故只對甲類斷言⛔ 無 unknown
+    mechanical = [item for item in _adopt.SMOKE_ITEMS if item not in _adopt.SMOKE_AI_ITEMS]
+    assert [smoke[item] for item in mechanical].count('unknown') == 0, smoke
+    assert {smoke[item] for item in _adopt.SMOKE_AI_ITEMS} == {'unknown'}, smoke
     print('A23 smoke_no_identity', smoke)
     # 反規避負控：補上可解析的本機身分後 `repository` 列必須由 unknown 轉為 ok／fail
     identified = FakeGhClient()
@@ -131,7 +133,7 @@ def test_preflight_and_smoke_degrade_per_item_not_wholesale(tmp_path, env, capsy
     bare, _ = local_tree(tmp_path, env, 'a23-bare')
     rc, out, _ = run(bare, 'smoke', capsys)
     unknowns = [item for item, status in rows_of(out).items() if status == 'unknown']
-    assert rc == 0 and set(unknowns) == set(_adopt.SMOKE_ITEMS[:3]), (unknowns, out)
+    assert rc == 0 and set(unknowns) == set(_adopt.SMOKE_ITEMS[:3]) | set(_adopt.SMOKE_AI_ITEMS), (unknowns, out)
     print('A23 bare_tree_unknowns', unknowns)
 
 

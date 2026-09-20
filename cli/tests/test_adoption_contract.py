@@ -13,7 +13,7 @@ import re
 import shutil
 
 from wf.context import FilesystemRulesSource, Provenance, rules_of
-from wf.verbs._adopt import STEPS
+from wf.verbs._adopt import ASSET_NAMES, SEED_HOME, STEPS
 from .test_compose_schema import ROOT
 from .test_context_roots import RULE_DIRS
 
@@ -67,6 +67,7 @@ def synthetic(tmp_path, name='synth'):
     for part in RULE_DIRS:
         shutil.copytree(ROOT / part, root / part)
     shutil.copy(ROOT / 'ADOPTION.md', root / 'ADOPTION.md')
+    shutil.copytree(ROOT / '.github/adopt', root / '.github/adopt')
     return FilesystemRulesSource(root, Provenance('cli', '--rules-root'))
 
 
@@ -104,8 +105,8 @@ def test_the_step_home_resolver_is_effective(tmp_path):
 
 
 def seed_areas(rules):
-    text = rules_of(rules).read_text('ADOPTION.md')
-    return json.loads(text.split('```json\n')[1].split('```')[0])['areas']
+    """種子的唯一機器可讀居所＝`_adopt.SEED_HOME`；⛔ 不以 `ADOPTION.md` 內第 N 個 json 圍欄定位。"""
+    return json.loads(rules_of(rules).read_text(SEED_HOME))['areas']
 
 
 def test_seed_areas_are_not_this_repo_areas():
@@ -116,8 +117,8 @@ def test_seed_areas_are_not_this_repo_areas():
     assert isinstance(seed, list) and seed and all(isinstance(a, str) for a in seed), seed
     print('AREAS seed', seed, 'repo', mine)
     section = dict(sections(rules.read_text('ADOPTION.md')))
-    clause, = [line for line in section['2 · `.wf/modules.json` 種子'].splitlines()
-               if line.startswith('- 種子裡的 `areas`')]
+    clause, = [line for line in section['2 · `.wf/modules.json`'].splitlines()
+               if line.startswith('- `areas`：')]
     assert '採用專案的需求方' in clause and '第一張卡 `open` 之前' in clause, clause
     print('WHO_AND_WHEN', clause)
     naming, = [line for line in rules.read_text('core/naming.md').splitlines()
@@ -175,9 +176,10 @@ def adopt_section(rules, number):
 
 
 SOURCE_ID = re.compile(r'`([a-z]+\.[a-z_]+)`')
-RECONCILIATION_COLUMNS = ('列名', '左側（取源 ID）', '右側（取源 ID）', '粒度')
-SMOKE_COLUMNS = ('項名', '取源 ID')
+RECONCILIATION_COLUMNS = ('列名', '左側取源 ID', '右側取源 ID', '粒度')
+SMOKE_COLUMNS = ('項名', '類別', '取源 ID')
 DEFECT_COLUMNS = ('缺陷代號', '⛔ 不合法的形狀')
+ASSET_COLUMNS = ('資產名', '來源檔', '目標路徑', '是否必要')
 
 
 def reconciliation_sources(rules=None):
@@ -188,10 +190,22 @@ def reconciliation_sources(rules=None):
 
 
 def smoke_sources(rules=None):
-    """`core/adopt.md` §3 smoke 取源表的 (項名 → 取源 ID 集合)；⛔ 不重打。"""
+    """`core/adopt.md` §3 smoke 表的 (項名 → 取源 ID 集合)；⛔ 不重打。"""
     _, body = adopt_section(rules, '3')
-    return {row[0].strip('`'): tuple(SOURCE_ID.findall(row[1]))
+    return {row[0].strip('`'): tuple(SOURCE_ID.findall(row[2]))
             for row in table_named(body, *SMOKE_COLUMNS)}
+
+
+def smoke_categories(rules=None):
+    """`core/adopt.md` §3 smoke 表的 (項名 → 類別)；甲＝機械可確認、乙＝須由 AI 判定。"""
+    _, body = adopt_section(rules, '3')
+    return {row[0].strip('`'): row[1] for row in table_named(body, *SMOKE_COLUMNS)}
+
+
+def asset_table(rules=None):
+    """`core/adopt.md` §2 框架資產表的逐列欄值（恰四欄）；⛔ 不重打。"""
+    _, body = adopt_section(rules, '2')
+    return [[cell.strip('`') for cell in row] for row in table_named(body, *ASSET_COLUMNS)]
 
 
 def manifest_defects(rules=None):
@@ -234,3 +248,74 @@ def test_the_synthetic_tree_definition_check_is_effective(tmp_path):
         _, body = adopt_section(rules, '0')
         assert victim not in body, victim
         print('NEGATIVE_CONTROL synthetic_definition dropped', victim)
+
+
+STEP_DOMAIN_ANCHOR = '- **step 名的封閉值域恰五個**'
+CONFIG_ITEMS_ANCHOR = '- 該母體逐字恰為：'
+BACKTICKED = re.compile(r'`([a-z][a-z_-]*)`')
+WHO_AND_WHEN = re.compile(r'\*\*(.+?)\*\*')
+
+
+def step_domain(rules=None):
+    """A1 ①：`core/adopt.md` §0 宣告的 step 封閉值域；⛔ 不重打成字面清單。"""
+    _, body = adopt_section(rules, '0')
+    line, = [row for row in body.splitlines() if row.startswith(STEP_DOMAIN_ANCHOR)]
+    return tuple(re.findall(r'`([a-z]+)`', line))
+
+
+def config_items(rules=None):
+    """A1：首次採用必要配置項的母體，唯一居所＝`core/adopt.md` §0；⛔ 不重打成字面清單。"""
+    _, body = adopt_section(rules, '0')
+    line, = [row for row in body.splitlines() if row.startswith(CONFIG_ITEMS_ANCHOR)]
+    return tuple(BACKTICKED.findall(line))
+
+
+def test_section_zero_fixes_the_step_domain_and_the_config_item_population():
+    """A1 ①＋指南充分性的機械下界：值域基數恰 5、與解析層常數逐字相等；九個必要配置項各在
+    `ADOPTION.md` 有**恰一個**條目，且該條目讀得到「由誰填」與「何時填」兩件事。充分性本身由
+    `verification` 的受控採用演練由查核者判，本測試⛔ 不以字串共現代替該判斷。"""
+    rules = repo_rules()
+    domain = step_domain(rules)
+    assert domain == STEPS, (domain, STEPS)
+    assert len(domain) == 5 and len(set(domain)) == 5, domain
+    items = config_items(rules)
+    assert len(items) == 9 and len(set(items)) == 9, items
+    adoption = dict(sections(rules.read_text('ADOPTION.md')))
+    for item in items:
+        homes = [(head, row) for head, body in adoption.items()
+                 for row in body.splitlines() if row.startswith(f'- `{item}`：')]
+        assert len(homes) == 1, (item, homes)
+        head, row = homes[0]
+        marked = WHO_AND_WHEN.findall(row)
+        assert len(marked) >= 2, (item, row)
+        print('CONFIG_ITEM', item, 'home', f'ADOPTION.md#{head}', 'who', marked[0], 'when', marked[1])
+    print('STEP_DOMAIN', list(domain), 'CONFIG_ITEMS', list(items))
+
+
+def test_the_section_zero_parsers_are_effective(tmp_path):
+    """負控（必須會響）：合成副本內拿掉任一 step 名或任一配置項後，同一個解析器必須少掉那一項。"""
+    for victim in step_domain():
+        rules = synthetic(tmp_path, f'domain-{victim}')
+        path = Path(rules.identity) / ADOPT_HOME
+        text = path.read_text(encoding='utf-8')
+        path.write_text(text.replace(f'`{victim}`、', '', 1).replace(f'、`{victim}`', '', 1),
+                        encoding='utf-8')
+        assert victim not in step_domain(rules), victim
+        print('NEGATIVE_CONTROL step_domain dropped', victim, '->', list(step_domain(rules)))
+    for victim in config_items():
+        rules = synthetic(tmp_path, f'item-{victim}')
+        path = Path(rules.identity) / ADOPT_HOME
+        text = path.read_text(encoding='utf-8')
+        path.write_text(text.replace(f'`{victim}`、', '').replace(f'、`{victim}`', ''), encoding='utf-8')
+        assert victim not in config_items(rules), victim
+        print('NEGATIVE_CONTROL config_item dropped', victim, '->', list(config_items(rules)))
+
+
+def test_the_asset_table_has_exactly_four_columns_and_matches_the_constant():
+    """A2 起首：§2 框架資產表的資產名集合與 `_adopt` 層的資產常數逐字相等，且表格欄數恰 4。"""
+    _, body = adopt_section(None, '2')
+    matched = [head for head, _ in tables(body) if head == ASSET_COLUMNS]
+    assert len(matched) == 1 and len(matched[0]) == 4, [head for head, _ in tables(body)]
+    names = tuple(row[0] for row in asset_table())
+    assert names == ASSET_NAMES, (names, ASSET_NAMES)
+    print('ASSET_TABLE', ASSET_COLUMNS, asset_table(), 'constant', list(ASSET_NAMES))

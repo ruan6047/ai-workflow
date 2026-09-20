@@ -20,8 +20,9 @@ from wf.verbs import _adopt
 from .test_compose_schema import ROOT
 from .test_context_roots import RULE_DIRS, git, git_env
 
-COPIED = ('cli/pyproject.toml', 'ADOPTION.md', '.github/scripts/trailer_check.py',
-          _adopt.FRAGMENT_SOURCE)  # 片段來源檔：`core/adopt.md` §2 片段表，⛔ 不重打路徑
+# 框架資產的來源檔與種子居所都由 `_adopt` 取得（`core/adopt.md` §2 資產表、§3 bootstrap），⛔ 不重打路徑
+COPIED = ('cli/pyproject.toml', 'ADOPTION.md', _adopt.SEED_HOME,
+          *(asset.source for asset in _adopt.ASSETS))
 RULES_PATH = 'vendor/wf'
 
 

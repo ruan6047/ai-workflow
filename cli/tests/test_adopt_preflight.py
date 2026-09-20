@@ -23,7 +23,7 @@ from wf.gh.writes import MUTATIONS
 from wf.verbs import _adopt, _adopt_reconcile
 from wf.verbs.main import DISPATCH, main
 from .fakes import FakeGhClient
-from .test_adopt_fragments import MERGE_BASE
+from .test_adopt_assets import MERGE_BASE
 from .test_adopt_gitlink import RULES_PATH, adopted_consumer, framework_tree
 from .test_adoption_contract import reconciliation_sources
 from .test_compose_schema import ROOT, card, catalog  # noqa: F401（card／catalog 是 fixture）

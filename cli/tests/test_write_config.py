@@ -1,9 +1,10 @@
-"""ADOPTION.md §2。"""
+"""ADOPTION.md §2 與 core/adopt.md §3（種子的機器可讀居所）。"""
 import json
 
 import pytest
 
 from wf.compose.project_config import ProjectConfigError, load_project_config, module_names, module_params
+from wf.verbs._adopt import SEED_HOME
 from .test_compose_schema import ROOT
 
 
@@ -19,14 +20,15 @@ def test_missing_config_defaults(tmp_path):
 
 
 def test_adoption_seed_verbatim(tmp_path):
-    text = (ROOT / 'ADOPTION.md').read_text()
-    seed = text.split('```json\n')[1].split('```')[0]
+    # 種子的唯一機器可讀居所＝`_adopt.SEED_HOME`（`core/adopt.md` §3）；
+    # ⛔ 不以 `ADOPTION.md` 內第 N 個 json 圍欄定位——CLI 與測試兩側都⛔ 不以排版位置取資料。
+    seed = (ROOT / SEED_HOME).read_text()
     path = tmp_path / '.wf/modules.json'
     path.parent.mkdir()
     path.write_text(seed)
     cfg = load_project_config(tmp_path)
     assert cfg == json.loads(seed) | {'project': None}
-    # 種子的 modules 由 ADOPTION.md §2 決定（2026-09-08 起為空陣列），⛔ 不在測試裡抄名字
+    # 種子的 modules 由 `_adopt.SEED_HOME` 決定（2026-09-08 起為空陣列），⛔ 不在測試裡抄名字
     assert module_names(cfg) == [m['name'] for m in json.loads(seed)['modules']]
     assert module_params(cfg, 'missing') == {}
 

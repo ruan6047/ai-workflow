@@ -56,7 +56,7 @@ def test_bootstrap_twice_leaves_the_tree_unchanged(tmp_path, env, capsys):
 
 
 def test_bootstrap_creates_the_seed_and_the_stage_skeleton_when_absent(tmp_path, env, capsys):
-    """`.wf/modules.json` 缺席時由 `ADOPTION.md` §2 的種子建立（⛔ 不在碼內重打種子）；
+    """`.wf/modules.json` 缺席時由 `_adopt.SEED_HOME` 的機器可讀種子建立（⛔ 不在碼內重打種子）；
     `.wf/stages/<階段>.md` 對 `core/enums.md` 的每個階段各一。第二次連跑仍逐一相等。"""
     _, rules, _, _, _ = adopted_consumer(tmp_path, env, name='seed-src')
     bare = tmp_path / 'bare-consumer'
@@ -64,8 +64,7 @@ def test_bootstrap_creates_the_seed_and_the_stage_skeleton_when_absent(tmp_path,
     rc1, out = bootstrap(bare, capsys, rules_root=rules)
     first = digests(bare)
     assert rc1 == 0, out
-    seed = json.loads((rules / 'ADOPTION.md').read_text(encoding='utf-8')
-                      .split('```json\n')[1].split('```')[0])
+    seed = json.loads((rules / _adopt.SEED_HOME).read_text(encoding='utf-8'))
     assert json.loads((bare / '.wf/modules.json').read_text(encoding='utf-8')) == seed
     stages = _adopt.stages_of(_adopt.rules_of(rules))
     assert stages and all((bare / f'.wf/stages/{s}.md').is_file() for s in stages), stages

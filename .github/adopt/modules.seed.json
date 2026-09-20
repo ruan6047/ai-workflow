@@ -1,0 +1,8 @@
+{
+ "modules": [],
+ "merge_method": "squash",
+ "areas": ["APP"],
+ "project": null,
+ "rules": null,
+ "remote": null
+}
