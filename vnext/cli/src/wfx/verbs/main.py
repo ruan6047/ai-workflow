@@ -2,20 +2,21 @@
 
 public shape：`wfx [--project-root <p>] <verb> [動詞參數…]`。全域旗標只認動詞之前，由前綴迴圈消耗、
 ⛔ 不傳給動詞的 parse_args。本檔⛔ 不判內容、⛔ 不代動詞印、⛔ 不呼叫 AI。
-`brief`（W1.6）與 `write`（W1.8）由各自的工作包在此登記，本工作包只登記 `facts`。
+`write`（W1.8）由該工作包在此登記。rc 慣例：**用法錯 rc=2、typed 錯 rc=1**（兩類可區分）。
 """
 import os
 from pathlib import Path
 import sys
 
 from wfx.core.context import ConfigError, load_config
+from wfx.core.errors import WfxError
 from wfx.gh.client import GhError
 from wfx.gh.localgit import LocalGitUnavailable
 from wfx.gh.localrev import LocalRevUnavailable
 from wfx.gh.target import TargetError
-from wfx.verbs import facts
+from wfx.verbs import brief, facts
 
-DISPATCH = {'facts': facts}
+DISPATCH = {'brief': brief, 'facts': facts}
 GLOBAL_FLAGS = ('--project-root',)
 USAGE = f'用法：wfx [--project-root <p>] <{"｜".join(DISPATCH)}> [動詞參數…]'
 
@@ -35,7 +36,8 @@ def global_flags(argv):
     return flags, rest
 
 
-def main(argv=None, *, env=None):
+def main(argv=None, *, env=None, **injected):
+    """`injected`＝動詞層的內部注入點（`client`／`runner`／`task_source`），測試專用、⛔ 非公開旗標。"""
     env = os.environ if env is None else env
     parsed = global_flags(sys.argv[1:] if argv is None else argv)
     if parsed is None:
@@ -48,7 +50,9 @@ def main(argv=None, *, env=None):
     project_root = Path(flags.get('--project-root', '.')).resolve()
     try:
         config = load_config(project_root)
-        return DISPATCH[rest[0]].run(rest[1:], project_root=project_root, config=config, env=env)
-    except (ConfigError, GhError, TargetError, LocalGitUnavailable, LocalRevUnavailable) as exc:
+        return DISPATCH[rest[0]].run(rest[1:], project_root=project_root, config=config,
+                                     env=env, **injected)
+    except (ConfigError, WfxError, GhError, TargetError,
+            LocalGitUnavailable, LocalRevUnavailable) as exc:
         print(f'{type(exc).__name__}: {exc}', file=sys.stderr)
         return 1

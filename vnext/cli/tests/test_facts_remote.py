@@ -5,11 +5,12 @@
 import pytest
 
 from wfx.core.context import Context
-from wfx.gh.facts import CONCEPTS, SECTIONS
+from wfx.gh.client import NotFound, TransportError
+from wfx.gh.facts import CONCEPTS, SECTIONS, base_resolver
 from wfx.gh.target import TargetError
 from wfx.verbs.facts import collect, render
 
-from .fakes import BODY, FakeClient, snapshot
+from .fakes import BASE_REF, FakeClient, snapshot
 
 CONFIG = {'rules': None, 'remote': None, 'project': {'owner': 'o', 'number': 9}}
 
@@ -129,3 +130,65 @@ def test_output_is_exactly_the_six_fact_categories(tmp_path):
     assert [h.split('·')[0].strip() for h in headings] == [f'## {n}' for n in range(1, 7)]
     for banned in ('退回', '轉移歷史', '工作包', 'iteration'):
         assert banned not in text
+
+
+# base 解析鏈：以**受查 head SHA** 查開啟中 PR，涵蓋 detached 與 --sha（E W1.7 (5)）
+HEAD_SHA = '4b968cd7712af5dd5b4d9c453f92cb3ddda0dda4'
+
+
+def test_base_is_the_open_pr_base_ref_not_the_default_branch():
+    client = FakeClient()
+    client.repository('o/r')                      # 綁定當次快照
+    branch, provenance, reason = base_resolver(client, 'main')(HEAD_SHA)
+    assert (branch, reason) == (BASE_REF, None)
+    assert str(provenance) == f'api:associatedPullRequests[OPEN].baseRefName={BASE_REF}'
+
+
+def test_multiple_open_prs_with_different_bases_are_unknown_not_a_guess():
+    client = FakeClient(snapshot(pull_requests=({'number': 1, 'state': 'OPEN', 'baseRefName': 'main'},
+                                                {'number': 2, 'state': 'OPEN', 'baseRefName': BASE_REF})))
+    client.repository('o/r')
+    branch, provenance, reason = base_resolver(client, 'main')(HEAD_SHA)
+    assert (branch, provenance) == (None, None)
+    assert '對到多個開啟中 PR 且 base 不同' in reason
+
+
+def test_query_failure_is_unknown_and_never_falls_back_to_the_default_branch():
+    client = FakeClient(pull_request_error=TransportError('HTTP 500'))
+    client.repository('o/r')
+    branch, provenance, reason = base_resolver(client, 'main')(HEAD_SHA)
+    assert (branch, provenance) == (None, None)
+    assert '⛔ 不當成沒有 PR' in reason
+    client = FakeClient(pull_request_error=NotFound('HTTP 404'))
+    client.repository('o/r')
+    assert base_resolver(client, 'main')(HEAD_SHA)[0] is None
+
+
+def test_closed_and_merged_prs_do_not_decide_the_base():
+    """只認 OPEN；已關閉／已合併的關聯 PR ⛔ 不是本次的預期合併目標。"""
+    client = FakeClient(snapshot(pull_requests=({'number': 1, 'state': 'MERGED', 'baseRefName': 'x'},
+                                                {'number': 2, 'state': 'CLOSED', 'baseRefName': 'y'})))
+    client.repository('o/r')
+    assert base_resolver(client, 'main')(HEAD_SHA)[0] == 'main'
+
+
+def test_only_a_confirmed_absence_of_prs_uses_the_default_branch_and_says_so():
+    client = FakeClient(snapshot(pull_requests=()))
+    client.repository('o/r')
+    branch, provenance, reason = base_resolver(client, 'main')(HEAD_SHA)
+    assert (branch, reason) == ('main', None)
+    assert '⛔ 無關聯的開啟中 PR' in str(provenance)
+
+
+def test_unresolved_head_sha_never_falls_back_to_a_branch_name():
+    client = FakeClient()
+    client.repository('o/r')
+    branch, provenance, reason = base_resolver(client, 'main')(None)
+    assert (branch, provenance) == (None, None)
+    assert '⛔ 不以分支名代查' in reason
+
+
+def test_no_default_branch_and_no_pr_is_unknown():
+    client = FakeClient(snapshot(pull_requests=()))
+    client.repository('o/r')
+    assert base_resolver(client, None)(HEAD_SHA)[2] == 'base ref：repository 無預設分支（API 回 null）'

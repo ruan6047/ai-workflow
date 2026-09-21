@@ -16,7 +16,7 @@ from wfx.core.context import Provenance
 from wfx.gh.client import GhError
 from wfx.gh.localgit import LocalGitUnavailable, merge_tree
 from wfx.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
-from wfx.gh.target import PermissionFact, TargetError, permission_fact
+from wfx.gh.target import PermissionFact, TargetError, permission_fact, resolve_repository
 
 SECTIONS = ('需求', '限制與非目標', '驗收', '風險與假設', '裁定紀錄')
 CONCEPTS = ('狀態', '階段', 'owner', '風險', '緊急性', '期限', 'Resource')
@@ -133,9 +133,43 @@ def concept_facts(field_names, values):
     return tuple(facts)
 
 
-def git_facts(root, *, default_branch, remote_names, sha, runner=None):
-    """base＝該 repository 的 API 預設分支（客觀事實，⛔ 不猜、⛔ 不加旗標）；
-    本機解不到該 ref 時，依賴它的三項事實回 typed unknown，⛔ 不回空清單。"""
+def base_resolver(client, default_branch):
+    """本次受查 head SHA → **預期合併目標**（需求 §3.4）。⛔ 不以當前分支名查。
+
+    ①該 SHA 的開啟中 PR `baseRefName` 唯一 ⇒ 用它；②對到多個開啟中 PR 且 base 不同 ⇒ unknown；
+    ③查詢失敗 ⇒ unknown（⛔ 不得當成「沒有 PR」而靜默改用預設分支）；
+    ④**確認**⛔ 無關聯的開啟中 PR ⇒ 才用 repository 預設分支，並在來源標記寫明。
+
+    以 SHA 而非分支名查，是為了讓固定到同一 exact SHA 的 detached worktree 與分支 checkout
+    印出同一個 base（E W1.7 (5)）。
+    """
+    def resolve(head_sha):
+        if not head_sha:
+            return None, None, 'base ref：未解析出受查 head SHA，⛔ 不以分支名代查'
+        try:
+            names = sorted({pr['baseRefName'] for pr in client.associated_pull_requests(head_sha)
+                            if pr.get('state') == 'OPEN'})
+        except GhError as exc:
+            return None, None, ('base ref：associatedPullRequests 查詢未完成'
+                                f'（{type(exc).__name__}: {exc}），⛔ 不當成沒有 PR')
+        if len(names) > 1:
+            return None, None, (f'base ref：{head_sha} 對到多個開啟中 PR 且 base 不同＝'
+                                f'{"、".join(names)}，⛔ 不猜')
+        if names:
+            return names[0], Provenance('api', f'associatedPullRequests[OPEN].baseRefName={names[0]}'), None
+        if default_branch:
+            return default_branch, Provenance(
+                'api', f'repository.defaultBranchRef={default_branch}（⛔ 無關聯的開啟中 PR）'), None
+        return None, None, 'base ref：repository 無預設分支（API 回 null）'
+    return resolve
+
+
+def git_facts(root, *, base, remote_names, sha, runner=None):
+    """`base`＝callable(head_sha) → (base 分支名｜None, Provenance｜None, unknown 原因｜None)。
+
+    以 callable 傳入是因為它要先有本機解出的受查 head SHA（見 base_resolver）。
+    本機解不到該 ref 時，依賴它的三項事實回 typed unknown，⛔ 不回空清單。
+    """
     unknown, base_ref, base_provenance, base_sha = [], None, None, None
     head_ref = sha or 'HEAD'
     try:
@@ -145,9 +179,12 @@ def git_facts(root, *, default_branch, remote_names, sha, runner=None):
                         (f'rev-parse {head_ref}：{exc}',))
     if head_sha is None:
         unknown.append(f'rev-parse {head_ref}：本機沒有這個 revision')
-    if default_branch:
-        for candidate in [f'refs/remotes/{name}/{default_branch}' for name in remote_names] + \
-                         [f'refs/heads/{default_branch}']:
+    base_branch, resolved_provenance, reason = base(head_sha)
+    if reason:
+        unknown.append(reason)
+    if base_branch:
+        for candidate in [f'refs/remotes/{name}/{base_branch}' for name in remote_names] + \
+                         [f'refs/heads/{base_branch}']:
             try:
                 base_sha = rev_parse(candidate, root=root, runner=runner)
             except LocalRevUnavailable as exc:
@@ -155,12 +192,10 @@ def git_facts(root, *, default_branch, remote_names, sha, runner=None):
                 break
             if base_sha is not None:
                 base_ref = candidate
-                base_provenance = Provenance('api', f'repository.defaultBranchRef={default_branch}')
+                base_provenance = resolved_provenance
                 break
         if base_sha is None and base_ref is None:
-            unknown.append(f'base ref：本機解不到預設分支 {default_branch} 的任何 ref')
-    else:
-        unknown.append('base ref：repository 無預設分支（API 回 null）')
+            unknown.append(f'base ref：本機解不到 {base_branch} 的任何 ref')
     log = stat = rc = None
     if base_sha and head_sha:
         for label, call in (('git log', lambda: log_commits(base_sha, head_sha, root=root, runner=runner)),
@@ -181,6 +216,25 @@ def git_facts(root, *, default_branch, remote_names, sha, runner=None):
     else:
         unknown.append('git log／diff --stat／merge-tree：base 或 head 未解析，⛔ 不以空結果冒充沒有改動')
     return GitFacts(base_ref, base_provenance, base_sha, head_ref, head_sha, log, stat, rc, tuple(unknown))
+
+
+def locate_item(items, slug, number):
+    """content 是本 repo 的該 Issue 者恰一個；⛔ 無＝事實缺席（回 None），多個＝fail-loud。"""
+    matched = [item for item in items
+               if (item.get('content') or {}).get('number') == number
+               and ((item['content'].get('repository') or {}).get('nameWithOwner') in (None, slug))]
+    if len(matched) > 1:
+        raise GhError(f'{slug}#{number} 對應多個 Project item：{[i["id"] for i in matched]}')
+    return matched[0] if matched else None
+
+
+def resolve_slug(context, task, *, env=None, runner=None):
+    """`--task` 已帶 slug 時逐字採用，否則走 remote precedence。回 (slug, Provenance, remote 名稱)。"""
+    if task.slug:
+        return task.slug, Provenance('cli', '--task'), ()
+    target = resolve_repository(context.project_root, configured=context.config.get('remote'),
+                                env_repo=(env or {}).get('GH_REPO'), runner=runner)
+    return target.slug, target.provenance, target.remote_names
 
 
 def ci_facts(client, sha):
