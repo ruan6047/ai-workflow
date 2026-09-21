@@ -213,9 +213,14 @@ class GhClient:
         return project
 
     def project_field_names(self, project_id):
-        """欄位名稱逐字（含內建），供呼叫端判定狀態欄實際落在 `Status` 還是 `狀態`。"""
+        """欄位名稱逐字（含內建），供呼叫端判定狀態欄實際落在 `Status` 還是 `狀態`。
+
+        另帶 `id` 與 SingleSelect 的 `options`：那是**寫入時指名該欄與該選項**所需的識別，
+        本方法仍是唯讀查詢（mutation 只住 wfx/gh/writes.py）。
+        """
         query = ('query($id:ID!,$size:Int!,$cursor:String){node(id:$id){... on ProjectV2{'
-                 'fields(first:$size,after:$cursor){nodes{... on ProjectV2FieldCommon{name dataType}}'
+                 'fields(first:$size,after:$cursor){nodes{... on ProjectV2FieldCommon{id name dataType}'
+                 '... on ProjectV2SingleSelectField{options{id name}}}'
                  'pageInfo{hasNextPage endCursor}}}}}')
         return self._connection(query, {'id': project_id, 'size': self.page_size}, 'fields')
 
