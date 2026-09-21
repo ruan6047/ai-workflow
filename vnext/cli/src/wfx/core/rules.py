@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from wfx.core.errors import LayerMissing
@@ -73,3 +74,39 @@ def split_sections(text: str) -> list[tuple[str, str]]:
 
 def headings(text: str) -> list[str]:
     return [line[3:].strip() for line in text.splitlines() if line.startswith("## ")]
+
+
+# `core/github.md` §1 的五章節清單＝規則樹的居所；⛔ 不在程式碼內建標題字面。
+_ISSUE_SECTION_ROW = re.compile(r"^\d+\.\s+`##\s+(?P<title>[^`]+)`")
+
+
+def issue_section_titles(rules_root: Path) -> tuple[str, ...]:
+    """從 `core/github.md` 機械抽出 Issue body 的固定章節標題。
+
+    ⛔ 不判內容、⛔ 不硬寫標題——抽不到就是規則樹的問題，往上丟 typed 失敗。
+    """
+    text = read_doc(rules_root, f"{CORE_DIR}/github.md")
+    titles = tuple(
+        m.group("title").strip()
+        for m in (_ISSUE_SECTION_ROW.match(line.strip()) for line in text.splitlines())
+        if m
+    )
+    if not titles:
+        raise LayerMissing("framework", f"{CORE_DIR}/github.md", "抽不出 Issue body 的固定章節標題")
+    return titles
+
+
+def section_spans(text: str) -> list[tuple[str, int, int]]:
+    """每個 `## ` 節的 (節名, 起始行號 1-based, 內文非空行數)。
+
+    ⛔ 只認 `## ` 行、⛔ 不含第一個 `## ` 之前的前言（那段沒有節名可定位）。
+    同名節重複出現時逐個回，去重交給呼叫端決定要第幾個。
+    """
+    out: list[tuple[str, int, int]] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if line.startswith("## "):
+            out.append((line[3:].strip(), number, 0))
+        elif line.strip() and out:
+            anchor, start, filled = out[-1]
+            out[-1] = (anchor, start, filled + 1)
+    return out

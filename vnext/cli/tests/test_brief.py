@@ -21,16 +21,21 @@ MARKER = re.compile(r"^\[來源: (?P<kind>[a-z]+):(?P<path>[^#]+)#(?P<section>.+
 ROLES = ("需求方", "PM", "研究者", "規劃者", "執行者", "審核者")
 STAGES = ("需求", "規劃", "執行", "審核", "結案")
 
-# brief 自己的結構行；載入的規則與 Issue body 也用 `## `，因此只認這五個標題。
-TOP_LEVEL = ("適用規則", "必要清單", "使用者層", "專案層", "任務層")
+# brief 自己的結構行；載入的規則與 Issue body 也用 `## `，因此只認這份清單裡的標題。
+TOP_LEVEL = (
+    "派工首屏", "核心概念現值", "必要清單", "Issue body 章節定位", "留言定位索引",
+    "模型資料狀態", "專案政策來源", "適用 core 規則定位",
+    "完整原文附錄", "適用規則", "使用者層", "專案層", "任務層",
+)
 
 
 def section(out, title):
     lines = out.splitlines()
-    start = lines.index(f"## {title}") + 1
+    start = next(i for i, l in enumerate(lines) if l in (f"## {title}", f"### {title}")) + 1
     end = len(lines)
     for index in range(start, len(lines)):
-        if lines[index].startswith("## ") and lines[index][3:] in TOP_LEVEL:
+        head = lines[index].split(" ", 1)
+        if head[0] in ("##", "###") and len(head) == 2 and head[1] in TOP_LEVEL:
             end = index
             break
     return "\n".join(lines[start:end])
