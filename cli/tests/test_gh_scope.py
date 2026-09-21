@@ -56,9 +56,14 @@ def test_source_inventory_and_negative_controls():
         print('SRC', path.relative_to(ROOT), count, longest, json.dumps(sorted(names)))
     independent, reached = aggregate(ROOT / 'cli/src/wf')
     assert independent == total, (independent, total)  # 逐檔迴圈累加與比較函式須獨立算出同一值
-    # 刻意⛔ 無 `assert within`：5,000 行後盾已由硬擋改為治理軟警示（`.github/scripts/source_budget.py`
-    # 在 CI 的 cli-tests job 內印 ::warning::）。⛔ 不得推出「聚合已無後盾」——警示與規劃／審核的
-    # 說明義務（stages/planning.md §5、stages/review.md §5）就是後盾；分桶仍由單檔與函式兩個觸發器守。
+    # 刻意⛔ 無 `assert within`：聚合值在**本函式**內⛔ 無獨立的門檻斷言，只印出來供人讀。
+    # ⛔ 但不得推出「達門檻⛔ 不會轉紅」——那是錯的，且已誤導過兩個讀者（WF-015 iteration 6 失誤登記）。
+    # 同檔 `test_source_budget_script_is_a_soft_warning` 的**第一段**對**真樹**跑 `_BUDGET.main([...])`
+    # 並斷言 `'::warning' not in quiet`：`cli/src/wf` 一旦達 8,000 行治理門檻，那一行就失敗、本檔轉紅、
+    # CI 的 cli-tests job 跟著紅。腳本 `rc` 恆 0 是**另一件事**（同函式第二段以 monkeypatch 樁驗的），
+    # 兩者⛔ 不得互相冒充。⇒ 對 `cli/src/wf` 而言 8,000 是**硬上限**、⛔ 不是可以超過的軟警示。
+    # 說明義務（stages/planning.md §5、stages/review.md §5）是門檻**之下**的治理、⛔ 不是超過它的豁免；
+    # 分桶另由單檔 400 行與單一函式 150 行兩個觸發器守。
     print('SRC_FILES', len(paths), 'SRC_TOTAL', total, 'LIMIT', TOTAL_LIMIT, 'REACHED', reached)
     for relative in ('compose/blocks.py', 'compose/project_config.py', 'gh/client.py', 'gh/writes.py', 'verbs/_write.py'):
         doc = ast.get_docstring(ast.parse((ROOT / 'cli/src/wf' / relative).read_text()))
