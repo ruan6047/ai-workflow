@@ -65,6 +65,23 @@ def digest_of(data):
     return 'sha256:' + hashlib.sha256(data).hexdigest()
 
 
+def on_tree(root, relative):
+    """§2 分支 ② 與 §3（甲-c）共用的**存在性**判準：一般檔、目錄、斷掉的符號連結皆是既有物；
+    `is_symlink()` 單獨判是刻意的（斷鏈 `exists()` 為 False 但它仍是既有物）。**⛔ 不讀該路徑的內容**
+    ——⛔ 不得以「讀得出位元組」代替存在判定：那會把目錄與斷鏈誤判為⛔ 不存在。"""
+    return (path := Path(root) / relative).is_symlink() or path.exists()
+
+
+def follows_symlink(root, relative):
+    """§2 逐字「對任何符號連結⛔ 不建立、⛔ 不改寫、⛔ 不跟隨」的**落地前**判準：目標的**完整父路徑**上
+    任一段是符號連結（或 `..`）時，逐字父路徑與其 `resolve()` ⛔ 不相等；leaf 自身由 `on_tree` 承接。
+    ⛔ 不得推出「指向樹內就可以跟隨」：`mkdir`／`write_bytes` 會落到兩個宣告集合的聯集之外。"""
+    try:
+        return (Path(root) / relative).parent.resolve() != Path(root).resolve() / Path(relative).parent
+    except (OSError, RuntimeError):
+        return True
+
+
 def is_legacy(path):
     """§2 的 legacy 判定：`path` 含 `#` 的**既有**登記項是已退休片段機制的殘留。CLI 只列出、
     ⛔ 不處置、⛔ 不重寫；它⛔ 不使整份 manifest 無效（結構宣告⛔ 不以 `#` 判不合法）。"""
@@ -126,9 +143,10 @@ def read_manifest(root):
 def control_unusable(root):
     """§2 的**前置條件**：控制檔路徑上有一個⛔ 不合結構宣告的既有物（⛔ 非 JSON、目錄、符號連結皆是）。
     符號連結單獨判是刻意的：它即使指向一份合法 manifest 也算既有物——跟隨它寫回去會寫到樹外。
-    控制檔**⛔ 不存在**⛔ 不是本情形（那是乾淨起點，走正常分支）。"""
+    控制檔**⛔ 不存在**⛔ 不是本情形（那是乾淨起點，走正常分支）。**父路徑上有符號連結時同屬本情形**：
+    leaf 自己⛔ 非連結也⛔ 不存在，但寫回去會沿父連結落到宣告面之外（紅證：`.wf/adopt` 連到 sibling）。"""
     path = Path(root) / MANIFEST_PATH
-    if path.is_symlink():
+    if path.is_symlink() or follows_symlink(root, MANIFEST_PATH):
         return True
     return path.exists() and read_manifest(root)[0] is None
 

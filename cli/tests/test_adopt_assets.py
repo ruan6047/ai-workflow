@@ -319,3 +319,36 @@ def test_the_manifest_has_one_path_grammar_and_maps_both_ways(tmp_path, env, cap
     for path in registered:                               # 方向二：登記項都在樹上
         assert (consumer / path).is_file(), path
     print('MANIFEST paths', sorted(paths), 'managed', sorted(registered))
+
+
+# ── 序 2 `R6.2-3`：父目錄符號連結 ⇒ install ⛔ 不跟隨、樹外零寫入 ────────────────────────
+PARENT_LINKS = ('.github', '.wf/adopt')          # 兩個宣告集合各一：資產側與控制檔側
+
+
+@pytest.mark.parametrize('link', PARENT_LINKS)
+def test_install_never_follows_a_parent_symlink_out_of_the_tree(tmp_path, env, link):
+    """新 A2 逐字「對任何符號連結⛔ 不建立、⛔ 不改寫、⛔ 不跟隨」。缺陷版只查目標**自身**
+    `is_symlink()`，`target.parent.mkdir`／`write_bytes`（與控制檔的 `write_text`）仍沿父目錄連結
+    寫到樹外：`.github` 連到 sibling ⇒ 樹外 2 檔、`.wf/adopt` 連到 sibling ⇒ 樹外 `manifest.json`，
+    rc 均 0。判準是**樹外**目錄的檔案集合前後逐一相等，⛔ 不是看 stdout 說了什麼。"""
+    consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='parent-link-' + link.replace('/', '-'))
+    outside = tmp_path / ('outside-' + link.replace('/', '-'))
+    outside.mkdir()
+    (consumer / link).parent.mkdir(parents=True, exist_ok=True)
+    (consumer / link).symlink_to(outside)
+    before = digests(outside, skip=())
+    rc, _ = run_step(consumer, 'install')
+    assert rc == 0                                            # ⛔ 不 raise：本動詞無拒收
+    assert digests(outside, skip=()) == before, '樹外零位元組寫入'
+    print('PARENT_LINK no_follow', link, 'outside', sorted(before))
+
+
+def test_a_clean_tree_still_lands_both_assets(tmp_path, env):
+    """`R6.2-3` 修法的正控：⛔ 無父連結時兩個宣告資產照樣整檔落地。
+    ⛔ 不得以「一律零寫入」通過上一條——那會讓零跟隨判準恆真。"""
+    consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='no-parent-link')
+    rc, _ = run_step(consumer, 'install')
+    assert rc == 0
+    landed = [target for target in _adopt.INSTALL_SET if (consumer / target).is_file()]
+    assert landed == list(_adopt.INSTALL_SET), landed
+    print('NO_PARENT_LINK landed', landed)

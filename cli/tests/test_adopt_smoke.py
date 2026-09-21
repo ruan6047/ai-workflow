@@ -312,3 +312,53 @@ def test_managed_assets_is_not_ok_without_a_manifest(tmp_path, env, capsys):
     assert found[_adopt.SMOKE_ITEMS[0]] == 'unknown' and found[_adopt.SMOKE_ITEMS[2]] == 'unknown', found
     assert found[_adopt.SMOKE_ITEMS[4]] == 'fail', found        # 尚未 bootstrap ⇒ 階段骨架缺
     print('NO_MANIFEST', found)
+
+
+# ── 序 2 `R6.2-2`：（甲-c）的分水嶺是**存在性**、⛔ 不是「讀得出位元組」───────────────────
+OCCUPANTS = {
+    'regular-file': lambda target: target.write_text('name: consumer\n', encoding='utf-8'),
+    'same-name-directory': lambda target: target.mkdir(),
+    'broken-symlink': lambda target: target.symlink_to(target.parent / 'no-such-target'),
+}
+
+
+@pytest.mark.parametrize('kind', sorted(OCCUPANTS))
+def test_every_kind_of_occupant_is_case_c_not_case_b(tmp_path, env, capsys, kind):
+    """新 A6（甲-c）逐字「該路徑⛔ 無 `framework-managed` 登記，且該路徑在樹上**存在**」。
+    缺陷版以 `asset_digest(root, path) is None` 判「樹上⛔ 不存在」——同名目錄與斷掉的符號連結
+    都**確實存在**、install 也確實零寫入，卻被誤報成（甲-b）`fail・未登記・樹上⛔ 不存在`。
+    母體＝3 種既有物；本條對三者都要求同一個結果，`regular-file` 一格同時是正控。"""
+    consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='occupant-' + kind)
+    target = consumer / _adopt.INSTALL_SET[0]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    OCCUPANTS[kind](target)
+    assert target.is_symlink() or target.exists(), '起點必須是既有物'
+    before = target.is_symlink() or target.exists()
+    for step in ('install', 'bootstrap'):
+        assert main(['--project-root', str(consumer), 'snapshot', '--adopt', step],
+                    client=FakeGhClient(), root=None, env={}) == 0
+    capsys.readouterr()
+    assert (target.is_symlink() or target.exists()) == before, 'install 對該路徑零寫入'
+    rc = main(['--project-root', str(consumer), 'snapshot', '--adopt', 'smoke'],
+              client=FakeGhClient(), root=None, env={})
+    out = capsys.readouterr().out
+    member = [line for line in out.splitlines()
+              if _adopt.SMOKE_ITEMS[1] in line and _adopt.INSTALL_SET[0] in line]
+    assert rc == 0 and len(member) == 1, out
+    assert f'・{_adopt.STATUSES[2]}・' in member[0], member                 # unknown，⛔ 非 fail
+    assert _adopt_reconcile.UNREGISTERED_OCCUPANT in member[0], member
+    print('OCCUPANT case_c', kind, member[0])
+
+
+def test_an_absent_path_is_still_case_b(tmp_path, env, capsys):
+    """（甲-b）負控：真正⛔ 不存在的路徑必須仍是 `fail`。⛔ 不得以「一律 unknown」通過上一條
+    ——那會讓（甲-b）永不成立，等於把雙向判準換成單向。"""
+    consumer, _, _, _, _ = adopted_consumer(tmp_path, env, name='truly-absent')
+    rc = main(['--project-root', str(consumer), 'snapshot', '--adopt', 'smoke'],   # ⛔ 未跑 install
+              client=FakeGhClient(), root=None, env={})
+    out = capsys.readouterr().out
+    members = [line for line in out.splitlines()
+               if _adopt.SMOKE_ITEMS[1] in line and f'・{_adopt.STATUSES[1]}・' in line
+               and '樹上⛔ 不存在' in line]
+    assert rc == 0 and len(members) == len(_adopt.INSTALL_SET), out
+    print('ABSENT case_b', len(members), members)

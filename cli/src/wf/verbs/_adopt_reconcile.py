@@ -20,7 +20,8 @@ from wf.gh.localgit import LocalGitUnavailable
 from wf.gh.target import gitlink_sha, local_git_facts
 from wf.verbs._adopt_manifest import (ASSETS, CONFIG_PATH, EXIT_SECTION, INSTALL_SET, MANIFEST_PATH,
                                       NO_MANIFEST, OWNERSHIPS, STAGE_DIR, VERSION_HOME, digest_of,
-                                      entries_of, legacy_entries, managed_entries, read_manifest)
+                                      entries_of, legacy_entries, managed_entries, on_tree,
+                                      read_manifest)
 
 STATUSES = ('ok', 'fail', 'unknown')
 STATIC_IDENTITY_ITEMS = ('roots', 'repository', 'configured Project')
@@ -218,7 +219,9 @@ def _member(root, registered, path):
     **母體是 `INSTALL_SET`、⛔ 不因樹或 manifest 的狀態收窄**——以「已登記者」定義母體會使本列恆真。"""
     entry = registered.get(path)
     if entry is None:                                   # ⛔ 無 framework-managed 登記
-        if asset_digest(root, path) is None:
+        # 甲-b／甲-c 的分水嶺逐字是「該路徑在樹上**存在**」＝ `on_tree`，⛔ 不是「讀得出位元組」——同名
+        # 目錄與斷鏈都確實存在也確實走過 §2 分支 ② 的零寫入，以摘要可讀性代替存在判定會把它們誤報成甲-b。
+        if not on_tree(root, path):
             return 'fail', '未登記・樹上⛔ 不存在'       # （甲-b）既未落地也未整合
         # （甲-c）走過 §2 分支 ② 的零寫入。必要內容識別（job 名）只有一個居所＝`pending-integration`，
         # 本列⛔ 不自行重印：兩列對同一路徑各留一份 job 名會漂。

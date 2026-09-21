@@ -77,6 +77,11 @@ def test_install_rerun_preserves_every_prior_entry(tmp_path, env, capsys):
     second, second_landed = entries(consumer), landed(out, 'install')
     assert second_landed == set(), sorted(second_landed)        # 路徑已有既有物 ⇒ 分支 ②
     added = owned_of(second, _adopt.OWNERSHIPS[0]) - owned_of(first, _adopt.OWNERSHIPS[0])
+    # 本行右側逐字是卡面的右側（`second_landed`），但本起點下兩側都是空集 ⇒ 本行⛔ 未把等式撐開。
+    # 序 2 `R6.2-1` 另指出的 install 反例起點（合法 `framework-managed` 登記在案、樹上該檔缺席 ⇒
+    # 分支 ① 重新落地並以現行 `pin` 重新登記）本檔刻意**⛔ 不建**：該起點下卡面「本次之前既有…一律
+    # 逐字保留」與 A3① 逐字「`pin` 與版本值居所逐字相同」在同一項上互斥（實測舊 pin 必被現行 pin 取代），
+    # 建了只會把規格矛盾寫進測試。同上停下上呈、由需求方裁定 A2 保留面的例外後再補。
     assert added == second_landed, sorted(added ^ second_landed)
     for path, entry in first.items():                           # 逐字保留：比整項、⛔ 不只比 path
         assert second.get(path) == entry, (path, entry, second.get(path))
@@ -101,6 +106,17 @@ def test_bootstrap_rerun_preserves_every_prior_entry(tmp_path, env, capsys):
     after, built = entries(consumer), landed(out, 'bootstrap')
     assert UNREBUILT not in built, built                         # 本次確實⛔ 未重建它 ⇒ 判準有分辨力
     added = owned_of(after, _adopt.OWNERSHIPS[1]) - owned_of(before, _adopt.OWNERSHIPS[1])
+    # ⚠ 本行右側是 `built - owned_of(before, …)`，**⛔ 不是卡面 A2／V12② 的右側**——卡面逐字是
+    # 「本次建立**或沿用**的骨架路徑集合」＝ `built` 本身。序 2 `WF-015-R6.2-1` 指的就是這一行。
+    # 本輪（iteration 6）實測：第二次 bootstrap 的 `built` 為 9 項，而「新增」在**兩種**執行前後可測
+    # 的口徑下都是空集（α path 口徑＝路徑差集；β entry 口徑＝整項有變或新出現者）——因為 A5① 逐字
+    # 要求第二次全樹位元組冪等 ⇒ 沿用項一個位元組都⛔ 不會動。**「沿用」在左側⛔ 無任何可測對應物**，
+    # 故卡面等式在本起點⛔ 不可能成立：這是 A2 與 A5① 的**規格層互斥**、⛔ 不是實作缺口。
+    # `acceptance`／`verification` 是規格欄（`core/card-schema.md` §1），執行者⛔ 不得自行改，故本輪
+    # **停下上呈**：⛔ 不改本行斷言、⛔ 不改條文、⛔ 不以改過的右側充當原文成立。
+    # **⛔ 不得把本行的綠燈讀成卡面等式成立**（`roles/reviewer.md` §4 `F-查核者-04`）：它只證「本次
+    # 新增的⛔ 非既有 `consumer-owned` 項恰是本次建立者」，是卡面等式的一個**真子命題**。
+    # 需求方裁定＋PM 落欄後，本行須改回逐字的卡面右側。
     assert added == built - owned_of(before, _adopt.OWNERSHIPS[1]), (sorted(added), sorted(built))
     assert after.get(UNREBUILT) == before[UNREBUILT], (before[UNREBUILT], after.get(UNREBUILT))
     for path, entry in before.items():

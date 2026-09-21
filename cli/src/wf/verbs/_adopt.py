@@ -18,9 +18,9 @@ from wf.verbs._adopt_manifest import (ASSET_KEYS, ASSET_NAMES, ASSETS, CONFIG_PA
                                       EXIT_SECTION, INSTALL_SET, MANIFEST_PATH, MANIFEST_SCHEMA,
                                       NO_MANIFEST, OWNERSHIPS, PENDING_KEYS, SEED_HOME, STAGES_HOME,
                                       STAGE_DIR, TOP_KEYS, VERSION_HOME, Asset, asset_entry,
-                                      control_unusable, defect_of, digest_of, entries_of, is_legacy,
-                                      legacy_entries, managed_entries, pending, read_manifest,
-                                      write_manifest)
+                                      control_unusable, defect_of, digest_of, entries_of,
+                                      follows_symlink, is_legacy, legacy_entries, managed_entries,
+                                      on_tree, pending, read_manifest, write_manifest)
 from wf.verbs._adopt_reconcile import (AI_EVIDENCE, GIT_UNAVAILABLE, NOT_FILESYSTEM, NO_CHECKOUT, NO_HEAD,
                                        NO_INDEX, NO_SOURCE_COMMIT, NO_STAGES, NO_VERSION, OUTSIDE_PROJECT,
                                        PREFIX, RECONCILIATION_ITEMS, RULES_IS_PROJECT, SMOKE_AI_ITEMS,
@@ -57,11 +57,11 @@ __all__ = ['ABSENT_SOURCE', 'AI_EVIDENCE', 'ASSETS', 'ASSET_KEYS', 'ASSET_NAMES'
            'RULES_IS_PROJECT', 'Row', 'SEED_HOME', 'SMOKE_AI_ITEMS', 'SMOKE_ITEMS', 'STAGES_HOME',
            'STAGE_DIR', 'STATIC_IDENTITY_ITEMS', 'STATUSES', 'STEPS', 'STEP_PREFIX', 'SYMLINK_PATH',
            'TOP_KEYS', 'UNRESOLVED', 'VERSION_HOME', 'asset_digest', 'asset_entry', 'confined',
-           'control_unusable', 'defect_of', 'digest_of', 'entries_of', 'framework_version', 'gitlink_facts',
-           'gitlink_relative', 'identity_rows', 'is_legacy', 'item_names', 'legacy_entries',
-           'managed_entries', 'pending', 'pins_of', 'preflight_rows', 'print_scope', 'read_manifest',
-           'reconcile', 'render', 'rules_of', 'run_step', 'smoke_rows', 'stages_of',
-           'write_manifest']
+           'control_unusable', 'defect_of', 'digest_of', 'entries_of', 'follows_symlink',
+           'framework_version', 'gitlink_facts', 'gitlink_relative', 'identity_rows', 'is_legacy',
+           'item_names', 'legacy_entries', 'managed_entries', 'on_tree', 'pending', 'pins_of',
+           'preflight_rows', 'print_scope', 'read_manifest', 'reconcile', 'render', 'rules_of',
+           'run_step', 'smoke_rows', 'stages_of', 'write_manifest']
 
 
 def print_scope(scope, emit=print):
@@ -81,11 +81,11 @@ def _pending(emit, step, item):
          + '・'.join(f'{key}={item[key]}' for key in PENDING_KEYS))
 
 
-def _occupied(target, relative, owned):
-    """§2 分支 ②：目標路徑上有既有物（一般檔、目錄、符號連結皆是），或該路徑已是 `consumer-owned`
-    登記項。`is_symlink()` 單獨判是刻意的：斷掉的符號連結 `exists()` 為 False，但它仍是既有物。
-    **⛔ 不讀該路徑的內容、⛔ 不解析其內部結構**——分支只看「有沒有東西在那裡」。"""
-    return target.is_symlink() or target.exists() or relative in owned
+def _occupied(root, relative, owned):
+    """§2 分支 ②：路徑上有既有物（存在性判準住 `on_tree`）、已是 `consumer-owned` 登記項，或其**完整父路徑上有符號連結**。
+    第三者刻意併進分支 ②：§2 逐字「對任何符號連結⛔ 不建立、⛔ 不改寫、⛔ 不跟隨」而落地必須跟隨 ⇒ 唯一合規處置是零寫入＋未完成項；
+    ⛔ 不得推出「可先解析父連結再寫」——那正是樹外寫入的來源。**⛔ 不讀該路徑的內容、⛔ 不解析其內部結構**——只看「有沒有東西在那裡」。"""
+    return on_tree(root, relative) or relative in owned or follows_symlink(root, relative)
 
 
 def _install_assets(root, source, owned, version, emit):
@@ -93,7 +93,7 @@ def _install_assets(root, source, owned, version, emit):
     entries = []
     for asset in ASSETS:
         target = root / asset.target
-        if _occupied(target, asset.target, owned):
+        if _occupied(root, asset.target, owned):
             _pending(emit, 'install',
                      pending(asset.source, asset.target, asset.content, asset.section))
             continue
@@ -170,9 +170,10 @@ def _seed(root, rules):
 
 
 def _bootstrap_config(root, seed, emit):
-    """`.wf/modules.json`：已存在 ⇒ 位元組不變＋一項未完成項；⛔ 不存在且種子可讀 ⇒ 建立。"""
+    """`.wf/modules.json`：有既有物 ⇒ 位元組不變＋一項未完成項；⛔ 無既有物且種子可讀 ⇒ 建立。存在性
+    判準與 §2 分支 ② 同一個（`_occupied`）：斷鏈 `exists()` 為 False，照它寫下去會建出樹外的檔。"""
     config_path = root / CONFIG_PATH
-    if config_path.exists():
+    if _occupied(root, CONFIG_PATH, ()):
         if seed is None:  # 既有檔位元組不變，但種子不可讀 ⇒ 交不出非空的必要內容識別
             _say(emit, 'bootstrap', CONFIG_PATH, NO_SEED)
         else:
@@ -188,22 +189,24 @@ def _bootstrap_config(root, seed, emit):
 
 def step_bootstrap(root, rules, config=None, repository=None, board=None, emit=print, *, runner=None):
     """冪等：已存在的路徑一律位元組不變、⛔ 不覆寫、⛔ 不合併，並各交一項未完成項；建立的骨架以
-    `consumer-owned` 登記進 manifest。"""
+    `consumer-owned` 登記進 manifest。登記面只收**一般檔**（`is_file` 且父路徑⛔ 無連結）：登記項的
+    `digest` 只有整檔一種前像文法，目錄與斷鏈⛔ 無整檔摘要、照樣讀是未處理例外，父路徑有連結者則⛔ 不是
+    樹上那個名字。這三種都已由 `_occupied` 走了零寫入分支，故只由未完成項承接、⛔ 不登記。"""
     root, created, owned = Path(root), [], []
     if _blocked(root, 'bootstrap', emit):
         return 0
     if _bootstrap_config(root, _seed(root, rules), emit):
         created.append(CONFIG_PATH)
-    owned += [CONFIG_PATH] if (root / CONFIG_PATH).exists() else []
+    owned += [CONFIG_PATH] if (root / CONFIG_PATH).is_file() and not follows_symlink(root, CONFIG_PATH) else []
     for stage in stages_of(rules):
         relative = f'{STAGE_DIR}/{stage}.md'
-        if (root / relative).exists():
+        if _occupied(root, relative, ()):
             _pending(emit, 'bootstrap', pending(STAGES_HOME, relative, (stage,), 'ADOPTION.md §4'))
         else:
             (root / relative).parent.mkdir(parents=True, exist_ok=True)
             (root / relative).write_text(_stage_stub(stage), encoding='utf-8')
             created.append(relative)
-        owned.append(relative)
+        owned += [relative] if (root / relative).is_file() and not follows_symlink(root, relative) else []
     version, _ = framework_version(rules)
     previous, _ = read_manifest(root)
     entries = _carry(previous, set(owned))
