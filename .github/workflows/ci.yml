@@ -52,6 +52,11 @@ jobs:
   commit-trailer:
     # P5：commit trailer 鍵在允許集合內，且是訊息末端的連續單一區塊。
     # 只驗「鍵」與「連續」（core/platform.md P5）；哪些 trailer 必須出現＝約定，住 roles/conduct-common.md §2，CI 不驗。
+    # vNext 隔離：分支名以 codex/vnext- 為前綴時本 job 不執行（skipped）。
+    # push 看 github.ref_name；pull_request 的 ref_name 是 <number>/merge，
+    # 所以另看 github.head_ref 與 github.base_ref。push event 下後兩者為空字串，
+    # startsWith('', 'codex/vnext-') 為 false，不影響舊分支。
+    if: ${{ !startsWith(github.ref_name, 'codex/vnext-') && !startsWith(github.head_ref, 'codex/vnext-') && !startsWith(github.base_ref, 'codex/vnext-') }}
     name: commit-trailer
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -82,6 +87,11 @@ jobs:
 
   reachability:
     # core/state-machine.md §5：轉移表可達性。被測物＝該檔 json wf-state-machine 區塊＋core/enums.md 的值域。
+    # vNext 隔離：分支名以 codex/vnext- 為前綴時本 job 不執行（skipped）。
+    # push 看 github.ref_name；pull_request 的 ref_name 是 <number>/merge，
+    # 所以另看 github.head_ref 與 github.base_ref。push event 下後兩者為空字串，
+    # startsWith('', 'codex/vnext-') 為 false，不影響舊分支。
+    if: ${{ !startsWith(github.ref_name, 'codex/vnext-') && !startsWith(github.head_ref, 'codex/vnext-') && !startsWith(github.base_ref, 'codex/vnext-') }}
     name: reachability
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -100,6 +110,11 @@ jobs:
     # fetch-depth: 0＝cli/tests/test_baseline_parity.py 要以 `git archive <基線 SHA> cli/src` 取出
     # 固定基線樹跑隔離子行程；淺 clone 取不到那顆物件時該測試逐字須失敗而不得 skip。
     # 寫法照抄同檔 secret-scan 與 commit-trailer 兩個 job 的 `with:` 區塊。
+    # vNext 隔離：分支名以 codex/vnext- 為前綴時本 job 不執行（skipped）。
+    # push 看 github.ref_name；pull_request 的 ref_name 是 <number>/merge，
+    # 所以另看 github.head_ref 與 github.base_ref。push event 下後兩者為空字串，
+    # startsWith('', 'codex/vnext-') 為 false，不影響舊分支。
+    if: ${{ !startsWith(github.ref_name, 'codex/vnext-') && !startsWith(github.head_ref, 'codex/vnext-') && !startsWith(github.base_ref, 'codex/vnext-') }}
     name: cli-tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
