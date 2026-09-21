@@ -2,8 +2,11 @@
 """CLI production source 的聚合行數治理軟警示（core/modules.md 非射程；WF-011 驗收第 5 條）。
 
 被測物＝`cli/src/wf`。計數口徑：遞迴 `*.py`、排除空行；測試目錄與產生檔本就不在該樹下。
-達門檻時印一行 GitHub Actions `::warning::` 註記（含當前行數與門檻），rc 恆 0——
-這是**治理軟警示**，⛔ 不擋業務 CLI、⛔ 不要求壓行。
+達門檻時印一行 GitHub Actions `::warning::` 註記（含當前行數與門檻），**本腳本 rc 恆 0**、
+⛔ 不擋業務 CLI。⛔ 但不得推出「達門檻⛔ 不會擋任何東西」：`cli/tests/test_gh_scope.py` 的
+`test_source_budget_script_is_a_soft_warning` 第一段對**真樹**跑 `main([...])` 並斷言
+`'::warning' not in quiet`，故真樹一達門檻該檔即轉紅、`cli-tests` job 跟著紅。
+⇒ 對 `cli/src/wf` 而言 `TOTAL_LIMIT` 實際上是**硬上限**；rc 恆 0 講的只是本腳本自身。
 
 `TOTAL_LIMIT` 只有這一個字面居所：真掃描的比較函式 `aggregate` 與 `cli/tests/test_gh_scope.py`
 的合成樹負控都從這裡匯入，⛔ 不重打。單檔 400 行與單一函式 150 行兩個既有觸發器住 test_gh_scope.py，
@@ -18,7 +21,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = "cli/src/wf"
-TOTAL_LIMIT = 5000
+TOTAL_LIMIT = 8000  # 需求方 2026-09-21 裁定：5000 → 8000。字面唯一居所，⛔ 不在別處重打。
 WARNING = "::warning file={target}::CLI production source 聚合 {total} 行，達治理門檻 {limit} 行；規劃者與查核者須在交回單寫出責任邊界與行數增長原因（stages/planning.md §5、stages/review.md §5）"
 
 
@@ -61,7 +64,8 @@ def main(argv) -> int:
     if reached:
         print(WARNING.format(target=TARGET, total=total, limit=TOTAL_LIMIT))
     print(f"SOURCE_BUDGET {TARGET} {total}/{TOTAL_LIMIT} {'REACHED' if reached else 'UNDER'}")
-    return 0  # 恆 0：治理軟警示，⛔ 不擋 CI、⛔ 不擋業務 CLI
+    # 恆 0 只是**本腳本自身**⛔ 不擋；擋的是 `test_gh_scope.py` 對真樹的那條斷言（見檔頭）。
+    return 0
 
 
 if __name__ == "__main__":

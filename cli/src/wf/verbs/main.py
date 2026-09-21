@@ -25,7 +25,7 @@ from wf.gh.localgit import LocalGitUnavailable
 from wf.gh.target import (RepositoryCandidate, local_git_facts, permission_facts, resolve_project,
                           resolve_repository, select_remotes, slug_of)
 from wf.module_validation import ModuleValidationError, validate_modules
-from wf.verbs import brief, edit, move, notes, review, snapshot
+from wf.verbs import _adopt, brief, edit, move, notes, review, snapshot
 from wf.verbs import open as open_verb
 
 DISPATCH = {'open': open_verb, 'move': move, 'edit': edit, 'notes': notes,
@@ -73,9 +73,16 @@ def candidates(facts, flags, config, env, client):
     return [], None
 
 
-def bootstrap(flags, *, root, env, client):
+def bootstrap(flags, *, root, env, client, scope=None, identity_optional=False):
     """失敗最晚時點：旗標／root／設定／rules／catalog 都在任何 API 讀取之前；remote 多義、`GH_REPO` 不符、
-    Project 解析不到都在第一次 API 讀取之後、client 綁定 context 之前（六原語尚未綁定即 raise）。"""
+    Project 解析不到都在第一次 API 讀取之後、client 綁定 context 之前（六原語尚未綁定即 raise）。
+
+    `scope` 是本函式逐步填入的解析結果（root／config／rules／catalog／repository／board），供
+    `--adopt` 的三個失敗分支**逐項**判定哪些取源已經解析到（⛔ 不連坐、⛔ 不整批冒充 `unknown`）。
+    `identity_optional`＝本次呼叫是 `snapshot --adopt <step>`：⛔ 無本機 remote 也⛔ 無 `GH_REPO` 時
+    回 context=None 而⛔ 不 raise——純本機 step ⛔ 不需要遠端身分。⛔ 不得推出「模組驗證也放寬」：
+    `validate_modules` 仍在此之前 fail-closed。"""
+    scope = {} if scope is None else scope
     cwd = resolve_path('.', os.getcwd(), Provenance('default', 'invocation cwd'))
     if '--project-root' in flags:
         project_path = resolve_path(flags['--project-root'], cwd.canonical, Provenance('cli', '--project-root'))
@@ -83,7 +90,8 @@ def bootstrap(flags, *, root, env, client):
         project_path = resolve_path(str(root), cwd.canonical, Provenance('default', 'main(root=…)'))
     else:
         project_path = cwd
-    config = load_project_config(project_path.canonical)
+    scope['root'] = project_path.canonical
+    config = scope['config'] = load_project_config(project_path.canonical)
     project = ProjectRoot(project_path, str(Path(project_path.canonical) / '.wf/modules.json'), config,
                           Provenance('project_config', '.wf/modules.json'))
     if '--rules-root' in flags:
@@ -94,8 +102,8 @@ def bootstrap(flags, *, root, env, client):
     else:
         rules_path = Resolved(project_path.canonical, project_path.canonical, project_path.canonical,
                               Provenance('default', 'project_root'))
-    rules = open_rules_source(rules_path.canonical, rules_path.provenance)
-    catalog = load_blocks(rules)
+    rules = scope['rules'] = open_rules_source(rules_path.canonical, rules_path.provenance)
+    catalog = scope['catalog'] = load_blocks(rules)
     # core/modules.md §5 fail-closed：模組可用性在任何 API 讀取與任何遠端寫入之前判定。
     # 刻意放在 client 綁定之前 ⇒ 不過時該次執行對 GitHub 與 Project 零呼叫；
     # ⛔ 不得推出「可用旗標或環境變數放行」——無效設定自下一次相關指令起一律拒絕操作。
@@ -106,11 +114,15 @@ def bootstrap(flags, *, root, env, client):
         facts = None  # git 不可執行＝本機事實缺席，交給 GH_REPO／注入 client 決定，⛔ 不猜 origin
     found, asserted = candidates(facts, flags, config, env, client)
     if not found:
+        if identity_optional:
+            return None, client
         raise ContextError('未能取得 repo：設 GH_REPO 或在有 remote 的 git repo 內執行')
     probe = GhClient(found[0].slug) if client is None else client
     repository, payload = resolve_repository(found, lookup=probe.repository, assertion=asserted)
+    scope['repository'] = repository
     client = GhClient(repository.name_with_owner) if client is None else client
     board, board_payload = resolve_project(config['project'], client.capability)
+    scope['board'] = board
     context = Context(project, rules, catalog, facts, repository, board, permission_facts(payload, board_payload),
                       cwd, static_identity_verified(project, rules, repository, board))
     client.bind_context(context)
@@ -125,28 +137,49 @@ def main(argv=None, *, client=None, root=None, env=None) -> int:
         print('wf <' + '|'.join(VERBS) + '> …', file=sys.stderr)
         return 2
     flags, argv = parsed
+    adopt_requested = argv[0] == 'snapshot' and any(
+        token.partition('=')[0] == '--adopt' for token in argv[1:])
+    scope = {}
     try:
-        context, client = bootstrap(flags, root=root, env=os.environ if env is None else env, client=client)
+        context, client = bootstrap(flags, root=root, env=os.environ if env is None else env,
+                                    client=client, scope=scope, identity_optional=adopt_requested)
+    # WF-015：下面三個分支各自在原有輸出之後呼叫 `_adopt.print_scope`，印出與 `--adopt preflight`
+    # 同一份項名清單常數（`import` 使用、⛔ 不重打）；每一項的狀態由 `scope` 內**該分支實際已解析到**的
+    # 取源決定，取源不可得者才標 `unknown`（⛔ 不連坐）。純計算、落 stdout、對 GitHub 與 Project 零
+    # mutation（client 在 `bootstrap()` 內尚未 bind_context 即 raise）。
+    # 刻意只在本次呼叫就是 `snapshot --adopt <step>` 時印（`adopt_requested`）：⛔ 不把採用診斷加到別的
+    # 動詞的失敗輸出上——`cli/tests/test_main_wiring.py::test_broken_project_config_prints_one_line_and_
+    # writes_nothing` 對 `notes` 的同一分支有既有逐字斷言 `captured.out == ''` 與 stderr 恰一行，而該檔
+    # ⛔ 不在本卡 `resources` 內。⛔ 不得推出「聚合函式沒有接上三個分支」——接線在此，只是收斂到採用入口。
     except ProjectConfigError as exc:
         print(f'.wf/modules.json 不合法：{exc}', file=sys.stderr)
+        if adopt_requested:
+            _adopt.print_scope(scope)
         return 1
     except ModuleValidationError as exc:
         # core/modules.md §5：完整修正資訊落 stdout（⛔ 不是 stderr），逐條、⛔ 不折疊。
         for line in exc.lines:
             print(f'模組宣告或設定不可用・{line}')
+        if adopt_requested:
+            _adopt.print_scope(scope)
         return 1
     except IdentityError as exc:
         print(f'硬擋・{exc.code}・{exc}', file=sys.stderr)
         return 1
     except (ContextError, BlockError) as exc:
         print(str(exc), file=sys.stderr)
+        if adopt_requested:
+            _adopt.print_scope(scope)
         return 1
     # G4：`--dry-run` 只在此掛上 client 一顆布林，gate 住 gh/writes.py 的六原語（⛔ 不逐動詞加旗標）。
-    client.dry_run = '--dry-run' in flags
-    for fact in context.permissions:  # 只印事實；逐 operation 的放行或阻擋⛔ 不在此（WF-016）
+    if client is not None:
+        client.dry_run = '--dry-run' in flags
+    for fact in () if context is None else context.permissions:  # 只印事實；逐 operation 的放行或阻擋⛔ 不在此（WF-016）
         print(f'permission・{fact.subject}・{fact.state}・{fact.source}・{fact.reason}', file=sys.stderr)
-    return DISPATCH[argv[0]].run(argv[1:], client=client, root=Path(context.project.root.canonical),
-                                 catalog=context.catalog, context=context)
+    if adopt_requested:  # 採用入口：只交 bootstrap 期已解析到的 scope，⛔ 不經 client、⛔ 不碰遠端
+        return snapshot.run_adopt(argv[1:], dict(scope))
+    return DISPATCH[argv[0]].run(argv[1:], client=client, root=Path(scope['root']),
+                                 catalog=scope['catalog'], context=context)
 
 
 if __name__ == '__main__':

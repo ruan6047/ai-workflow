@@ -615,3 +615,34 @@ def test_formalized_candidates_records_skipped_and_markdown_reads_it(setup, tmp_
     # 負控：略過行的唯一資料來源就是該鍵，清空後必須消失（⛔ 非憑空渲染）。
     assert '已正式化' not in _markdown(dict(result.data, formalized_candidates=[]))
     assert_read_only(client)
+
+
+def test_run_parses_adopt_alongside_out(setup, catalog, tmp_path, capsys):
+    """WF-015：`--adopt` 與既有 `--out` 共存於同一個 parse_args；值域由 `_adopt.STEPS` 提供
+    （`import` 使用、⛔ 不重打）。給 `--adopt` 時⛔ 不落 snapshot.json／.md、⛔ 不讀 issues。"""
+    from wf.verbs import _adopt
+    _, issues, items = population(catalog)
+    client, kwargs = setup(issues=issues, items=items)
+    target = tmp_path / '盤點輸出'
+    assert run(['--out', str(target)], client=client, root=kwargs['root'], catalog=catalog) == 0
+    assert (target / 'snapshot.json').is_file()
+    for step in _adopt.STEPS:
+        fresh = Client(issues=lambda state: [], project=lambda **kw: None, comments=lambda n: [])
+        assert run(['--adopt', step], client=fresh, root=kwargs['root'], catalog=catalog) == 0
+        assert fresh.calls == [], (step, fresh.calls)   # 盤點路徑未被走到
+    capsys.readouterr()
+    assert not (tmp_path / '.wf/snapshot').exists()     # `--adopt` ⛔ 不落本機盤點輸出
+    print('ADOPT_FLAG steps', list(_adopt.STEPS), 'out_dir_still_works', (target / 'snapshot.json').is_file())
+
+
+def test_run_rejects_an_adopt_value_outside_the_closed_domain(setup, catalog, tmp_path, capsys):
+    """值域外的值擋在解析層（argparse `choices` ⇒ SystemExit rc=2），⛔ 不新增 D 類：
+    `core/verbs.md` §1 `snapshot` 列硬擋欄逐字為「—」。"""
+    from wf.verbs import _adopt
+    client, kwargs = setup()
+    with pytest.raises(SystemExit) as caught:
+        run(['--adopt', 'nope'], client=client, root=kwargs['root'], catalog=catalog)
+    assert caught.value.code == 2
+    message = capsys.readouterr().err
+    assert 'nope' in message and all(step in message for step in _adopt.STEPS), message
+    print('ADOPT_FLAG closed_domain rejects nope; message names', list(_adopt.STEPS))

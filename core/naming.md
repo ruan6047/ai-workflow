@@ -13,7 +13,7 @@ last_confirmed: 2026-09-07
 - NNN 的序號池四件：範圍＝同一 AREA 各自一池，⛔ 不跨 area 共用序號；母體＝全 repo 帶 `wf-card` 區塊的 issue，含已 closed 的、含不在 Project 板上的，⛔ 不是 Project 板上的卡、⛔ 不跨 repo；篩選＝`card_id` 合 `core/card-schema.md` §1 的 pattern 者才進池；遞增＝該 area 池內已用最大序號 +1，池空時視最大序號為 0。
 - 標題 slug 只放 issue 標題；⛔ 不進卡ID。
 - 修復卡 `<原卡>-FIX<n>`，n 從 1 起；只在碼已進 main 的事後查核時開。
-- aiwf 種子 areas：WF、CLI、DOC、OPS。
+- aiwf 本 repo 自己的 `areas` 值：WF、CLI、DOC、OPS。⛔ 不是採用專案的預設值——採用專案自填（`ADOPTION.md` §2）。
 
 ## 2 · 分支
 
@@ -52,6 +52,6 @@ last_confirmed: 2026-09-07
 | core 各檔 | 依各檔自身定義 | 150 行 |
 | module.md | 0 宣告區塊（`yaml wf-module`） · 1 條文 · 2 該模組加的注意事項 | 80 行 |
 | README | 1 心智模型（≤12 行） · 2 角色一句話 · 3 查詢指令 | 40 行 |
-| ADOPTION | 1 repo 前置（ruleset、merge_method） · 2 `.wf/modules.json` 種子 · 3 Project 五欄 · 4 第一張卡 | 60 行 |
+| ADOPTION | 1 repo 前置（ruleset、required status checks） · 2 `.wf/modules.json` · 3 Project 五欄 · 4 第一張卡 · 5 退場（由 CLI 移除／由 AI 依證據處理／一律保留三類） | 60 行 |
 
 每個規則檔、模組檔、core 檔統一 frontmatter 四欄（沿舊 stage-rules 與卡片簡介的 skill 式檔頭，決策 9）：`name`、`when`（適用時機一句）、`non_scope`（⛔ 不是什麼一句）、`last_confirmed`（日期，規則文件自身過期；`rule_confirm_days` 見 `core/params.md`）。
