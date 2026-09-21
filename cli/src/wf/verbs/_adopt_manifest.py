@@ -73,11 +73,15 @@ def on_tree(root, relative):
 
 
 def follows_symlink(root, relative):
-    """§2 逐字「對任何符號連結⛔ 不建立、⛔ 不改寫、⛔ 不跟隨」的**落地前**判準：目標的**完整父路徑**上
-    任一段是符號連結（或 `..`）時，逐字父路徑與其 `resolve()` ⛔ 不相等；leaf 自身由 `on_tree` 承接。
+    """§2 逐字「對任何符號連結⛔ 不建立、⛔ 不改寫、⛔ 不跟隨」的**單一**零跟隨判準，三個居所共用：落地面
+    （`install` 的 `_occupied`）、登記面（`bootstrap` 的 `owned`）、移除面（`deactivate` 的登記項迴圈與控制檔
+    迴圈）。逐字路徑（**含 leaf 自身**，⛔ 不只父路徑）與其 `resolve()` ⛔ 不相等時為真：leaf 是符號連結（含
+    斷鏈）、或完整父路徑上任一段是符號連結（或 `..`）皆命中。**刻意收斂成一個函式**：判準分居兩處時兩動詞會
+    對同一形狀給相反答案。**⛔ 不得在任一居所改用裸 `is_file()` 代替**——`is_file()` 跟隨 leaf 連結，拿它判
+    「那裡有一個一般檔」會把指向物的位元組登記成樹上那個名字的內容，或刪到連結背後的採用者檔案。
     ⛔ 不得推出「指向樹內就可以跟隨」：`mkdir`／`write_bytes` 會落到兩個宣告集合的聯集之外。"""
     try:
-        return (Path(root) / relative).parent.resolve() != Path(root).resolve() / Path(relative).parent
+        return (Path(root) / relative).resolve() != Path(root).resolve() / relative
     except (OSError, RuntimeError):
         return True
 
@@ -142,11 +146,11 @@ def read_manifest(root):
 
 def control_unusable(root):
     """§2 的**前置條件**：控制檔路徑上有一個⛔ 不合結構宣告的既有物（⛔ 非 JSON、目錄、符號連結皆是）。
-    符號連結單獨判是刻意的：它即使指向一份合法 manifest 也算既有物——跟隨它寫回去會寫到樹外。
-    控制檔**⛔ 不存在**⛔ 不是本情形（那是乾淨起點，走正常分支）。**父路徑上有符號連結時同屬本情形**：
-    leaf 自己⛔ 非連結也⛔ 不存在，但寫回去會沿父連結落到宣告面之外（紅證：`.wf/adopt` 連到 sibling）。"""
+    符號連結（leaf 自己是、或完整父路徑上任一段是）由 `follows_symlink` **一個**判準承接，⛔ 不在此重打：
+    它即使指向一份合法 manifest 也算既有物——跟隨它寫回去會寫到樹外（紅證：`.wf/adopt` 連到 sibling）。
+    控制檔**⛔ 不存在**⛔ 不是本情形（那是乾淨起點，走正常分支）。"""
     path = Path(root) / MANIFEST_PATH
-    if path.is_symlink() or follows_symlink(root, MANIFEST_PATH):
+    if follows_symlink(root, MANIFEST_PATH):
         return True
     return path.exists() and read_manifest(root)[0] is None
 

@@ -33,9 +33,12 @@ STEPS = ('install', 'preflight', 'bootstrap', 'smoke', 'deactivate')
 STEP_PREFIX = '採用'
 PENDING_MARK = '未完成項'
 OUTSIDE_ROOT = '解析後⛔ 不在 project_root 之下，未刪除'
-# 登記路徑是符號連結：解析後再刪是刪錯對象 ⇒ deactivate 零處置。⛔ 不得推出「該路徑越界」——
-# 那是 OUTSIDE_ROOT，兩者是不同判準（`core/adopt.md` §5 末兩條）。
-SYMLINK_PATH = '該路徑在樹上是符號連結，未移除、未跟隨'
+# 移除面（登記項與控制檔集合）上有符號連結：解析後再刪是刪錯對象 ⇒ deactivate 零處置。⛔ 不得推出「該路徑
+# 越界」——那是 OUTSIDE_ROOT，兩者是不同判準（`core/adopt.md` §5 末兩條）。
+SYMLINK_PATH = '該路徑上有符號連結，未移除、未跟隨'
+# 移除面路徑上有既有物但⛔ 非一般檔（例：登記路徑被換成同名目錄）：框架只落整檔 ⇒ ⛔ 不刪；且⛔ 不得說
+# 「已不在樹上」——那是⛔ 不成立的事實陳述。存在與否的判準住 `on_tree`，⛔ 不以 `is_file()` 代替（§5）。
+NOT_PLAIN_FILE = '該路徑上的既有物⛔ 非一般檔，未移除'
 LEGACY_KEPT = f'legacy 登記項，CLI ⛔ 不處置、⛔ 不重寫，依 {EXIT_SECTION} 由 AI 依證據處理'
 # 同一承載檔同時被整檔項與 legacy 項指到時，保留面優先：legacy 承載檔在 §5 逐字是保留面。
 LEGACY_CARRIER = f'該路徑同時是 legacy 登記項的承載檔，未移除，依 {EXIT_SECTION} 由 AI 依證據處理'
@@ -51,7 +54,7 @@ NO_SEED = '種子來源不可讀，未建立'
 __all__ = ['ABSENT_SOURCE', 'AI_EVIDENCE', 'ASSETS', 'ASSET_KEYS', 'ASSET_NAMES', 'Asset', 'CONFIG_PATH',
            'CONTROL_HOME', 'CONTROL_SET', 'CONTROL_UNUSABLE', 'DEFECTS', 'DIGEST_DRIFT', 'EXIT_SECTION',
            'GIT_UNAVAILABLE', 'INSTALL_SET', 'LEGACY_CARRIER', 'LEGACY_KEPT', 'MANIFEST_PATH',
-           'MANIFEST_SCHEMA', 'NOT_FILESYSTEM', 'NO_CHECKOUT', 'NO_HEAD', 'NO_INDEX', 'NO_MANIFEST',
+           'MANIFEST_SCHEMA', 'NOT_FILESYSTEM', 'NOT_PLAIN_FILE', 'NO_CHECKOUT', 'NO_HEAD', 'NO_INDEX', 'NO_MANIFEST',
            'NO_SEED', 'NO_SOURCE_COMMIT', 'NO_STAGES', 'NO_VERSION', 'OUTSIDE_PROJECT', 'OUTSIDE_ROOT',
            'OWNERSHIPS', 'PENDING_KEYS', 'PENDING_MARK', 'PREFIX', 'RECONCILIATION_ITEMS',
            'RULES_IS_PROJECT', 'Row', 'SEED_HOME', 'SMOKE_AI_ITEMS', 'SMOKE_ITEMS', 'STAGES_HOME',
@@ -82,7 +85,7 @@ def _pending(emit, step, item):
 
 
 def _occupied(root, relative, owned):
-    """§2 分支 ②：路徑上有既有物（存在性判準住 `on_tree`）、已是 `consumer-owned` 登記項，或其**完整父路徑上有符號連結**。
+    """§2 分支 ②：路徑上有既有物（存在性判準住 `on_tree`）、已是 `consumer-owned` 登記項，或**該路徑上有符號連結**（零跟隨判準住 `follows_symlink`，含 leaf 自身）。
     第三者刻意併進分支 ②：§2 逐字「對任何符號連結⛔ 不建立、⛔ 不改寫、⛔ 不跟隨」而落地必須跟隨 ⇒ 唯一合規處置是零寫入＋未完成項；
     ⛔ 不得推出「可先解析父連結再寫」——那正是樹外寫入的來源。**⛔ 不讀該路徑的內容、⛔ 不解析其內部結構**——只看「有沒有東西在那裡」。"""
     return on_tree(root, relative) or relative in owned or follows_symlink(root, relative)
@@ -189,9 +192,11 @@ def _bootstrap_config(root, seed, emit):
 
 def step_bootstrap(root, rules, config=None, repository=None, board=None, emit=print, *, runner=None):
     """冪等：已存在的路徑一律位元組不變、⛔ 不覆寫、⛔ 不合併，並各交一項未完成項；建立的骨架以
-    `consumer-owned` 登記進 manifest。登記面只收**一般檔**（`is_file` 且父路徑⛔ 無連結）：登記項的
-    `digest` 只有整檔一種前像文法，目錄與斷鏈⛔ 無整檔摘要、照樣讀是未處理例外，父路徑有連結者則⛔ 不是
-    樹上那個名字。這三種都已由 `_occupied` 走了零寫入分支，故只由未完成項承接、⛔ 不登記。"""
+    `consumer-owned` 登記進 manifest。登記面只收**一般檔**：`is_file()` 且 `not follows_symlink(...)`——
+    後者是與 `_occupied`／`deactivate` **同一個**零跟隨判準（含 leaf 自身），⛔ 不在此另寫一套，否則兩動詞
+    會對同一形狀給相反答案。登記項的 `digest` 只有整檔一種前像文法：目錄與斷鏈⛔ 無整檔摘要、照樣讀是未
+    處理例外；leaf 是符號連結時 `is_file()` 會跟隨它、把**指向物**的位元組登記成樹上那個名字的內容；父路徑
+    有連結者則⛔ 不是樹上那個名字。這四種都已由 `_occupied` 走了零寫入分支，故只由未完成項承接、⛔ 不登記。"""
     root, created, owned = Path(root), [], []
     if _blocked(root, 'bootstrap', emit):
         return 0
@@ -261,8 +266,9 @@ def step_deactivate(root, rules=None, config=None, repository=None, board=None, 
     carriers = {entry['path'].split('#', 1)[0] for entry in legacy_entries(manifest)}
     for entry in sorted(managed_entries(manifest), key=lambda entry: entry['path']):
         target = confined(root, entry['path'])
-        # 框架⛔ 不落地符號連結 ⇒ 樹上是連結就是 consumer 的，連同其指向的目標一律零處置
-        note = OUTSIDE_ROOT if target is None else (SYMLINK_PATH if target.is_symlink() else None)
+        # 框架⛔ 不落地符號連結 ⇒ 路徑上有連結（leaf 自身或父路徑任一段）就是 consumer 的，連同其指向的目標一律零處置。
+        # 判準住 `follows_symlink`，與 install／bootstrap 同一個：⛔ 不在此用裸 `is_symlink()`（那只看 leaf，父連結會漏）。
+        note = OUTSIDE_ROOT if target is None else (SYMLINK_PATH if follows_symlink(root, entry['path']) else None)
         if note is None and entry['path'] in carriers:
             note = LEGACY_CARRIER
         if note is None and target.is_file() and digest_of(target.read_bytes()) != entry['digest']:
@@ -271,17 +277,27 @@ def step_deactivate(root, rules=None, config=None, repository=None, board=None, 
         if note is not None:
             _say(emit, 'deactivate', entry['path'], note)
             continue
-        gone = target.is_file()
-        if gone:
+        # 此處路徑上已排除符號連結 ⇒ `is_file()` ⛔ 不跟隨任何連結。但「⛔ 非一般檔」與「⛔ 不在樹上」是**兩件事**：
+        # 登記路徑被換成同名目錄時⛔ 不可刪（框架只落整檔），也⛔ 不得印「已不在樹上」——存在性判準住 `on_tree`。
+        if gone := target.is_file():
             target.unlink()
-        _say(emit, 'deactivate', entry['path'], '已移除' if gone else '已不在樹上')
+        _say(emit, 'deactivate', entry['path'], '已移除' if gone
+             else (NOT_PLAIN_FILE if on_tree(root, entry['path']) else '已不在樹上'))
     for entry in legacy_entries(manifest):
         _say(emit, 'deactivate', entry['path'], LEGACY_KEPT)
     for entry in sorted(entries_of(manifest, OWNERSHIPS[1]), key=lambda entry: entry['path']):
         if not is_legacy(entry['path']):
             _say(emit, 'deactivate', entry['path'], f'{OWNERSHIPS[1]}，保留')
     for relative in CONTROL_SET:                      # （二）具名承接，⛔ 非經登記移除
-        if (control := root / relative).is_file():
+        # 控制檔⛔ 不自登記（§2 方案 A）⇒ 它⛔ 不經上面那個迴圈，移除面的兩道守門必須在此**就地**接上同一組
+        # 函式：`confined` 管封閉面、`follows_symlink` 管零跟隨。缺任一道的紅證（本輪查核序 1 四起點）：
+        # `.wf/adopt` 連到樹外 ⇒ 樹外 manifest.json 被刪；樹外僅存 manifest ⇒ 再對連結 `rmdir` 拋
+        # NotADirectoryError（而 `core/verbs.md` §1 snapshot 硬擋欄逐字「—」⇒ 本層⛔ 不得 raise）。
+        # ⛔ 不得推出「控制檔是框架自己的、可以無條件刪」：那個名字落在哪裡由採用者的樹決定，⛔ 不由集合決定。
+        if (control := confined(root, relative)) is None or follows_symlink(root, relative):
+            _say(emit, 'deactivate', relative, OUTSIDE_ROOT if control is None else SYMLINK_PATH)
+            continue
+        if control.is_file():
             control.unlink()
             _say(emit, 'deactivate', relative, '已移除（控制檔具名承接）')
         if (parent := control.parent).is_dir() and not any(parent.iterdir()):
