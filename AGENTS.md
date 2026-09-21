@@ -1,5 +1,14 @@
 # AGENTS.md — ai-workflow
 
+## vNext 隔離重建的適用範圍
+
+本分支 `codex/vnext-rebuild` 與由它建立的 vNext 工作，以 `docs/research/VNEXT-REQUIREMENTS-2026-09-21.md` 作為已核定的需求與流程邊界。
+
+- vNext 工作使用該文件定義的五階段輕量流程；具體新規則尚未經需求方確認前，不得自行補成生效規則。
+- 既有 `core/`、`roles/`、`stages/`、`modules/`、舊 CLI、舊卡片格式、tier、計數器與 trailer 規則只供歷史及重用評估，不得作為 vNext 的派工、退回或驗收判準。
+- 不逐檔註解、搬移或修改既有規則來模擬 vNext；規劃成果與後續實作放在 vNext 自己的明確居所。
+- main 與既有任務仍依下節的現行規則運作，不受本分支的 vNext 邊界影響。
+
 > 舊制規則、範本、設計文件與舊 CLI 凍結；舊入口文件全文在 `archive/rules-2026-09/`（唯讀，僅供對照）。
 
 ## 現在以什麼為準
