@@ -2,7 +2,7 @@
 
 public shape：`wfx [--project-root <p>] <verb> [動詞參數…]`。全域旗標只認動詞之前，由前綴迴圈消耗、
 ⛔ 不傳給動詞的 parse_args。本檔⛔ 不判內容、⛔ 不代動詞印、⛔ 不呼叫 AI。
-`write`（W1.8）由該工作包在此登記。rc 慣例：**用法錯 rc=2、typed 錯 rc=1**（兩類可區分）。
+三個動詞（`brief`／`facts`／`write`）已全部登記。rc 慣例：**用法錯 rc=2、typed 錯 rc=1**（兩類可區分）。
 """
 import os
 from pathlib import Path
@@ -14,9 +14,9 @@ from wfx.gh.client import GhError
 from wfx.gh.localgit import LocalGitUnavailable
 from wfx.gh.localrev import LocalRevUnavailable
 from wfx.gh.target import TargetError
-from wfx.verbs import brief, facts
+from wfx.verbs import brief, facts, write
 
-DISPATCH = {'brief': brief, 'facts': facts}
+DISPATCH = {'brief': brief, 'facts': facts, 'write': write}
 GLOBAL_FLAGS = ('--project-root',)
 USAGE = f'用法：wfx [--project-root <p>] <{"｜".join(DISPATCH)}> [動詞參數…]'
 

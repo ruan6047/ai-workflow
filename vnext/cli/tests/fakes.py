@@ -11,6 +11,21 @@ BODY = '\n'.join(f'## {name}\n\n內容 {name}\n' for name in
 
 FIELD_NAMES = ('Title', 'Status', '階段', 'owner', '風險', '緊急性', '期限', 'Resource')
 
+# 該 Project 每個欄位的**遠端**型別與選項清單（＝遠端事實，⛔ 不是值域的第二個居所）。
+OPTIONS = {'Status': ('待辦', '進行中', '待確認', '阻塞', '完成', '停止'),
+           '狀態': ('待辦', '進行中', '待確認', '阻塞', '完成', '停止'),
+           '階段': ('需求', '規劃', '執行', '審核', '結案'),
+           '風險': ('一般', '重要', '高風險'),
+           '緊急性': ('一般', '限時', '緊急')}
+
+
+def field_node(name):
+    if name in OPTIONS:
+        return {'id': f'F_{name}', 'name': name, 'dataType': 'SINGLE_SELECT',
+                'options': [{'id': f'O_{name}_{v}', 'name': v} for v in OPTIONS[name]]}
+    return {'id': f'F_{name}', 'name': name, 'options': [],
+            'dataType': 'DATE' if name == '期限' else 'TEXT'}
+
 COMMENTS = ({'url': 'https://example.invalid/c1',
              'body': '## 規劃階段完成\n工作包：W1.1–W1.9。\n判斷留給讀者，CLI ⛔ 不解析。\n'},
             {'url': 'https://example.invalid/c2', 'body': '隨手一則，⛔ 不屬四類中的任何一類。\n'})
@@ -35,7 +50,7 @@ def snapshot(*, item_updated='2026-09-21T11:05:20Z', issue_updated='2026-09-21T1
         'comments': list(comments),
         'pull_requests': list(pull_requests),
         'project': {'id': 'PVT_1', 'title': 'board', 'url': 'u', 'viewerCanUpdate': viewer_can_update},
-        'field_names': [{'name': name, 'dataType': 'TEXT'} for name in field_names],
+        'field_names': [field_node(name) for name in field_names],
         'items': ([{'id': 'PVTI_1', 'updatedAt': item_updated, 'isArchived': False,
                     'content': {'__typename': 'Issue', 'number': 370, 'url': 'u',
                                 'repository': {'nameWithOwner': 'o/r'}},
@@ -48,7 +63,7 @@ def snapshot(*, item_updated='2026-09-21T11:05:20Z', issue_updated='2026-09-21T1
 class FakeClient:
     """序列快照：第 n 次讀取週期讀到第 n 份快照（最後一份之後維持最後一份）。
 
-    一個讀取週期由入口 getter（`repository`＝facts／`issue`＝brief）起算；同一週期內的其他
+    一個讀取週期由入口 getter（`repository`＝facts／`issue`＝brief／`project`＝write 的欄位路徑）起算；同一週期內的其他
     getter 都從**當次**綁定的那一份讀，證明沒有跨呼叫快取。
     """
 
@@ -83,7 +98,7 @@ class FakeClient:
         return self._current['pull_requests']
 
     def project(self, owner, number):
-        return self._current['project']
+        return self._bind('project')['project']
 
     def project_field_names(self, project_id):
         return self._current['field_names']
@@ -135,3 +150,18 @@ class RecordedRunner:
             raise AssertionError(f'未預期的呼叫：{args}')
         rc, stdout, stderr = self.default
         return subprocess.CompletedProcess(args, rc, stdout, stderr)
+
+
+class FakeWriter:
+    """mutation 替身：只記錄呼叫，⛔ 不連網。零 mutation 的證明＝`calls` 為空。"""
+
+    def __init__(self, *, comment_url='https://example.invalid/370#issuecomment-1'):
+        self.calls = []
+        self.comment_url = comment_url
+
+    def set_field(self, project_id, item_id, field, value):
+        self.calls.append(('set_field', item_id, field['name'], value))
+
+    def post_comment(self, issue_id, body):
+        self.calls.append(('post_comment', issue_id, body))
+        return self.comment_url

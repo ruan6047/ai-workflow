@@ -167,15 +167,29 @@ def test_config_shape_only(tmp_path):
         load_config(tmp_path)
 
 
-def test_dispatch_is_exactly_brief_and_facts(capsys):
-    """W1.6＋W1.7 合流後登記兩個動詞；`write` 由 W1.8 登記，此處⛔ 不預建。"""
+def test_dispatch_is_exactly_the_three_verbs(capsys):
+    """W1.8 登記第三個動詞後動詞集合固定為三；⛔ 不長出第四個。"""
     from wfx.verbs.main import DISPATCH
-    assert set(DISPATCH) == {'brief', 'facts'}
+    assert set(DISPATCH) == {'brief', 'facts', 'write'}
     assert main([]) == 2
-    assert main(['write', '--task', '1']) == 2      # 尚未登記＝用法錯誤，⛔ 不是假成功
+    assert main(['move', '--task', '1']) == 2       # 未登記的動詞＝用法錯誤，⛔ 不是假成功
     assert main(['--project-root']) == 2            # 旗標缺值
     assert main(['facts', '--project-root', '.']) == 2   # 全域旗標⛔ 不得出現在動詞之後
-    assert 'wfx [--project-root <p>] <brief｜facts>' in capsys.readouterr().err
+    assert 'wfx [--project-root <p>] <brief｜facts｜write>' in capsys.readouterr().err
+
+
+def test_mutation_surface_lives_only_in_gh_writes():
+    """寫入能力只住 `wfx/gh/writes.py`，且只有 `verbs/write.py` 匯入它。
+
+    這是對**程式碼結構**的檢查：唯讀的 `facts`／`brief` 路徑不可能夾帶 mutation。
+    """
+    importers = {path.relative_to(SRC).as_posix() for path in sorted(SRC.rglob('*.py'))
+                 if any(m.startswith('wfx.gh.writes')
+                        for m in modules(path.read_text(encoding='utf-8')))}
+    assert importers == {'verbs/write.py'}
+    mutating = {path.relative_to(SRC).as_posix() for path in sorted(SRC.rglob('*.py'))
+                if 'mutation(' in path.read_text(encoding='utf-8')}
+    assert mutating == {'gh/writes.py'}
 
 
 def test_verb_error_paths_return_rc_one_not_a_traceback(tmp_path, capsys):
