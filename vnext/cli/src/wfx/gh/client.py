@@ -138,6 +138,47 @@ class GhClient:
             raise NotFound(f'issue #{number} 不存在於 {self.repo}')
         return issue
 
+    def issue_comments(self, issue_id):
+        """該 Issue 的**全部**留言，依遠端順序原樣回傳。
+
+        ⛔ 不分類、⛔ 不篩「哪些算階段完成留言」——`github.md` §3 的四類是內容分類，CLI 判不得。
+        """
+        query = ('query($id:ID!,$size:Int!,$cursor:String){node(id:$id){... on Issue{'
+                 'comments(first:$size,after:$cursor){nodes{url body}'
+                 'pageInfo{hasNextPage endCursor}}}}}')
+        return self._connection(query, {'id': issue_id, 'size': self.page_size}, 'comments')
+
+    def associated_pull_requests(self, oid):
+        """該 commit 的關聯 PR（`state`＋`baseRefName`）原樣回傳；篩 OPEN 由呼叫端做。
+
+        以 SHA 查、⛔ 不以分支名查：detached checkout 與 `--sha` 都沒有分支名。
+        查不到 commit＝NotFound，⛔ 不回空清單冒充「沒有 PR」。
+        """
+        query = ('query($owner:String!,$name:String!,$oid:GitObjectID!,$size:Int!,$cursor:String){'
+                 'repository(owner:$owner,name:$name){object(oid:$oid){... on Commit{'
+                 'associatedPullRequests(first:$size,after:$cursor)'
+                 '{nodes{number state baseRefName}pageInfo{hasNextPage endCursor}}}}}}')
+        owner, _, name = self.repo.partition('/')
+        nodes, cursor, seen = [], None, set()
+        while True:
+            repository = self._request('graphql', query=query, variables={
+                'owner': owner, 'name': name, 'oid': oid,
+                'size': self.page_size, 'cursor': cursor})['data']['repository']
+            if repository is None:
+                raise GhError('GraphQL 未提供 repository；無法確定不存在')
+            commit = repository.get('object')
+            if commit is None:
+                raise NotFound(f'{self.repo} 內⛔ 無 commit {oid}')
+            connection = commit['associatedPullRequests']
+            nodes.extend(connection['nodes'])
+            info = connection['pageInfo']
+            if not info['hasNextPage']:
+                return nodes
+            cursor = info['endCursor']
+            if cursor is None or cursor in seen:
+                raise GhError('GraphQL 分頁未前進；讀取未完成')
+            seen.add(cursor)
+
     def ci_checks(self, sha):
         """checks 與舊式 status 原樣回傳；⛔ 不篩 required checks、⛔ 不判通過。"""
         ref = quote(sha, safe='')

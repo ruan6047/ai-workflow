@@ -25,11 +25,25 @@ class Provenance:
 
 
 @dataclass(frozen=True)
+class RulesSource:
+    """第 1 層規則樹的來源。W1.6 只有本機 checkout 一種；W2.1 另加 package data。
+
+    ⛔ 不印 root 路徑：那會讓「同一輸入兩次執行逐字相同」隨機器而破（規則來源與版本＝W2.2）。
+    """
+    root: Path
+
+
+@dataclass(frozen=True)
 class Context:
-    """`rules` 由 W1.6 brief 補上（本工作包⛔ 不預建規則載入）。"""
+    """C6 四欄：`project_root`／`rules`／不透明 `task_id`／`config`。
+
+    `rules` 由 `brief` 提供；`facts` 不讀規則樹，該欄為 None。
+    GitHub 專屬事實⛔ 不進 Context，由 `wfx.gh` 另產並在動詞層並列傳遞。
+    """
     project_root: Path
     task_id: str
     config: dict = field(default_factory=dict)
+    rules: RulesSource | None = None
 
 
 def load_config(project_root) -> dict:

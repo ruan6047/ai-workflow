@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -101,56 +100,27 @@ def project_layer(project_root: Path) -> list[Segment]:
     ]
 
 
-def task_layer(snapshot_path: Path | None, task_id: str) -> list[Segment]:
-    """任務層＝Issue body 五章節＋七個核心概念＋已貼出的階段完成留言。
+def task_layer(data) -> list[Segment]:
+    """任務層＝Issue body 五章節＋七個核心概念＋**該卡全部留言**（原樣，⛔ 不分類）。
 
-    W1.6 的來源是一份固定快照；讀遠端當下值是 `facts`（W1.7）的事。
-    三者一律原樣納入，⛔ 不解析、⛔ 不驗章節、⛔ 不判留言屬於哪一類。
+    `data` 是動詞層交進來的純資料（`wfx.gh.task.TaskData`）——`wfx.core` ⛔ 不 import `wfx.gh`，
+    也⛔ 不理解任務識別的格式。三者一律原樣納入，⛔ 不解析、⛔ 不驗章節、⛔ 不判留言屬於哪一類。
     """
-    if snapshot_path is None:
-        raise LayerMissing("task", "--task-snapshot", "任務層資料來源未提供")
-    if not snapshot_path.is_file():
-        raise LayerMissing("task", str(snapshot_path))
-    try:
-        data = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise MalformedInput(f"任務層快照不是合法 JSON：{exc}") from exc
-    if not isinstance(data, dict):
-        raise MalformedInput("任務層快照的最外層必須是 object")
-
-    snapshot_task = data.get("task")
-    if snapshot_task != task_id:
-        raise MalformedInput(
-            f"任務層快照的 task 是 {snapshot_task!r}，與 --task {task_id!r} 不符"
-        )
-
-    body = data.get("issue_body")
+    if not isinstance(data.fields, dict):
+        raise MalformedInput("任務層的 fields 必須是 object")
+    missing = [name for name in CORE_CONCEPTS if name not in data.fields]
+    if missing:
+        raise MalformedInput(f"任務層缺核心概念：{'、'.join(missing)}")
+    body = data.issue_body
     if not isinstance(body, str) or not body.strip():
-        raise LayerMissing("task", f"{task_id}#issue-body", "快照缺 issue_body 或為空")
+        raise LayerMissing("task", f"{data.task}#issue-body", "Issue body 缺或為空")
 
-    fields = data.get("fields", {})
-    if not isinstance(fields, dict):
-        raise MalformedInput("任務層快照的 fields 必須是 object")
-    unknown = sorted(set(fields) - set(CORE_CONCEPTS))
-    if unknown:
-        raise MalformedInput(
-            f"fields 出現七個核心概念以外的鍵：{'、'.join(unknown)}"
-        )
-
-    comments = data.get("comments", [])
-    if not isinstance(comments, list):
-        raise MalformedInput("任務層快照的 comments 必須是 array")
-
-    out = [Segment("task", task_id, "issue-body", body.strip("\n"))]
-    rendered = "\n".join(f"{name}: {fields.get(name, '')}" for name in CORE_CONCEPTS)
-    out.append(Segment("task", task_id, "核心概念", rendered))
-    for index, comment in enumerate(comments, start=1):
-        if not isinstance(comment, dict) or not isinstance(comment.get("body"), str):
-            raise MalformedInput(f"comments[{index - 1}] 缺 body 或型別不對")
-        lines = []
-        url = comment.get("url")
-        if isinstance(url, str) and url:
-            lines.append(f"url: {url}")
-        lines.append(comment["body"].strip("\n"))
-        out.append(Segment("task", task_id, f"comment-{index}", "\n".join(lines)))
+    out = [Segment("task", data.task, "issue-body", body.strip("\n"))]
+    # 只投影七個核心概念；Project 的其餘內建欄位原樣忽略，⛔ 不是第八個核心概念、⛔ 不拒收
+    rendered = "\n".join(f"{name}: {data.fields[name]}" for name in CORE_CONCEPTS)
+    out.append(Segment("task", data.task, "核心概念", rendered))
+    for index, (url, comment_body) in enumerate(data.comments, start=1):
+        lines = [f"url: {url}"] if url else []
+        lines.append((comment_body or "").strip("\n"))
+        out.append(Segment("task", data.task, f"comment-{index}", "\n".join(lines)))
     return out

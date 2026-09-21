@@ -9,10 +9,10 @@ from __future__ import annotations
 import argparse
 import os
 
-from wfx.core.context import Context, Provenance
+from wfx.core.context import Context
 from wfx.gh import facts as F
-from wfx.gh.client import GhClient, GhError, PermissionDenied
-from wfx.gh.target import parse_task, permission_fact, resolve_repository
+from wfx.gh.client import GhClient, PermissionDenied
+from wfx.gh.target import parse_task, permission_fact
 
 USAGE = 'wfx facts --task <id> [--sha <sha>]'
 
@@ -24,26 +24,11 @@ def parse_args(argv):
     return parser.parse_args(argv)
 
 
-def _locate_item(items, slug, number):
-    """content 是本 repo 的該 Issue 者恰一個；⛔ 無＝事實缺席（回 None），多個＝fail-loud。"""
-    matched = [item for item in items
-               if (item.get('content') or {}).get('number') == number
-               and ((item['content'].get('repository') or {}).get('nameWithOwner') in (None, slug))]
-    if len(matched) > 1:
-        raise GhError(f'{slug}#{number} 對應多個 Project item：{[i["id"] for i in matched]}')
-    return matched[0] if matched else None
-
-
 def collect(context, task_id, sha, *, client=None, runner=None, env=None):
     """遠端每次即時讀取，⛔ 不快取、⛔ 不凍結。"""
     env = os.environ if env is None else env
     task = parse_task(task_id)
-    if task.slug:
-        slug, provenance, remote_names = task.slug, Provenance('cli', '--task'), ()
-    else:
-        target = resolve_repository(context.project_root, configured=context.config.get('remote'),
-                                    env_repo=env.get('GH_REPO'), runner=runner)
-        slug, provenance, remote_names = target.slug, target.provenance, target.remote_names
+    slug, provenance, remote_names = F.resolve_slug(context, task, env=env, runner=runner)
     client = GhClient(slug, runner=runner) if client is None else client
 
     repository = client.repository(slug)
@@ -67,7 +52,7 @@ def collect(context, task_id, sha, *, client=None, runner=None, env=None):
         permissions.append(permission_fact('project', 'projectV2.viewerCanUpdate',
                                            project.get('viewerCanUpdate')))
         field_names = [f['name'] for f in client.project_field_names(project['id'])]
-        item = _locate_item(client.project_items(project['id'], field_names), slug, task.number)
+        item = F.locate_item(client.project_items(project['id'], field_names), slug, task.number)
         if item is None:
             unknown_baselines.append(f'project_item：{project_ref} 內⛔ 無 {slug}#{task.number} 的 item')
             concepts = tuple(F.ConceptFact(name, None, None) for name in F.CONCEPTS)
@@ -77,7 +62,8 @@ def collect(context, task_id, sha, *, client=None, runner=None, env=None):
             baselines.append(F.Baseline('project_item', item_id, item['updatedAt']))
 
     baselines.append(F.Baseline('issue', f'{slug}#{task.number}', issue['updatedAt']))
-    git = F.git_facts(context.project_root, default_branch=repository.get('default_branch'),
+    git = F.git_facts(context.project_root,
+                      base=F.base_resolver(client, repository.get('default_branch')),
                       remote_names=remote_names, sha=sha, runner=runner)
     return F.GhFacts(task.raw, slug, provenance, issue['url'], project_ref, item_id, sections,
                      concepts, tuple(baselines), tuple(unknown_baselines), git,

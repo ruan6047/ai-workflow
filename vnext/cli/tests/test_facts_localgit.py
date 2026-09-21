@@ -10,7 +10,7 @@ from wfx.gh.facts import git_facts
 from wfx.gh.localgit import LocalGitUnavailable, merge_tree
 from wfx.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
 
-from .fakes import RecordedRunner
+from .fakes import RecordedRunner, fixed_base
 
 
 def git(root, *args):
@@ -40,8 +40,8 @@ def repo(tmp_path):
 def test_local_facts_for_the_same_sha_are_byte_identical(repo):
     """同一 SHA 兩次讀取逐字相同（⛔ 不含工作樹路徑或執行時間）。"""
     head = git(repo, 'rev-parse', 'HEAD')
-    first = git_facts(repo, default_branch='main', remote_names=(), sha=head)
-    second = git_facts(repo, default_branch='main', remote_names=(), sha=head)
+    first = git_facts(repo, base=fixed_base('main'), remote_names=(), sha=head)
+    second = git_facts(repo, base=fixed_base('main'), remote_names=(), sha=head)
     assert first == second
     assert first.base_ref == 'refs/heads/main'
     assert first.head_sha == head
@@ -53,7 +53,7 @@ def test_local_facts_for_the_same_sha_are_byte_identical(repo):
 
 def test_remote_tracking_ref_is_preferred_and_never_hardcoded_origin(repo):
     git(repo, 'update-ref', 'refs/remotes/up/main', git(repo, 'rev-parse', 'main'))
-    facts = git_facts(repo, default_branch='main', remote_names=('up',), sha=None)
+    facts = git_facts(repo, base=fixed_base('main'), remote_names=('up',), sha=None)
     assert facts.base_ref == 'refs/remotes/up/main'
 
 
@@ -62,25 +62,27 @@ def test_conflicting_branches_report_rc_one_not_a_verdict(repo):
     (repo / 'b.txt').write_text('other\n')
     git(repo, 'add', 'b.txt')
     git(repo, 'commit', '-qm', 'conflict')
-    facts = git_facts(repo, default_branch='main', remote_names=(), sha='work')
+    facts = git_facts(repo, base=fixed_base('main'), remote_names=(), sha='work')
     assert facts.merge_tree_rc == 1
 
 
 def test_unresolvable_base_is_typed_unknown_not_empty_lists(repo):
-    facts = git_facts(repo, default_branch='no-such-branch', remote_names=(), sha=None)
+    facts = git_facts(repo, base=fixed_base('no-such-branch'), remote_names=(), sha=None)
     assert facts.base_sha is None
     assert facts.log is None and facts.diff_stat is None and facts.merge_tree_rc is None
-    assert any('base ref' in reason for reason in facts.unknown)
+    assert any('本機解不到 no-such-branch' in reason for reason in facts.unknown)
     assert any('⛔ 不以空結果冒充沒有改動' in reason for reason in facts.unknown)
 
 
-def test_missing_default_branch_from_api_is_typed_unknown(repo):
-    facts = git_facts(repo, default_branch=None, remote_names=(), sha=None)
-    assert 'base ref：repository 無預設分支（API 回 null）' in facts.unknown
+def test_unresolved_base_from_the_resolver_is_typed_unknown(repo):
+    reason = 'base ref：repository 無預設分支（API 回 null）'
+    facts = git_facts(repo, base=fixed_base(None, unknown=reason), remote_names=(), sha=None)
+    assert reason in facts.unknown
+    assert facts.base_ref is None and facts.log is None
 
 
 def test_non_worktree_root_is_typed_unknown(tmp_path):
-    facts = git_facts(tmp_path, default_branch='main', remote_names=(), sha=None)
+    facts = git_facts(tmp_path, base=fixed_base('main'), remote_names=(), sha=None)
     assert facts.head_sha is None
     assert facts.log is None and facts.diff_stat is None
     assert len(facts.unknown) == 1 and facts.unknown[0].startswith('rev-parse HEAD：')

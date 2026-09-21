@@ -1,6 +1,7 @@
 """測試共用夾具。
 
 隔離原則：一律用只帶規則樹與 `.wf/` 的 tmp root，⛔ 不靠 repo 裡缺了什麼檔案來成立。
+遠端一律走注入式替身（tests/fakes.py），⛔ 不連網、⛔ 不 mutation 任何遠端資源。
 """
 
 import json
@@ -17,27 +18,7 @@ if str(SRC) not in sys.path:
 
 REPO_RULES = REPO_ROOT / "vnext" / "rules"
 
-TASK_ID = "ruan/ai-workflow#370"
-
-ISSUE_BODY = (
-    "## 需求\n單一主要成果。最終需求方：ruan。\n\n"
-    "## 限制與非目標\n⛔ 不新增第四個動詞。\n\n"
-    "## 驗收\n六個角色各產生不同必要清單。\n\n"
-    "## 風險與假設\n~/.wf/ 尚未存在。\n\n"
-    "## 裁定紀錄\n- 需求核定：見留言 1\n"
-)
-
-STAGE_COMMENT = "## 規劃階段完成\n工作包：W1.1–W1.9。\n判斷留給讀者，CLI ⛔ 不解析。\n"
-
-FIELDS = {
-    "狀態": "進行中",
-    "階段": "執行",
-    "owner": "ruan",
-    "風險": "重要",
-    "緊急性": "一般",
-    "期限": "",
-    "Resource": "",
-}
+TASK_ID = "o/r#370"
 
 
 @pytest.fixture
@@ -50,10 +31,15 @@ def rules_root(tmp_path):
 
 @pytest.fixture
 def project_root(tmp_path):
+    """第 3 層＋`.wf/config.json`（`facts`／`brief` 都從這裡取 Project 位置）。"""
     root = tmp_path / "project"
     (root / ".wf").mkdir(parents=True)
     (root / ".wf" / "model-policy.md").write_text(
         "# 專案層政策\n具體模型名稱⛔ 不住這裡。\n", encoding="utf-8"
+    )
+    (root / ".wf" / "config.json").write_text(
+        json.dumps({"rules": None, "remote": None, "project": {"owner": "o", "number": 9}}),
+        encoding="utf-8",
     )
     return root
 
@@ -68,40 +54,32 @@ def user_root(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def snapshot(tmp_path):
-    def make(name="task.json", **overrides):
-        data = {
-            "task": TASK_ID,
-            "issue_body": ISSUE_BODY,
-            "fields": dict(FIELDS),
-            "comments": [{"url": "https://example.invalid/c1", "body": STAGE_COMMENT}],
-        }
-        data.update(overrides)
-        path = tmp_path / name
-        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        return path
-
-    return make
-
-
-@pytest.fixture
 def run_cli(rules_root, project_root, user_root, capsys):
-    """跑真正的 CLI 進入點，回 (rc, stdout, stderr)。"""
+    """跑真正的 CLI 進入點（含全域旗標前綴迴圈），回 (rc, stdout, stderr)。
+
+    `client`／`task_source` 是動詞層的**內部**注入點，⛔ 不是公開旗標。
+    """
     from wfx.verbs.main import main
 
-    def run(*extra, role="執行者", stage="執行", task=TASK_ID, snapshot_path=None):
+    from .fakes import FakeClient
+
+    def run(*extra, role="執行者", stage="執行", task=TASK_ID, snapshots=None,
+            client=None, task_source=None, project=None):
+        injected = {}
+        if task_source is not None:
+            injected["task_source"] = task_source
+        else:
+            injected["client"] = FakeClient(*(snapshots or ())) if client is None else client
         argv = [
+            "--project-root", str(project if project is not None else project_root),
             "brief",
             "--task", task,
             "--role", role,
             "--stage", stage,
             "--rules-root", str(rules_root),
-            "--project-root", str(project_root),
         ]
-        if snapshot_path is not None:
-            argv += ["--task-snapshot", str(snapshot_path)]
         argv += list(extra)
-        rc = main(argv)
+        rc = main(argv, **injected)
         captured = capsys.readouterr()
         return rc, captured.out, captured.err
 
