@@ -124,3 +124,96 @@ def task_layer(data) -> list[Segment]:
         lines.append((comment_body or "").strip("\n"))
         out.append(Segment("task", data.task, f"comment-{index}", "\n".join(lines)))
     return out
+
+
+# ── 派工首屏：只由機械資料組成的定位索引 ────────────────────────────
+# 全部內容都是路徑、節錨、行數、既有欄位值與 url。
+# ⛔ 不摘要、⛔ 不判讀留言屬於哪一類、⛔ 不截斷任何原文——原文一律在附錄逐字保留。
+
+NO_COMMENTS = "（該卡⛔ 無留言）"
+NO_HEADING = "⛔ 無 ## 標題"
+
+
+def _anchor_line(rel: str, text: str) -> str:
+    anchors = [anchor for anchor, _ in rules.split_sections(text)]
+    return f"- {rel}（{len(anchors)} 節）：" + "／".join(anchors)
+
+
+def core_concept_values(data) -> Segment:
+    """七個核心概念的當下值；與附錄任務層同一份投影，⛔ 不另行加工。"""
+    rendered = "\n".join(f"{name}: {data.fields[name]}" for name in CORE_CONCEPTS)
+    return Segment("task", data.task, "核心概念", rendered)
+
+
+def rules_index(rules_root: Path) -> Segment:
+    """core 六份的路徑與節錨。
+
+    ⛔ 不印 rules-root 絕對路徑（那會讓逐字穩定隨機器而破）；
+    stages／roles 兩份的節錨逐項列在「必要清單」，此處⛔ 不重複。
+    """
+    lines = [_anchor_line(rel, text) for rel, text in rules.core_docs(rules_root)]
+    return Segment("framework", "rules/core/", "節索引", "\n".join(lines))
+
+
+def project_policy_index(project_segments: list[Segment]) -> Segment:
+    """第 3 層每份政策檔的路徑與節錨；全文在附錄。傳入的就是附錄那份，⛔ 不重讀檔案。"""
+    lines = [_anchor_line(segment.path, segment.body) for segment in project_segments]
+    return Segment("project", ".wf/", "節索引", "\n".join(lines))
+
+
+def user_model_index(user_root: Path) -> Segment:
+    """兩類模型資料的狀態與來源檔名；⛔ 不判時效、⛔ 不解析內容。"""
+    lines = []
+    for name in USER_MODEL_FILES:
+        path = user_root / name
+        if path.is_file():
+            filled = len([l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()])
+            lines.append(f"- ~/.wf/{name}：在（{filled} 非空行，全文見附錄）")
+        else:
+            lines.append(f"- ~/.wf/{name}：{UNKNOWN_MODEL_DATA}")
+    return Segment("user", "~/.wf/", "狀態", "\n".join(lines))
+
+
+def issue_section_index(rules_root: Path, data) -> Segment:
+    """Issue body 五章節的存在性與定位。
+
+    `core/github.md` §1 明訂 CLI 只確認「標題在且其下非空」；本函式只做這件事，
+    ⛔ 不解析散文語意。非五章節的 `## ` 標題一律照列，⛔ 不判它合不合法。
+    """
+    titles = rules.issue_section_titles(rules_root)
+    spans = rules.section_spans(data.issue_body)
+    first = {}
+    for anchor, start, filled in spans:
+        first.setdefault(anchor, (start, filled))     # 同名節重複時取最先出現的那個
+    lines = []
+    for title in titles:
+        span = first.get(title)
+        if span is None:
+            lines.append(f"- {title}：⛔ 標題不在 body")
+        elif span[1] == 0:
+            lines.append(f"- {title}：標題在第 {span[0]} 行、其下空")
+        else:
+            lines.append(f"- {title}：在（第 {span[0]} 行，{span[1]} 非空行）")
+    for anchor, start, _ in spans:
+        if anchor not in titles:
+            lines.append(f"- （五章節以外）{anchor}：第 {start} 行")
+        elif start != first[anchor][0]:
+            lines.append(f"- （同名重複）{anchor}：第 {start} 行")
+    return Segment("task", data.task, "issue-body 章節", "\n".join(lines))
+
+
+def comment_index(data) -> Segment:
+    """全部留言逐則一行：編號、url、行數、該則首個 `## ` 標題（逐字）。
+
+    ⛔ 不分類（`github.md` §3 的四類是內容分類，CLI 判不得）、⛔ 不挑「哪幾則是裁定」——
+    裁定留言的定位靠 body §裁定紀錄 的連結索引與這份全量索引兩邊對照。
+    """
+    lines = []
+    for index, (url, body) in enumerate(data.comments, start=1):
+        text = (body or "").strip("\n")
+        filled = len([l for l in text.splitlines() if l.strip()])
+        heading = next(
+            (l[3:].strip() for l in text.splitlines() if l.startswith("## ")), NO_HEADING
+        )
+        lines.append(f"- comment-{index}｜{url or '（⛔ 無 url）'}｜{filled} 非空行｜{heading}")
+    return Segment("task", data.task, "留言索引", "\n".join(lines) or NO_COMMENTS)
