@@ -181,23 +181,21 @@ def issue_section_index(rules_root: Path, data) -> Segment:
     ⛔ 不解析散文語意。非五章節的 `## ` 標題一律照列，⛔ 不判它合不合法。
     """
     titles = rules.issue_section_titles(rules_root)
-    spans = rules.section_spans(data.issue_body)
-    first = {}
-    for anchor, start, filled in spans:
-        first.setdefault(anchor, (start, filled))     # 同名節重複時取最先出現的那個
+    # 五章節的存在／非空走 `rules.required_sections`＝與 `facts` 同一份解析來源
+    required = rules.required_sections(titles, data.issue_body)
     lines = []
-    for title in titles:
-        span = first.get(title)
-        if span is None:
+    for title, state, start, filled in required:
+        if state == rules.MISSING:
             lines.append(f"- {title}：⛔ 標題不在 body")
-        elif span[1] == 0:
-            lines.append(f"- {title}：標題在第 {span[0]} 行、其下空")
+        elif state == rules.EMPTY:
+            lines.append(f"- {title}：標題在第 {start} 行、其下空")
         else:
-            lines.append(f"- {title}：在（第 {span[0]} 行，{span[1]} 非空行）")
-    for anchor, start, _ in spans:
+            lines.append(f"- {title}：在（第 {start} 行，{filled} 非空行）")
+    firsts = {title: start for title, _, start, _ in required}
+    for anchor, start, _ in rules.section_spans(data.issue_body):
         if anchor not in titles:
             lines.append(f"- （五章節以外）{anchor}：第 {start} 行")
-        elif start != first[anchor][0]:
+        elif start != firsts[anchor]:
             lines.append(f"- （同名重複）{anchor}：第 {start} 行")
     return Segment("task", data.task, "issue-body 章節", "\n".join(lines))
 

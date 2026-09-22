@@ -6,11 +6,14 @@ import subprocess
 
 import pytest
 
+from wfx.core.context import Context
 from wfx.gh.facts import git_facts
 from wfx.gh.localgit import LocalGitUnavailable, merge_tree
 from wfx.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
+from wfx.gh.target import TargetError
+from wfx.verbs.facts import collect
 
-from .fakes import RecordedRunner, fixed_base
+from .fakes import FakeClient, RecordedRunner, fixed_base, snapshot
 
 
 def git(root, *args):
@@ -99,3 +102,66 @@ def test_absent_revision_is_fact_absence_and_broken_git_raises(repo):
         diff_stat('a', 'b', root=repo, runner=broken)
     with pytest.raises(LocalGitUnavailable):
         merge_tree('a', 'b', root=repo, runner=RecordedRunner([], default=(128, '', 'boom')))
+
+
+@pytest.fixture
+def repo_with_remote(tmp_path):
+    """落後的本機 `main`、已前進的 `refs/remotes/up/main`，其上再一筆本次成果。
+
+    remote 刻意⛔ 不叫 origin：候選是從本機 remote 查出來的，⛔ 不寫死名字。
+    """
+    root = tmp_path / 'rr'
+    root.mkdir()
+    git(root, 'init', '-q', '-b', 'main')
+    git(root, 'config', 'user.email', 't@example.invalid')
+    git(root, 'config', 'user.name', 't')
+    git(root, 'remote', 'add', 'up', 'git@github.com:o/r.git')
+    (root / 'a.txt').write_text('base\n')
+    git(root, 'add', 'a.txt')
+    git(root, 'commit', '-qm', 'base')
+    git(root, 'checkout', '-qb', 'work')
+    (root / 'upstream-only.txt').write_text('已在合併目標上\n')
+    git(root, 'add', 'upstream-only.txt')
+    git(root, 'commit', '-qm', 'upstream')
+    git(root, 'update-ref', 'refs/remotes/up/main', git(root, 'rev-parse', 'HEAD'))
+    (root / 'feature.txt').write_text('本次成果\n')
+    git(root, 'add', 'feature.txt')
+    git(root, 'commit', '-qm', 'feature')
+    return root, git(root, 'rev-parse', 'HEAD')
+
+
+def collected(root, task_id, sha):
+    """同一 repo／同一 head／同一 API 快照，只有 `--task` 的寫法不同。"""
+    return collect(Context(root, task_id), task_id, sha,
+                   client=FakeClient(snapshot(pull_requests=())), env={})
+
+
+def test_full_task_form_gets_the_same_remote_base_as_the_short_form(repo_with_remote):
+    """`o/r#370` 與 `370` 對同一 repository 必須取到同一組本機 remote-tracking 候選。
+
+    完整寫法曾把「身分已知」當成「不必查本機 remote」，於是退回較舊的 `refs/heads/main`，
+    把已在合併目標上的改動算成本次成果。
+    """
+    root, head = repo_with_remote
+    short, full = collected(root, '370', head), collected(root, 'o/r#370', head)
+    assert short.git.base_ref == 'refs/remotes/up/main'
+    assert full.git == short.git
+    assert len(short.git.log) == 1
+    assert [row for row in short.git.diff_stat if 'upstream-only.txt' in row] == []
+
+
+def test_a_slug_without_a_matching_local_remote_falls_back_to_the_local_branch(repo_with_remote):
+    """本機⛔ 無指向該 repository 的 remote＝⛔ 無 remote-tracking 候選（邊界，不是缺陷）。"""
+    root, head = repo_with_remote
+    facts = collected(root, 'other/elsewhere#370', head)
+    assert facts.git.base_ref == 'refs/heads/main'
+
+
+def test_a_broken_remote_setting_fails_loud_in_both_task_forms(repo_with_remote):
+    """設定鍵指向不存在的 remote＝precedence 不成立；⛔ 不得因為身分已知就靜默換候選。"""
+    root, head = repo_with_remote
+    for task_id in ('370', 'o/r#370'):
+        context = Context(root, task_id, {'rules': None, 'remote': 'zz', 'project': None})
+        with pytest.raises(TargetError, match='remote 不存在'):
+            collect(context, task_id, head,
+                    client=FakeClient(snapshot(pull_requests=())), env={})

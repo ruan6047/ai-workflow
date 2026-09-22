@@ -5,9 +5,12 @@
 import pytest
 
 from wfx.core.context import Context
+from wfx.core.layers import issue_section_index
+from wfx.core.rules import issue_section_titles
 from wfx.gh.client import NotFound, TransportError
 from wfx.gh.facts import CONCEPTS, SECTIONS, base_resolver
 from wfx.gh.target import TargetError
+from wfx.gh.task import TaskData
 from wfx.verbs.facts import collect, render
 
 from .fakes import BASE_REF, FakeClient, snapshot
@@ -192,3 +195,37 @@ def test_no_default_branch_and_no_pr_is_unknown():
     client = FakeClient(snapshot(pull_requests=()))
     client.repository('o/r')
     assert base_resolver(client, None)(HEAD_SHA)[2] == 'base ref：repository 無預設分支（API 回 null）'
+
+
+# ── 固定五章節：facts 與 brief 必須由同一份機械解析得到同一組事實 ──────────────
+
+def brief_index(rules_root, body):
+    return issue_section_index(rules_root, TaskData('o/r#370', body, {}, ())).body
+
+
+def test_the_five_titles_have_one_contract(rules_root):
+    """章節標題的居所是 `core/github.md`；facts 的常數只是同一份契約的投影。"""
+    assert issue_section_titles(rules_root) == SECTIONS
+
+
+def test_h1_headings_are_not_the_required_h2_sections(tmp_path, rules_root):
+    """契約寫的是 `## `；facts 曾連 `# ` 也收，於是對 brief 說缺的 body 回報五章節皆非空。"""
+    body = '\n'.join(f'# {name}\n內容 {name}\n' for name in SECTIONS)
+    facts, _ = gather(tmp_path, snapshot(body=body))
+    assert [(s.name, s.state) for s in facts.sections] == [(n, '缺章節') for n in SECTIONS]
+    index = brief_index(rules_root, body)
+    for name in SECTIONS:
+        assert f'- {name}：⛔ 標題不在 body' in index
+
+
+def test_a_duplicate_section_never_fills_in_for_an_empty_first_one(tmp_path, rules_root):
+    """同名重複時兩邊都只看**第一個**；facts 曾把重複的內容併進同一節而回非空。"""
+    body = '## 需求\n\n## 限制與非目標\n內容\n## 需求\n後來補的\n'
+    facts, _ = gather(tmp_path, snapshot(body=body))
+    assert [(s.name, s.state) for s in facts.sections] == [
+        ('需求', '空'), ('限制與非目標', '非空'), ('驗收', '缺章節'),
+        ('風險與假設', '缺章節'), ('裁定紀錄', '缺章節')]
+    index = brief_index(rules_root, body)
+    assert '- 需求：標題在第 1 行、其下空' in index
+    assert '- 限制與非目標：在（第 3 行，1 非空行）' in index
+    assert '- （同名重複）需求：第 5 行' in index
