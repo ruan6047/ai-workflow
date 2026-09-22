@@ -96,6 +96,19 @@ def resolve_repository(root, *, configured=None, env_repo=None, runner=None) -> 
     return RepositoryTarget(slug, tuple(names), Provenance(provenance.kind, detail))
 
 
+def remote_names_for(root, slug, *, configured=None, runner=None) -> tuple[str, ...]:
+    """repository 身分**已由呼叫端給定**時的本機 remote-tracking ref 候選。
+
+    走與 `resolve_repository` 同一組 precedence 候選、再逐個比對 fetch URL 的 slug，
+    因此 `370` 與 `o/name#370` 對同一 repository 拿到同一組候選（否則完整寫法會退回
+    較舊的 `refs/heads/<base>`）。本機不是 git 工作樹、或⛔ 無指向該 repository 的
+    remote 時回 ()＝事實缺席。precedence 本身不成立（設定鍵指向不存在的 remote）
+    照樣 fail-loud，⛔ 不因為身分已知就靜默改用別的候選——那就是同一個缺陷換個角落。
+    """
+    candidates, _ = _candidates(remote_facts(root, runner=runner) or (), configured)
+    return tuple(remote.name for remote in candidates if slug_of(remote.fetch_url) == slug)
+
+
 def permission_fact(subject, source, value):
     """value＝API 欄位值（bool／viewerPermission／缺欄位＝None）或讀取時的例外；只翻譯成事實。
     true／false、WRITE 以上／以下＝allowed／denied；403 ⇒ denied；

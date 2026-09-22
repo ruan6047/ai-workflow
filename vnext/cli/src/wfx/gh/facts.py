@@ -10,19 +10,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 
 from wfx.core.context import Provenance
+from wfx.core.rules import required_sections
 from wfx.gh.client import GhError
 from wfx.gh.localgit import LocalGitUnavailable, merge_tree
 from wfx.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
-from wfx.gh.target import PermissionFact, TargetError, permission_fact, resolve_repository
+from wfx.gh.target import (PermissionFact, TargetError, permission_fact, remote_names_for,
+                           resolve_repository)
 
 SECTIONS = ('需求', '限制與非目標', '驗收', '風險與假設', '裁定紀錄')
 CONCEPTS = ('狀態', '階段', 'owner', '風險', '緊急性', '期限', 'Resource')
 STATUS_FIELD_ALIASES = ('狀態', 'Status')  # 內建欄位能否改名由平台決定；兩種都認、恰一個才合法
-HEADING = re.compile(r'^(#{1,6})\s+(.*?)\s*$')
-PRESENT, EMPTY, MISSING = '非空', '空', '缺章節'
 
 
 @dataclass(frozen=True)
@@ -85,23 +84,13 @@ class GhFacts:
 
 
 def section_facts(body):
-    """只認「標題在且其下非空」。⛔ 不解析散文語意、⛔ 不判內容好壞。"""
-    content, current = {}, None
-    for line in (body or '').splitlines():
-        match = HEADING.match(line)
-        if match and len(match[1]) <= 2:
-            current = match[2]
-            content.setdefault(current, [])
-            continue
-        if current is not None:
-            content[current].append(line)
-    facts = []
-    for name in SECTIONS:
-        if name not in content:
-            facts.append(SectionFact(name, MISSING))
-        else:
-            facts.append(SectionFact(name, PRESENT if any(l.strip() for l in content[name]) else EMPTY))
-    return tuple(facts)
+    """只認「標題在且其下非空」。⛔ 不解析散文語意、⛔ 不判內容好壞。
+
+    解析走 `wfx.core.rules.required_sections`＝與 `brief` 的章節索引同一份來源；
+    `facts` ⛔ 不讀規則樹，標題以本模組的 `SECTIONS` 投影同一份契約。
+    """
+    return tuple(SectionFact(name, state)
+                 for name, state, _, _ in required_sections(SECTIONS, body))
 
 
 def _field_value(raw):
@@ -229,9 +218,14 @@ def locate_item(items, slug, number):
 
 
 def resolve_slug(context, task, *, env=None, runner=None):
-    """`--task` 已帶 slug 時逐字採用，否則走 remote precedence。回 (slug, Provenance, remote 名稱)。"""
+    """`--task` 已帶 slug 時逐字採用，否則走 remote precedence。回 (slug, Provenance, remote 名稱)。
+
+    兩條路都要回本機 remote 名稱：`remote_names` 是本機 remote-tracking ref 的候選來源，
+    身分從哪裡來⛔ 不改變本機有哪些 remote 指向該 repository。
+    """
     if task.slug:
-        return task.slug, Provenance('cli', '--task'), ()
+        return task.slug, Provenance('cli', '--task'), remote_names_for(
+            context.project_root, task.slug, configured=context.config.get('remote'), runner=runner)
     target = resolve_repository(context.project_root, configured=context.config.get('remote'),
                                 env_repo=(env or {}).get('GH_REPO'), runner=runner)
     return target.slug, target.provenance, target.remote_names

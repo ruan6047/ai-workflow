@@ -110,3 +110,27 @@ def section_spans(text: str) -> list[tuple[str, int, int]]:
             anchor, start, filled = out[-1]
             out[-1] = (anchor, start, filled + 1)
     return out
+
+
+# 固定章節的三態；`core/github.md` §1 的「標題在且其下非空」只有這三個結果。
+PRESENT, EMPTY, MISSING = "非空", "空", "缺章節"
+
+
+def required_sections(titles, text: str) -> list[tuple[str, str, int | None, int]]:
+    """固定章節的機械事實：每個標題回 (標題, 三態, 起始行號｜None, 非空行數)。
+
+    這是**必要章節的唯一解析來源**——`facts` 與 `brief` 都走這裡，兩邊才不會對同一份 body
+    給出互相矛盾的事實。只認 `## `（`# ` ⛔ 不是契約寫的那個層級），同名重複時只看**第一個**
+    （後面的由呼叫端另行照列）。⛔ 不解析散文語意、⛔ 不判內容好壞。
+    """
+    first: dict[str, tuple[int, int]] = {}
+    for anchor, start, filled in section_spans(text or ""):
+        first.setdefault(anchor, (start, filled))
+    out: list[tuple[str, str, int | None, int]] = []
+    for title in titles:
+        span = first.get(title)
+        if span is None:
+            out.append((title, MISSING, None, 0))
+        else:
+            out.append((title, PRESENT if span[1] else EMPTY, span[0], span[1]))
+    return out
