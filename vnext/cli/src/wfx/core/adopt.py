@@ -65,9 +65,6 @@ class Probe:
     blocked: Blocked | None = None
     reason: str = ''
 
-    def detail(self) -> str:
-        return self.fact if self.ok else (self.blocked.line() if self.blocked else self.reason)
-
 
 @dataclass(frozen=True)
 class Field:
@@ -247,18 +244,14 @@ def _schema(rules_root: Path, facts: Facts, project_ref: str | None,
         reason = _upstream('gh 已登入')
     else:
         reason = ''
-    if reason:
-        items = [Item('Project 可讀', UNVERIFIED, reason)]
-        items += [Item(f'核心概念「{e.concept}」', UNVERIFIED, _upstream('Project 可讀'))
-                  for e in facts.expectations]
-        return Section(SECTION_TITLES[4], tuple(items))
-    if not facts.project.ok:
-        state, detail = ((BLOCKED, facts.project.blocked.line()) if facts.project.blocked
-                         else (MISSING, facts.project.reason))
-        items = [Item('Project 可讀', state, detail)]
-        items += [Item(f'核心概念「{e.concept}」', UNVERIFIED, _upstream('Project 可讀'))
-                  for e in facts.expectations]
-        return Section(SECTION_TITLES[4], tuple(items))
+    # Project 讀不到就整節停在這裡：頭一項照實分類（上游未滿足＝無法確認，gh 給出客觀錯誤＝
+    # 環境阻塞），其餘核心概念一律「無法確認」——⛔ 不把「讀不到」冒充成「缺少欄位」。
+    if reason or not facts.project.ok:
+        head = (Item('Project 可讀', UNVERIFIED, reason) if reason
+                else _tool_item('Project 可讀', facts.project))
+        return Section(SECTION_TITLES[4], (head,) + tuple(
+            Item(f'核心概念「{e.concept}」', UNVERIFIED, _upstream('Project 可讀'))
+            for e in facts.expectations))
 
     by_name = {field.name: field for field in facts.fields}
     items = [Item('Project 可讀', DONE, f'{facts.project.fact}｜欄位 {len(facts.fields)} 個')]
