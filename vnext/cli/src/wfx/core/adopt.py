@@ -37,6 +37,8 @@ NEXT_NOTE = ('CLI 只印，⛔ 不代為套用——下列骨架與指令一律�
              '已完成的項目⛔ 不列在這裡。')
 NEXT_NONE = '（全部已完成，⛔ 無下一步）'
 NO_COMMAND = '（⛔ 無可直接套用的指令：先解決上游那一項，或由人在平台上處理）'
+WORKTREE_BLOCKED = ('先排除 git 對既有 `.git` 的錯誤（例如修好 gitfile 或移除它）；'
+                    '本清單⛔ 不推論工作樹缺少、⛔ 不建議 git init。')
 SUMMARY_NOTE = ('註：rc ⛔ 不表達就緒與否（清單產得出來就是 rc 0）；'
                 '要機械判斷就緒與否請讀上面的計數。')
 
@@ -119,11 +121,18 @@ def _upstream(name: str) -> str:
     return f'上游未滿足：{name}'
 
 
-def _tool_item(name: str, probe: Probe, remedy: tuple[str, ...] = ()) -> Item:
+def _tool_item(name: str, probe: Probe, remedy: tuple[str, ...] = (), *,
+               blocked_remedy: tuple[str, ...] | None = None) -> Item:
+    """`remedy` 給「事實缺席」那一支；`blocked_remedy` 給「外部工具客觀錯誤」那一支。
+
+    兩支的下一步⛔ 不能共用：對一個**已經存在但壞掉**的目標建議「建立它」必然失敗。
+    未指定時沿用 `remedy`（工具本身跑不起來的項目只會走 blocked 那一支）。
+    """
     if probe.ok:
         return Item(name, DONE, probe.fact)
     if probe.blocked is not None:
-        return Item(name, BLOCKED, probe.blocked.line(), remedy)
+        return Item(name, BLOCKED, probe.blocked.line(),
+                    remedy if blocked_remedy is None else blocked_remedy)
     return Item(name, MISSING, probe.reason, remedy)
 
 
@@ -156,6 +165,36 @@ def _framework(rules_root: Path, rules_source: str, version: str) -> Section:
     ))
 
 
+def _present(path: Path) -> bool:
+    """路徑上有東西（壞掉的 symlink 也算）——**存在與否**這一件事，⛔ 不判它是什麼型別。"""
+    return path.exists() or path.is_symlink()
+
+
+def _displace(rel: str) -> str:
+    return f'mv {rel} {rel}.bak   # 或自行移除；CLI ⛔ 不代刪、⛔ 不代改名'
+
+
+def _document_item(path: Path, rel: str, skeleton: tuple[str, ...]) -> Item:
+    """文件類只判「存在且非空」，但**不存在**與**型別／編碼錯**要分開報。
+
+    三種失敗各有自己的下一步：不存在＝照骨架建；路徑上不是一般檔案、或讀不出 UTF-8 文字＝
+    先讓開再建（直接 `cat >` 會被目錄擋掉，覆蓋既有內容也不是 CLI 該做的事）。
+    讀取只包住這一個檔案，⛔ 不吞掉清單上其他項目的診斷。例外訊息裡的絕對路徑換成相對寫法。
+    """
+    if not _present(path):
+        return Item(rel, MISSING, f'{rel} 不存在', skeleton)
+    if not path.is_file():
+        return Item(rel, MALFORMED, f'{rel} 存在但不是一般檔案', (_displace(rel),) + skeleton)
+    try:
+        text = path.read_text(encoding='utf-8')
+    except (UnicodeDecodeError, OSError) as exc:
+        return Item(rel, MALFORMED, f'{rel} 讀不出 UTF-8 文字：{str(exc).replace(str(path), rel)}',
+                    (_displace(rel),) + skeleton)
+    if not text.strip():
+        return Item(rel, MALFORMED, '檔案存在但為空（文件類只判存在且非空）', skeleton)
+    return Item(rel, DONE, '存在且非空')
+
+
 def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None) -> Section:
     wf = project_root / CONFIG_REL.split('/')[0]
     config_skeleton = (
@@ -167,10 +206,23 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
         '}',
         'JSON',
     )
-    items = [Item(f'{wf.name}/ 目錄', DONE if wf.is_dir() else MISSING,
-                  f'{wf.name}/ 存在' if wf.is_dir() else f'{wf.name}/ 不存在',
-                  () if wf.is_dir() else (f'mkdir -p {wf.name}',))]
-    if result.state == CONFIG_OK:
+    # `.wf` 有三種型別事實：目錄／路徑上有東西但不是目錄／不存在。中間那種**⛔ 不是「缺少」**
+    # ——報成缺少會讓下一步給出必然失敗的 `mkdir -p`，使用者照著做也收斂不了。
+    wf_is_dir = wf.is_dir()
+    wf_displaced = _present(wf) and not wf_is_dir
+    if wf_is_dir:
+        items = [Item(f'{wf.name}/ 目錄', DONE, f'{wf.name}/ 存在')]
+    elif wf_displaced:
+        items = [Item(f'{wf.name}/ 目錄', MALFORMED, f'{wf.name} 存在但不是目錄',
+                      (_displace(wf.name), f'mkdir -p {wf.name}'))]
+    else:
+        items = [Item(f'{wf.name}/ 目錄', MISSING, f'{wf.name}/ 不存在', (f'mkdir -p {wf.name}',))]
+
+    # `.wf` 被占著時，底下兩個路徑連「存不存在」都問不出來（作業系統一律回不存在）：
+    # 那是上游未滿足，⛔ 不是「缺少」。
+    if wf_displaced:
+        items.append(Item(CONFIG_REL, UNVERIFIED, _upstream(f'{wf.name}/ 目錄')))
+    elif result.state == CONFIG_OK:
         items.append(Item(CONFIG_REL, DONE, '形狀合法｜只認 rules／remote／project 三鍵'))
     elif result.state == CONFIG_MISSING:
         items.append(Item(CONFIG_REL, MISSING, result.reason, config_skeleton))
@@ -185,7 +237,6 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
     else:
         items.append(Item(f'{CONFIG_REL} 的 project', DONE, project_ref))
 
-    policy = project_root / POLICY_REL
     policy_skeleton = (
         f"cat > {POLICY_REL} <<'MD'",
         '# 專案層政策',
@@ -193,13 +244,8 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
         '具體模型名稱、額度與帳號狀態⛔ 不住這裡（core/boundaries.md §2／§3）。',
         'MD',
     )
-    if not policy.is_file():
-        items.append(Item(POLICY_REL, MISSING, f'{POLICY_REL} 不存在', policy_skeleton))
-    elif not policy.read_text(encoding='utf-8').strip():
-        items.append(Item(POLICY_REL, MALFORMED, '檔案存在但為空（文件類只判存在且非空）',
-                          policy_skeleton))
-    else:
-        items.append(Item(POLICY_REL, DONE, '存在且非空'))
+    items.append(Item(POLICY_REL, UNVERIFIED, _upstream(f'{wf.name}/ 目錄')) if wf_displaced
+                 else _document_item(project_root / POLICY_REL, POLICY_REL, policy_skeleton))
     return Section(SECTION_TITLES[2], tuple(items))
 
 
@@ -209,7 +255,8 @@ def _repository(facts: Facts) -> Section:
             Item('git 工作樹', UNVERIFIED, _upstream('git 可執行')),
             Item('github.com repository 身分', UNVERIFIED, _upstream('git 可執行')),
         ))
-    items = [_tool_item('git 工作樹', facts.worktree, ('git init',))]
+    items = [_tool_item('git 工作樹', facts.worktree, ('git init',),
+                        blocked_remedy=(WORKTREE_BLOCKED,))]
     if not facts.worktree.ok:
         items.append(Item('github.com repository 身分', UNVERIFIED, _upstream('git 工作樹')))
     elif facts.repository.ok:
@@ -223,15 +270,48 @@ def _repository(facts: Facts) -> Section:
     return Section(SECTION_TITLES[3], tuple(items))
 
 
+def _options(rules_root: Path, expectation: Expectation) -> tuple[str, ...]:
+    """該概念的 SingleSelect 值域；⛔ 無值域的概念回空 tuple。值只住 `core/values.md`。"""
+    row = values.DOMAINS.get(expectation.concept)
+    return () if row is None else values.domain(rules_root, row)
+
+
+def _expected_field(expectation: Expectation) -> str:
+    """欄名的預期寫法：內建欄位取平台自己的那個寫法，其餘就是概念名。"""
+    return expectation.builtin_names[-1] if expectation.builtin_names else expectation.concept
+
+
+def _expected_spec(expectation: Expectation, options: tuple[str, ...]) -> str:
+    """框架已知的**預期規格**：欄型、SingleSelect 值域、唯一居所。
+
+    這一串**⛔ 不依賴任何 Project 讀取結果**——「實際 schema 無法確認」與「預期規格未知」是
+    兩件事，前者常常成立，後者從來不成立（三項都讀得出來）。上游未滿足時照樣印，
+    採用者才能只靠清單完成首次設定。
+    """
+    parts = [f'型別 {expectation.data_type}']
+    if options:
+        parts.append(f'選項逐字＝{"／".join(options)}')
+    if expectation.builtin_names:
+        parts.append(f'唯一居所＝內建欄位（{"／".join(expectation.builtin_names)} 恰一個；'
+                     '兩個都在＝該概念有第二個居所）')
+    else:
+        parts.append(f'欄名「{expectation.concept}」')
+    return '、'.join(parts)
+
+
 def _field_remedy(expectation: Expectation, name: str, options: tuple[str, ...],
                   project_ref: str | None) -> tuple[str, ...]:
     where = f'Project {project_ref}' if project_ref else 'Project'
     spec = f'欄位「{name}」型別 {expectation.data_type}'
     if options:
         spec += f'、選項逐字＝{"／".join(options)}'
-    return (f'在 {where} 上讓 {spec}。',
-            'CLI ⛔ 不代建、⛔ 不改 Project schema——由人在平台操作，或用 '
-            '`gh project field-create`（旗標形狀見 `gh project field-create --help`）。')
+    lines = [f'在 {where} 上讓 {spec}。']
+    if expectation.builtin_names:
+        lines.append(f'「{expectation.concept}」的唯一居所＝內建欄位'
+                     f'（{"／".join(expectation.builtin_names)} 恰一個）；⛔ 不另建同義欄。')
+    lines.append('CLI ⛔ 不代建、⛔ 不改 Project schema——由人在平台操作，或用 '
+                 '`gh project field-create`（旗標形狀見 `gh project field-create --help`）。')
+    return tuple(lines)
 
 
 def _schema(rules_root: Path, facts: Facts, project_ref: str | None,
@@ -246,20 +326,24 @@ def _schema(rules_root: Path, facts: Facts, project_ref: str | None,
         reason = ''
     # Project 讀不到就整節停在這裡：頭一項照實分類（上游未滿足＝無法確認，gh 給出客觀錯誤＝
     # 環境阻塞），其餘核心概念一律「無法確認」——⛔ 不把「讀不到」冒充成「缺少欄位」。
+    # 但**分類是無法確認、預期規格照印**：欄型、值域與唯一居所都來自規則樹，與 Project 讀不讀
+    # 得到無關，少印它們等於把兩件事混成一件，採用者就無法只靠清單做完首次設定。
     if reason or not facts.project.ok:
         head = (Item('Project 可讀', UNVERIFIED, reason) if reason
                 else _tool_item('Project 可讀', facts.project))
-        return Section(SECTION_TITLES[4], (head,) + tuple(
-            Item(f'核心概念「{e.concept}」', UNVERIFIED, _upstream('Project 可讀'))
-            for e in facts.expectations))
+        pending = []
+        for expectation in facts.expectations:
+            options = _options(rules_root, expectation)
+            pending.append(Item(
+                f'核心概念「{expectation.concept}」', UNVERIFIED,
+                f'{_upstream("Project 可讀")}｜預期規格：{_expected_spec(expectation, options)}',
+                _field_remedy(expectation, _expected_field(expectation), options, project_ref)))
+        return Section(SECTION_TITLES[4], (head,) + tuple(pending))
 
     by_name = {field.name: field for field in facts.fields}
     items = [Item('Project 可讀', DONE, f'{facts.project.fact}｜欄位 {len(facts.fields)} 個')]
     for expectation in facts.expectations:
-        options = ()
-        row = values.DOMAINS.get(expectation.concept)
-        if row is not None:
-            options = values.domain(rules_root, row)
+        options = _options(rules_root, expectation)
         name = expectation.concept
         if expectation.builtin_names:
             present = tuple(n for n in expectation.builtin_names if n in by_name)
@@ -279,8 +363,9 @@ def _schema(rules_root: Path, facts: Facts, project_ref: str | None,
                 items.append(Item(unique, MISSING,
                                   f'⛔ 無 {"、".join(expectation.builtin_names)} 任一欄'))
                 items.append(Item(f'核心概念「{expectation.concept}」', MISSING,
-                                  f'⛔ 無欄位（收 {"、".join(expectation.builtin_names)}）',
-                                  _field_remedy(expectation, expectation.builtin_names[-1],
+                                  f'⛔ 無欄位（收 {"、".join(expectation.builtin_names)}）'
+                                  f'｜預期規格：{_expected_spec(expectation, options)}',
+                                  _field_remedy(expectation, _expected_field(expectation),
                                                 options, project_ref)))
                 continue
             items.append(Item(unique, DONE, f'落在「{present[0]}」欄'))

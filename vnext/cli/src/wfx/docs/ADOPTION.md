@@ -64,8 +64,8 @@ wfx --project-root <你的專案> facts --adopt [--rules-root <p>]
 |---|---|
 | 已完成 | 目標存在且形狀合法 |
 | 缺少 | 目標不存在 |
-| 格式錯誤 | 存在但形狀不合法（設定鍵、欄位型別、選項字面、狀態欄有第二個居所） |
-| 環境阻塞 | 外部工具給出客觀錯誤；逐字附上**工具名、rc 與 stderr 首行** |
+| 格式錯誤 | 存在但形狀不合法（設定鍵、欄位型別、選項字面、狀態欄有第二個居所；路徑上不是該有的型別、或文件讀不出 UTF-8 文字也算） |
+| 環境阻塞 | 外部工具給出客觀錯誤；逐字附上**工具名、rc 與 stderr 首行**（訊息裡的 `--project-root` 絕對路徑換成 `<project-root>`） |
 | 無法確認 | 本清單內的上游那一項還沒滿足，所以這一項還判不了 |
 
 **rc ⛔ 不表達就緒與否**：清單產得出來一律 **rc 0**（不論項目狀態），連清單都產不出來
@@ -75,6 +75,11 @@ wfx --project-root <你的專案> facts --adopt [--rules-root <p>]
 判準邊界：文件類只判「存在且非空」，⛔ 不判內容品質；欄位型別依 `rules/core/github.md` §2，
 SingleSelect 的選項依 `rules/core/values.md` 逐字比對；內建 `Status` 與自訂 `狀態`
 **同時存在**＝狀態有第二個居所＝格式錯誤。
+
+**「實際 schema 無法確認」⛔ 不等於「預期規格未知」**：Project 還讀不到時，第 5／6 節照樣印出
+七個概念的預期欄型、SingleSelect 值域與 `Status` 唯一居所——那三項都來自規則樹，與能不能讀到
+Project 無關。同理，`.git` 已存在而 git 回非 0 是**外部工具的客觀錯誤**（環境阻塞），
+清單⛔ 不推論成「工作樹缺少」、⛔ 不建議 `git init`。
 
 ## 4 · 人工套用
 
@@ -98,7 +103,8 @@ git init && git remote add origin git@github.com:<owner>/<name>.git
 gh auth login
 ```
 
-Project 的七個核心概念欄位（型別與選項逐字見清單第 5 節）**由你在平台上建立**，
+Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清單第 5／6 節，Project 還讀不到時
+也照樣印）**由你在平台上建立**，
 或自行以 `gh project field-create` 操作（旗標形狀見 `gh project field-create --help`）。
 **CLI ⛔ 不代建欄位、⛔ 不改 Project schema，連「只建缺的那一個」都不做。**
 

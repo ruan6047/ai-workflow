@@ -331,3 +331,137 @@ def test_broken_config_still_fails_loud_for_the_three_ordinary_verbs(tmp_path, r
     for argv in calls:
         assert main(['--project-root', str(tmp_path), *argv], env={}) == 1
         assert 'ConfigError' in capsys.readouterr().err
+
+
+# ── 審核退回的四個阻擋（#382）：每條在 def8f1f 上都會紅 ──────────────────
+
+def next_steps(text):
+    return text.split(f'## 6 · {adopt.SECTION_TITLES[5]}', 1)[1].split('## 7 · ', 1)[0]
+
+
+def remedies(text, item_name):
+    """第 6 節裡某一項底下的下一步逐字行；沒被列出就回 None（已完成的⛔ 不列）。"""
+    out = None
+    for line in next_steps(text).splitlines():
+        if line.startswith('- '):
+            if out is not None:
+                return out
+            if line[2:].partition('：')[0].endswith(f'/ {item_name}'):
+                out = []
+        elif out is not None and line.startswith('    '):
+            out.append(line[4:])
+    return out
+
+
+def test_expected_field_spec_is_printed_even_when_the_project_is_unreadable(tmp_path, rules_root,
+                                                                            capsys):
+    """上游未滿足時，**實際 schema 無法確認**⛔ 不等於**預期規格未知**。
+
+    空專案（⛔ 無 `.wf/`、⛔ 無 Project）照樣要印出七個概念的預期欄型、SingleSelect 值域與
+    `Status` 唯一居所——採用者只靠這份清單就要能完成首次設定。
+    """
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(worktree=(128, '', 'fatal: not a git repository')))
+    assert rc == 0
+    assert states(out)['核心概念「狀態」'] == adopt.UNVERIFIED     # 分類仍是無法確認
+    for concept, data_type in (('狀態', 'SINGLE_SELECT'), ('階段', 'SINGLE_SELECT'),
+                               ('owner', 'TEXT'), ('風險', 'SINGLE_SELECT'),
+                               ('緊急性', 'SINGLE_SELECT'), ('期限', 'DATE'),
+                               ('Resource', 'TEXT')):
+        row = next(line for line in out.splitlines()
+                   if line.startswith(f'- 核心概念「{concept}」：'))
+        assert f'型別 {data_type}' in row, concept
+    # SingleSelect 值域逐字（值只住 values.md，這裡比對的是它被印出來）
+    assert '選項逐字＝待辦／進行中／待確認／阻塞／完成／停止' in out
+    assert '選項逐字＝需求／規劃／執行／審核／結案' in out
+    # `Status` 唯一居所：第 5 節說明、第 6 節下一步都要有
+    assert '唯一居所＝內建欄位（狀態／Status 恰一個；兩個都在＝該概念有第二個居所）' in out
+    status_steps = remedies(out, '核心概念「狀態」')
+    assert status_steps is not None
+    assert any('欄位「Status」型別 SINGLE_SELECT' in line for line in status_steps)
+    assert any('唯一居所＝內建欄位（狀態／Status 恰一個）' in line for line in status_steps)
+    assert adopt.NO_COMMAND not in status_steps
+
+
+def test_non_utf8_policy_is_one_malformed_item_not_a_crash(tmp_path, rules_root, capsys):
+    """`.wf/model-policy.md` 含無效 UTF-8（最小重現＝單一 byte 0xff）：rc 仍 0、七節俱全。
+
+    ⛔ 不得 traceback、⛔ 不得因為這一個檔案吞掉其餘診斷。
+    """
+    (tmp_path / '.wf').mkdir()
+    (tmp_path / '.wf/model-policy.md').write_bytes(b'\xff')
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(worktree=(128, '', 'fatal: not a git repository')))
+    assert rc == 0
+    for number, title in enumerate(adopt.SECTION_TITLES, start=1):
+        assert f'## {number} · {title}' in out
+    assert states(out)['.wf/model-policy.md'] == adopt.MALFORMED
+    assert '讀不出 UTF-8 文字' in out
+    # 其餘診斷照樣產出（沒有被這一項的例外吃掉）
+    result = states(out)
+    assert result['.wf/ 目錄'] == adopt.DONE and result['git 工作樹'] == adopt.MISSING
+    assert str(tmp_path) not in out
+    steps = remedies(out, '.wf/model-policy.md')
+    assert steps is not None and steps[0].startswith('mv .wf/model-policy.md')
+
+
+def test_wf_occupied_by_a_regular_file_is_malformed_and_converges(tmp_path, rules_root, capsys):
+    """`.wf` 存在但是一般檔案＝格式錯誤；⛔ 不得報「缺少」、⛔ 不得只建議必然失敗的 mkdir。"""
+    (tmp_path / '.wf').write_text('not a directory', encoding='utf-8')
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(worktree=(128, '', 'fatal: not a git repository')))
+    result = states(out)
+    assert rc == 0
+    assert result['.wf/ 目錄'] == adopt.MALFORMED
+    assert '.wf 存在但不是目錄' in out
+    steps = remedies(out, '.wf/ 目錄')
+    assert steps == ['mv .wf .wf.bak   # 或自行移除；CLI ⛔ 不代刪、⛔ 不代改名', 'mkdir -p .wf']
+    # 相鄰的 config／policy：`.wf` 被占著時它們的「不存在」是上游造成的，⛔ 不是「缺少」
+    for name in ('.wf/config.json', '.wf/model-policy.md'):
+        assert result[name] == adopt.UNVERIFIED, name
+
+
+def test_adjacent_paths_distinguish_absent_from_wrong_type(tmp_path, rules_root, capsys):
+    """`.wf` 是目錄、但 config／policy 路徑上是**目錄**：兩者都要是格式錯誤而非缺少。"""
+    (tmp_path / '.wf/config.json').mkdir(parents=True)
+    (tmp_path / '.wf/model-policy.md').mkdir()
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(worktree=(128, '', 'fatal: not a git repository')))
+    result = states(out)
+    assert rc == 0
+    assert result['.wf/config.json'] == adopt.MALFORMED
+    assert result['.wf/model-policy.md'] == adopt.MALFORMED
+    assert '.wf/model-policy.md 存在但不是一般檔案' in out
+    assert str(tmp_path) not in out
+
+
+def test_a_broken_dot_git_is_blocked_not_a_missing_worktree(tmp_path, rules_root, capsys):
+    """`.git` 在、`git rev-parse` rc=128＝外部工具的客觀錯誤。
+
+    ⛔ 不得推論成「工作樹缺少」、⛔ 不得建議 `git init`（`.git` 已經在那裡，必然失敗），
+    且 stderr 首行帶的絕對路徑⛔ 不得洩漏進清單。
+    """
+    (tmp_path / '.git').write_text('invalid git file', encoding='utf-8')
+    stderr = f'fatal: invalid gitfile format: {tmp_path}/.git'
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner(worktree=(128, '', stderr)))
+    assert rc == 0
+    assert states(out)['git 工作樹'] == adopt.BLOCKED
+    assert ('- git 工作樹：環境阻塞（git rev-parse --git-dir｜rc=128｜'
+            'fatal: invalid gitfile format: '
+            f'{gh_adopt.PROJECT_ROOT_MASK}/.git）') in out
+    assert str(tmp_path) not in out
+    assert str(tmp_path.resolve()) not in out
+    steps = remedies(out, 'git 工作樹')
+    assert steps == [adopt.WORKTREE_BLOCKED]
+    # `git init` ⛔ 不得以「可直接套用的指令」出現（阻塞說明裡那句否定不算）
+    assert 'git init' not in [line.strip() for line in next_steps(out).splitlines()]
+    assert states(out)['github.com repository 身分'] == adopt.UNVERIFIED
+
+
+def test_an_absent_dot_git_is_still_a_missing_worktree(tmp_path, rules_root, capsys):
+    """負控：`.git` ⛔ 不在時仍是「缺少」，下一步仍是 `git init`——修正⛔ 不把兩者都推成阻塞。"""
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(worktree=(128, '', 'fatal: not a git repository')))
+    assert rc == 0
+    assert states(out)['git 工作樹'] == adopt.MISSING
+    assert remedies(out, 'git 工作樹') == ['git init']
