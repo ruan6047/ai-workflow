@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from importlib import metadata, resources
 import re
 from pathlib import Path
 
@@ -15,15 +16,40 @@ CORE_DIR = "core"
 STAGES_DIR = "stages"
 ROLES_DIR = "roles"
 
+# distribution 名稱＝`vnext/cli/pyproject.toml` 的 `[project] name`；版本值的唯一居所也在那裡。
+DISTRIBUTION = "ai-workflow-vnext"
+RULES_DIR = "rules"
+
+# 第 1 層規則樹實際被讀的那一份，只有兩種來源。
+PACKAGE, OVERRIDE = "package", "override"
+
 
 def default_rules_root() -> Path:
-    """W1.6 的預設＝原始碼樹的 vnext/rules。
+    """預設＝`wfx` 套件內的 package data（`wfx/rules`）。
 
-    W2.1 會把規則樹打包成 package data 並改由套件解析；`--rules-root` 覆寫在
-    兩種情況下都生效。
+    走 `importlib.resources` 而非相對本檔數層 parents：裝在 site-packages 時沒有
+    `vnext/` 那幾層，原始碼樹直跑時兩者指到同一個目錄。`--rules-root` 覆寫在兩種情況下都生效。
     """
-    # core → wfx → src → cli → vnext
-    return Path(__file__).resolve().parents[4] / "rules"
+    return Path(resources.files("wfx").joinpath(RULES_DIR))
+
+
+def package_version() -> str:
+    """`ai-workflow-vnext` 的安裝版本；**⛔ 不建立第二個版本來源**。
+
+    未安裝（例如以 PYTHONPATH 直跑原始碼樹）＝`unknown`，⛔ 不改由檔案或常數補一個值。
+    """
+    try:
+        return metadata.version(DISTRIBUTION)
+    except metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def rules_provenance(rules_root: Path | None) -> tuple[str, str]:
+    """(來源, 版本)：給了 `--rules-root` 就是 `override`，否則讀套件內的規則樹。
+
+    ⛔ 不讀該路徑、⛔ 不判它合不合法——那是 `brief` 載入時才會 fail-loud 的事。
+    """
+    return (OVERRIDE if rules_root is not None else PACKAGE), package_version()
 
 
 def read_doc(rules_root: Path, rel: str) -> str:

@@ -1,4 +1,4 @@
-"""入口。動詞集合固定為三個（vnext/rules/core/boundaries.md「CLI 邊界」）；本檔只做分派。
+"""入口。動詞集合固定為三個（wfx/rules/core/boundaries.md「CLI 邊界」）；本檔只做分派。
 
 public shape：`wfx [--project-root <p>] <verb> [動詞參數…]`。全域旗標只認動詞之前，由前綴迴圈消耗、
 ⛔ 不傳給動詞的 parse_args。本檔⛔ 不判內容、⛔ 不代動詞印、⛔ 不呼叫 AI。

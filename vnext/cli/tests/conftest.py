@@ -16,7 +16,8 @@ SRC = REPO_ROOT / "vnext" / "cli" / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-REPO_RULES = REPO_ROOT / "vnext" / "rules"
+# 規則樹＝`wfx` 的 package data；repo 內的居所與安裝後的相對路徑同為 `wfx/rules`。
+REPO_RULES = SRC / "wfx" / "rules"
 
 TASK_ID = "o/r#370"
 

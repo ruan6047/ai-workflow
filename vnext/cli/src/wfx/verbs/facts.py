@@ -1,26 +1,32 @@
-"""`facts --task <id> [--sha <sha>]`：只輸出六類客觀事實，⛔ 不作任何內容判斷。
+"""`facts --task <id> [--sha <sha>] [--rules-root <p>]`：只輸出客觀事實，⛔ 不作任何內容判斷。
 
 輸出形狀刻意逐行、固定順序：同一 SHA、同一次遠端讀取重跑可逐字 `diff`；
 ⛔ 不印工作樹路徑與執行時間（那會讓乾淨 checkout 的比對失敗，且不是被問的事實）。
 第 ③ 節兩個 `updatedAt` 逐字可直接餵給 W1.8 `write --expect-updated-at`。
+第 ⑦ 節是**本次實際會被讀的規則樹來源與套件版本**，接在既有六節之後、⛔ 不插隊。
 """
 from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 
 from wfx.core.context import Context
+from wfx.core.rules import rules_provenance
 from wfx.gh import facts as F
 from wfx.gh.client import GhClient, PermissionDenied
 from wfx.gh.target import parse_task, permission_fact
 
-USAGE = 'wfx facts --task <id> [--sha <sha>]'
+USAGE = 'wfx facts --task <id> [--sha <sha>] [--rules-root <p>]'
 
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(prog='wfx facts', usage=USAGE, add_help=True)
     parser.add_argument('--task', required=True)
     parser.add_argument('--sha')
+    # `facts` ⛔ 不讀規則樹；這個旗標只決定第 ⑦ 節報的來源是 package 還是 override，
+    # 與 `brief`／`write` 同名同義（給了就是覆寫）。
+    parser.add_argument('--rules-root', type=Path, default=None)
     return parser.parse_args(argv)
 
 
@@ -88,7 +94,7 @@ def _git_block(git, out):
         out(f'unknown: {reason}')
 
 
-def render(facts):
+def render(facts, rules_root=None):
     lines = []
     out = lines.append
     out(f'# facts task={facts.task} repository={facts.repository}（{facts.repository_provenance}）')
@@ -129,11 +135,19 @@ def render(facts):
     out('## 6 · 權限（allowed／denied／unknown）')
     for permission in facts.permissions:
         out(f'{permission.subject}: {permission.state}（{permission.reason}）')
+    out('')
+    # 第 ⑦ 節：規則樹來源與套件版本。⛔ 不印任何路徑（那會讓逐字比對隨機器而破）；
+    # 版本取不到就是 unknown，⛔ 不在別處補第二個版本來源。
+    out('## 7 · 規則來源與套件版本')
+    source, version = rules_provenance(rules_root)
+    out(f'rules source: {source}')
+    out(f'package version: {version}')
     return '\n'.join(lines)
 
 
 def run(argv, *, project_root, config, client=None, runner=None, env=None):
     args = parse_args(argv)
     context = Context(project_root, args.task, config)
-    print(render(collect(context, args.task, args.sha, client=client, runner=runner, env=env)))
+    print(render(collect(context, args.task, args.sha, client=client, runner=runner, env=env),
+                 args.rules_root))
     return 0

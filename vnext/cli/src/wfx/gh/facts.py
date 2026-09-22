@@ -1,4 +1,4 @@
-"""六類客觀事實的組裝（vnext/rules/core/github.md、boundaries.md「CLI 邊界」）。
+"""六類客觀事實的組裝（wfx/rules/core/github.md、boundaries.md「CLI 邊界」）。
 
 六類：①Issue 五章節存在且非空 ②七個核心概念當下值 ③Project item 與 Issue 各自的 `updatedAt`
 ④本機 git rev-parse／log／diff --stat／merge-tree ⑤CI check 結論 ⑥權限三態。

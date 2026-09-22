@@ -1,0 +1,32 @@
+# vNext CLI 的套件宣告。distribution `ai-workflow-vnext`／import package `wfx`／console
+# script `wfx` 三個名稱各有唯一居所，⛔ 不與舊 CLI 的 distribution `wf`（cli/pyproject.toml）相撞。
+[project]
+name = "ai-workflow-vnext"
+# **版本值的唯一居所**。⛔ 不得再出現 `__version__`、VERSION 檔或 `.wf/config.json` 版本鍵；
+# 執行期一律走 `importlib.metadata.version("ai-workflow-vnext")`，取不到就是 unknown。
+version = "0.1.0"
+description = "wfx：vNext CLI。動詞集合＝brief／facts／write；規則樹以 package data 隨輪子出貨"
+requires-python = ">=3.14"
+# ⛔ 無執行期相依：`gh`／`git` 是外部指令，不是 Python 套件（`pip show` 的 Requires: 須為空）。
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+wfx = "wfx.verbs.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# 規則樹＝package data，隨 wheel 出貨；⛔ 不複製進採用者專案、⛔ 不靠 build 時的套件外路徑映射。
+# 只收 `.md`：`.gitkeep` 是 repo 保留空目錄用的，⛔ 不是規則。
+[tool.setuptools.package-data]
+wfx = ["rules/**/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

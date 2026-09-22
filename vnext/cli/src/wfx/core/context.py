@@ -1,6 +1,6 @@
 """核心上下文：專案層設定與不透明任務識別。
 
-`wfx.core` ⛔ 不得 import `wfx.gh`、⛔ 不得 import subprocess（vnext/rules/core/boundaries.md「CLI 邊界」；
+`wfx.core` ⛔ 不得 import `wfx.gh`、⛔ 不得 import subprocess（wfx/rules/core/boundaries.md「CLI 邊界」；
 機械錨＝tests/test_wfx_scope.py）。`task_id` 對核心是不透明字串，格式的理解只住 `wfx.gh`。
 """
 from __future__ import annotations
@@ -26,9 +26,10 @@ class Provenance:
 
 @dataclass(frozen=True)
 class RulesSource:
-    """第 1 層規則樹的來源。W1.6 只有本機 checkout 一種；W2.1 另加 package data。
+    """第 1 層規則樹的來源：套件內的 package data，或 `--rules-root` 指定的本機 checkout。
 
-    ⛔ 不印 root 路徑：那會讓「同一輸入兩次執行逐字相同」隨機器而破（規則來源與版本＝W2.2）。
+    ⛔ 不印 root 路徑：那會讓「同一輸入兩次執行逐字相同」隨機器而破。來源屬於哪一種與套件版本，
+    由 `facts` 第 ⑦ 節報（`core/rules.rules_provenance`）。
     """
     root: Path
 

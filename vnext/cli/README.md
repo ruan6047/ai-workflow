@@ -2,22 +2,46 @@
 
 動詞只有三個：`brief`／`facts`／`write`，W1.6／W1.7／W1.8 已全部交付。
 
-CLI 只載入與呈現資訊、只交客觀事實，**內容判斷由人或負責該內容的 AI 完成**（`rules/core/boundaries.md` §4）。
+CLI 只載入與呈現資訊、只交客觀事實，**內容判斷由人或負責該內容的 AI 完成**（`wfx/rules/core/boundaries.md` §4）。
+
+## 三個名稱
+
+| 名稱 | 值 | 唯一居所 |
+|---|---|---|
+| distribution | `ai-workflow-vnext` | `vnext/cli/pyproject.toml` 的 `[project] name` |
+| import package | `wfx` | `vnext/cli/src/wfx/` |
+| console script | `wfx` | `[project.scripts]` |
+
+版本值的唯一居所是 `pyproject.toml` 的 `version`，執行期走
+`importlib.metadata.version("ai-workflow-vnext")`；未安裝時就是 `unknown`，
+⛔ 無 `__version__`、⛔ 無 VERSION 檔、⛔ 不進 `.wf/config.json`。
+
+**規則樹住在套件內**（`wfx/rules/`，17 份 markdown 隨 wheel 出貨）。安裝後⛔ 不需 checkout、
+⛔ 不需 `PYTHONPATH`，也⛔ 不把規則複製進採用者的專案。
 
 ## 跑它
 
 ```
-PYTHONPATH=vnext/cli/src python -m wfx [--project-root <p>] <verb> [動詞參數…]
+pip install ai_workflow_vnext-<版本>-py3-none-any.whl
+wfx [--project-root <p>] <verb> [動詞參數…]
 
-PYTHONPATH=vnext/cli/src python -m wfx --project-root vnext \
-  brief --task 'ruan6047/ai-workflow#370' --role 執行者 --stage 執行
-PYTHONPATH=vnext/cli/src python -m wfx --project-root vnext facts --task 370 --sha <sha>
-PYTHONPATH=vnext/cli/src python -m wfx --project-root vnext \
-  write --task 370 --field 狀態=進行中 --expect-updated-at 2026-09-21T11:05:20Z
+wfx --project-root vnext brief --task 'ruan6047/ai-workflow#370' --role 執行者 --stage 執行
+wfx --project-root vnext facts --task 370 --sha <sha>
+wfx --project-root vnext write --task 370 --field 狀態=進行中 --expect-updated-at 2026-09-21T11:05:20Z
 ```
 
+未安裝時等價的入口是 `PYTHONPATH=vnext/cli/src python -m wfx …`（差別只在
+`facts` 第 ⑦ 節的版本會是 `unknown`）。
+
 `--project-root` 是**全域**旗標，只認動詞之前，由入口的前綴迴圈消耗。
-console script 由 W2.1 提供；在那之前一律用 `PYTHONPATH=vnext/cli/src python -m wfx`。
+
+自己 build 一顆 wheel：
+
+```
+python -m build --wheel --outdir <repo 外的目錄> vnext/cli
+```
+
+建置產物（`build/`、`*.egg-info/`）已進 `.gitignore`；⛔ 不要把 wheel 或 venv 放進 repository。
 
 **rc 慣例**：`0`＝成功、`2`＝用法錯（未知動詞、旗標形狀不對）、`1`＝typed 錯（缺層、設定形狀、
 GitHub 讀取未完成、本機 git 不可用）。兩類刻意可區分。
@@ -29,7 +53,7 @@ GitHub 讀取未完成、本機 git 不可用）。兩類刻意可區分。
 | `--task` | 必填 | 不透明任務識別，核心⛔ 不理解其格式（`370`／`#370`／`owner/name#370`） |
 | `--role` | 必填 | 角色六值之一 |
 | `--stage` | 必填 | 階段五值之一 |
-| `--rules-root` | 原始碼樹的 `vnext/rules` | 第 1 層來源，可指向另一個本機 checkout |
+| `--rules-root` | 套件內的 `wfx/rules` | 第 1 層來源，可指向另一個本機 checkout |
 
 角色與階段的值域**只住 `rules/core/values.md`**，程式碼⛔ 不內建任何值——換規則樹就換值域。
 ⛔ 無 `--task-snapshot`：第 4 層走與 `facts` 同一條唯讀 `wfx.gh`。測試用的固定快照由
@@ -80,7 +104,7 @@ PM 可以只把首屏貼進派工單，需要核對時再給整份。
 
 | kind | 來源 | 缺了會怎樣 |
 |---|---|---|
-| `framework` | `--rules-root` 下的 `core/*.md` 六份全載，加選定的 `stages/<階段>.md` 與 `roles/<角色>.md` | typed 失敗（rc=1） |
+| `framework` | 規則樹（預設＝套件內 `wfx/rules`，`--rules-root` 可覆寫）下的 `core/*.md` 六份全載，加選定的 `stages/<階段>.md` 與 `roles/<角色>.md` | typed 失敗（rc=1） |
 | `user` | `~/.wf/model-usage.md`、`~/.wf/model-availability.md`，原樣呈現 | **合法 unknown，rc=0** |
 | `project` | `<project-root>/.wf/*.md` | typed 失敗（rc=1） |
 | `task` | Issue body ＋七個核心概念＋**該卡全部留言**（唯讀 GitHub） | Issue 取不到或 body 為空＝typed 失敗（rc=1） |
@@ -129,6 +153,25 @@ write --task <id> [--field k=v …] [--comment-file <f>] [--expect-updated-at <t
 mutation surface 只住 `wfx/gh/writes.py`，且只有 `verbs/write.py` 匯入它；唯讀的 `GhClient`
 ⛔ 無任何寫入方法（機械錨＝`test_wfx_boundaries.py`）。
 
+## `facts` 的第 ⑦ 節：規則來源與套件版本
+
+```
+wfx facts --task <id> [--sha <sha>] [--rules-root <p>]
+```
+
+既有六節形狀逐字不變，第 ⑦ 節**接在它們之後**、⛔ 不插隊：
+
+```
+## 7 · 規則來源與套件版本
+rules source: package｜override
+package version: <版本>｜unknown
+```
+
+`package`＝讀套件內的規則樹；給了 `--rules-root` 就是 `override`。
+**⛔ 不印任何路徑**（那會讓逐字比對隨機器而破）。`facts` 本身⛔ 不讀規則樹——這個旗標
+在 `facts` 只決定第 ⑦ 節報哪一種來源，與 `brief`／`write` 同名同義。
+版本取不到（未安裝、以原始碼樹直跑）＝`unknown`，⛔ 不由別處補第二個版本來源。
+
 ## `facts` 的 base 解析
 
 第 ④ 節的 base＝**本次受查 head SHA** 的預期合併目標，以 SHA 查、⛔ 不以分支名查
@@ -152,6 +195,10 @@ mutation surface 只住 `wfx/gh/writes.py`，且只有 `verbs/write.py` 匯入�
 ```
 python -m pytest vnext/cli/tests -q     # Python 3.14
 ```
+
+`test_packaging.py` 是 W2.1 的錨：規則樹隨套件走、版本只有一個居所、`facts` 第 ⑦ 節的
+兩種來源。**wheel 內容與乾淨 venv 的行為**⛔ 不進 pytest（那需要 build 與安裝），由執行階段的
+實機驗證負責。
 
 `test_wfx_boundaries.py` 是**單一** C6 結構錨：`wfx` 全樹⛔ 無實際網路客戶端與模型 provider SDK
 （純 `urllib.parse` 是網址編碼工具，逐名放行；`urllib.request`／`http`／`socket`／`requests`／
