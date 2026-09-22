@@ -17,7 +17,7 @@ from wfx.gh.client import GhError
 from wfx.gh.localgit import LocalGitUnavailable, merge_tree
 from wfx.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
 from wfx.gh.target import (PermissionFact, TargetError, permission_fact, remote_names_for,
-                           resolve_repository)
+                           resolve_repository, same_repository)
 
 SECTIONS = ('需求', '限制與非目標', '驗收', '風險與假設', '裁定紀錄')
 CONCEPTS = ('狀態', '階段', 'owner', '風險', '緊急性', '期限', 'Resource')
@@ -208,10 +208,19 @@ def git_facts(root, *, base, remote_names, sha, runner=None):
 
 
 def locate_item(items, slug, number):
-    """content 是本 repo 的該 Issue 者恰一個；⛔ 無＝事實缺席（回 None），多個＝fail-loud。"""
-    matched = [item for item in items
-               if (item.get('content') or {}).get('number') == number
-               and ((item['content'].get('repository') or {}).get('nameWithOwner') in (None, slug))]
+    """content 是本 repo 的該 Issue 者恰一個；⛔ 無＝事實缺席（回 None），多個＝fail-loud。
+
+    `nameWithOwner` 走 `same_repository` 的 GitHub repository 身分比對，因此 `o/r#370` 與
+    `O/R#370` 定位到同一個 item（否則七個概念會整排變空、write 會誤報⛔ 無目標）。
+    缺該欄位＝無從否定，仍當相符；撞號多義照樣 fail-loud。
+    """
+    def is_this_task(item):
+        content = item.get('content') or {}
+        repository = (content.get('repository') or {}).get('nameWithOwner')
+        return content.get('number') == number and (repository is None
+                                                    or same_repository(repository, slug))
+
+    matched = [item for item in items if is_this_task(item)]
     if len(matched) > 1:
         raise GhError(f'{slug}#{number} 對應多個 Project item：{[i["id"] for i in matched]}')
     return matched[0] if matched else None
