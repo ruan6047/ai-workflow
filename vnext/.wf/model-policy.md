@@ -1,7 +1,7 @@
 ---
 name: model-policy
 when: 為 ai-workflow 自己的卡派工、或要知道本專案對模型資料的額外約定時讀
-last_confirmed: 2026-09-21
+last_confirmed: 2026-09-23
 ---
 
 # ai-workflow 的專案層模型政策
@@ -16,7 +16,7 @@ last_confirmed: 2026-09-21
 
 ## 2 · 本專案的額外約定
 
-- vNext 三張正式卡的審核一律跨模型家族；審核用的家族在派工時就要保留（independence.md §5）。
+- vNext 正式卡的審核者配置與家族保留照 independence.md §4 §5，本專案⛔ 不另加約定。
 - 可用性備註過期或不確定＝`unknown`，照常派工但在派工內容標明；⛔ 不當場加自動查詢。
 - 派工內容只引用已登記為留言的裁定，⛔ 不引用未登記的對話記憶（github.md §4）。
 
