@@ -1,7 +1,7 @@
 """resolved target identity：任務識別、repository 與 Project 的解析，以及權限三態事實。
 
 remote precedence 四段：①設定鍵 `remote` ②current branch upstream ③唯一 remote ④全部 remote
-（slug 相同才合併、仍多義即 fail-loud）。`GH_REPO` ⛔ 不在 precedence 內：本機身分缺席時成唯一候選。
+（同一 repository 才合併、仍多義即 fail-loud）。`GH_REPO` ⛔ 不在 precedence 內：本機身分缺席時成唯一候選。
 permission 只產事實（allowed／denied／unknown）、⛔ 不做政策、⛔ 不以 probe mutation 驗權限。
 """
 from __future__ import annotations
@@ -80,24 +80,42 @@ def _candidates(remotes, configured):
     return tuple(remotes), Provenance('git', 'sole remote' if len(remotes) == 1 else 'all remotes')
 
 
-def resolve_repository(root, *, configured=None, env_repo=None, runner=None) -> RepositoryTarget:
-    """候選 slug 不唯一＝fail-loud（列出每個候選與其 remote）。`remote_names` 供本機
-    remote-tracking ref 取源，⛔ 不寫死 `origin`。"""
-    remotes = remote_facts(root, runner=runner)
-    candidates, provenance = _candidates(remotes or (), configured)
-    found = {}
+def _group_by_repository(candidates):
+    """把候選依 GitHub 的 repository 身分分組，回 [(顯示 slug, [remote 名稱…])…]。
+
+    等價定義**只有** `same_repository()`：⛔ 不另立第二套正規化或大小寫敏感的 dict key——
+    多一套等價定義就是把同一個缺陷搬到下一個角落（`remote_names_for`／`locate_item` 已走它）。
+    顯示 slug 取每組第一個候選的字面，順序沿用 precedence，因此 deterministic 且⛔ 不改寫任何人的寫法。
+    """
+    groups = []
     for remote in candidates:
         slug = slug_of(remote.fetch_url)
-        if slug:
-            found.setdefault(slug, []).append(remote.name)
+        if slug is None:
+            continue
+        for group_slug, names in groups:
+            if same_repository(group_slug, slug):
+                names.append(remote.name)
+                break
+        else:
+            groups.append((slug, [remote.name]))
+    return groups
+
+
+def resolve_repository(root, *, configured=None, env_repo=None, runner=None) -> RepositoryTarget:
+    """候選指向**多個 repository** 時＝fail-loud（列出每個候選與其 remote）；同一個 repository
+    的多個 remote（含只差 owner／name 大小寫的寫法）合併成一個身分，⛔ 不誤報多義。
+    `remote_names` 供本機 remote-tracking ref 取源，⛔ 不寫死 `origin`。"""
+    remotes = remote_facts(root, runner=runner)
+    candidates, provenance = _candidates(remotes or (), configured)
+    found = _group_by_repository(candidates)
     if not found:
         if env_repo and SLUG_PLAIN.match(env_repo):
             return RepositoryTarget(env_repo, (), Provenance('env', 'GH_REPO'))
         raise TargetError('未能取得 repository：設 GH_REPO，或在有 github.com remote 的 git 工作樹內執行')
     if len(found) > 1:
         raise TargetError('repository 候選不唯一：' + '；'.join(
-            f'{slug}←{"、".join(names)}' for slug, names in sorted(found.items())))
-    (slug, names), = found.items()
+            f'{slug}←{"、".join(names)}' for slug, names in sorted(found)))
+    (slug, names), = found
     detail = provenance.detail + ('' if len(names) == 1 else '（合併 ' + '、'.join(names) + '）')
     if env_repo and SLUG_PLAIN.match(env_repo) and env_repo != slug:
         raise TargetError(f'GH_REPO {env_repo} ≠ resolved {slug}')
