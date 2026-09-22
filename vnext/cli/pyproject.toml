@@ -25,8 +25,10 @@ where = ["src"]
 
 # 規則樹＝package data，隨 wheel 出貨；⛔ 不複製進採用者專案、⛔ 不靠 build 時的套件外路徑映射。
 # 只收 `.md`：`.gitkeep` 是 repo 保留空目錄用的，⛔ 不是規則。
+# `docs/*.md`＝採用指南（`wfx/docs/ADOPTION.md`）。它**⛔ 不是規則**：`brief` ⛔ 不載入它，
+# 放在 `docs/` 而非 `rules/core/` 正是為了不讓每次 brief 的 core 附錄變長。
 [tool.setuptools.package-data]
-wfx = ["rules/**/*.md"]
+wfx = ["rules/**/*.md", "docs/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

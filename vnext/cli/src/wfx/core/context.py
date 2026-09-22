@@ -47,13 +47,42 @@ class Context:
     rules: RulesSource | None = None
 
 
+CONFIG_REL = '.wf/config.json'
+
+# `.wf/config.json` 的三態；`load_config_result()` 用它，⛔ 不改變 `load_config()` 的 fail-loud。
+CONFIG_OK, CONFIG_MISSING, CONFIG_MALFORMED = 'ok', 'missing', 'malformed'
+
+
+@dataclass(frozen=True)
+class ConfigResult:
+    """不 raise 的設定讀取結果：三態＋逐字原因。
+
+    採用清單要把「壞掉的 config」分類成一項可讀的「格式錯誤」，⛔ 不能在載入時就炸掉整份清單；
+    普通三動詞仍走 `load_config()` 的 fail-loud，rc 與訊息逐字不變。
+    `reason` 內的絕對路徑一律換成相對的 `.wf/config.json`——清單輸出⛔ 不得含絕對路徑。
+    """
+    state: str
+    config: dict | None
+    reason: str
+
+
+def load_config_result(project_root) -> ConfigResult:
+    path = Path(project_root) / CONFIG_REL
+    if not path.exists():
+        return ConfigResult(CONFIG_MISSING, None, f'{CONFIG_REL} 不存在')
+    try:
+        return ConfigResult(CONFIG_OK, load_config(project_root), '')
+    except ConfigError as exc:
+        return ConfigResult(CONFIG_MALFORMED, None, str(exc).replace(str(path), CONFIG_REL))
+
+
 def load_config(project_root) -> dict:
     """只驗形狀、⛔ 不判內容、⛔ 不連網。缺檔＝空設定（各鍵為 None）。
 
     `rules`＝null 或 {"path": 非空字串}；`remote`＝null 或 remote 名稱（⛔ 不是 URL）；
     `project`＝null 或 {"owner": 字串, "number": 整數}。⛔ 無 modules 鍵（§13 模組四禁）。
     """
-    path = Path(project_root) / '.wf/config.json'
+    path = Path(project_root) / CONFIG_REL
     try:
         raw = json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError:

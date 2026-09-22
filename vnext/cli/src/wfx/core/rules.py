@@ -160,3 +160,35 @@ def required_sections(titles, text: str) -> list[tuple[str, str, int | None, int
         else:
             out.append((title, PRESENT if span[1] else EMPTY, span[0], span[1]))
     return out
+
+
+# `core/github.md` §2 的七個核心概念表：概念｜落地｜值。三欄逐字抽出，
+# 「落地」的措辭（SingleSelect／text／date／內建 `Status`）要怎麼對到平台的欄位型別，
+# 是平台細節、住 `wfx/gh/adopt.py`；本層只負責把表格切成三欄。
+_CONCEPT_SECTION = "## 2 · 七個核心概念"
+_CONCEPT_ROW = re.compile(r"^\|(?P<concept>[^|]+)\|(?P<landing>[^|]+)\|(?P<values>[^|]*)\|\s*$")
+
+
+def core_concept_rows(rules_root: Path) -> tuple[tuple[str, str, str], ...]:
+    """(概念, 落地, 值) 逐字，順序沿用文件。⛔ 不判內容、⛔ 不內建概念名。
+
+    抽不到＝規則樹的問題，往上丟 typed 失敗（採用清單連「該有哪些欄位」都說不出來時
+    ⛔ 不得靜默少報一項）。
+    """
+    rel = f"{CORE_DIR}/github.md"
+    text = read_doc(rules_root, rel)
+    if _CONCEPT_SECTION not in text:
+        raise LayerMissing("framework", rel, f"找不到「{_CONCEPT_SECTION}」")
+    block = text.split(_CONCEPT_SECTION, 1)[1].split("\n## ", 1)[0]
+    rows = []
+    for line in block.splitlines():
+        m = _CONCEPT_ROW.match(line.strip())
+        if m is None:
+            continue
+        concept, landing, allowed = (m.group(k).strip() for k in ("concept", "landing", "values"))
+        if concept in ("概念",) or not set(concept) - set("-: "):
+            continue
+        rows.append((concept, landing, allowed))
+    if not rows:
+        raise LayerMissing("framework", rel, "§2 的七個核心概念表抽不出任何一列")
+    return tuple(rows)

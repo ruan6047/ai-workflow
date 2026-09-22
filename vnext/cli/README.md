@@ -27,6 +27,7 @@ wfx [--project-root <p>] <verb> [動詞參數…]
 
 wfx --project-root vnext brief --task 'ruan6047/ai-workflow#370' --role 執行者 --stage 執行
 wfx --project-root vnext facts --task 370 --sha <sha>
+wfx --project-root <任一既存目錄> facts --adopt          # 唯讀採用清單，⛔ 不需任務／.wf/／Project
 wfx --project-root vnext write --task 370 --field 狀態=進行中 --expect-updated-at 2026-09-21T11:05:20Z
 ```
 
@@ -171,6 +172,45 @@ package version: <版本>｜unknown
 **⛔ 不印任何路徑**（那會讓逐字比對隨機器而破）。`facts` 本身⛔ 不讀規則樹——這個旗標
 在 `facts` 只決定第 ⑦ 節報哪一種來源，與 `brief`／`write` 同名同義。
 版本取不到（未安裝、以原始碼樹直跑）＝`unknown`，⛔ 不由別處補第二個版本來源。
+
+## `facts --adopt`：唯讀採用清單
+
+```
+wfx [--project-root <p>] facts (--task <id> [--sha <sha>] | --adopt) [--rules-root <p>]
+```
+
+`--adopt` 與 `--task`／`--sha` **互斥**，兩者皆缺＝用法錯（rc 2）。動詞集合仍是三個——
+採用清單是 `facts` 的**另一種輸出**，⛔ 不是第四個動詞。它⛔ 不需要任務、⛔ 不需要 git
+工作樹、⛔ 不需要 `.wf/`、⛔ 不需要 Project：**空的既存目錄照樣輸出完整清單**。
+
+固定七節、固定順序，逐行穩定、⛔ 無時間戳、⛔ 無絕對路徑——同一狀態重跑逐字 `diff` 相同：
+
+```
+## 1 · 執行環境 / 2 · 框架套件 / 3 · `.wf/` 骨架 / 4 · repository 身分
+## 5 · Project schema / 6 · 下一步 / 7 · 摘要
+```
+
+逐項五類：**已完成**（存在且形狀合法）／**缺少**（不存在）／**格式錯誤**（存在但形狀不合法）／
+**環境阻塞**（外部工具的客觀錯誤，逐字附**工具名、rc、stderr 首行**）／**無法確認**
+（本清單內的上游項未滿足）。文件類一律只判「存在且非空」，⛔ 不判內容品質。
+
+**rc ⛔ 不表達就緒與否**：清單產得出來一律 rc 0，連清單都產不出來（`--project-root` 不是
+既存目錄、規則樹取不到）才 rc 1。要機械判斷就緒與否請讀第 7 節的計數行。
+
+**CLI 零寫入**：第 6 節只**印**可直接套用的骨架與指令，⛔ 不建立、⛔ 不修改、⛔ 不刪除採用者
+的檔案、`~/.wf/` 或 Project schema，⛔ 不登入、⛔ 不保存憑證、⛔ 不安裝工具。
+
+schema 判準的唯一來源是規則樹：欄位型別讀 `rules/core/github.md` §2、SingleSelect 的選項逐字
+比對 `rules/core/values.md`；同時存在內建 `Status` 與自訂 `狀態` ＝狀態有第二個居所＝格式錯誤
+（與 `gh/facts.py` 的 `STATUS_FIELD_ALIASES` 同一判準）。
+
+程式切分：`wfx/core/adopt.py` 只做**分類與渲染**（⛔ 無 subprocess、⛔ 無 `wfx.gh`），
+`wfx/gh/adopt.py` 才做 `git`／`gh` 探測與 Project schema 讀取。完整採用流程（安裝、版本確認、
+人工套用、升級、不變驗證、回退、移除、重現條件）住 **`wfx/docs/ADOPTION.md`**，隨 wheel 出貨；
+它**⛔ 不是規則**，`brief` ⛔ 不載入它。
+
+`.wf/config.json` 的載入住在**各動詞的 `run()`**、⛔ 不在分派前——壞掉的設定必須能被
+`facts --adopt` 分類成一項「格式錯誤」。三個動詞的 fail-loud（`ConfigError` rc=1）逐字不變。
 
 ## `facts` 的 base 解析
 

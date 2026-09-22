@@ -1,9 +1,13 @@
-"""`facts --task <id> [--sha <sha>] [--rules-root <p>]`：只輸出客觀事實，⛔ 不作任何內容判斷。
+"""`facts (--task <id> [--sha <sha>] | --adopt) [--rules-root <p>]`：只輸出客觀事實，⛔ 不作內容判斷。
 
 輸出形狀刻意逐行、固定順序：同一 SHA、同一次遠端讀取重跑可逐字 `diff`；
 ⛔ 不印工作樹路徑與執行時間（那會讓乾淨 checkout 的比對失敗，且不是被問的事實）。
 第 ③ 節兩個 `updatedAt` 逐字可直接餵給 W1.8 `write --expect-updated-at`。
 第 ⑦ 節是**本次實際會被讀的規則樹來源與套件版本**，接在既有六節之後、⛔ 不插隊。
+
+`--adopt`＝**唯讀採用清單**，與 `--task`／`--sha` 互斥（兩者皆缺＝用法錯 rc 2）。它⛔ 不需要
+任務、git 工作樹、`.wf/` 或 Project，在空的既存目錄照樣輸出完整七節；rc ⛔ 不表達就緒與否
+（清單產得出來就 rc 0，產不出來才 rc 1）。採用清單是**另一種輸出**，⛔ 不是第四個動詞。
 """
 from __future__ import annotations
 
@@ -11,23 +15,32 @@ import argparse
 import os
 from pathlib import Path
 
-from wfx.core.context import Context
-from wfx.core.rules import rules_provenance
+from wfx.core import adopt
+from wfx.core.context import Context, load_config, load_config_result
+from wfx.core.rules import default_rules_root, rules_provenance
+from wfx.gh import adopt as gh_adopt
 from wfx.gh import facts as F
 from wfx.gh.client import GhClient, PermissionDenied
 from wfx.gh.target import parse_task, permission_fact
 
-USAGE = 'wfx facts --task <id> [--sha <sha>] [--rules-root <p>]'
+USAGE = 'wfx [--project-root <p>] facts (--task <id> [--sha <sha>] | --adopt) [--rules-root <p>]'
 
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(prog='wfx facts', usage=USAGE, add_help=True)
-    parser.add_argument('--task', required=True)
+    parser.add_argument('--task')
     parser.add_argument('--sha')
-    # `facts` ⛔ 不讀規則樹；這個旗標只決定第 ⑦ 節報的來源是 package 還是 override，
-    # 與 `brief`／`write` 同名同義（給了就是覆寫）。
+    parser.add_argument('--adopt', action='store_true',
+                        help='唯讀採用清單；⛔ 不需 --task／git 工作樹／.wf/／Project')
+    # `facts --task` ⛔ 不讀規則樹；該路徑上這個旗標只決定第 ⑦ 節報 package 還是 override，
+    # 與 `brief`／`write` 同名同義（給了就是覆寫）。`--adopt` 則真的讀它（§2 欄型與值域）。
     parser.add_argument('--rules-root', type=Path, default=None)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.adopt and (args.task is not None or args.sha is not None):
+        parser.error('--adopt 與 --task／--sha 互斥：採用清單⛔ 不認識任務，也⛔ 不讀任何 Issue')
+    if not args.adopt and args.task is None:
+        parser.error('要嘛 --task <id>（該卡的客觀事實），要嘛 --adopt（唯讀採用清單）')
+    return args
 
 
 def collect(context, task_id, sha, *, client=None, runner=None, env=None):
@@ -145,9 +158,29 @@ def render(facts, rules_root=None):
     return '\n'.join(lines)
 
 
-def run(argv, *, project_root, config, client=None, runner=None, env=None):
+def adopt_listing(project_root, rules_root, *, client=None, runner=None, env=None) -> str:
+    """唯讀清單：CLI 零寫入。連清單都產不出來一律 raise（rc=1），⛔ 不印半份。
+
+    設定走**不 raise** 的 `load_config_result()`——壞掉的 `config.json` 是清單上的一項
+    「格式錯誤」，⛔ 不是整份清單的失敗。
+    """
+    root = Path(project_root)
+    if not root.is_dir():
+        raise adopt.AdoptUnavailable(f'--project-root 不是既存目錄：{root}')
+    source, version = rules_provenance(rules_root)
+    resolved = rules_root or default_rules_root()
+    config = load_config_result(root)
+    facts = gh_adopt.collect(root, resolved, config.config, env=env, runner=runner, client=client)
+    return adopt.render(adopt.build(root, resolved, rules_source=source, version=version,
+                                    config=config, facts=facts))
+
+
+def run(argv, *, project_root, client=None, runner=None, env=None):
     args = parse_args(argv)
-    context = Context(project_root, args.task, config)
+    if args.adopt:
+        print(adopt_listing(project_root, args.rules_root, client=client, runner=runner, env=env))
+        return 0
+    context = Context(project_root, args.task, load_config(project_root))
     print(render(collect(context, args.task, args.sha, client=client, runner=runner, env=env),
                  args.rules_root))
     return 0

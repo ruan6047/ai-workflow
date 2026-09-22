@@ -82,7 +82,8 @@ def test_names_are_declared_exactly_once_each():
     assert project['scripts'] == {'wfx': 'wfx.verbs.main:main'}
     assert project['requires-python'] == '>=3.14'
     assert project['dependencies'] == []       # `gh`／`git` 是外部指令，⛔ 不是 Python 相依
-    assert declaration()['tool']['setuptools']['package-data'] == {'wfx': ['rules/**/*.md']}
+    assert declaration()['tool']['setuptools']['package-data'] == {
+        'wfx': ['rules/**/*.md', 'docs/*.md']}
 
 
 # ── `facts` 第 ⑦ 節 ─────────────────────────────────────────────────────
