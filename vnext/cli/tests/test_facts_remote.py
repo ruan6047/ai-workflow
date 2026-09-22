@@ -18,10 +18,10 @@ from .fakes import BASE_REF, FakeClient, snapshot
 CONFIG = {'rules': None, 'remote': None, 'project': {'owner': 'o', 'number': 9}}
 
 
-def gather(tmp_path, *snapshots, sha=None, client=None):
+def gather(tmp_path, *snapshots, sha=None, client=None, task_id='o/r#370'):
     client = FakeClient(*snapshots) if client is None else client
-    context = Context(tmp_path, 'o/r#370', CONFIG)
-    return collect(context, 'o/r#370', sha, client=client), client
+    context = Context(tmp_path, task_id, CONFIG)
+    return collect(context, task_id, sha, client=client), client
 
 
 def test_five_sections_positive(tmp_path):
@@ -97,6 +97,27 @@ def test_missing_item_is_typed_unknown_not_a_fake_empty(tmp_path):
     assert 'issue o/r#370 updatedAt=' in text        # Issue 側基準仍取得
     assert '狀態: unknown（Project ⛔ 無此欄，或該卡⛔ 無 item）' in text
     assert '(空)' not in text.split('## 3 ·')[0]   # 取不到⛔ 不得冒充「已讀到且未填」
+
+
+@pytest.mark.parametrize('item_slug, task_slug', (('o/r', 'O/R'), ('O/R', 'o/r')))
+def test_an_item_of_the_same_repository_in_another_letter_case_is_still_found(
+        tmp_path, item_slug, task_slug):
+    """Project item 的 `repository.nameWithOwner` 與 `--task` 只差大小寫＝同一個 repository。
+
+    ⛔ 不得因字面不同就當 item 不存在：那會讓七個概念整排變空、基準少掉 project_item，
+    而那是「取不到」的表示法，拿來表示「讀到了但沒填」就是拿事實缺席冒充值。
+    """
+    snap = snapshot()
+    snap['items'][0]['content']['repository']['nameWithOwner'] = item_slug
+    task_id = f'{task_slug}#370'
+    facts, _ = gather(tmp_path, snap, task_id=task_id)
+    assert facts.item_id == 'PVTI_1'
+    assert facts.unknown_baselines == ()
+    assert [(c.field_name, c.value) for c in facts.concepts] == [
+        ('Status', '進行中'), ('階段', '執行'), ('owner', 'ruan6047'), ('風險', '重要'),
+        ('緊急性', '一般'), ('期限', '2026-09-30'), ('Resource', None)]
+    assert ('project_item', 'PVTI_1', '2026-09-21T11:05:20Z') == (
+        facts.baselines[0].object_kind, facts.baselines[0].object_ref, facts.baselines[0].updated_at)
 
 
 def test_permission_three_states(tmp_path):

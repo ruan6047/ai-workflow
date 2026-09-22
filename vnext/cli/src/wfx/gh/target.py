@@ -60,6 +60,14 @@ def slug_of(url):
     return match[1] if match else None
 
 
+def same_repository(left, right):
+    """GitHub 的 owner／name 大小寫不敏感：`o/r` 與 `O/R` 是同一個 repository（同一 node id）。
+
+    只做 GitHub slug 的身分比對，⛔ 不改寫任何人給的字面、⛔ 不做通用 URL 正規化。
+    """
+    return left is not None and right is not None and left.lower() == right.lower()
+
+
 def _candidates(remotes, configured):
     by_name = {remote.name: remote for remote in remotes}
     if configured is not None:
@@ -99,14 +107,16 @@ def resolve_repository(root, *, configured=None, env_repo=None, runner=None) -> 
 def remote_names_for(root, slug, *, configured=None, runner=None) -> tuple[str, ...]:
     """repository 身分**已由呼叫端給定**時的本機 remote-tracking ref 候選。
 
-    走與 `resolve_repository` 同一組 precedence 候選、再逐個比對 fetch URL 的 slug，
-    因此 `370` 與 `o/name#370` 對同一 repository 拿到同一組候選（否則完整寫法會退回
-    較舊的 `refs/heads/<base>`）。本機不是 git 工作樹、或⛔ 無指向該 repository 的
+    走與 `resolve_repository` 同一組 precedence 候選、再逐個比對 fetch URL 的 slug
+    （大小寫不敏感＝GitHub 自己的 repository 身分語意），因此 `370`、`o/name#370` 與
+    `O/Name#370` 對同一 repository 拿到同一組候選（否則完整寫法會退回較舊的
+    `refs/heads/<base>`）。本機不是 git 工作樹、或⛔ 無指向該 repository 的
     remote 時回 ()＝事實缺席。precedence 本身不成立（設定鍵指向不存在的 remote）
     照樣 fail-loud，⛔ 不因為身分已知就靜默改用別的候選——那就是同一個缺陷換個角落。
     """
     candidates, _ = _candidates(remote_facts(root, runner=runner) or (), configured)
-    return tuple(remote.name for remote in candidates if slug_of(remote.fetch_url) == slug)
+    return tuple(remote.name for remote in candidates
+                 if same_repository(slug_of(remote.fetch_url), slug))
 
 
 def permission_fact(subject, source, value):

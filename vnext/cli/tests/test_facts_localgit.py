@@ -104,18 +104,16 @@ def test_absent_revision_is_fact_absence_and_broken_git_raises(repo):
         merge_tree('a', 'b', root=repo, runner=RecordedRunner([], default=(128, '', 'boom')))
 
 
-@pytest.fixture
-def repo_with_remote(tmp_path):
+def build_repo_with_remote(root, remote_slug='o/r'):
     """落後的本機 `main`、已前進的 `refs/remotes/up/main`，其上再一筆本次成果。
 
     remote 刻意⛔ 不叫 origin：候選是從本機 remote 查出來的，⛔ 不寫死名字。
     """
-    root = tmp_path / 'rr'
     root.mkdir()
     git(root, 'init', '-q', '-b', 'main')
     git(root, 'config', 'user.email', 't@example.invalid')
     git(root, 'config', 'user.name', 't')
-    git(root, 'remote', 'add', 'up', 'git@github.com:o/r.git')
+    git(root, 'remote', 'add', 'up', f'git@github.com:{remote_slug}.git')
     (root / 'a.txt').write_text('base\n')
     git(root, 'add', 'a.txt')
     git(root, 'commit', '-qm', 'base')
@@ -128,6 +126,11 @@ def repo_with_remote(tmp_path):
     git(root, 'add', 'feature.txt')
     git(root, 'commit', '-qm', 'feature')
     return root, git(root, 'rev-parse', 'HEAD')
+
+
+@pytest.fixture
+def repo_with_remote(tmp_path):
+    return build_repo_with_remote(tmp_path / 'rr')
 
 
 def collected(root, task_id, sha):
@@ -165,3 +168,19 @@ def test_a_broken_remote_setting_fails_loud_in_both_task_forms(repo_with_remote)
         with pytest.raises(TargetError, match='remote 不存在'):
             collect(context, task_id, head,
                     client=FakeClient(snapshot(pull_requests=())), env={})
+
+
+@pytest.mark.parametrize('remote_slug, task_slug', (('o/r', 'O/R'), ('O/R', 'o/r')))
+def test_the_same_repository_in_another_letter_case_keeps_the_same_remote_base(
+        tmp_path, remote_slug, task_slug):
+    """GitHub 的 owner/name 大小寫不同仍是同一個 repository，候選⛔ 不得因字面不同被濾掉。
+
+    兩個方向都要測：remote URL 小寫／task 大寫，以及 remote URL 大寫／task 小寫；
+    否則只因為複製來的寫法換了大小寫，就會退回較舊的本機 branch 並多算 log／diff。
+    """
+    root, head = build_repo_with_remote(tmp_path / 'case', remote_slug)
+    short, full = collected(root, '370', head), collected(root, f'{task_slug}#370', head)
+    assert short.git.base_ref == 'refs/remotes/up/main'
+    assert full.git == short.git
+    assert len(full.git.log) == 1
+    assert [row for row in full.git.diff_stat if 'upstream-only.txt' in row] == []

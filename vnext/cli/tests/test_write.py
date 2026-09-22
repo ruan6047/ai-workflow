@@ -3,6 +3,8 @@
 全檔走注入式替身（`client`＝唯讀快照、`writer`＝記錄式 mutation 替身），
 ⛔ 不連網、⛔ 不 mutation 官方 Project #9 或 Issue #370。真實寫入的證據另存於 PR 說明與執行報告。
 """
+import json
+
 import pytest
 
 from wfx.verbs.main import main
@@ -161,3 +163,32 @@ def test_status_field_alias_is_resolved_before_writing(run_write):
     rc, _, _, writer, _ = run_write('--field', '狀態=完成', '--expect-updated-at', ITEM_TS,
                                     snapshots=(snapshot(field_names=renamed),))
     assert rc == 0 and [(c[2], c[3]) for c in writer.calls] == [('狀態', '完成')]
+
+
+@pytest.mark.parametrize('item_slug, task_slug', (('o/r', 'O/R'), ('O/R', 'o/r')))
+def test_a_case_differing_task_writes_to_the_same_project_item(run_write, item_slug, task_slug):
+    """`--task` 與 item 的 `repository.nameWithOwner` 只差大小寫＝同一個 repository。
+
+    目標物件要是同一個 item（同 id、同基準），⛔ 不得變成「⛔ 無 item」而把一次正常寫入
+    誤報成缺目標；也⛔ 不得挑到別的 item。全程走 `FakeWriter`，遠端零 mutation。
+    """
+    snap = snapshot()
+    snap['items'][0]['content']['repository']['nameWithOwner'] = item_slug
+    rc, out, _, writer, _ = run_write('--field', '狀態=待辦', '--expect-updated-at', ITEM_TS,
+                                      task=f'{task_slug}#370', snapshots=(snap,))
+    assert rc == 0 and writer.calls == [('set_field', 'PVTI_1', 'Status', '待辦')]
+    assert f'# write task={task_slug}#370 目標物件=project_item PVTI_1' in out
+    assert f'當下基準：project_item PVTI_1 updatedAt={ITEM_TS}' in out
+
+
+def test_two_items_of_the_same_repository_still_fail_loud(run_write):
+    """同一 repository 的兩個 item 撞號＝多義；⛔ 不得因大小寫比對放寬就改成挑第一個。"""
+    snap = snapshot()
+    second = json.loads(json.dumps(snap['items'][0]))
+    second['id'] = 'PVTI_2'
+    second['content']['repository']['nameWithOwner'] = 'O/R'
+    snap['items'].append(second)
+    rc, _, err, writer, _ = run_write('--field', '狀態=待辦', '--expect-updated-at', ITEM_TS,
+                                      snapshots=(snap,))
+    assert rc == 1 and writer.calls == []
+    assert "對應多個 Project item：['PVTI_1', 'PVTI_2']" in err
