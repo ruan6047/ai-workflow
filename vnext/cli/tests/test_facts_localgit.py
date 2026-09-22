@@ -2,6 +2,7 @@
 
 母體＝tmp_path 內臨時建立的 git repo，⛔ 不釘本 repo 的任何 SHA、內容或缺檔。
 """
+import json
 import subprocess
 
 import pytest
@@ -10,10 +11,11 @@ from wfx.core.context import Context
 from wfx.gh.facts import git_facts
 from wfx.gh.localgit import LocalGitUnavailable, merge_tree
 from wfx.gh.localrev import LocalRevUnavailable, diff_stat, log_commits, rev_parse
-from wfx.gh.target import TargetError
+from wfx.gh.target import TargetError, remote_names_for, resolve_repository
 from wfx.verbs.facts import collect
+from wfx.verbs.main import main
 
-from .fakes import FakeClient, RecordedRunner, fixed_base, snapshot
+from .fakes import FakeClient, FakeWriter, RecordedRunner, fixed_base, snapshot
 
 
 def git(root, *args):
@@ -184,3 +186,72 @@ def test_the_same_repository_in_another_letter_case_keeps_the_same_remote_base(
     assert full.git == short.git
     assert len(full.git.log) == 1
     assert [row for row in full.git.diff_stat if 'upstream-only.txt' in row] == []
+
+
+def build_repo_with_two_remotes(root, up_slug='o/r', mirror_slug='O/R'):
+    """`up` 之外再加一個 `mirror`；兩個 slug 決定它們是不是同一個 repository。
+
+    同時把這棵樹當第 3 層（`.wf/`），三個動詞才能都從真正的進入點跑。
+    """
+    root, head = build_repo_with_remote(root, up_slug)
+    git(root, 'remote', 'add', 'mirror', f'https://github.com/{mirror_slug}.git')
+    (root / '.wf').mkdir()
+    (root / '.wf' / 'model-policy.md').write_text('# 專案層政策\n具體模型名稱⛔ 不住這裡。\n',
+                                                 encoding='utf-8')
+    (root / '.wf' / 'config.json').write_text(
+        json.dumps({'rules': None, 'remote': None, 'project': {'owner': 'o', 'number': 9}}),
+        encoding='utf-8')
+    return root, head
+
+
+def run_verb(root, rules_root, verb, task, sha):
+    """真正的進入點；`write` 一律 `--dry-run`＋`FakeWriter`＝遠端零 mutation。"""
+    extra = {'facts': ('--sha', sha),
+             'brief': ('--role', '執行者', '--stage', '執行', '--rules-root', str(rules_root)),
+             'write': ('--field', '狀態=待辦', '--dry-run', '--rules-root', str(rules_root))}[verb]
+    writer = FakeWriter()
+    injected = {'writer': writer} if verb == 'write' else {}
+    rc = main(['--project-root', str(root), verb, '--task', task, *extra],
+              client=FakeClient(snapshot(pull_requests=())), env={}, **injected)
+    return rc, writer.calls
+
+
+@pytest.mark.parametrize('up_slug, mirror_slug', (('o/r', 'O/R'), ('O/R', 'o/r')))
+def test_two_remotes_of_one_repository_do_not_make_the_short_task_ambiguous(
+        tmp_path, rules_root, user_root, capsys, up_slug, mirror_slug):
+    """同一 repository 的兩個 remote 只差大小寫＝一個身分；簡式 `370` ⛔ 不得被判成多義。
+
+    三動詞共用同一條解析，任一個回 rc=1 就等於整條派工在審核用 checkout 上停擺；
+    兩個方向都要測，否則只證明了「第一個候選剛好是小寫」。
+    """
+    root, head = build_repo_with_two_remotes(tmp_path / f'two-{up_slug[0]}', up_slug, mirror_slug)
+    for verb in ('facts', 'brief', 'write'):
+        for task in ('370', 'o/r#370', 'O/R#370'):
+            rc, calls = run_verb(root, rules_root, verb, task, head)
+            capsys.readouterr()
+            assert (verb, task, rc, calls) == (verb, task, 0, [])
+
+
+def test_all_three_task_forms_get_the_same_merged_remote_candidates(tmp_path):
+    """候選一致＝同一組、同一順序；顯示 slug 取候選順序中第一個的字面（deterministic）。"""
+    root, head = build_repo_with_two_remotes(tmp_path / 'merged')
+    target = resolve_repository(root)
+    assert target.remote_names == ('mirror', 'up')   # ＝`git remote` 的列出順序，合併⛔ 不重排
+    assert target.slug == 'O/R'                      # mirror 的字面，⛔ 不改寫成別的大小寫
+    assert '合併 mirror、up' in target.provenance.detail
+    for task_slug in ('o/r', 'O/R'):
+        assert remote_names_for(root, task_slug) == target.remote_names
+    short = collected(root, '370', head)
+    assert short.git.base_ref == 'refs/remotes/up/main'
+    assert collected(root, 'O/R#370', head).git == short.git
+
+
+def test_two_remotes_of_different_repositories_still_fail_loud_in_all_three_verbs(
+        tmp_path, rules_root, user_root, capsys):
+    """真正不同的 repository＝多義，照樣硬擋、零 mutation；⛔ 不得因合併同身分就改成挑第一個。"""
+    root, head = build_repo_with_two_remotes(tmp_path / 'distinct', 'o/r', 'other/r')
+    for verb in ('facts', 'brief', 'write'):
+        rc, calls = run_verb(root, rules_root, verb, '370', head)
+        err = capsys.readouterr().err
+        assert (verb, rc, calls) == (verb, 1, [])
+        assert 'repository 候選不唯一：o/r←up；other/r←mirror' in err
