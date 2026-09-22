@@ -1,14 +1,18 @@
-"""入口。動詞集合固定為三個（vnext/rules/core/boundaries.md「CLI 邊界」）；本檔只做分派。
+"""入口。動詞集合固定為三個（wfx/rules/core/boundaries.md「CLI 邊界」）；本檔只做分派。
 
 public shape：`wfx [--project-root <p>] <verb> [動詞參數…]`。全域旗標只認動詞之前，由前綴迴圈消耗、
 ⛔ 不傳給動詞的 parse_args。本檔⛔ 不判內容、⛔ 不代動詞印、⛔ 不呼叫 AI。
 三個動詞（`brief`／`facts`／`write`）已全部登記。rc 慣例：**用法錯 rc=2、typed 錯 rc=1**（兩類可區分）。
+
+`.wf/config.json` 的載入住在**各動詞的 `run()`**、⛔ 不在分派前：壞掉的設定必須能被
+`facts --adopt` 分類成清單上的一項「格式錯誤」，在分派前就 raise 會讓那一類永遠走不到。
+三個動詞的 fail-loud 仍由本檔同一個 `except` 收，rc 與訊息逐字不變。
 """
 import os
 from pathlib import Path
 import sys
 
-from wfx.core.context import ConfigError, load_config
+from wfx.core.context import ConfigError
 from wfx.core.errors import WfxError
 from wfx.gh.client import GhError
 from wfx.gh.localgit import LocalGitUnavailable
@@ -49,9 +53,7 @@ def main(argv=None, *, env=None, **injected):
         return 2
     project_root = Path(flags.get('--project-root', '.')).resolve()
     try:
-        config = load_config(project_root)
-        return DISPATCH[rest[0]].run(rest[1:], project_root=project_root, config=config,
-                                     env=env, **injected)
+        return DISPATCH[rest[0]].run(rest[1:], project_root=project_root, env=env, **injected)
     except (ConfigError, WfxError, GhError, TargetError,
             LocalGitUnavailable, LocalRevUnavailable) as exc:
         print(f'{type(exc).__name__}: {exc}', file=sys.stderr)

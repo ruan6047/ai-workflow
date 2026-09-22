@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from wfx.core import values
-from wfx.core.context import Context
+from wfx.core.context import Context, load_config
 from wfx.core.errors import WfxError
 from wfx.core.rules import default_rules_root
 from wfx.gh import facts as F
@@ -26,9 +26,6 @@ from wfx.gh.writes import GhWriter
 USAGE = ('wfx [--project-root <p>] write --task <id> [--field k=v …] [--comment-file <f>] '
          '[--expect-updated-at <ts>] [--dry-run] [--rules-root <p>]')
 
-# 概念名 → values.md 的表格列名。**值本身只住 values.md**；本表只記兩處命名的對應，
-# ⛔ 不是第二個值域居所。未列入者（owner／期限／Resource）⛔ 無值域，CLI 只原樣送出。
-DOMAINS = {'狀態': '狀態', '階段': '階段', '風險': '風險影響', '緊急性': '緊急性'}
 NOTE = '註：基準只縮小視窗、⛔ 不構成鎖；基準讀取與寫入之間⛔ 不具原子性（core/github.md §7）。'
 EMPTY = '(空)'
 
@@ -90,8 +87,8 @@ def parse_args(argv):
 def check_domain(rules_root, fields):
     """純本機檢查，在任何遠端讀寫之前。空值＝清空，⛔ 不套值域。訊息只談值域。"""
     for concept, value in fields.items():
-        if value and concept in DOMAINS:
-            values.check(rules_root, DOMAINS[concept], value)
+        if value and concept in values.DOMAINS:
+            values.check(rules_root, values.DOMAINS[concept], value)
 
 
 def field_target(context, client, task, slug, concepts):
@@ -167,9 +164,9 @@ def apply_fields(writer, target, fields, *, dry_run, out):
         out(f'{concept}[{field["name"]}]: {before} → {after}（已寫入）')
 
 
-def run(argv, *, project_root, config, client=None, runner=None, env=None, writer=None):
+def run(argv, *, project_root, client=None, runner=None, env=None, writer=None):
     args, fields = parse_args(argv)
-    context = Context(project_root, args.task, config)
+    context = Context(project_root, args.task, load_config(project_root))
     check_domain(args.rules_root or default_rules_root(), fields)
     task = parse_task(args.task)
     slug, _, _ = F.resolve_slug(context, task, env=env, runner=runner)

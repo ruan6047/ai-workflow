@@ -16,7 +16,7 @@ import argparse
 from pathlib import Path
 
 from wfx.core import layers, values
-from wfx.core.context import Context, RulesSource
+from wfx.core.context import Context, RulesSource, load_config
 from wfx.core.render import Block, render
 from wfx.core.rules import default_rules_root
 from wfx.gh.task import GhTaskSource
@@ -69,10 +69,10 @@ def build(context, role, stage, *, user_root, task_source) -> str:
     return render(context.task_id, role, stage, first_screen, appendix)
 
 
-def run(argv, *, project_root, config, client=None, runner=None, env=None,
+def run(argv, *, project_root, client=None, runner=None, env=None,
         task_source=None, user_root=None):
     args = parse_args(argv)
-    context = Context(project_root, args.task, config,
+    context = Context(project_root, args.task, load_config(project_root),
                       RulesSource(args.rules_root or default_rules_root()))
     source = GhTaskSource(client=client, runner=runner, env=env) if task_source is None else task_source
     print(build(context, args.role, args.stage,

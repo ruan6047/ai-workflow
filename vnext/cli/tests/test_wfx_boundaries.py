@@ -19,7 +19,6 @@ from wfx.gh.client import (GhError, NotFound, NotLoggedIn, PermissionDenied, Tra
 from wfx.gh.target import TargetError, parse_task, resolve_repository, slug_of
 from wfx.verbs.main import main
 
-from .conftest import REPO_ROOT
 from .fakes import RecordedRunner
 
 SRC = Path(__file__).resolve().parents[1] / 'src/wfx'
@@ -93,7 +92,7 @@ def test_core_keeps_the_task_identifier_opaque():
 
 def test_seven_core_concepts_match_the_rules_document():
     """七個核心概念的唯一居所是 core/github.md；程式碼只固定呈現順序。"""
-    text = (REPO_ROOT / 'vnext' / 'rules' / 'core' / 'github.md').read_text(encoding='utf-8')
+    text = (SRC / 'rules' / 'core' / 'github.md').read_text(encoding='utf-8')
     block = text.split('## 2 · 七個核心概念', 1)[1].split('\n## ', 1)[0]
     rows = [m.group(1).strip()
             for m in re.finditer(r'^\|([^|]+)\|[^|]+\|[^|]*\|\s*$', block, re.M)]

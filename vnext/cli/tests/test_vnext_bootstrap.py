@@ -10,9 +10,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 SKELETON_DIRS = (
-    "vnext/rules/core",
-    "vnext/rules/stages",
-    "vnext/rules/roles",
+    "vnext/cli/src/wfx/rules/core",
+    "vnext/cli/src/wfx/rules/stages",
+    "vnext/cli/src/wfx/rules/roles",
     "vnext/.wf",
     "vnext/cli/src/wfx/core",
     "vnext/cli/src/wfx/gh",

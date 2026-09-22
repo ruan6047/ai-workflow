@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from importlib import metadata, resources
 import re
 from pathlib import Path
 
@@ -15,15 +16,40 @@ CORE_DIR = "core"
 STAGES_DIR = "stages"
 ROLES_DIR = "roles"
 
+# distribution 名稱＝`vnext/cli/pyproject.toml` 的 `[project] name`；版本值的唯一居所也在那裡。
+DISTRIBUTION = "ai-workflow-vnext"
+RULES_DIR = "rules"
+
+# 第 1 層規則樹實際被讀的那一份，只有兩種來源。
+PACKAGE, OVERRIDE = "package", "override"
+
 
 def default_rules_root() -> Path:
-    """W1.6 的預設＝原始碼樹的 vnext/rules。
+    """預設＝`wfx` 套件內的 package data（`wfx/rules`）。
 
-    W2.1 會把規則樹打包成 package data 並改由套件解析；`--rules-root` 覆寫在
-    兩種情況下都生效。
+    走 `importlib.resources` 而非相對本檔數層 parents：裝在 site-packages 時沒有
+    `vnext/` 那幾層，原始碼樹直跑時兩者指到同一個目錄。`--rules-root` 覆寫在兩種情況下都生效。
     """
-    # core → wfx → src → cli → vnext
-    return Path(__file__).resolve().parents[4] / "rules"
+    return Path(resources.files("wfx").joinpath(RULES_DIR))
+
+
+def package_version() -> str:
+    """`ai-workflow-vnext` 的安裝版本；**⛔ 不建立第二個版本來源**。
+
+    未安裝（例如以 PYTHONPATH 直跑原始碼樹）＝`unknown`，⛔ 不改由檔案或常數補一個值。
+    """
+    try:
+        return metadata.version(DISTRIBUTION)
+    except metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def rules_provenance(rules_root: Path | None) -> tuple[str, str]:
+    """(來源, 版本)：給了 `--rules-root` 就是 `override`，否則讀套件內的規則樹。
+
+    ⛔ 不讀該路徑、⛔ 不判它合不合法——那是 `brief` 載入時才會 fail-loud 的事。
+    """
+    return (OVERRIDE if rules_root is not None else PACKAGE), package_version()
 
 
 def read_doc(rules_root: Path, rel: str) -> str:
@@ -134,3 +160,35 @@ def required_sections(titles, text: str) -> list[tuple[str, str, int | None, int
         else:
             out.append((title, PRESENT if span[1] else EMPTY, span[0], span[1]))
     return out
+
+
+# `core/github.md` §2 的七個核心概念表：概念｜落地｜值。三欄逐字抽出，
+# 「落地」的措辭（SingleSelect／text／date／內建 `Status`）要怎麼對到平台的欄位型別，
+# 是平台細節、住 `wfx/gh/adopt.py`；本層只負責把表格切成三欄。
+_CONCEPT_SECTION = "## 2 · 七個核心概念"
+_CONCEPT_ROW = re.compile(r"^\|(?P<concept>[^|]+)\|(?P<landing>[^|]+)\|(?P<values>[^|]*)\|\s*$")
+
+
+def core_concept_rows(rules_root: Path) -> tuple[tuple[str, str, str], ...]:
+    """(概念, 落地, 值) 逐字，順序沿用文件。⛔ 不判內容、⛔ 不內建概念名。
+
+    抽不到＝規則樹的問題，往上丟 typed 失敗（採用清單連「該有哪些欄位」都說不出來時
+    ⛔ 不得靜默少報一項）。
+    """
+    rel = f"{CORE_DIR}/github.md"
+    text = read_doc(rules_root, rel)
+    if _CONCEPT_SECTION not in text:
+        raise LayerMissing("framework", rel, f"找不到「{_CONCEPT_SECTION}」")
+    block = text.split(_CONCEPT_SECTION, 1)[1].split("\n## ", 1)[0]
+    rows = []
+    for line in block.splitlines():
+        m = _CONCEPT_ROW.match(line.strip())
+        if m is None:
+            continue
+        concept, landing, allowed = (m.group(k).strip() for k in ("concept", "landing", "values"))
+        if concept in ("概念",) or not set(concept) - set("-: "):
+            continue
+        rows.append((concept, landing, allowed))
+    if not rows:
+        raise LayerMissing("framework", rel, "§2 的七個核心概念表抽不出任何一列")
+    return tuple(rows)

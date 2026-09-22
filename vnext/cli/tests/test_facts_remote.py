@@ -144,14 +144,15 @@ def test_ci_without_any_resolvable_sha_is_typed_unknown(tmp_path):
     assert 'unknown: CI check：未解析出 SHA' in render(facts)
 
 
-def test_output_is_exactly_the_six_fact_categories(tmp_path):
-    """節數與節名固定為六；renderer 自己的詞彙⛔ 無退回次數、轉移歷史或工作包完成度。
+def test_output_is_exactly_the_seven_fact_categories(tmp_path):
+    """節數與節名固定為七（W2.1 的規則來源接在既有六節之後）；renderer 自己的詞彙⛔ 無退回次數、
+    轉移歷史或工作包完成度。
 
     禁用字串只檢查**本 CLI 產生的模板**在固定快照下的輸出，⛔ 不是對散文或規則文件的判讀。
     """
     text = render(gather(tmp_path)[0])
     headings = [line for line in text.splitlines() if line.startswith('## ')]
-    assert [h.split('·')[0].strip() for h in headings] == [f'## {n}' for n in range(1, 7)]
+    assert [h.split('·')[0].strip() for h in headings] == [f'## {n}' for n in range(1, 8)]
     for banned in ('退回', '轉移歷史', '工作包', 'iteration'):
         assert banned not in text
 

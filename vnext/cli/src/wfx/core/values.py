@@ -11,6 +11,12 @@ from pathlib import Path
 from wfx.core.errors import LayerMissing, ValueNotInDomain
 from wfx.core.rules import read_doc
 
+# 概念名 → values.md 的表格列名。**值本身只住 values.md**；本表只記兩處命名的對應，
+# ⛔ 不是第二個值域居所。未列入者（owner／期限／Resource）⛔ 無值域。
+# 唯一居所在此：`write`（寫入前檢值域）與 `adopt`（比對 Project 的 SingleSelect 選項）共用同一份，
+# ⛔ 不保留第二份對照表。
+DOMAINS = {'狀態': '狀態', '階段': '階段', '風險': '風險影響', '緊急性': '緊急性'}
+
 _ROW = re.compile(r"^\|(?P<name>[^|]+)\|(?P<vals>[^|]+)\|\s*$")
 _COUNT = re.compile(r"[（(]\s*\d+\s*[）)]\s*$")
 

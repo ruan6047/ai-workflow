@@ -5,6 +5,8 @@ __pycache__/
 
 # Python 建置產物
 cli/src/*.egg-info/
+vnext/cli/build/
+vnext/cli/src/*.egg-info/
 __pycache__/
 .pytest_cache/
 

@@ -1,6 +1,6 @@
 """GitHub 讀取層。只有唯讀能力：⛔ 無任何 mutation 方法（寫入契約由 W1.8 `write` 另立）。
 
-四類錯誤分類沿用既有資產：**未知錯誤⛔ 不得推論資源不存在**（vnext/rules/core/research.md「未知不得冒充」）。
+四類錯誤分類沿用既有資產：**未知錯誤⛔ 不得推論資源不存在**（wfx/rules/core/research.md「未知不得冒充」）。
 runner 採 subprocess.run 的參數與回傳介面，測試以注入式固定／序列快照替身驗遠端變更行為。
 """
 import json
@@ -68,7 +68,7 @@ FIELD_VALUE_FRAGMENTS = (
 
 
 class GhClient:
-    """唯讀 GitHub 介接；每次呼叫即時打 API，⛔ 不快取（vnext/rules/core/github.md §7）。"""
+    """唯讀 GitHub 介接；每次呼叫即時打 API，⛔ 不快取（wfx/rules/core/github.md §7）。"""
 
     def __init__(self, repo, *, runner=None, page_size=100):
         self.repo = '/'.join(quote(part, safe='') for part in repo.split('/'))

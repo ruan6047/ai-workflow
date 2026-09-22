@@ -1,4 +1,4 @@
-"""本機 git 唯讀 revision 事實：`rev-parse`／`log`／`diff --stat`（vnext/rules/core/boundaries.md「CLI 邊界」）。
+"""本機 git 唯讀 revision 事實：`rev-parse`／`log`／`diff --stat`（wfx/rules/core/boundaries.md「CLI 邊界」）。
 
 不連網、不寫本機 repo、不改工作樹、⛔ 不解析輸出語意。
 取不到就 raise，交呼叫端印一行帶原因：⛔ 不回空清單冒充「沒有改動」。
