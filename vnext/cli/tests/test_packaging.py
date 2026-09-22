@@ -52,6 +52,22 @@ def test_brief_loads_the_four_layers_without_any_rules_root_flag(project_root, u
         assert f'[來源: {kind}' in out
 
 
+def test_no_markdown_in_the_package_falls_outside_the_declared_globs():
+    """套件裡每一份 `.md` 都要被 `package-data` 的 glob 收到，否則它**不會進 wheel**。
+
+    這不是把設定抄一遍：它把宣告的 glob 真的套在當下的檔案樹上。獨立失敗模式＝有人新增
+    `wfx/docs/<子目錄>/x.md`（`docs/*.md` ⛔ 不遞迴）或把規則放到 `wfx/` 根下——
+    原始碼樹與既有測試全綠，wheel 卻默默少一份文件，要到乾淨 venv 才會炸。
+    """
+    package = CLI_ROOT / 'src/wfx'
+    patterns = declaration()['tool']['setuptools']['package-data']['wfx']
+    shipped = {path for pattern in patterns for path in package.glob(pattern)}
+    present = {path for path in package.rglob('*.md')}
+    assert present, '套件內⛔ 無任何 markdown：這個測試本身已經失去意義'
+    assert present - shipped == set(), sorted(str(p.relative_to(package))
+                                              for p in present - shipped)
+
+
 # ── 版本只有一個居所 ────────────────────────────────────────────────────
 
 def test_version_lives_only_in_pyproject():

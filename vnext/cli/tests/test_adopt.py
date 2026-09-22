@@ -140,6 +140,29 @@ def test_blocked_items_carry_tool_rc_and_first_stderr_line(tmp_path, rules_root,
     assert states(out)['gh 已登入'] == adopt.UNVERIFIED
 
 
+def test_auth_status_stdout_never_reaches_the_listing(tmp_path, rules_root, capsys):
+    """`gh auth status` 的 **stdout** 帶帳號名與 token scope，⛔ 不得進清單——登入與未登入都是。
+
+    `probe_login` 是唯一會碰到這份 stdout 的地方，它刻意丟掉；沒有這條，把 blocked 的第三欄
+    改成 `stdout or stderr`（看起來像「訊息更完整」）能讓其餘所有 adopt 測試照樣全綠。
+    登入成功那一支同理：`ok` 的 fact 是固定字串，⛔ 不是 stdout。
+    """
+    secret = '✓ Logged in to github.com account <帳號> (keyring)\n- Token scopes: repo, project'
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(auth=(1, secret, 'You are not logged into any GitHub hosts.')))
+    assert rc == 0
+    assert ('- gh 已登入：環境阻塞（gh auth status｜rc=1｜'
+            'You are not logged into any GitHub hosts.）') in out
+    for leaked in ('Logged in to', '<帳號>', 'Token scopes', 'keyring'):
+        assert leaked not in out, leaked
+
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner(auth=(0, secret, '')))
+    assert rc == 0
+    assert '- gh 已登入：已完成（gh auth status rc=0）' in out
+    for leaked in ('Logged in to', '<帳號>', 'Token scopes', 'keyring'):
+        assert leaked not in out, leaked
+
+
 def test_unexecutable_tool_reports_rc_unknown_not_a_made_up_code(tmp_path, rules_root, capsys):
     def explode(args, **kwargs):
         raise FileNotFoundError("[Errno 2] No such file or directory: 'git'")

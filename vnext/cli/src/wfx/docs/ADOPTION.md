@@ -38,8 +38,12 @@ package version: <版本>｜unknown
 ```
 
 - `package`＝讀套件內的規則樹；給了 `--rules-root <p>` 就是 `override`。
-- `unknown`＝這個直譯器裡⛔ 無 `ai-workflow-vnext` 的 distribution metadata
+- `unknown`＝這個直譯器的 `sys.path` 上⛔ 無 `ai-workflow-vnext` 的 distribution metadata
   （典型情況：以原始碼樹 `PYTHONPATH=… python -m wfx` 直跑）。**這是事實，⛔ 不是錯誤。**
+  **判準是 metadata 在不在 `sys.path` 上，不是「有沒有 pip install」**：`build` 會在
+  `src/` 留下 `ai_workflow_vnext.egg-info/`，那份殘留也算 metadata，此時同一道原始碼樹直跑
+  會報出 **egg-info 裡的版本**而非 `unknown`。要重現 `unknown`，`sys.path` 上只放 `wfx/`
+  套件目錄本身（見第 10 節 E8）。
 - 本節⛔ 不印任何路徑：印了會讓「同一輸入兩次執行逐字相同」隨機器而破。
 
 ## 3 · 採用清單：怎麼讀
@@ -155,3 +159,52 @@ python -m pip uninstall ai-workflow-vnext
 
 `facts --adopt` ⛔ 不讀任何 Issue、⛔ 不讀遠端 repository：它只看本機環境、`.wf/`、
 remote 身分與（設了 `project` 時的）Project schema。
+
+## 10 · 受控端到端驗證（可重現步驟）
+
+要自己把「乾淨環境能裝、清單零寫入、升級不動資料」重跑一遍，照下面的順序。全程
+**⛔ 無非 dry-run 的遠端寫入**；會連網的只有 `facts --task`／`brief`／`write --dry-run`
+的**唯讀查詢**。先設三個變數（`PY` 換成你的 ≥3.14 直譯器）：
+
+```
+PY=<python3.14 的絕對路徑>
+PROJ=$(mktemp -d)                 # 空的採用者專案
+WHL=/tmp/wfx-dist/ai_workflow_vnext-0.1.0-py3-none-any.whl
+```
+
+- **E1 離線出輪子**。`uv build --offline --wheel --python "$PY" --out-dir /tmp/wfx-dist <此套件目錄>`
+  （或任何 PEP 517 前端配 `setuptools`；`python -m build --no-isolation` 需先把
+  `setuptools` 裝進該直譯器）。輪子⛔ 不進 repo。
+- **E2 乾淨 venv 安裝**。`$PY -m venv /tmp/wfx-venv` →
+  `/tmp/wfx-venv/bin/python -m pip install --no-index --no-cache-dir "$WHL"`。
+  無參數跑 `wfx` 應印用法並 **rc 2**（console script 會把 `main()` 的回傳值當 exit code）。
+- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **17 份**、
+  `wfx/docs/ADOPTION.md` 在，且⛔ 無 `.wf/`、⛔ 無任務／模型資料、⛔ 無憑證。
+  `pip show -f ai-workflow-vnext` 的 `Requires:` 須為**空**。
+- **E4 空目錄清單＋零寫入**。`find "$PROJ" | sort` 前後比對，中間跑兩次
+  `wfx --project-root "$PROJ" facts --adopt`：rc 0、兩次輸出 `diff` 逐字相同、`find` 無差異。
+  第 ①②節（直譯器、git／gh、套件）本來就會是「已完成」——**那是環境事實，不是專案狀態**。
+- **E5 套用後收斂**。照第 4 節建 `.wf/` 與 remote 後重跑：全項應轉「已完成」，
+  且 `shasum` 快照顯示 CLI 仍然零寫入。
+- **E6 未登入負控**。`GH_CONFIG_DIR=$(mktemp -d) GH_TOKEN= GITHUB_TOKEN= wfx … facts --adopt`：
+  「gh 已登入」應為**環境阻塞**並附 `gh auth status｜rc=1｜<stderr 首行>`，rc 仍 **0**。
+  **⛔ 不要跑 `gh auth logout`**——用完刪掉那個暫存 `GH_CONFIG_DIR` 即可，你真實的登入自始未被碰過
+  （`gh auth status` 前後相同可證）。清單⛔ 不印 `gh auth status` 的 stdout：帳號名與 token scope 在那裡。
+- **E7 安裝版 `brief`**。**不帶 `--rules-root`** 跑 `brief --task <id> --role <角色> --stage <階段>`：
+  rc 0，且 `framework:`／`user:`／`project:`／`task:` 四層來源標記齊全。
+- **E8 三種來源**。同一道 `facts --task`：不帶旗標＝`package`；帶 `--rules-root <checkout>`＝`override`；
+  把**只含 `wfx/` 套件目錄**（⛔ 無 `*.egg-info`）的路徑放進 `PYTHONPATH` 直跑＝`unknown`。
+- **E9／E10 `write --dry-run`**。留言路徑用 `--comment-file`、欄位路徑用 `--field`；
+  兩者都印 `would-write ⛔ 未送出任何 mutation`。零 mutation 的證據＝dry-run 前後的
+  Issue `updatedAt`、留言數、`facts` 第 ③節兩個基準與 `gh project field-list` 逐字相同。
+  **⛔ 不要為了取證貼測試留言。**
+- **E11 缺環境負控**。空目錄跑 `brief --task`＝rc 1 `LayerMissing`；非 git 且⛔ 無 `GH_REPO`
+  跑 `facts --task`＝rc 1 `TargetError`；`--project-root` 指到不存在的路徑跑 `facts --adopt`＝
+  rc 1 `AdoptUnavailable`。三者的 **stdout 都應為空**（⛔ 不印半份結果）。
+- **E12 升級不變**。照第 6 節取三份快照 → 在 **`/tmp` 的原始碼副本**改 `version` 再 build
+  （**⛔ 不改你自己的工作樹、⛔ 不 commit 版本號**）→ `pip install --force-reinstall` →
+  三份快照逐字相同。回退與移除照第 7／8 節，之後專案樹仍應逐字不變。
+- **E13 測試**。`python -m pytest <此套件目錄>/tests -q`（3.14）須全綠。
+
+收尾：刪掉 `/tmp/wfx-dist`、`/tmp/wfx-venv`、`$PROJ` 與那個暫存 `GH_CONFIG_DIR`；
+你的工作樹 `git status` 應為 clean（輪子與 venv **從來不該**落在 repo 裡）。
