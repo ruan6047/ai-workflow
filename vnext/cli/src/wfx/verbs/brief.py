@@ -44,6 +44,9 @@ def build(context, role, stage, *, user_root, task_source) -> str:
     rules_root = context.rules.root
     values.check(rules_root, '角色', role)
     values.check(rules_root, '階段', stage)
+    # 選用文件模組（boundaries.md §5）：未啟用時這兩個值都是空的，輸出與未支援模組前逐字相同。
+    enabled = context.config.get('modules') or []
+    modules = layers.module_docs(rules_root, enabled, values.domain(rules_root, '階段'), stage)
 
     project_segments = layers.project_layer(context.project_root)
     data = task_source.fetch(context)
@@ -59,9 +62,12 @@ def build(context, role, stage, *, user_root, task_source) -> str:
         Block('專案政策來源', [layers.project_policy_index(project_segments)], level=3),
         Block('適用 core 規則定位', [layers.rules_index(rules_root)], level=3),
     ]
+    if enabled:
+        first_screen.append(Block('啟用模組定位', [layers.module_index(modules)], level=3))
     appendix = [
         Block('完整原文附錄', note=APPENDIX_NOTE),
-        Block('適用規則', layers.framework_rules(rules_root, role, stage), level=3),
+        Block('適用規則', layers.framework_rules(rules_root, role, stage)
+              + layers.module_segments(modules), level=3),
         Block('使用者層', layers.user_model_data(user_root), level=3),
         Block('專案層', project_segments, level=3),
         Block('任務層', task_segments, level=3),

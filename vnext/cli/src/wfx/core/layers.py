@@ -2,6 +2,7 @@
 
 每段都是一個 Segment，輸出時逐段標示 `[來源: kind:path#節]`。
 ⛔ 不做 delta 合成、⛔ 不做模組層、⛔ 不解析散文語意。
+已啟用的選用文件模組住在框架規則樹，因此仍是 `framework` 段，⛔ 不是第五種 kind。
 """
 
 from __future__ import annotations
@@ -52,6 +53,18 @@ def framework_rules(rules_root: Path, role: str, stage: str) -> list[Segment]:
     ):
         segments.extend(_doc_segments(rel, text))
     return segments
+
+
+def module_docs(rules_root: Path, names, stages, stage: str) -> list[tuple[str, tuple[str, str] | None]]:
+    """已啟用模組（依 `.wf/config.json` 的宣告順序）在當前階段的文件；該階段沒有文件＝None。
+
+    每個已啟用模組都完整驗過，不論當前階段——名稱打錯在任何階段都 typed 失敗，⛔ 不靜默略過。
+    """
+    return [(name, rules.module_stage_docs(rules_root, name, stages).get(stage)) for name in names]
+
+
+def module_segments(docs) -> list[Segment]:
+    return [segment for _, doc in docs if doc for segment in _doc_segments(*doc)]
 
 
 def required_checklist(rules_root: Path, role: str, stage: str) -> list[Segment]:
@@ -153,6 +166,18 @@ def rules_index(rules_root: Path) -> Segment:
     """
     lines = [_anchor_line(rel, text) for rel, text in rules.core_docs(rules_root)]
     return Segment("framework", "rules/core/", "節索引", "\n".join(lines))
+
+
+NO_MODULE_DOC = "本階段⛔ 無文件，⛔ 不注入"
+
+
+def module_index(docs) -> Segment:
+    """已啟用模組逐個一行：當前階段的文件路徑與節錨，或「本階段無文件」。全文在附錄。"""
+    lines = [
+        _anchor_line(*doc) if doc else f"- {rules.MODULES_DIR}/{name}/：{NO_MODULE_DOC}"
+        for name, doc in docs
+    ]
+    return Segment("framework", f"rules/{rules.MODULES_DIR}/", "啟用模組", "\n".join(lines))
 
 
 def project_policy_index(project_segments: list[Segment]) -> Segment:

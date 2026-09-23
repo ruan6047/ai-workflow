@@ -214,3 +214,29 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.1.0-py3-none-any.whl
 
 收尾：刪掉 `/tmp/wfx-dist`、`/tmp/wfx-venv`、`$PROJ` 與那個暫存 `GH_CONFIG_DIR`；
 你的工作樹 `git status` 應為 clean（輪子與 venv **從來不該**落在 repo 裡）。
+
+## 11 · 選用模組
+
+契約本體住 `rules/core/boundaries.md` §5「本版契約：選用文件模組」；本節只講怎麼操作。
+
+- **本版只支援文件模組**：模組內容隨框架套件出貨，住規則樹 `modules/<名稱>/<階段>.md`。
+  你的專案**⛔ 不複製、⛔ 不自寫**模組內容；專案自己的補充照舊寫在 `.wf/*.md`。
+  目前套件**未出貨任何模組**，可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
+- **啟用**：在 `.wf/config.json` 加一個鍵，其餘三鍵不動：
+
+  ```
+  "modules": ["<名稱>"]
+  ```
+
+  之後 `brief` 在該模組有文件的階段，會在首屏多一段 `### 啟用模組定位`、並把原文以
+  `framework:modules/<名稱>/<階段>.md` 的來源標記附在 `### 適用規則` 之後；沒有文件的階段只在首屏
+  標明「本階段⛔ 無文件，⛔ 不注入」。
+- **停用／降級**：刪掉 `modules` 鍵，或設成 `null`／`[]`。`brief` 輸出回到與未啟用時逐字相同，
+  ⛔ 無其他清理步驟。回退到不認得 `modules` 鍵的舊套件前，**先**從設定移除它——舊版會把它當未知鍵
+  （`ConfigError`）。
+- **錯誤怎麼讀**（皆 rc 1、stdout 空）：
+  - `ConfigError: modules 須為 null 或不重複的模組名稱清單…`＝形狀錯（不是清單、重複、空字串、
+    含 `/` 或 `\`、以 `.` 開頭或前後有空白）；三個動詞都會擋，`facts --adopt` 把它列成「格式錯誤」。
+  - `LayerMissing: 缺少必要層 framework：modules/<名稱>（…）`＝這個名稱不在你用的規則樹裡，或該目錄沒有文件。
+    這一項要讀規則樹才判得出來，**只有 `brief` 會報**；`facts --adopt` 只驗形狀。
+  - `MalformedInput: framework:modules/<名稱> 的檔名不是階段值：…`＝規則樹本身寫錯，請回報框架，⛔ 不要自行改檔。

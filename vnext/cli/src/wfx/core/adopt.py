@@ -223,7 +223,7 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
     if wf_displaced:
         items.append(Item(CONFIG_REL, UNVERIFIED, _upstream(f'{wf.name}/ 目錄')))
     elif result.state == CONFIG_OK:
-        items.append(Item(CONFIG_REL, DONE, '形狀合法｜只認 rules／remote／project 三鍵'))
+        items.append(Item(CONFIG_REL, DONE, '形狀合法｜只認 rules／remote／project／modules 四鍵'))
     elif result.state == CONFIG_MISSING:
         items.append(Item(CONFIG_REL, MISSING, result.reason, config_skeleton))
     else:

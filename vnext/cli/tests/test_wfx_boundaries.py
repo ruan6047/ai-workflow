@@ -153,12 +153,13 @@ def test_client_has_no_mutation_surface():
 
 
 def test_config_shape_only(tmp_path):
-    assert load_config(tmp_path) == {'rules': None, 'remote': None, 'project': None}
+    assert load_config(tmp_path) == {'rules': None, 'remote': None, 'project': None,
+                                      'modules': None}
     wf = tmp_path / '.wf'
     wf.mkdir()
     (wf / 'config.json').write_text('{"project": {"owner": "o", "number": 9}}')
     assert load_config(tmp_path)['project'] == {'owner': 'o', 'number': 9}
-    (wf / 'config.json').write_text('{"modules": []}')
+    (wf / 'config.json').write_text('{"plugins": []}')
     with pytest.raises(ConfigError, match='未知鍵'):
         load_config(tmp_path)
     (wf / 'config.json').write_text('{"remote": "https://github.com/o/r"}')

@@ -105,7 +105,7 @@ PM 可以只把首屏貼進派工單，需要核對時再給整份。
 
 | kind | 來源 | 缺了會怎樣 |
 |---|---|---|
-| `framework` | 規則樹（預設＝套件內 `wfx/rules`，`--rules-root` 可覆寫）下的 `core/*.md` 六份全載，加選定的 `stages/<階段>.md` 與 `roles/<角色>.md` | typed 失敗（rc=1） |
+| `framework` | 規則樹（預設＝套件內 `wfx/rules`，`--rules-root` 可覆寫）下的 `core/*.md` 六份全載，加選定的 `stages/<階段>.md` 與 `roles/<角色>.md`，再加 `.wf/config.json` 已啟用模組的 `modules/<名稱>/<階段>.md`（見下節） | typed 失敗（rc=1） |
 | `user` | `~/.wf/model-usage.md`、`~/.wf/model-availability.md`，原樣呈現 | **合法 unknown，rc=0** |
 | `project` | `<project-root>/.wf/*.md` | typed 失敗（rc=1） |
 | `task` | Issue body ＋七個核心概念＋**該卡全部留言**（唯讀 GitHub） | Issue 取不到或 body 為空＝typed 失敗（rc=1） |
@@ -114,6 +114,20 @@ PM 可以只把首屏貼進派工單，需要核對時再給整份。
 ⛔ 不逐則判欄位缺漏、⛔ 不判時效——新鮮度由 PM 在派工當下自行判斷（`rules/roles/PM.md` §2）。
 
 **必要清單**＝該角色與該階段兩份文件的章節逐項列出，六個角色各不相同；呈現在首屏。
+
+### 選用文件模組（#392）
+
+契約本體住 `rules/core/boundaries.md` §5，操作見 `wfx/docs/ADOPTION.md` §11。程式面只有三件事：
+
+- `.wf/config.json` 多認一個鍵 `modules`：`null`／缺鍵／`[]`＝停用，否則是不重複的名稱清單；
+  形狀錯＝三個動詞同一個 `ConfigError`（rc=1）。
+- `brief` 對每個已啟用模組讀 `modules/<名稱>/`：檔名（去 `.md`）＝生效階段，只注入等於 `--stage`
+  的那一份，依宣告順序接在 `### 適用規則` 的角色文件之後，kind 仍是 `framework`。
+  名稱不在規則樹、目錄空＝`LayerMissing`；檔名不是階段值＝`MalformedInput`，一律 rc=1。
+- 有啟用模組時首屏末尾多一段 `### 啟用模組定位`（路徑＋節錨，或「本階段⛔ 無文件」）；
+  停用時兩處都不出現，輸出逐字同未支援模組前。
+
+⛔ 無第五種 kind、⛔ 無新動詞或旗標、⛔ 不依角色生效、⛔ 無模組衝突處理；套件本身未出貨任何模組。
 
 ### 第 4 層的三條邊界
 

@@ -122,7 +122,7 @@ def test_the_verb_set_is_still_exactly_three():
 
 def test_all_five_classes_appear_in_one_listing(tmp_path, rules_root, capsys):
     (tmp_path / '.wf').mkdir()
-    (tmp_path / '.wf/config.json').write_text('{"modules": []}', encoding='utf-8')
+    (tmp_path / '.wf/config.json').write_text('{"plugins": []}', encoding='utf-8')
     rc, out = listing(tmp_path, rules_root, capsys,
                       runner=runner(auth=(1, '', 'You are not logged into any GitHub hosts.'),
                                     worktree=(128, '', 'fatal: not a git repository')))
