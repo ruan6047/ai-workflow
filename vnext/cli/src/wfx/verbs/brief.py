@@ -44,7 +44,7 @@ def build(context, role, stage, *, user_root, task_source) -> str:
     rules_root = context.rules.root
     values.check(rules_root, '角色', role)
     values.check(rules_root, '階段', stage)
-    # 選用文件模組（boundaries.md §5）：未啟用（缺鍵／null）時這兩個值都是空的，輸出與未支援模組前逐字相同。
+    # 選用文件模組（boundaries.md §5）：未啟用（缺鍵／null）時這兩個值都是空的，⛔ 不注入模組內容。
     enabled = context.config.get('modules') or []
     modules = layers.module_docs(rules_root, enabled, values.domain(rules_root, '階段'), stage)
 
