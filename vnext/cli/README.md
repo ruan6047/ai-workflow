@@ -119,8 +119,8 @@ PM 可以只把首屏貼進派工單，需要核對時再給整份。
 
 契約本體住 `rules/core/boundaries.md` §5，操作見 `wfx/docs/ADOPTION.md` §11。程式面只有三件事：
 
-- `.wf/config.json` 多認一個鍵 `modules`：`null`／缺鍵／`[]`＝停用，否則是不重複的名稱清單；
-  形狀錯＝三個動詞同一個 `ConfigError`（rc=1）。
+- `.wf/config.json` 多認一個鍵 `modules`：`null`／缺鍵＝停用，否則是非空、不重複的名稱清單；
+  形狀錯（含 `[]`）＝三個動詞同一個 `ConfigError`（rc=1）。
 - `brief` 對每個已啟用模組讀 `modules/<名稱>/`：檔名（去 `.md`）＝生效階段，只注入等於 `--stage`
   的那一份，依宣告順序接在 `### 適用規則` 的角色文件之後，kind 仍是 `framework`。
   名稱不在規則樹、目錄空＝`LayerMissing`；檔名不是階段值＝`MalformedInput`，一律 rc=1。

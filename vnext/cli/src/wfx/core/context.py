@@ -80,8 +80,8 @@ def load_config(project_root) -> dict:
     """只驗形狀、⛔ 不判內容、⛔ 不連網。缺檔＝空設定（各鍵為 None）。
 
     `rules`＝null 或 {"path": 非空字串}；`remote`＝null 或 remote 名稱（⛔ 不是 URL）；
-    `project`＝null 或 {"owner": 字串, "number": 整數}；`modules`＝null 或選用模組名稱的清單
-    （boundaries.md §5）。這裡只驗名稱的形狀；名稱在不在框架規則樹，要讀規則樹的 `brief` 才判。
+    `project`＝null 或 {"owner": 字串, "number": 整數}；`modules`＝null 或非空的選用模組名稱清單
+    （boundaries.md §5；`[]`＝形狀錯，⛔ 不是停用）。這裡只驗名稱的形狀；名稱在不在框架規則樹，要讀規則樹的 `brief` 才判。
     """
     path = Path(project_root) / CONFIG_REL
     try:
@@ -109,10 +109,10 @@ def load_config(project_root) -> dict:
                                 or type(project['number']) is not int):
         raise ConfigError('project 須為 null 或 {"owner": 非空字串, "number": 整數}')
     modules = cfg['modules']
-    if modules is not None and (not isinstance(modules, list)
+    if modules is not None and (not isinstance(modules, list) or not modules
                                 or not all(_module_name_ok(name) for name in modules)
                                 or len(set(modules)) != len(modules)):
-        raise ConfigError('modules 須為 null 或不重複的模組名稱清單（名稱不得含路徑分隔、不得以 . 開頭）')
+        raise ConfigError('modules 須為 null 或非空、不重複的模組名稱清單（名稱不得含路徑分隔、不得以 . 開頭）')
     return cfg
 
 

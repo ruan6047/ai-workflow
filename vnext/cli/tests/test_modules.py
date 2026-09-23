@@ -37,19 +37,17 @@ def configure(project_root, **extra):
 
 # ── WP1：設定形狀 ───────────────────────────────────────────────────────
 
-def test_modules_absent_null_or_empty_all_mean_disabled(project_root):
+def test_modules_absent_or_null_mean_disabled(project_root):
     configure(project_root)
     assert load_config(project_root)['modules'] is None
     configure(project_root, modules=None)
     assert load_config(project_root)['modules'] is None
-    configure(project_root, modules=[])
-    assert load_config(project_root)['modules'] == []
     configure(project_root, modules=[SAMPLE, '另一個'])
     assert load_config(project_root)['modules'] == [SAMPLE, '另一個']
 
 
 @pytest.mark.parametrize('bad', [
-    SAMPLE, {'name': SAMPLE}, [''], [1], [None], ['../core'], ['a/b'], ['a\\b'],
+    SAMPLE, {'name': SAMPLE}, [], [''], [1], [None], ['../core'], ['a/b'], ['a\\b'],
     ['.hidden'], [' 前後空白 '], [SAMPLE, SAMPLE],
 ])
 def test_malformed_modules_is_a_config_error_for_every_verb(project_root, bad, capsys):
@@ -95,12 +93,12 @@ def test_enabled_module_without_a_document_for_this_stage_injects_nothing(
 
 def test_disabled_output_is_identical_to_a_rules_tree_without_modules(
         run_cli, project_root, rules_root):
-    """停用（缺鍵／null／空清單）＝逐字等於規則樹根本沒有模組時的輸出。"""
+    """停用（缺鍵／null）＝逐字等於規則樹根本沒有模組時的輸出。"""
     configure(project_root)
     _, baseline, _ = run_cli()
     (rules_root / 'modules' / SAMPLE).mkdir(parents=True)
     (rules_root / 'modules' / SAMPLE / '執行.md').write_text(f'## 1\n{SAMPLE_TEXT}\n', encoding='utf-8')
-    for disabled in ({}, {'modules': None}, {'modules': []}):
+    for disabled in ({}, {'modules': None}):
         configure(project_root, **disabled)
         rc, out, _ = run_cli()
         assert rc == 0
@@ -149,7 +147,8 @@ def test_adoption_listing_checks_only_the_shape_of_modules(tmp_path, rules_root,
     from wfx.core import adopt
     from .test_adopt import listing, runner, states
     (tmp_path / '.wf').mkdir()
-    for modules, expected in ((['not-in-tree'], adopt.DONE), ('not-a-list', adopt.MALFORMED)):
+    for modules, expected in ((['not-in-tree'], adopt.DONE), ('not-a-list', adopt.MALFORMED),
+                              ([], adopt.MALFORMED)):
         (tmp_path / '.wf/config.json').write_text(json.dumps({'modules': modules}), encoding='utf-8')
         rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
         assert rc == 0
