@@ -1,7 +1,7 @@
 """#392 最小選用模組契約：`.wf/config.json` 的 `modules` 啟用、框架規則樹 `modules/<名稱>/<階段>.md` 提供。
 
 樣本模組是**本檔的 fixture**（與任何特定方法、專案無關），只建在 tmp 規則樹副本裡；
-套件本身⛔ 不出貨任何真實模組。全部走注入式快照，零網路、零 mutation。
+套件出貨的真實模組（`tdd`）另由 test_module_tdd.py 驗。全部走注入式快照，零網路、零 mutation。
 """
 
 import json
