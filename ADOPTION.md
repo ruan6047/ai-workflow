@@ -1,5 +1,7 @@
 # ADOPTION — 新專案接上框架
 
+> 本檔是舊制 `wf` 的採用流程。明確選用 vNext 試用基準時改看 `vnext/cli/src/wfx/docs/ADOPTION.md`（入口見 `README.md` §4）；既有採用專案⛔ 不自動切換。
+
 首次採用的必要配置項母體住 `core/adopt.md` §0（恰九項）。本檔逐項寫出**由誰填**與**何時填**；⛔ 不重列母體，也⛔ 不把任何一項的唯一居所放進 `notes` 合成輸出（`.wf/stages/<階段>.md` 的 `P-` 或卡面 `notes` 的 `T-`）。
 
 ## 1 · repo 前置

@@ -2,6 +2,8 @@
 
 多 AI 協作的任務治理框架：規則住這個 repo，卡與看板住各專案的 GitHub issue 與 Project。
 
+> 本檔 §1–§3 描述舊制 `wf`。新任務可明確選用 vNext 試用基準，見 §4；兩者⛔ 不混用，也⛔ 不自動切換。
+
 ## 1 · 心智模型
 
 - CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不做內容判讀。
@@ -29,3 +31,13 @@
 - 活卡與看板：`gh project list --owner <帳號>` 取板號，再 `gh project item-list <N> --owner <帳號>`。
 - 平台硬擋現況：`gh api repos/<owner>/<repo>/rulesets`。
 - 舊制規則與範本：`archive/rules-2026-09/`（唯讀，僅供對照）。
+
+## 4 · vNext 試用基準（明確選用）
+
+- 定位：可固定版本安裝的**試用基準**，⛔ 不宣稱全面穩定，⛔ 無自動升級。版本 `0.1.0`（唯一居所＝`vnext/cli/pyproject.toml`）。
+- 範圍：選用 vNext 的新任務才適用。既有專案、舊卡與舊 `wf` ⛔ 不自動切換；舊卡照原流程完成，舊制內容維持封存對照。
+- 內容：套件 `ai-workflow-vnext`、CLI `wfx`，動詞只有 `brief`／`facts`／`write`；規則樹隨套件出貨（`vnext/cli/src/wfx/rules/`：`core/`、`roles/`、`stages/`、選用文件模組 `modules/tdd/`）。
+- 環境：Python **3.14**（`requires-python >=3.14`），`git` 與 `gh` 另行安裝。
+- 安裝：取得對應版本的 wheel 後 `python -m pip install ai_workflow_vnext-0.1.0-py3-none-any.whl`；固定版本的 wheel 以 tag＋GitHub Release 附件發布，尚未發布前可自行 `python -m build --wheel --outdir <repo 外的目錄> vnext/cli`。
+- 選用 TDD 文件模組：專案 `.wf/config.json` 加 `"modules": ["tdd"]`，只有 `執行`、`審核` 兩個階段有文件。**尚無真實專案啟用案例**，只經 CI 測試驗證；⛔ 不據此宣稱其他模組類型已驗證。
+- 文件：CLI 契約 `vnext/cli/README.md`；採用流程（安裝、版本確認、升級、回退、移除）`vnext/cli/src/wfx/docs/ADOPTION.md`；需求邊界 `docs/research/VNEXT-REQUIREMENTS-2026-09-21.md`。

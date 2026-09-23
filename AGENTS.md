@@ -1,5 +1,14 @@
 # AGENTS.md — ai-workflow
 
+## vNext 試用基準的適用範圍
+
+`vnext/` 是明確選用的 vNext 試用基準（入口見 `README.md` §4），以 `docs/research/VNEXT-REQUIREMENTS-2026-09-21.md` 作為已核定的需求與流程邊界；規則本體住 `vnext/cli/src/wfx/rules/`。
+
+- 明確選用 vNext 的任務使用該文件定義的五階段輕量流程；具體新規則尚未經需求方確認前，不得自行補成生效規則。
+- 既有 `core/`、`roles/`、`stages/`、`modules/`、舊 CLI、舊卡片格式、tier、計數器與 trailer 規則只供歷史及重用評估，不得作為 vNext 的派工、退回或驗收判準。
+- 不逐檔註解、搬移或修改既有規則來模擬 vNext；vNext 的成果放在 `vnext/`。
+- 未選用 vNext 的任務與既有舊卡仍依下節的現行規則運作；vNext ⛔ 不自動切換任何專案、舊卡或版本。
+
 > 舊制規則、範本、設計文件與舊 CLI 凍結；舊入口文件全文在 `archive/rules-2026-09/`（唯讀，僅供對照）。
 
 ## 現在以什麼為準
