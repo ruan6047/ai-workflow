@@ -1,6 +1,7 @@
 # CLAUDE.md — ai-workflow
 
 > 舊制規則、範本、設計文件與舊 CLI 全部封存在 `archive/rules-2026-09/`（唯讀，僅供對照）；舊 `wfcli` 凍結不再改。
+> 本檔下列各節是舊制 `wf`；明確選用 vNext 試用基準的任務改看 `AGENTS.md` 的 vNext 節與 `README.md` §4。
 
 ## 現在以什麼為準
 
