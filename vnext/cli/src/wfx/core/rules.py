@@ -10,11 +10,13 @@ from importlib import metadata, resources
 import re
 from pathlib import Path
 
-from wfx.core.errors import LayerMissing
+from wfx.core.errors import LayerMissing, MalformedInput
 
 CORE_DIR = "core"
 STAGES_DIR = "stages"
 ROLES_DIR = "roles"
+# 選用文件模組：`modules/<名稱>/<階段>.md`，隨框架規則樹出貨（boundaries.md §5）。
+MODULES_DIR = "modules"
 
 # distribution 名稱＝`vnext/cli/pyproject.toml` 的 `[project] name`；版本值的唯一居所也在那裡。
 DISTRIBUTION = "ai-workflow-vnext"
@@ -80,6 +82,26 @@ def stage_doc(rules_root: Path, stage: str) -> tuple[str, str]:
 def role_doc(rules_root: Path, role: str) -> tuple[str, str]:
     rel = f"{ROLES_DIR}/{role}.md"
     return rel, read_doc(rules_root, rel)
+
+
+def module_stage_docs(rules_root: Path, name: str, stages) -> dict[str, tuple[str, str]]:
+    """一個已啟用模組的文件：{階段: (相對路徑, 原文)}。
+
+    模組＝`modules/<名稱>/` 目錄；檔名（去 `.md`）就是生效的階段，⛔ 不讀 frontmatter、⛔ 不判內容。
+    目錄不在或沒有文件＝`LayerMissing`；檔名不在階段值域＝規則樹寫錯＝`MalformedInput`，
+    ⛔ 不得靜默變成「永遠不生效」的文件。
+    """
+    directory = rules_root / MODULES_DIR / name
+    rel_dir = f"{MODULES_DIR}/{name}"
+    if not directory.is_dir():
+        raise LayerMissing("framework", rel_dir, f"已在 .wf/config.json 啟用，但規則樹找不到 {directory}")
+    docs = {p.stem: f"{rel_dir}/{p.name}" for p in sorted(directory.glob("*.md"))}
+    if not docs:
+        raise LayerMissing("framework", rel_dir, "目錄下沒有模組文件")
+    stray = sorted(stem for stem in docs if stem not in stages)
+    if stray:
+        raise MalformedInput(f"framework:{rel_dir} 的檔名不是階段值：{'、'.join(stray)}")
+    return {stage: (rel, read_doc(rules_root, rel)) for stage, rel in docs.items()}
 
 
 def split_sections(text: str) -> list[tuple[str, str]]:
