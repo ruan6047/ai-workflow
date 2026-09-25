@@ -120,6 +120,22 @@ Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清
 
 套用完重跑同一道指令，逐項應轉成「已完成」。
 
+### AI 任務入口（複製到採用專案的 `AGENTS.md`／`CLAUDE.md`）
+
+以下是範例，路徑換成第 1 節實際用的 venv；⛔ 不是規則，規則仍只住 `wfx/rules/`。
+
+````markdown
+## 工作流程（wfx）
+
+- 入口：`wfx/docs/ADOPTION.md` §1 的獨立 venv（預設 `$HOME/.venvs/wfx`，可換成實際位置；下行命令要跟著改）；以絕對路徑直接呼叫，⛔ 不依賴 PATH。
+- 有卡：在本專案根目錄執行（`--project-root .` 指當前目錄）
+  `"$HOME/.venvs/wfx/bin/wfx" --project-root . brief --task <issue> --role <受派角色> --stage <當前階段>`，照輸出接手。
+- 沒有卡，或任務角色不明：把問題、證據、已做的修改交給當值 PM；由 PM 查重、決定是否開卡與派工。
+  ⛔ 不自行開卡、⛔ 不寫流程欄位。
+- 依據：同一時間只有一位當值 PM（`wfx/rules/roles/PM.md`）；開卡與關卡＝PM 的平台協調操作
+  （`wfx/rules/core/github.md` §5）。
+````
+
 ## 5 · 升級
 
 ```
