@@ -14,8 +14,12 @@ GitHub Project schema，⛔ 不登入、⛔ 不保存憑證、⛔ 不安裝工�
 ## 1 · 安裝
 
 ```
-python -m pip install ai_workflow_vnext-<版本>-py3-none-any.whl
-wfx
+WFX_VENV="$HOME/.venvs/wfx"                                  # 獨立 venv 位置，可自選
+WFX_WHEEL="ai_workflow_vnext-<版本>-py3-none-any.whl"         # 換成實際 wheel 檔路徑
+python3.14 -m venv "$WFX_VENV"
+"$WFX_VENV/bin/python" -m pip install "$WFX_WHEEL"
+test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $WFX_VENV/bin/wfx"
+"$WFX_VENV/bin/wfx"                                          # 以絕對路徑啟動，不依賴 PATH
 ```
 
 - 需要 Python **≥ 3.14**（`requires-python`）。
@@ -24,6 +28,12 @@ wfx
 - 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（19 份 markdown）
   隨 wheel 走，住在 `wfx/rules/`，⛔ 不複製進你的專案。
 - 無參數執行 `wfx` 會印用法並以 **rc 2** 結束（用法錯）。
+- `wfx: command not found` 先看上面的檢查：
+  - 印 `OK`＝**只是 PATH 未設定**，⛔ 不是安裝缺陷：用 `"$WFX_VENV/bin/wfx"`，或
+    `source "$WFX_VENV/bin/activate"` 後再打 `wfx`。
+  - 印 `MISSING`＝**console script 真缺失**：以 `"$WFX_VENV/bin/python" -m pip show -f ai-workflow-vnext`
+    確認有無安裝紀錄與 `bin/wfx`，再 `--force-reinstall` 該 wheel。`python -m wfx` 能跑⛔ 不證明
+    console script 裝好，安裝驗證只看 `$WFX_VENV/bin/wfx`。
 
 ## 2 · 版本確認
 
