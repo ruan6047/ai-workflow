@@ -38,7 +38,7 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 ## 2 · 版本確認
 
 ```
-wfx --project-root <你的專案> facts --task <id>    # 第 ⑦ 節
+"$HOME/.venvs/wfx/bin/wfx" --project-root <你的專案> facts --task <id>    # 第 ⑦ 節
 ```
 
 ```
@@ -59,7 +59,7 @@ package version: <版本>｜unknown
 ## 3 · 採用清單：怎麼讀
 
 ```
-wfx --project-root <你的專案> facts --adopt [--rules-root <p>]
+"$HOME/.venvs/wfx/bin/wfx" --project-root <你的專案> facts --adopt [--rules-root <p>]
 ```
 
 `--adopt` 與 `--task`／`--sha` **互斥**，兩者皆缺＝用法錯（rc 2）。它⛔ 不需要任務、
@@ -202,7 +202,7 @@ remote 身分與（設了 `project` 時的）Project schema。
 ```
 PY=<python3.14 的絕對路徑>
 PROJ=$(mktemp -d)                 # 空的採用者專案
-WHL=/tmp/wfx-dist/ai_workflow_vnext-0.1.0-py3-none-any.whl
+WHL=/tmp/wfx-dist/ai_workflow_vnext-0.1.1-py3-none-any.whl
 ```
 
 - **E1 離線出輪子**。`uv build --offline --wheel --python "$PY" --out-dir /tmp/wfx-dist <此套件目錄>`
