@@ -4,7 +4,7 @@
 name = "ai-workflow-vnext"
 # **版本值的唯一居所**。⛔ 不得再出現 `__version__`、VERSION 檔或 `.wf/config.json` 版本鍵；
 # 執行期一律走 `importlib.metadata.version("ai-workflow-vnext")`，取不到就是 unknown。
-version = "0.1.0"
+version = "0.1.1"
 description = "wfx：vNext CLI。動詞集合＝brief／facts／write；規則樹以 package data 隨輪子出貨"
 requires-python = ">=3.14"
 # ⛔ 無執行期相依：`gh`／`git` 是外部指令，不是 Python 套件（`pip show` 的 Requires: 須為空）。
