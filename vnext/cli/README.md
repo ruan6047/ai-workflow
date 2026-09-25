@@ -22,14 +22,18 @@ CLI 只載入與呈現資訊、只交客觀事實，**內容判斷由人或負�
 ## 跑它
 
 ```
-pip install ai_workflow_vnext-<版本>-py3-none-any.whl
-wfx [--project-root <p>] <verb> [動詞參數…]
+python3.14 -m venv "$HOME/.venvs/wfx"                        # 獨立 venv，路徑可自選
+"$HOME/.venvs/wfx/bin/python" -m pip install ai_workflow_vnext-<版本>-py3-none-any.whl
+"$HOME/.venvs/wfx/bin/wfx" [--project-root <p>] <verb> [動詞參數…]   # 絕對路徑，不依賴 PATH
 
-wfx --project-root vnext brief --task 'ruan6047/ai-workflow#370' --role 執行者 --stage 執行
-wfx --project-root vnext facts --task 370 --sha <sha>
-wfx --project-root <任一既存目錄> facts --adopt          # 唯讀採用清單，⛔ 不需任務／.wf/／Project
-wfx --project-root vnext write --task 370 --field 狀態=進行中 --expect-updated-at 2026-09-21T11:05:20Z
+"$HOME/.venvs/wfx/bin/wfx" --project-root vnext brief --task 'ruan6047/ai-workflow#370' --role 執行者 --stage 執行
+"$HOME/.venvs/wfx/bin/wfx" --project-root vnext facts --task 370 --sha <sha>
+"$HOME/.venvs/wfx/bin/wfx" --project-root <任一既存目錄> facts --adopt          # 唯讀採用清單，⛔ 不需任務／.wf/／Project
+"$HOME/.venvs/wfx/bin/wfx" --project-root vnext write --task 370 --field 狀態=進行中 --expect-updated-at 2026-09-21T11:05:20Z
 ```
+
+已 activate 該 venv 或 PATH 已設定時可簡寫為 `wfx`。PATH 排查與
+可複製進採用專案 `AGENTS.md`／`CLAUDE.md` 的 AI 任務入口見 `wfx/docs/ADOPTION.md` §1 與 §4。
 
 未安裝時等價的入口是 `PYTHONPATH=vnext/cli/src python -m wfx …`（差別只在
 `facts` 第 ⑦ 節的版本會是 `unknown`）。
