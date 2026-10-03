@@ -25,7 +25,7 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 - 需要 Python **≥ 3.14**（`requires-python`）。
 - 執行期⛔ 無 Python 相依（`pip show ai-workflow-vnext` 的 `Requires:` 為空）；
   `git` 與 `gh` 是**外部指令**，各自另行安裝。
-- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（19 份 markdown）
+- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（20 份 markdown）
   隨 wheel 走，住在 `wfx/rules/`，⛔ 不複製進你的專案。
 - 無參數執行 `wfx` 會印用法並以 **rc 2** 結束（用法錯）。
 - `wfx: command not found` 先看上面的檢查：
@@ -133,10 +133,51 @@ Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清
 - 有卡但任務角色不明：先讀該卡正式來源，再請本卡 PM 補足派工；⛔ 不重新回入口排隊。
 - 沒有卡：把目標、問題、證據與已做的修改交共同入口；共同協調查重、指派任務 PM，由被指派的 PM 開卡並分流到各卡對話。入口⛔ 不完成需求討論。
 - 續談出現第二個主要成果：回共同入口查重，拆成相連任務；方向改動：在原卡停止目前階段、退回需求，由需求方裁定。
-- ⛔ 不自行開卡、⛔ 不寫流程欄位。依據：每卡當值與寫入範圍（`wfx/rules/core/independence.md` §1）、共同協調（`wfx/rules/roles/PM.md` §9）、開卡與關卡（`wfx/rules/core/github.md` §5）。
+- ⛔ 不自行開卡、⛔ 不寫流程欄位。依據：每卡當值與寫入範圍（`wfx/rules/core/independence.md` §1）、共同協調（`wfx/rules/PM-coordination.md`）、開卡與關卡（`wfx/rules/core/github.md` §5）。
 ````
 
 這套責任只在需求方核定的採用集合配置；首批資料、觀察及停止條件見 `wfx/rules/core/flow.md` §9。更新規則或本機覆寫⛔ 不表示既有專案、舊卡或安裝套件已切換；先按第 2 節確認實際規則來源與版本。
+
+### 任務 PM 入口
+
+本卡 PM 沿用上面的有卡入口，角色明確設為 `PM`：
+
+```sh
+"$HOME/.venvs/wfx/bin/wfx" --project-root <採用專案> brief --task <id> --role PM --stage <當前階段> [--rules-root <p>]
+```
+
+其角色文件只載入本卡 PM 職責；`PM-coordination.md` 不在自動載入範圍，連結不會展開。更換本卡當值工作實體時，依 `roles/PM.md` 前言引用的安全接手義務讀取專屬文件 §3，不能因拆分省略接手證據。
+
+### 共同協調入口
+
+派工明列：**本次只承擔共同協調責任**、核定安排來源、採用範圍、具名責任與替補、正式資料索引及本次交界事件。共同協調**⛔ 不使用 `--role PM` 取得上下文，⛔ 不把階段文件當作自己的操作指令**；讀取公共核心中的本卡 PM 條款，不代表取得任何卡的流程寫入、合併、結案或四階段確認責任，見 `PM-coordination.md` 前言。
+
+先依第 2 節的 `facts --task <id> [--rules-root <p>]` §7 確認本次來源與版本；新案尚無卡時，看同一採用專案的 `facts --adopt [--rules-root <p>]`「框架套件」節。這不是文件存在查核，⛔ 不要求另開共同協調管理卡。
+
+- **套件來源 [package]**：使用與本次 `wfx` 同一虛擬環境 [virtual environment] 的 Python，以 `importlib.resources` 定位規則樹；`WFX_VENV` 換成第 1 節實際位置：
+
+  ```sh
+  WFX_VENV="$HOME/.venvs/wfx"
+  WFX_RULES_ROOT="$("$WFX_VENV/bin/python" -c 'from importlib.resources import files; print(files("wfx").joinpath("rules"))')"
+  ```
+
+- **覆寫來源 [override]**：直接把 `WFX_RULES_ROOT` 設為**同一次 `facts --rules-root <p>` 使用的規則樹路徑**，相對路徑以該次呼叫的工作目錄解析；⛔ 不猜測 `site-packages`，⛔ 不自動退回套件來源。`WFX_VENV` 仍是本次 `wfx` 的環境。
+
+確認規則樹含完整六份 `core/*.md`，再執行以下短入口。專屬文件缺少或空白時命令非零結束，**停止該協調派工**，⛔ 不退而載入整份 `roles/PM.md`：
+
+```sh
+"$WFX_VENV/bin/python" -c 'from pathlib import Path; import sys; p = Path(sys.argv[1]); sys.exit(0 if p.is_file() and p.read_text(encoding="utf-8").strip() else 1)' "$WFX_RULES_ROOT/PM-coordination.md" && cat "$WFX_RULES_ROOT/core/"*.md "$WFX_RULES_ROOT/PM-coordination.md"
+```
+
+框架閱讀集合只有**六份公共核心＋專屬文件**，沒有 `roles/PM.md` 或 `stages/*.md`。另依同次派工來源直接讀取：
+
+- 本次執行環境使用者的 `~/.wf/model-usage.md`、`~/.wf/model-availability.md`；缺檔按既有公共限制標 `unknown`，新鮮度仍由受派協調者自行確認。
+- 與同一次 `--project-root` 相同採用專案的 `.wf/*.md`，⛔ 不因規則覆寫而改讀框架倉庫的專案層。
+- 已核定來源中的責任安排、相關卡的 body／欄位／裁定／占用與交接證據；索引只連正式來源，⛔ 不建立第二份權威資料。
+
+文件分離可以降低責任混淆；命令列介面 [Command-Line Interface, CLI] 仍**不強制身分或權限隔離**，也不驗證當值 PM、協調資格或責任安排。六個正式角色、公開命令與資料契約不變。
+
+本次本地拆分尚未發布；原先安裝的 `0.1.1` 不含本次專屬文件，版本數字相同也不保證規則內容相同。⛔ 不因 checkout 更新而自動改用新規則、更新既有安裝或發布套件；仍須確認本次來源、文件存在及需求方核定的採用範圍。
 
 ## 5 · 升級
 
@@ -213,7 +254,7 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.1.1-py3-none-any.whl
 - **E2 乾淨 venv 安裝**。`$PY -m venv /tmp/wfx-venv` →
   `/tmp/wfx-venv/bin/python -m pip install --no-index --no-cache-dir "$WHL"`。
   無參數跑 `wfx` 應印用法並 **rc 2**（console script 會把 `main()` 的回傳值當 exit code）。
-- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **19 份**、
+- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **20 份**、
   `wfx/docs/ADOPTION.md` 在，且⛔ 無 `.wf/`、⛔ 無任務／模型資料、⛔ 無憑證。
   `pip show -f ai-workflow-vnext` 的 `Requires:` 須為**空**。
 - **E4 空目錄清單＋零寫入**。`find "$PROJ" | sort` 前後比對，中間跑兩次
