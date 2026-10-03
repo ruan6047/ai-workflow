@@ -16,7 +16,7 @@ CLI 只載入與呈現資訊、只交客觀事實，**內容判斷由人或負�
 `importlib.metadata.version("ai-workflow-vnext")`；未安裝時就是 `unknown`，
 ⛔ 無 `__version__`、⛔ 無 VERSION 檔、⛔ 不進 `.wf/config.json`。
 
-**規則樹住在套件內**（`wfx/rules/`，19 份 markdown 隨 wheel 出貨）。安裝後⛔ 不需 checkout、
+**規則樹住在套件內**（`wfx/rules/`，20 份 markdown 隨 wheel 出貨）。安裝後⛔ 不需 checkout、
 ⛔ 不需 `PYTHONPATH`，也⛔ 不把規則複製進採用者的專案。
 
 ## 跑它
