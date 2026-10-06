@@ -177,7 +177,7 @@ Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清
 
 文件分離可以降低責任混淆；命令列介面 [Command-Line Interface, CLI] 仍**不強制身分或權限隔離**，也不驗證當值 PM、協調資格或責任安排。六個正式角色、公開命令與資料契約不變。
 
-本次本地拆分尚未發布；原先安裝的 `0.1.1` 不含本次專屬文件，版本數字相同也不保證規則內容相同。⛔ 不因 checkout 更新而自動改用新規則、更新既有安裝或發布套件；仍須確認本次來源、文件存在及需求方核定的採用範圍。
+本專屬文件自 `0.2.0` 起隨套件發布；先前標為 `0.1.1` 的安裝不保證含此文件或對應規則，版本數字相同也不保證規則內容相同，以實際安裝的規則樹為準。⛔ 不因 checkout 更新而自動改用新規則、更新既有安裝或發布套件；仍須確認本次來源、文件存在及需求方核定的採用範圍。
 
 ## 5 · 升級
 
@@ -245,7 +245,7 @@ remote 身分與（設了 `project` 時的）Project schema。
 ```
 PY=<python3.14 的絕對路徑>
 PROJ=$(mktemp -d)                 # 空的採用者專案
-WHL=/tmp/wfx-dist/ai_workflow_vnext-0.1.1-py3-none-any.whl
+WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.0-py3-none-any.whl
 ```
 
 - **E1 離線出輪子**。`uv build --offline --wheel --python "$PY" --out-dir /tmp/wfx-dist <此套件目錄>`
