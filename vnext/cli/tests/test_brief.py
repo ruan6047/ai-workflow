@@ -221,6 +221,24 @@ def test_non_utf8_local_layer_file_fails_with_one_line_naming_the_file(
     assert str(tmp_path) not in err
 
 
+# 專案層檔名含會斷行的字元：訊息仍是一行，該字元以 escape 寫法出現；其餘字元（含中文）原樣
+@pytest.mark.parametrize("name, shown", [
+    ("zz-\npolicy.md", "zz-\\npolicy.md"),
+    ("zz-\rpolicy.md", "zz-\\rpolicy.md"),
+    ("zz-\x1bpolicy.md", "zz-\\x1bpolicy.md"),
+    ("zz- 政策.md", "zz-\\u2028政策.md"),
+])
+def test_non_utf8_project_file_with_line_breaking_name_stays_one_line(
+        run_cli, project_root, tmp_path, name, shown):
+    (project_root / ".wf" / name).write_bytes(b"\xff# x\n")
+
+    rc, out, err = run_cli(task_source=_TaskSourceMustNotBeRead())
+    assert (rc, out) == (1, "")
+    assert err.endswith("\n") and len(err.splitlines()) == 1
+    assert err.startswith(f"MalformedInput: .wf/{shown} 不是 UTF-8，編碼讀取失敗：")
+    assert "Traceback" not in err and str(tmp_path) not in err
+
+
 # (8) 第 4 層含已貼出的留言，原樣納入且⛔ 不解析、⛔ 不分類
 def test_task_layer_carries_issue_body_fields_and_comments_verbatim(run_cli):
     rc, out, _ = run_cli()

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import unicodedata
 
 from wfx.core.errors import LayerMissing, MalformedInput
 from wfx.core import rules
@@ -35,16 +36,29 @@ class Segment:
         return f"[來源: {self.kind}:{self.path}#{self.section}]"
 
 
+# 會斷行或不可見的字元：控制字元（含 LF／CR）與 Unicode 行／段分隔符。
+_LINE_BREAKING = ("Cc", "Zl", "Zp")
+
+
+def _one_line(text: str) -> str:
+    """檔名裡會斷行或不可見的字元換成 escape 寫法（`\\n`、`\\x1b`、`\\u2028`…），其餘字元原樣保留。"""
+    return "".join(
+        ch.encode("unicode_escape").decode("ascii") if unicodedata.category(ch) in _LINE_BREAKING else ch
+        for ch in text
+    )
+
+
 def _read_utf8(path: Path, display: str) -> str:
     """讀使用者層／專案層的一份檔案；不是 UTF-8＝`MalformedInput`（rc=1）。
 
-    訊息單行、只帶顯示路徑（`~/.wf/<檔名>`、`.wf/<檔名>`），⛔ 不含絕對路徑；
+    訊息單行、只帶顯示路徑（`~/.wf/<檔名>`、`.wf/<檔名>`），⛔ 不含絕對路徑；顯示路徑來自檔名，
+    其中會斷行的字元一律 escape，訊息才保證是一行。
     ⛔ 不改用其他編碼、⛔ 不替換壞字元、⛔ 不捕捉 `UnicodeDecodeError` 以外的例外。
     """
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
-        raise MalformedInput(f"{display} 不是 UTF-8，編碼讀取失敗：{exc}") from exc
+        raise MalformedInput(f"{_one_line(display)} 不是 UTF-8，編碼讀取失敗：{exc}") from exc
 
 
 def _doc_segments(rel: str, text: str) -> list[Segment]:
