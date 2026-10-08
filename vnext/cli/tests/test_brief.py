@@ -188,6 +188,39 @@ def test_one_absent_user_model_file_is_unknown(run_cli, user_root):
     assert block.count(UNKNOWN_MODEL_DATA) == 1
 
 
+class _TaskSourceMustNotBeRead:
+    """被呼叫就失敗：證明本機層的讀檔錯誤在讀卡之前就報出、不需連網。"""
+
+    def fetch(self, context):
+        raise AssertionError("本機層讀檔失敗時⛔ 不該讀卡")
+
+    def fetch_linked(self, body, spec):
+        raise AssertionError("本機層讀檔失敗時⛔ 不該讀相連卡")
+
+
+# 使用者層兩檔與專案層任一 *.md 不是 UTF-8：整體 typed 失敗，stderr 一行指出哪個檔，⛔ 不出 traceback
+@pytest.mark.parametrize("layer, name", [
+    ("user", "model-usage.md"),
+    ("user", "model-availability.md"),
+    ("project", "model-policy.md"),
+    ("project", "zz-bad.md"),
+])
+def test_non_utf8_local_layer_file_fails_with_one_line_naming_the_file(
+        run_cli, user_root, project_root, tmp_path, layer, name):
+    directory = user_root if layer == "user" else project_root / ".wf"
+    display = f"~/.wf/{name}" if layer == "user" else f".wf/{name}"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_bytes(b"\xff# x\n" + "內容\n".encode("utf-8"))
+
+    rc, out, err = run_cli(task_source=_TaskSourceMustNotBeRead())
+    assert (rc, out) == (1, "")
+    assert err.endswith("\n") and err.count("\n") == 1
+    assert "Traceback" not in err
+    assert err.startswith(f"MalformedInput: {display} ")
+    assert "UTF-8" in err and "編碼讀取失敗" in err
+    assert str(tmp_path) not in err
+
+
 # (8) 第 4 層含已貼出的留言，原樣納入且⛔ 不解析、⛔ 不分類
 def test_task_layer_carries_issue_body_fields_and_comments_verbatim(run_cli):
     rc, out, _ = run_cli()

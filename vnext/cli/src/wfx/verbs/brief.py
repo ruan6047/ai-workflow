@@ -67,6 +67,9 @@ def build(context, role, stage, *, user_root, task_source) -> str:
     modules = layers.module_docs(rules_root, enabled, values.domain(rules_root, '階段'), stage)
 
     project_segments = layers.project_layer(context.project_root)
+    # 本機各層都排在讀卡之前：檔案讀不出（如不是 UTF-8）時不連網就報錯。只改讀取時點，輸出順序不動。
+    user_index = layers.user_model_index(user_root)
+    user_segments = layers.user_model_data(user_root)
     data = task_source.fetch(context)
     task_segments = layers.task_layer(data)
     # 只有帶入角色才讀登記；章節缺席＝None＝未登記，兩處都⛔ 不出現相連區塊
@@ -78,7 +81,7 @@ def build(context, role, stage, *, user_root, task_source) -> str:
         Block('必要清單', layers.required_checklist(rules_root, role, stage), level=3),
         Block('Issue body 章節定位', [layers.issue_section_index(rules_root, data)], level=3),
         Block('留言定位索引', [layers.comment_index(data)], level=3),
-        Block('模型資料狀態', [layers.user_model_index(user_root)], level=3),
+        Block('模型資料狀態', [user_index], level=3),
         Block('專案政策來源', [layers.project_policy_index(project_segments)], level=3),
         Block('適用 core 規則定位', [layers.rules_index(rules_root)], level=3),
     ]
@@ -91,7 +94,7 @@ def build(context, role, stage, *, user_root, task_source) -> str:
         Block('完整原文附錄', note=APPENDIX_NOTE),
         Block('適用規則', layers.framework_rules(rules_root, role, stage)
               + layers.module_segments(modules), level=3),
-        Block('使用者層', layers.user_model_data(user_root), level=3),
+        Block('使用者層', user_segments, level=3),
         Block('專案層', project_segments, level=3),
         Block('任務層', task_segments, level=3),
     ]
