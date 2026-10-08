@@ -240,3 +240,72 @@ def comment_index(data) -> Segment:
         )
         lines.append(f"- comment-{index}｜{url or '（⛔ 無 url）'}｜{filled} 非空行｜{heading}")
     return Segment("task", data.task, "留言索引", "\n".join(lines) or NO_COMMENTS)
+
+
+# ── 相連任務（`core/github.md` §1 選用章節）：只對帶入角色呈現 ──────────────
+# `linked` 是動詞層交進來的純資料（`wfx.gh.task.LinkedTask` 序列）；本層只讀屬性、⛔ 不理解 URL。
+# 首屏只放機械事實（url／state／行號／行數／失敗類別），原文逐字在附錄。
+
+LINKED_EMPTY = "（章節在，其下⛔ 無登記行）"
+LINKED_COMMENT_SECTION = "已核定規劃"
+
+
+def _linked_sections_line(entry, sections) -> str:
+    parts = []
+    for title, state, start, filled in rules.required_sections(sections, entry.body):
+        if state == rules.MISSING:
+            parts.append(f"{title}：⛔ 標題不在 body")
+        elif state == rules.EMPTY:
+            parts.append(f"{title}：標題在第 {start} 行、其下空")
+        else:
+            parts.append(f"{title}：在（第 {start} 行，{filled} 非空行）")
+    return "｜".join(parts)
+
+
+def _linked_comment_line(entry) -> str:
+    if entry.comment_url is None:
+        return f"{LINKED_COMMENT_SECTION}：未登記"
+    if entry.comment_error is not None:
+        return f"{LINKED_COMMENT_SECTION}：{entry.comment_url} 讀取失敗：{entry.comment_error}"
+    if entry.comment_foreign is not None:
+        return f"{LINKED_COMMENT_SECTION}：{entry.comment_url} 留言不屬於登記的相連卡：{entry.comment_foreign}"
+    filled = len([l for l in entry.comment_body.splitlines() if l.strip()])
+    return f"{LINKED_COMMENT_SECTION}：{entry.comment_url}（{filled} 非空行）"
+
+
+def linked_index(task: str, linked, sections) -> Segment:
+    """每筆登記一行：序號、相連卡 url、讀取結果、state、帶入章節定位、規劃留言定位。
+
+    ⛔ 不判是否真的相連、⛔ 不判規劃是否已核定；形狀不合的行照原文印出，⛔ 不猜、⛔ 不略過。
+    """
+    lines = []
+    for index, entry in enumerate(linked, start=1):
+        if entry.issue_url is None:
+            lines.append(f"- {index}｜無法解讀（逐字）：{entry.line}")
+        elif entry.duplicate_of is not None:
+            lines.append(f"- {index}｜{entry.issue_url}｜重複登記（同第 {entry.duplicate_of} 筆），⛔ 不重讀")
+        elif entry.error is not None:
+            lines.append(f"- {index}｜{entry.issue_url}｜讀取失敗：{entry.error}")
+        else:
+            lines.append(f"- {index}｜{entry.issue_url}｜{entry.state}｜"
+                         f"{_linked_sections_line(entry, sections)}｜{_linked_comment_line(entry)}")
+    return Segment("task", task, "相連任務定位", "\n".join(lines) or LINKED_EMPTY)
+
+
+def linked_segments(linked, sections) -> list[Segment]:
+    """每張讀到的相連卡：帶入章節逐字（標題在且其下非空者）＋登記的規劃留言全文。
+
+    來源標記 kind 仍是 `task`（⛔ 不是第五種 kind），path＝相連卡 issue url（⛔ 不含 `#`）。
+    """
+    out: list[Segment] = []
+    for entry in linked:
+        if entry.issue_url is None or entry.duplicate_of is not None or entry.error is not None:
+            continue
+        for title in sections:
+            text = rules.section_text(entry.body, title)
+            if text:
+                out.append(Segment("task", entry.issue_url, title, text))
+        if entry.comment_body is not None:
+            out.append(Segment("task", entry.issue_url, LINKED_COMMENT_SECTION,
+                               f"url: {entry.comment_url}\n{entry.comment_body.strip(chr(10))}"))
+    return out

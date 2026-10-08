@@ -148,6 +148,13 @@ class GhClient:
                  'pageInfo{hasNextPage endCursor}}}}}')
         return self._connection(query, {'id': issue_id, 'size': self.page_size}, 'comments')
 
+    def issue_comment(self, comment_id):
+        """單一則 issue 留言（REST）：原樣回傳，含 `body`、`html_url`、`issue_url`。
+
+        只讀呼叫端指名的那一則；⛔ 不判它是不是「已核定規劃」——那是登記者（PM）的責任。
+        """
+        return self._rest(f'issues/comments/{int(comment_id)}')
+
     def associated_pull_requests(self, oid):
         """該 commit 的關聯 PR（`state`＋`baseRefName`）原樣回傳；篩 OPEN 由呼叫端做。
 
