@@ -62,15 +62,17 @@ def run_cli(rules_root, project_root, user_root, capsys):
     """
     from wfx.verbs.main import main
 
-    from .fakes import FakeClient
+    from .fakes import FakeClient, FakeLinkedClients
 
     def run(*extra, role="執行者", stage="執行", task=TASK_ID, snapshots=None,
-            client=None, task_source=None, project=None):
+            client=None, task_source=None, project=None, linked_clients=None):
         injected = {}
         if task_source is not None:
             injected["task_source"] = task_source
         else:
             injected["client"] = FakeClient(*(snapshots or ())) if client is None else client
+            # 相連卡一律走替身工廠：漏注入時也⛔ 不會起子行程連網
+            injected["linked_clients"] = FakeLinkedClients() if linked_clients is None else linked_clients
         argv = [
             "--project-root", str(project if project is not None else project_root),
             "brief",

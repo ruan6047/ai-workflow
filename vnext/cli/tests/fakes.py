@@ -4,6 +4,7 @@ from __future__ import annotations
 import subprocess
 
 from wfx.core.context import Provenance
+from wfx.gh.client import NotFound
 from wfx.gh.task import TaskData
 
 BODY = '\n'.join(f'## {name}\n\n內容 {name}\n' for name in
@@ -120,15 +121,64 @@ def fixed_base(branch, *, unknown=None):
 class FixedTaskSource:
     """第 4 層的內部注入點：一份固定快照，⛔ 不連任何遠端（W1.6 零 provider 呼叫的取證路徑）。"""
 
-    def __init__(self, task, *, issue_body=BODY, fields=None, comments=()):
+    def __init__(self, task, *, issue_body=BODY, fields=None, comments=(), linked=None):
         self.data = TaskData(task, issue_body,
                              {'狀態': '進行中', '階段': '執行', 'owner': 'ruan6047',
                               '風險': '重要', '緊急性': '一般', '期限': '', 'Resource': ''}
                              if fields is None else fields,
                              tuple(comments))
+        self.linked = linked
+        self.linked_reads = 0
 
     def fetch(self, context):
         return self.data
+
+    def fetch_linked(self, body, spec):
+        self.linked_reads += 1
+        return self.linked
+
+
+class FakeLinkedClients:
+    """相連卡用的 client 工廠替身（slug → client）：固定回應＋記錄每一次讀取。
+
+    `issues`：{(owner/name 小寫, number): issue dict 或要 raise 的例外}；
+    `comments`：{comment id: REST 回應 dict 或要 raise 的例外}。查不到的 issue／留言＝NotFound。
+    ⛔ 不連網、⛔ 不 mutation。零相連讀取的證明＝`calls` 與 `created` 都為空。
+    """
+
+    def __init__(self, issues=None, comments=None):
+        self.issues = dict(issues or {})
+        self.comments = dict(comments or {})
+        self.created = []
+        self.calls = []
+
+    def __call__(self, slug):
+        self.created.append(slug)
+        return _LinkedClient(self, slug)
+
+
+class _LinkedClient:
+    def __init__(self, owner, slug):
+        self.owner = owner
+        self.slug = slug
+
+    def issue(self, number):
+        self.owner.calls.append(('issue', self.slug, number))
+        found = self.owner.issues.get((self.slug.lower(), number))
+        if found is None:
+            raise NotFound(f'issue #{number} 不存在於 {self.slug}')
+        if isinstance(found, Exception):
+            raise found
+        return found
+
+    def issue_comment(self, comment_id):
+        self.owner.calls.append(('issue_comment', self.slug, comment_id))
+        found = self.owner.comments.get(comment_id)
+        if found is None:
+            raise NotFound(f'HTTP 404: comment {comment_id}')
+        if isinstance(found, Exception):
+            raise found
+        return found
 
 
 class RecordedRunner:

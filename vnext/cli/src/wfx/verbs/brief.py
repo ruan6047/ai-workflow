@@ -9,13 +9,17 @@
 ⛔ 不解析散文語意、⛔ 不判退回是否合法、⛔ 不認識「工作包」。
 第 4 層走與 `facts` 同一條唯讀 `wfx.gh`；`task_source` 是**內部**注入點（測試用固定快照），
 ⛔ 不是公開旗標。全域 `--project-root` 由入口的前綴迴圈消耗。
+
+相連任務（`core/github.md` §1 選用章節）：帶入角色與帶入章節都從規則樹抽出，程式碼⛔ 不內建角色值。
+角色不在帶入角色內時**在讀相連卡之前**就分流——零相連讀取、零相連區塊，輸出與未登記相同。
 """
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from wfx.core import layers, values
+from wfx.core import layers, rules, values
+from wfx.core.errors import MalformedInput
 from wfx.core.context import Context, RulesSource, load_config
 from wfx.core.render import Block, render
 from wfx.core.rules import default_rules_root
@@ -40,10 +44,24 @@ FIRST_SCREEN_NOTE = (
 APPENDIX_NOTE = '四層原文逐字保留、順序固定，同一來源只出現一次。'
 
 
+def linked_spec(rules_root):
+    """`core/github.md` §1 的相連任務登記規則；帶入角色每值都須在 values.md 的角色值域內。
+
+    不論當前角色都驗：規則樹寫錯在任何角色都 typed 失敗，⛔ 不靜默變成「永遠不帶」。
+    """
+    spec = rules.linked_task_spec(rules_root)
+    allowed = values.domain(rules_root, '角色')
+    stray = [role for role in spec.roles if role not in allowed]
+    if stray:
+        raise MalformedInput(f"framework:core/github.md 的「帶入角色」不在角色值域內：{'、'.join(stray)}")
+    return spec
+
+
 def build(context, role, stage, *, user_root, task_source) -> str:
     rules_root = context.rules.root
     values.check(rules_root, '角色', role)
     values.check(rules_root, '階段', stage)
+    spec = linked_spec(rules_root)
     # 選用文件模組（boundaries.md §5）：未啟用（缺鍵／null）時這兩個值都是空的，⛔ 不注入模組內容。
     enabled = context.config.get('modules') or []
     modules = layers.module_docs(rules_root, enabled, values.domain(rules_root, '階段'), stage)
@@ -51,6 +69,8 @@ def build(context, role, stage, *, user_root, task_source) -> str:
     project_segments = layers.project_layer(context.project_root)
     data = task_source.fetch(context)
     task_segments = layers.task_layer(data)
+    # 只有帶入角色才讀登記；章節缺席＝None＝未登記，兩處都⛔ 不出現相連區塊
+    linked = task_source.fetch_linked(data.issue_body, spec) if role in spec.roles else None
 
     first_screen = [
         Block('派工首屏', note=FIRST_SCREEN_NOTE),
@@ -64,6 +84,9 @@ def build(context, role, stage, *, user_root, task_source) -> str:
     ]
     if enabled:
         first_screen.append(Block('啟用模組定位', [layers.module_index(modules)], level=3))
+    if linked is not None:
+        first_screen.append(Block('相連任務定位',
+                                  [layers.linked_index(context.task_id, linked, spec.sections)], level=3))
     appendix = [
         Block('完整原文附錄', note=APPENDIX_NOTE),
         Block('適用規則', layers.framework_rules(rules_root, role, stage)
@@ -72,15 +95,19 @@ def build(context, role, stage, *, user_root, task_source) -> str:
         Block('專案層', project_segments, level=3),
         Block('任務層', task_segments, level=3),
     ]
+    linked_segments = layers.linked_segments(linked or (), spec.sections)
+    if linked_segments:
+        appendix.append(Block('相連任務原文', linked_segments, level=3))
     return render(context.task_id, role, stage, first_screen, appendix)
 
 
 def run(argv, *, project_root, client=None, runner=None, env=None,
-        task_source=None, user_root=None):
+        task_source=None, user_root=None, linked_clients=None):
     args = parse_args(argv)
     context = Context(project_root, args.task, load_config(project_root),
                       RulesSource(args.rules_root or default_rules_root()))
-    source = GhTaskSource(client=client, runner=runner, env=env) if task_source is None else task_source
+    source = (GhTaskSource(client=client, runner=runner, env=env, linked_clients=linked_clients)
+              if task_source is None else task_source)
     print(build(context, args.role, args.stage,
                 user_root=Path.home() / '.wf' if user_root is None else user_root,
                 task_source=source), end='')

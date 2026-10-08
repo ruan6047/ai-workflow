@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from importlib import metadata, resources
 import re
 from pathlib import Path
@@ -182,6 +183,74 @@ def required_sections(titles, text: str) -> list[tuple[str, str, int | None, int
         else:
             out.append((title, PRESENT if span[1] else EMPTY, span[0], span[1]))
     return out
+
+
+# `core/github.md` §1 的選用章節「相連任務登記」：三行機械抽出，⛔ 不在程式碼內建標題、角色或章節字面。
+_LINKED_TITLE = re.compile(r"^選用章節標題：`##\s+(?P<title>[^`]+)`\s*$")
+_LINKED_ROLES = re.compile(r"^帶入角色：(?P<items>.+)$")
+_LINKED_SECTIONS = re.compile(r"^帶入章節：(?P<items>.+)$")
+_BACKTICKED = re.compile(r"`(?P<item>[^`]+)`")
+_HEADING_ITEM = re.compile(r"^##\s+(?P<title>.+)$")
+
+
+@dataclass(frozen=True)
+class LinkedSpec:
+    """相連任務登記的三項規則值，全部逐字抽自 `core/github.md` §1。"""
+    title: str
+    roles: tuple[str, ...]
+    sections: tuple[str, ...]
+
+
+def _one_line(text: str, pattern: re.Pattern, rel: str, label: str) -> re.Match:
+    found = [m for m in (pattern.match(line.strip()) for line in text.splitlines()) if m]
+    if not found:
+        raise LayerMissing("framework", rel, f"抽不出「{label}」行")
+    if len(found) > 1:
+        raise MalformedInput(f"framework:{rel} 的「{label}」行出現 {len(found)} 次")
+    return found[0]
+
+
+def linked_task_spec(rules_root: Path) -> LinkedSpec:
+    """從 `core/github.md` 機械抽出選用章節標題、帶入角色與帶入章節。
+
+    抽不到＝規則樹的問題（`LayerMissing`）；行重複、項目不是反引號值、章節不是 `## ` 標題
+    ＝形狀錯（`MalformedInput`）。角色是否在值域內由呼叫端以 values.md 驗（本模組⛔ 不 import values）。
+    """
+    rel = f"{CORE_DIR}/github.md"
+    text = read_doc(rules_root, rel)
+    title = _one_line(text, _LINKED_TITLE, rel, "選用章節標題").group("title").strip()
+    roles = tuple(m.group("item").strip() for m in _BACKTICKED.finditer(
+        _one_line(text, _LINKED_ROLES, rel, "帶入角色").group("items")))
+    raw_sections = tuple(m.group("item").strip() for m in _BACKTICKED.finditer(
+        _one_line(text, _LINKED_SECTIONS, rel, "帶入章節").group("items")))
+    if not roles:
+        raise MalformedInput(f"framework:{rel} 的「帶入角色」行沒有反引號值")
+    if not raw_sections:
+        raise MalformedInput(f"framework:{rel} 的「帶入章節」行沒有反引號值")
+    sections = []
+    for item in raw_sections:
+        m = _HEADING_ITEM.match(item)
+        if m is None:
+            raise MalformedInput(f"framework:{rel} 的「帶入章節」項目不是 `## ` 標題：{item}")
+        sections.append(m.group("title").strip())
+    return LinkedSpec(title, roles, tuple(sections))
+
+
+def section_text(text: str, title: str) -> str | None:
+    """`## <title>` 第一次出現的那一節內文（原樣，去頭尾空行）；標題不在＝None。
+
+    與 `required_sections` 同一規則：只認 `## `、同名重複只看第一個。⛔ 不解析內文。
+    """
+    buf: list[str] | None = None
+    for line in (text or "").splitlines():
+        if line.startswith("## "):
+            if buf is not None:
+                break
+            if line[3:].strip() == title:
+                buf = []
+        elif buf is not None:
+            buf.append(line)
+    return None if buf is None else "\n".join(buf).strip("\n")
 
 
 # `core/github.md` §2 的七個核心概念表：概念｜落地｜值。三欄逐字抽出，
