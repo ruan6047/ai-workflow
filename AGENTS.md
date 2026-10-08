@@ -1,28 +1,21 @@
 # AGENTS.md — ai-workflow
 
-## vNext 試用基準的適用範圍
+本 repo 只有 vNext：套件 `ai-workflow-vnext`（CLI `wfx`，原始碼 `vnext/cli/`），規則樹 `vnext/cli/src/wfx/rules/`，
+需求基準 `docs/research/VNEXT-REQUIREMENTS-2026-09-21.md`，本 repo 專案層 `vnext/.wf/`。安裝、版本、文件見 `README.md`。
 
-`vnext/` 是明確選用的 vNext 試用基準（入口見 `README.md` §4），以 `docs/research/VNEXT-REQUIREMENTS-2026-09-21.md` 作為已核定的需求與流程邊界；規則本體住 `vnext/cli/src/wfx/rules/`。
+## 工作流程（wfx）
 
-- 明確選用 vNext 的任務使用該文件定義的五階段輕量流程；具體新規則尚未經需求方確認前，不得自行補成生效規則。
-- 既有 `core/`、`roles/`、`stages/`、`modules/`、舊 CLI、舊卡片格式、tier、計數器與 trailer 規則只供歷史及重用評估，不得作為 vNext 的派工、退回或驗收判準。
-- 不逐檔註解、搬移或修改既有規則來模擬 vNext；vNext 的成果放在 `vnext/`。
-- 未選用 vNext 的任務與既有舊卡仍依下節的現行規則運作；vNext ⛔ 不自動切換任何專案、舊卡或版本。
+- 入口：`wfx/docs/ADOPTION.md` §1 的獨立 venv（預設 `$HOME/.venvs/wfx`，可換成實際位置；下行命令要跟著改）；以絕對路徑直接呼叫，⛔ 不依賴 PATH。
+- 有卡：直接回該卡對話與任務專案經理 [Project Manager, PM] 續談；在本 repo 根目錄執行（`--project-root vnext` 指本 repo 的專案層 `vnext/.wf/` 所在目錄）
+  `"$HOME/.venvs/wfx/bin/wfx" --project-root vnext brief --task <issue> --role <受派角色> --stage <當前階段>`，照輸出接手。
+- 有卡但任務角色不明：先讀該卡正式來源，再請本卡 PM 補足派工；⛔ 不重新回入口排隊。
+- 沒有卡：把目標、問題、證據與已做的修改交共同入口；共同協調查重、指派任務 PM，由被指派的 PM 開卡並分流到各卡對話。入口⛔ 不完成需求討論。
+- 續談出現第二個主要成果：回共同入口查重，拆成相連任務；方向改動：在原卡停止目前階段、退回需求，由需求方裁定。
+- ⛔ 不自行開卡、⛔ 不寫流程欄位。依據：每卡當值與寫入範圍（`wfx/rules/core/independence.md` §1）、共同協調（`wfx/rules/PM-coordination.md`）、開卡與關卡（`wfx/rules/core/github.md` §5）。
 
-> 舊制規則、範本、設計文件與舊 CLI 凍結；舊入口文件全文在 `archive/rules-2026-09/`（唯讀，僅供對照）。
+## 本 repo 補充
 
-## 現在以什麼為準
-
-1. `docs/research/REBUILD-DECISIONS-2026-09-04.md`：決策紀錄與**第零條**——CLI 提供資訊清單，AI 判斷；CLI 只確認清單有沒有填，⛔ 不做內容判讀。
-2. 規則本體 `core/`、`roles/`、`stages/`、`modules/`＝唯一居所（骨架與第 6／7 步的形狀已歸檔至 `archive/research/`，⛔ 不引為判準）。
-3. `docs/research/extract/`：舊規則萃取與 14 條衝突的量測與裁定。
-4. 舊 commit trailer 三條（Requested-by／Planned-by／Implemented-by）與 `Reviewed-by` 的說明見 `archive/rules-2026-09/AGENTS.md`。⛔ 無機械錨——舊 `doctor.py` 已隨舊 CLI 封存，CI 只跑 `cli/tests`。現行的 trailer 規則住 `core/platform.md` P5，檢查器＝`.github/scripts/trailer_check.py`。
-
-⛔ 不得引用 archive 內任何條文為判準。框架給 AI 用：數值由 AI 自己算，審核時尤其要自己算，⛔ 不以文件裡的統計數字為權威。
-
-## 舊根因家族對照（隨舊 CLI 封存）
-
-下列字串留作人讀對照，全表見 `archive/rules-2026-09/AGENTS.md`。⛔ 無機械錨——`test_agents_md_records_the_canonical_root_cause_id` 讀的是 `archive/rules-2026-09/AGENTS.md`（該測試住 `archive/rules-2026-09/cli/tests/test_doctor.py`，`parents[2]` 解析到 `archive/rules-2026-09`），且 CI 只跑 `cli/tests`、⛔ 不跑 archive：
-
-`commit-trailer-required-but-missing`；曾用名：`governance-provenance-trailer-omission`、`unknown-DEV-AIWF-MINIMAL-CI1-R2-002`
-舊 trailer 檢查器只是偵測器，不在 push 也不在 merge 路徑上（原文在 `archive/rules-2026-09/AGENTS.md`；ROADMAP 已隨舊 CLI 封存於 `archive/rules-2026-09/docs/ROADMAP.md`）。
+- 永遠使用繁體中文。
+- commit trailer 與機密掃描的依據：`vnext/.wf/repo-guards.md`（brief 會自動注入）。
+- 舊制（舊 `wf` CLI、舊規則四目錄、`archive/`、舊研究）已於 #417 刪除；對照用 `git show a1ea86f:<path>`，⛔ 不引為判準。
+  舊卡依 #417 裁定改照 vNext（[Q6](https://github.com/ruan6047/ai-workflow/issues/417#issuecomment-6059993575)）。

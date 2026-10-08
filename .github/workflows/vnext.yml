@@ -1,8 +1,8 @@
 name: vNext CI
 
-# vNext 的獨立工程檢查。被測物＝vnext/cli/tests。
-# 與 ci.yml 並行：main 的 PR 與 push 同時跑舊 job 與本 job，ci.yml ⛔ 不因 vNext 跳過任何 job。
-# ⛔ 無行數門檻、⛔ 無禁字掃描、⛔ 無散文判讀；⛔ 不列 main required checks。
+# vNext 的工程檢查。被測物＝vnext/cli/tests。
+# 本檔的 vnext-tests 是 main 的 required check 之一（與 ci.yml 的 commit-trailer、secret-scan 並列）。
+# ⛔ 無行數門檻、⛔ 無禁字掃描、⛔ 無散文判讀。
 
 on:
   push:
