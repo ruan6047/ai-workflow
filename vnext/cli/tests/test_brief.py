@@ -226,7 +226,7 @@ def test_non_utf8_local_layer_file_fails_with_one_line_naming_the_file(
     ("zz-\npolicy.md", "zz-\\npolicy.md"),
     ("zz-\rpolicy.md", "zz-\\rpolicy.md"),
     ("zz-\x1bpolicy.md", "zz-\\x1bpolicy.md"),
-    ("zz- 政策.md", "zz-\\u2028政策.md"),
+    ("zz-\u2028政策.md", "zz-\\u2028政策.md"),
 ])
 def test_non_utf8_project_file_with_line_breaking_name_stays_one_line(
         run_cli, project_root, tmp_path, name, shown):
