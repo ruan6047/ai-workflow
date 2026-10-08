@@ -252,7 +252,7 @@ remote 身分與（設了 `project` 時的）Project schema。
 ```
 PY=<python3.14 的絕對路徑>
 PROJ=$(mktemp -d)                 # 空的採用者專案
-WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.1-py3-none-any.whl
+WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.3-py3-none-any.whl
 ```
 
 - **E1 離線出輪子**。`uv build --offline --wheel --python "$PY" --out-dir /tmp/wfx-dist <此套件目錄>`
