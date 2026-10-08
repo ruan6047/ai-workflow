@@ -67,7 +67,7 @@ def build(context, role, stage, *, user_root, task_source) -> str:
     modules = layers.module_docs(rules_root, enabled, values.domain(rules_root, '階段'), stage)
 
     project_segments = layers.project_layer(context.project_root)
-    # 本機各層都排在讀卡之前：檔案讀不出（如不是 UTF-8）時不連網就報錯。只改讀取時點，輸出順序不動。
+    # 使用者層與專案層都排在讀卡之前：檔案讀不出（如不是 UTF-8）時不連網就報錯。只改讀取時點，輸出順序不動。
     user_index = layers.user_model_index(user_root)
     user_segments = layers.user_model_data(user_root)
     data = task_source.fetch(context)
