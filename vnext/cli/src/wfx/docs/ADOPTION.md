@@ -177,7 +177,7 @@ Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清
 
 文件分離可以降低責任混淆；命令列介面 [Command-Line Interface, CLI] 仍**不強制身分或權限隔離**，也不驗證當值 PM、協調資格或責任安排。六個正式角色、公開命令與資料契約不變。
 
-本次本地拆分尚未發布；原先安裝的 `0.1.1` 不含本次專屬文件，版本數字相同也不保證規則內容相同。⛔ 不因 checkout 更新而自動改用新規則、更新既有安裝或發布套件；仍須確認本次來源、文件存在及需求方核定的採用範圍。
+安裝套件內實際含哪些規則與文件，以第 2 節的 `package version` 與第 5 節的版本對應原則為準。⛔ 不因 checkout 更新而自動改用新規則、更新既有安裝或發布套件；仍須確認本次來源、文件存在及需求方核定的採用範圍。
 
 ## 5 · 升級
 
@@ -188,6 +188,13 @@ python -m pip install --force-reinstall ai_workflow_vnext-<新版本>-py3-none-a
 - 升級只動 `site-packages`。⛔ 無版本比較、⛔ 無相容矩陣、⛔ 無自動遷移、⛔ 無 legacy 讀取路徑：
   這個 CLI 對「上一版留下什麼」⛔ 不做任何假設，也⛔ 不改寫你的資料。
 - 要確認實際生效的版本，看第 2 節的 `package version`。
+- **版本對應內容**：每一次交付的可安裝套件，只要可安裝內容（含程式或隨附規則樹 `wfx/rules/`）改變，
+  就使用新的 `version`（唯一居所仍是 `pyproject.toml`，⛔ 無第二個版本居所）。開發中的多次修改可合併後
+  一次發版，⛔ 不要求每個 commit 改版號；已交付的版本號⛔ 不得換成不同內容再交付，同一版本號只對應同一份內容。
+- **核對方式**：版本看第 2 節的 metadata（`package version`），內容以 `importlib.resources` 定位的
+  規則樹與文件和交付來源（固定 SHA 或同一顆 wheel）逐檔比對雜湊。CLI ⛔ 不自動強制上述原則、
+  ⛔ 不比較版本、⛔ 不擋重複版號。採行本原則前的歷史候選建置（未對外發布）可能與後來的版本同號而內容不同，
+  疑慮時以建置來源核對，⛔ 不以版本數字推定內容。
 
 ## 6 · 「`.wf/` 不變」驗證
 
@@ -245,7 +252,7 @@ remote 身分與（設了 `project` 時的）Project schema。
 ```
 PY=<python3.14 的絕對路徑>
 PROJ=$(mktemp -d)                 # 空的採用者專案
-WHL=/tmp/wfx-dist/ai_workflow_vnext-0.1.1-py3-none-any.whl
+WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.1-py3-none-any.whl
 ```
 
 - **E1 離線出輪子**。`uv build --offline --wheel --python "$PY" --out-dir /tmp/wfx-dist <此套件目錄>`
