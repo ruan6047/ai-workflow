@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""P5：commit trailer 鍵在允許集合內，且是訊息末端的連續單一區塊。
+"""commit trailer 鍵在允許集合內，且是訊息末端的連續單一區塊。
 
-只驗兩件事（core/platform.md P5）：
+只驗兩件事（依據居所＝vnext/.wf/repo-guards.md §2）：
 1. trailer 區塊＝末段（最後一個空行之後）且至少一行的鍵在允許集合內；區塊內每行都要是
    `Key: value` 且 Key 在允許集合內。末段沒有任何允許鍵＝沒有 trailer，不驗（散文、
    conventional subject 都不是 trailer）。
 2. 允許集合內的鍵不得出現在非末段（被空行切斷＝不是連續區塊）。
-⛔ 不驗哪些 trailer 必須出現、不驗值——那是 core/platform.md 的條文。
+⛔ 不驗哪些 trailer 必須出現、不驗值。
 
 `--selftest` 跑內建正負控。
 """

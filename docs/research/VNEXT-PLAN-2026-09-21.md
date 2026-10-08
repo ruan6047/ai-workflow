@@ -1,5 +1,7 @@
 # ai-workflow vNext 重建規劃 v6.3（三張正式卡）
 
+> 文中舊制路徑指 `a1ea86f` 的樹，已於 #417 刪除；以 `git show a1ea86f:<path>` 對照。
+
 **Context**：`docs/research/VNEXT-REQUIREMENTS-2026-09-21.md` 已由需求方核定。v5（761 行）經 Fable 與 Astra 獨立查核後不 APPROVE；v6／v6.1／v6.2 逐項修訂。本版（v6.3）只處理三項文字修正：bootstrap commit 的現況表述、W1.5／W1.8 的時序、工作包分支前綴。⛔ 不新增需求、正式卡、機制、確認點、工作包或裁定題。
 
 ---

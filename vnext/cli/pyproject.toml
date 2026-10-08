@@ -1,5 +1,5 @@
 # vNext CLI 的套件宣告。distribution `ai-workflow-vnext`／import package `wfx`／console
-# script `wfx` 三個名稱各有唯一居所，⛔ 不與舊 CLI 的 distribution `wf`（cli/pyproject.toml）相撞。
+# script `wfx` 三個名稱各有唯一居所，⛔ 不與舊 CLI 的 distribution `wf`（已於 #417 移除，`a1ea86f:cli/pyproject.toml`）相撞。
 [project]
 name = "ai-workflow-vnext"
 # **版本值的唯一居所**。⛔ 不得再出現 `__version__`、VERSION 檔或 `.wf/config.json` 版本鍵；
