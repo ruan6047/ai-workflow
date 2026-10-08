@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import unicodedata
 
 from wfx.core.errors import LayerMissing, MalformedInput
 from wfx.core import rules
@@ -33,6 +34,31 @@ class Segment:
 
     def marker(self) -> str:
         return f"[來源: {self.kind}:{self.path}#{self.section}]"
+
+
+# 會斷行或不可見的字元：控制字元（含 LF／CR）與 Unicode 行／段分隔符。
+_LINE_BREAKING = ("Cc", "Zl", "Zp")
+
+
+def _one_line(text: str) -> str:
+    """檔名裡會斷行或不可見的字元換成 escape 寫法（`\\n`、`\\x1b`、`\\u2028`…），其餘字元原樣保留。"""
+    return "".join(
+        ch.encode("unicode_escape").decode("ascii") if unicodedata.category(ch) in _LINE_BREAKING else ch
+        for ch in text
+    )
+
+
+def _read_utf8(path: Path, display: str) -> str:
+    """讀使用者層／專案層的一份檔案；不是 UTF-8＝`MalformedInput`（rc=1）。
+
+    訊息單行、只帶顯示路徑（`~/.wf/<檔名>`、`.wf/<檔名>`），⛔ 不含絕對路徑；顯示路徑來自檔名，
+    其中會斷行的字元一律 escape，訊息才保證是一行。
+    ⛔ 不改用其他編碼、⛔ 不替換壞字元、⛔ 不捕捉 `UnicodeDecodeError` 以外的例外。
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise MalformedInput(f"{_one_line(display)} 不是 UTF-8，編碼讀取失敗：{exc}") from exc
 
 
 def _doc_segments(rel: str, text: str) -> list[Segment]:
@@ -93,7 +119,7 @@ def user_model_data(user_root: Path) -> list[Segment]:
         path = user_root / name
         display = f"~/.wf/{name}"
         if path.is_file():
-            out.append(Segment("user", display, "全文", path.read_text(encoding="utf-8").strip("\n")))
+            out.append(Segment("user", display, "全文", _read_utf8(path, display).strip("\n")))
         else:
             out.append(Segment("user", display, "缺", UNKNOWN_MODEL_DATA))
     return out
@@ -108,7 +134,7 @@ def project_layer(project_root: Path) -> list[Segment]:
     if not paths:
         raise LayerMissing("project", ".wf", "目錄下沒有專案層資料")
     return [
-        Segment("project", f".wf/{p.name}", "全文", p.read_text(encoding="utf-8").strip("\n"))
+        Segment("project", f".wf/{p.name}", "全文", _read_utf8(p, f".wf/{p.name}").strip("\n"))
         for p in paths
     ]
 
@@ -192,7 +218,8 @@ def user_model_index(user_root: Path) -> Segment:
     for name in USER_MODEL_FILES:
         path = user_root / name
         if path.is_file():
-            filled = len([l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()])
+            text = _read_utf8(path, f"~/.wf/{name}")
+            filled = len([l for l in text.splitlines() if l.strip()])
             lines.append(f"- ~/.wf/{name}：在（{filled} 非空行，全文見附錄）")
         else:
             lines.append(f"- ~/.wf/{name}：{UNKNOWN_MODEL_DATA}")
