@@ -40,7 +40,7 @@ class Segment:
 _LINE_BREAKING = ("Cc", "Zl", "Zp")
 
 
-def _one_line(text: str) -> str:
+def one_line(text: str) -> str:
     """檔名裡會斷行或不可見的字元換成 escape 寫法（`\\n`、`\\x1b`、`\\u2028`…），其餘字元原樣保留。"""
     return "".join(
         ch.encode("unicode_escape").decode("ascii") if unicodedata.category(ch) in _LINE_BREAKING else ch
@@ -58,7 +58,7 @@ def _read_utf8(path: Path, display: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
-        raise MalformedInput(f"{_one_line(display)} 不是 UTF-8，編碼讀取失敗：{exc}") from exc
+        raise MalformedInput(f"{one_line(display)} 不是 UTF-8，編碼讀取失敗：{exc}") from exc
 
 
 def _doc_segments(rel: str, text: str) -> list[Segment]:
@@ -170,13 +170,22 @@ def task_layer(data) -> list[Segment]:
 # ⛔ 不摘要、⛔ 不判讀留言屬於哪一類、⛔ 不截斷任何原文——原文一律在附錄逐字保留。
 # 資料驅動的清單可帶 `limit`（#434 預設輸出）：超出時只依**位置**保留列、印一行省略數，
 # ⛔ 不依內容挑選；`limit=None`＝全列（`--full`）。
+# 預設輸出另帶 `single_line=True`：每列與每個任務來源標記都 escape 成恰一個實體行（`one_line`）——
+# 單筆值、檔名或 url 內含換行時，「一列＝一個非空行」才成立，上限才由列數保證。⛔ 不丟字元、⛔ 不截斷，
+# 原樣值在 `--full`；`--full`（`single_line=False`）逐字不變。
 
 NO_COMMENTS = "（該卡⛔ 無留言）"
 NO_HEADING = "⛔ 無 ## 標題"
 
 
-def _bounded(lines: list[str], limit: int | None, *, keep_last: bool = False) -> list[str]:
-    """依位置保留至多 `limit` 列，其餘換成一行省略數；`None` 或未超出＝原樣。"""
+def _bounded(lines: list[str], limit: int | None, *, keep_last: bool = False,
+             single_line: bool = False) -> list[str]:
+    """依位置保留至多 `limit` 列，其餘換成一行省略數；`None` 或未超出＝原樣。
+
+    `single_line`：每列先 escape 成恰一個實體行（見上方說明）。
+    """
+    if single_line:
+        lines = [one_line(line) for line in lines]
     if limit is None or len(lines) <= limit:
         return lines
     omitted = len(lines) - limit
@@ -185,15 +194,21 @@ def _bounded(lines: list[str], limit: int | None, *, keep_last: bool = False) ->
     return [*lines[:limit], f"- （其後 {omitted} 項未列；完整索引加 `--full`）"]
 
 
+def _task_path(task: str, single_line: bool) -> str:
+    """任務來源標記與表頭裡的任務識別；`single_line` 時 escape 成一行。"""
+    return one_line(task) if single_line else task
+
+
 def _anchor_line(rel: str, text: str) -> str:
     anchors = [anchor for anchor, _ in rules.split_sections(text)]
     return f"- {rel}（{len(anchors)} 節）：" + "／".join(anchors)
 
 
-def core_concept_values(data) -> Segment:
-    """七個核心概念的當下值；與附錄任務層同一份投影，⛔ 不另行加工。"""
-    rendered = "\n".join(f"{name}: {data.fields[name]}" for name in CORE_CONCEPTS)
-    return Segment("task", data.task, "核心概念", rendered)
+def core_concept_values(data, *, single_line: bool = False) -> Segment:
+    """七個核心概念的當下值；與附錄任務層同一份投影，⛔ 不另行加工（`single_line` 只 escape 斷行字元）。"""
+    rows = [f"{name}: {data.fields[name]}" for name in CORE_CONCEPTS]
+    return Segment("task", _task_path(data.task, single_line), "核心概念",
+                   "\n".join(_bounded(rows, None, single_line=single_line)))
 
 
 def rules_index(rules_root: Path) -> Segment:
@@ -209,19 +224,22 @@ def rules_index(rules_root: Path) -> Segment:
 NO_MODULE_DOC = "本階段⛔ 無文件，⛔ 不注入"
 
 
-def module_index(docs) -> Segment:
+def module_index(docs, *, single_line: bool = False) -> Segment:
     """已啟用模組逐個一行：當前階段的文件路徑與節錨，或「本階段無文件」。全文在附錄。"""
     lines = [
         _anchor_line(*doc) if doc else f"- {rules.MODULES_DIR}/{name}/：{NO_MODULE_DOC}"
         for name, doc in docs
     ]
-    return Segment("framework", f"rules/{rules.MODULES_DIR}/", "啟用模組", "\n".join(lines))
+    return Segment("framework", f"rules/{rules.MODULES_DIR}/", "啟用模組",
+                   "\n".join(_bounded(lines, None, single_line=single_line)))
 
 
-def project_policy_index(project_segments: list[Segment], limit: int | None = None) -> Segment:
+def project_policy_index(project_segments: list[Segment], limit: int | None = None, *,
+                         single_line: bool = False) -> Segment:
     """第 3 層每份政策檔的路徑與節錨；全文在附錄。傳入的就是附錄那份，⛔ 不重讀檔案。"""
     lines = [_anchor_line(segment.path, segment.body) for segment in project_segments]
-    return Segment("project", ".wf/", "節索引", "\n".join(_bounded(lines, limit)))
+    return Segment("project", ".wf/", "節索引",
+                   "\n".join(_bounded(lines, limit, single_line=single_line)))
 
 
 def user_model_index(user_root: Path) -> Segment:
@@ -238,7 +256,8 @@ def user_model_index(user_root: Path) -> Segment:
     return Segment("user", "~/.wf/", "狀態", "\n".join(lines))
 
 
-def issue_section_index(rules_root: Path, data, limit: int | None = None) -> Segment:
+def issue_section_index(rules_root: Path, data, limit: int | None = None, *,
+                        single_line: bool = False) -> Segment:
     """Issue body 五章節的存在性與定位。
 
     `core/github.md` §1 明訂 CLI 只確認「標題在且其下非空」；本函式只做這件事，
@@ -263,11 +282,11 @@ def issue_section_index(rules_root: Path, data, limit: int | None = None) -> Seg
             extras.append(f"- （五章節以外）{anchor}：第 {start} 行")
         elif start != firsts[anchor]:
             extras.append(f"- （同名重複）{anchor}：第 {start} 行")
-    lines.extend(_bounded(extras, limit))
-    return Segment("task", data.task, "issue-body 章節", "\n".join(lines))
+    lines.extend(_bounded(extras, limit, single_line=single_line))
+    return Segment("task", _task_path(data.task, single_line), "issue-body 章節", "\n".join(lines))
 
 
-def comment_index(data, limit: int | None = None) -> Segment:
+def comment_index(data, limit: int | None = None, *, single_line: bool = False) -> Segment:
     """全部留言逐則一行：編號、url、行數、該則首個 `## ` 標題（逐字）。
 
     ⛔ 不分類（`github.md` §3 的四類是內容分類，CLI 判不得）、⛔ 不挑「哪幾則是裁定」——
@@ -282,8 +301,9 @@ def comment_index(data, limit: int | None = None) -> Segment:
             (l[3:].strip() for l in text.splitlines() if l.startswith("## ")), NO_HEADING
         )
         lines.append(f"- comment-{index}｜{url or '（⛔ 無 url）'}｜{filled} 非空行｜{heading}")
-    return Segment("task", data.task, "留言索引",
-                   "\n".join(_bounded(lines, limit, keep_last=True)) or NO_COMMENTS)
+    return Segment("task", _task_path(data.task, single_line), "留言索引",
+                   "\n".join(_bounded(lines, limit, keep_last=True, single_line=single_line))
+                   or NO_COMMENTS)
 
 
 # ── 相連任務（`core/github.md` §1 選用章節）：只對帶入角色呈現 ──────────────
@@ -317,7 +337,8 @@ def _linked_comment_line(entry) -> str:
     return f"{LINKED_COMMENT_SECTION}：{entry.comment_url}（{filled} 非空行）"
 
 
-def linked_index(task: str, linked, sections, limit: int | None = None) -> Segment:
+def linked_index(task: str, linked, sections, limit: int | None = None, *,
+                 single_line: bool = False) -> Segment:
     """每筆登記一行：序號、相連卡 url、讀取結果、state、帶入章節定位、規劃留言定位。
 
     ⛔ 不判是否真的相連、⛔ 不判規劃是否已核定；形狀不合的行照原文印出，⛔ 不猜、⛔ 不略過。
@@ -334,7 +355,8 @@ def linked_index(task: str, linked, sections, limit: int | None = None) -> Segme
         else:
             lines.append(f"- {index}｜{entry.issue_url}｜{entry.state}｜"
                          f"{_linked_sections_line(entry, sections)}｜{_linked_comment_line(entry)}")
-    return Segment("task", task, "相連任務定位", "\n".join(_bounded(lines, limit)) or LINKED_EMPTY)
+    return Segment("task", _task_path(task, single_line), "相連任務定位",
+                   "\n".join(_bounded(lines, limit, single_line=single_line)) or LINKED_EMPTY)
 
 
 def linked_segments(linked, sections) -> list[Segment]:

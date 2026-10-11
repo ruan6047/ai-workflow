@@ -1,7 +1,7 @@
 """`brief --task <id> --role <r> --stage <s> [--rules-root <p>] [--full]`：四層注入、必要清單與模型資料。
 
 預設輸出＝有界首屏＋一行指標（#434）：`## 派工首屏` 只由機械資料組成，資料驅動的索引清單超出
-上限時依位置只列一部分並印省略數，總量受硬性上限約束（數字與性質的定義居所＝`rules/core/flow.md` §4，
+上限時依位置只列一部分並印省略數，每列（與任務識別）escape 成恰一個實體行，總量受硬性上限約束（數字與性質的定義居所＝`rules/core/flow.md` §4，
 由 `tests/test_brief_bounded.py` 釘住）；⛔ 無附錄。`--full`＝完整輸出，與 #434 前的輸出逐字相同（#370 裁定 issuecomment-5763204699）：
 首屏索引不設上限，後接 `## 完整原文附錄`＝四層原文逐字、順序固定、同一來源只出現一次，邊界可機械定位
 （`render.split_output`）。兩種輸出都⛔ 無摘要、⛔ 不截斷原文、⛔ 不以 rc≠0 擋行數；被省略的只有首屏索引的列，
@@ -96,23 +96,27 @@ def build(context, role, stage, *, user_root, task_source, full=False) -> str:
     def limit(value):
         return None if full else value
 
+    # 預設輸出：首屏每列與任務識別都 escape 成恰一個實體行，上限才由列數保證（單筆值或檔名內含換行時）；
+    # `--full` 原樣、逐字不變
+    one = not full
     first_screen = [
         Block('派工首屏', note=FIRST_SCREEN_NOTE if full else BOUNDED_NOTE),
-        Block('核心概念現值', [layers.core_concept_values(data)], level=3),
+        Block('核心概念現值', [layers.core_concept_values(data, single_line=one)], level=3),
         Block('必要清單', layers.required_checklist(rules_root, role, stage), level=3),
-        Block('Issue body 章節定位',
-              [layers.issue_section_index(rules_root, data, limit=limit(EXTRA_SECTION_LIMIT))], level=3),
-        Block('留言定位索引', [layers.comment_index(data, limit=limit(COMMENT_LIMIT))], level=3),
+        Block('Issue body 章節定位', [layers.issue_section_index(
+            rules_root, data, limit=limit(EXTRA_SECTION_LIMIT), single_line=one)], level=3),
+        Block('留言定位索引',
+              [layers.comment_index(data, limit=limit(COMMENT_LIMIT), single_line=one)], level=3),
         Block('模型資料狀態', [user_index], level=3),
-        Block('專案政策來源',
-              [layers.project_policy_index(project_segments, limit=limit(POLICY_LIMIT))], level=3),
+        Block('專案政策來源', [layers.project_policy_index(
+            project_segments, limit=limit(POLICY_LIMIT), single_line=one)], level=3),
         Block('適用 core 規則定位', [layers.rules_index(rules_root)], level=3),
     ]
     if enabled:
-        first_screen.append(Block('啟用模組定位', [layers.module_index(modules)], level=3))
+        first_screen.append(Block('啟用模組定位', [layers.module_index(modules, single_line=one)], level=3))
     if linked is not None:
         first_screen.append(Block('相連任務定位', [layers.linked_index(
-            context.task_id, linked, spec.sections, limit=limit(LINKED_LIMIT))], level=3))
+            context.task_id, linked, spec.sections, limit=limit(LINKED_LIMIT), single_line=one)], level=3))
     appendix = [
         Block('完整原文附錄', note=APPENDIX_NOTE),
         Block('適用規則', layers.framework_rules(rules_root, role, stage)
@@ -126,7 +130,7 @@ def build(context, role, stage, *, user_root, task_source, full=False) -> str:
         appendix.append(Block('相連任務原文', linked_segments, level=3))
     # 預設輸出與 `--full` 讀同一組來源、走同一組 typed 失敗；差別只在呈現
     if not full:
-        return render(context.task_id, role, stage, first_screen, [], tail=FULL_POINTER)
+        return render(layers.one_line(context.task_id), role, stage, first_screen, [], tail=FULL_POINTER)
     return render(context.task_id, role, stage, first_screen, appendix)
 
 
