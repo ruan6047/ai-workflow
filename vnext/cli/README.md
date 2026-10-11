@@ -60,6 +60,7 @@ GitHub 讀取未完成、本機 git 不可用）。兩類刻意可區分。
 | `--stage` | 必填 | 階段五值之一 |
 | `--rules-root` | 套件內的 `wfx/rules` | 第 1 層來源，可指向另一個本機 checkout |
 | `--full` | 關 | 完整輸出：首屏索引不設上限＋完整原文附錄（見下節）。預設只印有界首屏與一行指標 |
+| `--omit-user-layer` | 關 | 省略使用者層：`~/.wf/` 兩檔⛔ 不讀、附錄⛔ 無 `### 使用者層`，首屏「模型資料狀態」換成一行固定說明；與 `--full` 可合用。何時加住 `rules/roles/PM.md` §3，CLI ⛔ 不判目的地（#440） |
 
 角色與階段的值域**只住 `rules/core/values.md`**，程式碼⛔ 不內建任何值——換規則樹就換值域。
 ⛔ 無 `--task-snapshot`：第 4 層走與 `facts` 同一條唯讀 `wfx.gh`。測試用的固定快照由
@@ -122,7 +123,8 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
 也從該節機械抽出，程式碼⛔ 不內建標題字面。
 
 **`--full` 的附錄逐字保留四層全部原文**：Issue body、該卡全部留言、兩類模型資料、專案政策、框架規則，
-順序固定、同一來源只出現一次。首屏的索引段⛔ 不重複出現在附錄。唯一刻意的重複是七個核心概念
+順序固定、同一來源只出現一次。唯一例外是帶 `--omit-user-layer`：使用者層未讀也未附，附錄只有其餘三層
+（區塊、順序、來源標記與內容逐字不變），附錄開頭與預設輸出指標的結構說明改說「使用者層以外的三層」。首屏的索引段⛔ 不重複出現在附錄。唯一刻意的重複是七個核心概念
 （首屏一份值、附錄任務層一份值），因為它既是派工要看的現值、也是第 4 層的一段。
 
 **必要清單住在首屏、⛔ 不在附錄再出現一次**：它本來就是角色與階段兩份文件的章節清單，不是原文；
@@ -135,7 +137,7 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
 | kind | 來源 | 缺了會怎樣 |
 |---|---|---|
 | `framework` | 規則樹（預設＝套件內 `wfx/rules`，`--rules-root` 可覆寫）下的 `core/*.md` 六份全載，加選定的 `stages/<階段>.md` 與 `roles/<角色>.md`，再加 `.wf/config.json` 已啟用模組的 `modules/<名稱>/<階段>.md`（見下節） | typed 失敗（rc=1） |
-| `user` | `~/.wf/model-usage.md`、`~/.wf/model-availability.md`，原樣呈現 | **合法 unknown，rc=0** |
+| `user` | `~/.wf/model-usage.md`、`~/.wf/model-availability.md`，原樣呈現；帶 `--omit-user-layer` 時⛔ 不讀、⛔ 不附 | **合法 unknown，rc=0** |
 | `project` | `<project-root>/.wf/*.md` | typed 失敗（rc=1） |
 | `task` | Issue body ＋七個核心概念＋**該卡全部留言**（唯讀 GitHub）；規劃者與執行者另含本卡登記之相連卡的指定章節與規劃留言（見下節） | Issue 取不到或 body 為空＝typed 失敗（rc=1）；相連卡讀不到＝首屏照實印、rc=0 |
 
