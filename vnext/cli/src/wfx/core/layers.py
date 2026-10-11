@@ -168,9 +168,21 @@ def task_layer(data) -> list[Segment]:
 # ── 派工首屏：只由機械資料組成的定位索引 ────────────────────────────
 # 全部內容都是路徑、節錨、行數、既有欄位值與 url。
 # ⛔ 不摘要、⛔ 不判讀留言屬於哪一類、⛔ 不截斷任何原文——原文一律在附錄逐字保留。
+# 資料驅動的清單可帶 `limit`（#434 預設輸出）：超出時只依**位置**保留列、印一行省略數，
+# ⛔ 不依內容挑選；`limit=None`＝全列（`--full`）。
 
 NO_COMMENTS = "（該卡⛔ 無留言）"
 NO_HEADING = "⛔ 無 ## 標題"
+
+
+def _bounded(lines: list[str], limit: int | None, *, keep_last: bool = False) -> list[str]:
+    """依位置保留至多 `limit` 列，其餘換成一行省略數；`None` 或未超出＝原樣。"""
+    if limit is None or len(lines) <= limit:
+        return lines
+    omitted = len(lines) - limit
+    if keep_last:
+        return [f"- （較早的 {omitted} 項未列；完整索引加 `--full`）", *lines[-limit:]]
+    return [*lines[:limit], f"- （其後 {omitted} 項未列；完整索引加 `--full`）"]
 
 
 def _anchor_line(rel: str, text: str) -> str:
@@ -206,10 +218,10 @@ def module_index(docs) -> Segment:
     return Segment("framework", f"rules/{rules.MODULES_DIR}/", "啟用模組", "\n".join(lines))
 
 
-def project_policy_index(project_segments: list[Segment]) -> Segment:
+def project_policy_index(project_segments: list[Segment], limit: int | None = None) -> Segment:
     """第 3 層每份政策檔的路徑與節錨；全文在附錄。傳入的就是附錄那份，⛔ 不重讀檔案。"""
     lines = [_anchor_line(segment.path, segment.body) for segment in project_segments]
-    return Segment("project", ".wf/", "節索引", "\n".join(lines))
+    return Segment("project", ".wf/", "節索引", "\n".join(_bounded(lines, limit)))
 
 
 def user_model_index(user_root: Path) -> Segment:
@@ -226,11 +238,12 @@ def user_model_index(user_root: Path) -> Segment:
     return Segment("user", "~/.wf/", "狀態", "\n".join(lines))
 
 
-def issue_section_index(rules_root: Path, data) -> Segment:
+def issue_section_index(rules_root: Path, data, limit: int | None = None) -> Segment:
     """Issue body 五章節的存在性與定位。
 
     `core/github.md` §1 明訂 CLI 只確認「標題在且其下非空」；本函式只做這件事，
     ⛔ 不解析散文語意。非五章節的 `## ` 標題一律照列，⛔ 不判它合不合法。
+    五章節的列一律印出；`limit` 只作用在其後「五章節以外／同名重複」的列。
     """
     titles = rules.issue_section_titles(rules_root)
     # 五章節的存在／非空走 `rules.required_sections`＝與 `facts` 同一份解析來源
@@ -244,19 +257,22 @@ def issue_section_index(rules_root: Path, data) -> Segment:
         else:
             lines.append(f"- {title}：在（第 {start} 行，{filled} 非空行）")
     firsts = {title: start for title, _, start, _ in required}
+    extras = []
     for anchor, start, _ in rules.section_spans(data.issue_body):
         if anchor not in titles:
-            lines.append(f"- （五章節以外）{anchor}：第 {start} 行")
+            extras.append(f"- （五章節以外）{anchor}：第 {start} 行")
         elif start != firsts[anchor]:
-            lines.append(f"- （同名重複）{anchor}：第 {start} 行")
+            extras.append(f"- （同名重複）{anchor}：第 {start} 行")
+    lines.extend(_bounded(extras, limit))
     return Segment("task", data.task, "issue-body 章節", "\n".join(lines))
 
 
-def comment_index(data) -> Segment:
+def comment_index(data, limit: int | None = None) -> Segment:
     """全部留言逐則一行：編號、url、行數、該則首個 `## ` 標題（逐字）。
 
     ⛔ 不分類（`github.md` §3 的四類是內容分類，CLI 判不得）、⛔ 不挑「哪幾則是裁定」——
-    裁定留言的定位靠 body §裁定紀錄 的連結索引與這份全量索引兩邊對照。
+    裁定留言的定位靠 body §裁定紀錄 的連結索引與這份索引兩邊對照。`limit` 只依位置保留**最新**的 K 則，
+    編號維持原序號；完整索引在 `--full`。
     """
     lines = []
     for index, (url, body) in enumerate(data.comments, start=1):
@@ -266,7 +282,8 @@ def comment_index(data) -> Segment:
             (l[3:].strip() for l in text.splitlines() if l.startswith("## ")), NO_HEADING
         )
         lines.append(f"- comment-{index}｜{url or '（⛔ 無 url）'}｜{filled} 非空行｜{heading}")
-    return Segment("task", data.task, "留言索引", "\n".join(lines) or NO_COMMENTS)
+    return Segment("task", data.task, "留言索引",
+                   "\n".join(_bounded(lines, limit, keep_last=True)) or NO_COMMENTS)
 
 
 # ── 相連任務（`core/github.md` §1 選用章節）：只對帶入角色呈現 ──────────────
@@ -300,10 +317,11 @@ def _linked_comment_line(entry) -> str:
     return f"{LINKED_COMMENT_SECTION}：{entry.comment_url}（{filled} 非空行）"
 
 
-def linked_index(task: str, linked, sections) -> Segment:
+def linked_index(task: str, linked, sections, limit: int | None = None) -> Segment:
     """每筆登記一行：序號、相連卡 url、讀取結果、state、帶入章節定位、規劃留言定位。
 
     ⛔ 不判是否真的相連、⛔ 不判規劃是否已核定；形狀不合的行照原文印出，⛔ 不猜、⛔ 不略過。
+    `limit` 只依登記順序保留前 K 筆、印省略數；完整索引與相連卡原文在 `--full`。
     """
     lines = []
     for index, entry in enumerate(linked, start=1):
@@ -316,7 +334,7 @@ def linked_index(task: str, linked, sections) -> Segment:
         else:
             lines.append(f"- {index}｜{entry.issue_url}｜{entry.state}｜"
                          f"{_linked_sections_line(entry, sections)}｜{_linked_comment_line(entry)}")
-    return Segment("task", task, "相連任務定位", "\n".join(lines) or LINKED_EMPTY)
+    return Segment("task", task, "相連任務定位", "\n".join(_bounded(lines, limit)) or LINKED_EMPTY)
 
 
 def linked_segments(linked, sections) -> list[Segment]:

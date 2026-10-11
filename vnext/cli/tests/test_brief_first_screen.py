@@ -1,7 +1,8 @@
-"""#370 裁定（comment 5763204699）：brief ＝派工首屏＋同一輸出後方的完整原文附錄。
+"""#370 裁定（comment 5763204699）：`brief --full` ＝派工首屏＋同一輸出後方的完整原文附錄。
 
 被驗的是**呈現**：首屏只放機械定位資料、附錄逐字保留四層原文且同一來源只出現一次。
-⛔ 無行數 gate——行數是報告裡的量測，不是通過條件。
+本檔全部走 `--full`（`run_cli` 預設）：完整輸出的首屏索引不設上限，⛔ 無 rc≠0 的行數 gate。
+預設有界輸出（#434）的上限測試在 test_brief_bounded.py。
 """
 
 import re
@@ -188,7 +189,7 @@ def test_missing_and_extra_issue_sections_are_reported_as_found(run_cli):
     assert "- （五章節以外）自訂章節：第 7 行" in first
 
 
-# ⛔ 無截斷、⛔ 無行數 gate：留言變多時首屏照長、rc 仍是 0
+# `--full` ⛔ 無截斷、⛔ 無行數 gate：留言變多時首屏照長、rc 仍是 0；預設輸出同樣 rc 0、只少索引列
 def test_many_comments_neither_truncate_nor_fail(run_cli):
     many = tuple({"url": f"https://example.invalid/c{i}", "body": f"## 第 {i} 則\n內文 {i}\n"}
                  for i in range(1, 41))
@@ -198,6 +199,9 @@ def test_many_comments_neither_truncate_nor_fail(run_cli):
     assert first.count("｜https://example.invalid/c") == 40
     for i in range(1, 41):
         assert f"內文 {i}\n" in appendix
+    rc, bounded, err = run_cli(snapshots=[snapshot(comments=many)], full=False)
+    assert (rc, err) == (0, "")
+    assert bounded.count("｜https://example.invalid/c") < 40
 
 
 @pytest.mark.parametrize("role", ROLES)
