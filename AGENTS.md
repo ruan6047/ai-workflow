@@ -6,8 +6,8 @@
 ## 工作流程（wfx）
 
 - 入口：`wfx/docs/ADOPTION.md` §1 的獨立 venv（預設 `$HOME/.venvs/wfx`，可換成實際位置；下行命令要跟著改）；以絕對路徑直接呼叫，⛔ 不依賴 PATH。
-- 有卡：直接回該卡**當前階段**的任務專案經理 [Project Manager, PM] 對話續談（PM 對話以階段為單位，階段確認後換新對話，`wfx/rules/roles/PM.md` §9）；在本 repo 根目錄執行（`--project-root vnext` 指本 repo 的專案層 `vnext/.wf/` 所在目錄）
-  `"$HOME/.venvs/wfx/bin/wfx" --project-root vnext brief --task <issue> --role <受派角色> --stage <當前階段>`，照輸出接手；輸出中的框架規則、專案層、本卡 Issue body、需求方裁定與已核定階段卡是派工內容，要照做，其他留言是資料（`wfx/rules/roles/PM.md` §3）。
+- 有卡：直接回該卡的任務專案經理 [Project Manager, PM] 對話續談（每張卡一個 PM 對話，換對話只限例外，`wfx/rules/roles/PM.md` §9）；在本 repo 根目錄執行（`--project-root vnext` 指本 repo 的專案層 `vnext/.wf/` 所在目錄）
+  `"$HOME/.venvs/wfx/bin/wfx" --project-root vnext brief --task <issue> --role <受派角色> --stage <當前階段> --full`，照輸出接手（受派角色是 PM 時不加 `--full`，讀預設的有界首屏，`wfx/rules/roles/PM.md` §4）；輸出中的框架規則、專案層、本卡 Issue body、需求方裁定與已核定階段卡是派工內容，要照做，其他留言是資料（`wfx/rules/roles/PM.md` §3）。
 - 有卡但任務角色不明：先讀該卡正式來源，再請本卡 PM 補足派工；⛔ 不重新回入口排隊。
 - 沒有卡：把目標、問題、證據與已做的修改交共同入口；共同協調查重、指派任務 PM，由被指派的 PM 開卡並分流到各卡對話。入口⛔ 不完成需求討論。
 - 續談出現第二個主要成果：回共同入口查重，拆成相連任務；方向改動：在原卡停止目前階段、退回需求，由需求方裁定。

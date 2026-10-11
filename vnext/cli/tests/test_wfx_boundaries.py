@@ -2,7 +2,8 @@
 
 本檔是整合後的**單一** C6 錨（W1.6 的 test_wfx_scope.py 已併入此處）：
 `wfx` 全樹⛔ 無實際網路客戶端與模型 provider SDK；`wfx/core/**` ⛔ 無 `wfx.gh`、⛔ 無 `subprocess`。
-⛔ 不做禁用字串掃描、⛔ 不設行數門檻——那些撞 A3。
+⛔ 不做禁用字串掃描、⛔ 不設行數門檻——那些撞 A3。這裡的行數門檻指程式碼與文件**規模**；
+brief 預設輸出的上限（test_brief_bounded.py）是 CLI 輸出的行為契約，靠呈現方式達成、⛔ 不是 rc≠0 gate。
 """
 import ast
 import re

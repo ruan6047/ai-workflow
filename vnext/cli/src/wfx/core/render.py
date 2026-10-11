@@ -1,7 +1,8 @@
 """輸出組版。全部輸入不變時逐字穩定：⛔ 無時間戳、⛔ 無絕對路徑、⛔ 無隨機序。
 
-輸出恰兩部分：`## 派工首屏`（機械資料）與 `## 完整原文附錄`（四層原文逐字）。
-邊界＝`APPENDIX_HEADING` 這一行，可機械定位；⛔ 不做行數 gate、⛔ 不截斷、⛔ 不摘要。
+完整輸出（`brief --full`）恰兩部分：`## 派工首屏`（機械資料）與 `## 完整原文附錄`（四層原文逐字），
+邊界＝`APPENDIX_HEADING` 這一行，可機械定位。預設輸出只有首屏＋一行指標（`tail`），⛔ 無附錄邊界。
+本層⛔ 不做行數 gate、⛔ 不截斷、⛔ 不摘要——首屏索引的上限由動詞層在組 Block 前決定（#434）。
 """
 
 from __future__ import annotations
@@ -51,6 +52,8 @@ def render(
     stage: str,
     first_screen: list[Block],
     appendix: list[Block],
+    *,
+    tail: str = "",
 ) -> str:
     lines = [
         "# brief",
@@ -63,11 +66,16 @@ def render(
     lines.extend(_emit(appendix))
     while lines and lines[-1] == "":
         lines.pop()
+    if tail:
+        lines.extend(["", tail])
     return "\n".join(lines) + "\n"
 
 
 def split_output(text: str) -> tuple[str, str]:
-    """機械切出 (首屏, 附錄)。⛔ 不讀內容，只認 `APPENDIX_HEADING` 那一行。"""
+    """機械切出完整輸出的 (首屏, 附錄)。⛔ 不讀內容，只認 `APPENDIX_HEADING` 那一行。
+
+    預設輸出⛔ 無附錄邊界，傳入會拋 `ValueError`——要切就用 `brief --full` 的輸出。
+    """
     lines = text.splitlines(keepends=True)
     for index, line in enumerate(lines):
         if line.rstrip("\n") == APPENDIX_HEADING:

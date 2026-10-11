@@ -59,13 +59,15 @@ def run_cli(rules_root, project_root, user_root, capsys):
     """跑真正的 CLI 進入點（含全域旗標前綴迴圈），回 (rc, stdout, stderr)。
 
     `client`／`task_source` 是動詞層的**內部**注入點，⛔ 不是公開旗標。
+    `full=True`（預設）帶 `--full`：既有測試驗的是完整輸出（首屏＋附錄），與 #434 前的輸出逐字相同；
+    驗預設有界輸出的測試明寫 `full=False`。
     """
     from wfx.verbs.main import main
 
     from .fakes import FakeClient, FakeLinkedClients
 
     def run(*extra, role="執行者", stage="執行", task=TASK_ID, snapshots=None,
-            client=None, task_source=None, project=None, linked_clients=None):
+            client=None, task_source=None, project=None, linked_clients=None, full=True):
         injected = {}
         if task_source is not None:
             injected["task_source"] = task_source
@@ -82,6 +84,8 @@ def run_cli(rules_root, project_root, user_root, capsys):
             "--rules-root", str(rules_root),
         ]
         argv += list(extra)
+        if full:
+            argv.append("--full")
         rc = main(argv, **injected)
         captured = capsys.readouterr()
         return rc, captured.out, captured.err
