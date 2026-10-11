@@ -26,7 +26,7 @@ python3.14 -m venv "$HOME/.venvs/wfx"                        # 獨立 venv，路
 "$HOME/.venvs/wfx/bin/python" -m pip install ai_workflow_vnext-<版本>-py3-none-any.whl
 "$HOME/.venvs/wfx/bin/wfx" [--project-root <p>] <verb> [動詞參數…]   # 絕對路徑，不依賴 PATH
 
-"$HOME/.venvs/wfx/bin/wfx" --project-root vnext brief --task 'ruan6047/ai-workflow#370' --role 執行者 --stage 執行
+"$HOME/.venvs/wfx/bin/wfx" --project-root vnext brief --task 'ruan6047/ai-workflow#370' --role 執行者 --stage 執行 --full
 "$HOME/.venvs/wfx/bin/wfx" --project-root vnext facts --task 370 --sha <sha>
 "$HOME/.venvs/wfx/bin/wfx" --project-root <任一既存目錄> facts --adopt          # 唯讀採用清單，⛔ 不需任務／.wf/／Project
 "$HOME/.venvs/wfx/bin/wfx" --project-root vnext write --task 370 --field 狀態=進行中 --expect-updated-at 2026-09-21T11:05:20Z
