@@ -58,7 +58,7 @@ GitHub 讀取未完成、本機 git 不可用）。兩類刻意可區分。
 | `--task` | 必填 | 不透明任務識別，核心⛔ 不理解其格式（`370`／`#370`／`owner/name#370`） |
 | `--role` | 必填 | 角色六值之一 |
 | `--stage` | 必填 | 階段五值之一 |
-| `--rules-root` | 套件內的 `wfx/rules` | 第 1 層來源，可指向另一個本機 checkout |
+| `--rules-root` | 套件內的 `wfx/rules` | 第 1 層來源，指向含 `core/` 的 `rules/` 目錄本身（⛔ 不是 checkout 根目錄） |
 | `--full` | 關 | 完整輸出：首屏索引不設上限＋完整原文附錄（見下節）。預設只印有界首屏與一行指標 |
 | `--omit-user-layer` | 關 | 省略使用者層：`~/.wf/` 兩檔⛔ 不讀、附錄⛔ 無 `### 使用者層`，首屏「模型資料狀態」換成一行固定說明；與 `--full` 可合用。何時加住 `rules/roles/PM.md` §3，CLI ⛔ 不判目的地（#440） |
 
@@ -239,8 +239,10 @@ package version: <版本>｜unknown
 ```
 
 `package`＝讀套件內的規則樹；給了 `--rules-root` 就是 `override`。
-**⛔ 不印任何路徑**（那會讓逐字比對隨機器而破）。`facts` 本身⛔ 不讀規則樹——這個旗標
-在 `facts` 只決定第 ⑦ 節報哪一種來源，與 `brief`／`write` 同名同義。
+**⛔ 不印任何路徑**（那會讓逐字比對隨機器而破）。`facts --task` 只驗這個路徑的形狀（`<root>/core/`
+是目錄且其下有 `*.md`，與 `brief` 同一判準）、⛔ 不載入規則內容；不合法（例如指向 checkout 根目錄）＝
+rc 1 `LayerMissing`，在任何 gh／git 呼叫之前失敗，⛔ 不照樣報 `override`。這個旗標與 `brief`／`write`
+同名同義：指向含 `core/` 的 `rules/` 目錄本身。
 版本取不到（未安裝、以原始碼樹直跑）＝`unknown`，⛔ 不由別處補第二個版本來源。
 
 ## `facts --adopt`：唯讀採用清單

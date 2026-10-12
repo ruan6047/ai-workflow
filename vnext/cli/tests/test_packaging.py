@@ -126,6 +126,58 @@ def test_seventh_section_reports_override_when_rules_root_is_given(project_root,
     assert not any(str(rules_root) in line for line in lines)   # ⛔ 不印絕對路徑
 
 
+class NoCalls:
+    """client 與 runner 的替身：被呼叫就記下來。不合法的 --rules-root 要在任何 gh／git 呼叫之前失敗。"""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, *args, **kwargs):
+        self.calls.append(args)
+        raise AssertionError(f'未預期的呼叫：{args}')
+
+    def __getattr__(self, name):
+        if name.startswith('__'):
+            raise AttributeError(name)
+        return lambda *args, **kwargs: self(name, *args)
+
+
+def invalid_rules_roots(rules_root):
+    """指向 checkout 根目錄（rules/ 的上一層）、`core/` 存在但沒有 *.md、路徑根本不存在。"""
+    empty = rules_root.parent / 'empty-rules'
+    (empty / 'core').mkdir(parents=True)
+    return (rules_root.parent, empty, rules_root.parent / 'absent')
+
+
+def test_facts_rejects_a_rules_root_that_is_not_the_rules_directory(project_root, rules_root,
+                                                                    capsys):
+    """`--rules-root` 指向含 `core/` 的 rules/ 目錄本身；不合法＝rc 1 LayerMissing，⛔ 不照樣報 override。"""
+    for bad in invalid_rules_roots(rules_root):
+        for mode in (['--task', TASK_ID], ['--adopt']):
+            client, runner = NoCalls(), NoCalls()
+            rc = main(['--project-root', str(project_root), 'facts', *mode,
+                       '--rules-root', str(bad)], client=client, runner=runner, env={})
+            captured = capsys.readouterr()
+            assert (str(bad), mode[0], rc) == (str(bad), mode[0], 1)
+            assert captured.err.startswith('LayerMissing: 缺少必要層 framework：core（')
+            assert 'rules/ 目錄本身' in captured.err
+            assert 'override' not in captured.out and captured.out == ''
+            assert client.calls == [] and runner.calls == []
+
+
+def test_brief_and_facts_share_one_rules_root_criterion(rules_root):
+    """同一判準：`rules_provenance` 拒絕的路徑，`core_docs` 也拒絕；合法的兩邊都接受。"""
+    assert rules.rules_provenance(rules_root)[0] == rules.OVERRIDE
+    assert rules.core_docs(rules_root)
+    for bad in invalid_rules_roots(rules_root):
+        for check in (rules.rules_provenance, rules.core_docs):
+            try:
+                check(bad)
+            except rules.LayerMissing:
+                continue
+            raise AssertionError(f'{check.__name__} 接受了 {bad}')
+
+
 def test_seventh_section_comes_after_the_existing_six_and_adds_no_second_version_source(tmp_path):
     """既有六節⛔ 不插隊、⛔ 不改字；版本字面在整份輸出裡只出現在第 ⑦ 節那一行。"""
     from .test_facts_remote import gather

@@ -50,9 +50,26 @@ def package_version() -> str:
 def rules_provenance(rules_root: Path | None) -> tuple[str, str]:
     """(來源, 版本)：給了 `--rules-root` 就是 `override`，否則讀套件內的規則樹。
 
-    ⛔ 不讀該路徑、⛔ 不判它合不合法——那是 `brief` 載入時才會 fail-loud 的事。
+    給了就驗形狀（`core/` 是目錄且其下有 `*.md`，與 `core_docs` 同一判準），⛔ 不判內容；
+    不合法＝`LayerMissing`（rc 1），⛔ 不照樣報 `override`。`--rules-root` 指向 `rules/` 目錄本身，
+    ⛔ 不是 checkout 根目錄。
     """
+    if rules_root is not None and not _core_paths(rules_root):
+        raise LayerMissing("framework", CORE_DIR,
+                           "--rules-root 要指向含 core/ 的 rules/ 目錄本身，⛔ 不是 checkout 根目錄；"
+                           f"找不到 {rules_root}/{CORE_DIR} 或其下沒有 *.md")
     return (OVERRIDE if rules_root is not None else PACKAGE), package_version()
+
+
+def _core_paths(rules_root: Path) -> list[Path] | None:
+    """規則樹形狀的唯一判準：`core/` 不是目錄＝None，否則回其下的 `*.md`（可能為空）。
+
+    `core_docs`（brief 載入）與 `rules_provenance`（facts 驗 `--rules-root`）共用，⛔ 不另立第二套。
+    """
+    directory = rules_root / CORE_DIR
+    if not directory.is_dir():
+        return None
+    return list(directory.glob("*.md"))
 
 
 def read_doc(rules_root: Path, rel: str) -> str:
@@ -66,10 +83,10 @@ def read_doc(rules_root: Path, rel: str) -> str:
 
 
 def core_docs(rules_root: Path) -> list[tuple[str, str]]:
-    directory = rules_root / CORE_DIR
-    if not directory.is_dir():
-        raise LayerMissing("framework", CORE_DIR, f"找不到 {directory}")
-    rels = sorted(f"{CORE_DIR}/{p.name}" for p in directory.glob("*.md"))
+    paths = _core_paths(rules_root)
+    if paths is None:
+        raise LayerMissing("framework", CORE_DIR, f"找不到 {rules_root / CORE_DIR}")
+    rels = sorted(f"{CORE_DIR}/{p.name}" for p in paths)
     if not rels:
         raise LayerMissing("framework", CORE_DIR, "目錄下沒有規則文件")
     return [(rel, read_doc(rules_root, rel)) for rel in rels]

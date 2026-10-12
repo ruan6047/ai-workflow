@@ -1,7 +1,7 @@
 """核心上下文：專案層設定與不透明任務識別。
 
 `wfx.core` ⛔ 不得 import `wfx.gh`、⛔ 不得 import subprocess（wfx/rules/core/boundaries.md「CLI 邊界」；
-機械錨＝tests/test_wfx_scope.py）。`task_id` 對核心是不透明字串，格式的理解只住 `wfx.gh`。
+機械錨＝tests/test_wfx_boundaries.py）。`task_id` 對核心是不透明字串，格式的理解只住 `wfx.gh`。
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class Provenance:
 
 @dataclass(frozen=True)
 class RulesSource:
-    """第 1 層規則樹的來源：套件內的 package data，或 `--rules-root` 指定的本機 checkout。
+    """第 1 層規則樹的來源：套件內的 package data，或 `--rules-root` 指定的 `rules/` 目錄（含 `core/` 的那一層）。
 
     ⛔ 不印 root 路徑：那會讓「同一輸入兩次執行逐字相同」隨機器而破。來源屬於哪一種與套件版本，
     由 `facts` 第 ⑦ 節報（`core/rules.rules_provenance`）。
@@ -79,7 +79,8 @@ def load_config_result(project_root) -> ConfigResult:
 def load_config(project_root) -> dict:
     """只驗形狀、⛔ 不判內容、⛔ 不連網。缺檔＝空設定（各鍵為 None）。
 
-    `rules`＝null 或 {"path": 非空字串}；`remote`＝null 或 remote 名稱（⛔ 不是 URL）；
+    `rules`＝null（或省略）：該鍵已無作用，只為讓既有的 `"rules": null` 照常通過；非 null＝`ConfigError`，
+    規則來源的覆寫只有 `--rules-root` 一個入口。`remote`＝null 或 remote 名稱（⛔ 不是 URL）；
     `project`＝null 或 {"owner": 字串, "number": 整數}；`modules`＝null 或非空的選用模組名稱清單
     （boundaries.md §5；`[]`＝形狀錯，⛔ 不是停用）。這裡只驗名稱的形狀；名稱在不在框架規則樹，要讀規則樹的 `brief` 才判。
     """
@@ -97,9 +98,9 @@ def load_config(project_root) -> dict:
         raise ConfigError(f'{path}：未知鍵 {sorted(unknown)}（只認 rules／remote／project／modules）')
     cfg = {'rules': None, 'remote': None, 'project': None, 'modules': None, **raw}
     rules = cfg['rules']
-    if rules is not None and (not isinstance(rules, dict) or set(rules) != {'path'}
-                              or not isinstance(rules['path'], str) or not rules['path']):
-        raise ConfigError('rules 須為 null 或 {"path": 非空字串}')
+    if rules is not None:
+        raise ConfigError('rules 鍵已無作用：只接受 null 或省略；要改規則來源請用 '
+                          '--rules-root <含 core/ 的 rules/ 目錄>')
     remote = cfg['remote']
     if remote is not None and (not isinstance(remote, str) or not remote or ':' in remote):
         raise ConfigError('remote 須為 null 或 remote 名稱（非 URL）')

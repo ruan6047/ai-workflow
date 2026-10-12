@@ -41,7 +41,7 @@ def parse_args(argv):
     parser.add_argument('--role', required=True, help='角色六值之一，見 rules/core/values.md')
     parser.add_argument('--stage', required=True, help='階段五值之一，見 rules/core/values.md')
     parser.add_argument('--rules-root', type=Path, default=None,
-                        help='第 1 層：規則來源，可指向本機 checkout')
+                        help='第 1 層：規則來源，指向含 core/ 的 rules/ 目錄本身（⛔ 不是 checkout 根目錄）')
     parser.add_argument('--full', action='store_true',
                         help='完整輸出：首屏索引不設上限＋完整原文附錄（預設只印有界首屏與一行指標）')
     parser.add_argument('--omit-user-layer', action='store_true',

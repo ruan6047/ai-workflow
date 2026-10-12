@@ -1,13 +1,16 @@
 """本機 git 的另外兩組唯讀事實：`merge-tree` 與 remote 身分。
 
-`merge-tree` 的 rc 由呼叫端印，⛔ 不擋、⛔ 不重新定義其語意。
+`merge-tree` 的 rc 由呼叫端印，⛔ 不擋、⛔ 不重新定義其語意。repo 的 `.git/objects` 零寫入：
+merge 產物只落在暫存目錄，結束即刪。
 remote 事實只供 resolved repository 取源（gh/target.py），⛔ 不進 facts 輸出——
 worktree 路徑因機器而異，印出來會讓「同一 SHA 的本機事實逐字相同」不成立。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import subprocess
+import tempfile
 
 
 class LocalGitUnavailable(RuntimeError):
@@ -22,16 +25,39 @@ class RemoteFact:
 
 
 def merge_tree(base, head, *, root='.', runner=None):
-    """回傳 rc：0＝可合併、1＝有衝突（git merge-tree 的既有語意）。"""
+    """回傳 rc：0＝可合併、1＝有衝突（git merge-tree 的既有語意）。
+
+    repo 的 `.git/objects` 零寫入：`--write-tree` 照跑，但子行程的 `GIT_OBJECT_DIRECTORY` 指向暫存目錄、
+    repo 的 objects 只當 alternates 讀；merge 產物只落在暫存目錄，結束即刪。
+    ⛔ 不用 `--quiet`：它要 git ≥ 2.50，且上游明寫只是「avoid (not prevent)」寫入。
+    """
     runner = subprocess.run if runner is None else runner
-    args = ['git', '-C', str(root), 'merge-tree', '--write-tree', str(base), str(head)]
+    objects = _run(runner, ['git', '-C', str(root), 'rev-parse', '--path-format=absolute',
+                            '--git-path', 'objects'])
+    if objects.returncode != 0:
+        raise LocalGitUnavailable((objects.stderr or '').strip() or f'rc={objects.returncode}')
     try:
-        result = runner(args, capture_output=True, text=True, check=False, timeout=60)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise LocalGitUnavailable(str(exc)) from exc
+        with tempfile.TemporaryDirectory(prefix='wfx-merge-tree-') as scratch:
+            env = dict(os.environ)
+            alternates = [objects.stdout.strip()]
+            if env.get('GIT_ALTERNATE_OBJECT_DIRECTORIES'):
+                alternates.append(env['GIT_ALTERNATE_OBJECT_DIRECTORIES'])
+            env['GIT_OBJECT_DIRECTORY'] = scratch
+            env['GIT_ALTERNATE_OBJECT_DIRECTORIES'] = os.pathsep.join(alternates)
+            result = _run(runner, ['git', '-C', str(root), 'merge-tree', '--write-tree',
+                                   str(base), str(head)], env=env)
+    except OSError as exc:   # 暫存目錄建不起來或刪不掉＝本機環境問題，⛔ 不當成無衝突
+        raise LocalGitUnavailable(f'暫存 object 目錄：{exc}') from exc
     if result.returncode not in (0, 1):
         raise LocalGitUnavailable((result.stderr or '').strip() or f'rc={result.returncode}')
     return result.returncode
+
+
+def _run(runner, args, **kwargs):
+    try:
+        return runner(args, capture_output=True, text=True, check=False, timeout=60, **kwargs)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LocalGitUnavailable(str(exc)) from exc
 
 
 def remote_facts(root, *, runner=None):

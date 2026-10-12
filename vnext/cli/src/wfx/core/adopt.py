@@ -30,7 +30,9 @@ STATES = (DONE, MISSING, MALFORMED, BLOCKED, UNVERIFIED)
 SECTION_TITLES = ('執行環境', '框架套件', f'`{CONFIG_REL.split("/")[0]}/` 骨架', 'repository 身分',
                   'Project schema', '下一步', '摘要')
 
+# 專案層至少要一份 `.wf/*.md`（brief 收全部 *.md）；`model-policy.md` 只是一份都沒有時的建議起點，⛔ 不是必備檔名。
 POLICY_REL = '.wf/model-policy.md'
+PROJECT_DOCS = '.wf/*.md'
 HEADER = '# adopt 採用清單（唯讀：CLI ⛔ 不建立、⛔ 不修改、⛔ 不刪除任何檔案或 Project schema）'
 LEGEND = '# 五類：' + '｜'.join(STATES)
 NEXT_NOTE = ('CLI 只印，⛔ 不代為套用——下列骨架與指令一律由人或執行 AI 自行執行。'
@@ -200,7 +202,6 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
     config_skeleton = (
         f"mkdir -p {wf.name} && cat > {CONFIG_REL} <<'JSON'",
         '{',
-        '  "rules": null,',
         '  "remote": null,',
         '  "project": {"owner": "<owner>", "number": <Project 編號>}',
         '}',
@@ -237,16 +238,31 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
     else:
         items.append(Item(f'{CONFIG_REL} 的 project', DONE, project_ref))
 
-    policy_skeleton = (
-        f"cat > {POLICY_REL} <<'MD'",
+    # 專案層文件：判準與 brief 相同（`.wf/` 下的 *.md 至少一份），⛔ 不要求特定檔名。
+    # 有的話逐檔判，因為 brief 會逐檔讀 UTF-8，壞掉一份 brief 就失敗。
+    if wf_displaced:
+        items.append(Item(PROJECT_DOCS, UNVERIFIED, _upstream(f'{wf.name}/ 目錄')))
+    else:
+        docs = sorted(wf.glob('*.md'), key=lambda path: path.name) if wf_is_dir else []
+        if not docs:
+            items.append(Item(PROJECT_DOCS, MISSING,
+                              f'{wf.name}/ 下沒有任何 *.md（專案層至少要一份）',
+                              _doc_skeleton(POLICY_REL)))
+        for path in docs:
+            rel = f'{wf.name}/{path.name}'
+            items.append(_document_item(path, rel, _doc_skeleton(rel)))
+    return Section(SECTION_TITLES[2], tuple(items))
+
+
+def _doc_skeleton(rel: str) -> tuple[str, ...]:
+    """專案層文件的骨架；一份都沒有時以 `model-policy.md` 為建議起點，壞掉的那份就寫回它自己。"""
+    return (
+        f"cat > {rel} <<'MD'",
         '# 專案層政策',
         '',
         '具體模型名稱、額度與帳號狀態⛔ 不住這裡（core/boundaries.md §2／§3）。',
         'MD',
     )
-    items.append(Item(POLICY_REL, UNVERIFIED, _upstream(f'{wf.name}/ 目錄')) if wf_displaced
-                 else _document_item(project_root / POLICY_REL, POLICY_REL, policy_skeleton))
-    return Section(SECTION_TITLES[2], tuple(items))
 
 
 def _repository(facts: Facts) -> Section:
@@ -314,8 +330,18 @@ def _field_remedy(expectation: Expectation, name: str, options: tuple[str, ...],
     return tuple(lines)
 
 
+def _project_remedy(owner: str) -> tuple[str, ...]:
+    """「Project 可讀：缺少」的下一步：先查實際編號，再由人改 config 或建 Project。CLI 全程⛔ 不代做。"""
+    return (
+        f'gh project list --owner {owner}   # 唯讀：列出目前 gh 身分讀得到的 Project 與編號',
+        f'把 {CONFIG_REL} 的 "project" 改成實際的 {{"owner": "<owner>", "number": <Project 編號>}}'
+        '；CLI ⛔ 不代改',
+        '該 owner 下還沒有 Project：由人在平台上建立後重跑本清單；CLI ⛔ 不代建',
+    )
+
+
 def _schema(rules_root: Path, facts: Facts, project_ref: str | None,
-            config_ready: bool) -> Section:
+            config_ready: bool, owner: str | None) -> Section:
     if not config_ready:
         reason = _upstream(f'{CONFIG_REL} 的 project')
     elif not facts.gh.ok:
@@ -324,13 +350,14 @@ def _schema(rules_root: Path, facts: Facts, project_ref: str | None,
         reason = _upstream('gh 已登入')
     else:
         reason = ''
-    # Project 讀不到就整節停在這裡：頭一項照實分類（上游未滿足＝無法確認，gh 給出客觀錯誤＝
-    # 環境阻塞），其餘核心概念一律「無法確認」——⛔ 不把「讀不到」冒充成「缺少欄位」。
+    # Project 讀不到就整節停在這裡：頭一項照實分類（上游未滿足＝無法確認，GitHub 回報查無＝缺少，
+    # gh 給出其他客觀錯誤＝環境阻塞），其餘核心概念一律「無法確認」——⛔ 不把「讀不到」冒充成「缺少欄位」。
     # 但**分類是無法確認、預期規格照印**：欄型、值域與唯一居所都來自規則樹，與 Project 讀不讀
     # 得到無關，少印它們等於把兩件事混成一件，採用者就無法只靠清單做完首次設定。
     if reason or not facts.project.ok:
         head = (Item('Project 可讀', UNVERIFIED, reason) if reason
-                else _tool_item('Project 可讀', facts.project))
+                else _tool_item('Project 可讀', facts.project, _project_remedy(owner),
+                                blocked_remedy=()))
         pending = []
         for expectation in facts.expectations:
             options = _options(rules_root, expectation)
@@ -422,7 +449,8 @@ def build(project_root: Path, rules_root: Path, *, rules_source: str, version: s
         _framework(rules_root, rules_source, version),
         _skeleton(project_root, config, project_ref),
         _repository(facts),
-        _schema(rules_root, facts, project_ref, project_ref is not None),
+        _schema(rules_root, facts, project_ref, project_ref is not None,
+                None if project is None else project['owner']),
     )
     return diagnosed + (_next_steps(diagnosed), _summary(diagnosed))
 
