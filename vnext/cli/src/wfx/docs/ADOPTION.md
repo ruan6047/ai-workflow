@@ -37,6 +37,8 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 
 ## 2 · 版本確認
 
+已經有卡（專案有 github.com remote，也有任務）時：
+
 ```
 "$HOME/.venvs/wfx/bin/wfx" --project-root <你的專案> facts --task <id>    # 第 ⑦ 節
 ```
@@ -46,6 +48,22 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 rules source: package｜override
 package version: <版本>｜unknown
 ```
+
+還沒有卡的新專案（沒有 remote 或任務）跑 `facts --task` 會 rc 1
+`TargetError: 未能取得 repository：…`，改看採用清單（第 3 節）的第 2 節，空目錄也能跑、rc 0：
+
+```
+"$HOME/.venvs/wfx/bin/wfx" --project-root <你的專案> facts --adopt    # 第 2 節
+```
+
+```
+## 2 · 框架套件
+- ai-workflow-vnext 已安裝：已完成（版本 <版本>）
+- 規則樹隨套件可讀：已完成（來源 <package 或 override>｜<各規則目錄的份數>）
+```
+
+版本取不到時第一行是 `ai-workflow-vnext 已安裝：缺少（importlib.metadata 取不到版本｜以原始碼樹直跑就是這個結果）`，
+意思等同下面的 `unknown`。
 
 - `package`＝讀套件內的規則樹；給了 `--rules-root <p>` 就是 `override`。
 - `unknown`＝這個直譯器的 `sys.path` 上⛔ 無 `ai-workflow-vnext` 的 distribution metadata
@@ -99,7 +117,6 @@ Project 無關。同理，`.git` 已存在而 git 回非 0 是**外部工具的�
 mkdir -p .wf
 cat > .wf/config.json <<'JSON'
 {
-  "rules": null,
   "remote": null,
   "project": {"owner": "<owner>", "number": <Project 編號>}
 }
@@ -112,6 +129,20 @@ MD2
 git init && git remote add origin git@github.com:<owner>/<name>.git
 gh auth login
 ```
+
+`config.json` 的 `<owner>` 是 Project 所屬的個人帳號或組織 login，`<Project 編號>` 是數字。還沒有 Project
+就先建一個，再查編號填進 `number`：
+
+```
+gh project create --owner <owner> --title "<Project 標題>"
+gh project list --owner <owner>          # 第一欄是 Project 編號
+```
+
+- `gh project` 需要 token 帶 `project` scope；缺的時候照 `gh project --help` 的說明跑
+  `gh auth refresh -s project`（CLI ⛔ 不代為登入或改 scope）。
+- 填錯編號時，第 5 節「Project 可讀」不會是「已完成」。
+  <!-- #446 WP2：這一行的實際輸出原文與處理方式，等 #447 合併後依 main 的原始碼補上 -->
+  用 `gh project list --owner <owner>` 核對編號，改正 `config.json` 後重跑清單。
 
 Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清單第 5／6 節，Project 還讀不到時
 也照樣印）**由你在平台上建立**，
@@ -198,7 +229,7 @@ PM 讀預設輸出（有界首屏）；需要某段原文時照 `roles/PM.md` §
   WFX_RULES_ROOT="$("$WFX_VENV/bin/python" -c 'from importlib.resources import files; print(files("wfx").joinpath("rules"))')"
   ```
 
-- **覆寫來源 [override]**：直接把 `WFX_RULES_ROOT` 設為**同一次 `facts --rules-root <p>` 使用的規則樹路徑**，相對路徑以該次呼叫的工作目錄解析；⛔ 不猜測 `site-packages`，⛔ 不自動退回套件來源。`WFX_VENV` 仍是本次 `wfx` 的環境。
+- **覆寫來源 [override]**：直接把 `WFX_RULES_ROOT` 設為**同一次 `facts --rules-root <p>` 使用的規則樹路徑**——`<p>` 是含 `core/` 的 `rules/` 目錄本身（例如 `<checkout>/vnext/cli/src/wfx/rules`），⛔ 不是 checkout 根目錄；相對路徑以該次呼叫的工作目錄解析；⛔ 不猜測 `site-packages`，⛔ 不自動退回套件來源。`WFX_VENV` 仍是本次 `wfx` 的環境。
 
 確認規則樹含完整六份 `core/*.md`，再執行以下短入口。專屬文件缺少或空白時命令非零結束，**停止該協調派工**，⛔ 不退而載入整份 `roles/PM.md`：
 
@@ -219,7 +250,8 @@ PM 讀預設輸出（有界首屏）；需要某段原文時照 `roles/PM.md` §
 ## 5 · 升級
 
 ```
-python -m pip install --force-reinstall ai_workflow_vnext-<新版本>-py3-none-any.whl
+WFX_VENV="$HOME/.venvs/wfx"                                  # 換成第 1 節實際用的 venv 位置
+"$WFX_VENV/bin/python" -m pip install --force-reinstall ai_workflow_vnext-<新版本>-py3-none-any.whl
 ```
 
 - 升級只動 `site-packages`。⛔ 無版本比較、⛔ 無相容矩陣、⛔ 無自動遷移、⛔ 無 legacy 讀取路徑：
@@ -251,7 +283,8 @@ diff /tmp/before.txt /tmp/after.txt          # 應⛔ 無差異
 ## 7 · 回退
 
 ```
-python -m pip install --force-reinstall ai_workflow_vnext-<舊版本>-py3-none-any.whl
+WFX_VENV="$HOME/.venvs/wfx"                                  # 換成第 1 節實際用的 venv 位置
+"$WFX_VENV/bin/python" -m pip install --force-reinstall ai_workflow_vnext-<舊版本>-py3-none-any.whl
 ```
 
 回退只換套件。**你的 `.wf/`、repository 與 Project 都沒有被本 CLI 改過**，因此⛔ 無資料回滾步驟、
@@ -261,7 +294,8 @@ python -m pip install --force-reinstall ai_workflow_vnext-<舊版本>-py3-none-a
 ## 8 · 移除
 
 ```
-python -m pip uninstall ai-workflow-vnext
+WFX_VENV="$HOME/.venvs/wfx"                                  # 換成第 1 節實際用的 venv 位置
+"$WFX_VENV/bin/python" -m pip uninstall -y ai-workflow-vnext  # -y：非互動也能執行
 ```
 
 移除只刪套件與規則樹副本。你的 `.wf/`、Issue、Project 與 repository **原樣保留**——
@@ -273,7 +307,8 @@ python -m pip uninstall ai-workflow-vnext
 
 1. **exact SHA** 的乾淨 checkout 或同一顆 wheel（`pip install` 到全新 venv）；
 2. 同一個 `--project-root`（其 `.wf/` 內容相同）；
-3. 同一份規則樹來源（`package`，或同一個 `--rules-root` checkout）；
+3. 同一份規則樹來源（`package`，或同一個 `--rules-root` 規則目錄：含 `core/` 的 `rules/` 目錄本身，
+   例如 `<checkout>/vnext/cli/src/wfx/rules`，⛔ 不是 checkout 根目錄）；
 4. `facts --task`／`brief` 另需**同一次遠端讀取**——遠端資料變動導致輸出不同是正確行為，
    ⛔ 不得為了讓比對好看而快取或凍結即時遠端資料。
 
@@ -312,7 +347,8 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.18-py3-none-any.whl
   （`gh auth status` 前後相同可證）。清單⛔ 不印 `gh auth status` 的 stdout：帳號名與 token scope 在那裡。
 - **E7 安裝版 `brief`**。**不帶 `--rules-root`** 跑 `brief --task <id> --role <角色> --stage <階段>`：
   rc 0，且 `framework:`／`user:`／`project:`／`task:` 四層來源標記齊全。
-- **E8 三種來源**。同一道 `facts --task`：不帶旗標＝`package`；帶 `--rules-root <checkout>`＝`override`；
+- **E8 三種來源**。同一道 `facts --task`：不帶旗標＝`package`；帶 `--rules-root <checkout>/vnext/cli/src/wfx/rules`
+  （含 `core/` 的 `rules/` 目錄本身，⛔ 不是 checkout 根目錄）＝`override`；
   把**只含 `wfx/` 套件目錄**（⛔ 無 `*.egg-info`）的路徑放進 `PYTHONPATH` 直跑＝`unknown`。
 - **E9／E10 `write --dry-run`**。留言路徑用 `--comment-file`、欄位路徑用 `--field`；
   兩者都印 `would-write ⛔ 未送出任何 mutation`。零 mutation 的證據＝dry-run 前後的
@@ -324,9 +360,20 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.18-py3-none-any.whl
 - **E12 升級不變**。照第 6 節取三份快照 → 在 **`/tmp` 的原始碼副本**改 `version` 再 build
   （**⛔ 不改你自己的工作樹、⛔ 不 commit 版本號**）→ `pip install --force-reinstall` →
   三份快照逐字相同。回退與移除照第 7／8 節，之後專案樹仍應逐字不變。
-- **E13 測試**。`python -m pytest <此套件目錄>/tests -q`（3.14）須全綠。
+- **E13 測試**。pytest ⛔ 不是執行期相依，只在 dev extra（`pyproject.toml` 的
+  `[project.optional-dependencies] dev`）；測試的 `conftest.py` 依本框架 repo 的佈局找原始碼與規則樹，
+  所以**只能在完整 checkout 的原位跑**，⛔ 不能在 E12 的 `/tmp` 原始碼副本上跑（會出現大量 errors 或失敗）。
+  在 checkout 根目錄、用另建的 3.14 venv（⛔ 不裝進第 1 節的 `$WFX_VENV`）：
 
-收尾：刪掉 `/tmp/wfx-dist`、`/tmp/wfx-venv`、`$PROJ` 與那個暫存 `GH_CONFIG_DIR`；
+  ```
+  "$PY" -m venv /tmp/wfx-test-venv
+  /tmp/wfx-test-venv/bin/python -m pip install -e 'vnext/cli[dev]'
+  /tmp/wfx-test-venv/bin/python -m pytest vnext/cli/tests -q
+  ```
+
+  須全綠。可編輯安裝會在 `vnext/cli/src/` 留下 `ai_workflow_vnext.egg-info/`（已被 gitignore；對版本判讀的影響見第 2 節）。
+
+收尾：刪掉 `/tmp/wfx-dist`、`/tmp/wfx-venv`、`/tmp/wfx-test-venv`、`$PROJ` 與那個暫存 `GH_CONFIG_DIR`；
 你的工作樹 `git status` 應為 clean（輪子與 venv **從來不該**落在 repo 裡）。
 
 ## 11 · 選用模組
@@ -336,7 +383,8 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.18-py3-none-any.whl
 - **本版只支援文件模組**：模組內容隨框架套件出貨，住規則樹 `modules/<名稱>/<階段>.md`。
   你的專案**⛔ 不複製、⛔ 不自寫**模組內容；專案自己的補充照舊寫在 `.wf/*.md`。
   目前套件出貨 `tdd`（只在 `執行`、`審核` 階段有文件，屬選用指引）；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
-- **啟用**：在 `.wf/config.json` 加一個鍵，其餘三鍵不動：
+- **啟用**：在 `.wf/config.json` 加一個 `modules` 鍵，其他既有的鍵都不動（舊專案可能還有 `rules` 鍵，
+  第 4 節的新骨架沒有）：
 
   ```
   "modules": ["<名稱>"]
