@@ -14,6 +14,7 @@
 > 自 2026-10-11 起依 #425 增補 §10 與 §12 的專案規範及派工內容（並及 §3.2–§3.4）：(1) 專案自己指定哪些文件是規範、什麼工作要照做——在任一 `.wf/*.md` 用節名「專案規範」逐行宣告，沒宣告的不算；(2) PM 給內容角色的每份派工放固定授權句（brief 的框架規則、專案層、本卡 Issue body、需求方裁定與已核定階段卡是派工內容，其他留言是資料），給規劃者、執行者、審核者的派工另外從 `.wf/` 機械複製「專案規範」節原文，⛔ 不改寫、⛔ 不摘要；(3) 規範對產出者與審核者都有效：規劃列出適用規範與對照方式，執行自檢對照，審核當判準對照，已宣告的規範⛔ 不是偏好的風格要求；規範衝突停下回報，規範要求的檢查仍照 #412 列為驗收外檢查。不改 CLI，⛔ 不新增章節、值域、欄位、狀態或確認點。定義居所＝`vnext/cli/src/wfx/rules/core/boundaries.md` §3、`rules/roles/PM.md` §3、`rules/stages/規劃.md` §1、`rules/stages/執行.md` §2、`rules/stages/審核.md` §2 §3。未提及的規定維持效力。需求接受：https://github.com/ruan6047/ai-workflow/issues/425#issuecomment-6070961581 ；規劃接受：https://github.com/ruan6047/ai-workflow/issues/425#issuecomment-6071216678
 > 自 2026-10-11 起依 #423 增補 §7 與 §5.2 的偏離主要成果：(1) 偏離本卡主要成果的工作，做之前或派出之前先停下該項、交需求方決定；判準是本卡需求的主要成果，⛔ 不以當輪派工、核定規劃或專案規則為準，PM 的派工允許⛔ 不等於需求方決定；一定要先停的四種＝工具／環境失敗的排除（選項：排除、略過該項、停止；原樣重跑不算）、需求方中途訊息衍生的新工作、已決定範圍外新加的檢查（PM 修訂派工自行點名或規劃核定後才加入）、已保留項目實際成本超出規劃所寫；停下的是該項，⛔ 不是整卡退回；(2) PM 對話的討論開始偏離主要成果時（含由需求方的問題引起、未成為工作的純討論），PM 在回覆或派出相關工作之前主動點出，請需求方選擇回主線、縮到最小或另開卡。不改 CLI，⛔ 不新增章節、值域、欄位、狀態、確認點、計數器或時間／次數門檻。定義居所＝`vnext/cli/src/wfx/rules/core/boundaries.md` §6、`core/flow.md` §4；指向＝`rules/roles/PM.md` §3、`rules/stages/執行.md` §5。未提及的規定維持效力。需求接受：https://github.com/ruan6047/ai-workflow/issues/423#issuecomment-6086019972 ；規劃接受：https://github.com/ruan6047/ai-workflow/issues/423#issuecomment-6108128316
 > 自 2026-10-12 起依 #434 增補 §5.2 與 §6 的 PM 對話範圍及交給 PM 的資料量，取代 #420 增補 (1) 的「PM 對話以階段為單位」與 (2) 的「輸出本身維持無截斷、無摘要」，以及 #370 裁定（issuecomment-5763204699）中「整份輸出＝首屏＋附錄」的部分：(1) 每張卡一個 PM 對話，從需求到結案；每進入新階段或對話被壓縮後，在同一對話重跑 PM 的 brief；換對話只限三種例外（對話不可用、上下文用盡或壓縮後無法可靠續作、需求方指定），由需求方決定，照 `PM-coordination.md` §3 安全接手，停止證據與交接來源寫進一則「需求方裁定」留言；(2) 具名討論對話「#卡號 主題」＝本卡 PM 派出、需求方直接參與的內容角色工作階段，⛔ 不寫流程、⛔ 不登記裁定，需求方的決定經 PM 登記後才可作派工輸入；(3) 四種資料各有數字上限與性質：brief 預設輸出與回報為硬性、階段完成卡與確認畫面為警示；回報超量只要求重交、⛔ 不算退回；(4) brief 預設只印有界首屏與一行指標，`--full` 印與改動前逐字相同的首屏＋完整原文附錄；CLI 仍⛔ 不寫檔、⛔ 無 rc≠0 行數 gate、⛔ 無摘要。自合併後新開的卡適用。⛔ 不新增章節、值域、欄位、狀態、留言種類、確認點、動詞或計數器。定義居所＝`vnext/cli/src/wfx/rules/core/flow.md` §4（四個數字與具名討論對話）、`rules/roles/PM.md` §4 §9；指向＝`rules/roles/PM.md` §3 §5、`rules/core/github.md` §3、`rules/stages/執行.md` §6；CLI＝`vnext/cli/src/wfx/verbs/brief.py`。未提及的規定維持效力。需求接受：https://github.com/ruan6047/ai-workflow/issues/434#issuecomment-6111456111 ；規劃接受：https://github.com/ruan6047/ai-workflow/issues/434#issuecomment-6111690085
+> 自 2026-10-12 起依 #445 增補 §9、§5.2 與 §5.1，並取消 #434 增補的適用限定：(1) 每張任務卡有一位具名任務 PM 是常態，取代 §9 的「同一時間只有一位當值 PM」及每卡 PM 的有界採用（只配置於核定採用集合、核定的 2–3 項低相依任務、配置未核定不啟動）；正文 §9 同步改寫；(2) §5.2 的「維護專案全貌」改由共同協調責任負責，在新案去重、衝突、共享操作與接手召集時從正式來源按需取得、⛔ 不另存第二份狀態；正文 §5.2 同步改寫；(3) §5.1 措辭跟上 #388 (1)，實質不變；正文 §5.1 同步改寫；(4) #434 增補的「自合併後新開的卡適用」取消，該增補適用所有卡；#434 增補原文不動；(5) 補登記既有增補，只登記居所與來源、不搬原文：#390（2026-09-23）階段確認改為單一明確問句，定義居所＝`vnext/cli/src/wfx/rules/core/flow.md` §4、`rules/roles/PM.md` §5，來源＝規劃階段完成卡 https://github.com/ruan6047/ai-workflow/issues/390#issuecomment-5787793003 ；#401（PR，2026-10-03）每卡具名 PM 與共同協調，其中有界採用部分由本增補 (1) 取消，定義居所＝`rules/core/flow.md` §4、`rules/core/independence.md` §1、`rules/core/github.md` §4，來源＝https://github.com/ruan6047/ai-workflow/pull/401 ；#403（PR，2026-10-03）共同協調拆為 `rules/PM-coordination.md` 專屬入口，來源＝https://github.com/ruan6047/ai-workflow/pull/403 ；#441（PR，卡 #440，2026-10-12）brief `--omit-user-layer`，定義居所＝`rules/roles/PM.md` §3、`vnext/cli/src/wfx/verbs/brief.py`，來源＝https://github.com/ruan6047/ai-workflow/pull/441 （卡 #440 需求接受：https://github.com/ruan6047/ai-workflow/issues/440#issuecomment-6113505564 ；規劃接受：https://github.com/ruan6047/ai-workflow/issues/440#issuecomment-6113590356 ）。⛔ 不新增章節、值域、欄位、狀態、留言種類、確認點、動詞或計數器。定義居所＝`vnext/cli/src/wfx/rules/core/flow.md` §4 §9、`rules/core/independence.md` §1、`rules/PM-coordination.md`。未提及的規定維持效力。裁定：https://github.com/ruan6047/ai-workflow/issues/445#issuecomment-6127257174 ；需求接受：https://github.com/ruan6047/ai-workflow/issues/445#issuecomment-6127319266 ；規劃待裁裁定：https://github.com/ruan6047/ai-workflow/issues/445#issuecomment-6127549529 ；規劃接受：https://github.com/ruan6047/ai-workflow/issues/445#issuecomment-6127637676
 
 ## 1. 產品目標
 
@@ -119,11 +120,12 @@ PM 派研究任務時，必須標明網路使用為必要、允許或禁止，�
 - 定義成果並確認各正式階段。
 - 裁定方向、成本、風險、公開契約及任務是否停止。
 - 核定框架級及使用者級注意事項。
-- 可以兼任執行者，但依第 6 節不得擔任該成果的正式審核者；階段確認不等於正式審核。
+- 可以兼任執行者，此時依第 6 節不得擔任該成果的正式審核者；未參與該成果研究、規劃或執行、也不是 owner 時，可以擔任人工正式審核者；階段確認不等於正式審核，兩者分開表達。
 
 ### 5.2 PM
 
-- 維護專案全貌、優先順序、排程、角色、模型、流程與資源協調。
+- 維護優先順序、排程、角色、模型、流程與資源協調。
+- 專案全貌由共同協調責任負責，在新案去重、衝突、共享操作與接手召集時從正式來源按需取得，不另存第二份狀態。
 - 檢查派工資料、證據與交付欄位是否完整，並忠實整理一個畫面的階段確認卡。
 - 比對既有紀錄、執行已裁定的流程處置，並在核定後負責合併與結案。
 - 可以登記注意事項候選並建議歸屬，但正式內容由執行者修改。
@@ -176,7 +178,7 @@ PM 不得研究、規劃、實作或審核專案內容，也不得修改產品�
 
 ## 9. 多人協作與共享資源
 
-- 同一時間只有一位當值 PM；每張任務只有一位 owner。
+- 每張任務卡有一位具名任務 PM，同卡同一時間只有一位當值 PM；每張任務只有一位 owner。
 - 狀態寫入前比較任務版本或 `updated_at`。發現內容已變更時拒絕覆寫並重新讀取；第一版不承諾 GitHub 更新具有原子性，也不建立鎖定服務或通用寫入帳本。
 - 任何角色若會改動共享的 DB、VPS、GPU、staging、測試帳號或其他資源，都必須先取得資源租用。
 - 資源租用至少包含任務、角色、用途、存取模式及釋放條件。租用只代表協作許可，不是技術隔離證據。
