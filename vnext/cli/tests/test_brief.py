@@ -338,13 +338,14 @@ def test_domain_comes_from_values_md_not_from_code(rules_root):
         values.check(rules_root, "角色", "執行者")
 
 
-# 公開契約：brief 恰三個必填旗標＋--rules-root＋--full（#434，預設關），⛔ 無 --task-snapshot
+# 公開契約：brief 恰三個必填旗標＋--rules-root＋--full（#434，預設關）＋--omit-user-layer（#440，預設關），
+# ⛔ 無 --task-snapshot
 def test_public_flags_are_exactly_the_contract(run_cli):
     from wfx.verbs.brief import parse_args
 
     args = parse_args(["--task", TASK_ID, "--role", "執行者", "--stage", "執行"])
     assert vars(args) == {"task": TASK_ID, "role": "執行者", "stage": "執行", "rules_root": None,
-                          "full": False}
+                          "full": False, "omit_user_layer": False}
     assert parse_args(["--task", TASK_ID, "--role", "執行者", "--stage", "執行", "--full"]).full is True
     with pytest.raises(SystemExit) as exit_code:      # 用法錯＝rc=2，與 typed 錯（rc=1）可區分
         parse_args(["--task", TASK_ID, "--role", "執行者", "--stage", "執行",

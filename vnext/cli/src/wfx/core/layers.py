@@ -24,6 +24,10 @@ USER_MODEL_FILES = ("model-usage.md", "model-availability.md")
 
 UNKNOWN_MODEL_DATA = "使用者層模型資料：unknown"
 
+# `brief --omit-user-layer`：使用者層未讀也未附時，首屏「模型資料狀態」的固定說明。
+# ⛔ 不是 unknown（unknown 在 boundaries.md §2 另有語意）、⛔ 不印檔名行數。
+USER_LAYER_OMITTED = "本輸出以 `--omit-user-layer` 產出：使用者層（`~/.wf/`）未讀，也未附原文。"
+
 
 @dataclass(frozen=True)
 class Segment:
@@ -254,6 +258,11 @@ def user_model_index(user_root: Path) -> Segment:
         else:
             lines.append(f"- ~/.wf/{name}：{UNKNOWN_MODEL_DATA}")
     return Segment("user", "~/.wf/", "狀態", "\n".join(lines))
+
+
+def user_layer_omitted_index() -> Segment:
+    """`--omit-user-layer`：首屏保留標題與來源標記，內容換成固定說明一行；⛔ 不讀 `~/.wf/`。"""
+    return Segment("user", "~/.wf/", "狀態", USER_LAYER_OMITTED)
 
 
 def issue_section_index(rules_root: Path, data, limit: int | None = None, *,
