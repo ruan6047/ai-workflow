@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shlex
 import sys
 
 from wfx.core import values
@@ -173,7 +174,8 @@ def _present(path: Path) -> bool:
 
 
 def _displace(rel: str) -> str:
-    return f'mv {rel} {rel}.bak   # 或自行移除；CLI ⛔ 不代刪、⛔ 不代改名'
+    # 路徑來自實際檔名（可能含空白或 shell 特殊字元），插進指令前一律 shlex.quote。
+    return f'mv {shlex.quote(rel)} {shlex.quote(rel + ".bak")}   # 或自行移除；CLI ⛔ 不代刪、⛔ 不代改名'
 
 
 def _document_item(path: Path, rel: str, skeleton: tuple[str, ...]) -> Item:
@@ -257,7 +259,7 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
 def _doc_skeleton(rel: str) -> tuple[str, ...]:
     """專案層文件的骨架；一份都沒有時以 `model-policy.md` 為建議起點，壞掉的那份就寫回它自己。"""
     return (
-        f"cat > {rel} <<'MD'",
+        f"cat > {shlex.quote(rel)} <<'MD'",   # 檔名可能含空白：⛔ 不得未引用就插進指令
         '# 專案層政策',
         '',
         '具體模型名稱、額度與帳號狀態⛔ 不住這裡（core/boundaries.md §2／§3）。',

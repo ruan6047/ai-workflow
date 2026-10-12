@@ -7,6 +7,7 @@
 import hashlib
 import json
 import re
+import subprocess
 
 import pytest
 
@@ -520,6 +521,36 @@ def test_no_project_markdown_at_all_is_missing_with_the_policy_skeleton(tmp_path
     assert states(out)['.wf/*.md'] == adopt.MISSING
     assert '.wf/ 下沒有任何 *.md（專案層至少要一份）' in out
     assert remedies(out, '.wf/*.md')[0] == "cat > .wf/model-policy.md <<'MD'"
+
+
+def test_remedies_for_a_project_markdown_with_spaces_write_back_to_that_file(tmp_path, rules_root,
+                                                                           capsys):
+    """檔名含空白時，第 6 節的下一步要原樣交給真的 shell 跑，且寫回的是**那一份**檔案。
+
+    空檔＝`cat >` 骨架；讀不出 UTF-8＝先 `mv` 讓開再 `cat >`。未引用時 shell 會把檔名拆成兩段，
+    導向 `.wf/team` 之類的錯檔案，原檔則沒修好。跑完重列，兩份都要變成已完成。
+    """
+    wf = tmp_path / '.wf'
+    wf.mkdir()
+    (wf / 'team policy.md').write_text('', encoding='utf-8')
+    (wf / 'bad notes.md').write_bytes(b'\xff')
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    assert rc == 0
+    empty_steps = remedies(out, '.wf/team policy.md')
+    broken_steps = remedies(out, '.wf/bad notes.md')
+    assert empty_steps[0] == "cat > '.wf/team policy.md' <<'MD'"
+    assert broken_steps[0].startswith("mv '.wf/bad notes.md' '.wf/bad notes.md.bak'")
+    for steps in (empty_steps, broken_steps):
+        subprocess.run(['sh', '-c', '\n'.join(steps) + '\n'], cwd=tmp_path, check=True)
+    assert sorted(path.name for path in wf.iterdir()) == [
+        'bad notes.md', 'bad notes.md.bak', 'team policy.md']
+    assert (wf / 'bad notes.md.bak').read_bytes() == b'\xff'
+    for name in ('team policy.md', 'bad notes.md'):
+        assert (wf / name).read_text(encoding='utf-8').startswith('# 專案層政策\n')
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    result = states(out)
+    assert rc == 0
+    assert (result['.wf/team policy.md'], result['.wf/bad notes.md']) == (adopt.DONE, adopt.DONE)
 
 
 def test_malformed_modules_stays_one_malformed_item_with_rc_zero(tmp_path, rules_root, capsys):
