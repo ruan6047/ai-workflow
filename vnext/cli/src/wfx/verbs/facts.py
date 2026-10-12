@@ -32,8 +32,9 @@ def parse_args(argv):
     parser.add_argument('--sha')
     parser.add_argument('--adopt', action='store_true',
                         help='唯讀採用清單；⛔ 不需 --task／git 工作樹／.wf/／Project')
-    # `facts --task` ⛔ 不讀規則樹；該路徑上這個旗標只決定第 ⑦ 節報 package 還是 override，
-    # 與 `brief`／`write` 同名同義（給了就是覆寫）。`--adopt` 則真的讀它（§2 欄型與值域）。
+    # `facts --task` 只驗規則樹的形狀（`core/` 在且有 *.md）、⛔ 不載入內容；這個旗標在該路徑上決定
+    # 第 ⑦ 節報 package 還是 override，不合法就 rc 1 `LayerMissing`。與 `brief`／`write` 同名同義
+    # （指向含 `core/` 的 `rules/` 目錄本身）。`--adopt` 則真的讀它（§2 欄型與值域）。
     parser.add_argument('--rules-root', type=Path, default=None)
     args = parser.parse_args(argv)
     if args.adopt and (args.task is not None or args.sha is not None):
@@ -180,6 +181,8 @@ def run(argv, *, project_root, client=None, runner=None, env=None):
     if args.adopt:
         print(adopt_listing(project_root, args.rules_root, client=client, runner=runner, env=env))
         return 0
+    # 不合法的 `--rules-root` 要在任何 gh／git 呼叫之前 fail-loud，⛔ 不先讀遠端再照樣報 override。
+    rules_provenance(args.rules_root)
     context = Context(project_root, args.task, load_config(project_root))
     print(render(collect(context, args.task, args.sha, client=client, runner=runner, env=env),
                  args.rules_root))

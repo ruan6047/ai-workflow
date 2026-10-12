@@ -12,7 +12,8 @@ import json
 import subprocess
 
 from wfx.core.errors import WfxError
-# 四類錯誤分類與唯讀層共用同一份：未知錯誤⛔ 不得推論資源不存在（core/research.md）。
+# 四類錯誤分類與唯讀層共用同一份：未知錯誤⛔ 不得推論資源不存在
+# （機械錨＝tests/test_wfx_boundaries.py::test_client_error_classification_never_infers_absence）。
 from wfx.gh.client import GhError, TransportError, _error as _classify
 
 

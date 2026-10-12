@@ -168,6 +168,20 @@ def test_config_shape_only(tmp_path):
         load_config(tmp_path)
 
 
+def test_rules_key_only_accepts_null_or_absence(tmp_path):
+    """`rules` 鍵已無作用：null 與缺鍵照常通過，回傳形狀不變；非 null＝ConfigError，指向 --rules-root。"""
+    wf = tmp_path / '.wf'
+    wf.mkdir()
+    for text in ('{"rules": null}', '{}'):
+        (wf / 'config.json').write_text(text)
+        assert load_config(tmp_path) == {'rules': None, 'remote': None, 'project': None,
+                                          'modules': None}
+    for text in ('{"rules": {"path": "x"}}', '{"rules": "x"}', '{"rules": {}}'):
+        (wf / 'config.json').write_text(text)
+        with pytest.raises(ConfigError, match='--rules-root'):
+            load_config(tmp_path)
+
+
 def test_dispatch_is_exactly_the_three_verbs(capsys):
     """W1.8 登記第三個動詞後動詞集合固定為三；⛔ 不長出第四個。"""
     from wfx.verbs.main import DISPATCH

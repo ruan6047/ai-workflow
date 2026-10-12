@@ -3,6 +3,7 @@
 母體＝tmp_path 內臨時建立的 git repo，⛔ 不釘本 repo 的任何 SHA、內容或缺檔。
 """
 import json
+import os
 import subprocess
 
 import pytest
@@ -104,6 +105,97 @@ def test_absent_revision_is_fact_absence_and_broken_git_raises(repo):
         diff_stat('a', 'b', root=repo, runner=broken)
     with pytest.raises(LocalGitUnavailable):
         merge_tree('a', 'b', root=repo, runner=RecordedRunner([], default=(128, '', 'boom')))
+
+
+def objects_snapshot(root):
+    """`.git/objects` 下每個檔案的相對路徑與大小；前後相同＝merge-tree 對 repo 零寫入。"""
+    objects = root / '.git' / 'objects'
+    return sorted((str(path.relative_to(objects)), path.stat().st_size)
+                  for path in objects.rglob('*') if path.is_file())
+
+
+def commit_file(root, name, text, message):
+    (root / name).write_text(text)
+    git(root, 'add', name)
+    git(root, 'commit', '-qm', message)
+
+
+def build_criss_cross(root, *, conflict):
+    """兩個 merge-base 的歷史：merge-tree 的內層合併（call_depth>0）也要零寫入。"""
+    root.mkdir()
+    git(root, 'init', '-q', '-b', 'main')
+    git(root, 'config', 'user.email', 't@example.invalid')
+    git(root, 'config', 'user.name', 't')
+    commit_file(root, 'a.txt', 'base\n', 'base')
+    git(root, 'checkout', '-q', '-b', 'x')
+    commit_file(root, 'x.txt', 'x1\n', 'x1')
+    git(root, 'checkout', '-q', '-b', 'y', 'main')
+    commit_file(root, 'y.txt', 'y1\n', 'y1')
+    git(root, 'merge', '-q', '--no-edit', 'x~0')          # y 收 x1
+    git(root, 'checkout', '-q', 'x')
+    git(root, 'merge', '-q', '--no-edit', 'y~1')          # x 收 y1 ⇒ 兩個 merge-base
+    commit_file(root, 'c.txt', 'from x\n', 'x2')
+    git(root, 'checkout', '-q', 'y')
+    commit_file(root, 'c.txt' if conflict else 'd.txt', 'from y\n', 'y2')
+    assert len(git(root, 'merge-base', '--all', 'x', 'y').split()) == 2
+    return root
+
+
+def test_merge_tree_leaves_repo_objects_untouched_and_keeps_rc_semantics(repo):
+    """分岔（rc 0）與衝突（rc 1）兩種形狀：`.git/objects` 前後逐檔相同，rc 語意不變。"""
+    before = objects_snapshot(repo)
+    assert merge_tree('main', 'work', root=repo) == 0
+    assert git_facts(repo, base=fixed_base('main'), remote_names=(), sha='work').merge_tree_rc == 0
+    assert objects_snapshot(repo) == before
+
+    git(repo, 'checkout', '-q', 'main')
+    commit_file(repo, 'b.txt', 'other\n', 'conflict')
+    before = objects_snapshot(repo)
+    assert merge_tree('main', 'work', root=repo) == 1
+    assert git_facts(repo, base=fixed_base('main'), remote_names=(), sha='work').merge_tree_rc == 1
+    assert objects_snapshot(repo) == before
+
+    # 對照組：同一個 repo 直接跑 `--write-tree` 會寫進 `.git/objects`——快照確實量得到寫入。
+    subprocess.run(('git', '-C', str(repo), 'merge-tree', '--write-tree', 'main', 'work'),
+                   capture_output=True, text=True)
+    assert objects_snapshot(repo) != before
+
+
+@pytest.mark.parametrize('conflict, expected', ((False, 0), (True, 1)))
+def test_merge_tree_on_criss_cross_history_writes_nothing(tmp_path, conflict, expected):
+    root = build_criss_cross(tmp_path / f'cc-{expected}', conflict=conflict)
+    before = objects_snapshot(root)
+    assert merge_tree('x', 'y', root=root) == expected
+    assert objects_snapshot(root) == before
+
+
+def test_merge_tree_runs_against_a_scratch_object_directory_that_is_removed(repo, monkeypatch):
+    """repo 的 objects 只當 alternates 讀；使用者原有的 alternates 保留；暫存目錄結束即刪。"""
+    monkeypatch.setenv('GIT_ALTERNATE_OBJECT_DIRECTORIES', '/pre-existing/objects')
+    seen = []
+
+    def runner(args, **kwargs):
+        seen.append((tuple(args), kwargs.get('env')))
+        return subprocess.run(args, **kwargs)
+
+    assert merge_tree('main', 'work', root=repo, runner=runner) == 0
+    (rev_parse_args, _), (merge_args, env) = seen
+    assert rev_parse_args[3:] == ('rev-parse', '--path-format=absolute', '--git-path', 'objects')
+    assert merge_args[3:] == ('merge-tree', '--write-tree', 'main', 'work')
+    objects = git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'objects')
+    scratch = env['GIT_OBJECT_DIRECTORY']
+    assert scratch != objects
+    assert env['GIT_ALTERNATE_OBJECT_DIRECTORIES'].split(os.pathsep) == [objects,
+                                                                        '/pre-existing/objects']
+    assert not os.path.exists(scratch)
+
+
+def test_merge_tree_without_an_objects_path_is_unavailable_and_never_runs_merge_tree(repo):
+    runner = RecordedRunner([(('git', '-C', str(repo), 'rev-parse'),
+                              (128, '', 'fatal: not a git repository'))])
+    with pytest.raises(LocalGitUnavailable, match='not a git repository'):
+        merge_tree('main', 'work', root=repo, runner=runner)
+    assert [call[3] for call in runner.calls] == ['rev-parse']
 
 
 def build_repo_with_remote(root, remote_slug='o/r'):
@@ -255,3 +347,14 @@ def test_two_remotes_of_different_repositories_still_fail_loud_in_all_three_verb
         err = capsys.readouterr().err
         assert (verb, rc, calls) == (verb, 1, [])
         assert 'repository 候選不唯一：o/r←up；other/r←mirror' in err
+
+
+def test_merge_tree_without_a_scratch_directory_is_unavailable_not_a_crash(repo, monkeypatch):
+    """暫存目錄建不起來＝本機環境問題：typed LocalGitUnavailable，⛔ 不 traceback、⛔ 不當成無衝突。"""
+    from wfx.gh import localgit
+
+    def refuse(*args, **kwargs):
+        raise PermissionError('[Errno 13] Permission denied')
+    monkeypatch.setattr(localgit.tempfile, 'TemporaryDirectory', refuse)
+    with pytest.raises(LocalGitUnavailable, match='暫存 object 目錄'):
+        merge_tree('main', 'work', root=repo)

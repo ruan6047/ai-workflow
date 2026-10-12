@@ -7,6 +7,7 @@
 import hashlib
 import json
 import re
+import subprocess
 
 import pytest
 
@@ -83,7 +84,7 @@ def test_adopt_produces_the_listing_with_rc_zero_in_an_empty_directory(tmp_path,
         assert f'## {number} · {title}' in out
     # 專案側每一項都還沒成立；`已完成` 只會出現在執行環境與框架套件那兩節
     # （那兩節反映的是**跑清單的這台機器**，⛔ 不是採用專案的狀態）。
-    for name in ('.wf/ 目錄', '.wf/config.json', '.wf/model-policy.md', 'git 工作樹'):
+    for name in ('.wf/ 目錄', '.wf/config.json', '.wf/*.md', 'git 工作樹'):
         assert result[name] == adopt.MISSING, name
     for name in ('.wf/config.json 的 project', 'github.com repository 身分', 'Project 可讀'):
         assert result[name] == adopt.UNVERIFIED, name
@@ -417,7 +418,7 @@ def test_wf_occupied_by_a_regular_file_is_malformed_and_converges(tmp_path, rule
     steps = remedies(out, '.wf/ 目錄')
     assert steps == ['mv .wf .wf.bak   # 或自行移除；CLI ⛔ 不代刪、⛔ 不代改名', 'mkdir -p .wf']
     # 相鄰的 config／policy：`.wf` 被占著時它們的「不存在」是上游造成的，⛔ 不是「缺少」
-    for name in ('.wf/config.json', '.wf/model-policy.md'):
+    for name in ('.wf/config.json', '.wf/*.md'):
         assert result[name] == adopt.UNVERIFIED, name
 
 
@@ -465,3 +466,147 @@ def test_an_absent_dot_git_is_still_a_missing_worktree(tmp_path, rules_root, cap
     assert rc == 0
     assert states(out)['git 工作樹'] == adopt.MISSING
     assert remedies(out, 'git 工作樹') == ['git init']
+
+
+# ── #447：rules 鍵、專案層 *.md、modules 形狀、Project 查無 ─────────────────
+
+def test_config_skeleton_no_longer_prints_the_rules_key(tmp_path, rules_root, capsys):
+    """`rules` 鍵已無作用：骨架⛔ 不再印它；填了非 null 的值＝格式錯誤，訊息指向 --rules-root。"""
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    steps = remedies(out, '.wf/config.json')
+    assert rc == 0 and steps is not None
+    assert '  "remote": null,' in steps
+    assert not any('"rules"' in line for line in steps)
+    (tmp_path / '.wf').mkdir()
+    (tmp_path / '.wf/config.json').write_text('{"rules": {"path": "x"}}', encoding='utf-8')
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    assert rc == 0
+    assert states(out)['.wf/config.json'] == adopt.MALFORMED
+    assert '--rules-root' in out
+
+
+def test_any_project_markdown_satisfies_the_project_layer(tmp_path, rules_root, capsys):
+    """和 brief 同一判準：`.wf/` 下有任一份 *.md 就⛔ 不再要求 model-policy.md 這個檔名。"""
+    (tmp_path / '.wf').mkdir()
+    (tmp_path / '.wf/other.md').write_text('# 專案層\n', encoding='utf-8')
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(worktree=(128, '', 'fatal: not a git repository')))
+    section = out.split('## 3 · ', 1)[1].split('## 4 · ', 1)[0]
+    result = states(out)
+    assert rc == 0
+    assert result['.wf/other.md'] == adopt.DONE
+    assert '.wf/*.md' not in result
+    assert 'model-policy' not in out
+    assert [line for line in section.splitlines() if line.startswith('- .wf/')
+            and adopt.MISSING in line] == ['- .wf/config.json：缺少（.wf/config.json 不存在）']
+
+
+def test_each_project_markdown_is_checked_like_brief_reads_it(tmp_path, rules_root, capsys):
+    """逐檔判：brief 會逐檔讀 UTF-8，壞掉的那一份要單獨報，下一步寫回它自己。"""
+    (tmp_path / '.wf').mkdir()
+    (tmp_path / '.wf/a.md').write_text('# 專案層\n', encoding='utf-8')
+    (tmp_path / '.wf/b.md').write_text('  \n', encoding='utf-8')
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    result = states(out)
+    assert rc == 0
+    assert (result['.wf/a.md'], result['.wf/b.md']) == (adopt.DONE, adopt.MALFORMED)
+    assert remedies(out, '.wf/b.md')[0] == "cat > .wf/b.md <<'MD'"
+
+
+def test_no_project_markdown_at_all_is_missing_with_the_policy_skeleton(tmp_path, rules_root,
+                                                                        capsys):
+    (tmp_path / '.wf').mkdir()
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    assert rc == 0
+    assert states(out)['.wf/*.md'] == adopt.MISSING
+    assert '.wf/ 下沒有任何 *.md（專案層至少要一份）' in out
+    assert remedies(out, '.wf/*.md')[0] == "cat > .wf/model-policy.md <<'MD'"
+
+
+def test_remedies_for_a_project_markdown_with_spaces_write_back_to_that_file(tmp_path, rules_root,
+                                                                           capsys):
+    """檔名含空白時，第 6 節的下一步要原樣交給真的 shell 跑，且寫回的是**那一份**檔案。
+
+    空檔＝`cat >` 骨架；讀不出 UTF-8＝先 `mv` 讓開再 `cat >`。未引用時 shell 會把檔名拆成兩段，
+    導向 `.wf/team` 之類的錯檔案，原檔則沒修好。跑完重列，兩份都要變成已完成。
+    """
+    wf = tmp_path / '.wf'
+    wf.mkdir()
+    (wf / 'team policy.md').write_text('', encoding='utf-8')
+    (wf / 'bad notes.md').write_bytes(b'\xff')
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    assert rc == 0
+    empty_steps = remedies(out, '.wf/team policy.md')
+    broken_steps = remedies(out, '.wf/bad notes.md')
+    assert empty_steps[0] == "cat > '.wf/team policy.md' <<'MD'"
+    assert broken_steps[0].startswith("mv '.wf/bad notes.md' '.wf/bad notes.md.bak'")
+    for steps in (empty_steps, broken_steps):
+        subprocess.run(['sh', '-c', '\n'.join(steps) + '\n'], cwd=tmp_path, check=True)
+    assert sorted(path.name for path in wf.iterdir()) == [
+        'bad notes.md', 'bad notes.md.bak', 'team policy.md']
+    assert (wf / 'bad notes.md.bak').read_bytes() == b'\xff'
+    for name in ('team policy.md', 'bad notes.md'):
+        assert (wf / name).read_text(encoding='utf-8').startswith('# 專案層政策\n')
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    result = states(out)
+    assert rc == 0
+    assert (result['.wf/team policy.md'], result['.wf/bad notes.md']) == (adopt.DONE, adopt.DONE)
+
+
+def test_malformed_modules_stays_one_malformed_item_with_rc_zero(tmp_path, rules_root, capsys):
+    """Q6：`modules` 形狀錯在採用清單上是一項「格式錯誤」、rc 0（三動詞照舊 ConfigError rc 1）。"""
+    configured(tmp_path)
+    (tmp_path / '.wf/config.json').write_text('{"modules": []}', encoding='utf-8')
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    assert rc == 0
+    assert states(out)['.wf/config.json'] == adopt.MALFORMED
+    assert 'modules 須為 null 或非空' in out
+
+
+# gh 2.92.0 的實測回應（唯讀 `gh api graphql`）：編號不存在＝NOT_FOUND、gh rc 1；owner 不存在＝rc 0、
+# `repositoryOwner=null`、無 errors。
+NUMBER_NOT_FOUND = (1, json.dumps({
+    'data': {'repositoryOwner': {'projectV2': None}},
+    'errors': [{'type': 'NOT_FOUND', 'path': ['repositoryOwner', 'projectV2'],
+                'message': 'Could not resolve to a ProjectV2 with the number 999999.'}]}),
+    'gh: Could not resolve to a ProjectV2 with the number 999999.\n')
+OWNER_NOT_FOUND = (0, json.dumps({'data': {'repositoryOwner': None}}), '')
+
+
+@pytest.mark.parametrize('owner, number, response, detail', (
+    ('o', 999999, NUMBER_NOT_FOUND,
+     '查無 o/projects/999999｜GitHub 回報不存在，或目前 gh 身分無權讀取｜gh rc=1｜'
+     'gh: Could not resolve to a ProjectV2 with the number 999999.'),
+    ('zz-no-such-owner', 1, OWNER_NOT_FOUND,
+     "查無 zz-no-such-owner/projects/1｜GitHub 回報不存在，或目前 gh 身分無權讀取｜gh rc=0｜"
+     "查無 owner 'zz-no-such-owner'：GraphQL repositoryOwner=null"),
+))
+def test_a_project_github_cannot_find_is_missing_not_an_upstream_block(
+        tmp_path, rules_root, capsys, owner, number, response, detail):
+    """真 `GhClient`＋錄製回應：兩條分支都是「缺少」，第 6 節給可照做的步驟，⛔ 不叫人先解決上游。"""
+    rc, out = listing(configured(tmp_path, owner=owner, number=number), rules_root, capsys,
+                      runner=runner(default=response))
+    assert rc == 0
+    assert f'- Project 可讀：缺少（{detail}）' in out
+    steps = remedies(out, 'Project 可讀')
+    assert steps[0] == (f'gh project list --owner {owner}   '
+                        '# 唯讀：列出目前 gh 身分讀得到的 Project 與編號')
+    assert len(steps) == 3 and adopt.NO_COMMAND not in steps
+    assert '先解決上游' not in '\n'.join(steps)
+    assert states(out)['核心概念「階段」'] == adopt.UNVERIFIED
+
+
+def test_project_classification_from_the_client():
+    """owner 不存在＝NotFound；owner 在、projectV2 為 null 又無 errors＝仍是 GhError（⛔ 不冒充不存在）。"""
+    from wfx.gh.client import GhClient, GhError, NotFound
+
+    def client(response):
+        return GhClient('', runner=RecordedRunner([], default=response))
+    with pytest.raises(NotFound, match="查無 owner 'zz'"):
+        client(OWNER_NOT_FOUND).project('zz', 1)
+    with pytest.raises(NotFound):
+        client(NUMBER_NOT_FOUND).project('o', 999999)
+    with pytest.raises(GhError) as unknown:
+        client((0, json.dumps({'data': {'repositoryOwner': {'projectV2': None}}}), '')).project('o', 1)
+    assert type(unknown.value) is GhError
+    assert '無法確定不存在' in str(unknown.value)

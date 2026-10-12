@@ -1,6 +1,7 @@
 """GitHub 讀取層。只有唯讀能力：⛔ 無任何 mutation 方法（寫入契約由 W1.8 `write` 另立）。
 
-四類錯誤分類沿用既有資產：**未知錯誤⛔ 不得推論資源不存在**（wfx/rules/core/research.md「未知不得冒充」）。
+四類錯誤分類沿用既有資產：**未知錯誤⛔ 不得推論資源不存在**（機械錨＝tests/test_wfx_boundaries.py::
+test_client_error_classification_never_infers_absence）。
 runner 採 subprocess.run 的參數與回傳介面，測試以注入式固定／序列快照替身驗遠端變更行為。
 """
 import json
@@ -210,11 +211,19 @@ class GhClient:
             seen.add(cursor)
 
     def project(self, owner, number):
-        """Project 本體＋`viewerCanUpdate`；未提供＝GhError（無法確定不存在）。"""
+        """Project 本體＋`viewerCanUpdate`。
+
+        owner 不存在（`repositoryOwner=null`，gh rc 0、無 errors）＝NotFound；編號不存在由 GraphQL 回
+        `NOT_FOUND`，`_error` 已判成 NotFound。owner 在、`projectV2` 卻為 null 又無 errors＝GhError
+        （無法確定不存在，⛔ 不冒充）。
+        """
         query = ('query($owner:String!,$number:Int!){repositoryOwner(login:$owner){'
                  '... on ProjectV2Owner{projectV2(number:$number){id title url viewerCanUpdate}}}}')
         data = self._request('graphql', query=query, variables={'owner': owner, 'number': number})
-        project = (data['data']['repositoryOwner'] or {}).get('projectV2')
+        repository_owner = data['data']['repositoryOwner']
+        if repository_owner is None:
+            raise NotFound(f'查無 owner {owner!r}：GraphQL repositoryOwner=null')
+        project = repository_owner.get('projectV2')
         if project is None:
             raise GhError('GraphQL 未提供 Project；無法確定不存在')
         return project

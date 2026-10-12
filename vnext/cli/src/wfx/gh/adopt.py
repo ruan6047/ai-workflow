@@ -5,7 +5,8 @@
 ⛔ 不知道 GitHub 的欄位型別字面。
 
 ⛔ 不登入、⛔ 不保存憑證、⛔ 不安裝工具、⛔ 不建立或修改任何 Project schema：
-全部呼叫都是唯讀探測，失敗就照實回「環境阻塞」，⛔ 不重試、⛔ 不推論資源不存在。
+全部呼叫都是唯讀探測，失敗就照實回「環境阻塞」，⛔ 不重試、⛔ 不推論資源不存在；
+唯一例外是 GitHub 明確回報查無（`NotFound`），那是「缺少」的事實缺席，⛔ 不是工具錯誤。
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ import subprocess
 from wfx.core.adopt import Blocked, Expectation, Facts, Field, Probe
 from wfx.core.errors import LayerMissing
 from wfx.core.rules import CORE_DIR, core_concept_rows
-from wfx.gh.client import GhClient, GhError
+from wfx.gh.client import GhClient, GhError, NotFound
 from wfx.gh.facts import STATUS_FIELD_ALIASES
 from wfx.gh.localgit import LocalGitUnavailable
 from wfx.gh.target import TargetError, resolve_repository
@@ -124,6 +125,11 @@ def probe_schema(location, *, runner, client=None):
     try:
         project = client.project(location['owner'], location['number'])
         nodes = client.project_field_names(project['id'])
+    except NotFound as exc:
+        # GitHub 的 NOT_FOUND 也涵蓋「無權讀取」，所以⛔ 不斷言一定不存在。
+        return Probe(False, reason=(f'查無 {ref}｜GitHub 回報不存在，或目前 gh 身分無權讀取'
+                                    f'｜gh rc={"unknown" if recorder.rc is None else recorder.rc}'
+                                    f'｜{recorder.stderr or first_line(str(exc))}')), ()
     except GhError as exc:
         return Probe(False, blocked=Blocked('gh', recorder.rc,
                                             recorder.stderr or first_line(str(exc)))), ()
