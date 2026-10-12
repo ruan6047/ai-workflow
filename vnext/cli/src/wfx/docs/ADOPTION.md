@@ -66,6 +66,11 @@ package version: <版本>｜unknown
 意思等同下面的 `unknown`。
 
 - `package`＝讀套件內的規則樹；給了 `--rules-root <p>` 就是 `override`。
+- `<p>` 要指向含 `core/` 的 `rules/` 目錄本身（例如 `<checkout>/vnext/cli/src/wfx/rules`）。指到 checkout 根目錄
+  或其他不含 `core/*.md` 的目錄時，`facts --task` 與 `facts --adopt` 都在任何 gh／git 呼叫之前 rc 1、stdout 空，
+  stderr 印
+  `LayerMissing: 缺少必要層 framework：core（--rules-root 要指向含 core/ 的 rules/ 目錄本身，⛔ 不是 checkout 根目錄；找不到 <p>/core 或其下沒有 *.md）`，
+  ⛔ 不照樣報 `override`。改正 `<p>` 後重跑即可。
 - `unknown`＝這個直譯器的 `sys.path` 上⛔ 無 `ai-workflow-vnext` 的 distribution metadata
   （典型情況：以原始碼樹 `PYTHONPATH=… python -m wfx` 直跑）。**這是事實，⛔ 不是錯誤。**
   **判準是 metadata 在不在 `sys.path` 上，不是「有沒有 pip install」**：`build` 會在
@@ -97,7 +102,7 @@ package version: <版本>｜unknown
 | 無法確認 | 本清單內的上游那一項還沒滿足，所以這一項還判不了 |
 
 **rc ⛔ 不表達就緒與否**：清單產得出來一律 **rc 0**（不論項目狀態），連清單都產不出來
-（`--project-root` 不是既存目錄、規則樹取不到）才 **rc 1**，用法錯是 **rc 2**。
+（`--project-root` 不是既存目錄、規則樹取不到、`--rules-root` 不合法，見第 2 節）才 **rc 1**，用法錯是 **rc 2**。
 要機械判斷就緒與否，讀第 7 節的計數行，⛔ 不要讀 rc。
 
 判準邊界：文件類只判「存在且非空」，⛔ 不判內容品質；欄位型別依 `rules/core/github.md` §2，
@@ -140,9 +145,28 @@ gh project list --owner <owner>          # 第一欄是 Project 編號
 
 - `gh project` 需要 token 帶 `project` scope；缺的時候照 `gh project --help` 的說明跑
   `gh auth refresh -s project`（CLI ⛔ 不代為登入或改 scope）。
-- 填錯編號時，第 5 節「Project 可讀」不會是「已完成」。
-  <!-- #446 WP2：這一行的實際輸出原文與處理方式，等 #447 合併後依 main 的原始碼補上 -->
-  用 `gh project list --owner <owner>` 核對編號，改正 `config.json` 後重跑清單。
+- 編號或 owner 填錯時，清單第 5 節「Project 可讀」是**缺少**（⛔ 不是環境阻塞），括號內逐字附上 gh 的 rc
+  與 stderr 首行；七個核心概念都是「無法確認」（上游未滿足：Project 可讀），預期規格照印。
+  owner 存在、編號不存在時：
+
+  ```
+  - Project 可讀：缺少（查無 <owner>/projects/<Project 編號>｜GitHub 回報不存在，或目前 gh 身分無權讀取｜gh rc=1｜gh: Could not resolve to a ProjectV2 with the number <Project 編號>.）
+  ```
+
+  owner 本身不存在時，後半段改成 `｜gh rc=0｜查無 owner '<owner>'：GraphQL repositoryOwner=null）`。
+  「GitHub 回報不存在」也涵蓋目前 gh 身分無權讀取的情況，所以清單⛔ 不斷言 Project 一定不存在。
+  第 6 節對這一項印三行下一步：
+
+  ```
+  - Project schema / Project 可讀：缺少
+      gh project list --owner <owner>   # 唯讀：列出目前 gh 身分讀得到的 Project 與編號
+      把 .wf/config.json 的 "project" 改成實際的 {"owner": "<owner>", "number": <Project 編號>}；CLI ⛔ 不代改
+      該 owner 下還沒有 Project：由人在平台上建立後重跑本清單；CLI ⛔ 不代建
+  ```
+
+  照做：用 `gh project list --owner <owner>` 核對 owner 與編號，改正 `config.json` 後重跑清單；
+  列表裡沒有就照上面的 `gh project create` 建立。第一行的 `<owner>` 是 `config.json` 裡填的值，
+  owner 本身填錯時要先改對 owner 再查。
 
 Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清單第 5／6 節，Project 還讀不到時
 也照樣印）**由你在平台上建立**，
@@ -348,7 +372,8 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.18-py3-none-any.whl
 - **E7 安裝版 `brief`**。**不帶 `--rules-root`** 跑 `brief --task <id> --role <角色> --stage <階段>`：
   rc 0，且 `framework:`／`user:`／`project:`／`task:` 四層來源標記齊全。
 - **E8 三種來源**。同一道 `facts --task`：不帶旗標＝`package`；帶 `--rules-root <checkout>/vnext/cli/src/wfx/rules`
-  （含 `core/` 的 `rules/` 目錄本身，⛔ 不是 checkout 根目錄）＝`override`；
+  （含 `core/` 的 `rules/` 目錄本身，⛔ 不是 checkout 根目錄）＝`override`，帶 `--rules-root <checkout>`
+  ＝rc 1 `LayerMissing`（訊息見第 2 節）；
   把**只含 `wfx/` 套件目錄**（⛔ 無 `*.egg-info`）的路徑放進 `PYTHONPATH` 直跑＝`unknown`。
 - **E9／E10 `write --dry-run`**。留言路徑用 `--comment-file`、欄位路徑用 `--field`；
   兩者都印 `would-write ⛔ 未送出任何 mutation`。零 mutation 的證據＝dry-run 前後的
@@ -383,8 +408,10 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.18-py3-none-any.whl
 - **本版只支援文件模組**：模組內容隨框架套件出貨，住規則樹 `modules/<名稱>/<階段>.md`。
   你的專案**⛔ 不複製、⛔ 不自寫**模組內容；專案自己的補充照舊寫在 `.wf/*.md`。
   目前套件出貨 `tdd`（只在 `執行`、`審核` 階段有文件，屬選用指引）；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
-- **啟用**：在 `.wf/config.json` 加一個 `modules` 鍵，其他既有的鍵都不動（舊專案可能還有 `rules` 鍵，
-  第 4 節的新骨架沒有）：
+- **啟用**：在 `.wf/config.json` 加一個 `modules` 鍵，其他既有的鍵都不動（舊專案可能還有 `"rules": null`，
+  照常通過；第 4 節的新骨架沒有這個鍵。`rules` 填成非 null 會 rc 1
+  `ConfigError: rules 鍵已無作用：只接受 null 或省略；要改規則來源請用 --rules-root <含 core/ 的 rules/ 目錄>`，
+  清單上則是 `.wf/config.json` 格式錯誤）：
 
   ```
   "modules": ["<名稱>"]
