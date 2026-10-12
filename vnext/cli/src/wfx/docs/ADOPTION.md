@@ -37,10 +37,12 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 
 ## 2 · 版本確認
 
+以下沿用第 1 節設定的 `WFX_VENV`（換了新的 shell 要先照第 1 節重設這個變數）。
+
 已經有卡（專案有 github.com remote，也有任務）時：
 
 ```
-"$HOME/.venvs/wfx/bin/wfx" --project-root <你的專案> facts --task <id>    # 第 ⑦ 節
+"$WFX_VENV/bin/wfx" --project-root <你的專案> facts --task <id>    # 第 ⑦ 節
 ```
 
 ```
@@ -53,7 +55,7 @@ package version: <版本>｜unknown
 `TargetError: 未能取得 repository：…`，改看採用清單（第 3 節）的第 2 節，空目錄也能跑、rc 0：
 
 ```
-"$HOME/.venvs/wfx/bin/wfx" --project-root <你的專案> facts --adopt    # 第 2 節
+"$WFX_VENV/bin/wfx" --project-root <你的專案> facts --adopt    # 第 2 節
 ```
 
 ```
@@ -82,7 +84,7 @@ package version: <版本>｜unknown
 ## 3 · 採用清單：怎麼讀
 
 ```
-"$HOME/.venvs/wfx/bin/wfx" --project-root <你的專案> facts --adopt [--rules-root <p>]
+"$WFX_VENV/bin/wfx" --project-root <你的專案> facts --adopt [--rules-root <p>]
 ```
 
 `--adopt` 與 `--task`／`--sha` **互斥**，兩者皆缺＝用法錯（rc 2）。它⛔ 不需要任務、
@@ -164,9 +166,10 @@ gh project list --owner <owner>          # 第一欄是 Project 編號
       該 owner 下還沒有 Project：由人在平台上建立後重跑本清單；CLI ⛔ 不代建
   ```
 
-  照做：用 `gh project list --owner <owner>` 核對 owner 與編號，改正 `config.json` 後重跑清單；
-  列表裡沒有就照上面的 `gh project create` 建立。第一行的 `<owner>` 是 `config.json` 裡填的值，
-  owner 本身填錯時要先改對 owner 再查。
+  照做：用 `gh project list --owner <owner>` 核對 owner 與編號，改正 `config.json` 後重跑清單。
+  這個列表只列**目前 gh 身分讀得到**的 Project，列表裡沒有⛔ 不等於 Project 不存在：先用 `gh auth status`
+  核對目前登入的帳號，確認這個帳號有權讀取該 owner 的 Project；確認該 owner 下還沒有 Project，才照上面的
+  `gh project create` 建立。第一行的 `<owner>` 是 `config.json` 裡填的值，owner 本身填錯時要先改對 owner 再查。
 
 Project 的七個核心概念欄位（型別、選項與唯一居所逐字見清單第 5／6 節，Project 還讀不到時
 也照樣印）**由你在平台上建立**，
