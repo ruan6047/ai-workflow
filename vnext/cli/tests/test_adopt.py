@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -610,3 +611,150 @@ def test_project_classification_from_the_client():
         client((0, json.dumps({'data': {'repositoryOwner': {'projectV2': None}}}), '')).project('o', 1)
     assert type(unknown.value) is GhError
     assert '無法確定不存在' in str(unknown.value)
+
+# #459：在既有骨架節追加機械診斷，規範路徑一律以 repository 根解析。
+def test_norm_declaration_uses_repo_root_with_nested_project(tmp_path):
+    root = tmp_path / 'repo'
+    project = root / 'vnext'
+    (project / '.wf').mkdir(parents=True)
+    (root / 'docs').mkdir()
+    (root / 'docs/policy.md').write_text('# 規範\n內容', encoding='utf-8')
+    (project / '.wf/norms.md').write_text('## 專案規範\n- docs/policy.md：修改文件\n', encoding='utf-8')
+    items = adopt._norm_items(project, root)
+    assert len(items) == 1 and items[0].state == adopt.DONE
+    assert 'docs/policy.md' in items[0].name
+    assert 'L2' in items[0].name
+    assert str(tmp_path) not in str(items)
+
+
+@pytest.mark.parametrize('row', ['bad row', '- docs/a.md：', '- ：工作', '- /etc/hosts：工作',
+                                 '- ../elsewhere.md：工作', '- C:\\private.md：工作'])
+def test_invalid_norm_declarations_are_not_ignored(tmp_path, row):
+    (tmp_path / '.wf').mkdir()
+    (tmp_path / '.wf/norm.md').write_text('## 專案規範\n' + row + '\n', encoding='utf-8')
+    items = adopt._norm_items(tmp_path, tmp_path)
+    assert len(items) == 1 and items[0].state == adopt.MALFORMED
+
+
+@pytest.mark.parametrize('shape,state', [('missing', adopt.MISSING), ('empty', adopt.MALFORMED),
+                                       ('directory', adopt.MALFORMED), ('bad-utf8', adopt.MALFORMED),
+                                       ('external-link', adopt.MALFORMED), ('inside-link', adopt.DONE),
+                                       ('dangling-link', adopt.MISSING)])
+def test_norm_target_failure_classes(tmp_path, shape, state):
+    root = tmp_path / 'repo'
+    (root / '.wf').mkdir(parents=True)
+    target = root / 'target.md'
+    (root / '.wf/norm.md').write_text('## 專案規範\n- target.md：工程\n', encoding='utf-8')
+    if shape == 'empty': target.write_text(' \n')
+    elif shape == 'directory': target.mkdir()
+    elif shape == 'bad-utf8': target.write_bytes(b'\xff')
+    elif shape == 'external-link':
+        outside = tmp_path / 'outside.md'; outside.write_text('private'); target.symlink_to(outside)
+    elif shape == 'inside-link':
+        inside = root / 'inside.md'; inside.write_text('valid'); target.symlink_to(inside)
+    elif shape == 'dangling-link': target.symlink_to(root / 'missing.md')
+    items = adopt._norm_items(root, root)
+    assert len(items) == 1 and items[0].state == state
+    assert str(tmp_path) not in str(items)
+
+
+def test_unreadable_norm_target_is_environment_blocked(tmp_path, monkeypatch):
+    (tmp_path / '.wf').mkdir()
+    target = tmp_path / 'target.md'
+    target.write_text('readable')
+    (tmp_path / '.wf/norm.md').write_text('## 專案規範\n- target.md：工作\n')
+    read = Path.read_text
+    def denied(path, *args, **kwargs):
+        if path == target: raise PermissionError('denied')
+        return read(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'read_text', denied)
+    assert adopt._norm_items(tmp_path, tmp_path)[0].state == adopt.BLOCKED
+
+
+def test_absent_norm_declaration_is_explicit_optional(tmp_path):
+    (tmp_path / '.wf').mkdir()
+    (tmp_path / '.wf/policy.md').write_text('# 補充\n不是宣告\n')
+    items = adopt._norm_items(tmp_path, tmp_path)
+    assert len(items) == 1 and items[0].state == adopt.DONE
+    assert '未宣告' in items[0].detail
+
+
+def test_norm_multiple_files_and_sections_preserve_source_positions(tmp_path):
+    (tmp_path / '.wf').mkdir()
+    (tmp_path / 'a.md').write_text('A')
+    (tmp_path / 'b.md').write_text('B')
+    (tmp_path / '.wf/a.md').write_text('## 專案規範\n- a.md：甲\n## 其他\n不是宣告\n## 專案規範\n- b.md：乙\n')
+    (tmp_path / '.wf/b.md').write_text('## 專案規範\n- b.md：丙\n')
+    items = adopt._norm_items(tmp_path, tmp_path)
+    assert len(items) == 3 and all(i.state == adopt.DONE for i in items)
+    assert ['L2' in items[0].name, 'L6' in items[1].name, 'L2' in items[2].name] == [True]*3
+
+
+ENTRY = '"$HOME/.venvs/wfx/bin/wfx" --project-root . brief --task <issue> --role <受派角色> --stage <當前階段>'
+@pytest.mark.parametrize('text,state', [(ENTRY + ' --full', adopt.DONE),
+                                      (ENTRY, adopt.MALFORMED),
+                                      (ENTRY + '\n# --full', adopt.MALFORMED),
+                                      (ENTRY.replace(' brief', '').replace('<issue>', 'brief')+' --full', adopt.MALFORMED),
+                                      (ENTRY.replace('--project-root .', '--project-root other')+' --full', adopt.MALFORMED),
+                                      ('wfx可以自行決定怎麼brief', adopt.UNVERIFIED)])
+def test_entry_checks_command_not_unrelated_full_string(tmp_path, text, state):
+    (tmp_path / 'AGENTS.md').write_text(text)
+    items = adopt._entry_items(tmp_path, tmp_path)
+    assert items[0].state == state
+
+
+def test_entry_literal_include_and_pm_only_command(tmp_path):
+    (tmp_path / 'CLAUDE.md').write_text('@AGENTS.md\n')
+    (tmp_path / 'AGENTS.md').write_text(ENTRY.replace('<受派角色>', 'PM'))
+    items = adopt._entry_items(tmp_path, tmp_path)
+    assert all(i.state == adopt.DONE for i in items)
+    assert '引入' in items[-1].detail
+
+
+@pytest.mark.parametrize('target,state', [('missing.md', adopt.MISSING),
+                                         ('../outside.md', adopt.MALFORMED),
+                                         ('CLAUDE.md', adopt.UNVERIFIED)])
+def test_entry_include_does_not_expand_missing_escaping_or_nested_targets(tmp_path, target, state):
+    (tmp_path / 'AGENTS.md').write_text('@' + target + '\n')
+    (tmp_path / 'CLAUDE.md').write_text('@AGENTS.md\n')
+    assert adopt._entry_items(tmp_path, tmp_path)[0].state == state
+
+
+def test_adapter_reads_root_as_a_fact_without_executing_entry(tmp_path):
+    calls=[]
+    def capture(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, str(tmp_path) + '\n', '')
+    probe, root = gh_adopt.probe_worktree_root(tmp_path/'vnext', runner=capture)
+    assert probe.ok and root == tmp_path
+    assert calls == [('git', '-C', str(tmp_path/'vnext'), 'rev-parse', '--show-toplevel')]
+
+@pytest.mark.parametrize('root_failed', [False, True])
+def test_nested_adoption_listing_wires_root_classification_and_stays_read_only(
+        tmp_path, rules_root, capsys, root_failed):
+    repo = tmp_path / 'repo'
+    project = repo / 'vnext'
+    project.mkdir(parents=True)
+    configured(project)
+    (project / '.wf/norm.md').write_text('## 專案規範\n- vnext/.wf/model-policy.md：工程\n')
+    (repo / 'AGENTS.md').write_text(ENTRY.replace('--project-root .', '--project-root vnext')+' --full')
+    (repo / 'CLAUDE.md').write_text('@AGENTS.md\n')
+    before = tree(repo)
+    fallback = runner()
+    def capture(args, **kwargs):
+        if tuple(args)[-2:] == ('rev-parse', '--show-toplevel'):
+            return subprocess.CompletedProcess(args, 128 if root_failed else 0,
+                                               '' if root_failed else str(repo)+'\n',
+                                               'root unavailable' if root_failed else '')
+        return fallback(args, **kwargs)
+    rc, output = listing(project, rules_root, capsys, runner=capture, client=SchemaClient())
+    again_rc, again = listing(project, rules_root, capsys, runner=capture, client=SchemaClient())
+    assert rc == again_rc == 0 and output == again
+    assert tree(repo) == before and str(tmp_path) not in output
+    if root_failed:
+        assert states(output)['專案規範與入口檢查'] == adopt.BLOCKED
+        assert 'git rev-parse --show-toplevel｜rc=128｜root unavailable' in output
+    else:
+        assert states(output)['入口 AGENTS.md'] == adopt.DONE
+        assert states(output)['入口 CLAUDE.md'] == adopt.DONE
+        assert states(output)['專案規範 vnext/.wf/norm.md:L2 → vnext/.wf/model-policy.md'] == adopt.DONE

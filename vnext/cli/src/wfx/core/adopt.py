@@ -14,7 +14,8 @@ rc ⛔ 不承載「就緒與否」——可機械消費的替代品是第 7 節�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import re
 import shlex
 import sys
 
@@ -102,6 +103,8 @@ class Facts:
     project: Probe
     fields: tuple[Field, ...] = ()
     expectations: tuple[Expectation, ...] = ()
+    worktree_root: Path | None = None
+    worktree_root_probe: Probe | None = None
 
 
 @dataclass(frozen=True)
@@ -199,7 +202,158 @@ def _document_item(path: Path, rel: str, skeleton: tuple[str, ...]) -> Item:
     return Item(rel, DONE, '存在且非空')
 
 
-def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None) -> Section:
+def _inspection_text(path: Path, rel: str, repo_root: Path) -> tuple[str | None, Item | None]:
+    """讀明列本機目標；先驗越界，不展開文件內的外部來源。"""
+    try:
+        if not path.resolve().is_relative_to(repo_root.resolve()):
+            return None, Item(rel, MALFORMED, '路徑或符號連結越出 repository')
+        if not path.exists():
+            return None, Item(rel, MISSING, '目標不存在')
+        if not path.is_file():
+            return None, Item(rel, MALFORMED, '目標不是一般檔案')
+        text = path.read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+        return None, Item(rel, MALFORMED, '目標不是 UTF-8 文字')
+    except OSError as exc:
+        return None, Item(rel, BLOCKED, f'讀取失敗：{type(exc).__name__}')
+    except RuntimeError:
+        return None, Item(rel, MALFORMED, '符號連結無法解析')
+    if not text.strip():
+        return None, Item(rel, MALFORMED, '目標存在但為空')
+    return text, None
+
+
+def _repo_relative(value: str) -> bool:
+    return bool(value) and not (Path(value).is_absolute() or PureWindowsPath(value).drive
+                               or '\\' in value or '..' in Path(value).parts
+                               or re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', value))
+
+
+def _norm_items(project_root: Path, repo_root: Path) -> list[Item]:
+    items = []
+    for path in sorted((project_root / '.wf').glob('*.md'), key=lambda p: p.name):
+        rel = path.relative_to(repo_root).as_posix()
+        text, error = _inspection_text(path, rel, repo_root)
+        if error is not None:
+            items.append(Item(f'專案規範來源 {rel}', error.state, error.detail))
+            continue
+        inside = False
+        declarations = 0
+        for number, line in enumerate(text.splitlines(), 1):
+            if re.match(r'^#{1,2}\s', line):
+                if inside and declarations == 0:
+                    items.append(Item(f'專案規範 {rel}:L{number - 1}', MALFORMED, '宣告節為空'))
+                inside = line == '## 專案規範'
+                declarations = 0
+                continue
+            if not inside or not line.strip():
+                continue
+            declarations += 1
+            name = f'專案規範 {rel}:L{number}'
+            match = re.fullmatch(r'- ([^：]+)：(.+)', line)
+            if not match or not all(part.strip() for part in match.groups()):
+                items.append(Item(name, MALFORMED, '須為 - <repo 相對路徑>：<非空工作>'))
+                continue
+            target, work = match.groups()
+            if not _repo_relative(target) or target != target.strip():
+                items.append(Item(name, MALFORMED, '目標須為 repo 內的相對路徑'))
+                continue
+            _, error = _inspection_text(repo_root / target, target, repo_root)
+            items.append(Item(name + f' → {target}', error.state if error else DONE,
+                              f'工作＝{work}｜' + (error.detail if error else '目標可讀且非空；語意由內容角色核對')))
+        if inside and declarations == 0:
+            items.append(Item(f'專案規範 {rel}:L{len(text.splitlines())}', MALFORMED, '宣告節為空'))
+    return items or [Item('專案規範宣告', DONE, '未宣告（選用）；不表示整體採用失敗')]
+
+
+def _entry_command(line: str, repo_root: Path, project_root: Path) -> tuple[str, str]:
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
+        return MALFORMED, '命令引號形狀錯誤'
+    if not tokens or not tokens[0].endswith('/wfx'):
+        return UNVERIFIED, '未辨識範本的 wfx 路徑形式；由內容角色核對'
+    if not tokens[0].startswith(('/', '$HOME/', '~/')):
+        return MALFORMED, '未明列 wfx 的絕對位置'
+    required = ('--project-root', '--task', '--role', '--stage')
+    if not any(token == 'brief' and index > 0
+               and tokens[index - 1] not in (*required, '--rules-root')
+               for index, token in enumerate(tokens)):
+        return MALFORMED, '命令缺少 brief 動詞（參數值不算動詞）'
+    args = {}
+    for flag in required:
+        if flag not in tokens or tokens.index(flag) + 1 == len(tokens):
+            return MALFORMED, f'命令缺少 {flag} 或其值'
+        args[flag] = tokens[tokens.index(flag) + 1]
+        if args[flag].startswith('--'):
+            return MALFORMED, f'命令缺少 {flag} 的值'
+    root = args['--project-root']
+    if root == '$(git rev-parse --show-toplevel)':
+        target = repo_root
+    elif not _repo_relative(root):
+        return UNVERIFIED, 'project-root 非支援的靜態相對位置；由內容角色核對'
+    else:
+        target = repo_root / root
+    if target.resolve() != project_root.resolve():
+        return MALFORMED, 'project-root 與本次採用位置不同'
+    if args['--role'] != 'PM' and '--full' not in tokens:
+        return MALFORMED, '內容角色命令缺少 --full'
+    return DONE, '明確命令片段符合；PM 有界接手、完整派工與換對話語意須人工核對'
+
+
+def _entry_item(path: Path, repo_root: Path, project_root: Path) -> Item:
+    rel = path.relative_to(repo_root).as_posix()
+    text, error = _inspection_text(path, rel, repo_root)
+    if error:
+        return Item(f'入口 {rel}', error.state, error.detail)
+    included = ''
+    first = text.splitlines()[0].strip()
+    if first.startswith('@'):
+        target = first[1:]
+        if not _repo_relative(target):
+            return Item(f'入口 {rel}', MALFORMED, '引入目標越界或非 repo 相對路徑')
+        text, error = _inspection_text(repo_root / target, target, repo_root)
+        if error:
+            return Item(f'入口 {rel}', error.state, f'引入 {target}：{error.detail}')
+        if text.splitlines()[0].strip().startswith('@'):
+            return Item(f'入口 {rel}', UNVERIFIED, '引入目標仍為引入文件；不遞迴展開')
+        included = f'引入 {target}｜'
+    rows = []
+    for number, raw in enumerate(text.splitlines(), 1):
+        raw = raw.lstrip('> ').strip()
+        if raw.startswith('#'):
+            continue
+        snippets = re.findall(r'`([^`]+)`', raw) if '`' in raw else [raw]
+        for line in snippets:
+            if 'wfx' in line and re.search(r'\bbrief\b', line):
+                state, detail = _entry_command(line, repo_root, project_root)
+                rows.append((state, f'L{number}：{detail}'))
+    if not rows:
+        return Item(f'入口 {rel}', UNVERIFIED, included + '無可辨機械命令；由內容角色核對')
+    state = MALFORMED if any(s == MALFORMED for s, _ in rows) else (
+        UNVERIFIED if any(s == UNVERIFIED for s, _ in rows) else DONE)
+    return Item(f'入口 {rel}', state, included + '；'.join(detail for _, detail in rows))
+
+
+def _entry_items(repo_root: Path, project_root: Path) -> list[Item]:
+    return [_entry_item(repo_root / name, repo_root, project_root)
+            for name in ('AGENTS.md', 'CLAUDE.md')]
+
+
+def _adoption_documents(project_root: Path, facts: Facts) -> list[Item]:
+    if facts.worktree_root is None:
+        probe = facts.worktree_root_probe
+        state = BLOCKED if probe and probe.blocked else UNVERIFIED
+        detail = probe.blocked.line() if probe and probe.blocked else 'repository 根目錄未確認；不猜測 project-root 就是 repo 根'
+        return [Item('專案規範與入口檢查', state, detail)]
+    root = facts.worktree_root
+    norms = (_norm_items(project_root, root) if (project_root / '.wf').is_dir() else
+             [Item('專案規範宣告', UNVERIFIED, '上游 .wf/ 目錄未滿足')])
+    return norms + _entry_items(root, project_root)
+
+
+def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None,
+              facts: Facts) -> Section:
     wf = project_root / CONFIG_REL.split('/')[0]
     config_skeleton = (
         f"mkdir -p {wf.name} && cat > {CONFIG_REL} <<'JSON'",
@@ -253,6 +407,7 @@ def _skeleton(project_root: Path, result: ConfigResult, project_ref: str | None)
         for path in docs:
             rel = f'{wf.name}/{path.name}'
             items.append(_document_item(path, rel, _doc_skeleton(rel)))
+    items.extend(_adoption_documents(project_root, facts))
     return Section(SECTION_TITLES[2], tuple(items))
 
 
@@ -449,7 +604,7 @@ def build(project_root: Path, rules_root: Path, *, rules_source: str, version: s
     diagnosed = (
         _environment(facts),
         _framework(rules_root, rules_source, version),
-        _skeleton(project_root, config, project_ref),
+        _skeleton(project_root, config, project_ref, facts),
         _repository(facts),
         _schema(rules_root, facts, project_ref, project_ref is not None,
                 None if project is None else project['owner']),

@@ -12,7 +12,7 @@
 第 4 層走與 `facts` 同一條唯讀 `wfx.gh`；`task_source` 是**內部**注入點（測試用固定快照），
 ⛔ 不是公開旗標。全域 `--project-root` 由入口的前綴迴圈消耗。
 
-`--omit-user-layer`（#440，預設關）：省略使用者層——`~/.wf/` 兩檔⛔ 不讀、附錄⛔ 無 `### 使用者層` 區塊、
+`--omit-user-layer`（#440，預設關）：省略使用者層——`~/.wf/` 三個明列檔⛔ 不讀、附錄⛔ 無 `### 使用者層` 區塊、
 首屏「模型資料狀態」換成一行固定說明；其餘區塊、順序、來源標記與內容逐字不變。不帶時程式路徑與輸出不變。
 旗標只描述輸出內容，何時加由呼叫端決定（`rules/roles/PM.md` §3），CLI ⛔ 不判目的地。
 
@@ -97,12 +97,12 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
 
     project_segments = layers.project_layer(context.project_root)
     # 使用者層與專案層都排在讀卡之前：檔案讀不出（如不是 UTF-8）時不連網就報錯。只改讀取時點，輸出順序不動。
-    # `--omit-user-layer`：兩檔⛔ 不讀（壞檔也不會讓這次 brief 失敗）
+    # `--omit-user-layer`：三個明列檔⛔ 不讀（壞檔也不會讓這次 brief 失敗）
     if omit_user_layer:
         user_index, user_segments = layers.user_layer_omitted_index(), None
     else:
-        user_index = layers.user_model_index(user_root)
-        user_segments = layers.user_model_data(user_root)
+        user_index = layers.user_index(user_root)
+        user_segments = layers.user_data(user_root)
     data = task_source.fetch(context)
     task_segments = layers.task_layer(data)
     # 只有帶入角色才讀登記；章節缺席＝None＝未登記，兩處都⛔ 不出現相連區塊

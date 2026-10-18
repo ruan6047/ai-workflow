@@ -21,6 +21,7 @@ CORE_CONCEPTS = ("狀態", "階段", "owner", "風險", "緊急性", "期限", "
 
 # 使用者層的兩類模型資料（rules/core/boundaries.md §2）。兩者都缺＝合法 unknown。
 USER_MODEL_FILES = ("model-usage.md", "model-availability.md")
+USER_TOOL_FILE = "tool-usage.md"
 
 UNKNOWN_MODEL_DATA = "使用者層模型資料：unknown"
 
@@ -127,6 +128,40 @@ def user_model_data(user_root: Path) -> list[Segment]:
         else:
             out.append(Segment("user", display, "缺", UNKNOWN_MODEL_DATA))
     return out
+
+
+def _tool_text(user_root: Path) -> str | None:
+    """只讀明列工具檔；缺席合法，壞檔不能冒充缺席。"""
+    path = user_root / USER_TOOL_FILE
+    display = f"~/.wf/{USER_TOOL_FILE}"
+    try:
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return None
+        if not path.resolve().is_relative_to(user_root.resolve()):
+            raise MalformedInput(f"{display} 的符號連結越出使用者層")
+        if not path.is_file():
+            raise MalformedInput(f"{display} 存在但不是一般可讀檔案")
+        return _read_utf8(path, display)
+    except OSError as exc:
+        raise MalformedInput(f"{display} 讀取失敗：{type(exc).__name__}") from exc
+
+
+def user_data(user_root: Path) -> list[Segment]:
+    out = user_model_data(user_root)
+    text = _tool_text(user_root)
+    if text is not None:
+        out.append(Segment("user", f"~/.wf/{USER_TOOL_FILE}", "全文", text.strip("\n")))
+    return out
+
+
+def user_index(user_root: Path) -> Segment:
+    models = user_model_index(user_root)
+    text = _tool_text(user_root)
+    status = ("未提供（選用）" if text is None else
+              f"在（{sum(bool(line.strip()) for line in text.splitlines())} 非空行，全文見附錄）")
+    return Segment("user", "~/.wf/", "狀態", models.body + f"\n- ~/.wf/{USER_TOOL_FILE}：{status}")
 
 
 def project_layer(project_root: Path) -> list[Segment]:

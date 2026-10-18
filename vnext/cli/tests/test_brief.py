@@ -351,3 +351,56 @@ def test_public_flags_are_exactly_the_contract(run_cli):
         parse_args(["--task", TASK_ID, "--role", "執行者", "--stage", "執行",
                     "--task-snapshot", "x.json"])
     assert exit_code.value.code == 2
+
+# #459：工具經驗與模型資料分開；不因工具存在抹掉缺模型的 unknown。
+def test_optional_tool_document_is_loaded_once_with_model_unknown(run_cli, user_root):
+    user_root.mkdir(parents=True)
+    text = '# 工具經驗\n工具來源哨兵459\n'
+    (user_root / 'tool-usage.md').write_text(text, encoding='utf-8')
+    (user_root / 'not-loaded.md').write_text('第四檔禁止讀入459', encoding='utf-8')
+    rc, out, err = run_cli()
+    assert (rc, err) == (0, '')
+    assert out.count('[來源: user:~/.wf/tool-usage.md#全文]') == 1
+    assert out.count(text.strip('\n')) == 1
+    assert '- ~/.wf/model-usage.md：使用者層模型資料：unknown' in out
+    assert '- ~/.wf/model-availability.md：使用者層模型資料：unknown' in out
+    assert '- ~/.wf/tool-usage.md：在（2 非空行，全文見附錄）' in out
+    assert '第四檔禁止讀入459' not in out
+
+
+def test_optional_tool_absence_is_not_another_model_unknown(run_cli):
+    rc, out, err = run_cli()
+    assert (rc, err) == (0, '')
+    assert '- ~/.wf/tool-usage.md：未提供（選用）' in out
+    assert '[來源: user:~/.wf/tool-usage.md#缺]' not in out
+
+
+@pytest.mark.parametrize('shape', ['directory', 'bad-utf8'])
+def test_invalid_tool_file_reports_the_exact_source(run_cli, user_root, shape):
+    user_root.mkdir(parents=True)
+    p = user_root / 'tool-usage.md'
+    if shape == 'directory':
+        p.mkdir()
+    else:
+        p.write_bytes(b'\xff')
+    rc, out, err = run_cli()
+    assert rc == 1 and out == ''
+    assert '~/.wf/tool-usage.md' in err
+    assert 'Traceback' not in err
+
+
+def test_unreadable_tool_document_is_not_silently_missing(run_cli, user_root, monkeypatch):
+    from pathlib import Path
+    user_root.mkdir(parents=True)
+    tool = user_root / 'tool-usage.md'
+    tool.write_text('有內容', encoding='utf-8')
+    read = Path.read_text
+    def denied(path, *args, **kwargs):
+        if path == tool:
+            raise PermissionError('simulated permission denied')
+        return read(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'read_text', denied)
+    rc, out, err = run_cli()
+    assert rc == 1 and out == ''
+    assert '~/.wf/tool-usage.md' in err
+    assert 'Traceback' not in err
