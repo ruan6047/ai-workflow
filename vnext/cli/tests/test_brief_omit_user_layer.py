@@ -22,7 +22,8 @@ USAGE = ("---\nname: usage\n---\n# 模型使用說明（測試）\n### 專案層
          "家族甲：只在使用者層出現的一行。\n來源：需求方；最後確認時間：2026-10-12\n")
 AVAILABILITY = "# 可用性備註（測試）\n家族乙：額度受限，只在使用者層出現。\n"
 
-USER_STATUS_ROW_PREFIXES = ("- ~/.wf/model-usage.md：", "- ~/.wf/model-availability.md：")
+USER_STATUS_ROW_PREFIXES = ("- ~/.wf/model-usage.md：", "- ~/.wf/model-availability.md：",
+                           "- ~/.wf/tool-usage.md：")
 
 
 def nonempty(text):
@@ -40,9 +41,9 @@ def user_files(user_root):
 def replace_status_rows(lines):
     """首屏 `### 模型資料狀態` 的兩列（每檔一列）換成固定說明一行。"""
     status = lines.index("[來源: user:~/.wf/#狀態]") + 1
-    assert [line.startswith(USER_STATUS_ROW_PREFIXES) for line in lines[status:status + 3]] == [
-        True, True, False]
-    return lines[:status] + [USER_LAYER_OMITTED] + lines[status + 2:]
+    assert [line.startswith(USER_STATUS_ROW_PREFIXES) for line in lines[status:status + 4]] == [
+        True, True, True, False]
+    return lines[:status] + [USER_LAYER_OMITTED] + lines[status + 3:]
 
 
 def without_user_layer(full_output):
@@ -121,3 +122,26 @@ def test_flag_defaults_off_and_describes_content_only():
     texts = (USER_LAYER_OMITTED, OMITTED_APPENDIX_NOTE, OMITTED_FULL_POINTER)
     for word in ("外送", "外部", "external", "審核者"):
         assert not any(word in text for text in texts), word
+
+@pytest.mark.parametrize('full', [True, False])
+def test_omit_touches_none_of_the_three_user_paths(run_cli, user_root, monkeypatch, full):
+    from pathlib import Path
+    root = user_root
+    root.mkdir(parents=True)
+    for name in ('model-usage.md', 'model-availability.md', 'tool-usage.md'):
+        (root / name).write_bytes(b'\xff')
+    original_stat, original_read = Path.stat, Path.read_text
+    def stat(path, *args, **kwargs):
+        if path.parent == root:
+            raise AssertionError('使用者檔案不能 stat')
+        return original_stat(path, *args, **kwargs)
+    def read(path, *args, **kwargs):
+        if path.parent == root:
+            raise AssertionError('使用者檔案不能 read')
+        return original_read(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'stat', stat)
+    monkeypatch.setattr(Path, 'read_text', read)
+    rc, out, err = run_cli(FLAG, full=full)
+    assert (rc, err) == (0, '')
+    assert '[來源: user:~/.wf/tool-usage.md#' not in out
+    assert '- ~/.wf/tool-usage.md：' not in out
