@@ -86,6 +86,18 @@ def probe_worktree(project_root, *, runner) -> Probe:
     return Probe(False, reason=f'git rev-parse --git-dir rc={rc}｜{first_line(stderr)}')
 
 
+def probe_worktree_root(project_root, *, runner) -> tuple[Probe, Path | None]:
+    rc, stdout, stderr = _capture(('git', '-C', str(project_root), 'rev-parse', '--show-toplevel'),
+                                  runner=runner)
+    if rc != 0:
+        return Probe(False, blocked=Blocked('git rev-parse --show-toplevel', rc, first_line(stderr))), None
+    value = stdout.strip()
+    if (not value or not Path(value).is_absolute()
+            or not Path(project_root).resolve().is_relative_to(Path(value).resolve())):
+        return Probe(False, reason='git 未提供明確 repository 絕對根目錄'), None
+    return Probe(True, 'git rev-parse --show-toplevel rc=0'), Path(value)
+
+
 def probe_repository(project_root, config, *, env, runner) -> Probe:
     """走 `facts`／`write` 同一條 remote precedence，⛔ 不另立第二套解析。"""
     try:
@@ -196,7 +208,12 @@ def collect(project_root, rules_root, config, *, env=None, runner=None, client=N
     project, fields = NOT_PROBED, ()
     if location is not None and gh.ok and login.ok:
         project, fields = probe_schema(location, runner=runner, client=client)
+    root_probe, worktree_root = (probe_worktree_root(project_root, runner=runner)
+                                 if worktree.ok else (NOT_PROBED, None))
     roots = _root_spellings(project_root)
+    if worktree_root is not None:
+        roots += _root_spellings(worktree_root)
     probes = tuple(_masked(probe, roots)
                    for probe in (git, gh, login, worktree, repository, project))
-    return Facts(*probes, fields, expectations(rules_root))
+    return Facts(*probes, fields, expectations(rules_root), worktree_root,
+                 _masked(root_probe, roots))
