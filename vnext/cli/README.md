@@ -16,7 +16,7 @@ CLI 只載入與呈現資訊、只交客觀事實，**內容判斷由人或負�
 `importlib.metadata.version("ai-workflow-vnext")`；未安裝時就是 `unknown`，
 ⛔ 無 `__version__`、⛔ 無 VERSION 檔、⛔ 不進 `.wf/config.json`。
 
-**規則樹住在套件內**（`wfx/rules/`，20 份 markdown 隨 wheel 出貨）。安裝後⛔ 不需 checkout、
+**規則樹住在套件內**（`wfx/rules/`，23 份 markdown 隨 wheel 出貨）。安裝後⛔ 不需 checkout、
 ⛔ 不需 `PYTHONPATH`，也⛔ 不把規則複製進採用者的專案。
 
 ## 跑它
@@ -162,7 +162,8 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
   停用時兩處都不出現；同版同規則樹下，停用與未啟用設定的輸出一致
   （核心規則跨版的文字差異不在比較範圍）。
 
-⛔ 無第五種 kind、⛔ 無新動詞或旗標、⛔ 不依角色生效、⛔ 無模組衝突處理。套件目前出貨一個模組 `tdd`（#393）：只有 `執行`、`審核` 兩份文件，屬選用指引。
+⛔ 無第五種 kind、⛔ 無新動詞或旗標、⛔ 不依角色生效、⛔ 無模組衝突處理。套件出貨 `tdd`（#393，`執行`、`審核`）及 `codegraph`（`規劃`、`執行`、`審核`），皆屬選用文件指引。
+`codegraph` 另附顯式呼叫的專用入口 `python -m wfx.codegraph` 與集中指南 `wfx/docs/CODEGRAPH.md`；模組載入器不啟動它，三個 wfx 動詞不變。
 
 ### 相連任務（#414）
 
@@ -314,6 +315,6 @@ python -m pytest vnext/cli/tests -q     # Python 3.14
 
 `test_wfx_boundaries.py` 是**單一** C6 結構錨：`wfx` 全樹⛔ 無實際網路客戶端與模型 provider SDK
 （純 `urllib.parse` 是網址編碼工具，逐名放行；`urllib.request`／`http`／`socket`／`requests`／
-`httpx` 仍全樹禁止），`wfx/core/**` ⛔ 無 `wfx.gh` 與 `subprocess`，`subprocess` 只住 `wfx/gh/`。
+`httpx` 仍全樹禁止），`wfx/core/**` ⛔ 無 `wfx.gh` 與 `subprocess`，`subprocess` 只住 `wfx/gh/` 與固定的 `wfx/codegraph.py`。
 ⛔ 不做禁用字串掃描、⛔ 不設行數門檻。這裡的「行數門檻」指程式碼與文件**規模**（A3）；
 `test_brief_bounded.py` 釘的 brief 預設輸出上限是 CLI 輸出的行為契約，靠呈現方式達成，⛔ 不是 rc≠0 gate，兩者不衝突。
