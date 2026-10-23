@@ -466,7 +466,10 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.22-py3-none-any.whl
 
 - **本版只支援文件模組**：模組內容隨框架套件出貨，住規則樹 `modules/<名稱>/<階段>.md`。
   你的專案**⛔ 不複製、⛔ 不自寫**模組內容；專案自己的補充照舊寫在 `.wf/*.md`。
-  目前套件出貨 `tdd`（只在 `執行`、`審核` 階段有文件，屬選用指引）；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
+  目前套件出貨 `tdd`（`執行`、`審核`）與 `codegraph`（`規劃`、`執行`、`審核`），皆屬選用指引；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
+  `codegraph` 另隨套件附專用伴隨入口 `python -m wfx.codegraph`，由內容角色顯式呼叫固定 query/explore；
+  `brief` 不啟動它、不改載入器或新增 wfx 動詞。每台主機一次的固定版本／launcher、每專案啟停／路徑／排除、
+  原生索引生命週期與未驗限制，集中見 [CODEGRAPH.md](CODEGRAPH.md)。opt-in 不授予安裝、索引或設定寫入權。
 - **啟用**：在 `.wf/config.json` 加一個 `modules` 鍵，其他既有的鍵都不動（舊專案可能還有 `"rules": null`，
   照常通過；第 4 節的新骨架沒有這個鍵。`rules` 填成非 null 會 rc 1
   `ConfigError: rules 鍵已無作用：只接受 null 或省略；要改規則來源請用 --rules-root <含 core/ 的 rules/ 目錄>`，

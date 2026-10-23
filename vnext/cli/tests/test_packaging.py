@@ -4,6 +4,7 @@
 實機驗證負責（那需要 build 與安裝，⛔ 不進 pytest）。
 ⛔ 不驗規則內容、⛔ 不比對版本值大小、⛔ 不做散文判讀。
 """
+import ast
 import tomllib
 from pathlib import Path
 
@@ -35,10 +36,10 @@ def test_default_rules_root_is_inside_the_package_not_the_repo_layout():
 
 
 def test_every_rule_document_travels_with_the_package():
-    """四個目錄與 20 份 markdown 全在套件內；`.gitkeep` ⛔ 不是規則、不列入。"""
+    """四個目錄與 23 份 markdown 全在套件內；`.gitkeep` ⛔ 不是規則、不列入。"""
     root = rules.default_rules_root()
     assert sorted(p.name for p in root.iterdir() if p.is_dir()) == ['core', 'modules', 'roles', 'stages']
-    assert len(sorted(root.rglob('*.md'))) == 20
+    assert len(sorted(root.rglob('*.md'))) == 23
     assert len(rules.core_docs(root)) == 6
 
 
@@ -75,8 +76,13 @@ def test_version_lives_only_in_pyproject():
     assert declaration()['project']['version']
     for path in sorted((CLI_ROOT / 'src/wfx').rglob('*.py')):
         text = path.read_text(encoding='utf-8')
-        assert '__version__' not in text, path
-        assert 'VERSION =' not in text, path
+        # 只禁止框架的第二個版本來源；外部工具的 SUPPORTED_CODEGRAPH_VERSION 不是框架版號。
+        assigned = {node.id for statement in ast.walk(ast.parse(text))
+                    if isinstance(statement, (ast.Assign, ast.AnnAssign))
+                    for target in (statement.targets if isinstance(statement, ast.Assign)
+                                   else [statement.target])
+                    for node in ast.walk(target) if isinstance(node, ast.Name)}
+        assert not assigned & {'__version__', 'VERSION'}, path
     assert not list((CLI_ROOT / 'src/wfx').rglob('VERSION'))
 
 
