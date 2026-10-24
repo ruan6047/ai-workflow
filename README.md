@@ -6,7 +6,7 @@
 
 - 定位：可固定版本安裝的**試用基準**，⛔ 不宣稱全面穩定，⛔ 無自動升級。版本 `0.2.30`（唯一居所＝`vnext/cli/pyproject.toml`）。
 - 範圍：舊制已於 #417 移除，舊卡改照 vNext（[Q6](https://github.com/ruan6047/ai-workflow/issues/417#issuecomment-6059993575)）。
-- 內容：套件 `ai-workflow-vnext`、CLI `wfx`，動詞只有 `brief`／`facts`／`write`；規則樹隨套件出貨（`vnext/cli/src/wfx/rules/`：`core/`、`roles/`、`stages/`、選用文件模組 `modules/tdd/`）。
+- 內容：套件 `ai-workflow-vnext`、CLI `wfx`，動詞只有 `brief`／`facts`／`write`；規則樹隨套件出貨（`vnext/cli/src/wfx/rules/`：`core/`、`roles/`、`stages/`、選用文件模組 `modules/`：`tdd`、`codegraph`、`architecture`）。
 - 環境：Python **3.14**（`requires-python >=3.14`），`git` 與 `gh` 另行安裝。
 - 取得 wheel：固定版本以 tag `vnext-v<版本>`＋GitHub Release 附件發布。Release 都標 Pre-release、沒有 latest，一律指定版本；下載不需要 gh 登入：
 
@@ -23,8 +23,8 @@
 
   前提：能連網（pip 會下載建置後端 `setuptools`）；⛔ 不需要 `build` 模組。建置會在 `vnext/cli/` 留下 `build/` 與 `src/ai_workflow_vnext.egg-info/`（已被 gitignore；對版本判讀的影響見 ADOPTION §2）。
 - 安裝：照 ADOPTION §1，用獨立 venv 的 `"$WFX_VENV/bin/python" -m pip install <wheel 檔>`，⛔ 不用 PATH 上的 `python`。
-- 選用 TDD 文件模組：專案 `.wf/config.json` 加 `"modules": ["tdd"]`，只有 `執行`、`審核` 兩個階段有文件。**尚無真實專案啟用案例**，只經 CI 測試驗證；⛔ 不據此宣稱其他模組類型已驗證。
-- 文件：CLI 契約 `vnext/cli/README.md`；採用流程（安裝、版本確認、升級、回退、移除）`vnext/cli/src/wfx/docs/ADOPTION.md`；需求邊界 `docs/research/VNEXT-REQUIREMENTS-2026-09-21.md`。
+- 選用文件模組：專案 `.wf/config.json` 加 `"modules": ["<名稱>", …]`。套件出貨 `tdd`（`執行`、`審核`）、`codegraph`（`規劃`、`執行`、`審核`）與 `architecture`（`需求`、`規劃`、`執行`、`審核`），操作見 ADOPTION §11。`tdd` **尚無真實專案啟用案例**，只經 CI 測試驗證；⛔ 不據此宣稱其他模組類型已驗證。
+- 文件：CLI 契約 `vnext/cli/README.md`；採用流程（安裝、版本確認、升級、回退、移除）`vnext/cli/src/wfx/docs/ADOPTION.md`；選用模組指南 `vnext/cli/src/wfx/docs/CODEGRAPH.md`、`vnext/cli/src/wfx/docs/ARCHITECTURE.md`；需求邊界 `docs/research/VNEXT-REQUIREMENTS-2026-09-21.md`。
 
 ## 2 · 本 repo 的 CI 與守門
 
