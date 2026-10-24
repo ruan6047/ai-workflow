@@ -16,7 +16,7 @@ CLI 只載入與呈現資訊、只交客觀事實，**內容判斷由人或負�
 `importlib.metadata.version("ai-workflow-vnext")`；未安裝時就是 `unknown`，
 ⛔ 無 `__version__`、⛔ 無 VERSION 檔、⛔ 不進 `.wf/config.json`。
 
-**規則樹住在套件內**（`wfx/rules/`，23 份 markdown 隨 wheel 出貨）。安裝後⛔ 不需 checkout、
+**規則樹住在套件內**（`wfx/rules/`，27 份 markdown 隨 wheel 出貨）。安裝後⛔ 不需 checkout、
 ⛔ 不需 `PYTHONPATH`，也⛔ 不把規則複製進採用者的專案。
 
 ## 跑它
@@ -40,10 +40,10 @@ python3.14 -m venv "$HOME/.venvs/wfx"                        # 獨立 venv，路
 
 `--project-root` 是**全域**旗標，只認動詞之前，由入口的前綴迴圈消耗。
 
-自己 build 一顆 wheel：
+自己 build 一顆 wheel（與 repo 根目錄 `README.md` 同一作法；⛔ 不需要 `build` 模組）：
 
 ```
-python -m build --wheel --outdir <repo 外的目錄> vnext/cli
+"$HOME/.venvs/wfx/bin/python" -m pip wheel --no-deps --wheel-dir <repo 外的目錄> vnext/cli
 ```
 
 建置產物（`build/`、`*.egg-info/`）已進 `.gitignore`；⛔ 不要把 wheel 或 venv 放進 repository。
@@ -162,7 +162,7 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
   停用時兩處都不出現；同版同規則樹下，停用與未啟用設定的輸出一致
   （核心規則跨版的文字差異不在比較範圍）。
 
-⛔ 無第五種 kind、⛔ 無新動詞或旗標、⛔ 不依角色生效、⛔ 無模組衝突處理。套件出貨 `tdd`（#393，`執行`、`審核`）及 `codegraph`（`規劃`、`執行`、`審核`），皆屬選用文件指引。
+⛔ 無第五種 kind、⛔ 無新動詞或旗標、⛔ 不依角色生效、⛔ 無模組衝突處理。套件出貨 `tdd`（#393，`執行`、`審核`）、`codegraph`（`規劃`、`執行`、`審核`）及 `architecture`（`需求`、`規劃`、`執行`、`審核`；指南 `wfx/docs/ARCHITECTURE.md`），皆屬選用文件指引。
 `codegraph` 另附顯式呼叫的專用入口 `python -m wfx.codegraph` 與集中指南 `wfx/docs/CODEGRAPH.md`；模組載入器不啟動它，三個 wfx 動詞不變。
 
 ### 相連任務（#414）

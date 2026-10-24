@@ -1,6 +1,6 @@
 """W1.6 驗收：brief 的四層注入、必要清單與模型資料載入。
 
-驗收編號對應 VNEXT-PLAN-2026-09-21.md 的 E 表 W1.6 (1)–(10)。
+驗收編號對應歷史規劃稿 VNEXT-PLAN-2026-09-21.md（已刪除，以 `git show 37c52cb:docs/research/VNEXT-PLAN-2026-09-21.md` 對照）的 E 表 W1.6 (1)–(10)。
 第 4 層走與 `facts` 同一條唯讀 `wfx.gh`；本檔全部以注入式快照驗，零網路、零 mutation。
 """
 
