@@ -56,6 +56,17 @@ def network_modules(text):
             if name.split('.')[0] in NETWORK and name not in URL_TOOLS}
 
 
+def subprocess_allowed(relative_path):
+    return relative_path.parts[0] == 'gh' or relative_path.as_posix() == 'codegraph.py'
+
+
+@pytest.mark.parametrize('path,allowed', [('codegraph.py', True), ('gh/client.py', True),
+                                        ('core/codegraph.py', False), ('verbs/codegraph.py', False),
+                                        ('codegraph/runner.py', False), ('other.py', False)])
+def test_subprocess_exception_is_only_the_fixed_codegraph_companion(path, allowed):
+    assert subprocess_allowed(Path(path)) is allowed
+
+
 def test_import_scope_negative_control():
     """放行 `urllib.parse` 之後，這條錨仍抓得到真正的網路與 provider 匯入。"""
     assert network_modules('import socket\nimport requests') == {'socket', 'requests'}
@@ -78,8 +89,8 @@ def test_core_never_imports_gh_or_subprocess_and_tree_is_stdlib_only():
         if path.parts[path.parts.index('wfx') + 1] == 'core':
             assert not any(m.startswith('wfx.gh') for m in used), path
             assert 'subprocess' not in names, path
-        if 'gh' not in path.parts:
-            assert 'subprocess' not in names, path        # 起 `gh` 子行程只住 wfx.gh
+        if not subprocess_allowed(path.relative_to(SRC)):
+            assert 'subprocess' not in names, path        # 只有 gh 與固定 CodeGraph helper
         total += sum(1 for line in source.splitlines() if line.strip())
     print('WFX_SRC_NONBLANK', total)   # C7 行數只作警示；⛔ 無 rc≠0 的門檻斷言
 

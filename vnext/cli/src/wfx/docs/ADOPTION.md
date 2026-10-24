@@ -25,7 +25,7 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 - 需要 Python **≥ 3.14**（`requires-python`）。
 - 執行期⛔ 無 Python 相依（`pip show ai-workflow-vnext` 的 `Requires:` 為空）；
   `git` 與 `gh` 是**外部指令**，各自另行安裝。
-- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（20 份 markdown）
+- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（23 份 markdown）
   隨 wheel 走，住在 `wfx/rules/`，⛔ 不複製進你的專案。
 - 無參數執行 `wfx` 會印用法並以 **rc 2** 結束（用法錯）。
 - `wfx: command not found` 先看上面的檢查：
@@ -416,8 +416,8 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.22-py3-none-any.whl
 - **E2 乾淨 venv 安裝**。`$PY -m venv /tmp/wfx-venv` →
   `/tmp/wfx-venv/bin/python -m pip install --no-index --no-cache-dir "$WHL"`。
   無參數跑 `wfx` 應印用法並 **rc 2**（console script 會把 `main()` 的回傳值當 exit code）。
-- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **20 份**、
-  `wfx/docs/ADOPTION.md` 在，且⛔ 無 `.wf/`、⛔ 無任務／模型資料、⛔ 無憑證。
+- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **23 份**（含 `modules/codegraph/` 的規劃、執行、審核），
+  `wfx/codegraph.py`、`wfx/docs/ADOPTION.md` 與 `wfx/docs/CODEGRAPH.md` 在，且⛔ 無 `.wf/`、⛔ 無任務／模型資料、⛔ 無憑證。
   `pip show -f ai-workflow-vnext` 的 `Requires:` 須為**空**。
 - **E4 空目錄清單＋零寫入**。`find "$PROJ" | sort` 前後比對，中間跑兩次
   `wfx --project-root "$PROJ" facts --adopt`：rc 0、兩次輸出 `diff` 逐字相同、`find` 無差異。
@@ -466,7 +466,10 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.22-py3-none-any.whl
 
 - **本版只支援文件模組**：模組內容隨框架套件出貨，住規則樹 `modules/<名稱>/<階段>.md`。
   你的專案**⛔ 不複製、⛔ 不自寫**模組內容；專案自己的補充照舊寫在 `.wf/*.md`。
-  目前套件出貨 `tdd`（只在 `執行`、`審核` 階段有文件，屬選用指引）；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
+  目前套件出貨 `tdd`（`執行`、`審核`）與 `codegraph`（`規劃`、`執行`、`審核`），皆屬選用指引；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
+  `codegraph` 另隨套件附專用伴隨入口 `python -m wfx.codegraph`，由內容角色顯式呼叫固定 query/explore；
+  `brief` 不啟動它、不改載入器或新增 wfx 動詞。每台主機一次的固定版本／launcher、每專案啟停／路徑／排除、
+  原生索引生命週期與未驗限制，集中見 [CODEGRAPH.md](CODEGRAPH.md)。opt-in 不授予安裝、索引或設定寫入權。
 - **啟用**：在 `.wf/config.json` 加一個 `modules` 鍵，其他既有的鍵都不動（舊專案可能還有 `"rules": null`，
   照常通過；第 4 節的新骨架沒有這個鍵。`rules` 填成非 null 會 rc 1
   `ConfigError: rules 鍵已無作用：只接受 null 或省略；要改規則來源請用 --rules-root <含 core/ 的 rules/ 目錄>`，
