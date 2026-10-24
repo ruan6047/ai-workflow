@@ -4,14 +4,14 @@
 
 ## 1 · vNext
 
-- 定位：可固定版本安裝的**試用基準**，⛔ 不宣稱全面穩定，⛔ 無自動升級。版本 `0.2.28`（唯一居所＝`vnext/cli/pyproject.toml`）。
+- 定位：可固定版本安裝的**試用基準**，⛔ 不宣稱全面穩定，⛔ 無自動升級。版本 `0.2.29`（唯一居所＝`vnext/cli/pyproject.toml`）。
 - 範圍：舊制已於 #417 移除，舊卡改照 vNext（[Q6](https://github.com/ruan6047/ai-workflow/issues/417#issuecomment-6059993575)）。
 - 內容：套件 `ai-workflow-vnext`、CLI `wfx`，動詞只有 `brief`／`facts`／`write`；規則樹隨套件出貨（`vnext/cli/src/wfx/rules/`：`core/`、`roles/`、`stages/`、選用文件模組 `modules/tdd/`）。
 - 環境：Python **3.14**（`requires-python >=3.14`），`git` 與 `gh` 另行安裝。
 - 取得 wheel：固定版本以 tag `vnext-v<版本>`＋GitHub Release 附件發布。Release 都標 Pre-release、沒有 latest，一律指定版本；下載不需要 gh 登入：
 
   ```
-  curl -fLO https://github.com/ruan6047/ai-workflow/releases/download/vnext-v0.2.28/ai_workflow_vnext-0.2.28-py3-none-any.whl
+  curl -fLO https://github.com/ruan6047/ai-workflow/releases/download/vnext-v0.2.29/ai_workflow_vnext-0.2.29-py3-none-any.whl
   ```
 
   要其他版本就把網址裡兩處版本號換掉；版本不存在時 curl 回 404 並非零結束。
