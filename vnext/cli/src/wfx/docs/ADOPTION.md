@@ -416,8 +416,8 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.22-py3-none-any.whl
 - **E2 乾淨 venv 安裝**。`$PY -m venv /tmp/wfx-venv` →
   `/tmp/wfx-venv/bin/python -m pip install --no-index --no-cache-dir "$WHL"`。
   無參數跑 `wfx` 應印用法並 **rc 2**（console script 會把 `main()` 的回傳值當 exit code）。
-- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **23 份**（含 `modules/codegraph/` 的規劃、執行、審核），
-  `wfx/codegraph.py`、`wfx/docs/ADOPTION.md` 與 `wfx/docs/CODEGRAPH.md` 在，且⛔ 無 `.wf/`、⛔ 無任務／模型資料、⛔ 無憑證。
+- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **27 份**（含 `modules/codegraph/` 的規劃、執行、審核及 `modules/architecture/` 的需求、規劃、執行、審核），
+  `wfx/codegraph.py`、`wfx/docs/ADOPTION.md`、`wfx/docs/CODEGRAPH.md` 與 `wfx/docs/ARCHITECTURE.md` 在，且⛔ 無 `.wf/`、⛔ 無任務／模型資料、⛔ 無憑證。
   `pip show -f ai-workflow-vnext` 的 `Requires:` 須為**空**。
 - **E4 空目錄清單＋零寫入**。`find "$PROJ" | sort` 前後比對，中間跑兩次
   `wfx --project-root "$PROJ" facts --adopt`：rc 0、兩次輸出 `diff` 逐字相同、`find` 無差異。
