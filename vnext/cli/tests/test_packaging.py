@@ -36,10 +36,10 @@ def test_default_rules_root_is_inside_the_package_not_the_repo_layout():
 
 
 def test_every_rule_document_travels_with_the_package():
-    """四個目錄與 23 份 markdown 全在套件內；`.gitkeep` ⛔ 不是規則、不列入。"""
+    """四個目錄與 27 份 markdown 全在套件內；`.gitkeep` ⛔ 不是規則、不列入。"""
     root = rules.default_rules_root()
     assert sorted(p.name for p in root.iterdir() if p.is_dir()) == ['core', 'modules', 'roles', 'stages']
-    assert len(sorted(root.rglob('*.md'))) == 23
+    assert len(sorted(root.rglob('*.md'))) == 27
     assert len(rules.core_docs(root)) == 6
 
 
