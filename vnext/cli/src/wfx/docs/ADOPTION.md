@@ -25,7 +25,7 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 - 需要 Python **≥ 3.14**（`requires-python`）。
 - 執行期⛔ 無 Python 相依（`pip show ai-workflow-vnext` 的 `Requires:` 為空）；
   `git` 與 `gh` 是**外部指令**，各自另行安裝。
-- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（23 份 markdown）
+- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（27 份 markdown）
   隨 wheel 走，住在 `wfx/rules/`，⛔ 不複製進你的專案。
 - 無參數執行 `wfx` 會印用法並以 **rc 2** 結束（用法錯）。
 - `wfx: command not found` 先看上面的檢查：
@@ -466,7 +466,8 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-0.2.22-py3-none-any.whl
 
 - **本版只支援文件模組**：模組內容隨框架套件出貨，住規則樹 `modules/<名稱>/<階段>.md`。
   你的專案**⛔ 不複製、⛔ 不自寫**模組內容；專案自己的補充照舊寫在 `.wf/*.md`。
-  目前套件出貨 `tdd`（`執行`、`審核`）與 `codegraph`（`規劃`、`執行`、`審核`），皆屬選用指引；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
+  目前套件出貨 `tdd`（`執行`、`審核`）、`codegraph`（`規劃`、`執行`、`審核`）與 `architecture`（`需求`、`規劃`、`執行`、`審核`），皆屬選用指引；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
+  架構參考的文件效力、按需引用、生命週期及採用／停用集中見 [ARCHITECTURE.md](ARCHITECTURE.md)；在既有 `modules` 清單加入 `architecture`，不依賴 CodeGraph，也不另建專案架構或索引。
   `codegraph` 另隨套件附專用伴隨入口 `python -m wfx.codegraph`，由內容角色顯式呼叫固定 query/explore；
   `brief` 不啟動它、不改載入器或新增 wfx 動詞。每台主機一次的固定版本／launcher、每專案啟停／路徑／排除、
   原生索引生命週期與未驗限制，集中見 [CODEGRAPH.md](CODEGRAPH.md)。opt-in 不授予安裝、索引或設定寫入權。
