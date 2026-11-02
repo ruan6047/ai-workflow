@@ -190,7 +190,10 @@ class GitHub:
         command(['gh', 'release', 'create', tag, '--repo', self.repo, '--verify-tag',
                  '--draft', '--prerelease', '--latest=false', '--title', f'vNext {version}',
                  '--notes', f'Source: {sha}\nRun: {run_url}'])
-        return self.api(f'releases/tags/{tag}')
+        # tag REST 端點只回 published；gh view 支援草稿查找，取得 REST 數字 ID。
+        release_id = json.loads(command(['gh', 'release', 'view', tag, '--repo', self.repo,
+                                         '--json', 'databaseId']))['databaseId']
+        return self.api(f'releases/{release_id}')
 
     def upload(self, tag, files):
         command(['gh', 'release', 'upload', tag, '--repo', self.repo, *map(str, files)])

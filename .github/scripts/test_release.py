@@ -78,7 +78,17 @@ class FakeGitHub:
 
     def create(self, *args):
         self.calls.append('create')
-        return dict(self.release)
+        from unittest.mock import patch
+        def command(args):
+            if args[:3] == ['gh', 'release', 'create']:
+                return b''
+            if args[:3] == ['gh', 'release', 'view']:
+                if self.fail == 'view':
+                    raise r.ReleaseError('draft lookup failed')
+                return b'{"databaseId": 7}'
+            raise AssertionError(args)
+        with patch.object(r, 'command', side_effect=command):
+            return r.GitHub.create(self, *args)
 
     def upload(self, tag, paths):
         self.calls.append('upload')
@@ -88,6 +98,11 @@ class FakeGitHub:
                                   for i, (name, data) in enumerate(self.files.items())]
 
     def api(self, endpoint, payload=None):
+        # 官方 tag REST 端點只承諾 published release，不能回讀新草稿。
+        if endpoint.startswith('releases/tags/') and self.release['draft']:
+            raise r.ReleaseError('GET release by tag: 404')
+        if endpoint != 'releases/7':
+            raise AssertionError(endpoint)
         if payload is not None:
             self.calls.append(('publish', payload))
             self.release['draft'] = False
@@ -138,6 +153,7 @@ class Publication(unittest.TestCase):
                 self.assertEqual(self.exercise(fail), ['query'])
 
     def test_failure_never_recovers_or_claims_success(self):
+        self.assertEqual(self.exercise('view'), ['query', 'create'])
         self.assertEqual(self.exercise('upload'), ['query', 'create', 'upload'])
         calls = self.exercise('readback')
         self.assertNotIn('anonymous', calls)
@@ -163,11 +179,17 @@ class RemoteBoundaries(unittest.TestCase):
     def test_gh_commands_and_anonymous_headers(self):
         from unittest.mock import patch, MagicMock
         api = r.GitHub('ruan6047/ai-workflow')
-        with patch.object(r, 'command', return_value=b'{}') as call:
-            api.create('vnext-v1.2.3', '1.2.3', 'a' * 40, 'run')
+        with patch.object(r, 'command', side_effect=[b'', b'{"databaseId": 7}',
+                                                   b'{"id": 7}', b'']) as call:
+            self.assertEqual(api.create('vnext-v1.2.3', '1.2.3', 'a' * 40, 'run'), {'id': 7})
             args = call.call_args_list[0].args[0]
             for flag in ['--verify-tag', '--draft', '--prerelease', '--latest=false']:
                 self.assertIn(flag, args)
+            self.assertEqual(call.call_args_list[1].args[0],
+                             ['gh', 'release', 'view', 'vnext-v1.2.3', '--repo', api.repo,
+                              '--json', 'databaseId'])
+            self.assertEqual(call.call_args_list[2].args[0],
+                             ['gh', 'api', f'repos/{api.repo}/releases/7'])
             api.upload('vnext-v1.2.3', [Path('a.whl'), Path('a.whl.sha256')])
             self.assertNotIn('--clobber', call.call_args.args[0])
         response = MagicMock()
