@@ -358,6 +358,18 @@ WFX_VENV="$HOME/.venvs/wfx"                                  # 換成第 1 節�
 
 - **機械發布承接原審核**：適用條件與原卡未關／已關的承接方式只依 `wfx/rules/stages/結案.md` §4；由受派執行者沿既有方式升版、打包及安裝，PM 沿原卡處理授權與結果。版本提交／PR、必要 CI、上列版本與內容核對、正式資產下載比對及安裝後版本／內容與入口核對仍保留；沿用有效原驗證，不重跑未受影響的功能測試。新行為、依賴、安裝方式、資料或安全變更及不能證明純機械者，回原內容製作與獨立審核，不以升版名義承接。CLI 不判定機械資格，也不自動執行發布或遷移。
 
+### 維護者發布與人工恢復
+
+人仍負責版本 PR、審核／必要 CI、合併與推 tag。推 tag 前，核對本次發布授權所指版本 PR 的精確合併 commit `S`、pyproject 版本、README 顯示及下載 URL 的 tag／wheel 版本，保存原批准及 CI 證據；tag 必須精確指向 `S`。自動 ancestry 檢查不能把任意 main 祖先認定為已核來源。
+
+新增的 `release.yml` 僅由 `vnext-v<major>.<minor>.<patch>` tag push 觸發，數字段不接受前導零；不升版、不推 tag、不操作 PR。唯讀 build 從固定來源建置並驗 wheel metadata／entry point／程式、規則與文件 bytes，產生 wheel 與 `.whl.sha256`；同 run、明確 artifact ID 傳遞，保留 1 日。publish 重核遠端 tag、main 歸屬與原兩檔，不重建或執行 wheel；草稿資產下載相符後才公開，標題 `vNext <版本>`，Pre-release／非 Latest。公開後匿名下載固定版本 URL 核對，所有檢查完成才報成功。**首次實際發布未驗證**，離線替身與候選檢查不能代替真正 tag→run→Release→匿名下載收據；安裝與升級仍各自授權。
+
+同 tag 任意 Release（草稿／部分／完整）都停止，不接管、不覆寫、不自動刪除或改 tag。API／上傳／公開回應不明時可能已寫入，原 run 仍失敗；人先唯讀核對已知 Release ID、原 run、來源及資產。尚無 Release 且來源／版本／授權不變時，才另授權重跑原 run。已有 Release 的人工補完須另授權精確 ID 與動作，只用原交付可證同一份 bytes 的 wheel；缺原件或無法證明同份就停止、改走新版本，不能同號重建替換。公開後匿名核驗失敗仍是未完整成功，人工恢復另留收據。
+
+既有 `pip wheel --no-deps` 手動備援保留：從同一已核 `S` 的乾淨來源建置，核對版本、metadata、內容及兩檔 SHA256，另授權以 Pre-release／非 Latest 發布並匿名下載核驗；同號停止原則仍適用。短期 artifact 到期後不能假設可恢復原 wheel。若需回復功能，另走既有 PR／CI／審核移除新增 workflow／helper／相鄰測試並還原本卡文件差異；不回寫既有 Release、tag 或安裝。
+
+build 為 `contents:read`，publish 才為 `contents:write`，後者仍可寫 repo／refs；token 僅注入認證發布 step，固定官方 action 仍屬信任面。無 tag ruleset 的移標競態及惡意 workflow 風險仍在，本功能不保證平台級不可繞過隔離。
+
 ## 6 · 「`.wf/` 不變」驗證
 
 升級或重跑前後各取一次快照，逐字比對：

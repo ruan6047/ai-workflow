@@ -1,0 +1,83 @@
+name: vNext release
+
+on:
+  push:
+    tags: ['vnext-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # 刪除／零 SHA／非 tag 事件明確顯示 skipped，不建置或發布。
+    if: ${{ !github.event.deleted && github.sha != '0000000000000000000000000000000000000000' && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      source: ${{ steps.build.outputs.source }}
+      version: ${{ steps.build.outputs.version }}
+      hash: ${{ steps.build.outputs.hash }}
+      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.14'
+      - name: 固定來源、建置並核對兩檔
+        id: build
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: python .github/scripts/release.py build --directory "$RUNNER_TEMP/release-dist"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: artifact
+        with:
+          name: release-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.build.outputs.source }}
+          path: ${{ runner.temp }}/release-dist/*
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false
+
+      - name: 明示建置失敗
+        if: ${{ failure() }}
+        run: echo '失敗：建置或 artifact 傳遞未完成；未執行發布。' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-dist
+      - name: 核對草稿後公開並匿名下載
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+          EXPECTED_SOURCE: ${{ needs.build.outputs.source }}
+          EXPECTED_HASH: ${{ needs.build.outputs.hash }}
+        run: python .github/scripts/release.py publish --directory "$RUNNER_TEMP/release-dist"
+      - name: 明示發布失敗
+        if: ${{ failure() }}
+        run: echo '失敗／遠端可能已部分成功；詳見發布步驟的 Release ID 與最後步驟，交人核對，勿盲目重跑。' >> "$GITHUB_STEP_SUMMARY"
