@@ -15,6 +15,10 @@
   ```
 
   要其他版本就把網址裡兩處版本號換掉；版本不存在時 curl 回 404 並非零結束。
+- 維護者發布：人先完成版本 PR（同步 pyproject 與上面三處引用），保存該次審核、必要 CI、發布授權及版本 PR 的精確合併 commit `S`；核對本次 tag 必須正好指向 `S` 後，另依授權推 `vnext-v<版本>`。main 祖先檢查只證明主線歸屬，不能代替上述人工核對。
+  `.github/workflows/release.yml` 會從固定 tag commit 唯讀建置 wheel／SHA256，經保留 1 日的同 run artifact 傳給發布 job；後者重核來源及 bytes，建立標題 `vNext <版本>` 的草稿，核對精確兩資產後公開為 Pre-release／非 Latest，再匿名下載固定 URL 比對才報完成。**首次實際發布尚未驗證**；離線自檢不代表 Actions 或公開下載已成功。
+  同 tag 已有任何 Release（含草稿或部分資產）即停止，不覆寫、續傳或自動刪除。失敗可能已留下遠端內容，先由人核對原 run／Release ID／來源及原 wheel，再另授權恢復；只有尚無 Release 且來源不變時才考慮重跑。詳見 ADOPTION §5。
+  建置 job 為 `contents:read`，發布 job 的 `contents:write` 仍可寫 repo／refs，並非 Release 專用；無 tag ruleset 時仍有移標競態，也不能防有寫權者改寫 workflow。使用標準 Ubuntu 24.04 runner 與兩檔短期 artifact，不承諾所有資源無限免費。
 - 從原始碼自建（Release 還沒發布的版本）：在 checkout 根目錄，用任一 Python 3.14 venv 的 pip（例如照 ADOPTION §1 建好的 `$WFX_VENV`）：
 
   ```
