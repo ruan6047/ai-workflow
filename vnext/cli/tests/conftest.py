@@ -59,7 +59,7 @@ def run_cli(rules_root, project_root, user_root, capsys):
     """跑真正的 CLI 進入點（含全域旗標前綴迴圈），回 (rc, stdout, stderr)。
 
     `client`／`task_source` 是動詞層的**內部**注入點，⛔ 不是公開旗標。
-    `full=True`（預設）帶 `--full`：既有測試驗的是完整輸出（首屏＋附錄），與 #434 前的輸出逐字相同；
+    `full=True`（預設）帶 `--full`：既有測試驗的是完整輸出（首屏＋附錄；附錄留言只附 body 引用者與最新 15 則）；
     驗預設有界輸出的測試明寫 `full=False`。
     """
     from wfx.verbs.main import main

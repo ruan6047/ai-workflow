@@ -2,10 +2,11 @@
 
 預設輸出＝有界首屏＋一行指標（#434）：`## 派工首屏` 只由機械資料組成，資料驅動的索引清單超出
 上限時依位置只列一部分並印省略數，每列（與任務識別）escape 成恰一個實體行，總量受硬性上限約束（數字與性質的定義居所＝`rules/core/flow.md` §4，
-由 `tests/test_brief_bounded.py` 釘住）；⛔ 無附錄。`--full`＝完整輸出，與 #434 前的輸出逐字相同（#370 裁定 issuecomment-5763204699）：
-首屏索引不設上限，後接 `## 完整原文附錄`＝四層原文逐字、順序固定、同一來源只出現一次，邊界可機械定位
-（`render.split_output`）。兩種輸出都⛔ 無摘要、⛔ 不截斷原文、⛔ 不以 rc≠0 擋行數；被省略的只有首屏索引的列，
-原文與完整索引一律在 `--full`。兩種輸出讀同一組來源，typed 失敗也相同。
+由 `tests/test_brief_bounded.py` 釘住）；⛔ 無附錄。`--full`＝首屏索引不設上限，後接 `## 完整原文附錄`＝
+四層原文逐字、順序固定、同一來源只出現一次，邊界可機械定位（`render.split_output`）。附錄的任務層只附
+Issue body 引用到的留言與最新 `COMMENT_LIMIT` 則的全文（`layers.carried_comments`：url 字面與位置，⛔ 不分類），
+其餘留言只在索引、整則不附（區塊說明印出未附則數）。兩種輸出都⛔ 無摘要、⛔ 不截斷任何一則原文、
+⛔ 不以 rc≠0 擋行數。兩種輸出讀同一組來源，typed 失敗也相同。
 
 ⛔ 不判內容品質、⛔ 不選模型、⛔ 不呼叫 AI、⛔ 不查額度、⛔ 不判備註是否過期、
 ⛔ 不解析散文語意、⛔ 不判退回是否合法、⛔ 不認識「工作包」。
@@ -56,17 +57,22 @@ BOUNDED_NOTE = (
     '只有機械資料（欄位值／路徑／節錨／行號／url）；原文逐字只在 `--full` 輸出的「完整原文附錄」。'
 )
 FULL_POINTER = '完整原文附錄未印出（本輸出只有有界首屏）：四層原文逐字與完整索引，在同一指令加 `--full` 取得。'
-APPENDIX_NOTE = '四層原文逐字保留、順序固定，同一來源只出現一次。'
+APPENDIX_NOTE = '四層原文逐字保留、順序固定，同一來源只出現一次；留言只附 Issue body 引用者與最新幾則的全文。'
 # `--omit-user-layer` 時的結構說明：⛔ 不得與實際內容（只有三層）矛盾
 OMITTED_FULL_POINTER = ('完整原文附錄未印出（本輸出只有有界首屏）：使用者層以外的三層原文逐字與完整索引，'
                         '在同一指令加 `--full` 取得。')
 OMITTED_APPENDIX_NOTE = ('使用者層以外的三層原文逐字保留、順序固定，同一來源只出現一次；'
-                         '使用者層以 `--omit-user-layer` 省略。')
+                         '使用者層以 `--omit-user-layer` 省略；留言只附 Issue body 引用者與最新幾則的全文。')
+# 附錄任務層未附全文的留言：一行結構說明（⛔ 不是來源內容），告訴接手者怎麼拿到
+OMITTED_COMMENTS_NOTE = ('較早的 {n} 則留言未附全文（首屏索引仍逐則列出）；需要其全文時，由 PM 在派工點名該則，'
+                         '或在 Issue body 引用該則留言的 url 即自動附上。')
 
 # 預設輸出的首屏索引上限（依位置保留，超出印省略數；`--full` 一律不設上限）。只限資料驅動的清單：
 # 留言、Issue body 五章節以外的標題、`.wf/*.md`、相連任務登記。規則樹決定的清單（必要清單、core 節錨、
 # 啟用模組）由框架版本決定長度、不在此列。總量上限（flow.md §4）由測試在極端輸入下釘住；規則樹變大使其轉紅
 # 是設計壓力，由該次框架變更處理，⛔ 不在此預放寬。
+# `COMMENT_LIMIT` 同時是附錄任務層附全文的「最新 K 則」（`layers.carried_comments`；數字的規則居所＝
+# `rules/core/boundaries.md` §1）：首屏索引與附錄全文用同一個 K，兩邊才對得上。
 COMMENT_LIMIT = 15        # 最新的 K 則
 EXTRA_SECTION_LIMIT = 5   # 最先的 K 個
 POLICY_LIMIT = 8          # 檔名序最先的 K 份
@@ -104,7 +110,8 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
         user_index = layers.user_index(user_root)
         user_segments = layers.user_data(user_root)
     data = task_source.fetch(context)
-    task_segments = layers.task_layer(data)
+    task_segments = layers.task_layer(data, recent=COMMENT_LIMIT)
+    omitted = len(data.comments) - len(layers.carried_comments(data, COMMENT_LIMIT))
     # 只有帶入角色才讀登記；章節缺席＝None＝未登記，兩處都⛔ 不出現相連區塊
     linked = task_source.fetch_linked(data.issue_body, spec) if role in spec.roles else None
 
@@ -142,7 +149,8 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
         appendix.append(Block('使用者層', user_segments, level=3))
     appendix += [
         Block('專案層', project_segments, level=3),
-        Block('任務層', task_segments, level=3),
+        Block('任務層', task_segments, level=3,
+              note=OMITTED_COMMENTS_NOTE.format(n=omitted) if omitted else ''),
     ]
     linked_segments = layers.linked_segments(linked or (), spec.sections)
     if linked_segments:

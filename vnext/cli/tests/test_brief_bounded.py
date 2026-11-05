@@ -100,8 +100,10 @@ def test_default_output_stays_within_the_limit_under_extreme_inputs(run_cli, ext
     assert out.count("項未列；完整索引加 `--full`）") >= 3      # 留言、五章節以外、`.wf/*.md`
 
 
-# 同一份極端輸入在 `--full` 下零遺漏：全部索引列與全部留言原文都在
+# 同一份極端輸入在 `--full` 下索引零遺漏：全部索引列都在；附錄留言只附最新 15 則全文（整則附或不附）
 def test_full_output_keeps_every_index_row_and_every_source(run_cli, extreme):
+    from wfx.verbs.brief import OMITTED_COMMENTS_NOTE
+
     rc, out, err = extreme(run_cli, "執行者", "執行", full=True)
     assert (rc, err) == (0, "")
     first, appendix = split_output(out)
@@ -110,8 +112,11 @@ def test_full_output_keeps_every_index_row_and_every_source(run_cli, extreme):
     assert first.count("- （五章節以外）自訂章節 ") == N_EXTRA_SECTIONS
     assert first.count("- .wf/policy-") == N_POLICIES
     assert first.count("｜https://github.com/o/r/issues/10") == N_LINKED
-    for i in range(1, N_COMMENTS + 1):
+    for i in range(N_COMMENTS - 14, N_COMMENTS + 1):
         assert f"第 {i} 則內文第二行\n" in appendix
+    for i in range(1, N_COMMENTS - 14):
+        assert f"第 {i} 則內文第二行\n" not in appendix
+    assert OMITTED_COMMENTS_NOTE.format(n=N_COMMENTS - 15) in appendix
     for i in range(1, N_LINKED + 1):
         assert f"相連卡 {1000 + i} 規劃原文" in appendix
 
