@@ -189,16 +189,22 @@ def test_missing_and_extra_issue_sections_are_reported_as_found(run_cli):
     assert "- （五章節以外）自訂章節：第 7 行" in first
 
 
-# `--full` ⛔ 無截斷、⛔ 無行數 gate：留言變多時首屏照長、rc 仍是 0；預設輸出同樣 rc 0、只少索引列
+# `--full` 首屏索引⛔ 無截斷、⛔ 無行數 gate：留言變多時索引照長、rc 仍是 0；附錄只附最新 15 則全文，
+# 整則附或整則不附、印未附則數；預設輸出同樣 rc 0、只少索引列
 def test_many_comments_neither_truncate_nor_fail(run_cli):
+    from wfx.verbs.brief import OMITTED_COMMENTS_NOTE
+
     many = tuple({"url": f"https://example.invalid/c{i}", "body": f"## 第 {i} 則\n內文 {i}\n"}
                  for i in range(1, 41))
     rc, out, err = run_cli(snapshots=[snapshot(comments=many)])
     assert (rc, err) == (0, "")
     first, appendix = parts(out)
     assert first.count("｜https://example.invalid/c") == 40
-    for i in range(1, 41):
+    for i in range(26, 41):
         assert f"內文 {i}\n" in appendix
+    for i in range(1, 26):
+        assert f"內文 {i}\n" not in appendix
+    assert OMITTED_COMMENTS_NOTE.format(n=25) in appendix
     rc, bounded, err = run_cli(snapshots=[snapshot(comments=many)], full=False)
     assert (rc, err) == (0, "")
     assert bounded.count("｜https://example.invalid/c") < 40

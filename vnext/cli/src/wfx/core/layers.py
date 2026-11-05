@@ -178,8 +178,22 @@ def project_layer(project_root: Path) -> list[Segment]:
     ]
 
 
-def task_layer(data) -> list[Segment]:
-    """任務層＝Issue body 五章節＋七個核心概念＋**該卡全部留言**（原樣，⛔ 不分類）。
+def carried_comments(data, recent: int | None = None) -> list[int]:
+    """附錄要附全文的留言序號（1-based、原序）：Issue body 引用到其 url 的每一則，加上最新 `recent` 則。
+
+    `recent=None`＝全部。判準只有兩個機械事實——url 字面是否出現在 body、位置是否在最後 `recent` 則內；
+    ⛔ 不判留言屬於哪一類（`github.md` §3 的四類是內容分類，CLI 判不得）、⛔ 不截斷、⛔ 不摘要：
+    整則附或整則不附，未附的仍在首屏索引（`comment_index`）且序號不變。
+    """
+    total = len(data.comments)
+    cutoff = 0 if recent is None else max(total - recent, 0)
+    body = data.issue_body if isinstance(data.issue_body, str) else ""
+    return [index for index, (url, _) in enumerate(data.comments, start=1)
+            if index > cutoff or (url and url in body)]
+
+
+def task_layer(data, *, recent: int | None = None) -> list[Segment]:
+    """任務層＝Issue body 五章節＋七個核心概念＋留言全文（只附 `carried_comments` 選出的那些）。
 
     `data` 是動詞層交進來的純資料（`wfx.gh.task.TaskData`）——`wfx.core` ⛔ 不 import `wfx.gh`，
     也⛔ 不理解任務識別的格式。三者一律原樣納入，⛔ 不解析、⛔ 不驗章節、⛔ 不判留言屬於哪一類。
@@ -197,7 +211,10 @@ def task_layer(data) -> list[Segment]:
     # 只投影七個核心概念；Project 的其餘內建欄位原樣忽略，⛔ 不是第八個核心概念、⛔ 不拒收
     rendered = "\n".join(f"{name}: {data.fields[name]}" for name in CORE_CONCEPTS)
     out.append(Segment("task", data.task, "核心概念", rendered))
+    carried = set(carried_comments(data, recent))
     for index, (url, comment_body) in enumerate(data.comments, start=1):
+        if index not in carried:
+            continue
         lines = [f"url: {url}"] if url else []
         lines.append((comment_body or "").strip("\n"))
         out.append(Segment("task", data.task, f"comment-{index}", "\n".join(lines)))
@@ -206,7 +223,7 @@ def task_layer(data) -> list[Segment]:
 
 # ── 派工首屏：只由機械資料組成的定位索引 ────────────────────────────
 # 全部內容都是路徑、節錨、行數、既有欄位值與 url。
-# ⛔ 不摘要、⛔ 不判讀留言屬於哪一類、⛔ 不截斷任何原文——原文一律在附錄逐字保留。
+# ⛔ 不摘要、⛔ 不判讀留言屬於哪一類、⛔ 不截斷任何原文——被選入附錄的留言（`carried_comments`）全文逐字保留，其餘只在索引。
 # 資料驅動的清單可帶 `limit`（#434 預設輸出）：超出時只依**位置**保留列、印一行省略數，
 # ⛔ 不依內容挑選；`limit=None`＝全列（`--full`）。
 # 預設輸出另帶 `single_line=True`：每列與每個任務來源標記都 escape 成恰一個實體行（`one_line`）——

@@ -15,7 +15,7 @@ from wfx.gh.client import NotFound
 from wfx.gh.task import UNKNOWN_CONCEPT, TaskData
 
 from .conftest import TASK_ID
-from .fakes import COMMENTS, FIELD_NAMES, FakeClient, FixedTaskSource, snapshot
+from .fakes import BODY, COMMENTS, FIELD_NAMES, FakeClient, FixedTaskSource, snapshot
 
 MARKER = re.compile(r"^\[來源: (?P<kind>[a-z]+):(?P<path>[^#]+)#(?P<section>.+)\]$")
 ROLES = ("需求方", "PM", "研究者", "規劃者", "執行者", "審核者")
@@ -251,7 +251,7 @@ def test_task_layer_carries_issue_body_fields_and_comments_verbatim(run_cli):
 
 
 def test_every_comment_is_carried_verbatim_and_never_classified(run_cli):
-    """該卡**全部**留言原樣納入；⛔ 不篩「哪些算階段完成留言」——四類是內容分類，CLI 判不得。"""
+    """最新 15 則內的留言原樣納入；⛔ 不篩「哪些算階段完成留言」——四類是內容分類，CLI 判不得。"""
     rc, out, _ = run_cli()
     assert rc == 0
     block = section(out, "任務層")
@@ -260,6 +260,60 @@ def test_every_comment_is_carried_verbatim_and_never_classified(run_cli):
         assert f"url: {comment['url']}" in block
         assert comment["body"].strip("\n") in block
     assert block.index(COMMENTS[0]["body"].strip("\n")) < block.index(COMMENTS[1]["body"].strip("\n"))
+
+
+# (8b) 附錄只附 Issue body 引用到的留言與最新 15 則的全文；其餘只在首屏索引，整則不附、⛔ 不截斷
+def test_appendix_carries_body_referenced_and_recent_comments_only(run_cli):
+    from wfx.verbs.brief import COMMENT_LIMIT, OMITTED_COMMENTS_NOTE
+
+    many = tuple({"url": f"https://example.invalid/c{i}", "body": f"## 第 {i} 則\n內文 {i}\n"}
+                 for i in range(1, 31))
+    body = BODY.replace("內容 裁定紀錄",
+                        "- 規劃階段完成卡：https://example.invalid/c2\n- 需求方裁定：https://example.invalid/c7")
+    rc, out, _ = run_cli(snapshots=[snapshot(body=body, comments=many)])
+    assert rc == 0
+    block = section(out, "任務層") + "\n"
+    carried = {2, 7} | set(range(31 - COMMENT_LIMIT, 31))
+    for i in range(1, 31):
+        assert (f"[來源: task:{TASK_ID}#comment-{i}]" in block) == (i in carried), i
+        assert (f"內文 {i}\n" in block) == (i in carried), i
+    assert OMITTED_COMMENTS_NOTE.format(n=30 - len(carried)) in block
+    # 首屏索引仍逐則列出（`--full` 不設上限）；判準只有 url 字面與位置，⛔ 不看標題字樣
+    assert section(out, "留言定位索引").count("｜https://example.invalid/c") == 30
+    assert "## 第 1 則" not in block
+    # 都附得下時沒有未附說明
+    _, out, _ = run_cli()
+    assert "則留言未附全文" not in out
+
+
+def test_omitted_comments_note_survives_omit_user_layer(run_cli):
+    from wfx.core.render import split_output
+    from wfx.verbs.brief import OMITTED_APPENDIX_NOTE, OMITTED_COMMENTS_NOTE
+
+    many = tuple({"url": f"https://example.invalid/c{i}", "body": f"## 第 {i} 則\n內文 {i}\n"}
+                 for i in range(1, 31))
+    rc, out, err = run_cli("--omit-user-layer", snapshots=[snapshot(comments=many)])
+    assert (rc, err) == (0, "")
+    first, appendix = split_output(out)
+    assert "### 使用者層" not in appendix and OMITTED_APPENDIX_NOTE in appendix
+    assert OMITTED_COMMENTS_NOTE.format(n=15) in appendix
+    assert first.count("｜https://example.invalid/c") == 30
+    padded = appendix + "\n"
+    assert all(f"內文 {i}\n" in padded for i in range(16, 31))
+    assert not any(f"內文 {i}\n" in padded for i in range(1, 16))
+
+
+def test_carried_comments_is_url_and_position_only():
+    from wfx.core.layers import carried_comments
+
+    comments = tuple((f"https://example.invalid/c{i}", f"## 需求方裁定 {i}\n") for i in range(1, 6))
+    fields = {c: "" for c in CORE_CONCEPTS}
+    data = TaskData(TASK_ID, "引用 https://example.invalid/c1 一次", fields, comments)
+    assert carried_comments(data, 2) == [1, 4, 5]
+    assert carried_comments(data, None) == [1, 2, 3, 4, 5]
+    assert carried_comments(data, 0) == [1]
+    no_url = TaskData(TASK_ID, "body", fields, (("", "x"), ("", "y")))
+    assert carried_comments(no_url, 1) == [2]
 
 
 # (9) 待辦與進行中兩種輸入都能正常呈現

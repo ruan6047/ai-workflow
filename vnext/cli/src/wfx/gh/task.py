@@ -1,7 +1,8 @@
-"""`brief` 第 4 層的 GitHub 唯讀來源：Issue body ＋ 七個核心概念 ＋ **該卡全部留言**，
+"""`brief` 第 4 層的 GitHub 唯讀來源：Issue body ＋ 七個核心概念 ＋ **該卡全部留言**（索引用；
+附錄附哪幾則全文由 `wfx.core.layers.carried_comments` 以 url 字面與位置決定），
 以及（只在帶入角色時）本卡登記的相連卡（`core/github.md` §1「選用章節：相連任務登記」）。
 
-⛔ 不分類留言：`github.md` §3 的四類是**內容分類**，CLI 判不得——自己加篩選＝CLI 做內容判讀。
+⛔ 不分類留言：`github.md` §3 的四類是**內容分類**，CLI 判不得——自己加內容篩選＝CLI 做內容判讀。
 `.wf/config.json` 未設 `project`、或該卡尚⛔ 無 Project item 時，七概念照 `facts` 同一形狀
 印 `unknown` 且 rc=0，⛔ 不 typed fail（否則採用入口與空板情境會被自己擋掉）。
 本模組⛔ 無任何 mutation 能力，走的是與 `facts` 同一條唯讀 `wfx.gh`。

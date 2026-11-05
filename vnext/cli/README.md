@@ -122,7 +122,7 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
 「標題在且其下非空」——這正是 `rules/core/github.md` §1 交給 CLI 的那一件事；五個章節標題本身
 也從該節機械抽出，程式碼⛔ 不內建標題字面。
 
-**`--full` 的附錄逐字保留四層全部原文**：Issue body、該卡全部留言、兩類模型資料、專案政策、框架規則，
+**`--full` 的附錄逐字保留四層原文**：Issue body、留言（只附 Issue body 引用到的與最新 15 則，其餘只在首屏索引、整則不附）、兩類模型資料、專案政策、框架規則，
 順序固定、同一來源只出現一次。唯一例外是帶 `--omit-user-layer`：使用者層未讀也未附，附錄只有其餘三層
 （區塊、順序、來源標記與內容逐字不變），附錄開頭與預設輸出指標的結構說明改說「使用者層以外的三層」。首屏的索引段⛔ 不重複出現在附錄。唯一刻意的重複是七個核心概念
 （首屏一份值、附錄任務層一份值），因為它既是派工要看的現值、也是第 4 層的一段。
@@ -139,7 +139,7 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
 | `framework` | 規則樹（預設＝套件內 `wfx/rules`，`--rules-root` 可覆寫）下的 `core/*.md` 六份全載，加選定的 `stages/<階段>.md` 與 `roles/<角色>.md`，再加 `.wf/config.json` 已啟用模組的 `modules/<名稱>/<階段>.md`（見下節） | typed 失敗（rc=1） |
 | `user` | `~/.wf/model-usage.md`、`~/.wf/model-availability.md`，原樣呈現；帶 `--omit-user-layer` 時⛔ 不讀、⛔ 不附 | **合法 unknown，rc=0** |
 | `project` | `<project-root>/.wf/*.md` | typed 失敗（rc=1） |
-| `task` | Issue body ＋七個核心概念＋**該卡全部留言**（唯讀 GitHub）；規劃者與執行者另含本卡登記之相連卡的指定章節與規劃留言（見下節） | Issue 取不到或 body 為空＝typed 失敗（rc=1）；相連卡讀不到＝首屏照實印、rc=0 |
+| `task` | Issue body ＋七個核心概念＋**該卡全部留言的索引**，全文只附 Issue body 引用者與最新 15 則（唯讀 GitHub）；規劃者與執行者另含本卡登記之相連卡的指定章節與規劃留言（見下節） | Issue 取不到或 body 為空＝typed 失敗（rc=1）；相連卡讀不到＝首屏照實印、rc=0 |
 
 使用者層兩檔缺任一檔都印 `使用者層模型資料：unknown`。這是**檔案層**檢查，
 ⛔ 不逐則判欄位缺漏、⛔ 不判時效——新鮮度由 PM 在派工當下自行判斷（`rules/roles/PM.md` §2）。
@@ -188,7 +188,8 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
 
 ### 第 4 層的三條邊界
 
-- **全部留言原樣納入、⛔ 不分類。** `rules/core/github.md` §3 的四類是**內容分類**，CLI 判不得；
+- **留言⛔ 不分類。** 附錄附哪幾則全文只看兩個機械事實：url 字面是否出現在 Issue body、是否在最新 15 則內
+  （`layers.carried_comments`）；`rules/core/github.md` §3 的四類是**內容分類**，CLI 判不得，
   自己加「哪些算階段完成留言」的篩選＝CLI 做內容判讀。
 - **只投影七個核心概念。** Project 的其餘內建欄位（`Title` 等）**原樣忽略**，⛔ 不是第八個核心概念、
   ⛔ 不因此拒收整份 brief。七概念的唯一居所是 `rules/core/github.md` §2。
