@@ -29,9 +29,12 @@ with open(os.environ['STUB_LOG'], 'a') as log:
 if args == ['--version']:
     print(os.environ.get('STUB_VERSION', '1.6.2'))
     sys.exit(int(os.environ.get('STUB_VERSION_RC', '0')))
-assert args[0] in ('query', 'explore'), args
-assert args[1] == '--path' and args[-2] == '--', args
-assert args[3:-2] == (['--json'] if args[0] == 'query' else []), args
+assert args[0] in ('query', 'explore', 'impact', 'node', 'callers', 'status'), args
+if args[0] == 'status':
+    assert args[1:3] == ['--json', '--'] and len(args) == 4, args
+else:
+    assert args[1] == '--path' and args[-2] == '--', args
+    assert args[3:-2] == (['--json'] if args[0] == 'query' else []), args
 sys.stdout.buffer.write(b'raw output\\nno-reread footer\\n')
 sys.stderr.buffer.write(b'raw stderr\\n')
 sys.exit(int(os.environ.get('STUB_RC', '0')))
@@ -52,22 +55,34 @@ def calls(setup):
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
 
-@pytest.mark.parametrize('command,text', [('query', 'two words; $(untouched)'),
-                                         ('query', '-leading dash'),
-                                         ('explore', '依賴關係'), ('explore', '--help')])
-def test_fixed_argv_environment_and_native_streams(setup, monkeypatch, capfd, command, text):
+GATED = [('query', 'symbol'), ('explore', 'symbol'), ('impact', 'symbol'), ('node', 'symbol'),
+         ('callers', 'symbol'), ('status',)]
+
+
+@pytest.mark.parametrize('args', [('query', '--', 'two words; $(untouched)'),
+                                  ('query', '--', '-leading dash'),
+                                  ('explore', '--', '依賴關係'), ('explore', '--', '--help'),
+                                  ('impact', '--', 'two words; $(untouched)'),
+                                  ('impact', '--', '--depth'),
+                                  ('node', '--', '符號'), ('node', '--', '-leading dash'),
+                                  ('callers', '--', 'a.b'), ('callers', '--', '--limit'),
+                                  ('status',)])
+def test_fixed_argv_environment_and_native_streams(setup, monkeypatch, capfd, args):
     for name in ('DO_NOT_TRACK', 'CODEGRAPH_TELEMETRY', 'CODEGRAPH_NO_UPDATE_CHECK',
                  'CODEGRAPH_NO_DOWNLOAD', 'NODE_DISABLE_COMPILE_CACHE', 'CODEGRAPH_DIR'):
         monkeypatch.setenv(name, 'inherited-wrong')
     monkeypatch.setenv('STUB_RC', '23')
-    assert invoke(setup, command, '--', text) == 23
+    assert invoke(setup, *args) == 23
     captured = capfd.readouterr()
     assert captured.out == 'raw output\nno-reread footer\n'
     assert captured.err == 'raw stderr\n'
     version, operation = calls(setup)
     assert version['argv'] == ['--version']
-    expected = [command, '--path', str(setup[1].resolve())]
-    assert operation['argv'] == expected + (['--json'] if command == 'query' else []) + ['--', text]
+    command, root = args[0], str(setup[1].resolve())
+    expected = (['status', '--json', '--', root] if command == 'status' else
+                [command, '--path', root] + (['--json'] if command == 'query' else [])
+                + ['--', args[-1]])
+    assert operation['argv'] == expected
     for call in (version, operation):
         assert call['cwd'] == str(setup[1].resolve())
         assert call['env'] == {'DO_NOT_TRACK': '1', 'CODEGRAPH_TELEMETRY': '0',
@@ -76,11 +91,12 @@ def test_fixed_argv_environment_and_native_streams(setup, monkeypatch, capfd, co
                                'PATH': __import__('os').environ['PATH']}
 
 
+@pytest.mark.parametrize('args', GATED)
 @pytest.mark.parametrize('value', [None, '{}', '{"modules": null}', '{"modules": ["tdd"]}'])
-def test_disabled_or_absent_config_never_starts_binary(setup, value):
+def test_disabled_or_absent_config_never_starts_binary(setup, value, args):
     config = setup[0] / '.wf/config.json'
     config.unlink() if value is None else config.write_text(value)
-    assert invoke(setup, 'query', 'symbol') == 1
+    assert invoke(setup, *args) == 1
     assert calls(setup) == []
 
 
@@ -91,8 +107,9 @@ def test_invalid_config_is_usage_error_without_child(setup, value):
     assert calls(setup) == []
 
 
+@pytest.mark.parametrize('args', GATED)
 @pytest.mark.parametrize('kind', ['missing', 'parent', 'symlink', 'file'])
-def test_requires_own_index_directory(setup, kind):
+def test_requires_own_index_directory(setup, capfd, kind, args):
     root = setup[1]
     (root / '.codegraph').rmdir()
     if kind in ('parent', 'symlink'):
@@ -102,15 +119,17 @@ def test_requires_own_index_directory(setup, kind):
             (root / '.codegraph').symlink_to(other, target_is_directory=True)
     elif kind == 'file':
         (root / '.codegraph').touch()
-    assert invoke(setup, 'query', 'symbol') == 1
+    assert invoke(setup, *args) == 1
     assert calls(setup) == []
+    assert 'wfx/docs/CODEGRAPH.md §3 先建圖' in capfd.readouterr().err
 
 
+@pytest.mark.parametrize('args', GATED)
 @pytest.mark.parametrize('version,rc', [('1.6.3', '0'), ('garbage 1.6.2', '0'), ('1.6.2', '4')])
-def test_version_must_match_and_succeed_before_operation(setup, monkeypatch, version, rc):
+def test_version_must_match_and_succeed_before_operation(setup, monkeypatch, version, rc, args):
     monkeypatch.setenv('STUB_VERSION', version)
     monkeypatch.setenv('STUB_VERSION_RC', rc)
-    assert invoke(setup, 'query', 'symbol') == 1
+    assert invoke(setup, *args) == 1
     assert [c['argv'] for c in calls(setup)] == [['--version']]
 
 
@@ -140,14 +159,34 @@ def test_default_binary_location_and_canonical_root(setup, monkeypatch):
     assert calls(setup)[-1]['cwd'] == str(setup[1].resolve())
 
 
-@pytest.mark.parametrize('args', [[], ['init', 'x'], ['sync', 'x'],
+@pytest.mark.parametrize('args', [[], ['init', 'x'], ['sync', 'x'], ['init'], ['sync'],
+                                   ['index', 'x'], ['unlock', 'x'], ['uninit', 'x'],
                                    ['install'], ['serve'], ['query', 'x', '--json'],
-                                   ['query', 'one', 'two']])
+                                   ['query', 'one', 'two'], ['impact', 'one', 'two'],
+                                   ['query'], ['explore'], ['impact'], ['node'], ['callers'],
+                                   ['status', 'x'], ['status', '--', 'x'], ['status', ''],
+                                   ['status', '--json'],
+                                   ['impact', 'x', '--depth', '3'], ['impact', '--depth', '3', 'x'],
+                                   ['impact', 'x', '--file', 'a.py'], ['impact', 'x', '--json'],
+                                   ['callers', 'x', '--limit', '5'], ['node', 'x', '--file', 'a.py'],
+                                   ['callers', '--limit', '5', 'x']])
 def test_no_arbitrary_commands_or_arguments(setup, args):
     with pytest.raises(SystemExit) as exc:
         invoke(setup, *args)
     assert exc.value.code == 2
     assert calls(setup) == []
+
+
+def test_options_may_follow_the_command(setup):
+    project, root = setup[:2]
+    assert codegraph.main(['query', '--project-root', str(project), '--path', str(root),
+                           'symbol']) == 0
+    assert calls(setup)[-1]['argv'][-2:] == ['--', 'symbol']
+
+
+def test_empty_text_stays_a_native_argument(setup):
+    assert invoke(setup, 'impact', '') == 0
+    assert calls(setup)[-1]['argv'][-2:] == ['--', '']
 
 
 def test_missing_path_fails_without_process(setup):

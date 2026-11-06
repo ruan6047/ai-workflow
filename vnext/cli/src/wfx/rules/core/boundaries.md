@@ -115,7 +115,7 @@ CLI ⛔ 不負責：
 **內容判斷由人或負責該內容的 AI 完成。** 核心保存不透明任務識別、⛔ 不理解其格式、⛔ 不依賴平台專屬型別，平台細節住 adapter。框架以版本化套件提供，規則來源可用 `--rules-root` 指向含 `core/` 的 `rules/` 目錄本身（⛔ 不是 checkout 根目錄）。
 
 三個 wfx 動詞不變。套件另隨附顯式呼叫的 `python -m wfx.codegraph` 專用伴隨入口，
-只定位固定版 CodeGraph、檢查 opt-in／顯式路徑／自身圖、控制環境並傳遞固定 query/explore 的 argv 與原生輸出。
+只定位固定版 CodeGraph、檢查 opt-in／顯式路徑／自身圖、控制環境並傳遞固定 query/explore/impact/node/callers/status 的 argv 與原生輸出。
 它是 `wfx.gh` 之外唯一允許啟動外部 CLI 的固定檔案 `wfx/codegraph.py`；核心與其他位置仍⛔ 不啟動子行程。
 此入口⛔ 不安裝／管理索引、不調度 AI、不寫任務流程，不是任意命令代跑、純讀保證、沙箱或權限判斷器。
 
