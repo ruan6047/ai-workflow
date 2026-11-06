@@ -493,6 +493,7 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-<版本>-py3-none-any.whl   # <版本>＝pyp
   `codegraph` 另隨套件附專用伴隨入口 `python -m wfx.codegraph`，由內容角色顯式呼叫固定 query/explore；
   `brief` 不啟動它、不改載入器或新增 wfx 動詞。每台主機一次的固定版本／launcher、每專案啟停／路徑／排除、
   原生索引生命週期與未驗限制，集中見 [CODEGRAPH.md](CODEGRAPH.md)。opt-in 不授予安裝、索引或設定寫入權。
+- **啟用前**：需要外部工具或索引的模組，先確認實際工作位置可用，或已有承接任務，再加入 `modules`。載入後沒有人能成功使用就沒有意義。
 - **啟用**：在 `.wf/config.json` 加一個 `modules` 鍵，其他既有的鍵都不動（舊專案可能還有 `"rules": null`，
   照常通過；第 4 節的新骨架沒有這個鍵。`rules` 填成非 null 會 rc 1
   `ConfigError: rules 鍵已無作用：只接受 null 或省略；要改規則來源請用 --rules-root <含 core/ 的 rules/ 目錄>`，
