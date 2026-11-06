@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import unicodedata
 
 from wfx.core.errors import LayerMissing, MalformedInput
@@ -270,7 +271,7 @@ def core_concept_values(data, *, single_line: bool = False) -> Segment:
 def rules_index(rules_root: Path) -> Segment:
     """core 六份的路徑與節錨。
 
-    ⛔ 不印 rules-root 絕對路徑（那會讓逐字穩定隨機器而破）；
+    ⛔ 不印 rules-root 絕對路徑（那會讓逐字穩定隨機器而破；唯一例外是 `module_doc_index` 那一區塊）；
     stages／roles 兩份的節錨逐項列在「必要清單」，此處⛔ 不重複。
     """
     lines = [_anchor_line(rel, text) for rel, text in rules.core_docs(rules_root)]
@@ -288,6 +289,36 @@ def module_index(docs, *, single_line: bool = False) -> Segment:
     ]
     return Segment("framework", f"rules/{rules.MODULES_DIR}/", "啟用模組",
                    "\n".join(_bounded(lines, None, single_line=single_line)))
+
+
+# 模組短文引用套件文件的字面寫法。`wfx/docs/` 與規則目錄同層（`pyproject.toml` 的 package data）。
+MODULE_DOCS_DIR = "wfx/docs/"
+MODULE_DOC_MISSING = "找不到"
+_MODULE_DOC_REF = re.compile(re.escape(MODULE_DOCS_DIR) + r"[A-Za-z0-9._-]+\.md")
+
+
+def module_doc_refs(docs) -> list[str]:
+    """本階段已注入的模組短文裡 `wfx/docs/<檔名>.md` 的字面引用，依出現順序去重。
+
+    只掃模組短文，core／stages／roles 提到的文件⛔ 不算；⛔ 不新增宣告或對照表、⛔ 不讀被引用的文件。
+    """
+    return list(dict.fromkeys(ref for _, doc in docs if doc for ref in _MODULE_DOC_REF.findall(doc[1])))
+
+
+def module_doc_index(refs, rules_root: Path | None) -> Segment:
+    """每份引用一行；`rules_root` 給了才解析實際路徑，`None`＝只列文件識別，本機路徑⛔ 不經過這裡。
+
+    `wfx/docs/x.md`＝規則目錄同層的 `docs/x.md`，套件來源與 `--rules-root` 共用這一條。
+    只做 `is_file()`，⛔ 不讀內容；旁邊沒有就列「找不到」，⛔ 不退回套件來源。
+    這是 `brief` 輸出唯一會帶絕對路徑的地方，隨安裝位置變動（可重現性例外，見 `vnext/cli/README.md`）。
+    """
+    lines = [f"- {ref}" for ref in refs]
+    if rules_root is not None:
+        docs_dir = rules_root.resolve().parent / "docs"
+        paths = [docs_dir / ref.removeprefix(MODULE_DOCS_DIR) for ref in refs]
+        lines = [f"{line}：{path if path.is_file() else MODULE_DOC_MISSING}"
+                 for line, path in zip(lines, paths)]
+    return Segment("framework", MODULE_DOCS_DIR, "定位", "\n".join(lines))
 
 
 def project_policy_index(project_segments: list[Segment], limit: int | None = None, *,
