@@ -14,8 +14,13 @@ Issue body 引用到的留言與最新 `COMMENT_LIMIT` 則的全文（`layers.ca
 ⛔ 不是公開旗標。全域 `--project-root` 由入口的前綴迴圈消耗。
 
 `--omit-user-layer`（#440，預設關）：省略使用者層——`~/.wf/` 三個明列檔⛔ 不讀、附錄⛔ 無 `### 使用者層` 區塊、
-首屏「模型資料狀態」換成一行固定說明；其餘區塊、順序、來源標記與內容逐字不變。不帶時程式路徑與輸出不變。
+首屏「模型資料狀態」換成一行固定說明，`--full` 的 `### 模組文件定位` 改印文件識別與取得方式；其餘區塊、順序、
+來源標記與內容逐字不變。不帶時程式路徑與輸出不變。
 旗標只描述輸出內容，何時加由呼叫端決定（`rules/roles/PM.md` §3），CLI ⛔ 不判目的地。
+
+`### 模組文件定位`（#509，只在 `--full`）：本階段已注入的模組短文有 `wfx/docs/*.md` 字面引用才出現，
+`brief` 只定位、⛔ 不注入文件內容。不帶 `--omit-user-layer` 印實際路徑，這是輸出唯一會帶絕對路徑的區塊
+（`layers.module_doc_index`）；帶了⛔ 不解析路徑。
 
 相連任務（`core/github.md` §1 選用章節）：帶入角色與帶入章節都從規則樹抽出，程式碼⛔ 不內建角色值。
 角色不在帶入角色內時**在讀相連卡之前**就分流——零相連讀取、零相連區塊，輸出與未登記相同。
@@ -46,7 +51,7 @@ def parse_args(argv):
     parser.add_argument('--full', action='store_true',
                         help='完整輸出：首屏索引不設上限＋完整原文附錄（預設只印有界首屏與一行指標）')
     parser.add_argument('--omit-user-layer', action='store_true',
-                        help='省略使用者層：不讀也不附 ~/.wf/ 的原文（預設附上）')
+                        help='省略使用者層：不讀也不附 ~/.wf/ 的原文（預設附上）；`--full` 的模組文件定位不附本機路徑')
     return parser.parse_args(argv)
 
 
@@ -66,6 +71,17 @@ OMITTED_APPENDIX_NOTE = ('使用者層以外的三層原文逐字保留、順序
 # 附錄任務層未附全文的留言：一行結構說明（⛔ 不是來源內容），告訴接手者怎麼拿到
 OMITTED_COMMENTS_NOTE = ('較早的 {n} 則留言未附全文（首屏索引仍逐則列出）；需要其全文時，由 PM 在派工點名該則，'
                          '或在 Issue body 引用該則留言的 url 即自動附上。')
+
+# `--full` 首屏的 `### 模組文件定位`。⛔ 不注入文件內容；`MODULE_DOC_NOTE` 以外是帶 `--omit-user-layer` 時的說明，⛔ 不含本機路徑。
+MODULE_DOC_TITLE = '模組文件定位'
+MODULE_DOC_NOTE = '模組短文引用的套件文件不在採用專案內，實際位置如下；brief 只定位、⛔ 不注入內容。讀不到時回報 PM。'
+MODULE_DOC_PACKAGE_NOTE = ('這些檔隨 {distribution} 套件（版本 {version}）出貨，不在採用專案內；本輸出不附本機路徑。'
+                           '取得方式：環境裝有該套件時，用同一環境的 Python 以 importlib.resources 讀 files("wfx") '
+                           '下的 docs/<檔名>{web}。讀不到時回報 PM。')
+MODULE_DOC_WEB = ('；能連網時讀 https://github.com/ruan6047/ai-workflow/blob/vnext-v{version}'
+                  '/vnext/cli/src/wfx/docs/<檔名>')
+MODULE_DOC_OVERRIDE_NOTE = ('本次規則來源是 `--rules-root` 覆寫，這些檔在該 rules/ 目錄同層的 docs/<檔名>，不在採用專案內；'
+                            '本輸出不附本機路徑，也不給版本網址。讀不到時回報 PM。')
 
 # 預設輸出的首屏索引上限（依位置保留，超出印省略數；`--full` 一律不設上限）。只限資料驅動的清單：
 # 留言、Issue body 五章節以外的標題、`.wf/*.md`、相連任務登記。規則樹決定的清單（必要清單、core 節錨、
@@ -90,6 +106,20 @@ def linked_spec(rules_root):
     if stray:
         raise MalformedInput(f"framework:core/github.md 的「帶入角色」不在角色值域內：{'、'.join(stray)}")
     return spec
+
+
+def module_doc_block(source, refs, omit_user_layer) -> Block:
+    """首屏 `### 模組文件定位`；帶 `--omit-user-layer` 時規則目錄⛔ 不傳進 `layers`，路徑無從解析。"""
+    if not omit_user_layer:
+        return Block(MODULE_DOC_TITLE, [layers.module_doc_index(refs, source.root)], level=3,
+                     note=MODULE_DOC_NOTE)
+    note = MODULE_DOC_OVERRIDE_NOTE
+    if not source.override:
+        version = rules.package_version()
+        note = MODULE_DOC_PACKAGE_NOTE.format(
+            distribution=rules.DISTRIBUTION, version=version,
+            web='' if version == rules.UNKNOWN_VERSION else MODULE_DOC_WEB.format(version=version))
+    return Block(MODULE_DOC_TITLE, [layers.module_doc_index(refs, None)], level=3, note=note)
 
 
 def build(context, role, stage, *, user_root, task_source, full=False, omit_user_layer=False) -> str:
@@ -137,6 +167,10 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
     ]
     if enabled:
         first_screen.append(Block('啟用模組定位', [layers.module_index(modules, single_line=one)], level=3))
+    # 只在 `--full`：預設輸出與 PM 讀的有界首屏不動；沒有引用（未啟用、只啟用 tdd、結案）就沒有這一區塊
+    doc_refs = layers.module_doc_refs(modules) if full else []
+    if doc_refs:
+        first_screen.append(module_doc_block(context.rules, doc_refs, omit_user_layer))
     if linked is not None:
         first_screen.append(Block('相連任務定位', [layers.linked_index(
             context.task_id, linked, spec.sections, limit=limit(LINKED_LIMIT), single_line=one)], level=3))
@@ -166,7 +200,8 @@ def run(argv, *, project_root, client=None, runner=None, env=None,
         task_source=None, user_root=None, linked_clients=None):
     args = parse_args(argv)
     context = Context(project_root, args.task, load_config(project_root),
-                      RulesSource(args.rules_root or default_rules_root()))
+                      RulesSource(args.rules_root or default_rules_root(),
+                                  override=args.rules_root is not None))
     source = (GhTaskSource(client=client, runner=runner, env=env, linked_clients=linked_clients)
               if task_source is None else task_source)
     print(build(context, args.role, args.stage,

@@ -28,10 +28,12 @@ class Provenance:
 class RulesSource:
     """第 1 層規則樹的來源：套件內的 package data，或 `--rules-root` 指定的 `rules/` 目錄（含 `core/` 的那一層）。
 
-    ⛔ 不印 root 路徑：那會讓「同一輸入兩次執行逐字相同」隨機器而破。來源屬於哪一種與套件版本，
-    由 `facts` 第 ⑦ 節報（`core/rules.rules_provenance`）。
+    ⛔ 不印 root 路徑：那會讓「同一輸入兩次執行逐字相同」隨機器而破；唯一例外是 `brief --full` 的
+    `### 模組文件定位`（`layers.module_doc_index`）。來源屬於哪一種與套件版本，
+    由 `facts` 第 ⑦ 節報（`core/rules.rules_provenance`）。`override`＝給了 `--rules-root`。
     """
     root: Path
+    override: bool = False
 
 
 @dataclass(frozen=True)

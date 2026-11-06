@@ -417,6 +417,8 @@ WFX_VENV="$HOME/.venvs/wfx"                                  # 換成第 1 節�
 4. `facts --task`／`brief` 另需**同一次遠端讀取**——遠端資料變動導致輸出不同是正確行為，
    ⛔ 不得為了讓比對好看而快取或凍結即時遠端資料。
 
+唯一例外：`brief --full` 不帶 `--omit-user-layer` 時，`### 模組文件定位` 這一區塊印本機路徑，另隨安裝位置變動。
+
 `facts --adopt` ⛔ 不讀任何 Issue、⛔ 不讀遠端 repository：它只看本機環境、`.wf/`、
 remote 身分與（設了 `project` 時的）Project schema。
 

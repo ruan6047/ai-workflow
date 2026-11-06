@@ -25,6 +25,7 @@ RULES_DIR = "rules"
 
 # 第 1 層規則樹實際被讀的那一份，只有兩種來源。
 PACKAGE, OVERRIDE = "package", "override"
+UNKNOWN_VERSION = "unknown"
 
 
 def default_rules_root() -> Path:
@@ -44,7 +45,7 @@ def package_version() -> str:
     try:
         return metadata.version(DISTRIBUTION)
     except metadata.PackageNotFoundError:
-        return "unknown"
+        return UNKNOWN_VERSION
 
 
 def rules_provenance(rules_root: Path | None) -> tuple[str, str]:
