@@ -492,9 +492,9 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-<版本>-py3-none-any.whl   # <版本>＝pyp
   你的專案**⛔ 不複製、⛔ 不自寫**模組內容；專案自己的補充照舊寫在 `.wf/*.md`。
   目前套件出貨 `tdd`（`執行`、`審核`）、`codegraph`（`規劃`、`執行`、`審核`）與 `architecture`（`需求`、`規劃`、`執行`、`審核`），皆屬選用指引；可用名稱以你安裝的版本規則樹 `modules/` 下的目錄為準。
   架構參考的文件效力、按需引用、生命週期及採用／停用集中見 [ARCHITECTURE.md](ARCHITECTURE.md)；在既有 `modules` 清單加入 `architecture`，不依賴 CodeGraph，也不另建專案架構或索引。
-  `codegraph` 另隨套件附專用伴隨入口 `python -m wfx.codegraph`，由內容角色顯式呼叫固定 query/explore；
+  `codegraph` 另隨套件附專用伴隨入口 `python -m wfx.codegraph`，由內容角色顯式呼叫固定 query/explore/impact/node/callers/status；
   `brief` 不啟動它、不改載入器或新增 wfx 動詞。每台主機一次的固定版本／launcher、每專案啟停／路徑／排除、
-  原生索引生命週期與未驗限制，集中見 [CODEGRAPH.md](CODEGRAPH.md)。opt-in 不授予安裝、索引或設定寫入權。
+  原生索引生命週期與未驗限制，集中見 [CODEGRAPH.md](CODEGRAPH.md)。opt-in 授權規劃、執行在自身工作樹跑 `init`／`sync`，不授予安裝、設定或背景操作權。
 - **啟用前**：需要外部工具或索引的模組，先確認實際工作位置可用，或已有承接任務，再加入 `modules`。載入後沒有人能成功使用就沒有意義。
 - **啟用**：在 `.wf/config.json` 加一個 `modules` 鍵，其他既有的鍵都不動（舊專案可能還有 `"rules": null`，
   照常通過；第 4 節的新骨架沒有這個鍵。`rules` 填成非 null 會 rc 1

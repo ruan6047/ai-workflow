@@ -10,19 +10,25 @@ import sys
 from wfx.core.context import ConfigError, load_config
 
 SUPPORTED_CODEGRAPH_VERSION = '1.6.2'
+TEXT_COMMANDS = ('query', 'explore', 'impact', 'node', 'callers')
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description=f'CodeGraph {SUPPORTED_CODEGRAPH_VERSION} 專用 query/explore 入口。',
+        description=f'CodeGraph {SUPPORTED_CODEGRAPH_VERSION} 專用固定入口。',
         epilog='共用指南：wfx/docs/CODEGRAPH.md；不可用時回原有 rg/read，僅停止本工具。',
         allow_abbrev=False,
     )
     parser.add_argument('--project-root', required=True, help='含 .wf/config.json 的根目錄')
     parser.add_argument('--path', required=True, help='具有自身 .codegraph/ 的工作樹根目錄')
-    parser.add_argument('command', choices=('query', 'explore'))
-    parser.add_argument('text', help='單一查詢文字；前導 dash 請用 query -- "-文字"')
+    parser.add_argument('command', choices=(*TEXT_COMMANDS, 'status'))
+    parser.add_argument('text', nargs='?',
+                        help='單一查詢文字，status 不收；前導 dash 請用 query -- "-文字"')
     args = parser.parse_args(argv)
+    if args.command in TEXT_COMMANDS and args.text is None:
+        parser.error(f'{args.command} 須帶單一查詢文字')
+    if args.command == 'status' and args.text is not None:
+        parser.error('status 不收查詢文字')
 
     try:
         project = Path(args.project_root).resolve(strict=True)
@@ -42,7 +48,8 @@ def main(argv=None) -> int:
         return 1
     index = root / '.codegraph'
     if index.is_symlink() or not index.is_dir():
-        print('CodeGraph 不可用：--path 須有自身 .codegraph/，不可為符號連結；回原有 rg/read。',
+        print('CodeGraph 不可用：--path 須有自身 .codegraph/，不可為符號連結；'
+              '規劃、執行沒有圖時依 wfx/docs/CODEGRAPH.md §3 先建圖，其餘回原有 rg/read。',
               file=sys.stderr)
         return 1
     if not binary.is_file() or not os.access(binary, os.X_OK):
@@ -60,10 +67,13 @@ def main(argv=None) -> int:
                   '回原有 rg/read。', file=sys.stderr)
             return 1
         # 原生選項固定放在 -- 前，讓前導 dash 的文字也只成為位置參數。
-        command = [str(binary), args.command, '--path', str(root)]
-        if args.command == 'query':
-            command.append('--json')
-        command += ['--', args.text]
+        if args.command == 'status':  # 原生 status 無 --path，根是位置參數。
+            command = [str(binary), 'status', '--json', '--', str(root)]
+        else:
+            command = [str(binary), args.command, '--path', str(root)]
+            if args.command == 'query':
+                command.append('--json')
+            command += ['--', args.text]
         return subprocess.run(command, cwd=root, env=env, shell=False).returncode
     except OSError as exc:
         print(f'CodeGraph 不可用：{exc}；回原有 rg/read。', file=sys.stderr)
