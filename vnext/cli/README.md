@@ -60,7 +60,7 @@ GitHub 讀取未完成、本機 git 不可用）。兩類刻意可區分。
 | `--stage` | 必填 | 階段五值之一 |
 | `--rules-root` | 套件內的 `wfx/rules` | 第 1 層來源，指向含 `core/` 的 `rules/` 目錄本身（⛔ 不是 checkout 根目錄） |
 | `--full` | 關 | 完整輸出：首屏索引不設上限＋完整原文附錄（見下節）。預設只印有界首屏與一行指標 |
-| `--omit-user-layer` | 關 | 省略使用者層：`~/.wf/` 兩檔⛔ 不讀、附錄⛔ 無 `### 使用者層`，首屏「模型資料狀態」換成一行固定說明，`--full` 的 `### 模組文件定位` 改印文件識別與取得方式、⛔ 不印本機路徑；與 `--full` 可合用。何時加住 `rules/roles/PM.md` §3，CLI ⛔ 不判目的地（#440） |
+| `--omit-user-layer` | 關 | 省略使用者層：`~/.wf/` ⛔ 不讀、附錄⛔ 無 `### 使用者層`，首屏「模型資料狀態」換成一行固定說明，`--full` 的 `### 模組文件定位` 改印文件識別與取得方式、⛔ 不印本機路徑；與 `--full` 可合用。何時加住 `rules/roles/PM.md` §3，CLI ⛔ 不判目的地（#440） |
 
 角色與階段的值域**只住 `rules/core/values.md`**，程式碼⛔ 不內建任何值——換規則樹就換值域。
 ⛔ 無 `--task-snapshot`：第 4 層走與 `facts` 同一條唯讀 `wfx.gh`。測試用的固定快照由
@@ -123,7 +123,7 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
 「標題在且其下非空」——這正是 `rules/core/github.md` §1 交給 CLI 的那一件事；五個章節標題本身
 也從該節機械抽出，程式碼⛔ 不內建標題字面。
 
-**`--full` 的附錄逐字保留四層原文**：Issue body、留言（只附 Issue body 引用到的與最新 15 則，其餘只在首屏索引、整則不附）、兩類模型資料、專案政策、框架規則，
+**`--full` 的附錄逐字保留四層原文**：Issue body、留言（只附 Issue body 引用到的與最新 15 則，其餘只在首屏索引、整則不附）、模型使用說明、專案政策、框架規則，
 順序固定、同一來源只出現一次。唯一例外是帶 `--omit-user-layer`：使用者層未讀也未附，附錄只有其餘三層
 （區塊、順序、來源標記與內容逐字不變），附錄開頭與預設輸出指標的結構說明改說「使用者層以外的三層」。首屏的索引段⛔ 不重複出現在附錄。唯一刻意的重複是七個核心概念
 （首屏一份值、附錄任務層一份值），因為它既是派工要看的現值、也是第 4 層的一段。
@@ -138,12 +138,13 @@ wfx … brief … --full | awk '/^## 完整原文附錄$/{exit} {print}'
 | kind | 來源 | 缺了會怎樣 |
 |---|---|---|
 | `framework` | 規則樹（預設＝套件內 `wfx/rules`，`--rules-root` 可覆寫）下的 `core/*.md` 六份全載，加選定的 `stages/<階段>.md` 與 `roles/<角色>.md`，再加 `.wf/config.json` 已啟用模組的 `modules/<名稱>/<階段>.md`（見下節） | typed 失敗（rc=1） |
-| `user` | `~/.wf/model-usage.md`、`~/.wf/model-availability.md`，原樣呈現；帶 `--omit-user-layer` 時⛔ 不讀、⛔ 不附 | **合法 unknown，rc=0** |
+| `user` | `~/.wf/model-usage.md`，原樣呈現；帶 `--omit-user-layer` 時⛔ 不讀、⛔ 不附 | **合法 unknown，rc=0** |
 | `project` | `<project-root>/.wf/*.md` | typed 失敗（rc=1） |
 | `task` | Issue body ＋七個核心概念＋**該卡全部留言的索引**，全文只附 Issue body 引用者與最新 15 則（唯讀 GitHub）；規劃者與執行者另含本卡登記之相連卡的指定章節與規劃留言（見下節） | Issue 取不到或 body 為空＝typed 失敗（rc=1）；相連卡讀不到＝首屏照實印、rc=0 |
 
-使用者層兩檔缺任一檔都印 `使用者層模型資料：unknown`。這是**檔案層**檢查，
-⛔ 不逐則判欄位缺漏、⛔ 不判時效——新鮮度由 PM 在派工當下自行判斷（`rules/roles/PM.md` §2）。
+`model-usage.md` 缺檔就印 `使用者層模型資料：unknown`。這是**檔案層**檢查，
+⛔ 不逐則判欄位缺漏、⛔ 不判時效；模型能否使用由 PM 每次派工前自行確認（`rules/roles/PM.md` §2）。
+舊版的 `~/.wf/model-availability.md` 不再載入：仍留著時與其他未明列檔案一樣⛔ 不讀、⛔ 不附。
 
 `user`／`project` 的檔案不是 UTF-8＝`MalformedInput`（rc=1）：stderr 一行指出該檔（`~/.wf/<檔名>`、`.wf/<檔名>`），stdout 不輸出；
 ⛔ 不改用其他編碼、⛔ 不替換壞字元。這兩層在讀卡之前讀，所以這類錯誤不需連網就會報出。

@@ -109,7 +109,6 @@ def test_appendix_keeps_every_source_exactly_once(run_cli, user_root):
     assert len(found) == len(set(found))
     expected = {
         f"[來源: user:~/.wf/{USER_MODEL_FILES[0]}#全文]",
-        f"[來源: user:~/.wf/{USER_MODEL_FILES[1]}#全文]",
         "[來源: project:.wf/model-policy.md#全文]",
         f"[來源: task:{TASK_ID}#issue-body]",
         f"[來源: task:{TASK_ID}#核心概念]",
