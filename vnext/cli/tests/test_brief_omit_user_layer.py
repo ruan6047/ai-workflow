@@ -20,10 +20,8 @@ FLAG = "--omit-user-layer"
 # 使用者層原文：含與框架規則同字的行（`---`）與會被誤當切點的 `### ` 標題
 USAGE = ("---\nname: usage\n---\n# 模型使用說明（測試）\n### 專案層\n"
          "家族甲：只在使用者層出現的一行。\n來源：需求方；最後確認時間：2026-10-12\n")
-AVAILABILITY = "# 可用性備註（測試）\n家族乙：額度受限，只在使用者層出現。\n"
 
-USER_STATUS_ROW_PREFIXES = ("- ~/.wf/model-usage.md：", "- ~/.wf/model-availability.md：",
-                           "- ~/.wf/tool-usage.md：")
+USER_STATUS_ROW_PREFIXES = ("- ~/.wf/model-usage.md：", "- ~/.wf/tool-usage.md：")
 
 
 def nonempty(text):
@@ -34,16 +32,15 @@ def nonempty(text):
 def user_files(user_root):
     user_root.mkdir(parents=True)
     (user_root / "model-usage.md").write_text(USAGE, encoding="utf-8")
-    (user_root / "model-availability.md").write_text(AVAILABILITY, encoding="utf-8")
     return user_root
 
 
 def replace_status_rows(lines):
-    """首屏 `### 模型資料狀態` 的兩列（每檔一列）換成固定說明一行。"""
+    """首屏 `### 模型資料狀態` 的兩列（模型使用說明與工具檔各一列）換成固定說明一行。"""
     status = lines.index("[來源: user:~/.wf/#狀態]") + 1
-    assert [line.startswith(USER_STATUS_ROW_PREFIXES) for line in lines[status:status + 4]] == [
-        True, True, True, False]
-    return lines[:status] + [USER_LAYER_OMITTED] + lines[status + 3:]
+    assert [line.startswith(USER_STATUS_ROW_PREFIXES) for line in lines[status:status + 3]] == [
+        True, True, False]
+    return lines[:status] + [USER_LAYER_OMITTED] + lines[status + 2:]
 
 
 def without_user_layer(full_output):
@@ -67,11 +64,10 @@ def test_full_with_flag_drops_only_the_user_layer(run_cli, user_files):
 
     assert "### 使用者層" not in omitted.splitlines()
     assert "[來源: user:~/.wf/model-usage.md#全文]" not in omitted
-    assert "[來源: user:~/.wf/model-availability.md#全文]" not in omitted
 
     # 扣除：同字行也出現在框架規則或專案層者（這組輸入是 `---` 與結構標題 `### 專案層`）
     out_lines = omitted.splitlines()
-    user_lines = nonempty(USAGE) + nonempty(AVAILABILITY)
+    user_lines = nonempty(USAGE)
     deducted = [line for line in user_lines if line in out_lines]
     assert deducted == ["---", "---", "### 專案層"]
     assert omitted.count("\n### 專案層\n") == 1          # 只剩結構標題本身
@@ -108,7 +104,7 @@ def test_without_flag_user_layer_is_still_reproduced(run_cli, user_files):
     rc, out, _ = run_cli()
     assert rc == 0
     block = out.split("\n### 使用者層\n", 1)[1]
-    assert USAGE.strip("\n") in block and AVAILABILITY.strip("\n") in block
+    assert USAGE.strip("\n") in block
     assert USER_LAYER_OMITTED not in out and OMITTED_APPENDIX_NOTE not in out
 
 

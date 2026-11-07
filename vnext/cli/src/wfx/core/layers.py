@@ -20,8 +20,8 @@ KINDS = ("framework", "user", "project", "task")
 # 七個核心概念的落地與值見 rules/core/github.md §2；此處只固定呈現順序。
 CORE_CONCEPTS = ("狀態", "階段", "owner", "風險", "緊急性", "期限", "Resource")
 
-# 使用者層的兩類模型資料（rules/core/boundaries.md §2）。兩者都缺＝合法 unknown。
-USER_MODEL_FILES = ("model-usage.md", "model-availability.md")
+# 使用者層的模型資料只有使用說明（rules/core/boundaries.md §2）；缺檔＝合法 unknown。
+USER_MODEL_FILES = ("model-usage.md",)
 USER_TOOL_FILE = "tool-usage.md"
 
 UNKNOWN_MODEL_DATA = "使用者層模型資料：unknown"
@@ -116,7 +116,7 @@ def required_checklist(rules_root: Path, role: str, stage: str) -> list[Segment]
 
 
 def user_model_data(user_root: Path) -> list[Segment]:
-    """使用者層兩檔原樣呈現；缺檔是合法的 unknown，⛔ 不是失敗。
+    """模型使用說明原樣呈現；缺檔是合法的 unknown，⛔ 不是失敗。
 
     ⛔ 不判時效、⛔ 不逐則判欄位缺漏、⛔ 不解析內容。
     """
@@ -330,7 +330,7 @@ def project_policy_index(project_segments: list[Segment], limit: int | None = No
 
 
 def user_model_index(user_root: Path) -> Segment:
-    """兩類模型資料的狀態與來源檔名；⛔ 不判時效、⛔ 不解析內容。"""
+    """模型使用說明的狀態與來源檔名；⛔ 不判時效、⛔ 不解析內容。"""
     lines = []
     for name in USER_MODEL_FILES:
         path = user_root / name

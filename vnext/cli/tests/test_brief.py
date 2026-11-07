@@ -152,40 +152,50 @@ def test_task_layer_shape_errors_are_typed(tmp_path):
         layers.task_layer(TaskData(TASK_ID, "body", [], ()))
 
 
-# (6) 兩類模型資料原樣呈現，含其來源與最後確認時間
+# (6) 模型使用說明原樣呈現
 def test_user_model_files_are_reproduced_verbatim(run_cli, user_root):
     usage = "# 模型使用說明\n家族 A 適合長脈絡。\n來源：需求方；最後確認時間：2026-09-21\n"
-    availability = "# 可用性備註\n家族 B：額度受限。\n來源：主控台；最後確認時間：2026-09-20\n"
     user_root.mkdir(parents=True)
     (user_root / "model-usage.md").write_text(usage, encoding="utf-8")
-    (user_root / "model-availability.md").write_text(availability, encoding="utf-8")
 
     rc, out, _ = run_cli()
     assert rc == 0
     block = section(out, "使用者層")
     assert usage.strip("\n") in block
-    assert availability.strip("\n") in block
     assert "[來源: user:~/.wf/model-usage.md#全文]" in block
-    assert "[來源: user:~/.wf/model-availability.md#全文]" in block
     assert UNKNOWN_MODEL_DATA not in block
 
 
-# (7) 兩檔皆不存在時 unknown 且照常完成；單檔缺同樣是 unknown
+# (7) 模型使用說明不存在時 unknown 且照常完成
 def test_absent_user_model_files_are_unknown_and_do_not_block(run_cli, user_root):
     assert not user_root.exists()
     rc, out, err = run_cli()
     assert (rc, err) == (0, "")
-    assert section(out, "使用者層").count(UNKNOWN_MODEL_DATA) == 2
+    assert section(out, "使用者層").count(UNKNOWN_MODEL_DATA) == 1
 
 
-def test_one_absent_user_model_file_is_unknown(run_cli, user_root):
+# #524：舊版的 model-availability.md 不再是使用者層模型檔；殘留時與其他未明列檔一樣⛔ 不讀、⛔ 不附
+def test_leftover_availability_file_is_not_read(run_cli, user_root):
     user_root.mkdir(parents=True)
-    (user_root / "model-usage.md").write_text("# 模型使用說明\n家族 A。\n", encoding="utf-8")
-    rc, out, _ = run_cli()
-    assert rc == 0
+    (user_root / "model-availability.md").write_text("# 可用性備註\n殘留檔哨兵524\n", encoding="utf-8")
+    rc, out, err = run_cli()
+    assert (rc, err) == (0, "")
     block = section(out, "使用者層")
-    assert "[來源: user:~/.wf/model-availability.md#缺]" in block
+    assert "[來源: user:~/.wf/model-usage.md#缺]" in block
     assert block.count(UNKNOWN_MODEL_DATA) == 1
+    assert "殘留檔哨兵524" not in out
+    assert "user:~/.wf/model-availability.md" not in out
+    assert "- ~/.wf/model-availability.md：" not in out
+
+
+# #524：殘留檔不是 UTF-8 也照常完成——證明是「不讀」，⛔ 不是「讀了不印」
+@pytest.mark.parametrize("full", [True, False])
+def test_leftover_non_utf8_availability_file_does_not_fail(run_cli, user_root, full):
+    user_root.mkdir(parents=True)
+    (user_root / "model-availability.md").write_bytes(b"\xff# x\n" + "內容\n".encode("utf-8"))
+    rc, out, err = run_cli(full=full)
+    assert (rc, err) == (0, "")
+    assert "model-availability.md" not in out
 
 
 class _TaskSourceMustNotBeRead:
@@ -198,10 +208,9 @@ class _TaskSourceMustNotBeRead:
         raise AssertionError("本機層讀檔失敗時⛔ 不該讀相連卡")
 
 
-# 使用者層兩檔與專案層任一 *.md 不是 UTF-8：整體 typed 失敗，stderr 一行指出哪個檔，⛔ 不出 traceback
+# 使用者層模型使用說明與專案層任一 *.md 不是 UTF-8：整體 typed 失敗，stderr 一行指出哪個檔，⛔ 不出 traceback
 @pytest.mark.parametrize("layer, name", [
     ("user", "model-usage.md"),
-    ("user", "model-availability.md"),
     ("project", "model-policy.md"),
     ("project", "zz-bad.md"),
 ])
@@ -417,7 +426,7 @@ def test_optional_tool_document_is_loaded_once_with_model_unknown(run_cli, user_
     assert out.count('[來源: user:~/.wf/tool-usage.md#全文]') == 1
     assert out.count(text.strip('\n')) == 1
     assert '- ~/.wf/model-usage.md：使用者層模型資料：unknown' in out
-    assert '- ~/.wf/model-availability.md：使用者層模型資料：unknown' in out
+    assert 'model-availability.md' not in out
     assert '- ~/.wf/tool-usage.md：在（2 非空行，全文見附錄）' in out
     assert '第四檔禁止讀入459' not in out
 
