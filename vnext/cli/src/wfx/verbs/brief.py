@@ -1,9 +1,9 @@
-"""`brief --task <id> --role <r> --stage <s> [--rules-root <p>] [--full] [--omit-user-layer]`：四層注入、必要清單與模型資料。
+"""`brief --task <id> --role <r> --stage <s> [--rules-root <p>] [--full] [--omit-user-layer]`：四層來源、立即契約與模型資料。
 
 預設輸出＝有界首屏＋一行指標（#434）：`## 派工首屏` 只由機械資料組成，資料驅動的索引清單超出
-上限時依位置只列一部分並印省略數，每列（與任務識別）escape 成恰一個實體行，總量受硬性上限約束（數字與性質的定義居所＝`rules/core/flow.md` §4，
+上限時依位置只列一部分並印省略數，每列（與任務識別）escape 成恰一個實體行，總量受硬性上限約束（數字與性質的定義居所＝`rules/core/flow.md`「交付資料量」，
 由 `tests/test_brief_bounded.py` 釘住）；⛔ 無附錄。`--full`＝首屏索引不設上限，後接 `## 完整原文附錄`＝
-四層原文逐字、順序固定、同一來源只出現一次，邊界可機械定位（`render.split_output`）。附錄的任務層只附
+選入的立即契約與其餘層原文逐字、順序固定、同一來源只出現一次，邊界可機械定位（`render.split_output`）。附錄的任務層只附
 Issue body 引用到的留言與最新 `COMMENT_LIMIT` 則的全文（`layers.carried_comments`：url 字面與位置，⛔ 不分類），
 其餘留言只在索引、整則不附（區塊說明印出未附則數）。兩種輸出都⛔ 無摘要、⛔ 不截斷任何一則原文、
 ⛔ 不以 rc≠0 擋行數。兩種輸出讀同一組來源，typed 失敗也相同。
@@ -56,17 +56,17 @@ def parse_args(argv):
 
 
 FIRST_SCREEN_NOTE = (
-    '只有機械資料（欄位值／路徑／節錨／行號／url）；原文逐字在下方「完整原文附錄」，⛔ 不需再連網。'
+    '首屏提供定位；下方附錄逐字附本次立即契約，其餘詳則按明示觸發從同來源取讀。'
 )
 BOUNDED_NOTE = (
-    '只有機械資料（欄位值／路徑／節錨／行號／url）；原文逐字只在 `--full` 輸出的「完整原文附錄」。'
+    '首屏提供定位；立即契約原文在 `--full` 附錄，條件詳則按需取讀同來源。'
 )
-FULL_POINTER = '完整原文附錄未印出（本輸出只有有界首屏）：四層原文逐字與完整索引，在同一指令加 `--full` 取得。'
-APPENDIX_NOTE = '四層原文逐字保留、順序固定，同一來源只出現一次；留言只附 Issue body 引用者與最新幾則的全文。'
+FULL_POINTER = '完整原文附錄未印出（本輸出只有有界首屏）：立即契約及其餘三層原文與完整索引，在同一指令加 `--full` 取得。'
+APPENDIX_NOTE = '立即契約與其餘三層原文逐字保留、順序固定，同一來源只出現一次；留言只附 Issue body 引用者與最新幾則的全文。'
 # `--omit-user-layer` 時的結構說明：⛔ 不得與實際內容（只有三層）矛盾
-OMITTED_FULL_POINTER = ('完整原文附錄未印出（本輸出只有有界首屏）：使用者層以外的三層原文逐字與完整索引，'
+OMITTED_FULL_POINTER = ('完整原文附錄未印出（本輸出只有有界首屏）：立即契約、專案與任務原文及完整索引，'
                         '在同一指令加 `--full` 取得。')
-OMITTED_APPENDIX_NOTE = ('使用者層以外的三層原文逐字保留、順序固定，同一來源只出現一次；'
+OMITTED_APPENDIX_NOTE = ('立即契約、專案與任務原文逐字保留、順序固定，同一來源只出現一次；'
                          '使用者層以 `--omit-user-layer` 省略；留言只附 Issue body 引用者與最新幾則的全文。')
 # 附錄任務層未附全文的留言：一行結構說明（⛔ 不是來源內容），告訴接手者怎麼拿到
 OMITTED_COMMENTS_NOTE = ('較早的 {n} 則留言未附全文（首屏索引仍逐則列出）；需要其全文時，由 PM 在派工點名該則，'
@@ -77,9 +77,7 @@ MODULE_DOC_TITLE = '模組文件定位'
 MODULE_DOC_NOTE = '模組短文引用的套件文件不在採用專案內，實際位置如下；brief 只定位、⛔ 不注入內容。讀不到時回報 PM。'
 MODULE_DOC_PACKAGE_NOTE = ('這些檔隨 {distribution} 套件（版本 {version}）出貨，不在採用專案內；本輸出不附本機路徑。'
                            '取得方式：環境裝有該套件時，用同一環境的 Python 以 importlib.resources 讀 files("wfx") '
-                           '下的 docs/<檔名>{web}。讀不到時回報 PM。')
-MODULE_DOC_WEB = ('；能連網時讀 https://github.com/ruan6047/ai-workflow/blob/vnext-v{version}'
-                  '/vnext/cli/src/wfx/docs/<檔名>')
+                           '下的 docs/<檔名>；候選依派工 head SHA／自足包取得同源文件。讀不到時回報 PM。')
 MODULE_DOC_OVERRIDE_NOTE = ('本次規則來源是 `--rules-root` 覆寫，這些檔在該 rules/ 目錄同層的 docs/<檔名>，不在採用專案內；'
                             '本輸出不附本機路徑，也不給版本網址。讀不到時回報 PM。')
 
@@ -117,9 +115,20 @@ def module_doc_block(source, refs, omit_user_layer) -> Block:
     if not source.override:
         version = rules.package_version()
         note = MODULE_DOC_PACKAGE_NOTE.format(
-            distribution=rules.DISTRIBUTION, version=version,
-            web='' if version == rules.UNKNOWN_VERSION else MODULE_DOC_WEB.format(version=version))
+            distribution=rules.DISTRIBUTION, version=version)
     return Block(MODULE_DOC_TITLE, [layers.module_doc_index(refs, None)], level=3, note=note)
+
+
+def rules_source_segment(source, fallbacks):
+    origin = ('本次 --rules-root；詳則向提供者取得同源 rules/<路徑>，或自足包內同一 head SHA 的 rules/<路徑>。'
+              if source.override else
+              '同一執行環境的套件：用 importlib.resources.files("wfx") / "rules/<路徑>" 取得原文。')
+    body = (origin + '依立即契約的明示觸發，在操作前讀指定節；可直接讀，不需 PM 再批准。'
+            '缺材料或來源不符，只停相關操作；未預載不代表豁免。'
+            '未發布候選依派工的 head SHA／自足包定位，不以套件 metadata 猜版本網址。')
+    if fallbacks:
+        body += ' 未精簡（不同／未知來源版型，保留該來源全文）：' + '、'.join(fallbacks)
+    return layers.Segment('framework', 'rules/', '按需取讀', layers.one_line(body))
 
 
 def build(context, role, stage, *, user_root, task_source, full=False, omit_user_layer=False) -> str:
@@ -152,10 +161,12 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
     # 預設輸出：首屏每列與任務識別都 escape 成恰一個實體行，上限才由列數保證（單筆值或檔名內含換行時）；
     # `--full` 原樣、逐字不變
     one = not full
+    selection = layers.select_framework(rules_root, role, stage, modules)
+    modules = selection.modules
     first_screen = [
         Block('派工首屏', note=FIRST_SCREEN_NOTE if full else BOUNDED_NOTE),
         Block('核心概念現值', [layers.core_concept_values(data, single_line=one)], level=3),
-        Block('必要清單', layers.required_checklist(rules_root, role, stage), level=3),
+        Block('必要清單', layers.selected_checklist(selection.segments), level=3),
         Block('Issue body 章節定位', [layers.issue_section_index(
             rules_root, data, limit=limit(EXTRA_SECTION_LIMIT), single_line=one)], level=3),
         Block('留言定位索引',
@@ -163,8 +174,9 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
         Block('模型資料狀態', [user_index], level=3),
         Block('專案政策來源', [layers.project_policy_index(
             project_segments, limit=limit(POLICY_LIMIT), single_line=one)], level=3),
-        Block('適用 core 規則定位', [layers.rules_index(rules_root)], level=3),
+        Block('適用 core 規則定位', [layers.selected_core_index(selection.segments)], level=3),
     ]
+    first_screen.append(Block('規則取讀來源', [rules_source_segment(context.rules, selection.fallbacks)], level=3))
     if enabled:
         first_screen.append(Block('啟用模組定位', [layers.module_index(modules, single_line=one)], level=3))
     # 只在 `--full`：預設輸出與 PM 讀的有界首屏不動；沒有引用（未啟用、只啟用 tdd、結案）就沒有這一區塊
@@ -176,8 +188,7 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
             context.task_id, linked, spec.sections, limit=limit(LINKED_LIMIT), single_line=one)], level=3))
     appendix = [
         Block('完整原文附錄', note=OMITTED_APPENDIX_NOTE if omit_user_layer else APPENDIX_NOTE),
-        Block('適用規則', layers.framework_rules(rules_root, role, stage)
-              + layers.module_segments(modules), level=3),
+        Block('適用規則', selection.segments, level=3),
     ]
     if not omit_user_layer:
         appendix.append(Block('使用者層', user_segments, level=3))

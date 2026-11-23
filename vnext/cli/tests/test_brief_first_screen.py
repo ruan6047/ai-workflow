@@ -89,10 +89,9 @@ def test_first_screen_locates_every_source(run_cli, rules_root):
     for name in USER_MODEL_FILES:
         assert f"- ~/.wf/{name}：" in first
     assert "- .wf/model-policy.md（" in first
-    for rel in ("core/boundaries.md", "core/flow.md", "core/github.md",
-                "core/independence.md", "core/research.md", "core/values.md"):
+    for rel in ("core/boundaries.md", "core/independence.md"):
         assert f"- {rel}（" in first
-    assert "1 · 分層注入（四層）" in first                   # core 節錨逐項在首屏
+    assert "立即契約" in first and "1 · 分層注入（四層）" not in first                   # core 節錨逐項在首屏
     assert "[來源: framework:roles/執行者.md#章節]" in first  # 角色必要清單的來源節錨
     assert "[來源: framework:stages/執行.md#章節]" in first   # 階段必要清單的來源節錨
 
@@ -112,9 +111,9 @@ def test_appendix_keeps_every_source_exactly_once(run_cli, user_root):
         "[來源: project:.wf/model-policy.md#全文]",
         f"[來源: task:{TASK_ID}#issue-body]",
         f"[來源: task:{TASK_ID}#核心概念]",
-        "[來源: framework:core/github.md#1 · Issue body 五章節]",
-        "[來源: framework:roles/執行者.md#前言]",
-        "[來源: framework:stages/執行.md#前言]",
+        "[來源: framework:core/boundaries.md#立即契約]",
+        "[來源: framework:roles/執行者.md#立即契約]",
+        "[來源: framework:stages/執行.md#立即契約]",
     } | {f"[來源: task:{TASK_ID}#comment-{i}]" for i in range(1, len(COMMENTS) + 1)}
     assert expected <= set(found)
     # 首屏的索引段⛔ 不重複出現在附錄
@@ -140,7 +139,9 @@ def test_project_policy_and_framework_rules_survive_in_full(run_cli, project_roo
     policy = (project_root / ".wf" / "model-policy.md").read_text(encoding="utf-8")
     assert policy.strip("\n") in appendix
     boundaries = (rules_root / "core" / "boundaries.md").read_text(encoding="utf-8")
-    assert boundaries.splitlines()[-1].strip() in appendix
+    from wfx.core.rules import section_text
+    assert section_text(boundaries, "立即契約") in appendix
+    assert boundaries.splitlines()[-1].strip() not in appendix
 
 
 # 逐字穩定：同一份快照跑兩次，首屏與附錄都完全相同

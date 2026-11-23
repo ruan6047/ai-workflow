@@ -14,7 +14,7 @@ from wfx.core import rules
 from wfx.core.layers import MODULE_DOC_MISSING
 from wfx.core.render import split_output
 from wfx.verbs.brief import (
-    MODULE_DOC_NOTE, MODULE_DOC_OVERRIDE_NOTE, MODULE_DOC_PACKAGE_NOTE, MODULE_DOC_TITLE, MODULE_DOC_WEB,
+    MODULE_DOC_NOTE, MODULE_DOC_OVERRIDE_NOTE, MODULE_DOC_PACKAGE_NOTE, MODULE_DOC_TITLE,
 )
 from wfx.verbs.main import main
 
@@ -114,7 +114,8 @@ def test_omit_package_source_says_how_to_get_the_documents(
     block = section(out, MODULE_DOC_TITLE)
     assert f"{rules.DISTRIBUTION} 套件（版本 9.9.9）" in block
     assert 'importlib.resources 讀 files("wfx") 下的 docs/<檔名>' in block
-    assert f"{TAG_URL}9.9.9/vnext/cli/src/wfx/docs/<檔名>" in block
+    assert TAG_URL not in block
+    assert "head SHA" in block
     assert "讀不到時回報 PM" in block
     assert_no_local_path(out, tmp_path, user_root.parent, rules.default_rules_root().parent)
 
@@ -159,7 +160,8 @@ def test_no_block_without_a_reference(run_cli, project_root, config, stage, extr
 @pytest.mark.parametrize("extra", [(), (FLAG,)])
 def test_block_follows_the_stage_documents(run_cli, project_root, stage, expected, extra):
     configure(project_root, modules=BOTH)
-    rc, out, _ = run_cli(*extra, stage=stage)
+    role = {"需求": "需求方", "規劃": "規劃者", "執行": "執行者", "審核": "審核者", "結案": "PM"}[stage]
+    rc, out, _ = run_cli(*extra, stage=stage, role=role)
     assert rc == 0
     if expected is None:
         assert HEADING not in out
@@ -201,13 +203,13 @@ def test_document_content_is_not_injected(run_cli, project_root, extra):
         text = (REPO_RULES.parent / "docs" / name).read_text(encoding="utf-8")
         unique = {line for line in text.splitlines() if line.strip()} - rule_lines
         assert unique and not unique & out_lines
-    assert "wfx/docs/ADOPTION.md" in out                       # 規則原文確實提到它
+    assert "wfx/docs/ADOPTION.md" not in out                       # 規則原文確實提到它
     assert "ADOPTION.md" not in section(out, MODULE_DOC_TITLE)  # 但不在定位範圍
 
 
 # D8 說明文字只描述內容，⛔ 不以目的地為條件（判準同 test_flag_defaults_off_and_describes_content_only）
 def test_notes_describe_content_only():
-    texts = (MODULE_DOC_NOTE, MODULE_DOC_PACKAGE_NOTE, MODULE_DOC_WEB, MODULE_DOC_OVERRIDE_NOTE)
+    texts = (MODULE_DOC_NOTE, MODULE_DOC_PACKAGE_NOTE, MODULE_DOC_OVERRIDE_NOTE)
     for word in ("外送", "外部", "external", "審核者"):
         assert not any(word in text for text in texts), word
 

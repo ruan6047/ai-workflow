@@ -29,8 +29,11 @@ def test_enabled_document_injection_does_not_start_helper(
     rc, out, _ = run_cli(role=role, stage=stage)
     assert rc == 0
     first, appendix = split_output(out)
-    assert f'[來源: framework:modules/codegraph/{stage}.md#' in appendix
-    assert f'- modules/codegraph/{stage}.md（' in first
+    if role == 'PM':
+        assert f'[來源: framework:modules/codegraph/{stage}.md#' not in appendix
+    else:
+        assert f'[來源: framework:modules/codegraph/{stage}.md#立即契約]' in appendix
+        assert f'- modules/codegraph/{stage}.md（' in first
     for other in {'規劃', '執行', '審核'} - {stage}:
         assert f'modules/codegraph/{other}.md' not in out
 

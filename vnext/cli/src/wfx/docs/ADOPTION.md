@@ -322,13 +322,13 @@ PM 讀預設輸出（有界首屏）；需要某段原文時照 `roles/PM.md` §
 
 - **覆寫來源 [override]**：直接把 `WFX_RULES_ROOT` 設為**同一次 `facts --rules-root <p>` 使用的規則樹路徑**——`<p>` 是含 `core/` 的 `rules/` 目錄本身（例如 `<checkout>/vnext/cli/src/wfx/rules`），⛔ 不是 checkout 根目錄；相對路徑以該次呼叫的工作目錄解析；⛔ 不猜測 `site-packages`，⛔ 不自動退回套件來源。`WFX_VENV` 仍是本次 `wfx` 的環境。
 
-確認規則樹含完整六份 `core/*.md`，再執行以下短入口。專屬文件缺少或空白時命令非零結束，**停止該協調派工**，⛔ 不退而載入整份 `roles/PM.md`：
+本次只先取公共立即契約與共同協調立即契約，事件詳則依入口觸發再讀。專屬文件缺少或空白時命令非零結束，**停止該協調派工**，⛔ 不退而載入整份 `roles/PM.md`：
 
 ```sh
-"$WFX_VENV/bin/python" -c 'from pathlib import Path; import sys; p = Path(sys.argv[1]); sys.exit(0 if p.is_file() and p.read_text(encoding="utf-8").strip() else 1)' "$WFX_RULES_ROOT/PM-coordination.md" && cat "$WFX_RULES_ROOT/core/"*.md "$WFX_RULES_ROOT/PM-coordination.md"
+"$WFX_VENV/bin/python" -c 'from pathlib import Path; import sys; from wfx.core.layers import coordination_rules; print("\n\n".join(s.marker()+"\n"+s.body for s in coordination_rules(Path(sys.argv[1]))))' "$WFX_RULES_ROOT"
 ```
 
-框架閱讀集合只有**六份公共核心＋專屬文件**，沒有 `roles/PM.md` 或 `stages/*.md`。另依同次派工來源直接讀取：
+初始集合只有**公共兩份立即契約＋共同協調立即契約**；不含本卡角色／階段作業。共享、接手等事件依入口讀同源原節；不同或未知覆寫原檔保守全留，不混入套件正文。另依同次派工來源直接讀取：
 
 - 本次執行環境使用者的 `~/.wf/model-usage.md`，以及存在時的選用 `~/.wf/tool-usage.md`；模型使用說明缺檔按既有公共限制標 `unknown`，工具檔缺席合法；模型能否使用仍由受派協調者每次派工前自行確認（core/boundaries.md §2）。
 - 與同一次 `--project-root` 相同採用專案的 `.wf/*.md`，⛔ 不因規則覆寫而改讀框架倉庫的專案層。
