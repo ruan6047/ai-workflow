@@ -94,6 +94,7 @@ class FrameworkSelection:
     segments: list[Segment]
     modules: list[tuple[str, tuple[str, str] | None]]
     fallbacks: tuple[str, ...]
+    stage_note: str = ''
 
 
 def _select_doc(rel, text, wanted, fallbacks):
@@ -135,7 +136,11 @@ def select_framework(root, role, stage, modules=()):
     rel, text = rules.role_doc(root, role)
     segments.extend(_select_doc(rel, text, (IMMEDIATE,), fallbacks))
     rel, text = rules.stage_doc(root, stage)
-    segments.extend(_select_doc(rel, text, _stage_sections(role, stage), fallbacks))
+    wanted_stage = _stage_sections(role, stage)
+    segments.extend(_select_doc(rel, text, wanted_stage, fallbacks))
+    research_pair = role == '研究者' and stage in ('需求', '規劃')
+    stage_note = ('' if wanted_stage or research_pair or role == '需求方' else
+                  '此配對不新增其他角色職權，派工不明回本卡 PM。')
     selected_modules = []
     for name, doc in modules:
         if doc is None:
@@ -148,7 +153,7 @@ def select_framework(root, role, stage, modules=()):
         short_text = '\n\n'.join(f'## {s.section}\n\n{s.body}' for s in selected)
         selected_modules.append((name, (rel, short_text) if selected else None))
         segments.extend(selected)
-    return FrameworkSelection(segments, selected_modules, tuple(fallbacks))
+    return FrameworkSelection(segments, selected_modules, tuple(fallbacks), stage_note)
 
 
 def selected_checklist(segments):

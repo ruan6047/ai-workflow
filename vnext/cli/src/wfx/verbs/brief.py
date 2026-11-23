@@ -166,7 +166,7 @@ def build(context, role, stage, *, user_root, task_source, full=False, omit_user
     first_screen = [
         Block('派工首屏', note=FIRST_SCREEN_NOTE if full else BOUNDED_NOTE),
         Block('核心概念現值', [layers.core_concept_values(data, single_line=one)], level=3),
-        Block('必要清單', layers.selected_checklist(selection.segments), level=3),
+        Block('必要清單', layers.selected_checklist(selection.segments), level=3, note=selection.stage_note),
         Block('Issue body 章節定位', [layers.issue_section_index(
             rules_root, data, limit=limit(EXTRA_SECTION_LIMIT), single_line=one)], level=3),
         Block('留言定位索引',

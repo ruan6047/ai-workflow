@@ -66,6 +66,8 @@ def test_role_contract_and_actual_stage_responsibility(run_cli, role, stage, exp
         assert f'stages/{stage}.md#{expected}]' in body
     else:
         assert f'framework:stages/{stage}.md#' not in body
+        if role == '執行者':
+            assert '此配對不新增其他角色職權' in out
 
 
 @pytest.mark.parametrize('change', ['same_heading', 'duplicate_heading', 'missing_entry'])
