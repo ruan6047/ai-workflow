@@ -203,7 +203,7 @@ def test_document_content_is_not_injected(run_cli, project_root, extra):
         text = (REPO_RULES.parent / "docs" / name).read_text(encoding="utf-8")
         unique = {line for line in text.splitlines() if line.strip()} - rule_lines
         assert unique and not unique & out_lines
-    assert "wfx/docs/ADOPTION.md" not in out                       # 規則原文確實提到它
+    assert "wfx/docs/ADOPTION.md" not in out                       # 初始契約未預載這份詳則引用
     assert "ADOPTION.md" not in section(out, MODULE_DOC_TITLE)  # 但不在定位範圍
 
 

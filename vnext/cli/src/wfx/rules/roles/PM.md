@@ -45,7 +45,7 @@ last_confirmed: 2026-10-06
 
 規劃、執行、審核派工另機械複製 `.wf/`「專案規範」節（boundaries.md §3），不改寫或摘要；規範文件只引路徑。無宣告時寫「本專案未宣告專案規範」。
 
-內容接手使用 `brief --full`（flow.md §4）。PM 判定要外送的接手輸入改用 `brief --full --omit-user-layer`，由 PM 另述必要事實，不帶 `~/.wf/` 原文；本機照用 `brief --full`，CLI 不判目的地。
+內容接手使用 `brief --full`（flow.md「交付資料量」）。PM 判定要外送的接手輸入改用 `brief --full --omit-user-layer`，由 PM 另述必要事實，不帶 `~/.wf/` 原文；本機照用 `brief --full`，CLI 不判目的地。
 
 研究派工須列網路使用（必要／允許／禁止）及不可送出資料類型，收件依 research.md §5 只查聲明存在且合限，不判品質。
 

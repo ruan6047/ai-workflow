@@ -113,5 +113,6 @@ def test_coordination_reads_short_shared_authority_without_becoming_a_role(rules
     assert [(s.path, s.section) for s in chosen] == [
         ('core/boundaries.md', '立即契約'), ('core/independence.md', '立即契約'),
         ('PM-coordination.md', '立即契約')]
-    assert '不因本入口取得任一卡' in chosen[-1].body
+    assert '不因本入口取得任一卡的當值寫入、合併、結案或階段確認責任' in chosen[-1].body
+    assert '只介入' in chosen[-1].body and '四類交界事件' in chosen[-1].body
     assert all(not s.path.startswith(('roles/', 'stages/')) for s in chosen)
