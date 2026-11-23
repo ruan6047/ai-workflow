@@ -111,7 +111,7 @@ def test_unregistered_card_brings_nothing(run_cli, role):
     assert "相連任務定位" not in out and "相連任務原文" not in out
     assert headings(out) == [
         "## 派工首屏", "### 核心概念現值", "### 必要清單", "### Issue body 章節定位", "### 留言定位索引",
-        "### 模型資料狀態", "### 專案政策來源", "### 適用 core 規則定位",
+        "### 模型資料狀態", "### 專案政策來源", "### 適用 core 規則定位", "### 規則取讀來源",
         "## 完整原文附錄", "### 適用規則", "### 使用者層", "### 專案層", "### 任務層",
     ]
 

@@ -26,7 +26,7 @@ TOP_LEVEL = (
     "派工首屏", "核心概念現值", "必要清單", "Issue body 章節定位", "留言定位索引",
     "模型資料狀態", "專案政策來源", "適用 core 規則定位",
     "完整原文附錄", "適用規則", "使用者層", "專案層", "任務層",
-    "相連任務定位", "相連任務原文",
+    "相連任務定位", "相連任務原文", "規則取讀來源",
 )
 
 
@@ -71,7 +71,10 @@ def test_each_stage_loads_its_own_stage_document(run_cli):
     for stage in STAGES:
         rc, out, _ = run_cli(stage=stage)
         assert rc == 0
-        assert f"framework:stages/{stage}.md#章節" in section(out, "必要清單")
+        if stage in ("執行", "結案"):
+            assert f"framework:stages/{stage}.md#章節" in section(out, "必要清單")
+        else:
+            assert f"framework:stages/{stage}.md#" not in section(out, "適用規則")
 
 
 # (3) 每段帶來源標記，且 kind 恰在四層內

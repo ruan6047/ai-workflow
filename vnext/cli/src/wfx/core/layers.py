@@ -74,17 +74,256 @@ def _doc_segments(rel: str, text: str) -> list[Segment]:
     ]
 
 
-def framework_rules(rules_root: Path, role: str, stage: str) -> list[Segment]:
-    """core 六份全載；stages／roles 各載選定的那一份。"""
-    segments: list[Segment] = []
-    for rel, text in rules.core_docs(rules_root):
-        segments.extend(_doc_segments(rel, text))
-    for rel, text in (
-        rules.stage_doc(rules_root, stage),
-        rules.role_doc(rules_root, role),
-    ):
-        segments.extend(_doc_segments(rel, text))
+# 固定讀者／節名是本版套件的呈現契約，⛔ 不是採用者設定或情境推論。
+IMMEDIATE = '立即契約'
+_MODULE_READERS = {
+    ('architecture', '需求'): ('PM', '需求方', '研究者'),
+    ('architecture', '規劃'): ('規劃者',),
+    ('architecture', '執行'): ('執行者',),
+    ('architecture', '審核'): ('審核者',),
+    ('codegraph', '規劃'): ('規劃者',),
+    ('codegraph', '執行'): ('執行者',),
+    ('codegraph', '審核'): ('審核者',),
+    ('tdd', '執行'): ('執行者',),
+    ('tdd', '審核'): ('審核者',),
+}
+
+
+@dataclass(frozen=True)
+class FrameworkSelection:
+    segments: list[Segment]
+    modules: list[tuple[str, tuple[str, str] | None]]
+    fallbacks: tuple[str, ...]
+    stage_note: str = ''
+
+
+def _select_doc(rel, text, wanted, fallbacks):
+    """只有與同套件權威原檔逐字相同且版型已知才省略；未知原文不混入套件。"""
+    expected = _RULE_HEADINGS.get(rel)
+    headings = tuple(rules.headings(text))
+    canonical = rules.default_rules_root() / rel
+    sections = rules.split_sections(text)
+    present = {name for name, _ in sections}
+    trusted = (expected is not None and headings == expected and all(name in present for name in wanted)
+               and len(headings) == len(set(headings))
+               and canonical.is_file() and text == canonical.read_text(encoding='utf-8'))
+    if not trusted:
+        fallbacks.append(rel)
+        return _doc_segments(rel, text)
+    return [Segment('framework', rel, section, body)
+            for section, body in sections if section in wanted]
+
+
+def _stage_sections(role, stage):
+    if role == 'PM':
+        return (IMMEDIATE,) if stage == '需求' else ('PM 當值',)
+    if role == '需求方' and stage == '需求':
+        return (IMMEDIATE,)
+    if (role, stage) in (('規劃者', '規劃'), ('執行者', '執行'), ('審核者', '審核')):
+        return (IMMEDIATE,)
+    if (role, stage) == ('執行者', '結案'):
+        return ('機械收尾入口',)
+    return ()
+
+
+def select_framework(root, role, stage, modules=()):
+    """本次唯一選取結果；必要清單、索引、指南定位與附錄共用，不判任務散文。"""
+    fallbacks = []
+    segments = []
+    for rel, text in rules.core_docs(root):
+        wanted = (IMMEDIATE,) if rel in ('core/boundaries.md', 'core/independence.md') else ()
+        segments.extend(_select_doc(rel, text, wanted, fallbacks))
+    rel, text = rules.role_doc(root, role)
+    segments.extend(_select_doc(rel, text, (IMMEDIATE,), fallbacks))
+    rel, text = rules.stage_doc(root, stage)
+    wanted_stage = _stage_sections(role, stage)
+    segments.extend(_select_doc(rel, text, wanted_stage, fallbacks))
+    research_pair = role == '研究者' and stage in ('需求', '規劃')
+    stage_note = ('' if wanted_stage or research_pair or role == '需求方' else
+                  '此配對不新增其他角色職權，派工不明回本卡 PM。')
+    selected_modules = []
+    for name, doc in modules:
+        if doc is None:
+            selected_modules.append((name, None))
+            continue
+        rel, text = doc
+        wanted = (IMMEDIATE,) if role in _MODULE_READERS.get((name, stage), ()) else ()
+        selected = _select_doc(rel, text, wanted, fallbacks)
+        # 單次選出的模組段轉成既有索引／指南定位函式的資料形狀，不重讀或另選。
+        short_text = '\n\n'.join(f'## {s.section}\n\n{s.body}' for s in selected)
+        selected_modules.append((name, (rel, short_text) if selected else None))
+        segments.extend(selected)
+    return FrameworkSelection(segments, selected_modules, tuple(fallbacks), stage_note)
+
+
+def selected_checklist(segments):
+    out = []
+    for prefix in ('roles/', 'stages/'):
+        paths = dict.fromkeys(s.path for s in segments if s.path.startswith(prefix))
+        for path in paths:
+            body = '\n'.join(f'- {s.section}' for s in segments if s.path == path)
+            out.append(Segment('framework', path, '章節', body))
+    return out
+
+
+def selected_core_index(segments):
+    paths = dict.fromkeys(s.path for s in segments if s.path.startswith('core/'))
+    lines = []
+    for path in paths:
+        anchors = [s.section for s in segments if s.path == path]
+        lines.append(f'- {path}（{len(anchors)} 節）：' + '／'.join(anchors))
+    return Segment('framework', 'rules/core/', '節索引', '\n'.join(lines))
+
+
+def coordination_rules(root):
+    """共同入口直接取公共短契約＋專屬入口，⛔ 不偽裝成第七角色或本卡brief。"""
+    fallbacks, segments = [], []
+    for rel, text in rules.core_docs(root):
+        wanted = (IMMEDIATE,) if rel in ('core/boundaries.md', 'core/independence.md') else ()
+        segments.extend(_select_doc(rel, text, wanted, fallbacks))
+    rel = 'PM-coordination.md'
+    segments.extend(_select_doc(rel, rules.read_doc(root, rel), (IMMEDIATE,), fallbacks))
+    if fallbacks:
+        segments.append(Segment('framework', 'rules/', '按需取讀',
+                                '未精簡：' + '、'.join(one_line(x) for x in fallbacks)))
     return segments
+
+
+_RULE_HEADINGS = {'PM-coordination.md': ('立即契約', '1 · 責任位置', '2 · 新案與共享操作', '3 · 安全接手'),
+ 'core/boundaries.md': ('立即契約',
+                        '1 · 分層注入（四層）',
+                        '2 · 使用者層的模型與工具資料',
+                        '3 · 專案層',
+                        '4 · CLI 邊界',
+                        '5 · 模組四禁',
+                        '6 · 偏移、根因與停止',
+                        '7 · 經驗的確認、落地與退場'),
+ 'core/flow.md': ('1 · 為什麼有這個流程',
+                  '2 · 五個階段',
+                  '3 · 需求鎖定',
+                  '4 · 階段確認',
+                  '研究答案路徑',
+                  '已定案改動路徑',
+                  '具名討論對話',
+                  '交付資料量',
+                  '5 · 階段證據原則',
+                  '6 · 審核結果與退回',
+                  '7 · 工作包',
+                  '8 · 結案的固定序',
+                  '9 · 協作異常的停止'),
+ 'core/github.md': ('1 · Issue body 五章節',
+                    '2 · 七個核心概念（唯一來源）',
+                    '3 · 留言只有四類',
+                    '4 · 裁定以留言為權威',
+                    '5 · 開卡與關卡＝PM 的平台協調操作',
+                    '6 · Resource 與資源租用',
+                    '7 · 寫入基準'),
+ 'core/independence.md': ('立即契約',
+                          '1 · 誰不能兼任誰',
+                          '2 · 乾淨工作階段',
+                          '3 · 分離程度',
+                          '4 · 正式審核者的條件',
+                          '5 · 審核家族的保留與送審確認'),
+ 'core/research.md': ('1 · 定位', '2 · 一次一問', '3 · 來源與分歧', '4 · 影響邊界', '5 · 網路使用與資料聲明', '6 · 高難度研究（例外）'),
+ 'core/values.md': ('⛔ 不存在的值域',),
+ 'modules/architecture/執行.md': ('立即契約', '操作細則'),
+ 'modules/architecture/審核.md': ('立即契約', '操作細則'),
+ 'modules/architecture/規劃.md': ('立即契約', '操作細則'),
+ 'modules/architecture/需求.md': ('立即契約', '操作細則'),
+ 'modules/codegraph/執行.md': ('立即契約', '操作細則'),
+ 'modules/codegraph/審核.md': ('立即契約', '操作細則'),
+ 'modules/codegraph/規劃.md': ('立即契約', '操作細則'),
+ 'modules/tdd/執行.md': ('立即契約',
+                       '1 · 何時適用',
+                       '2 · 在核定規劃內做',
+                       '3 · 先失敗、後通過',
+                       '4 · Green 之後才 Refactor',
+                       '5 · 交付說明寫什麼'),
+ 'modules/tdd/審核.md': ('立即契約', '1 · 看什麼', '2 · 怎麼核對與必要重現', '3 · 缺少證據時怎麼判斷'),
+ 'roles/PM.md': ('立即契約',
+                 '1 · 你⛔ 不做什麼',
+                 '2 · 模型與流程協調',
+                 '3 · 派工內容與需求質詢（原件優先、報告有用途；規劃先辨限制、純改期只交差異）',
+                 '4 · 收交付時你檢查什麼',
+                 '5 · 寫入流程狀態',
+                 '6 · owner 不是第七個角色',
+                 '7 · 結案（一次性處置依當輪終點退場；安全與復原證據保留）',
+                 '8 · 注意事項',
+                 '9 · 一卡一個 PM 對話'),
+ 'roles/執行者.md': ('立即契約',
+                  '1 · 你可以自行調整什麼',
+                  '2 · 假設失效時',
+                  '3 · 交付前四項自檢',
+                  '4 · 你的自檢不是審核',
+                  '5 · 注意事項由你修改',
+                  '6 · 獨立性'),
+ 'roles/審核者.md': ('立即契約',
+                  '1 · 接案前確認四個前提',
+                  '2 · 怎麼查',
+                  '3 · 你⛔ 不得做什麼',
+                  '4 · 四種結果',
+                  '5 · 環境或權限不足',
+                  '6 · 你回報什麼'),
+ 'roles/研究者.md': ('立即契約',
+                  '1 · 一次一問',
+                  '2 · 你在哪個階段，決定你能碰什麼',
+                  '3 · 來源與分歧',
+                  '4 · 影響邊界',
+                  '5 · ⛔ 不替規劃者選方案',
+                  '6 · 網路與資料聲明',
+                  '7 · 獨立性'),
+ 'roles/規劃者.md': ('立即契約',
+                  '1 · 你交什麼',
+                  '2 · 你⛔ 不能做什麼',
+                  '3 · 你的步驟是預估，不是逐檔契約',
+                  '4 · 驗收怎麼定',
+                  '5 · 規模只作警示',
+                  '6 · 獨立性'),
+ 'roles/需求方.md': ('立即契約', '1 · 定義成果', '2 · 階段確認', '3 · 只有你能裁定的事', '4 · 階段確認不是審核', '5 · 你維護的模型資料'),
+ 'stages/執行.md': ('PM 當值',
+                  '立即契約',
+                  '1 · 只實作已核定方案',
+                  '2 · 交付前自檢（四項，全部要做）',
+                  '3 · 有疑慮就不要交付',
+                  '4 · 正常修正與重跑',
+                  '5 · 假設失效時',
+                  '6 · 完成'),
+ 'stages/審核.md': ('PM 當值',
+                  '立即契約',
+                  '1 · 開始前先確認自己有資格',
+                  '2 · 核對什麼',
+                  '3 · 你⛔ 不得做的三件事',
+                  '4 · 環境或權限不足',
+                  '5 · 審核結果只有四種',
+                  '6 · 再次審核',
+                  '7 · 完成與授權'),
+ 'stages/結案.md': ('機械收尾入口',
+                  'PM 當值',
+                  '1 · 固定序（順序不可調換）',
+                  '2 · 結案卡要放什麼',
+                  '3 · 合併後驗證失敗',
+                  '4 · 成果內容與機械發布收尾',
+                  '5 · 收尾檢查'),
+ 'stages/規劃.md': ('PM 當值',
+                  '立即契約',
+                  '1 · 輸入',
+                  '2 · 必要產出',
+                  '3 · 驗收外檢查',
+                  '4 · 執行步驟是預估',
+                  '5 · 規劃／研究',
+                  '6 · 邊界',
+                  '7 · 完成'),
+ 'stages/需求.md': ('PM 當值',
+                  '立即契約',
+                  '1 · 這個階段要確認四件事',
+                  '2 · Grilling（必做）',
+                  '3 · 需求／研究',
+                  '4 · 完成與鎖定',
+                  '5 · 從後面退回進來時')}
+
+
+def framework_rules(rules_root: Path, role: str, stage: str) -> list[Segment]:
+    return select_framework(rules_root, role, stage).segments
 
 
 def module_docs(rules_root: Path, names, stages, stage: str) -> list[tuple[str, tuple[str, str] | None]]:
@@ -100,19 +339,7 @@ def module_segments(docs) -> list[Segment]:
 
 
 def required_checklist(rules_root: Path, role: str, stage: str) -> list[Segment]:
-    """必要清單＝該角色與該階段兩份文件的章節逐項列出。
-
-    ⛔ 不改寫、⛔ 不排序、⛔ 不判哪一項重要——只是把清單載出來給讀者逐項對。
-    """
-    out: list[Segment] = []
-    for rel, text in (
-        rules.role_doc(rules_root, role),
-        rules.stage_doc(rules_root, stage),
-    ):
-        items = "\n".join(f"- {h}" for h in rules.headings(text))
-        if items:
-            out.append(Segment("framework", rel, "章節", items))
-    return out
+    return selected_checklist(framework_rules(rules_root, role, stage))
 
 
 def user_model_data(user_root: Path) -> list[Segment]:
@@ -278,7 +505,7 @@ def rules_index(rules_root: Path) -> Segment:
     return Segment("framework", "rules/core/", "節索引", "\n".join(lines))
 
 
-NO_MODULE_DOC = "本階段⛔ 無文件，⛔ 不注入"
+NO_MODULE_DOC = "本角色／階段無預載契約，⛔ 不注入"
 
 
 def module_index(docs, *, single_line: bool = False) -> Segment:

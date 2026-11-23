@@ -69,7 +69,7 @@ def test_full_with_flag_drops_only_the_user_layer(run_cli, user_files):
     out_lines = omitted.splitlines()
     user_lines = nonempty(USAGE)
     deducted = [line for line in user_lines if line in out_lines]
-    assert deducted == ["---", "---", "### 專案層"]
+    assert deducted == ["### 專案層"]
     assert omitted.count("\n### 專案層\n") == 1          # 只剩結構標題本身
 
     assert omitted == without_user_layer(baseline)
