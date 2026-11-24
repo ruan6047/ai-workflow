@@ -25,7 +25,7 @@ test -x "$WFX_VENV/bin/wfx" && echo "OK: $WFX_VENV/bin/wfx" || echo "MISSING: $W
 - 需要 Python **≥ 3.14**（`requires-python`）。
 - 執行期⛔ 無 Python 相依（`pip show ai-workflow-vnext` 的 `Requires:` 為空）；
   `git` 與 `gh` 是**外部指令**，各自另行安裝。
-- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（27 份 markdown）
+- 安裝後⛔ 不需要本框架的 checkout、也⛔ 不需要 `PYTHONPATH`：規則樹（28 份 markdown）
   隨 wheel 走，住在 `wfx/rules/`，⛔ 不複製進你的專案。
 - 無參數執行 `wfx` 會印用法並以 **rc 2** 結束（用法錯）。
 - `wfx: command not found` 先看上面的檢查：
@@ -455,7 +455,7 @@ WHL=/tmp/wfx-dist/ai_workflow_vnext-<版本>-py3-none-any.whl   # <版本>＝pyp
 - **E2 乾淨 venv 安裝**。`$PY -m venv /tmp/wfx-venv` →
   `/tmp/wfx-venv/bin/python -m pip install --no-index --no-cache-dir "$WHL"`。
   無參數跑 `wfx` 應印用法並 **rc 2**（console script 會把 `main()` 的回傳值當 exit code）。
-- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **27 份**（含 `modules/codegraph/` 的規劃、執行、審核及 `modules/architecture/` 的需求、規劃、執行、審核），
+- **E3 輪子內容**。`unzip -Z1 "$WHL"`：`wfx/rules/**` 的 `.md` 應為 **28 份**（含 `modules/codegraph/` 的規劃、執行、審核及 `modules/architecture/` 的需求、規劃、執行、審核），
   `wfx/codegraph.py`、`wfx/docs/ADOPTION.md`、`wfx/docs/CODEGRAPH.md` 與 `wfx/docs/ARCHITECTURE.md` 在，且⛔ 無 `.wf/`、⛔ 無任務／模型資料、⛔ 無憑證。
   `pip show -f ai-workflow-vnext` 的 `Requires:` 須為**空**。
 - **E4 空目錄清單＋零寫入**。`find "$PROJ" | sort` 前後比對，中間跑兩次
