@@ -175,13 +175,12 @@ def selected_core_index(segments):
     return Segment('framework', 'rules/core/', '節索引', '\n'.join(lines))
 
 
-def coordination_rules(root):
-    """共同入口直接取公共短契約＋專屬入口，⛔ 不偽裝成第七角色或本卡brief。"""
+def _entry_rules(root, rel):
+    """專屬入口直接取公共短契約＋該入口立即契約，⛔ 不偽裝成第七角色或本卡brief。"""
     fallbacks, segments = [], []
-    for rel, text in rules.core_docs(root):
-        wanted = (IMMEDIATE,) if rel in ('core/boundaries.md', 'core/independence.md') else ()
-        segments.extend(_select_doc(rel, text, wanted, fallbacks))
-    rel = 'PM-coordination.md'
+    for core_rel, text in rules.core_docs(root):
+        wanted = (IMMEDIATE,) if core_rel in ('core/boundaries.md', 'core/independence.md') else ()
+        segments.extend(_select_doc(core_rel, text, wanted, fallbacks))
     segments.extend(_select_doc(rel, rules.read_doc(root, rel), (IMMEDIATE,), fallbacks))
     if fallbacks:
         segments.append(Segment('framework', 'rules/', '按需取讀',
@@ -189,7 +188,18 @@ def coordination_rules(root):
     return segments
 
 
-_RULE_HEADINGS = {'PM-coordination.md': ('立即契約', '1 · 責任位置', '2 · 新案與共享操作', '3 · 安全接手'),
+def coordination_rules(root):
+    """共同入口：公共短契約＋共同協調立即契約。"""
+    return _entry_rules(root, 'PM-coordination.md')
+
+
+def project_rules(root):
+    """專案 PM 入口：公共短契約＋專案 PM 立即契約；與共同協調同型，不是第七角色。"""
+    return _entry_rules(root, 'PM-project.md')
+
+
+_RULE_HEADINGS = {'PM-coordination.md': ('立即契約', '1 · 責任位置', '2 · 共享操作', '3 · 安全接手'),
+ 'PM-project.md': ('立即契約', '1 · 新案與拆分', '2 · 專案方向提案', '3 · 責任位置與接手'),
  'core/boundaries.md': ('立即契約',
                         '1 · 分層注入（四層）',
                         '2 · 使用者層的模型與工具資料',

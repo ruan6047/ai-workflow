@@ -94,7 +94,7 @@ def test_selected_contract_links_resolve_to_the_same_tree():
         ('core/boundaries.md', '立即契約'), ('core/independence.md', '立即契約'),
         ('roles/執行者.md', '立即契約'), ('stages/執行.md', '立即契約')]
     for rel in ('roles/PM.md', 'roles/研究者.md', 'roles/規劃者.md', 'roles/審核者.md',
-                'roles/需求方.md', 'modules/codegraph/執行.md'):
+                'roles/需求方.md', 'modules/codegraph/執行.md', 'PM-coordination.md', 'PM-project.md'):
         chosen += [s for s in layers._doc_segments(rel, rules.read_doc(root, rel))
                    if s.section == '立即契約']
     for segment in chosen:
@@ -114,5 +114,17 @@ def test_coordination_reads_short_shared_authority_without_becoming_a_role(rules
         ('core/boundaries.md', '立即契約'), ('core/independence.md', '立即契約'),
         ('PM-coordination.md', '立即契約')]
     assert '不因本入口取得任一卡的當值寫入、合併、結案或階段確認責任' in chosen[-1].body
-    assert '只介入' in chosen[-1].body and '四類交界事件' in chosen[-1].body
+    assert '只介入' in chosen[-1].body and '兩類交界事件' in chosen[-1].body
     assert all(not s.path.startswith(('roles/', 'stages/')) for s in chosen)
+
+
+def test_project_pm_reads_short_shared_authority_without_becoming_a_role(rules_root):
+    chosen = layers.project_rules(rules_root)
+    assert [(s.path, s.section) for s in chosen] == [
+        ('core/boundaries.md', '立即契約'), ('core/independence.md', '立即契約'),
+        ('PM-project.md', '立即契約')]
+    assert '不因本入口取得任一卡的當值寫入、合併、結案或階段確認責任' in chosen[-1].body
+    assert all(not s.path.startswith(('roles/', 'stages/')) for s in chosen)
+    (rules_root / 'PM-project.md').write_text('\n')
+    with pytest.raises(rules.LayerMissing):
+        layers.project_rules(rules_root)
