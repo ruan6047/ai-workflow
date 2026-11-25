@@ -120,6 +120,18 @@ def test_the_verb_set_is_still_exactly_three():
     assert set(DISPATCH) == {'brief', 'facts', 'write'}
 
 
+def test_framework_rule_counts_cover_the_whole_rule_tree(tmp_path, rules_root, capsys):
+    """#566 F16：第 2 節的份數涵蓋 modules（遞迴）與根層，合計＝規則樹 *.md 遞迴總數。"""
+    rc, out = listing(tmp_path, rules_root, capsys,
+                      runner=runner(worktree=(128, '', 'fatal: not a git repository')))
+    assert rc == 0
+    [line] = [l for l in out.splitlines() if '規則樹隨套件可讀' in l]
+    tallies = dict((name, int(count)) for name, count in re.findall(r'([^｜、 ]+) (\d+) 份', line))
+    assert list(tallies) == ['core', 'stages', 'roles', 'modules', '根層']
+    assert tallies['modules'] == len(list((rules_root / 'modules').rglob('*.md'))) > 0
+    assert sum(tallies.values()) == len(list(rules_root.rglob('*.md')))
+
+
 # ── 五類都走得到 ───────────────────────────────────────────────────────
 
 def test_all_five_classes_appear_in_one_listing(tmp_path, rules_root, capsys):

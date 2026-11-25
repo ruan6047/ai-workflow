@@ -430,8 +430,21 @@ def test_optional_tool_document_is_loaded_once_with_model_unknown(run_cli, user_
     assert out.count(text.strip('\n')) == 1
     assert '- ~/.wf/model-usage.md：使用者層模型資料：unknown' in out
     assert 'model-availability.md' not in out
-    assert '- ~/.wf/tool-usage.md：在（2 非空行，全文見附錄）' in out
+    assert '- ~/.wf/tool-usage.md：在（2 非空行，全文在 `--full` 附錄）' in out
     assert '第四檔禁止讀入459' not in out
+
+
+# #566 B11：有界輸出沒有附錄；兩個明列檔的狀態列在預設與 `--full` 用同一個說法。
+@pytest.mark.parametrize('full', [False, True])
+def test_user_status_lines_point_to_full_appendix_in_both_modes(run_cli, user_root, full):
+    user_root.mkdir(parents=True)
+    (user_root / 'model-usage.md').write_text('# 模型\n模型哨兵566\n', encoding='utf-8')
+    (user_root / 'tool-usage.md').write_text('# 工具\n工具哨兵566\n', encoding='utf-8')
+    rc, out, err = run_cli(full=full)
+    assert (rc, err) == (0, '')
+    assert '- ~/.wf/model-usage.md：在（2 非空行，全文在 `--full` 附錄）' in out
+    assert '- ~/.wf/tool-usage.md：在（2 非空行，全文在 `--full` 附錄）' in out
+    assert '全文見附錄' not in out
 
 
 def test_optional_tool_absence_is_not_another_model_unknown(run_cli):

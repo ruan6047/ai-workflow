@@ -28,14 +28,17 @@ USAGE = 'wfx [--project-root <p>] facts (--task <id> [--sha <sha>] | --adopt) [-
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(prog='wfx facts', usage=USAGE, add_help=True)
-    parser.add_argument('--task')
-    parser.add_argument('--sha')
+    parser.add_argument('--task', help='不透明任務識別（核心⛔ 不理解其格式）')
+    parser.add_argument('--sha',
+                        help='受查 revision，預設 HEAD：第 4 節（本機 git）以它取代 HEAD 解析 base 與 log／diff，'
+                             '第 5 節（CI check）查它的 CI')
     parser.add_argument('--adopt', action='store_true',
                         help='唯讀採用清單；⛔ 不需 --task／git 工作樹／.wf/／Project')
-    # `facts --task` 只驗規則樹的形狀（`core/` 在且有 *.md）、⛔ 不載入內容；這個旗標在該路徑上決定
-    # 第 ⑦ 節報 package 還是 override，不合法就 rc 1 `LayerMissing`。與 `brief`／`write` 同名同義
-    # （指向含 `core/` 的 `rules/` 目錄本身）。`--adopt` 則真的讀它（§2 欄型與值域）。
-    parser.add_argument('--rules-root', type=Path, default=None)
+    # 不合法時 `--task` 路徑 rc 1 `LayerMissing`。
+    parser.add_argument('--rules-root', type=Path, default=None,
+                        help='規則來源，指向含 core/ 的 rules/ 目錄本身（與 brief／write 同名同義）；'
+                             '--task 只驗形狀（core/ 在且有 *.md）、⛔ 不載入內容，決定第 7 節（規則來源）報 package 或 override；'
+                             '--adopt 讀其內容（§2 欄型與值域）')
     args = parser.parse_args(argv)
     if args.adopt and (args.task is not None or args.sha is not None):
         parser.error('--adopt 與 --task／--sha 互斥：採用清單⛔ 不認識任務，也⛔ 不讀任何 Issue')

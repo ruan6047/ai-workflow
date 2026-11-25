@@ -23,7 +23,7 @@ from wfx.core import values
 from wfx.core.context import (CONFIG_MALFORMED, CONFIG_MISSING, CONFIG_OK, CONFIG_REL,
                               ConfigResult)
 from wfx.core.errors import WfxError
-from wfx.core.rules import CORE_DIR, ROLES_DIR, STAGES_DIR
+from wfx.core.rules import CORE_DIR, MODULES_DIR, ROLES_DIR, STAGES_DIR
 
 DONE, MISSING, MALFORMED, BLOCKED, UNVERIFIED = '已完成', '缺少', '格式錯誤', '環境阻塞', '無法確認'
 STATES = (DONE, MISSING, MALFORMED, BLOCKED, UNVERIFIED)
@@ -158,8 +158,12 @@ def _environment(facts: Facts) -> Section:
 
 
 def _framework(rules_root: Path, rules_source: str, version: str) -> Section:
-    counts = '、'.join(f'{name} {len(list((rules_root / name).glob("*.md")))} 份'
-                      for name in (CORE_DIR, STAGES_DIR, ROLES_DIR))
+    # 份數照實數：三個目錄＋`modules/` 遞迴＋根層，合計＝規則樹 *.md 總數；缺目錄照實 0 份，⛔ 不判缺漏。
+    tallies = [(name, len(list((rules_root / name).glob('*.md'))))
+               for name in (CORE_DIR, STAGES_DIR, ROLES_DIR)]
+    tallies.append((MODULES_DIR, len(list((rules_root / MODULES_DIR).rglob('*.md')))))
+    tallies.append(('根層', len(list(rules_root.glob('*.md')))))
+    counts = '、'.join(f'{name} {count} 份' for name, count in tallies)
     installed = version != 'unknown'
     return Section(SECTION_TITLES[1], (
         Item('ai-workflow-vnext 已安裝', DONE if installed else MISSING,
