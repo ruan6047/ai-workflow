@@ -189,7 +189,7 @@ def _entry_rules(root, rel):
 
 
 def coordination_rules(root):
-    """共同入口：公共短契約＋共同協調立即契約。"""
+    """共同協調入口：公共短契約＋共同協調立即契約。"""
     return _entry_rules(root, 'PM-coordination.md')
 
 
