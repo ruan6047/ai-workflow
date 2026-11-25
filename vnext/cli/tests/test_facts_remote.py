@@ -251,3 +251,16 @@ def test_a_duplicate_section_never_fills_in_for_an_empty_first_one(tmp_path, rul
     assert '- 需求：標題在第 1 行、其下空' in index
     assert '- 限制與非目標：在（第 3 行，1 非空行）' in index
     assert '- （同名重複）需求：第 5 行' in index
+
+
+def test_facts_help_describes_task_sha_and_rules_root(capsys, monkeypatch):
+    """#566 F10／F11：三個旗標在 `--help` 都有說明；`--sha` 寫明預設 HEAD。"""
+    from wfx.verbs.facts import parse_args
+    monkeypatch.setenv('COLUMNS', '400')   # 不讓 argparse 在中文長句中間折行
+    with pytest.raises(SystemExit) as exit_info:
+        parse_args(['--help'])
+    assert exit_info.value.code == 0
+    text = ' '.join(capsys.readouterr().out.split())
+    assert '--task TASK 不透明任務識別' in text
+    assert '--sha SHA 受查 revision，預設 HEAD' in text
+    assert '--rules-root RULES_ROOT 規則來源，指向含 core/ 的 rules/ 目錄本身' in text

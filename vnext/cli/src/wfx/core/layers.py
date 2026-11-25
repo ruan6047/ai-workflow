@@ -398,7 +398,7 @@ def user_index(user_root: Path) -> Segment:
     models = user_model_index(user_root)
     text = _tool_text(user_root)
     status = ("未提供（選用）" if text is None else
-              f"在（{sum(bool(line.strip()) for line in text.splitlines())} 非空行，全文見附錄）")
+              f"在（{sum(bool(line.strip()) for line in text.splitlines())} 非空行，全文在 `--full` 附錄）")
     return Segment("user", "~/.wf/", "狀態", models.body + f"\n- ~/.wf/{USER_TOOL_FILE}：{status}")
 
 
@@ -574,7 +574,7 @@ def user_model_index(user_root: Path) -> Segment:
         if path.is_file():
             text = _read_utf8(path, f"~/.wf/{name}")
             filled = len([l for l in text.splitlines() if l.strip()])
-            lines.append(f"- ~/.wf/{name}：在（{filled} 非空行，全文見附錄）")
+            lines.append(f"- ~/.wf/{name}：在（{filled} 非空行，全文在 `--full` 附錄）")
         else:
             lines.append(f"- ~/.wf/{name}：{UNKNOWN_MODEL_DATA}")
     return Segment("user", "~/.wf/", "狀態", "\n".join(lines))
