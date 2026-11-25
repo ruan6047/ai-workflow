@@ -310,6 +310,18 @@ def test_summary_counts_every_item_exactly_once(tmp_path, rules_root, capsys):
     assert sum(counted[state] for state in adopt.STATES) == counted['總計'] == len(states(out))
 
 
+def test_summary_states_entry_and_norm_check_scope_without_breaking_counts(tmp_path, rules_root,
+                                                                         capsys):
+    """摘要固定印入口／專案規範的檢查範圍並指向 ADOPTION §5；不改計數行、不用半形「: 」。"""
+    rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
+    summary = out.split(f'## 7 · {adopt.SECTION_TITLES[6]}', 1)[1].splitlines()
+    assert rc == 0
+    assert summary[-1] == adopt.ENTRY_SCOPE_NOTE and summary[-2] == adopt.SUMMARY_NOTE
+    assert ': ' not in adopt.ENTRY_SCOPE_NOTE
+    assert 'CLI 不核對語意' in adopt.ENTRY_SCOPE_NOTE and 'ADOPTION.md` §5' in adopt.ENTRY_SCOPE_NOTE
+    assert [line.split(': ')[0] for line in summary if ': ' in line] == [*adopt.STATES, '總計']
+
+
 def test_next_steps_only_lists_the_unfinished_and_says_the_cli_applies_nothing(tmp_path,
                                                                               rules_root, capsys):
     rc, out = listing(tmp_path, rules_root, capsys, runner=runner())
