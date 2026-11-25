@@ -318,7 +318,7 @@ def test_summary_states_entry_and_norm_check_scope_without_breaking_counts(tmp_p
     assert rc == 0
     assert summary[-1] == adopt.ENTRY_SCOPE_NOTE and summary[-2] == adopt.SUMMARY_NOTE
     assert ': ' not in adopt.ENTRY_SCOPE_NOTE
-    assert 'CLI 不核對語意' in adopt.ENTRY_SCOPE_NOTE and 'ADOPTION.md` §5' in adopt.ENTRY_SCOPE_NOTE
+    assert 'CLI 都不核對語意' in adopt.ENTRY_SCOPE_NOTE and 'ADOPTION.md` §5' in adopt.ENTRY_SCOPE_NOTE
     assert [line.split(': ')[0] for line in summary if ': ' in line] == [*adopt.STATES, '總計']
 
 
@@ -770,3 +770,20 @@ def test_nested_adoption_listing_wires_root_classification_and_stays_read_only(
         assert states(output)['入口 AGENTS.md'] == adopt.DONE
         assert states(output)['入口 CLAUDE.md'] == adopt.DONE
         assert states(output)['專案規範 vnext/.wf/norm.md:L2 → vnext/.wf/model-policy.md'] == adopt.DONE
+
+
+def test_summary_scope_note_covers_undeclared_norms_that_count_as_done(tmp_path, rules_root,
+                                                                     capsys):
+    """未宣告專案規範也算「已完成」；摘要行要講明這種情況，⛔ 不讓讀者讀成「有宣告且通過」。"""
+    configured(tmp_path)
+    fallback = runner()
+    def capture(args, **kwargs):
+        if tuple(args)[-2:] == ('rev-parse', '--show-toplevel'):
+            return subprocess.CompletedProcess(args, 0, str(tmp_path) + '\n', '')
+        return fallback(args, **kwargs)
+    rc, out = listing(tmp_path, rules_root, capsys, runner=capture, client=SchemaClient())
+    assert rc == 0 and states(out)['專案規範宣告'] == adopt.DONE
+    assert '專案規範宣告：已完成（未宣告（選用）' in out
+    summary = out.split(f'## 7 · {adopt.SECTION_TITLES[6]}', 1)[1].splitlines()
+    assert summary[-1] == adopt.ENTRY_SCOPE_NOTE
+    assert '未宣告（選用）' in adopt.ENTRY_SCOPE_NOTE and ': ' not in adopt.ENTRY_SCOPE_NOTE
